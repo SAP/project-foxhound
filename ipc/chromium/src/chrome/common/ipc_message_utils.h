@@ -33,12 +33,25 @@ class IProtocol;
 template <typename P>
 struct IPDLParamTraits;
 class SharedMemory;
+namespace shared_memory {
+class Cursor;
+}
 
 // Implemented in ProtocolUtils.cpp
 MOZ_NEVER_INLINE void PickleFatalError(const char* aMsg, IProtocol* aActor);
 }  // namespace mozilla::ipc
 
 namespace IPC {
+
+/**
+ * This constant determines the threshold size (in bytes) for deciding whether
+ * shared memory should be used during serialization/deserialization handled
+ * by the MessageBufferWriter class.
+ *
+ * NOTE: Even above this threshold, if MessageBufferWriter fails to allocate a
+ * shared memory region, it may still fall-back to sending the message inline.
+ */
+constexpr uint32_t kMessageBufferShmemThreshold = 64 * 1024;  // 64 KB
 
 /**
  * Context used to serialize into an IPC::Message. Provides relevant context
@@ -518,8 +531,7 @@ class MOZ_STACK_CLASS MessageBufferWriter {
 
  private:
   MessageWriter* writer_;
-  RefPtr<mozilla::ipc::SharedMemory> shmem_;
-  char* buffer_ = nullptr;
+  mozilla::UniquePtr<mozilla::ipc::shared_memory::Cursor> shmem_cursor_;
   uint32_t remaining_ = 0;
 };
 
@@ -550,8 +562,7 @@ class MOZ_STACK_CLASS MessageBufferReader {
 
  private:
   MessageReader* reader_;
-  RefPtr<mozilla::ipc::SharedMemory> shmem_;
-  const char* buffer_ = nullptr;
+  mozilla::UniquePtr<mozilla::ipc::shared_memory::Cursor> shmem_cursor_;
   uint32_t remaining_ = 0;
 };
 

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { BaseFeature } from "resource:///modules/urlbar/private/BaseFeature.sys.mjs";
+import { SuggestFeature } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
@@ -19,17 +19,17 @@ const IMPRESSION_COUNTERS_RESET_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
 /**
  * Impression caps and stats for quick suggest suggestions.
  */
-export class ImpressionCaps extends BaseFeature {
+export class ImpressionCaps extends SuggestFeature {
   constructor() {
     super();
     lazy.UrlbarPrefs.addObserver(this);
   }
 
-  get shouldEnable() {
-    return (
-      lazy.UrlbarPrefs.get("quickSuggestImpressionCapsSponsoredEnabled") ||
-      lazy.UrlbarPrefs.get("quickSuggestImpressionCapsNonSponsoredEnabled")
-    );
+  get enablingPreferences() {
+    return [
+      "quickSuggestImpressionCapsSponsoredEnabled",
+      "quickSuggestImpressionCapsNonSponsoredEnabled",
+    ];
   }
 
   enable(enabled) {
@@ -52,7 +52,7 @@ export class ImpressionCaps extends BaseFeature {
     this.logger.debug("Starting impression stats update", {
       type,
       currentStats: this.#stats,
-      impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
+      impression_caps: lazy.QuickSuggest.config.impression_caps,
     });
 
     // Don't bother recording anything if caps are disabled.
@@ -151,7 +151,9 @@ export class ImpressionCaps extends BaseFeature {
 
     // Validate stats against any changes to the impression caps in the config.
     this._onConfigSet = () => this.#validateStats();
-    lazy.QuickSuggest.jsBackend.emitter.on("config-set", this._onConfigSet);
+    // TODO: If impression caps are ever enabled again, this will need to be
+    // fixed.
+    // lazy.QuickSuggest.jsBackend.emitter.on("config-set", this._onConfigSet);
 
     // Periodically record impression counters reset telemetry.
     this.#setCountersResetInterval();
@@ -165,7 +167,9 @@ export class ImpressionCaps extends BaseFeature {
   }
 
   #uninit() {
-    lazy.QuickSuggest.jsBackend.emitter.off("config-set", this._onConfigSet);
+    // TODO: If impression caps are ever enabled again, this will need to be
+    // fixed.
+    // lazy.QuickSuggest.jsBackend.emitter.off("config-set", this._onConfigSet);
     this._onConfigSet = null;
 
     lazy.clearInterval(this._impressionCountersResetInterval);
@@ -207,7 +211,7 @@ export class ImpressionCaps extends BaseFeature {
    *   corresponding to each impression cap. See the `#stats` comment for info.
    */
   #validateStats() {
-    let { impression_caps } = lazy.QuickSuggest.jsBackend.config;
+    let { impression_caps } = lazy.QuickSuggest.config;
 
     this.logger.debug("Validating impression stats", {
       impression_caps,
@@ -325,7 +329,7 @@ export class ImpressionCaps extends BaseFeature {
   #resetElapsedCounters() {
     this.logger.debug("Checking for elapsed impression cap intervals", {
       currentStats: this.#stats,
-      impression_caps: lazy.QuickSuggest.jsBackend.config.impression_caps,
+      impression_caps: lazy.QuickSuggest.config.impression_caps,
     });
 
     let now = Date.now();
@@ -446,8 +450,7 @@ export class ImpressionCaps extends BaseFeature {
   // cap is the one with the same suggestion type (sponsored or non-sponsored)
   // and interval. See `#validateStats()` for more.
   //
-  // Impression caps are stored in the remote settings config. See
-  // `SuggestBackendJs.config.impression_caps`.
+  // Impression caps are stored in the Suggest remote settings global config.
   #stats = {};
 
   // Whether impression stats are currently being updated.

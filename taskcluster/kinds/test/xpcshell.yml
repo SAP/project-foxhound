@@ -9,7 +9,7 @@ task-defaults:
     target:
         by-test-platform:
             android-em-7.*: geckoview-test_runner.apk
-            windows11-64-2009.*:
+            windows11-64-24h2.*:
                 by-variant:
                     msix: target.installer.msix
                     default: null
@@ -26,6 +26,7 @@ task-defaults:
                     - android/android-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
+                    - unittests/linux_dbus-python.py
                     - remove_executables.py
                 macosx.*:
                     - unittests/mac_unittest.py
@@ -34,8 +35,8 @@ task-defaults:
         requires-signed-builds:
             by-test-platform:
                 macosx1100.*: true
-                windows.*-asan-qr/opt: false    # No XPCShell on ASAN yet
-                windows.*-mingwclang-qr/.*: false
+                windows.*-asan/opt: false    # No XPCShell on ASAN yet
+                windows.*-mingwclang/.*: false
                 windows.*: true
                 default: false
 
@@ -50,6 +51,7 @@ xpcshell:
         - msix
         - geckoview-no-fission-ship
         - os-integration
+        - inc-origin-init
     instance-size:
         by-variant:
             conditioned_profile: large
@@ -61,7 +63,7 @@ xpcshell:
                 by-test-platform:
                     .*asan.*: []
                     .*ccov.*: []
-                    (linux1804-64|windows11-64.*)(-shippable)?-qr/opt: ['trunk']
+                    (linux1804-64|windows11-64).*/opt: ['trunk']
                     default: []
             socketprocess_networking+no-fission:
                 by-test-platform:
@@ -70,7 +72,9 @@ xpcshell:
             socketprocess_networking:
                 by-test-platform:
                     macosx1015.*: ['trunk']  # All Mac variants
-                    ^(?!.*asan).*windows11.*: ['trunk']   # All Windows11 except ASAN
+                    macosx1470.*: ['trunk']  # All Mac variants
+                    windows.*asan.*: []
+                    windows11.*: ['trunk']   # All Windows11 except ASAN
                     default: []
             no-fission:
                 by-test-platform:
@@ -80,26 +84,33 @@ xpcshell:
                     default: []
             msix:
                 by-test-platform:
-                    windows11-64-2009(-shippable)?-qr/opt: built-projects
-                    windows11-64-2009-qr/debug: built-projects
+                    windows11-64-24h2(-shippable)?/opt: built-projects
+                    windows11-64-24h2/debug: built-projects
                     default: []
             geckoview-no-fission-ship:
                 by-test-platform:
                     android-em-7.0-x86_64-qr/debug-isolated-process: []
                     android-em.*: built-projects
                     default: []
+            inc-origin-init:
+                by-test-platform:
+                    .*asan.*: []
+                    .*ccov.*: []
+                    (linux.*64|macosx.*64|windows1.*-64.*)(-shippable)?(-qr)?/(opt|debug): built-projects
+                    default: []
             default:
                 by-test-platform:
                     android.*: built-projects
                     .*wayland.*: []
-                    windows.*-asan-qr/opt: []  # No XPCShell on ASAN yet
+                    windows.*-asan/opt: []  # No XPCShell on ASAN yet
                     default: built-projects
     chunks:
         by-variant:
             os-integration: dynamic
+            inc-origin-init: dynamic
             default:
                 by-test-platform:
-                    .*-asan-qr/opt: 4
+                    .*-asan.*/opt: 4
                     .*-ccov.*/.*: 8
                     .*-tsan-qr/opt: 10
                     (android-em-7.*|macosx.*|linux1804-64.*/opt): 2
@@ -110,7 +121,7 @@ xpcshell:
             conditioned_profile: 7200
             default:
                 by-test-platform:
-                    .*-ccov(-qr)?/.*: 7200
+                    .*-ccov.*/.*: 7200
                     .*-tsan-qr/opt: 7200
                     default: 5400
     allow-software-gl-layers: false
@@ -138,10 +149,18 @@ xpcshell:
     fetches:
         toolchain:
             by-test-platform:
-                linux.*:
+                linux1804.*:
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
+                    - linux-python-dbusmock
+                    - linux64-1804-dbus-python
+                linux2204.*:
+                    - linux64-node
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux-python-dbusmock
+                    - linux64-2204-dbus-python
                 macosx.*:
                     - macosx64-node
                     - macosx64-minidump-stackwalk

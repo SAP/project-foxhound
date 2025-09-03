@@ -70,17 +70,13 @@ const coreRules = {
     "mozilla/prefer-boolean-length-check": "error",
     "mozilla/prefer-formatValues": "error",
     "mozilla/reject-addtask-only": "error",
-    "mozilla/reject-chromeutils-import": "error",
-    "mozilla/reject-chromeutils-import-params": "error",
     "mozilla/reject-importGlobalProperties": ["error", "allownonwebidl"],
     "mozilla/reject-multiple-await": "error",
     "mozilla/reject-multiple-getters-calls": "error",
     "mozilla/reject-scriptableunicodeconverter": "warn",
     "mozilla/rejects-requires-await": "error",
     "mozilla/use-cc-etc": "error",
-    "mozilla/use-chromeutils-definelazygetter": "error",
     "mozilla/use-chromeutils-generateqi": "error",
-    "mozilla/use-chromeutils-import": "error",
     "mozilla/use-console-createInstance": "error",
     "mozilla/use-default-preference-values": "error",
     "mozilla/use-includes-instead-of-indexOf": "error",
@@ -232,6 +228,9 @@ const coreRules = {
 
     // This may conflict with prettier, so turn it off.
     "prefer-arrow-callback": "off",
+
+    // Not passing anything to .catch/.then doesn't work, error:
+    "promise/valid-params": "error",
   },
 };
 
@@ -250,7 +249,6 @@ const extraRules = [
     rules: {
       "mozilla/lazy-getter-object-name": "error",
       "mozilla/reject-eager-module-in-lazy-getter": "error",
-      "mozilla/reject-global-this": "error",
       "mozilla/reject-globalThis-modification": "error",
       // For all system modules, we expect no properties to need importing,
       // hence reject everything.

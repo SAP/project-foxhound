@@ -12,6 +12,7 @@ interface mozIDOMWindowProxy;
 interface nsIArray;
 interface nsIInterceptedChannel;
 interface nsIPrincipal;
+interface nsIPushSubscription;
 interface nsIRunnable;
 interface nsIURI;
 %{C++
@@ -295,7 +296,7 @@ interface nsIServiceWorkerManager : nsISupports
                            in AString aScope);
 
   void sendNotificationClickEvent(in ACString aOriginSuffix,
-                                  in ACString scope,
+                                  in AString scope,
                                   in AString aID,
                                   in AString aTitle,
                                   in AString aDir,
@@ -303,11 +304,10 @@ interface nsIServiceWorkerManager : nsISupports
                                   in AString aBody,
                                   in AString aTag,
                                   in AString aIcon,
-                                  in AString aData,
-                                  in AString aBehavior);
+                                  in AString aData);
 
   void sendNotificationCloseEvent(in ACString aOriginSuffix,
-                                  in ACString scope,
+                                  in AString scope,
                                   in AString aID,
                                   in AString aTitle,
                                   in AString aDir,
@@ -315,14 +315,14 @@ interface nsIServiceWorkerManager : nsISupports
                                   in AString aBody,
                                   in AString aTag,
                                   in AString aIcon,
-                                  in AString aData,
-                                  in AString aBehavior);
+                                  in AString aData);
 
   [optional_argc] void sendPushEvent(in ACString aOriginAttributes,
                                      in ACString aScope,
                                      [optional] in Array<uint8_t> aDataBytes);
   void sendPushSubscriptionChangeEvent(in ACString aOriginAttributes,
-                                       in ACString scope);
+                                       in ACString scope,
+                                       [optional] in nsIPushSubscription aOldSubscription);
 
   void addListener(in nsIServiceWorkerManagerListener aListener);
 

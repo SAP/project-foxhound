@@ -9,6 +9,8 @@
 /**
  * This test is used to check hardware video decoding on different platforms.
  */
+const FFVPX_HW = "media.ffvpx-hw.enabled";
+
 const PLATFORMS = {
   // TODO : add Linux and Android, media-gpu doesn't run on them yet
   WINNT: {
@@ -20,7 +22,21 @@ const PLATFORMS = {
       },
       {
         files: ["gizmo.webm"],
+        decoder: "ffvpx video decoder",
+      },
+      {
+        files: ["gizmo.webm"],
+        disableFFVPXHW : true,
         decoder: "wmf VP9 codec hardware video decoder",
+      },
+      {
+        files: [
+          "av1.mp4",
+          "gizmo_av1_8bit_420.webm",
+          "gizmo_av1_10bit_420.webm",
+          "av1-yuv420p.mp4",
+        ],
+        decoder: "ffvpx video decoder",
       },
       {
         files: [
@@ -28,6 +44,7 @@ const PLATFORMS = {
           "gizmo_av1_8bit_420.webm",
           "gizmo_av1_10bit_420.webm"
         ],
+        disableFFVPXHW : true,
         decoder: "wmf AV1 codec hardware video decoder",
       },
     ],
@@ -36,7 +53,11 @@ const PLATFORMS = {
     process: "RDD",
     tests: [
       {
-        files: ["gizmo.mp4"],
+        files: ["gizmo.mp4"], // H264
+        decoder: "apple hardware VT decoder",
+      },
+      {
+        files: ["gizmo_hevc_8bit_420.mp4"],  // HEVC
         decoder: "apple hardware VT decoder",
       },
       // TODO : enable VP9 for MacOS. The current machine on CI doesn't support
@@ -57,21 +78,36 @@ add_task(async function testHardwareVideoDecoding() {
       info(
         `Testing ${file} on ${platformName} : expect ${test.decoder} in ${platformTest.process}`
       );
+      // Disable ffvpx hw if needed
+      if (test.disableFFVPXHW !== undefined) {
+        await SpecialPowers.pushPrefEnv({
+          set: [[FFVPX_HW, false]],
+        });
+      }
       await createAndPlayVideo(file);
       await assertRunningProcessAndDecoderName({
         expectedProcess: platformTest.process,
         expectedDecoder: test.decoder,
       });
-      await waitVideoPlayToEnd();
+      // Reset ffvpx hw pref in order not to interfere next test case
+      if (test.disableFFVPXHW !== undefined) {
+        await SpecialPowers.pushPrefEnv({
+          set: [[FFVPX_HW, true]],
+        });
+      }
     }
   }
 });
 
 // Following are helper functions
 async function createAndPlayVideo(fileUrl) {
-  const video = document.createElement("video");
-  document.body.appendChild(video);
+  let video = document.querySelector("video");
+  if (!video) {
+    video = document.createElement("video");
+    document.body.appendChild(video);
+  }
   video.src = fileUrl;
+  video.loop = true;
   ok(
     await video.play().then(
       () => true,
@@ -79,9 +115,6 @@ async function createAndPlayVideo(fileUrl) {
     ),
     "video started playing"
   );
-  // Waiting for timeupdate to ensure the video decoder has been created
-  // correctly.
-  await new Promise(r => (video.ontimeupdate = r));
 }
 
 async function assertRunningProcessAndDecoderName(
@@ -106,17 +139,6 @@ async function assertRunningProcessAndDecoderName(
     isExpectedProcess,
     `Playback running in process '${videoDecoderName}', expected '${expectedProcess}'`
   );
-}
-
-async function waitVideoPlayToEnd() {
-  const video = document.querySelector("video");
-  if (video.ended) {
-    ok(true, "video reached to end!");
-  } else {
-    await new Promise(r => (video.onended = r));
-  }
-  // Remove current video so that we can check next video later.
-  document.body.removeChild(video);
 }
 
 </script>

@@ -2,9 +2,9 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-import json
 import os
 import shutil
+import sys
 
 import mozpack.path as mozpath
 from mach.decorators import Command, CommandArgument, SubCommand
@@ -99,11 +99,14 @@ def setup(ctx):
 @SubCommand("ts", "update", description="Update tools/@types libraries.")
 def update(ctx):
     typelib_dir = mozpath.join(ctx.topsrcdir, "tools/@types")
+    platforms = ["darwin", "linux", "win32"]
 
-    for lib in targets:
+    for lib in targets + platforms:
         file = f"lib.gecko.{lib}.d.ts"
         path = mozpath.join(ctx.distdir, "@types", file)
         if not os.path.exists(path):
+            if lib in platforms:
+                continue
             print(f"[ERROR] {path} not found. Did you run `mach ts build`?")
             return 1
 
@@ -116,6 +119,13 @@ def update(ctx):
     print("[WARNING] Your source tree was updated, you should commit the changes.")
 
 
+@SubCommand("ts", "glean", description="Build Glean bindings.")
+@CommandArgument("path", help="Path to a (dir with) metrics.yaml.")
+def glean(ctx, path):
+    maybe_setup(ctx)
+    return node(ctx, "build_glean", ctx.topsrcdir, path, "tools/@types")
+
+
 def node(ctx, script, *args):
     maybe_setup(ctx)
     path = mozpath.join(mozpath.dirname(__file__), script)
@@ -123,22 +133,15 @@ def node(ctx, script, *args):
 
 
 def maybe_setup(ctx):
+    sys.path.append(mozpath.join(ctx.topsrcdir, "tools", "lint", "eslint"))
+    import setup_helper
+
+    if not setup_helper.check_node_executables_valid():
+        return 1
+
     """Check if npm modules are installed, and run setup if needed."""
     dir = mozpath.dirname(__file__)
-    package_json = json.load(open(mozpath.join(dir, "package.json")))
-    needs_setup = False
-
-    # TODO: Use proper version checking from tools/lint/eslint/setup_helper.py.
-    for module in package_json.get("devDependencies", {}):
-        path = mozpath.join(dir, "node_modules", module, "package.json")
-        if not os.path.isfile(path):
-            print(f"Missing node module {path}.")
-            needs_setup = True
-            break
-
-    if needs_setup:
-        print("Running npm install.")
-        setup(ctx)
+    setup_helper.eslint_maybe_setup(dir, "TypeScript")
 
 
 def build_required(lib, item):

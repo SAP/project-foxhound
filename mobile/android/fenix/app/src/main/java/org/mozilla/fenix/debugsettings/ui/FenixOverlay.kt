@@ -6,6 +6,7 @@ package org.mozilla.fenix.debugsettings.ui
 
 import android.content.Intent
 import android.net.Uri
+import android.os.StrictMode
 import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -18,9 +19,17 @@ import androidx.navigation.compose.rememberNavController
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.compose.base.annotation.LightDarkPreview
+import mozilla.components.concept.storage.CreditCardsAddressesStorage
 import mozilla.components.concept.storage.LoginsStorage
 import mozilla.components.lib.state.ext.observeAsState
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
+import mozilla.telemetry.glean.Glean
+import org.mozilla.fenix.R
+import org.mozilla.fenix.debugsettings.addresses.AddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.AddressesTools
+import org.mozilla.fenix.debugsettings.addresses.FakeAddressesDebugLocalesRepository
+import org.mozilla.fenix.debugsettings.addresses.FakeCreditCardsAddressesStorage
+import org.mozilla.fenix.debugsettings.addresses.SharedPrefsAddressesDebugLocalesRepository
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsPreferencesMiddleware
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsState
 import org.mozilla.fenix.debugsettings.cfrs.CfrToolsStore
@@ -71,6 +80,10 @@ fun FenixOverlay(
             ),
         ),
         gleanDebugToolsStore = GleanDebugToolsStore(
+            initialState = GleanDebugToolsState(
+                logPingsToConsoleEnabled = Glean.getLogPings(),
+                debugViewTag = Glean.getDebugViewTag() ?: "",
+            ),
             middlewares = listOf(
                 GleanDebugToolsMiddleware(
                     gleanDebugToolsStorage = DefaultGleanDebugToolsStorage(),
@@ -80,10 +93,13 @@ fun FenixOverlay(
                         intent.data = Uri.parse(debugViewLink)
                         context.startActivity(intent)
                     },
-                    showToast = { resId ->
+                    showToast = { pingType ->
                         val toast = Toast.makeText(
                             context,
-                            context.getString(resId),
+                            context.getString(
+                                R.string.glean_debug_tools_send_ping_toast_message,
+                                pingType,
+                            ),
                             Toast.LENGTH_LONG,
                         )
                         toast.show()
@@ -92,6 +108,12 @@ fun FenixOverlay(
             ),
         ),
         loginsStorage = loginsStorage,
+        addressesDebugLocalesRepository = context.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+            SharedPrefsAddressesDebugLocalesRepository(
+                context,
+            )
+        },
+        creditCardsAddressesStorage = context.components.core.autofillStorage,
         inactiveTabsEnabled = inactiveTabsEnabled,
     )
 }
@@ -103,6 +125,8 @@ fun FenixOverlay(
  * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
  * @param gleanDebugToolsStore [GleanDebugToolsStore] used to access [GleanDebugToolsState].
  * @param loginsStorage [LoginsStorage] used to access logins for [LoginsTools].
+ * @param addressesDebugLocalesRepository used to control storage for [AddressesTools].
+ * @param creditCardsAddressesStorage used to access addresses for [AddressesTools].
  * @param inactiveTabsEnabled Whether the inactive tabs feature is enabled.
  */
 @Composable
@@ -111,6 +135,8 @@ private fun FenixOverlay(
     cfrToolsStore: CfrToolsStore,
     gleanDebugToolsStore: GleanDebugToolsStore,
     loginsStorage: LoginsStorage,
+    addressesDebugLocalesRepository: AddressesDebugLocalesRepository,
+    creditCardsAddressesStorage: CreditCardsAddressesStorage,
     inactiveTabsEnabled: Boolean,
 ) {
     val navController = rememberNavController()
@@ -135,6 +161,8 @@ private fun FenixOverlay(
             gleanDebugToolsStore = gleanDebugToolsStore,
             inactiveTabsEnabled = inactiveTabsEnabled,
             loginsStorage = loginsStorage,
+            addressesDebugLocalesRepository = addressesDebugLocalesRepository,
+            creditCardsAddressesStorage = creditCardsAddressesStorage,
         )
     }
     val drawerStatus by debugDrawerStore.observeAsState(initialValue = DrawerStatus.Closed) { state ->
@@ -168,8 +196,15 @@ private fun FenixOverlayPreview() {
             BrowserState(selectedTabId = selectedTab.id, tabs = listOf(selectedTab)),
         ),
         cfrToolsStore = CfrToolsStore(),
-        gleanDebugToolsStore = GleanDebugToolsStore(),
+        gleanDebugToolsStore = GleanDebugToolsStore(
+            initialState = GleanDebugToolsState(
+                logPingsToConsoleEnabled = false,
+                debugViewTag = "",
+            ),
+        ),
         inactiveTabsEnabled = true,
         loginsStorage = FakeLoginsStorage(),
+        addressesDebugLocalesRepository = FakeAddressesDebugLocalesRepository(),
+        creditCardsAddressesStorage = FakeCreditCardsAddressesStorage(),
     )
 }

@@ -1,4 +1,5 @@
-use std::{ops::Range, sync::Arc};
+use alloc::{sync::Arc, vec::Vec};
+use core::ops::Range;
 
 #[cfg(feature = "trace")]
 use crate::device::trace::Command as TraceCommand;
@@ -15,11 +16,14 @@ use crate::{
         ParentDevice, ResourceErrorIdent, Texture, TextureClearMode,
     },
     snatch::SnatchGuard,
-    track::{TextureSelector, TextureTrackerSetSingle},
+    track::TextureTrackerSetSingle,
 };
 
 use thiserror::Error;
-use wgt::{math::align_to, BufferAddress, BufferUsages, ImageSubresourceRange, TextureAspect};
+use wgt::{
+    math::align_to, BufferAddress, BufferUsages, ImageSubresourceRange, TextureAspect,
+    TextureSelector,
+};
 
 /// Error encountered while attempting a clear.
 #[derive(Clone, Debug, Error)]
@@ -91,8 +95,9 @@ impl Global {
         let cmd_buf = hub
             .command_buffers
             .get(command_encoder_id.into_command_buffer_id());
-        let mut cmd_buf_data = cmd_buf.try_get()?;
-        cmd_buf_data.check_recording()?;
+        let mut cmd_buf_data = cmd_buf.data.lock();
+        let mut cmd_buf_data_guard = cmd_buf_data.record()?;
+        let cmd_buf_data = &mut *cmd_buf_data_guard;
 
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf_data.commands {
@@ -106,7 +111,7 @@ impl Global {
         let dst_pending = cmd_buf_data
             .trackers
             .buffers
-            .set_single(&dst_buffer, hal::BufferUses::COPY_DST);
+            .set_single(&dst_buffer, wgt::BufferUses::COPY_DST);
 
         let snatch_guard = dst_buffer.device.snatchable_lock.read();
         let dst_raw = dst_buffer.try_raw(&snatch_guard)?;
@@ -138,6 +143,8 @@ impl Global {
 
         if offset == end_offset {
             log::trace!("Ignoring fill_buffer of size 0");
+
+            cmd_buf_data_guard.mark_successful();
             return Ok(());
         }
 
@@ -152,11 +159,13 @@ impl Global {
 
         // actual hal barrier & operation
         let dst_barrier = dst_pending.map(|pending| pending.into_hal(&dst_buffer, &snatch_guard));
-        let cmd_buf_raw = cmd_buf_data.encoder.open(&cmd_buf.device)?;
+        let cmd_buf_raw = cmd_buf_data.encoder.open()?;
         unsafe {
             cmd_buf_raw.transition_buffers(dst_barrier.as_slice());
             cmd_buf_raw.clear_buffer(dst_raw, offset..end_offset);
         }
+
+        cmd_buf_data_guard.mark_successful();
         Ok(())
     }
 
@@ -174,8 +183,9 @@ impl Global {
         let cmd_buf = hub
             .command_buffers
             .get(command_encoder_id.into_command_buffer_id());
-        let mut cmd_buf_data = cmd_buf.try_get()?;
-        cmd_buf_data.check_recording()?;
+        let mut cmd_buf_data = cmd_buf.data.lock();
+        let mut cmd_buf_data_guard = cmd_buf_data.record()?;
+        let cmd_buf_data = &mut *cmd_buf_data_guard;
 
         #[cfg(feature = "trace")]
         if let Some(ref mut list) = cmd_buf_data.commands {
@@ -229,7 +239,7 @@ impl Global {
 
         let device = &cmd_buf.device;
         device.check_is_valid()?;
-        let (encoder, tracker) = cmd_buf_data.open_encoder_and_tracker(&cmd_buf.device)?;
+        let (encoder, tracker) = cmd_buf_data.open_encoder_and_tracker()?;
 
         let snatch_guard = device.snatchable_lock.read();
         clear_texture(
@@ -243,7 +253,10 @@ impl Global {
             &device.alignments,
             device.zero_buffer.as_ref(),
             &snatch_guard,
-        )
+        )?;
+
+        cmd_buf_data_guard.mark_successful();
+        Ok(())
     }
 }
 
@@ -260,12 +273,12 @@ pub(crate) fn clear_texture<T: TextureTrackerSetSingle>(
 
     // Issue the right barrier.
     let clear_usage = match dst_texture.clear_mode {
-        TextureClearMode::BufferCopy => hal::TextureUses::COPY_DST,
+        TextureClearMode::BufferCopy => wgt::TextureUses::COPY_DST,
         TextureClearMode::RenderPass {
             is_color: false, ..
-        } => hal::TextureUses::DEPTH_STENCIL_WRITE,
+        } => wgt::TextureUses::DEPTH_STENCIL_WRITE,
         TextureClearMode::Surface { .. } | TextureClearMode::RenderPass { is_color: true, .. } => {
-            hal::TextureUses::COLOR_TARGET
+            wgt::TextureUses::COLOR_TARGET
         }
         TextureClearMode::None => {
             return Err(ClearError::NoValidTextureClearMode(
@@ -386,7 +399,7 @@ fn clear_texture_via_buffer_copies(
                     let num_rows = num_rows_left.min(max_rows_per_copy);
 
                     zero_buffer_copy_regions.push(hal::BufferTextureCopy {
-                        buffer_layout: wgt::ImageDataLayout {
+                        buffer_layout: wgt::TexelCopyBufferLayout {
                             offset: 0,
                             bytes_per_row: Some(bytes_per_row),
                             rows_per_image: None,
@@ -446,7 +459,7 @@ fn clear_texture_via_render_passes(
                             mip_level,
                             depth_or_layer,
                         ),
-                        usage: hal::TextureUses::COLOR_TARGET,
+                        usage: wgt::TextureUses::COLOR_TARGET,
                     },
                     resolve_target: None,
                     ops: hal::AttachmentOps::STORE,
@@ -464,7 +477,7 @@ fn clear_texture_via_render_passes(
                                 mip_level,
                                 depth_or_layer,
                             ),
-                            usage: hal::TextureUses::DEPTH_STENCIL_WRITE,
+                            usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
                         },
                         depth_ops: hal::AttachmentOps::STORE,
                         stencil_ops: hal::AttachmentOps::STORE,

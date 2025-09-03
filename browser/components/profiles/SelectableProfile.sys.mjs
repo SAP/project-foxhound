@@ -87,13 +87,31 @@ export class SelectableProfile {
   }
 
   /**
-   * Get the profile directory as an  nsIFile.
+   * Get the profile directory as an nsIFile.
    *
-   * @returns {Promise<nsIFile>} A promise that resolves to an nsIFIle for
+   * @returns {Promise<nsIFile>} A promise that resolves to an nsIFile for
    * the profile directory
    */
   get rootDir() {
     return IOUtils.getDirectory(this.path);
+  }
+
+  /**
+   * Get the profile local directory as an nsIFile.
+   *
+   * @returns {Promise<nsIFile>} A promise that resolves to an nsIFile for
+   * the profile local directory
+   */
+  get localDir() {
+    return this.rootDir.then(root => {
+      let relative = root.getRelativePath(
+        this.#selectableProfileService.constructor.getDirectory("DefProfRt")
+      );
+      let local =
+        this.#selectableProfileService.constructor.getDirectory("DefProfLRt");
+      local.appendRelativePath(relative);
+      return local;
+    });
   }
 
   /**
@@ -115,6 +133,30 @@ export class SelectableProfile {
     this.#avatar = aAvatar;
 
     this.saveUpdatesToDB();
+  }
+
+  /**
+   * Get the l10n id for the current avatar.
+   *
+   * @returns {string} L10n id for the current avatar
+   */
+  get avatarL10nId() {
+    switch (this.avatar) {
+      case "book":
+        return "book-avatar-alt";
+      case "briefcase":
+        return "briefcase-avatar-alt";
+      case "flower":
+        return "flower-avatar-alt";
+      case "heart":
+        return "heart-avatar-alt";
+      case "shopping":
+        return "shopping-avatar-alt";
+      case "star":
+        return "star-avatar-alt";
+    }
+
+    return "";
   }
 
   // Note, theme properties are set and returned as a group.
@@ -170,6 +212,7 @@ export class SelectableProfile {
       path: this.#path,
       name: this.name,
       avatar: this.avatar,
+      avatarL10nId: this.avatarL10nId,
       ...this.theme,
     };
 

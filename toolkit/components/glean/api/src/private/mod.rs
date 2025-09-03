@@ -4,8 +4,6 @@
 
 //! The different metric types supported by the Glean SDK to handle data.
 
-use serde::{Deserialize, Serialize};
-
 // Re-export of `glean` types we can re-use.
 // That way a user only needs to depend on this crate, not on glean (and there can't be a
 // version mismatch).
@@ -27,6 +25,7 @@ mod labeled_custom_distribution;
 mod labeled_memory_distribution;
 mod labeled_timing_distribution;
 mod memory_distribution;
+mod metric_getter;
 mod numerator;
 mod object;
 mod ping;
@@ -53,8 +52,9 @@ pub use self::labeled_custom_distribution::LabeledCustomDistributionMetric;
 pub use self::labeled_memory_distribution::LabeledMemoryDistributionMetric;
 pub use self::labeled_timing_distribution::LabeledTimingDistributionMetric;
 pub use self::memory_distribution::{LocalMemoryDistribution, MemoryDistributionMetric};
+pub use self::metric_getter::{MetricGetter, MetricId, SubMetricId};
 pub use self::numerator::NumeratorMetric;
-pub use self::object::ObjectMetric;
+pub use self::object::{ObjectMetric, RuntimeObject};
 pub use self::ping::Ping;
 pub use self::quantity::QuantityMetric as LabeledQuantityMetric;
 pub use self::quantity::QuantityMetric;
@@ -68,23 +68,6 @@ pub use self::timing_distribution::TimingDistributionMetric;
 pub use self::url::UrlMetric;
 pub use self::uuid::UuidMetric;
 
-/// Uniquely identifies a single metric within its metric type.
-#[derive(Debug, PartialEq, Eq, Hash, Copy, Clone, Deserialize, Serialize)]
-#[repr(transparent)]
-pub struct MetricId(pub(crate) u32);
-
-impl MetricId {
-    pub fn new(id: u32) -> Self {
-        Self(id)
-    }
-}
-
-impl From<u32> for MetricId {
-    fn from(id: u32) -> Self {
-        Self(id)
-    }
-}
-
 // We only access the methods here when we're building with Gecko, as that's
 // when we have access to the profiler. We don't need alternative (i.e.
 // non-gecko) implementations, as any imports from this sub-module are also
@@ -94,111 +77,12 @@ pub(crate) mod profiler_utils {
     use super::max_string_byte_length;
     pub(crate) use super::truncate_string_for_marker;
 
-    #[derive(Debug)]
-    pub(crate) enum LookupError {
-        NullPointer,
-        Utf8ParseError(std::str::Utf8Error),
-    }
-
-    impl LookupError {
-        pub fn as_str(self) -> &'static str {
-            match self {
-                LookupError::NullPointer => "id not found",
-                LookupError::Utf8ParseError(_) => "utf8 parse error",
-            }
-        }
-    }
-
-    impl std::fmt::Display for LookupError {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-            match self {
-                LookupError::NullPointer => write!(f, "id not found"),
-                LookupError::Utf8ParseError(p) => write!(f, "utf8 parse error: {}", p),
-            }
-        }
-    }
-
-    pub(crate) fn lookup_canonical_metric_name(
-        id: &super::MetricId,
-    ) -> Result<&'static str, LookupError> {
-        #[allow(unused)]
-        use std::ffi::{c_char, CStr};
-        extern "C" {
-            fn FOG_GetMetricIdentifier(id: u32) -> *const c_char;
-        }
-        // SAFETY: We check to make sure that the returned pointer is not null
-        // before trying to construct a string from it. As the string array that
-        // `FOG_GetMetricIdentifier` references is statically defined and allocated,
-        // we know that any strings will be guaranteed to have a null terminator,
-        // and will have the same lifetime as the program, meaning we're safe to
-        // return a static lifetime, knowing that they won't be changed "underneath"
-        // us. Additionally, we surface any errors from parsing the string as utf8.
-        unsafe {
-            let raw_name_ptr = FOG_GetMetricIdentifier(id.0);
-            if raw_name_ptr.is_null() {
-                Err(LookupError::NullPointer)
-            } else {
-                let name = CStr::from_ptr(raw_name_ptr).to_str();
-                match name {
-                    Ok(s) => Ok(s),
-                    Err(ut8err) => Err(LookupError::Utf8ParseError(ut8err)),
-                }
-            }
-        }
-    }
-
-    #[derive(serde::Serialize, serde::Deserialize, Debug)]
-    pub(crate) struct StringLikeMetricMarker {
-        id: super::MetricId,
-        value: String,
-    }
-
-    impl StringLikeMetricMarker {
-        pub fn new(id: super::MetricId, value: &String) -> StringLikeMetricMarker {
-            StringLikeMetricMarker {
-                id: id,
-                value: truncate_string_for_marker(value.clone()),
-            }
-        }
-
-        pub fn new_owned(id: super::MetricId, value: String) -> StringLikeMetricMarker {
-            StringLikeMetricMarker {
-                id: id,
-                value: truncate_string_for_marker(value),
-            }
-        }
-    }
-
-    impl gecko_profiler::ProfilerMarker for StringLikeMetricMarker {
-        fn marker_type_name() -> &'static str {
-            "StringLikeMetric"
-        }
-
-        fn marker_type_display() -> gecko_profiler::MarkerSchema {
-            use gecko_profiler::schema::*;
-            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
-            schema.set_tooltip_label("{marker.data.id}");
-            schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.value}");
-            schema.add_key_label_format_searchable(
-                "id",
-                "Metric",
-                Format::UniqueString,
-                Searchable::Searchable,
-            );
-            schema.add_key_label_format("value", "Value", Format::String);
-            schema
-        }
-
-        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
-            json_writer.unique_string_property(
-                "id",
-                lookup_canonical_metric_name(&self.id).unwrap_or_else(LookupError::as_str),
-            );
-
-            debug_assert!(self.value.len() <= max_string_byte_length());
-            json_writer.string_property("value", self.value.as_str());
-        }
-    }
+    // Declare the telemetry profiling category as a constant here.
+    // This lets us avoid re-importing gecko_profiler ... within metric files,
+    // which keeps the importing a bit cleaner, and reduces profiler intrusion.
+    #[allow(non_upper_case_globals)]
+    pub const TelemetryProfilerCategory: gecko_profiler::ProfilingCategoryPair =
+        gecko_profiler::ProfilingCategoryPair::Telemetry(None);
 
     // Get the datetime *now*
     // From https://searchfox.org/mozilla-central/source/third_party/rust/glean-core/src/util.rs#51
@@ -230,7 +114,6 @@ pub(crate) mod profiler_utils {
             // See https://bugzilla.mozilla.org/show_bug.cgi?id=1611770.
 
             use chrono::{FixedOffset, Utc};
-            use time;
 
             // Get timespec, including the user's timezone.
             let tm = time::now();
@@ -270,6 +153,336 @@ pub(crate) mod profiler_utils {
                 .ymd_opt(gdt.year, gdt.month, gdt.day)
                 .and_hms_nano_opt(gdt.hour, gdt.minute, gdt.second, gdt.nanosecond),
         )
+    }
+
+    // Truncate a vector down to a maximum size.
+    // We want to avoid storing large vectors of values in the profiler buffer,
+    // so this helper method allows markers to explicitly limit the size of
+    // vectors of values that might originate from Glean
+    pub(crate) fn truncate_vector_for_marker<T>(vec: &Vec<T>) -> Vec<T>
+    where
+        T: Clone,
+    {
+        const MAX_VECTOR_LENGTH: usize = 1024;
+        if vec.len() > MAX_VECTOR_LENGTH {
+            vec[0..MAX_VECTOR_LENGTH - 1].to_vec()
+        } else {
+            vec.clone()
+        }
+    }
+
+    // Generic marker structs:
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) struct StringLikeMetricMarker {
+        id: super::MetricGetter,
+        val: String,
+    }
+
+    impl StringLikeMetricMarker {
+        pub fn new(id: super::MetricGetter, val: &String) -> StringLikeMetricMarker {
+            StringLikeMetricMarker {
+                id: id,
+                val: truncate_string_for_marker(val.clone()),
+            }
+        }
+
+        pub fn new_owned(id: super::MetricGetter, val: String) -> StringLikeMetricMarker {
+            StringLikeMetricMarker {
+                id: id,
+                val: truncate_string_for_marker(val),
+            }
+        }
+    }
+
+    impl gecko_profiler::ProfilerMarker for StringLikeMetricMarker {
+        fn marker_type_name() -> &'static str {
+            "StringLikeMetric"
+        }
+
+        fn marker_type_display() -> gecko_profiler::MarkerSchema {
+            use gecko_profiler::schema::*;
+            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+            schema.set_tooltip_label("{marker.data.id}");
+            schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.value}");
+            schema.add_key_label_format_searchable(
+                "id",
+                "Metric",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format_searchable(
+                "label",
+                "Label",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format("val", "Value", Format::String);
+            schema
+        }
+
+        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+            let (name, label) = self.id.get_identifiers();
+            json_writer.unique_string_property("id", &name);
+            if let Some(l) = label {
+                json_writer.unique_string_property("label", &l);
+            };
+            debug_assert!(self.val.len() <= max_string_byte_length());
+            json_writer.string_property("val", self.val.as_str());
+        }
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) struct IntLikeMetricMarker<T>
+    where
+        T: Into<i64>,
+    {
+        id: super::MetricGetter,
+        label: Option<String>,
+        val: T,
+    }
+
+    impl<T> IntLikeMetricMarker<T>
+    where
+        T: Into<i64>,
+    {
+        pub fn new(
+            id: super::MetricGetter,
+            label: Option<String>,
+            val: T,
+        ) -> IntLikeMetricMarker<T> {
+            IntLikeMetricMarker { id, label, val }
+        }
+    }
+
+    impl<T> gecko_profiler::ProfilerMarker for IntLikeMetricMarker<T>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned + Into<i64> + Copy,
+    {
+        fn marker_type_name() -> &'static str {
+            "IntLikeMetric"
+        }
+
+        fn marker_type_display() -> gecko_profiler::MarkerSchema {
+            use gecko_profiler::schema::*;
+            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+            schema.set_tooltip_label("{marker.data.id} {marker.data.label} {marker.data.val}");
+            schema.set_table_label(
+                "{marker.name} - {marker.data.id} {marker.data.label}: {marker.data.val}",
+            );
+            schema.add_key_label_format_searchable(
+                "id",
+                "Metric",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format_searchable(
+                "label",
+                "Label",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format("val", "Value", Format::Integer);
+
+            schema
+        }
+
+        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+            let (name, label) = self.id.get_identifiers();
+            json_writer.unique_string_property("id", &name);
+            if let Some(l) = self.label.as_ref().or(label.as_ref()) {
+                json_writer.unique_string_property("label", &l);
+            };
+            json_writer.int_property("val", self.val.clone().into());
+        }
+    }
+
+    // This might seem like overkill for discerning between a single element and
+    // a vector of elements. However, from the perspective of the profiler buffer
+    // this is quite reasonable, as it has a lower memory overhead. Doing the maths
+    // (and assuming a 64-bit system, so usize = 8 bytes):
+    // Enum: i64 value (8-bytes), enum discernment byte = 9 bytes,
+    // Vector: i64 values (at least 8 bytes), usize length, usize capacity, data
+    //     pointer = 32 bytes
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) enum DistributionValues<T> {
+        Sample(T),
+        Samples(Vec<T>),
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) struct DistributionMetricMarker<T> {
+        id: super::MetricGetter,
+        label: Option<String>,
+        value: DistributionValues<T>,
+    }
+
+    impl<T> DistributionMetricMarker<T> {
+        pub fn new(
+            id: super::MetricGetter,
+            label: Option<String>,
+            value: DistributionValues<T>,
+        ) -> DistributionMetricMarker<T> {
+            DistributionMetricMarker { id, label, value }
+        }
+    }
+
+    impl<T> gecko_profiler::ProfilerMarker for DistributionMetricMarker<T>
+    where
+        T: serde::Serialize + serde::de::DeserializeOwned + Copy + std::fmt::Display,
+    {
+        fn marker_type_name() -> &'static str {
+            "DistMetric"
+        }
+
+        fn marker_type_display() -> gecko_profiler::MarkerSchema {
+            use gecko_profiler::schema::*;
+            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+            schema.set_tooltip_label("{marker.data.id} {marker.data.label} {marker.data.sample}");
+            schema.set_table_label(
+                "{marker.name} - {marker.data.id} {marker.data.label}: {marker.data.sample}{marker.data.samples}",
+            );
+            schema.set_chart_label("{marker.data.id}");
+            schema.add_key_label_format_searchable(
+                "id",
+                "Metric",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format_searchable(
+                "label",
+                "Label",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format("sample", "Sample", Format::String);
+            schema.add_key_label_format("samples", "Samples", Format::String);
+            schema
+        }
+
+        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+            let (name, label) = self.id.get_identifiers();
+            json_writer.unique_string_property("id", &name);
+
+            if let Some(l) = self.label.as_ref().or(label.as_ref()) {
+                json_writer.unique_string_property("label", &l);
+            };
+
+            match &self.value {
+                DistributionValues::Sample(s) => {
+                    let s = format!("{}", s);
+                    json_writer.string_property("sample", s.as_str());
+                }
+                DistributionValues::Samples(s) => {
+                    let s = format!(
+                        "[{}]",
+                        s.iter()
+                            .map(|v| v.to_string())
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    );
+                    json_writer.string_property("samples", s.as_str());
+                }
+            };
+        }
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) struct BooleanMetricMarker {
+        id: super::MetricGetter,
+        label: Option<String>,
+        val: bool,
+    }
+
+    impl BooleanMetricMarker {
+        pub fn new(
+            id: super::MetricGetter,
+            label: Option<String>,
+            val: bool,
+        ) -> BooleanMetricMarker {
+            BooleanMetricMarker { id, label, val }
+        }
+    }
+
+    impl gecko_profiler::ProfilerMarker for BooleanMetricMarker {
+        fn marker_type_name() -> &'static str {
+            "BooleanMetric"
+        }
+
+        fn marker_type_display() -> gecko_profiler::MarkerSchema {
+            use gecko_profiler::schema::*;
+            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+            schema.set_tooltip_label("{marker.data.id} {marker.data.val}");
+            schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.val}");
+            schema.add_key_label_format_searchable(
+                "id",
+                "Metric",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format_searchable(
+                "label",
+                "Label",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format("val", "Value", Format::String);
+            schema
+        }
+
+        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+            let (name, label) = self.id.get_identifiers();
+            json_writer.unique_string_property("id", &name);
+            if let Some(l) = self.label.as_ref().or(label.as_ref()) {
+                json_writer.unique_string_property("label", &l);
+            };
+            json_writer.bool_property("val", self.val);
+        }
+    }
+    #[derive(serde::Serialize, serde::Deserialize, Debug)]
+    pub(crate) struct PingMarker {
+        name: String,
+        reason: Option<String>,
+    }
+
+    impl PingMarker {
+        pub(crate) fn new_for_submit(name: String, reason: Option<String>) -> Self {
+            PingMarker { name, reason }
+        }
+    }
+
+    impl gecko_profiler::ProfilerMarker for PingMarker {
+        fn marker_type_name() -> &'static str {
+            "Ping"
+        }
+
+        fn marker_type_display() -> gecko_profiler::MarkerSchema {
+            use gecko_profiler::schema::*;
+            let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+            schema.set_tooltip_label("{marker.data.id} {marker.data.reason}");
+            schema.set_table_label("{marker.name} - {marker.data.id} {marker.data.reason}");
+            schema.add_key_label_format_searchable(
+                "id",
+                "Ping",
+                Format::UniqueString,
+                Searchable::Searchable,
+            );
+            schema.add_key_label_format_searchable(
+                "reason",
+                "Submission reason",
+                Format::String,
+                Searchable::Searchable,
+            );
+            schema
+        }
+
+        fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+            json_writer.unique_string_property("id", self.name.as_str());
+
+            if let Some(reason) = &self.reason {
+                json_writer.string_property("reason", reason);
+            };
+        }
     }
 }
 

@@ -75,6 +75,7 @@ def original_path():
 def bootstrap_toolchain_tasks(host):
     prefix = {
         ("x86_64", "GNU", "Linux"): "linux64",
+        ("aarch64", "GNU", "Linux"): "linux64-aarch64",
         ("x86_64", "OSX", "Darwin"): "macosx64",
         ("aarch64", "OSX", "Darwin"): "macosx64-aarch64",
         ("x86_64", "WINNT", "WINNT"): "win64",
@@ -92,6 +93,7 @@ def bootstrap_toolchain_tasks(host):
         result = {
             "index": t.optimization["index-search"],
             "artifact": t.attributes["toolchain-artifact"],
+            "extract": t.attributes.get("toolchain-extract", True),
         }
         command = t.attributes.get("toolchain-command")
         if command:
@@ -219,6 +221,9 @@ def bootstrap_path(path, **kwargs):
                     "--from-task",
                     f"{task_id}:{artifact}",
                 ]
+                if not task["extract"]:
+                    command.append("--no-unpack")
+
             elif command:
                 # For private local toolchains, run the associated command.
                 command = (
@@ -283,7 +288,9 @@ def bootstrap_path(path, **kwargs):
                     return None
             except Exception as e:
                 log.error("%s", e)
-                die("If you can't fix the above, retry with --disable-bootstrap.")
+                die(
+                    "If you can't fix the above, retry with --enable-bootstrap=no-update."
+                )
         if enable_bootstrap or enable_bootstrap.origin == "default":
             # We re-test whether the path exists because it may have been created by
             # try_bootstrap. Automation will not have gone through the bootstrap

@@ -10,6 +10,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/media/MediaUtils.h"
 #include "WebrtcCallWrapper.h"
+#include "WebrtcEnvironmentWrapper.h"
 #include "PeerConnectionCtx.h"
 
 // libwebrtc
@@ -301,7 +302,17 @@ class MockCall : public webrtc::Call {
   void SetClientBitratePreferences(
       const webrtc::BitrateSettings& preferences) override {}
 
+  void SetEncoderInfo(const webrtc::VideoEncoder::EncoderInfo& aInfo) {
+    mEncoderInfo = aInfo;
+  }
+
+  void EnableSendCongestionControlFeedbackAccordingToRfc8888() override {}
+  int FeedbackAccordingToRfc8888Count() override { return 0; }
+  int FeedbackAccordingToTransportCcCount() override { return 0; }
+
+
   std::vector<webrtc::VideoStream> CreateEncoderStreams(int width, int height) {
+    mVideoSendEncoderConfig->video_stream_factory->SetEncoderInfo(mEncoderInfo);
     return mVideoSendEncoderConfig->video_stream_factory->CreateEncoderStreams(
         mUnusedConfig, width, height, *mVideoSendEncoderConfig);
   }
@@ -330,6 +341,7 @@ class MockCall : public webrtc::Call {
   mozilla::Maybe<webrtc::VideoEncoderConfig> mVideoSendEncoderConfig;
   webrtc::Call::Stats mStats;
   webrtc::MozTrialsConfig mUnusedConfig;
+  webrtc::VideoEncoder::EncoderInfo mEncoderInfo;
 };
 
 class MockCallWrapper : public mozilla::WebrtcCallWrapper {
@@ -345,7 +357,8 @@ class MockCallWrapper : public mozilla::WebrtcCallWrapper {
           aShutdownTicket)
       : mozilla::WebrtcCallWrapper(
             std::move(aSharedState), std::move(aVideoBitrateAllocatorFactory),
-            std::move(aEventLog), std::move(aTaskQueueFactory), aTimestampMaker,
+            mozilla::WebrtcEnvironmentWrapper::Create(aTimestampMaker),
+            aTimestampMaker,
             std::move(aShutdownTicket)) {}
 
   static RefPtr<MockCallWrapper> Create() {

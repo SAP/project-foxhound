@@ -182,7 +182,8 @@ function hasSite(
 //                                      cleaner needs a separate step after
 //                                      deletion. No-op if not implemented.
 //                                      Currently called via
-//                                      Sanitizer.maybeSanitizeSessionPrincipals().
+//                                      Sanitizer.sanitizeOnShutdown() and
+//                                      Sanitizer.onStartup()
 
 const CookieCleaner = {
   deleteByLocalFiles(aOriginAttributes) {
@@ -556,6 +557,38 @@ const CSSCacheCleaner = {
   },
 };
 
+const MessagingLayerSecurityStateCleaner = {
+  async deleteByHost(aHost, aOriginAttributes) {
+    // Delete data from both HTTP and HTTPS sites.
+    let httpURI = Services.io.newURI("http://" + aHost);
+    let httpsURI = Services.io.newURI("https://" + aHost);
+    let httpPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+      httpURI,
+      aOriginAttributes
+    );
+    let httpsPrincipal = Services.scriptSecurityManager.createContentPrincipal(
+      httpsURI,
+      aOriginAttributes
+    );
+    ChromeUtils.clearMessagingLayerSecurityStateByPrincipal(httpsPrincipal);
+    // The WebAPI doesn't allow for non-secure contexts but
+    // we are keeping this out of caution.
+    ChromeUtils.clearMessagingLayerSecurityStateByPrincipal(httpPrincipal);
+  },
+  async deleteByPrincipal(aPrincipal) {
+    ChromeUtils.clearMessagingLayerSecurityStateByPrincipal(aPrincipal);
+  },
+  async deleteBySite(aSchemelessSite, aOriginAttributesPattern) {
+    ChromeUtils.clearMessagingLayerSecurityStateBySite(
+      aSchemelessSite,
+      aOriginAttributesPattern
+    );
+  },
+  async deleteAll() {
+    ChromeUtils.clearMessagingLayerSecurityState();
+  },
+};
+
 const JSCacheCleaner = {
   async deleteByHost(aHost, aOriginAttributes) {
     // Delete data from both HTTP and HTTPS sites.
@@ -863,12 +896,14 @@ const QuotaCleaner = {
     );
 
     // Clear sessionStorage
-    // TODO: aOriginAttributesPattern
-    Services.obs.notifyObservers(
-      null,
-      "browser:purge-sessionStorage",
-      aSchemelessSite
+    let entry = Cc["@mozilla.org/clear-by-site-entry;1"].createInstance(
+      Ci.nsIClearBySiteEntry
     );
+    entry.schemelessSite = aSchemelessSite;
+    // Convert the pattern to a JSON string.
+    entry.patternJSON = JSON.stringify(aOriginAttributesPattern);
+
+    Services.obs.notifyObservers(entry, "browser:purge-sessionStorage");
 
     // Clear third-party storage partitioned under aSchemelessSite.
     // This notification is forwarded via the StorageObserver and consumed only
@@ -1029,17 +1064,40 @@ const QuotaCleaner = {
   },
 
   async cleanupAfterDeletionAtShutdown() {
+    const tobeRemoveDirName = "to-be-removed";
+    const storageName = Services.prefs.getStringPref(
+      "dom.quotaManager.storageName"
+    );
+
+    if (!storageName) {
+      throw new Error("storage name must not be empty");
+    }
+
     const toBeRemovedDir = PathUtils.join(
       PathUtils.profileDir,
-      Services.prefs.getStringPref("dom.quotaManager.storageName"),
-      "to-be-removed"
+      storageName,
+      tobeRemoveDirName
     );
 
     if (
       !AppConstants.MOZ_BACKGROUNDTASKS ||
       !Services.prefs.getBoolPref("dom.quotaManager.backgroundTask.enabled")
     ) {
+      // Our behavior in this case differs from our use of the background-task below because
+      // while the background-task will only try to empty the contents of the directory but
+      // leave the directory itself intact, our call here will remove the directory. We
+      // remove the directory here for reasons of implementation simplicity and because
+      // we do not have to worry about the same race that the background task has to worry
+      // about. Specifically, the background task needs to worry about gecko restarting and
+      // racing on QM trying to move directories into the to-be-removed directory. But as long
+      // as we are confident QM has fully processed its I/O thread, we know it should not be
+      // trying to move new files into it because we are in the same process.
+
       await IOUtils.remove(toBeRemovedDir, { recursive: true });
+      return;
+    }
+    // return early if directory does not exist or empty
+    if (!(await IOUtils.hasChildren(toBeRemovedDir, { ignoreAbsent: true }))) {
       return;
     }
 
@@ -2213,6 +2271,11 @@ const FLAGS_MAP = [
   {
     flag: Ci.nsIClearDataService.CLEAR_CSS_CACHE,
     cleaners: [CSSCacheCleaner],
+  },
+
+  {
+    flag: Ci.nsIClearDataService.CLEAR_MESSAGING_LAYER_SECURITY_STATE,
+    cleaners: [MessagingLayerSecurityStateCleaner],
   },
 
   {

@@ -16,6 +16,7 @@
 #include "js/ErrorReport.h"
 #include "mozIThirdPartyUtil.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/CycleCollectedJSContext.h"  // for MicroTaskRunnable
 #include "mozilla/ErrorResult.h"
 #include "mozilla/JSObjectHolder.h"
@@ -29,7 +30,7 @@
 #include "mozilla/Services.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StoragePrincipalHelper.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomServiceworkersMetrics.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/ClientIPCTypes.h"
 #include "mozilla/dom/ClientManager.h"
@@ -37,6 +38,7 @@
 #include "mozilla/dom/FetchEventOpChild.h"
 #include "mozilla/dom/InternalHeaders.h"
 #include "mozilla/dom/InternalRequest.h"
+#include "mozilla/dom/PushManager.h"
 #include "mozilla/dom/ReferrerInfo.h"
 #include "mozilla/dom/RemoteType.h"
 #include "mozilla/dom/RemoteWorkerControllerChild.h"
@@ -49,6 +51,7 @@
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/CookieJarSettings.h"
+#include "mozilla/net/CookieService.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
 #include "nsError.h"
@@ -110,14 +113,6 @@ uint32_t ServiceWorkerPrivate::sRunningServiceWorkers = 0;
 uint32_t ServiceWorkerPrivate::sRunningServiceWorkersFetch = 0;
 uint32_t ServiceWorkerPrivate::sRunningServiceWorkersMax = 0;
 uint32_t ServiceWorkerPrivate::sRunningServiceWorkersFetchMax = 0;
-
-// Tracks the "dom.serviceWorkers.disable_open_click_delay" preference. Modified
-// on main thread, read on worker threads.
-// It is updated every time a "notificationclick" event is dispatched. While
-// this is done without synchronization, at the worst, the thread will just get
-// an older value within which a popup is allowed to be displayed, which will
-// still be a valid value since it was set prior to dispatching the runnable.
-Atomic<uint32_t> gDOMDisableOpenClickDelay(0);
 
 /**
  * KeepAliveToken
@@ -552,10 +547,11 @@ nsresult ServiceWorkerPrivate::Initialize() {
   // it's a third-party service worker. So, the cookieJarSettings can directly
   // use the partitionKey from it. For first-party case, we can populate the
   // partitionKey from the principal URI.
-  Maybe<uint64_t> overriddenFingerprintingSettingsArg;
-  Maybe<RFPTarget> overriddenFingerprintingSettings;
+  Maybe<RFPTargetSet> overriddenFingerprintingSettingsArg;
+  Maybe<RFPTargetSet> overriddenFingerprintingSettings;
   nsCOMPtr<nsIURI> firstPartyURI;
   bool foreignByAncestorContext = false;
+  bool isOn3PCBExceptionList = false;
   if (!principal->OriginAttributesRef().mPartitionKey.IsEmpty()) {
     net::CookieJarSettings::Cast(cookieJarSettings)
         ->SetPartitionKey(principal->OriginAttributesRef().mPartitionKey);
@@ -581,8 +577,14 @@ nsresult ServiceWorkerPrivate::Initialize() {
                 firstPartyURI, uri);
         if (overriddenFingerprintingSettings.isSome()) {
           overriddenFingerprintingSettingsArg.emplace(
-              uint64_t(overriddenFingerprintingSettings.ref()));
+              overriddenFingerprintingSettings.ref());
         }
+
+        RefPtr<net::CookieService> csSingleton =
+            net::CookieService::GetSingleton();
+        isOn3PCBExceptionList =
+            csSingleton->ThirdPartyCookieBlockingExceptionsRef()
+                .CheckExceptionForURIs(firstPartyURI, uri);
       }
     }
   } else if (!principal->OriginAttributesRef().mFirstPartyDomain.IsEmpty()) {
@@ -609,9 +611,16 @@ nsresult ServiceWorkerPrivate::Initialize() {
               : nsRFPService::GetOverriddenFingerprintingSettingsForURI(
                     uri, nullptr);
 
+      RefPtr<net::CookieService> csSingleton =
+          net::CookieService::GetSingleton();
+      isOn3PCBExceptionList =
+          isThirdParty ? csSingleton->ThirdPartyCookieBlockingExceptionsRef()
+                             .CheckExceptionForURIs(firstPartyURI, uri)
+                       : false;
+
       if (overriddenFingerprintingSettings.isSome()) {
         overriddenFingerprintingSettingsArg.emplace(
-            uint64_t(overriddenFingerprintingSettings.ref()));
+            overriddenFingerprintingSettings.ref());
       }
     }
   } else {
@@ -627,8 +636,15 @@ nsresult ServiceWorkerPrivate::Initialize() {
 
     if (overriddenFingerprintingSettings.isSome()) {
       overriddenFingerprintingSettingsArg.emplace(
-          uint64_t(overriddenFingerprintingSettings.ref()));
+          overriddenFingerprintingSettings.ref());
     }
+  }
+
+  // Firefox doesn't support service workers in PBM.
+  bool isPBM = principal->GetIsInPrivateBrowsing();
+  if (ContentBlockingAllowList::Check(principal, isPBM)) {
+    net::CookieJarSettings::Cast(cookieJarSettings)
+        ->SetIsOnContentBlockingAllowList(true);
   }
 
   bool shouldResistFingerprinting =
@@ -636,11 +652,13 @@ nsresult ServiceWorkerPrivate::Initialize() {
           principal,
           "Service Workers exist outside a Document or Channel; as a property "
           "of the domain (and origin attributes). We don't have a "
-          "CookieJarSettings to perform the nested check, but we can rely on"
+          "CookieJarSettings to perform the *nested check*, but we can rely on"
           "the FPI/dFPI partition key check. The WorkerPrivate's "
           "ShouldResistFingerprinting function for the ServiceWorker depends "
           "on this boolean and will also consider an explicit RFPTarget.",
-          RFPTarget::IsAlwaysEnabledForPrecompute);
+          RFPTarget::IsAlwaysEnabledForPrecompute) &&
+      !nsContentUtils::ETPSaysShouldNotResistFingerprinting(cookieJarSettings,
+                                                            isPBM);
 
   if (shouldResistFingerprinting && NS_SUCCEEDED(rv) && firstPartyURI) {
     auto rfpKey = nsRFPService::GenerateKeyForServiceWorker(
@@ -726,7 +744,7 @@ nsresult ServiceWorkerPrivate::Initialize() {
       /* referrerInfo */ nullptr,
 
       storageAccess, isThirdPartyContextToTopWindow, shouldResistFingerprinting,
-      overriddenFingerprintingSettingsArg,
+      overriddenFingerprintingSettingsArg, isOn3PCBExceptionList,
       // Origin trials are associated to a window, so it doesn't make sense on
       // service workers.
       OriginTrials(), std::move(serviceWorkerData), regInfo->AgentClusterId(),
@@ -945,45 +963,41 @@ nsresult ServiceWorkerPrivate::SendPushEventInternal(
       });
 }
 
-nsresult ServiceWorkerPrivate::SendPushSubscriptionChangeEvent() {
+nsresult ServiceWorkerPrivate::SendPushSubscriptionChangeEvent(
+    const RefPtr<nsIPushSubscription>& aOldSubscription) {
   AssertIsOnMainThread();
 
+  ServiceWorkerPushSubscriptionChangeEventOpArgs args{};
+  if (aOldSubscription) {
+    PushSubscriptionData oldSubscription{};
+    MOZ_TRY(GetSubscriptionParams(aOldSubscription, oldSubscription.endpoint(),
+                                  oldSubscription.rawP256dhKey(),
+                                  oldSubscription.authSecret(),
+                                  oldSubscription.appServerKey()));
+    args.oldSubscription().emplace(oldSubscription);
+  }
+
   return ExecServiceWorkerOp(
-      ServiceWorkerPushSubscriptionChangeEventOpArgs(),
-      ServiceWorkerLifetimeExtension(FullLifetimeExtension{}),
+      std::move(args), ServiceWorkerLifetimeExtension(FullLifetimeExtension{}),
       [](ServiceWorkerOpResult&& aResult) {
         MOZ_ASSERT(aResult.type() == ServiceWorkerOpResult::Tnsresult);
       });
 }
 
 nsresult ServiceWorkerPrivate::SendNotificationEvent(
-    const nsAString& aEventName, const nsAString& aID, const nsAString& aTitle,
-    const nsAString& aDir, const nsAString& aLang, const nsAString& aBody,
-    const nsAString& aTag, const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior, const nsAString& aScope) {
+    const nsAString& aEventName, const nsAString& aScope, const nsAString& aId,
+    const IPCNotificationOptions& aOptions) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  if (aEventName.EqualsLiteral(NOTIFICATION_CLICK_EVENT_NAME)) {
-    gDOMDisableOpenClickDelay =
-        Preferences::GetInt("dom.serviceWorkers.disable_open_click_delay");
-  } else if (!aEventName.EqualsLiteral(NOTIFICATION_CLOSE_EVENT_NAME)) {
+  if (!aEventName.EqualsLiteral(NOTIFICATION_CLICK_EVENT_NAME) &&
+      !aEventName.EqualsLiteral(NOTIFICATION_CLOSE_EVENT_NAME)) {
     MOZ_ASSERT_UNREACHABLE("Invalid notification event name");
     return NS_ERROR_FAILURE;
   }
 
   ServiceWorkerNotificationEventOpArgs args;
   args.eventName() = nsString(aEventName);
-  args.id() = nsString(aID);
-  args.title() = nsString(aTitle);
-  args.dir() = nsString(aDir);
-  args.lang() = nsString(aLang);
-  args.body() = nsString(aBody);
-  args.tag() = nsString(aTag);
-  args.icon() = nsString(aIcon);
-  args.data() = nsString(aData);
-  args.behavior() = nsString(aBehavior);
-  args.scope() = nsString(aScope);
-  args.disableOpenClickDelay() = gDOMDisableOpenClickDelay;
+  args.notification() = IPCNotification(nsString(aId), aOptions);
 
   return ExecServiceWorkerOp(
       std::move(args), ServiceWorkerLifetimeExtension(FullLifetimeExtension{}),
@@ -1310,6 +1324,23 @@ void ServiceWorkerPrivate::UpdateState(ServiceWorkerState aState) {
   }
 
   mPendingFunctionalEvents.Clear();
+}
+
+void ServiceWorkerPrivate::UpdateIsOnContentBlockingAllowList(
+    bool aOnContentBlockingAllowList) {
+  AssertIsOnMainThread();
+
+  if (!mControllerChild) {
+    return;
+  }
+
+  ExecServiceWorkerOp(
+      ServiceWorkerUpdateIsOnContentBlockingAllowListOpArgs(
+          aOnContentBlockingAllowList),
+      ServiceWorkerLifetimeExtension(NoLifetimeExtension{}),
+      [](ServiceWorkerOpResult&& aResult) {
+        MOZ_ASSERT(aResult.type() == ServiceWorkerOpResult::Tnsresult);
+      });
 }
 
 nsresult ServiceWorkerPrivate::GetDebugger(nsIWorkerDebugger** aResult) {
@@ -1650,12 +1681,11 @@ void ServiceWorkerPrivate::CreationFailed() {
 
   if (mRemoteWorkerData.remoteType().Find(SERVICEWORKER_REMOTE_TYPE) !=
       kNotFound) {
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::SERVICE_WORKER_ISOLATED_LAUNCH_TIME,
-        mServiceWorkerLaunchTimeStart);
+    glean::service_worker::isolated_launch_time.AccumulateRawDuration(
+        TimeStamp::Now() - mServiceWorkerLaunchTimeStart);
   } else {
-    Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LAUNCH_TIME_2,
-                                   mServiceWorkerLaunchTimeStart);
+    glean::service_worker::launch_time.AccumulateRawDuration(
+        TimeStamp::Now() - mServiceWorkerLaunchTimeStart);
   }
 
   mPendingSpawnLifetime = ServiceWorkerLifetimeExtension(NoLifetimeExtension{});
@@ -1678,12 +1708,11 @@ void ServiceWorkerPrivate::CreationSucceeded() {
 
   if (mRemoteWorkerData.remoteType().Find(SERVICEWORKER_REMOTE_TYPE) !=
       kNotFound) {
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::SERVICE_WORKER_ISOLATED_LAUNCH_TIME,
-        mServiceWorkerLaunchTimeStart);
+    glean::service_worker::isolated_launch_time.AccumulateRawDuration(
+        TimeStamp::Now() - mServiceWorkerLaunchTimeStart);
   } else {
-    Telemetry::AccumulateTimeDelta(Telemetry::SERVICE_WORKER_LAUNCH_TIME_2,
-                                   mServiceWorkerLaunchTimeStart);
+    glean::service_worker::launch_time.AccumulateRawDuration(
+        TimeStamp::Now() - mServiceWorkerLaunchTimeStart);
   }
 
   RenewKeepAliveToken(mPendingSpawnLifetime);

@@ -18,6 +18,7 @@ apt_packages+=('ca-certificates')
 apt_packages+=('ccache')
 apt_packages+=('curl')
 apt_packages+=('dbus-x11')
+apt_packages+=('ffmpeg')
 apt_packages+=('fontconfig')
 apt_packages+=('fonts-dejavu')
 apt_packages+=('fonts-kacst')
@@ -83,9 +84,6 @@ apt_packages+=('xwit')
 apt_packages+=('yasm')
 apt_packages+=('zip')
 
-# xvinfo for test-linux.sh to monitor Xvfb startup
-apt_packages+=('x11-utils')
-
 # Bug 1232407 - this allows the user to start vnc
 apt_packages+=('x11vnc')
 
@@ -124,6 +122,11 @@ apt_packages+=('libasound2:i386')
 
 apt-get install --allow-downgrades "${apt_packages[@]}"
 rm -rf /var/lib/apt/lists/*
+
+# enable audiotestsrc plugin in pipewire config
+# used by gecko media tests to create dummy sound sources
+install -d -o root -g root -m 755 /etc/pipewire
+sed -e '/^context.spa-libs = {/,/^}$/ s/#\(audiotestsrc\)/\1/' /usr/share/pipewire/pipewire.conf > /etc/pipewire/pipewire.conf
 
 # Build a list of packages to purge from the image.
 apt_packages=()

@@ -60,6 +60,7 @@ import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.home.HomeFragmentDirections
+import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.messaging.MessageController
 import org.mozilla.fenix.onboarding.WallpaperOnboardingDialogFragment.Companion.THUMBNAILS_SELECTION_COUNT
 import org.mozilla.fenix.settings.SupportUtils
@@ -130,6 +131,11 @@ interface SessionControlController {
     fun handleSelectTopSite(topSite: TopSite, position: Int)
 
     /**
+     * @see [TopSiteInteractor.onTopSiteImpression]
+     */
+    fun handleTopSiteImpression(topSite: TopSite.Provided, position: Int)
+
+    /**
      * @see [TopSiteInteractor.onSettingsClicked]
      */
     fun handleTopSiteSettingsClicked()
@@ -198,6 +204,7 @@ class DefaultSessionControlController(
     private val selectTabUseCase: TabsUseCases.SelectTabUseCase,
     private val reloadUrlUseCase: SessionUseCases.ReloadUrlUseCase,
     private val topSitesUseCases: TopSitesUseCases,
+    private val marsUseCases: MARSUseCases,
     private val appStore: AppStore,
     private val navController: NavController,
     private val viewLifecycleScope: CoroutineScope,
@@ -406,8 +413,14 @@ class DefaultSessionControlController(
             is TopSite.Default -> TopSites.openDefault.record(NoExtras())
             is TopSite.Frecent -> TopSites.openFrecency.record(NoExtras())
             is TopSite.Pinned -> TopSites.openPinned.record(NoExtras())
-            is TopSite.Provided -> TopSites.openContileTopSite.record(NoExtras()).also {
-                submitTopSitesImpressionPing(topSite, position)
+            is TopSite.Provided -> {
+                if (settings.marsAPIEnabled) {
+                    sendMarsTopSiteCallback(topSite.clickUrl)
+                }
+
+                TopSites.openContileTopSite.record(NoExtras()).also {
+                    recordTopSitesClickTelemetry(topSite, position)
+                }
             }
         }
 
@@ -463,7 +476,7 @@ class DefaultSessionControlController(
     }
 
     @VisibleForTesting
-    internal fun submitTopSitesImpressionPing(topSite: TopSite.Provided, position: Int) {
+    internal fun recordTopSitesClickTelemetry(topSite: TopSite.Provided, position: Int) {
         TopSites.contileClick.record(
             TopSites.ContileClickExtra(
                 position = position + 1,
@@ -473,8 +486,40 @@ class DefaultSessionControlController(
 
         topSite.id?.let { TopSites.contileTileId.set(it) }
         topSite.title?.let { TopSites.contileAdvertiser.set(it.lowercase()) }
-        TopSites.contileReportingUrl.set(topSite.clickUrl)
+
+        if (!settings.marsAPIEnabled) {
+            TopSites.contileReportingUrl.set(topSite.clickUrl)
+        }
+
         Pings.topsitesImpression.submit()
+    }
+
+    override fun handleTopSiteImpression(topSite: TopSite.Provided, position: Int) {
+        if (settings.marsAPIEnabled) {
+            sendMarsTopSiteCallback(topSite.impressionUrl)
+        }
+
+        TopSites.contileImpression.record(
+            TopSites.ContileImpressionExtra(
+                position = position + 1,
+                source = "newtab",
+            ),
+        )
+
+        topSite.id?.let { TopSites.contileTileId.set(it) }
+        topSite.title?.let { TopSites.contileAdvertiser.set(it.lowercase()) }
+
+        if (!settings.marsAPIEnabled) {
+            TopSites.contileReportingUrl.set(topSite.impressionUrl)
+        }
+
+        Pings.topsitesImpression.submit()
+    }
+
+    private fun sendMarsTopSiteCallback(url: String) {
+        viewLifecycleScope.launch(Dispatchers.IO) {
+            marsUseCases.recordInteraction(url)
+        }
     }
 
     override fun handleTopSiteSettingsClicked() {

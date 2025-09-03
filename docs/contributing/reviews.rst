@@ -99,17 +99,23 @@ Review groups
      - cubeb, Gecko's audio input/output library and associated projects (audioipc, cubeb-rs, rust cubeb backends)
      - `Member list <https://phabricator.services.mozilla.com/project/profile/129/>`__
    * - #desktop-theme-reviewers
-     - User interface CSS
+     - `User interface CSS </mots/index.html#desktop-theme>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/141/>`__
    * - #devtools-reviewers
-     - Firefox DevTools
+     - `Firefox DevTools </mots/index.html#devtools>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/153/>`__
+   * - #dom-core
+     - `Core: DOM <https://firefox-source-docs.mozilla.org/mots/index.html#core-document-object-model>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/178/>`__
    * - #dom-worker-reviewers
      - DOM Workers
      - `Member list <https://phabricator.services.mozilla.com/project/members/146/>`__
    * - #dom-storage-reviewers
      - DOM Storage
      - `Member list <https://phabricator.services.mozilla.com/project/members/147/>`__
+   * - #extension-reviewers
+     - `WebExtensions </mots/index.html#webextensions>`__ and `Toolkit::Add-ons Manager </mots/index.html#add-ons-manager>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/130/>`__
    * - #fluent-reviewers
      - Fluent (FTL) files (translation).
      - `Member list <https://phabricator.services.mozilla.com/project/members/105/>`__
@@ -137,6 +143,9 @@ Review groups
    * - #intermittent-reviewers
      - Test manifest changes
      - `Member list <https://phabricator.services.mozilla.com/project/members/110/>`__
+   * - #ipc-reviewers
+     - `Core: IPC <https://firefox-source-docs.mozilla.org/mots/index.html#core-ipc>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/145/>`__
    * - #layout-reviewers
      - Layout
      - `Member list <https://phabricator.services.mozilla.com/project/members/126/>`__
@@ -209,6 +218,9 @@ Review groups
    * - #theme or #desktop-theme-reviewers
      - `Firefox: Theme and Toolkit: Themes </mots/index.html#desktop-theme>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/141/>`__
+   * - #translations-reviewers
+     - `Firefox: Translation <https://firefox-source-docs.mozilla.org/mots/index.html#translation>`__
+     - `Member list <https://phabricator.services.mozilla.com/project/members/192/>`__
    * - #urlbar-reviewers
      - `Urlbar (Address Bar) </mots/index.html#address-bar>`__
      - `Member list <https://phabricator.services.mozilla.com/project/members/211/>`__

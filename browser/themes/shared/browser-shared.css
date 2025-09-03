@@ -52,8 +52,8 @@ body {
     min-height: 120px;
 
     /* stylelint-disable-next-line media-query-no-invalid */
-    @media (-moz-bool-pref: "sidebar.verticalTabs") {
-      min-width: 800px;
+    @media -moz-pref("sidebar.verticalTabs") {
+      min-width: 732px;
 
       @media (-moz-platform: macos) {
         min-width: 670px;
@@ -70,6 +70,7 @@ body {
   --browser-area-z-index-toolbox: 0;
   --browser-area-z-index-sidebar: 1;
   --browser-area-z-index-tabbox: 2;
+  --browser-area-z-index-sidebar-wrapper: 3;
   --browser-area-z-index-sidebar-splitter: 3;
 
   /* on macOS the animation of the toolbox in fullscreen needs the toolbox to be higher */
@@ -83,7 +84,8 @@ body {
   /* This should be used for icons and chiclets inside the input field. It makes
      the gap around them more uniform when they are close to the field edges */
   --urlbar-icon-border-radius: calc(var(--toolbarbutton-border-radius) - 1px);
-  --urlbar-searchmodeswitcher-spacing: 6px;
+  --urlbar-searchmodeswitcher-inline-padding: 6px;
+  --urlbar-searchmodeswitcher-margin-inline-end: .45em;
 
   --pocket-icon-fill: #ef4056;
 
@@ -190,22 +192,29 @@ body {
   }
 
   /* stylelint-disable-next-line media-query-no-invalid */
-  @media (-moz-platform: macos) and (-moz-bool-pref: "browser.theme.native-theme") {
+  @media (-moz-platform: macos) and -moz-pref("browser.theme.native-theme") {
+    /* This is conceptually a background, but putting this on a pseudo-element
+     * avoids it from suppressing the chrome-content separator border, etc.
+     *
+     * We make this exist unconditionally to prevent dynamic changes from
+     * reframing the whole toolbox when adding or removing it.
+     *
+     * See bug 1949528 and bug 1476281 (which would make this unnecessary). */
+    &::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -1;
+    }
+
     /* Don't make the toolbox vibrant when in full-screen. macOS fullscreen has a
      * native titlebar outside of the window (revealed on hover) anyways. */
-    :root[tabsintitlebar]:not([lwtheme], [macOSNativeFullscreen]) & {
+    :root[customtitlebar]:not([lwtheme], [macOSNativeFullscreen]) & {
       background-color: transparent;
 
-      /* This is conceptually a background, but putting this on a
-       * pseudo-element avoids it from suppressing the chrome-content separator
-       * border, etc */
       &::after {
         -moz-default-appearance: -moz-window-titlebar;
         appearance: auto;
-        content: "";
-        position: absolute;
-        inset: 0;
-        z-index: -1;
       }
     }
   }
@@ -220,7 +229,7 @@ body {
   color: inherit;
 
   /* stylelint-disable-next-line media-query-no-invalid */
-  @media not (-moz-bool-pref: "sidebar.verticalTabs") {
+  @media not -moz-pref("sidebar.verticalTabs") {
     &:not(.browser-titlebar) {
       background-color: var(--toolbar-bgcolor);
       color: var(--toolbar-color);
@@ -233,8 +242,8 @@ body {
 .browser-titlebar {
   -moz-window-dragging: drag;
 
-  :root[tabsintitlebar] &,
-  :root[tabsintitlebar] & #urlbar:popover-open {
+  :root[customtitlebar] &,
+  :root[customtitlebar] & #urlbar:popover-open {
     will-change: opacity;
     transition: opacity var(--inactive-window-transition);
 
@@ -263,14 +272,16 @@ body {
     visibility: hidden;
   }
 
-  :root:not([chromemargin], [inFullscreen]) & {
+  :root:not([customtitlebar], [inFullscreen]) & {
     display: none;
   }
 }
 
 .titlebar-spacer {
+  width: 40px;
+
   :root[inFullscreen] &,
-  :root:not([tabsintitlebar]) & {
+  :root:not([customtitlebar]) & {
     display: none;
   }
 
@@ -290,6 +301,19 @@ body {
   @media (-moz-gtk-csd-reversed-placement) {
     :root:not([sizemode=normal]) &[type="post-tabs"],
     :root[gtktiledwindow=true] &[type="post-tabs"] {
+      display: none;
+    }
+  }
+
+  @media (max-width: 500px) {
+    &[type="post-tabs"] {
+      display: none;
+    }
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.verticalTabs") {
+    &[type="pre-tabs"], &[type="post-tabs"] {
       display: none;
     }
   }
@@ -317,7 +341,7 @@ body {
   -moz-default-appearance: -moz-window-button-box;
   position: relative;
 
-  :root:not([tabsintitlebar], [sizemode=fullscreen]) & {
+  :root:not([customtitlebar], [sizemode=fullscreen]) & {
     display: none;
   }
 }
@@ -332,12 +356,12 @@ body {
        as tall as the tab toolbar such that the window controls don't appear to move up.
        For MacOS, autohide is never true on the menubar.
     */
-    :root[tabsintitlebar] #navigator-toolbox:not([tabs-hidden]) > & {
+    :root[customtitlebar] #navigator-toolbox:not([tabs-hidden]) > & {
       min-height: var(--tabstrip-min-height);
     }
     /* adjust the height of the auto-hiding toolbar menubar when the tabstrip is
        hidden and we need to match the height of the nav-bar. */
-    :root[tabsintitlebar] #navigator-toolbox[tabs-hidden] > & {
+    :root[customtitlebar] #navigator-toolbox[tabs-hidden] > & {
       min-height: calc(var(--urlbar-min-height) + 2 * var(--urlbar-padding-block));
     }
 
@@ -394,6 +418,13 @@ body {
   > :is(toolbarbutton, toolbaritem):first-child,
   > toolbarpaletteitem:first-child > :is(toolbarbutton, toolbaritem) {
     padding-inline-start: var(--toolbar-start-end-padding);
+  }
+}
+
+/* stylelint-disable-next-line media-query-no-invalid */
+@media not -moz-pref("sidebar.verticalTabs") {
+  #vertical-spacer {
+    display: none;
   }
 }
 
@@ -459,8 +490,8 @@ body {
   -moz-window-dragging: inherit;
 }
 
+#fxms-bmb-button-wrapper,
 toolbarpaletteitem > #personal-bookmarks > #PlacesToolbar,
-toolbarpaletteitem:has(> toolbarbutton.fxms-bmb-button),
 #personal-bookmarks:is([overflowedItem=true], [cui-areatype="panel"]) > #PlacesToolbar {
   display: none;
 }
@@ -475,6 +506,11 @@ toolbarpaletteitem:has(> toolbarbutton.fxms-bmb-button),
 #PlacesToolbarDropIndicator {
   list-style-image: url(chrome://browser/skin/toolbar-drag-indicator.svg);
   pointer-events: none;
+}
+
+#notifications-toolbar {
+  min-height: 0;
+  flex-direction: column;
 }
 
 /* Menupopup drop indicators */
@@ -582,9 +618,11 @@ menupopup::part(drop-indicator) {
 }
 
 /* Content analysis indicator */
-
-:root:not([contentanalysisactive]) #content-analysis-indicator {
-  display: none;
+.content-analysis-indicator {
+  :root:not([contentanalysisactive]) &,
+  #navigator-toolbox:not([tabs-hidden]) > #nav-bar > & {
+    display: none;
+  }
 }
 
 /* Various panels and popup notifications */
@@ -643,7 +681,7 @@ menupopup::part(drop-indicator) {
   width: 100%;
   display: block;
   text-align: center;
-  box-shadow: 0px 1px 0px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.2);
 }
 
 #cfr-notification-header-stack {
@@ -1077,14 +1115,6 @@ popupnotificationcontent {
   }
 }
 
-#password-notification-visibilityToggle {
-  margin-block-start: 14px;
-
-  > .checkbox-label-box > .checkbox-label {
-    opacity: 0.7;
-  }
-}
-
 #tab-notification-deck {
   display: block;
 }
@@ -1096,21 +1126,36 @@ popupnotificationcontent {
   align-items: center;
   font-size: 2em;
 
-  > div {
+  > div:nth-of-type(1) {
     width: 32px;
     height: 32px;
     background-image: url("chrome://browser/content/logos/relay.svg");
     background-repeat: no-repeat;
   }
 
-  > span:first-of-type {
-    font-weight: bold;
-    margin-inline-start: 8px;
-  }
+  > div:nth-of-type(2) {
+    direction: ltr;
+    margin-inline: 8px;
 
-  > span:last-of-type {
-    font-weight: normal;
-    white-space: pre;
+    > span:first-of-type {
+      font-weight: bold;
+    }
+
+    > span:last-of-type {
+      font-weight: normal;
+    }
+  }
+}
+
+.relay-integration-header-variation {
+  display: flex;
+  align-items: center;
+  font-weight: var(--font-weight-bold);
+  font-size: 1.5em;
+  margin: auto;
+
+  > p {
+    margin-block: auto;
   }
 }
 

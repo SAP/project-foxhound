@@ -22,7 +22,15 @@ support-files = [
 
 ["browser_translations_about_preferences_settings_ui.js"]
 
-["browser_translations_e2e_full_page_translate.js"]
+["browser_translations_about_preferences_settings_ui_keyboard_a11y.js"]
+
+["browser_translations_about_preferences_settings_ui_tab.js"]
+
+["browser_translations_e2e_full_page_translate_with_lexical_shortlist.js"]
+
+["browser_translations_e2e_full_page_translate_without_lexical_shortlist.js"]
+
+["browser_translations_full_page_language_id_behavior.js"]
 
 ["browser_translations_full_page_move_tab_to_new_window.js"]
 
@@ -70,6 +78,8 @@ support-files = [
 
 ["browser_translations_full_page_panel_firstrun_revisit.js"]
 
+["browser_translations_full_page_panel_flip_lexical_shortlist.js"]
+
 ["browser_translations_full_page_panel_fuzzing.js"]
 skip-if = ["true"]
 
@@ -88,6 +98,8 @@ skip-if = ["true"]
 ["browser_translations_full_page_panel_never_translate_site_manual.js"]
 
 ["browser_translations_full_page_panel_retry.js"]
+
+["browser_translations_full_page_panel_script_tags.js"]
 
 ["browser_translations_full_page_panel_settings_unsupported_lang.js"]
 
@@ -167,6 +179,8 @@ skip-if = ["true"]
 
 ["browser_translations_select_panel_fallback_to_doc_language.js"]
 
+["browser_translations_select_panel_flip_lexical_shortlist.js"]
+
 ["browser_translations_select_panel_init_failure.js"]
 
 ["browser_translations_select_panel_modify_available_language_models.js"]
@@ -178,6 +192,8 @@ skip-if = ["true"]
 ["browser_translations_select_panel_retranslate_on_change_language_directly.js"]
 
 ["browser_translations_select_panel_retranslate_on_change_language_from_dropdown_menu.js"]
+
+["browser_translations_select_panel_script_tags.js"]
 
 ["browser_translations_select_panel_select_current_language_directly.js"]
 

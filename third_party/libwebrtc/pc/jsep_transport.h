@@ -25,9 +25,9 @@
 #include "api/transport/data_channel_transport_interface.h"
 #include "call/payload_type_picker.h"
 #include "media/sctp/sctp_transport_internal.h"
-#include "p2p/base/dtls_transport_internal.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/transport_description.h"
+#include "p2p/dtls/dtls_transport_internal.h"
 #include "pc/dtls_srtp_transport.h"
 #include "pc/dtls_transport.h"
 #include "pc/rtcp_mux_filter.h"
@@ -147,8 +147,7 @@ class JsepTransport {
   // negotiated yet.
   std::optional<rtc::SSLRole> GetDtlsRole() const;
 
-  // TODO(deadbeef): Make this const. See comment in transportcontroller.h.
-  bool GetStats(TransportStats* stats);
+  bool GetStats(TransportStats* stats) const;
 
   const JsepTransportDescription* local_description() const {
     RTC_DCHECK_RUN_ON(network_thread_);
@@ -285,7 +284,7 @@ class JsepTransport {
 
   bool GetTransportStats(DtlsTransportInternal* dtls_transport,
                          int component,
-                         TransportStats* stats);
+                         TransportStats* stats) const;
 
   // Owning thread, for safety checks
   const rtc::Thread* const network_thread_;

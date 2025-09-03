@@ -40,7 +40,6 @@ nsView::nsView(nsViewManager* aViewManager, ViewVisibility aVisibility)
       mVis(aVisibility),
       mPosX(0),
       mPosY(0),
-      mVFlags(0),
       mWidgetIsTopLevel(false),
       mForcedRepaint(false),
       mNeedsWindowPropertiesSync(false) {
@@ -419,13 +418,6 @@ void nsView::SetVisibility(ViewVisibility aVisibility) {
   NotifyEffectiveVisibilityChanged(IsEffectivelyVisible());
 }
 
-void nsView::SetFloating(bool aFloatingView) {
-  if (aFloatingView)
-    mVFlags |= NS_VIEW_FLAG_FLOATING;
-  else
-    mVFlags &= ~NS_VIEW_FLAG_FLOATING;
-}
-
 void nsView::InvalidateHierarchy() {
   if (mViewManager->GetRootView() == this) mViewManager->InvalidateHierarchy();
 
@@ -534,19 +526,10 @@ nsresult nsView::CreateWidgetForPopup(widget::InitData* aWidgetInitData,
   MOZ_ASSERT(aWidgetInitData, "Widget init data required");
   MOZ_ASSERT(aWidgetInitData->mWindowType == WindowType::Popup,
              "Use one of the other CreateWidget methods");
+  MOZ_ASSERT(aParent);
 
   LayoutDeviceIntRect trect = CalcWidgetBounds(
       aWidgetInitData->mWindowType, aWidgetInitData->mTransparencyMode);
-
-  if (!aParent && GetParent()) {
-    aParent = GetParent()->GetNearestWidget(nullptr);
-  }
-  if (!aParent) {
-    NS_ERROR("nsView::CreateWidgetForPopup without suitable parent widget??");
-    // Without a parent, we can't make a popup. This used to be able to happen
-    // when printing, apparently.
-    return NS_ERROR_FAILURE;
-  }
   mWindow = aParent->CreateChild(trect, *aWidgetInitData);
   if (!mWindow) {
     return NS_ERROR_FAILURE;
@@ -683,7 +666,7 @@ void nsView::List(FILE* out, int32_t aIndent) const {
   nsRect brect = GetBounds();
   fprintf(out, "{%d,%d,%d,%d} @ %d,%d", brect.X(), brect.Y(), brect.Width(),
           brect.Height(), mPosX, mPosY);
-  fprintf(out, " flags=%x vis=%d frame=%p <\n", mVFlags, int(mVis), mFrame);
+  fprintf(out, " vis=%d frame=%p <\n", int(mVis), mFrame);
   for (nsView* kid = mFirstChild; kid; kid = kid->GetNextSibling()) {
     NS_ASSERTION(kid->GetParent() == this, "incorrect parent");
     kid->List(out, aIndent + 1);

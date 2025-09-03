@@ -19,26 +19,14 @@ import android.view.ViewGroup
 import androidx.annotation.DrawableRes
 import androidx.annotation.VisibleForTesting
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.ButtonDefaults
-import androidx.compose.material.SnackbarDuration
 import androidx.compose.material.Text
-import androidx.compose.material.TextButton
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.testTag
-import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.coordinatorlayout.widget.CoordinatorLayout
@@ -48,8 +36,10 @@ import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.fragment.app.setFragmentResultListener
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.navigation.fragment.navArgs
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -74,6 +64,7 @@ import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.compose.base.Divider
 import mozilla.components.compose.cfr.CFRPopup
 import mozilla.components.compose.cfr.CFRPopupLayout
 import mozilla.components.compose.cfr.CFRPopupProperties
@@ -93,15 +84,15 @@ import mozilla.components.lib.state.ext.consumeFrom
 import mozilla.components.lib.state.ext.observeAsState
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.utils.BrowsersCache
-import mozilla.components.ui.colors.PhotonColors
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import mozilla.telemetry.glean.private.NoExtras
+import org.mozilla.fenix.AuthenticationStatus
+import org.mozilla.fenix.BiometricAuthenticationManager
 import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.HomeScreen
 import org.mozilla.fenix.GleanMetrics.Homepage
 import org.mozilla.fenix.GleanMetrics.Metrics
 import org.mozilla.fenix.GleanMetrics.NavigationBar
-import org.mozilla.fenix.GleanMetrics.PrivateBrowsingShortcutCfr
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.R
@@ -111,7 +102,6 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.tabstrip.TabStrip
 import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.Components
-import org.mozilla.fenix.components.PrivateShortcutCreateManager
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
@@ -124,14 +114,12 @@ import org.mozilla.fenix.components.toolbar.FenixTabCounterMenu
 import org.mozilla.fenix.components.toolbar.navbar.HomeNavBar
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.components.toolbar.navbar.updateNavBarForConfigurationChange
-import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.databinding.FragmentHomeBinding
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.containsQueryParameters
 import org.mozilla.fenix.ext.hideToolbar
-import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.isToolbarAtBottom
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.openSetDefaultBrowserOption
@@ -143,6 +131,7 @@ import org.mozilla.fenix.ext.tabClosedUndoMessage
 import org.mozilla.fenix.ext.updateMicrosurveyPromptForConfigurationChange
 import org.mozilla.fenix.home.bookmarks.BookmarksFeature
 import org.mozilla.fenix.home.bookmarks.controller.DefaultBookmarksController
+import org.mozilla.fenix.home.ext.showWallpaperOnboardingDialog
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.controller.DefaultPocketStoriesController
 import org.mozilla.fenix.home.privatebrowsing.controller.DefaultPrivateBrowsingController
@@ -180,6 +169,7 @@ import org.mozilla.fenix.snackbar.SnackbarBinding
 import org.mozilla.fenix.tabstray.Page
 import org.mozilla.fenix.tabstray.TabsTrayAccessPoint
 import org.mozilla.fenix.theme.FirefoxTheme
+import org.mozilla.fenix.utils.Settings.Companion.TOP_SITES_PROVIDER_LIMIT
 import org.mozilla.fenix.utils.Settings.Companion.TOP_SITES_PROVIDER_MAX_THRESHOLD
 import org.mozilla.fenix.utils.allowUndo
 import org.mozilla.fenix.wallpapers.Wallpaper
@@ -240,7 +230,7 @@ class HomeFragment : Fragment() {
                     snackBarParentView = binding.dynamicSnackbarContainer,
                     snackbarState = SnackbarState(
                         message = it.context.getString(message),
-                        duration = SnackbarDuration.Long,
+                        duration = SnackbarState.Duration.Preset.Long,
                     ),
                 ).show()
             }
@@ -276,6 +266,10 @@ class HomeFragment : Fragment() {
     private val searchSelectorBinding = ViewBoundFeatureWrapper<SearchSelectorBinding>()
     private val searchSelectorMenuBinding = ViewBoundFeatureWrapper<SearchSelectorMenuBinding>()
     private val homeScreenPopupManager = ViewBoundFeatureWrapper<HomeScreenPopupManager>()
+
+    // This limits feature recommendations (CFR and wallpaper onboarding dialog) so only one will
+    // show at a time.
+    private var featureRecommended = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // DO NOT ADD ANYTHING ABOVE THIS getProfilerTime CALL!
@@ -323,22 +317,47 @@ class HomeFragment : Fragment() {
         components.appStore.dispatch(AppAction.ModeChange(browsingModeManager.mode))
 
         lifecycleScope.launch(IO) {
-            if (requireContext().settings().showPocketRecommendationsFeature) {
+            // Show Merino content recommendations.
+            val showContentRecommendations = requireContext().settings().showContentRecommendations
+            // Show Pocket recommended stories.
+            val showPocketRecommendationsFeature =
+                requireContext().settings().showPocketRecommendationsFeature
+            // Show sponsored stories if recommended stories are enabled.
+            val showSponsoredStories = requireContext().settings().showPocketSponsoredStories &&
+                (showContentRecommendations || showPocketRecommendationsFeature)
+
+            if (showContentRecommendations) {
+                components.appStore.dispatch(
+                    ContentRecommendationsAction.ContentRecommendationsFetched(
+                        recommendations = components.core.pocketStoriesService.getContentRecommendations(),
+                    ),
+                )
+            } else if (showPocketRecommendationsFeature) {
                 val categories = components.core.pocketStoriesService.getStories()
                     .groupBy { story -> story.category }
                     .map { (category, stories) -> PocketRecommendedStoriesCategory(category, stories) }
 
                 components.appStore.dispatch(ContentRecommendationsAction.PocketStoriesCategoriesChange(categories))
+            } else {
+                components.appStore.dispatch(ContentRecommendationsAction.PocketStoriesClean)
+            }
 
-                if (requireContext().settings().showPocketSponsoredStories) {
+            if (showSponsoredStories) {
+                if (requireContext().settings().marsAPIEnabled) {
+                    components.appStore.dispatch(
+                        ContentRecommendationsAction.SponsoredContentsChange(
+                            sponsoredContents = components.core.pocketStoriesService.getSponsoredContents(),
+                            showContentRecommendations = showContentRecommendations,
+                        ),
+                    )
+                } else {
                     components.appStore.dispatch(
                         ContentRecommendationsAction.PocketSponsoredStoriesChange(
-                            components.core.pocketStoriesService.getSponsoredStories(),
+                            sponsoredStories = components.core.pocketStoriesService.getSponsoredStories(),
+                            showContentRecommendations = showContentRecommendations,
                         ),
                     )
                 }
-            } else {
-                components.appStore.dispatch(ContentRecommendationsAction.PocketStoriesClean)
             }
         }
 
@@ -453,6 +472,7 @@ class HomeFragment : Fragment() {
                 selectTabUseCase = components.useCases.tabsUseCases.selectTab,
                 reloadUrlUseCase = components.useCases.sessionUseCases.reload,
                 topSitesUseCases = components.useCases.topSitesUseCase,
+                marsUseCases = components.useCases.marsUseCases,
                 appStore = components.appStore,
                 navController = findNavController(),
                 viewLifecycleScope = viewLifecycleOwner.lifecycleScope,
@@ -491,11 +511,13 @@ class HomeFragment : Fragment() {
                 homeActivity = activity,
                 appStore = components.appStore,
                 settings = components.settings,
+                marsUseCases = components.useCases.marsUseCases,
+                viewLifecycleScope = viewLifecycleOwner.lifecycleScope,
             ),
             privateBrowsingController = DefaultPrivateBrowsingController(
                 activity = activity,
-                appStore = components.appStore,
                 navController = findNavController(),
+                browsingModeManager = browsingModeManager,
             ),
             searchSelectorController = DefaultSearchSelectorController(
                 activity = activity,
@@ -520,8 +542,10 @@ class HomeFragment : Fragment() {
         }
 
         if (requireContext().settings().enableComposeHomepage) {
-            initHomepage()
+            initComposeHomepage()
         } else {
+            binding.homepageView.isVisible = false
+            binding.sessionControlRecyclerView.isVisible = true
             sessionControlView = SessionControlView(
                 containerView = binding.sessionControlRecyclerView,
                 viewLifecycleOwner = viewLifecycleOwner,
@@ -559,7 +583,7 @@ class HomeFragment : Fragment() {
 
         // If the navbar feature could be visible, we should update it's state.
         val shouldUpdateNavBarState =
-            requireContext().settings().navigationToolbarEnabled && !isLargeWindow()
+            requireContext().settings().navigationToolbarEnabled
         if (shouldUpdateNavBarState) {
             updateNavBarForConfigurationChange(
                 context = requireContext(),
@@ -599,6 +623,8 @@ class HomeFragment : Fragment() {
         activity: HomeActivity,
         isConfigChange: Boolean = false,
     ) {
+        NavigationBar.homeInitializeTimespan.start()
+
         val context = requireContext()
         val isToolbarAtBottom = context.isToolbarAtBottom()
 
@@ -635,10 +661,12 @@ class HomeFragment : Fragment() {
                         val shouldShowNavBarCFR =
                             context.shouldAddNavigationBar() && context.settings().shouldShowNavigationBarCFR
                         val shouldShowMicrosurveyPrompt = !activity.isMicrosurveyPromptDismissed.value
+                        var isMicrosurveyShown = false
 
                         if (!isSearchActive && shouldShowMicrosurveyPrompt && !shouldShowNavBarCFR) {
                             currentMicrosurvey
                                 ?.let {
+                                    isMicrosurveyShown = true
                                     if (isToolbarAtBottom) {
                                         updateToolbarViewUIForMicrosurveyPrompt()
                                     }
@@ -675,11 +703,6 @@ class HomeFragment : Fragment() {
 
                         if (isToolbarAtBottom) {
                             AndroidView(factory = { _ -> binding.toolbarLayout })
-                        } else if (
-                            currentMicrosurvey == null ||
-                            (shouldShowMicrosurveyPrompt && !shouldShowNavBarCFR)
-                        ) {
-                            Divider()
                         }
 
                         val showCFR = !isSearchActive &&
@@ -764,7 +787,9 @@ class HomeFragment : Fragment() {
                             if (!isSearchActive) {
                                 HomeNavBar(
                                     isPrivateMode = activity.browsingModeManager.mode.isPrivate,
+                                    showDivider = !isMicrosurveyShown && !isToolbarAtBottom,
                                     browserStore = context.components.core.store,
+                                    appStore = context.components.appStore,
                                     menuButton = menuButton,
                                     tabsCounterMenu = tabCounterMenu,
                                     onSearchButtonClick = {
@@ -811,6 +836,39 @@ class HomeFragment : Fragment() {
                 }
             },
         )
+
+        NavigationBar.homeInitializeTimespan.stop()
+    }
+
+    private fun showEncourageSearchCfr() {
+        CFRPopup(
+            anchor = binding.toolbarWrapper,
+            properties = CFRPopupProperties(
+                popupBodyColors = listOf(
+                    getColor(requireContext(), R.color.fx_mobile_layer_color_gradient_end),
+                    getColor(requireContext(), R.color.fx_mobile_layer_color_gradient_start),
+                ),
+                popupVerticalOffset = ENCOURAGE_SEARCH_CFR_VERTICAL_OFFSET.dp,
+                dismissButtonColor = getColor(requireContext(), R.color.fx_mobile_icon_color_oncolor),
+                indicatorDirection = if (requireContext().isToolbarAtBottom()) {
+                    CFRPopup.IndicatorDirection.DOWN
+                } else {
+                    CFRPopup.IndicatorDirection.UP
+                },
+            ),
+            onDismiss = {
+                homeScreenPopupManager.get()?.onSearchBarCFRDismissed()
+            },
+            text = {
+                FirefoxTheme {
+                    Text(
+                        text = FxNimbus.features.encourageSearchCfr.value().cfrText,
+                        color = FirefoxTheme.colors.textOnColorPrimary,
+                        style = FirefoxTheme.typography.body2,
+                    )
+                }
+            },
+        ).show()
     }
 
     @VisibleForTesting
@@ -976,6 +1034,7 @@ class HomeFragment : Fragment() {
             ) { !Uri.parse(it.url).containsQueryParameters(settings.frecencyFilterQuery) },
             providerConfig = TopSitesProviderConfig(
                 showProviderTopSites = settings.showContileFeature,
+                limit = TOP_SITES_PROVIDER_LIMIT,
                 maxThreshold = TOP_SITES_PROVIDER_MAX_THRESHOLD,
                 providerFilter = { topSite ->
                     when (store.state.search.selectedOrDefaultSearchEngine?.name) {
@@ -1175,6 +1234,16 @@ class HomeFragment : Fragment() {
             view = view,
         )
 
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.lifecycle.repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                homeScreenPopupManager.get()?.searchBarCFRVisibility?.collect { showSearchBarCfr ->
+                    if (showSearchBarCfr) {
+                        showEncourageSearchCfr()
+                    }
+                }
+            }
+        }
+
         // DO NOT MOVE ANYTHING BELOW THIS addMarker CALL!
         requireComponents.core.engine.profiler?.addMarker(
             MarkersFragmentLifecycleCallbacks.MARKER_NAME,
@@ -1183,8 +1252,10 @@ class HomeFragment : Fragment() {
         )
     }
 
-    private fun initHomepage() {
+    private fun initComposeHomepage() {
+        binding.sessionControlRecyclerView.isVisible = false
         binding.homepageView.isVisible = true
+        binding.homeAppBarContent.isVisible = false
 
         binding.homepageView.apply {
             setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed)
@@ -1200,15 +1271,39 @@ class HomeFragment : Fragment() {
                         state = HomepageState.build(
                             appState = appState,
                             settings = settings,
+                            browsingModeManager = browsingModeManager,
                         ),
                         interactor = sessionControlInteractor,
                         onTopSitesItemBound = {
                             StartupTimeline.onTopSitesItemBound(activity = (requireActivity() as HomeActivity))
                         },
                     )
+
+                    LaunchedEffect(Unit) {
+                        onFirstHomepageFrameDrawn()
+                    }
                 }
             }
         }
+    }
+
+    private fun onFirstHomepageFrameDrawn() {
+        with(requireContext().components.settings) {
+            if (!featureRecommended && !showHomeOnboardingDialog && showWallpaperOnboardingDialog(featureRecommended)) {
+                featureRecommended = sessionControlInteractor.showWallpapersOnboardingDialog(
+                    requireContext().components.appStore.state.wallpaperState,
+                )
+            }
+        }
+
+        // We want some parts of the home screen UI to be rendered first if they are
+        // the most prominent parts of the visible part of the screen.
+        // For this reason, we wait for the home screen recycler view to finish it's
+        // layout and post an update for when it's best for non-visible parts of the
+        // home screen to render itself.
+        requireContext().components.appStore.dispatch(
+            AppAction.UpdateFirstFrameDrawn(true),
+        )
     }
 
     private fun initTabStrip() {
@@ -1325,17 +1420,10 @@ class HomeFragment : Fragment() {
         lastAppliedWallpaperName = Wallpaper.defaultName
     }
 
-    override fun onStop() {
-        dismissRecommendPrivateBrowsingShortcut()
-        super.onStop()
-    }
-
     override fun onStart() {
         super.onStart()
 
         subscribeToTabCollections()
-
-        val context = requireContext()
 
         requireComponents.backgroundServices.accountManagerAvailableQueue.runIfReadyOrQueue {
             // By the time this code runs, we may not be attached to a context or have a view lifecycle owner.
@@ -1360,14 +1448,6 @@ class HomeFragment : Fragment() {
                 },
                 owner = this@HomeFragment.viewLifecycleOwner,
             )
-        }
-
-        if (browsingModeManager.mode.isPrivate &&
-            // We will be showing the search dialog and don't want to show the CFR while the dialog shows
-            !bundleArgs.getBoolean(FOCUS_ON_ADDRESS_BAR) &&
-            context.settings().shouldShowPrivateModeCfr
-        ) {
-            recommendPrivateBrowsingShortcut()
         }
 
         // We only want this observer live just before we navigate away to the collection creation screen
@@ -1415,6 +1495,11 @@ class HomeFragment : Fragment() {
         components.useCases.sessionUseCases.updateLastAccess()
 
         evaluateMessagesForMicrosurvey(components)
+
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.shouldShowAuthenticationPrompt =
+            true
+        BiometricAuthenticationManager.biometricAuthenticationNeededInfo.authenticationStatus =
+            AuthenticationStatus.NOT_AUTHENTICATED
     }
 
     private fun evaluateMessagesForMicrosurvey(components: Components) =
@@ -1431,109 +1516,6 @@ class HomeFragment : Fragment() {
         // Counterpart to the update in onResume to keep the last access timestamp of the selected
         // tab up-to-date.
         requireComponents.useCases.sessionUseCases.updateLastAccess()
-    }
-
-    private var recommendPrivateBrowsingCFR: CFRPopup? = null
-
-    @OptIn(ExperimentalComposeUiApi::class)
-    @Suppress("LongMethod")
-    private fun recommendPrivateBrowsingShortcut() {
-        context?.let { context ->
-            CFRPopup(
-                anchor = binding.privateBrowsingButton,
-                properties = CFRPopupProperties(
-                    popupWidth = 256.dp,
-                    popupAlignment = CFRPopup.PopupAlignment.INDICATOR_CENTERED_IN_ANCHOR,
-                    popupBodyColors = listOf(
-                        getColor(context, R.color.fx_mobile_layer_color_gradient_end),
-                        getColor(context, R.color.fx_mobile_layer_color_gradient_start),
-                    ),
-                    showDismissButton = false,
-                    dismissButtonColor = getColor(context, R.color.fx_mobile_icon_color_oncolor),
-                    indicatorDirection = CFRPopup.IndicatorDirection.UP,
-                ),
-                onDismiss = {
-                    PrivateBrowsingShortcutCfr.cancel.record()
-                    context.settings().showedPrivateModeContextualFeatureRecommender = true
-                    context.settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                    dismissRecommendPrivateBrowsingShortcut()
-                },
-                text = {
-                    FirefoxTheme {
-                        Text(
-                            text = context.getString(R.string.private_mode_cfr_message_2),
-                            color = FirefoxTheme.colors.textOnColorPrimary,
-                            style = FirefoxTheme.typography.headline7,
-                            modifier = Modifier
-                                .semantics {
-                                    testTagsAsResourceId = true
-                                    testTag = "private.message"
-                                },
-                        )
-                    }
-                },
-                action = {
-                    FirefoxTheme {
-                        TextButton(
-                            onClick = {
-                                PrivateBrowsingShortcutCfr.addShortcut.record(NoExtras())
-                                PrivateShortcutCreateManager.createPrivateShortcut(context)
-                                context.settings().showedPrivateModeContextualFeatureRecommender = true
-                                context.settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                                dismissRecommendPrivateBrowsingShortcut()
-                            },
-                            colors = ButtonDefaults.buttonColors(backgroundColor = PhotonColors.LightGrey30),
-                            shape = RoundedCornerShape(8.dp),
-                            modifier = Modifier
-                                .padding(top = 16.dp)
-                                .heightIn(36.dp)
-                                .fillMaxWidth()
-                                .semantics {
-                                    testTagsAsResourceId = true
-                                    testTag = "private.add"
-                                },
-                        ) {
-                            Text(
-                                text = context.getString(R.string.private_mode_cfr_pos_button_text),
-                                color = PhotonColors.DarkGrey50,
-                                style = FirefoxTheme.typography.headline7,
-                                textAlign = TextAlign.Center,
-                            )
-                        }
-                        TextButton(
-                            onClick = {
-                                PrivateBrowsingShortcutCfr.cancel.record()
-                                context.settings().showedPrivateModeContextualFeatureRecommender = true
-                                context.settings().lastCfrShownTimeInMillis = System.currentTimeMillis()
-                                dismissRecommendPrivateBrowsingShortcut()
-                            },
-                            modifier = Modifier
-                                .heightIn(36.dp)
-                                .fillMaxWidth()
-                                .semantics {
-                                    testTagsAsResourceId = true
-                                    testTag = "private.cancel"
-                                },
-                        ) {
-                            Text(
-                                text = context.getString(R.string.cfr_neg_button_text),
-                                textAlign = TextAlign.Center,
-                                color = FirefoxTheme.colors.textOnColorPrimary,
-                                style = FirefoxTheme.typography.headline7,
-                            )
-                        }
-                    }
-                },
-            ).run {
-                recommendPrivateBrowsingCFR = this
-                show()
-            }
-        }
-    }
-
-    private fun dismissRecommendPrivateBrowsingShortcut() {
-        recommendPrivateBrowsingCFR?.dismiss()
-        recommendPrivateBrowsingCFR = null
     }
 
     private fun subscribeToTabCollections(): Observer<List<TabCollection>> {
@@ -1555,7 +1537,7 @@ class HomeFragment : Fragment() {
                 snackBarParentView = binding.dynamicSnackbarContainer,
                 snackbarState = SnackbarState(
                     message = view.context.getString(R.string.snackbar_collection_renamed),
-                    duration = SnackbarDuration.Long,
+                    duration = SnackbarState.Duration.Preset.Long,
                 ),
             ).show()
         }
@@ -1686,5 +1668,7 @@ class HomeFragment : Fragment() {
 
         // Elevation for undo toasts
         internal const val TOAST_ELEVATION = 80f
+
+        private const val ENCOURAGE_SEARCH_CFR_VERTICAL_OFFSET = 0
     }
 }

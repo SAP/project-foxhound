@@ -115,17 +115,13 @@ urlbar:
           `merino_amo`,
           `merino_top_picks`,
           `merino_wikipedia`,
+          `ml_yelp`,
           `recent_search`,
           `remote_tab`,
           `restrict_keyword_actions`,
           `restrict_keyword_bookmarks`,
           `restrict_keyword_history`,
           `restrict_keyword_tabs`,
-          `rs_adm_nonsponsored`,
-          `rs_adm_sponsored`,
-          `rs_amo`,
-          `rs_mdn`,
-          `rs_pocket`,
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
@@ -266,17 +262,13 @@ urlbar:
           `merino_amo`,
           `merino_top_picks`,
           `merino_wikipedia`,
+          `ml_yelp`,
           `recent_search`,
           `remote_tab`,
           `restrict_keyword_actions`,
           `restrict_keyword_bookmarks`,
           `restrict_keyword_history`,
           `restrict_keyword_tabs`,
-          `rs_adm_nonsponsored`,
-          `rs_adm_sponsored`,
-          `rs_amo`,
-          `rs_mdn`,
-          `rs_pocket`,
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
@@ -391,17 +383,13 @@ urlbar:
           `merino_amo`,
           `merino_top_picks`,
           `merino_wikipedia`,
+          `ml_yelp`,
           `recent_search`,
           `remote_tab`,
           `restrict_keyword_actions`,
           `restrict_keyword_bookmarks`,
           `restrict_keyword_history`,
           `restrict_keyword_tabs`,
-          `rs_adm_nonsponsored`,
-          `rs_adm_sponsored`,
-          `rs_amo`,
-          `rs_mdn`,
-          `rs_pocket`,
           `rust_adm_nonsponsored`,
           `rust_adm_sponsored`,
           `rust_amo`,
@@ -576,11 +564,12 @@ urlbar:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1866204#c8
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892377#c2
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1912174#c8
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1933863#c5
     data_sensitivity:
       - interaction
     notification_emails:
       - fx-search-telemetry@mozilla.com
-    expires: 136
+    expires: 140
 
   pref_max_results:
     lifetime: application
@@ -680,44 +669,6 @@ urlbar:
     send_in_pings:
       - events
 
-  quick_suggest_ingest_time:
-    type: timing_distribution
-    time_unit: millisecond
-    description: >
-      Counts how long each successful ingest takes in the Firefox Suggest Rust
-      component. Ingests that fail for whatever reason are not included.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907227
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1907227
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-
-  # The _count suffix is to disambiguate with the event of the same name.
-  abandonment_count:
-    type: counter
-    description: >
-      A uint recording the number of abandoned engagements in the urlbar.
-      An abandonment occurs when the user begins using the urlbar but
-      stops before completing the engagement. This can happen when the
-      user clicks outside the urlbar to focus a different part of the
-      window. It can also happen when the user switches to another window
-      while the urlbar is focused.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.abandonment.
-    bugs:
-      - https://bugzil.la/1752953
-    data_reviews:
-      - https://bugzil.la/1752953
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-      - adw@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_ABANDONMENT
-
   autofill_deletion:
     type: counter
     description: >
@@ -734,44 +685,6 @@ urlbar:
       - fx-search-telemetry@mozilla.com
     expires: never
     telemetry_mirror: URLBAR_AUTOFILL_DELETION
-
-  # The _count suffix is to disambiguate with the event of the same name.
-  engagement_count:
-    type: counter
-    description: >
-      A uint recording the number of engagements the user completes in the
-      urlbar.  An engagement occurs when the user navigates to a page
-      using the urlbar, for example by picking a result in the urlbar
-      panel or typing a search term or URL in the urlbar and pressing the
-      enter key.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.engagement.
-    bugs:
-      - https://bugzil.la/1752953
-    data_reviews:
-      - https://bugzil.la/1752953
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-      - adw@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_ENGAGEMENT
-
-  tips:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times particular tips are shown in
-      the Urlbar and how often their confirm and help buttons are pressed.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.tips.
-    bugs:
-      - https://bugzil.la/1608461
-    data_reviews:
-      - https://bugzil.la/1608461
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-      - adw@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_TIPS
 
 # Replacement for PingCentre "quicksuggest-block|impression|click" pings.
 quick_suggest:
@@ -988,8 +901,10 @@ quick_suggest:
       An identifier to identify users for Contextual Services user interaction pings.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1941161
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1836283
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1941161
     data_sensitivity:
       - technical
     notification_emails:
@@ -997,6 +912,7 @@ quick_suggest:
     expires: never
     send_in_pings:
       - quick-suggest
+      - quick-suggest-deletion-request
 
   iab_category:
     type: string
@@ -1120,7 +1036,7 @@ suggest_relevance:
     notification_emails:
       - disco-team@mozilla.com
       - najiang@mozilla.com
-    expires: 136
+    expires: 139
     data_sensitivity:
       - technical
   outcome:
@@ -1140,819 +1056,9 @@ suggest_relevance:
     notification_emails:
       - disco-team@mozilla.com
       - najiang@mozilla.com
-    expires: 136
+    expires: 139
     data_sensitivity:
       - technical
-
-urlbar.picked:
-  autofill_about:
-    type: labeled_counter
-    description: >
-      Counts how many times an about-page autofill result (e.g.,
-      "about:config") was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.autofill_about.
-    bugs:
-      - https://bugzil.la/1770483
-    data_reviews:
-      - https://bugzil.la/1770483
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_AUTOFILL_ABOUT
-
-  autofill_adaptive:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.autofill_adaptive.
-    bugs:
-      - https://bugzil.la/1597791
-    data_reviews:
-      - https://bugzil.la/1597791
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_AUTOFILL_ADAPTIVE
-
-  autofill_origin:
-    type: labeled_counter
-    description: >
-      Counts how many times an origin (domain) autofill result (e.g.,
-      "mozilla.org") was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.autofill_origin.
-    bugs:
-      - https://bugzil.la/1597791
-    data_reviews:
-      - https://bugzil.la/1597791
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_AUTOFILL_ORIGIN
-
-  autofill_other:
-    type: labeled_counter
-    description: >
-      Counts how many times some other type of autofill result that does
-      not have a specific keyed scalar was picked at a given index. This
-      is a fallback that is used when the code is not properly setting a
-      specific autofill type, and it should not normally be used. If it
-      appears in the data, it means we need to investigate and fix the
-      code that is not properly setting a specific autofill type.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.autofill_other.
-    bugs:
-      - https://bugzil.la/1770483
-    data_reviews:
-      - https://bugzil.la/1770483
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_AUTOFILL_OTHER
-
-  autofill_url:
-    type: labeled_counter
-    description: >
-      Counts how many times a URL autofill result (e.g.,
-      "mozilla.org/firefox") was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.autofill_url.
-    bugs:
-      - https://bugzil.la/1597791
-    data_reviews:
-      - https://bugzil.la/1597791
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_AUTOFILL_URL
-
-  bookmark:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.bookmark.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_BOOKMARK
-
-  bookmark_adaptive:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.bookmark_adaptive.
-    bugs:
-      - https://bugzil.la/1466103
-    data_reviews:
-      - https://bugzil.la/1466103
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_BOOKMARK_ADAPTIVE
-
-  clipboard:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.clipboard.
-    bugs:
-      - https://bugzil.la/1842247
-    data_reviews:
-      - https://bugzil.la/1842247
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_CLIPBOARD
-
-  dynamic:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.dynamic.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_DYNAMIC
-
-  dynamic_wikipedia:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.dynamic_wikipedia.
-    bugs:
-      - https://bugzil.la/1819797
-    data_reviews:
-      - https://bugzil.la/1819797
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_DYNAMIC_WIKIPEDIA
-
-  extension:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.extension.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_EXTENSION
-
-  formhistory:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.formhistory.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_FORMHISTORY
-
-  history:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.history.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_HISTORY
-
-  history_adaptive:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.history_adaptive.
-    bugs:
-      - https://bugzil.la/1466103
-    data_reviews:
-      - https://bugzil.la/1466103
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_HISTORY_ADAPTIVE
-
-  keyword:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.keyword.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_KEYWORD
-
-  navigational:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.navigational.
-    bugs:
-      - https://bugzil.la/1819797
-    data_reviews:
-      - https://bugzil.la/1819797
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_NAVIGATIONAL
-
-  quickaction:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.quickaction.
-    bugs:
-      - https://bugzil.la/1783154
-    data_reviews:
-      - https://bugzil.la/1783154
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_QUICKACTION
-
-  quicksuggest:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.quicksuggest.
-    bugs:
-      - https://bugzil.la/1761059
-    data_reviews:
-      - https://bugzil.la/1761059
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_QUICKSUGGEST
-
-  recent_search:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.recent_search.
-    bugs:
-      - https://bugzil.la/1852848
-    data_reviews:
-      - https://bugzil.la/1852848
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_RECENT_SEARCH
-
-  remotetab:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.remotetab.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_REMOTETAB
-
-  restrict_keyword_actions:
-    type: labeled_counter
-    description: >
-      Counts how many times this restrict actions result was picked at a
-      given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.restrict_keyword_actions.
-    bugs:
-      - https://bugzil.la/1917992
-    data_reviews:
-      - https://bugzil.la/1917992
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_RESTRICT_KEYWORD_ACTIONS
-
-  restrict_keyword_bookmarks:
-    type: labeled_counter
-    description: >
-      Counts how many times this restrict bookmarks result was picked at a
-      given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.restrict_keyword_bookmarks.
-    bugs:
-      - https://bugzil.la/1917992
-    data_reviews:
-      - https://bugzil.la/1917992
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_RESTRICT_KEYWORD_BOOKMARKS
-
-  restrict_keyword_history:
-    type: labeled_counter
-    description: >
-      Counts how many times this restrict history result was picked at a
-      given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.restrict_keyword_history.
-    bugs:
-      - https://bugzil.la/1917992
-    data_reviews:
-      - https://bugzil.la/1917992
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_RESTRICT_KEYWORD_HISTORY
-
-  restrict_keyword_tabs:
-    type: labeled_counter
-    description: >
-      Counts how many times this restrict tabs result was picked at a
-      given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.restrict_keyword_tabs.
-    bugs:
-      - https://bugzil.la/1917992
-    data_reviews:
-      - https://bugzil.la/1917992
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_RESTRICT_KEYWORD_TABS
-
-  searchengine:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchengine.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHENGINE
-
-  searchsuggestion:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchsuggestion.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHSUGGESTION
-
-  searchsuggestion_rich:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchsuggestion_rich.
-    bugs:
-      - https://bugzil.la/1834359
-    data_reviews:
-      - https://bugzil.la/1834359
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHSUGGESTION_RICH
-
-  switchtab:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.switchtab.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SWITCHTAB
-
-  tabtosearch:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.tabtosearch.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_TABTOSEARCH
-
-  tip:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.tip.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_TIP
-
-  topsite:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.topsite.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_TOPSITE
-
-  trending:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.trending.
-    bugs:
-      - https://bugzil.la/1823543
-    data_reviews:
-      - https://bugzil.la/1823543
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_TRENDING
-
-  trending_rich:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.trending_rich.
-    bugs:
-      - https://bugzil.la/1834359
-    data_reviews:
-      - https://bugzil.la/1834359
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_TRENDING_RICH
-
-  unknown:
-    type: labeled_counter
-    description: >
-      Counts how many times an unknown result type was picked at a given
-      index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.unknown.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_UNKNOWN
-
-  visiturl:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.visiturl.
-    bugs:
-      - https://bugzil.la/1671508
-    data_reviews:
-      - https://bugzil.la/1671508
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_VISITURL
-
-  weather:
-    type: labeled_counter
-    description: >
-      Counts how many times this result type was picked at a given index.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.weather.
-    bugs:
-      - https://bugzil.la/1815699
-    data_reviews:
-      - https://bugzil.la/1815699
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_WEATHER
-
-urlbar.picked.searchmode:
-  bookmarkmenu:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode from
-      the Search Bookmarks menu item in the Library menu.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.bookmarkmenu.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_BOOKMARKMENU
-
-  handoff:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      being handed off from the search bar on the new tab page.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.handoff.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_HANDOFF
-
-  keywordoffer:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a keyword offer result.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.keywordoffer.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_KEYWORDOFFER
-
-  oneoff:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a one-off.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.oneoff.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_ONEOFF
-
-  searchbutton:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user entered a particular
-      search mode by unified search button.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.searchbutton.
-    bugs:
-      - https://bugzil.la/1919857
-    data_reviews:
-      - https://bugzil.la/1919857
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_SEARCHBUTTON
-
-  shortcut:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      pressing a keyboard shortcut.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.shortcut.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_SHORTCUT
-
-  tabmenu:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting the Search Tabs menu item in the Tab Overflow menu.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.tabmenu.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TABMENU
-
-  tabtosearch:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a tab-to-search result.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.tabtosearch.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TABTOSEARCH
-
-  tabtosearch_onboard:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a tab-to-search onboarding result.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.tabtosearch_onboard.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TABTOSEARCH_ONBOARD
-
-  topsites_newtab:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a search shortcut Top Site on the New Tab Page.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.topsites_newtab.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TOPSITES_NEWTAB
-
-  topsites_urlbar:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a search shortcut Top Site in the Urlbar.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.topsites_urlbar.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TOPSITES_URLBAR
-
-  touchbar:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      selecting a search shortcut on the macOS Touch Bar.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.touchbar.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TOUCHBAR
-
-  typed:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode by
-      typing an alias.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.typed.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_TYPED
-
-  historymenu:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode from
-      the Search History menu item in a History menu.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.historymenu.
-    bugs:
-      - https://bugzil.la/1736939
-    data_reviews:
-      - https://bugzil.la/1736939
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_HISTORYMENU
-
-  other:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times the user picked a particular
-      kind of result while in search mode after entering search mode from
-      an unknown entry point. If values appear for this probe in
-      Telemetry, we should review the entry points to search mode.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.picked.searchmode.other.
-    bugs:
-      - https://bugzil.la/1674874
-    data_reviews:
-      - https://bugzil.la/1674874
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_PICKED_SEARCHMODE_OTHER
 
 urlbar.impression:
   autofill_about:
@@ -2067,39 +1173,6 @@ urlbar.trending:
     expires: never
     telemetry_mirror: URLBAR_TRENDING_BLOCK
 
-urlbar.tabtosearch:
-  impressions:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times non-onboarding tab-to-search
-      results are shown in the Urlbar for a particular search engine.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.tabtosearch.impressions.
-    bugs:
-      - https://bugzil.la/1686330
-    data_reviews:
-      - https://bugzil.la/1686330
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_TABTOSEARCH_IMPRESSIONS
-
-  impressions_onboarding:
-    type: labeled_counter
-    description: >
-      A keyed uint recording how many times onboarding tab-to-search
-      results are shown in the Urlbar for a particular search engine.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar urlbar.tabtosearch.impressions_onboarding.
-    bugs:
-      - https://bugzil.la/1686330
-    data_reviews:
-      - https://bugzil.la/1686330
-    notification_emails:
-      - fx-search-telemetry@mozilla.com
-    expires: never
-    telemetry_mirror: URLBAR_TABTOSEARCH_IMPRESSIONS_ONBOARDING
-
 urlbar.persistedsearchterms:
   revert_by_popup_count:
     type: counter
@@ -2205,3 +1278,39 @@ urlbar.quickaction:
       - fx-search-telemetry@mozilla.com
     expires: never
     telemetry_mirror: QUICKACTION_PICKED
+
+urlbar.unifiedsearchbutton:
+  opened:
+    type: counter
+    description: >
+      Counts how many times Unified Search Button popup is opened.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar urlbar.unifiedsearchbutton.opened.
+    bugs:
+      - https://bugzil.la/1936673
+    data_reviews:
+      - https://bugzil.la/1936673
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+    telemetry_mirror: URLBAR_UNIFIEDSEARCHBUTTON_OPENED
+
+  picked:
+    type: labeled_counter
+    description: >
+      Counts how many times Unified Search Button items were selected.
+      The key is followings.
+      * builtin_search: Builtin search engine.
+      * addon_search: Addon search engine.
+      * local_search: Local search engine such as Bookmarks.
+      * settings: Settings menu.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar urlbar.unifiedsearchbutton.picked.
+    bugs:
+      - https://bugzil.la/1936673
+    data_reviews:
+      - https://bugzil.la/1936673
+    notification_emails:
+      - fx-search-telemetry@mozilla.com
+    expires: never
+    telemetry_mirror: URLBAR_UNIFIEDSEARCHBUTTON_PICKED

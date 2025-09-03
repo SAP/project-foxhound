@@ -19,6 +19,9 @@
 #include <algorithm>
 #include <type_traits>
 
+#include "jsmath.h"
+
+#include "gc/BufferAllocator.h"
 #include "gc/GCInternals.h"
 #include "gc/ParallelMarking.h"
 #include "gc/TraceKind.h"
@@ -28,6 +31,7 @@
 #include "util/Poison.h"
 #include "vm/GeneratorObject.h"
 
+#include "gc/BufferAllocator-inl.h"
 #include "gc/GC-inl.h"
 #include "gc/PrivateIterators-inl.h"
 #include "gc/TraceMethods-inl.h"
@@ -1079,6 +1083,10 @@ template <uint32_t opts>
 void GCMarker::traverse(BaseScript* thing) {
   pushThing<opts>(thing);
 }
+template <uint32_t opts>
+void GCMarker::traverse(SmallBuffer* thing) {
+  // Buffer contents are traced by their owning GC thing.
+}
 
 template <uint32_t opts, typename T>
 void js::GCMarker::traceChildren(T* thing) {
@@ -1253,11 +1261,11 @@ static gcstats::PhaseKind GrayMarkingPhaseForCurrentPhase(
   }
 }
 
-void GCMarker::moveWork(GCMarker* dst, GCMarker* src) {
+size_t GCMarker::moveWork(GCMarker* dst, GCMarker* src, bool allowDistribute) {
   MOZ_ASSERT(dst->stack.isEmpty());
   MOZ_ASSERT(src->canDonateWork());
 
-  MarkStack::moveWork(dst->stack, src->stack);
+  return MarkStack::moveWork(src, dst->stack, src->stack, allowDistribute);
 }
 
 bool GCMarker::initStack() {
@@ -1597,8 +1605,8 @@ scan_value_range:
 
     if (v.isString()) {
       markAndTraverseEdge<opts>(obj, v.toString());
-    } else if (v.hasObjectPayload()) {
-      JSObject* obj2 = &v.getObjectPayload();
+    } else if (v.isObject()) {
+      JSObject* obj2 = &v.toObject();
 #ifdef DEBUG
       if (!obj2) {
         fprintf(stderr,
@@ -1657,6 +1665,16 @@ scan_obj: {
   }
 
   unsigned nslots = nobj->slotSpan();
+
+  if (nobj->hasDynamicSlots()) {
+    ObjectSlots* slots = nobj->getSlotsHeader();
+    BufferAllocator::MarkTenuredAlloc(slots);
+  }
+
+  if (nobj->hasDynamicElements()) {
+    void* elements = nobj->getUnshiftedElementsHeader();
+    BufferAllocator::MarkTenuredAlloc(elements);
+  }
 
   if (!nobj->hasEmptyElements()) {
     base = nobj->getDenseElements();
@@ -1898,12 +1916,13 @@ MOZ_ALWAYS_INLINE bool MarkStack::indexIsEntryBase(size_t index) const {
   // startAndKind_ word can be interpreted as such, which is arranged by making
   // SlotsOrElementsRangeTag zero and all SlotsOrElementsKind tags non-zero.
 
-  MOZ_ASSERT(index < position());
-  return (at(index) & TagMask) != SlotsOrElementsRangeTag;
+  MOZ_ASSERT(index < capacity_);
+  return (stack_[index] & TagMask) != SlotsOrElementsRangeTag;
 }
 
 /* static */
-void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
+size_t MarkStack::moveWork(GCMarker* marker, MarkStack& dst, MarkStack& src,
+                           bool allowDistribute) {
   // Move some work from |src| to |dst|. Assumes |dst| is empty.
   //
   // When this method runs during parallel marking, we are on the thread that
@@ -1916,6 +1935,65 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
 
   size_t totalWords = src.position();
   size_t wordsToMove = std::min(totalWords / 2, MaxWordsToMove);
+
+  // Mark stack entries do not represent uniform amounts of marking work (they
+  // are either single GC things or arbitrarily large arrays) and when the mark
+  // stack is small the situation often arises where one thread repeatedly takes
+  // what is in effect a small amount of marking work while leaving the other
+  // thread with a whole lot more. To split the work up more effectively we
+  // randomly distribute stack entries for small stack.
+  //
+  // This works by randomly choosing one of every pair of entries in |src| and
+  // moving it to |dst| (rather than moving half of the stack as a contiguous
+  // region).
+  //
+  // This has the effect of reducing the number of donations between threads. It
+  // does not decrease average marking time but it does decrease variance of
+  // marking time.
+  static constexpr size_t MaxWordsToDistribute = 30;
+  if (allowDistribute && totalWords <= MaxWordsToDistribute) {
+    if (!dst.ensureSpace(totalWords)) {
+      return 0;
+    }
+
+    src.topIndex_ = 0;
+
+    // We will use bits from a single 64-bit random number.
+    static_assert(HowMany(MaxWordsToDistribute, 2) <= 64);
+    uint64_t randomBits = marker->random.ref().next();
+    DebugOnly<size_t> randomBitCount = 64;
+
+    size_t i = 0;    // Entry index.
+    size_t pos = 0;  // Source stack position.
+    uintptr_t* data = src.stack_;
+    while (pos < totalWords) {
+      MOZ_ASSERT(src.indexIsEntryBase(pos));
+
+      // Randomly chose which stack to copy the entry to, with each half of each
+      // pair of entries moving to different stacks.
+      MOZ_ASSERT(randomBitCount != 0);
+      bool whichStack = (randomBits & 1) ^ (i & 1);
+      randomBits <<= i & 1;
+      randomBitCount -= i & 1;
+
+      MarkStack& stack = whichStack ? dst : src;
+
+      bool isRange =
+          pos < totalWords - 1 && TagIsRangeTag(Tag(data[pos + 1] & TagMask));
+      if (isRange) {
+        stack.infalliblePush(
+            SlotsOrElementsRange::fromBits(data[pos], data[pos + 1]));
+        pos += ValueRangeWords;
+      } else {
+        stack.infalliblePush(TaggedPtr::fromBits(data[pos]));
+        pos++;
+      }
+
+      i++;
+    }
+
+    return totalWords;
+  }
 
   size_t targetPos = src.position() - wordsToMove;
 
@@ -1931,7 +2009,7 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
   MOZ_ASSERT(wordsToMove == src.position() - targetPos);
 
   if (!dst.ensureSpace(wordsToMove)) {
-    return;
+    return 0;
   }
 
   // TODO: This doesn't have good cache behaviour when moving work between
@@ -1948,6 +2026,7 @@ void MarkStack::moveWork(MarkStack& dst, MarkStack& src) {
   src.poisonUnused();
 #endif
   src.peekPtr().assertValid();
+  return wordsToMove;
 }
 
 void MarkStack::clearAndResetCapacity() {
@@ -1991,12 +2070,16 @@ inline void MarkStack::infalliblePush(const TaggedPtr& ptr) {
 
 inline void MarkStack::infalliblePush(JSObject* obj, SlotsOrElementsKind kind,
                                       size_t start) {
+  SlotsOrElementsRange range(kind, obj, start);
+  infalliblePush(range);
+}
+
+inline void MarkStack::infalliblePush(const SlotsOrElementsRange& range) {
   MOZ_ASSERT(position() + ValueRangeWords <= capacity());
 
-  SlotsOrElementsRange array(kind, obj, start);
-  array.assertValid();
-  end()[0] = array.asBits0();
-  end()[1] = array.asBits1();
+  range.assertValid();
+  end()[0] = range.asBits0();
+  end()[1] = range.asBits1();
   topIndex_ += ValueRangeWords;
   MOZ_ASSERT(TagIsRangeTag(peekTag()));
 }
@@ -2148,7 +2231,8 @@ GCMarker::GCMarker(JSRuntime* rt)
       markColor_(MarkColor::Black),
       state(NotActive),
       incrementalWeakMapMarkingEnabled(
-          TuningDefaults::IncrementalWeakMapMarkingEnabled)
+          TuningDefaults::IncrementalWeakMapMarkingEnabled),
+      random(js::GenerateRandomSeed(), js::GenerateRandomSeed())
 #ifdef DEBUG
       ,
       checkAtomMarking(true),
@@ -2928,6 +3012,10 @@ MarkInfo GetMarkInfo(void* vp) {
     return chunk->getKind() == js::gc::ChunkKind::NurseryFromSpace
                ? MarkInfo::NURSERY_FROMSPACE
                : MarkInfo::NURSERY_TOSPACE;
+  }
+
+  if (gc.isPointerWithinBufferAlloc(vp)) {
+    return MarkInfo::BUFFER;
   }
 
   if (!gc.isPointerWithinTenuredCell(vp)) {

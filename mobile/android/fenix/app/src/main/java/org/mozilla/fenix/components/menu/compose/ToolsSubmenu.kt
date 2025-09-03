@@ -4,24 +4,18 @@
 
 package org.mozilla.fenix.components.menu.compose
 
-import android.graphics.BitmapFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.toArgb
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.header.SubmenuHeader
-import org.mozilla.fenix.components.menu.store.WebExtensionMenuItem
-import org.mozilla.fenix.compose.Divider
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
@@ -29,12 +23,13 @@ import org.mozilla.fenix.theme.Theme
 @Composable
 internal fun ToolsSubmenu(
     isPdf: Boolean,
-    isReportSiteIssueSupported: Boolean,
-    webExtensionMenuItems: List<WebExtensionMenuItem.WebExtensionPageMenuItem>,
+    isWebCompatEnabled: Boolean,
+    isWebCompatReporterSupported: Boolean,
     isReaderable: Boolean,
     isReaderViewActive: Boolean,
     isTranslated: Boolean,
     isTranslationSupported: Boolean,
+    isOpenInRegularTabSupported: Boolean,
     hasExternalApp: Boolean,
     externalAppName: String,
     translatedLanguage: String,
@@ -45,6 +40,8 @@ internal fun ToolsSubmenu(
     onPrintMenuClick: () -> Unit,
     onShareMenuClick: () -> Unit,
     onOpenInAppMenuClick: () -> Unit,
+    onWebCompatReporterClick: () -> Unit,
+    onOpenInRegularTabClick: () -> Unit,
 ) {
     MenuScaffold(
         header = {
@@ -86,23 +83,25 @@ internal fun ToolsSubmenu(
                 )
             }
 
-            if (webExtensionMenuItems.isNotEmpty() && isReportSiteIssueSupported) {
+            if (isOpenInRegularTabSupported) {
                 Divider(color = FirefoxTheme.colors.borderSecondary)
 
-                for (webExtensionMenuItem in webExtensionMenuItems) {
-                    WebExtensionMenuItem(
-                        label = webExtensionMenuItem.label,
-                        iconPainter = webExtensionMenuItem.icon?.let { icon ->
-                            BitmapPainter(image = icon.asImageBitmap())
-                        } ?: painterResource(R.drawable.mozac_ic_web_extension_default_icon),
-                        iconTint = FirefoxTheme.colors.iconSecondary,
-                        enabled = webExtensionMenuItem.enabled,
-                        badgeText = webExtensionMenuItem.badgeText,
-                        badgeTextColor = webExtensionMenuItem.badgeTextColor,
-                        badgeBackgroundColor = webExtensionMenuItem.badgeBackgroundColor,
-                        onClick = webExtensionMenuItem.onClick,
-                    )
-                }
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_open_in_normal_tab),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_external_link_24),
+                    onClick = onOpenInRegularTabClick,
+                )
+            }
+
+            if (isWebCompatReporterSupported) {
+                Divider(color = FirefoxTheme.colors.borderSecondary)
+
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_webcompat_reporter),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_lightbulb_24),
+                    state = if (isWebCompatEnabled) MenuItemState.ENABLED else MenuItemState.DISABLED,
+                    onClick = onWebCompatReporterClick,
+                )
             }
         }
 
@@ -205,27 +204,14 @@ private fun ToolsSubmenuPreview() {
         ) {
             ToolsSubmenu(
                 isPdf = false,
-                isReportSiteIssueSupported = false,
-                webExtensionMenuItems = listOf(
-                    WebExtensionMenuItem.WebExtensionPageMenuItem(
-                        label = "label",
-                        enabled = true,
-                        icon = BitmapFactory.decodeResource(
-                            LocalContext.current.resources,
-                            R.drawable.mozac_ic_web_extension_default_icon,
-                        ),
-                        badgeText = "1",
-                        badgeTextColor = Color.White.toArgb(),
-                        badgeBackgroundColor = Color.Gray.toArgb(),
-                        onClick = {
-                        },
-                    ),
-                ),
+                isWebCompatEnabled = true,
+                isWebCompatReporterSupported = false,
                 isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
                 isTranslationSupported = false,
                 hasExternalApp = true,
+                isOpenInRegularTabSupported = true,
                 externalAppName = "Pocket",
                 translatedLanguage = "",
                 onBackButtonClick = {},
@@ -235,6 +221,8 @@ private fun ToolsSubmenuPreview() {
                 onPrintMenuClick = {},
                 onShareMenuClick = {},
                 onOpenInAppMenuClick = {},
+                onWebCompatReporterClick = {},
+                onOpenInRegularTabClick = {},
             )
         }
     }
@@ -249,27 +237,14 @@ private fun ToolsSubmenuPrivatePreview() {
         ) {
             ToolsSubmenu(
                 isPdf = false,
-                isReportSiteIssueSupported = true,
-                webExtensionMenuItems = listOf(
-                    WebExtensionMenuItem.WebExtensionPageMenuItem(
-                        label = "label",
-                        enabled = true,
-                        icon = BitmapFactory.decodeResource(
-                            LocalContext.current.resources,
-                            R.drawable.mozac_ic_web_extension_default_icon,
-                        ),
-                        badgeText = "1",
-                        badgeTextColor = Color.White.toArgb(),
-                        badgeBackgroundColor = Color.Gray.toArgb(),
-                        onClick = {
-                        },
-                    ),
-                ),
+                isWebCompatEnabled = true,
+                isWebCompatReporterSupported = true,
                 isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
                 isTranslationSupported = true,
                 hasExternalApp = true,
+                isOpenInRegularTabSupported = true,
                 externalAppName = "Pocket",
                 translatedLanguage = "",
                 onBackButtonClick = {},
@@ -279,6 +254,8 @@ private fun ToolsSubmenuPrivatePreview() {
                 onPrintMenuClick = {},
                 onShareMenuClick = {},
                 onOpenInAppMenuClick = {},
+                onWebCompatReporterClick = {},
+                onOpenInRegularTabClick = {},
             )
         }
     }

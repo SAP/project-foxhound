@@ -6,7 +6,14 @@ const { sinon } = ChromeUtils.importESModule(
   "resource://testing-common/Sinon.sys.mjs"
 );
 
-const { ProgressStatusText, ProgressType } = ChromeUtils.importESModule(
+const {
+  getDirectoryHandleFromOPFS,
+  ProgressStatusText,
+  ProgressType,
+  removeFromOPFS,
+} = ChromeUtils.importESModule("chrome://global/content/ml/Utils.sys.mjs");
+
+const { URLChecker } = ChromeUtils.importESModule(
   "chrome://global/content/ml/Utils.sys.mjs"
 );
 
@@ -48,6 +55,12 @@ function createRandomBlob(blockSize = 8, count = 1) {
 
 function createBlob(size = 8) {
   return createRandomBlob(size);
+}
+
+function stripLastUsed(data) {
+  return data.map(({ lastUsed: _unusedLastUsed, ...rest }) => {
+    return rest;
+  });
 }
 
 /**
@@ -188,9 +201,8 @@ add_task(async function test_getting_file_in_subdir() {
     urlTemplate: FAKE_URL_TEMPLATE,
   });
 
-  let [array, metadata] = await hub.getModelFileAsArrayBuffer(
-    FAKE_ONNX_MODEL_ARGS
-  );
+  let [array, metadata] =
+    await hub.getModelFileAsArrayBuffer(FAKE_ONNX_MODEL_ARGS);
 
   Assert.equal(metadata["Content-Type"], "application/json");
 
@@ -255,6 +267,8 @@ add_task(async function test_getting_file_from_cache() {
   });
   let array = await hub.getModelFileAsArrayBuffer(FAKE_MODEL_ARGS);
 
+  var lastUsed = array[1].lastUsed;
+
   // stub to verify that the data was retrieved from IndexDB
   let matchMethod = hub.cache._testGetData;
 
@@ -269,7 +283,13 @@ add_task(async function test_getting_file_from_cache() {
   let array2 = await hub.getModelFileAsArrayBuffer(FAKE_MODEL_ARGS);
   hub.cache._testGetData.restore();
 
-  Assert.deepEqual(array, array2);
+  let newLastUsed = array2[1].lastUsed;
+
+  // make sure the last used field was updated
+  Assert.greater(newLastUsed, lastUsed);
+
+  // we don't compare the lastUsed fiel because it changes for each read
+  Assert.deepEqual(stripLastUsed(array), stripLastUsed(array2));
 });
 
 /**
@@ -336,6 +356,8 @@ add_task(async function test_getting_file_from_url_cache_with_callback() {
       numCalls += 1;
     },
   });
+
+  var lastUsed = array[1].lastUsed;
 
   Assert.greaterOrEqual(numCalls, 3);
 
@@ -406,7 +428,12 @@ add_task(async function test_getting_file_from_url_cache_with_callback() {
   });
   hub.cache._testGetData.restore();
 
-  Assert.deepEqual(array, array2);
+  let newLastUsed = array2[1].lastUsed;
+
+  // make sure the last used field was updated
+  Assert.greater(newLastUsed, lastUsed);
+
+  Assert.deepEqual(stripLastUsed(array), stripLastUsed(array2));
 
   // last received message is DONE
   Assert.deepEqual(
@@ -540,7 +567,9 @@ add_task(async function testTooFewParts() {
  */
 async function initializeCache() {
   const randomSuffix = Math.floor(Math.random() * 10000);
-  return await IndexedDBCache.init({ dbName: `modelFiles-${randomSuffix}` });
+  const dbName = `modelFiles-${randomSuffix}`;
+  await getDirectoryHandleFromOPFS(dbName, { create: true });
+  return await IndexedDBCache.init({ dbName });
 }
 
 /**
@@ -549,6 +578,11 @@ async function initializeCache() {
 async function deleteCache(cache) {
   await cache.dispose();
   indexedDB.deleteDatabase(cache.dbName);
+  try {
+    await removeFromOPFS(cache.dbName, { recursive: true });
+  } catch (e) {
+    // can be empty
+  }
 }
 
 /**
@@ -655,7 +689,7 @@ add_task(async function test_GetHeaders() {
     extra: "extra",
   };
 
-  await cache.put({
+  const when = await cache.put({
     taskName: "task",
     model: "org/model",
     revision: "v1",
@@ -679,6 +713,8 @@ add_task(async function test_GetHeaders() {
       status: 200,
       "Content-Type": "application/octet-stream",
       fileSize: 8,
+      lastUsed: when,
+      lastUpdated: when,
     },
     storedHeaders,
     "The retrieved headers should match the stored headers."
@@ -802,6 +838,7 @@ add_task(async function test_nonDeletedModels() {
     testData,
     "The retrieved data should match the stored data."
   );
+
   Assert.equal(
     headers.ETag,
     "ETAG123",
@@ -1029,34 +1066,32 @@ add_task(async function test_listFiles() {
   const headers = { "Content-Length": "12345", ETag: "XYZ" };
   const blob = createBlob();
 
-  await Promise.all([
-    cache.put({
-      taskName: "task1",
-      model: "org/model",
-      revision: "v1",
-      file: "file.txt",
-      data: blob,
-      headers: null,
-    }),
+  const when1 = await cache.put({
+    taskName: "task1",
+    model: "org/model",
+    revision: "v1",
+    file: "file.txt",
+    data: blob,
+    headers: null,
+  });
 
-    cache.put({
-      taskName: "task1",
-      model: "org/model",
-      revision: "v1",
-      file: "file2.txt",
-      data: blob,
-      headers: null,
-    }),
+  const when2 = await cache.put({
+    taskName: "task1",
+    model: "org/model",
+    revision: "v1",
+    file: "file2.txt",
+    data: blob,
+    headers: null,
+  });
 
-    cache.put({
-      taskName: "task2",
-      model: "org/model",
-      revision: "v1",
-      file: "sub/file3.txt",
-      data: createBlob(32),
-      headers,
-    }),
-  ]);
+  const when3 = await cache.put({
+    taskName: "task2",
+    model: "org/model",
+    revision: "v1",
+    file: "sub/file3.txt",
+    data: createBlob(32),
+    headers,
+  });
 
   const files = await cache.listFiles({ model: "org/model", revision: "v1" });
   const expected = [
@@ -1066,6 +1101,8 @@ add_task(async function test_listFiles() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUsed: when1,
+        lastUpdated: when1,
       },
     },
     {
@@ -1074,6 +1111,8 @@ add_task(async function test_listFiles() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUsed: when2,
+        lastUpdated: when2,
       },
     },
     {
@@ -1083,6 +1122,8 @@ add_task(async function test_listFiles() {
         "Content-Type": "application/octet-stream",
         fileSize: 32,
         ETag: "XYZ",
+        lastUsed: when3,
+        lastUpdated: when3,
       },
     },
   ];
@@ -1104,33 +1145,32 @@ add_task(async function test_listFilesUsingTaskName() {
   const headers = { "Content-Length": "12345", ETag: "XYZ" };
   const blob = createBlob();
 
-  await Promise.all([
-    cache.put({
-      taskName,
-      model,
-      revision,
-      file: "file.txt",
-      data: blob,
-      headers: null,
-    }),
-    cache.put({
-      taskName,
-      model,
-      revision,
-      file: "file2.txt",
-      data: blob,
-      headers: null,
-    }),
+  const when1 = await cache.put({
+    taskName,
+    model,
+    revision,
+    file: "file.txt",
+    data: blob,
+    headers: null,
+  });
 
-    cache.put({
-      taskName,
-      model,
-      revision,
-      file: "sub/file3.txt",
-      data: createBlob(32),
-      headers,
-    }),
-  ]);
+  const when2 = await cache.put({
+    taskName,
+    model,
+    revision,
+    file: "file2.txt",
+    data: blob,
+    headers: null,
+  });
+
+  const when3 = await cache.put({
+    taskName,
+    model,
+    revision,
+    file: "sub/file3.txt",
+    data: createBlob(32),
+    headers,
+  });
 
   const files = await cache.listFiles({ taskName });
   const expected = [
@@ -1140,6 +1180,8 @@ add_task(async function test_listFilesUsingTaskName() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUsed: when1,
+        lastUpdated: when1,
       },
     },
     {
@@ -1148,6 +1190,8 @@ add_task(async function test_listFilesUsingTaskName() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUsed: when2,
+        lastUpdated: when2,
       },
     },
     {
@@ -1157,6 +1201,8 @@ add_task(async function test_listFilesUsingTaskName() {
         "Content-Type": "application/octet-stream",
         fileSize: 32,
         ETag: "XYZ",
+        lastUsed: when3,
+        lastUpdated: when3,
       },
     },
   ];
@@ -1217,10 +1263,7 @@ add_task(async function test_listFilesUsingNonExistingTaskName() {
  * Test the ability to add a database from a non-existing database.
  */
 add_task(async function test_initDbFromNonExisting() {
-  const randomSuffix = Math.floor(Math.random() * 10000);
-  const cache = await IndexedDBCache.init({
-    dbName: `modelFiles-${randomSuffix}`,
-  });
+  const cache = await initializeCache();
 
   Assert.notEqual(cache, null);
 
@@ -1260,7 +1303,7 @@ add_task(async function test_initDbFromExistingEmpty() {
 
   const blob = createBlob();
 
-  await cache.put({
+  const when = await cache.put({
     taskName,
     model,
     revision,
@@ -1276,6 +1319,8 @@ add_task(async function test_initDbFromExistingEmpty() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUsed: when,
+        lastUpdated: when,
       },
     },
   ];
@@ -1358,7 +1403,7 @@ add_task(async function test_initDbFromExistingElseWhereStoreChanges() {
   Assert.notEqual(cache2, null);
   Assert.equal(cache2.db.version, 3);
 
-  await cache2.put({
+  const when = await cache2.put({
     taskName,
     model,
     revision,
@@ -1374,6 +1419,8 @@ add_task(async function test_initDbFromExistingElseWhereStoreChanges() {
         "Content-Type": "application/octet-stream",
         fileSize: 8,
         ETag: "NO_ETAG",
+        lastUpdated: when,
+        lastUsed: when,
       },
     },
   ];
@@ -1547,5 +1594,163 @@ add_task(async function test_DeleteFileByEngines() {
     null,
     "The data for the deleted model should not exist."
   );
+  await deleteCache(cache);
+});
+
+// tests allow deny list updating after model is cached
+add_task(async function test_update_allow_deny_after_model_cache() {
+  const cache = await initializeCache();
+  const file = "config.json";
+  const taskName = FAKE_MODEL_ARGS.taskName;
+  const model = FAKE_MODEL_ARGS.model;
+  const revision = "v0.1";
+  await cache.put({
+    taskName,
+    model,
+    revision,
+    file,
+    data: createBlob(),
+    headers: null,
+  });
+
+  let exists = await cache.fileExists({
+    model,
+    revision,
+    file,
+  });
+  Assert.ok(exists, "The file should exist in the cache.");
+
+  let list = [
+    {
+      filter: "ALLOW",
+      urlPrefix:
+        "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/data/acme",
+    },
+  ];
+
+  let hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+    allowDenyList: list,
+  });
+  hub.cache = cache;
+  // should go through since model is allowed
+  await hub.getModelFileAsArrayBuffer({ ...FAKE_MODEL_ARGS, file, revision });
+
+  // put model in deny list
+  list = [
+    {
+      filter: "DENY",
+      urlPrefix:
+        "chrome://mochitests/content/browser/toolkit/components/ml/tests/browser/data/acme",
+    },
+  ];
+
+  hub = new ModelHub({
+    rootUrl: FAKE_HUB,
+    urlTemplate: FAKE_URL_TEMPLATE,
+    allowDenyList: list,
+  });
+  hub.cache = cache;
+
+  // now ensure the model cannot be called after being put in the deny list
+  try {
+    await hub.getModelFileAsArrayBuffer({ ...FAKE_MODEL_ARGS, file, revision });
+  } catch (e) {
+    Assert.ok(e.name === "ForbiddenURLError");
+  }
+  // make sure that the model is deleted after
+  const dataAfterForbidden = await cache.getFile({
+    model,
+    revision,
+    file,
+  });
+  Assert.equal(
+    dataAfterForbidden,
+    null,
+    "The data for the deleted model should not exist."
+  );
+});
+
+/**
+ * Test that data from OPFS is wiped
+ */
+add_task(async function test_migrateStore_modelsDeleted() {
+  const randomSuffix = Math.floor(Math.random() * 10000);
+  const dbName = `modelFiles-${randomSuffix}`;
+
+  // Initialize version 4 of the database
+  let cache = await IndexedDBCache.init({ dbName, version: 4 });
+
+  // Add some test data for unknown models
+  await Promise.all([
+    cache.put({
+      taskName: "task",
+      model: "random/model",
+      revision: "v1",
+      file: "random.txt",
+      data: createBlob(),
+      headers: null,
+    }),
+    cache.put({
+      taskName: "task",
+      model: "unknown/model",
+      revision: "v2",
+      file: "unknown.txt",
+      data: createBlob(),
+      headers: null,
+    }),
+  ]);
+
+  // Close version 4 and upgrade to version 5
+  cache.db.close();
+  cache = await IndexedDBCache.init({ dbName, version: 5 });
+
+  // Verify all unknown model data is deleted
+  let remainingFiles = await cache.listFiles({
+    model: "random/model",
+    revision: "v1",
+  });
+  Assert.deepEqual(
+    remainingFiles,
+    [],
+    "All unknown model files should be deleted."
+  );
+
+  remainingFiles = await cache.listFiles({
+    model: "unknown/model",
+    revision: "v2",
+  });
+  Assert.deepEqual(
+    remainingFiles,
+    [],
+    "All unknown model files should be deleted."
+  );
+
+  await deleteCache(cache);
+});
+
+/**
+ * Test migration when database starts empty.
+ */
+add_task(async function test_migrateStore_emptyDatabase() {
+  const randomSuffix = Math.floor(Math.random() * 10000);
+  const dbName = `modelFiles-${randomSuffix}`;
+
+  // Initialize an empty version 4 database
+  let cache = await IndexedDBCache.init({ dbName, version: 4 });
+  cache.db.close();
+
+  // Upgrade to version 5
+  cache = await IndexedDBCache.init({ dbName, version: 5 });
+
+  // Verify database is still empty
+  const models = await cache.listModels();
+  Assert.deepEqual(
+    models,
+    [],
+    "The database should remain empty after migration."
+  );
+
   await deleteCache(cache);
 });

@@ -13,7 +13,11 @@
   font: message-box;
   font-size: var(--theme-body-font-size);
 
-  --tab-line-hover-color: rgba(0,0,0,.2);
+  --tab-line-hover-color: light-dark(
+    rgba(0,0,0,.2),
+    rgba(255,255,255,.2)
+  );
+
   --tab-line-selected-color: var(--blue-50);
   --toggle-thumb-color: light-dark(white, var(--grey-40));
   --toggle-thumb-color-pressed: white;
@@ -33,8 +37,8 @@
   --toggle-hover-track-color-pressed: var(--toggle-track-color-pressed);
   --toggle-hover-thumb-color: var(--toggle-thumb-color);
 
-  --searchbox-no-match-background-color: #ffe5e5;
-  --searchbox-no-match-stroke-color: var(--red-60);
+  --searchbox-no-match-background-color: light-dark(#ffe5e5, #402325);
+  --searchbox-no-match-stroke-color: light-dark(var(--red-60),var(--red-50));
   --searchbox-background-color: transparent;
   --searchbox-border-color: transparent;
 
@@ -65,6 +69,12 @@
     --toggle-disabled-thumb-color: GrayText;
     --toggle-track-disabled-opacity: 1;
 
+    /* From High Contrast Mode guidelines:
+       > Error inputs in our traditional design system use color to indicate they are destructive.
+       > We cannot do this in HCM, so the default INPUT style should be used instead.
+      Given this, we should use the default color.
+    */
+    --searchbox-no-match-stroke-color: var(--theme-icon-color);
     --searchbox-background-color: ButtonFace;
     --searchbox-border-color: ButtonText;
 
@@ -80,10 +90,6 @@
 
 :root.theme-dark {
   color-scheme: dark;
-
-  --tab-line-hover-color: rgba(255,255,255,.2);
-  --searchbox-no-match-background-color: #402325;
-  --searchbox-no-match-stroke-color: var(--red-50);
 }
 
 :root[platform="mac"] {
@@ -190,7 +196,7 @@ iframe {
   --autocomplete-item-color-swatch-margin-inline: 5px;
   appearance: none !important;
   background-color: transparent;
-  border-width: 0px !important;
+  border-width: 0 !important;
   margin: 0;
   padding: 0;
   overflow-x: hidden;
@@ -344,6 +350,10 @@ iframe {
   border-block: 2px solid transparent;
   /* Separate the outline from the button as it might have a similar background color */
   outline-offset: 2px;
+
+  :root[forced-colors-active] & {
+    border: 1px solid currentColor;
+  }
 }
 
 /* Remove system form border from devtools-button. */
@@ -445,6 +455,7 @@ iframe {
 
 .devtools-togglebutton:hover:not([aria-pressed="true"], :active) {
   background-color: var(--theme-toolbarbutton-hover-background);
+  color: var(--theme-toolbarbutton-hover-color);
 }
 
 /* Selectable button which is checked. */
@@ -465,7 +476,8 @@ iframe {
   color: var(--theme-toolbarbutton-checked-hover-color);
 }
 
-.devtools-togglebutton:active {
+/* Only apply active style on non High Contrast Mode */
+:root:not([forced-colors-active]) .devtools-togglebutton:active {
   background: var(--theme-toolbarbutton-active-background);
 }
 

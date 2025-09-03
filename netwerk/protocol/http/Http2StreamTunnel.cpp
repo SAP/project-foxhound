@@ -18,6 +18,7 @@
 #include "nsHttpConnectionInfo.h"
 #include "nsQueryObject.h"
 #include "nsProxyRelease.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 
 namespace mozilla::net {
 
@@ -302,7 +303,7 @@ Http2StreamTunnel::GetStatus(nsresult* aStatus) {
 
 already_AddRefed<nsHttpConnection> Http2StreamTunnel::CreateHttpConnection(
     nsAHttpTransaction* httpTransaction, nsIInterfaceRequestor* aCallbacks,
-    PRIntervalTime aRtt, bool aIsWebSocket) {
+    PRIntervalTime aRtt, bool aIsExtendedCONNECT) {
   mInput = new InputStreamTunnel(this);
   mOutput = new OutputStreamTunnel(this);
   RefPtr<nsHttpConnection> conn = new nsHttpConnection();
@@ -311,7 +312,7 @@ already_AddRefed<nsHttpConnection> Http2StreamTunnel::CreateHttpConnection(
   nsresult rv =
       conn->Init(httpTransaction->ConnectionInfo(),
                  gHttpHandler->ConnMgr()->MaxRequestDelay(), this, mInput,
-                 mOutput, true, NS_OK, aCallbacks, aRtt, aIsWebSocket);
+                 mOutput, true, NS_OK, aCallbacks, aRtt, aIsExtendedCONNECT);
   MOZ_RELEASE_ASSERT(NS_SUCCEEDED(rv));
   mTransaction = httpTransaction;
   return conn.forget();
@@ -356,7 +357,7 @@ nsresult Http2StreamTunnel::GenerateHeaders(nsCString& aCompressedData,
       aCompressedData.Length() * 100 /
       (11 + authorityHeader.Length() + mFlatHttpRequestHeaders.Length());
 
-  Telemetry::Accumulate(Telemetry::SPDY_SYN_RATIO, ratio);
+  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
 
   return NS_OK;
 }
@@ -747,7 +748,7 @@ nsresult Http2StreamWebSocket::GenerateHeaders(nsCString& aCompressedData,
       aCompressedData.Length() * 100 /
       (11 + authorityHeader.Length() + mFlatHttpRequestHeaders.Length());
 
-  Telemetry::Accumulate(Telemetry::SPDY_SYN_RATIO, ratio);
+  glean::spdy::syn_ratio.AccumulateSingleSample(ratio);
   return NS_OK;
 }
 

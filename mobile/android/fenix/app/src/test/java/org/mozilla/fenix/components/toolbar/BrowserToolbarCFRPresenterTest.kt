@@ -28,7 +28,6 @@ import mozilla.components.concept.engine.EngineSession
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.After
 import org.junit.Assert.assertNotNull
 import org.junit.Before
@@ -38,6 +37,7 @@ import org.junit.runner.RunWith
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.ext.isLargeWindow
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.utils.Settings
 
@@ -47,7 +47,7 @@ class BrowserToolbarCFRPresenterTest {
     val coroutinesTestRule = MainCoroutineRule()
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @Before
     fun setup() {
@@ -66,7 +66,6 @@ class BrowserToolbarCFRPresenterTest {
         val privateTab = createTab(url = "", private = true)
         val browserStore = createBrowserStore(tab = privateTab, selectedTabId = privateTab.id)
         val settings: Settings = mockk(relaxed = true) {
-            every { reviewQualityCheckOptInTimeInMillis } returns System.currentTimeMillis()
             every { shouldShowEraseActionCFR } returns false
             every { shouldShowCookieBannersCFR } returns true
             every { shouldUseCookieBannerPrivateMode } returns true
@@ -143,7 +142,6 @@ class BrowserToolbarCFRPresenterTest {
             every { isTabStripEnabled() } returns false
         }
         val settings: Settings = mockk(relaxed = true) {
-            every { reviewQualityCheckOptInTimeInMillis } returns System.currentTimeMillis()
             every { shouldShowEraseActionCFR } returns false
             every { shouldShowCookieBannersCFR } returns false
             every { shouldUseCookieBannerPrivateMode } returns false
@@ -174,7 +172,6 @@ class BrowserToolbarCFRPresenterTest {
             every { isTabStripEnabled() } returns true
         }
         val settings: Settings = mockk(relaxed = true) {
-            every { reviewQualityCheckOptInTimeInMillis } returns System.currentTimeMillis()
             every { shouldShowEraseActionCFR } returns false
             every { shouldShowCookieBannersCFR } returns false
             every { shouldUseCookieBannerPrivateMode } returns false
@@ -205,7 +202,6 @@ class BrowserToolbarCFRPresenterTest {
             every { isTabStripEnabled() } returns false
         }
         val settings: Settings = mockk(relaxed = true) {
-            every { reviewQualityCheckOptInTimeInMillis } returns System.currentTimeMillis()
             every { shouldShowEraseActionCFR } returns false
             every { shouldShowCookieBannersCFR } returns false
             every { shouldUseCookieBannerPrivateMode } returns false
@@ -254,7 +250,6 @@ class BrowserToolbarCFRPresenterTest {
      */
     private fun createPresenter(
         context: Context = mockk {
-            every { getString(R.string.tcp_cfr_message) } returns "Test"
             every { getColor(any()) } returns 0
         },
         anchor: View = mockk(relaxed = true),

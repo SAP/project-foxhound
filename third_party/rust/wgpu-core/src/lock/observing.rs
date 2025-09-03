@@ -28,15 +28,19 @@
 //!
 //! [`lock/rank.rs`]: ../../../src/wgpu_core/lock/rank.rs.html
 
-use crate::FastHashSet;
+#![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
 
-use super::rank::{LockRank, LockRankSet};
 use std::{
     cell::RefCell,
+    format,
     fs::File,
     panic::Location,
     path::{Path, PathBuf},
+    vec::Vec,
 };
+
+use super::rank::{LockRank, LockRankSet};
+use crate::FastHashSet;
 
 /// A `Mutex` instrumented for lock acquisition order observation.
 ///
@@ -75,15 +79,6 @@ impl<T> Mutex<T> {
             inner: self.inner.lock(),
             _state: LockStateGuard { saved },
         }
-    }
-}
-
-impl<'a, T> MutexGuard<'a, T> {
-    pub fn try_map<U: ?Sized, F>(s: Self, f: F) -> Result<parking_lot::MappedMutexGuard<'a, U>, ()>
-    where
-        F: FnOnce(&mut T) -> Option<&mut U>,
-    {
-        parking_lot::MutexGuard::try_map(s.inner, f).map_err(|_| ())
     }
 }
 
@@ -299,7 +294,7 @@ fn release(saved: Option<HeldLock>) {
     });
 }
 
-thread_local! {
+std::thread_local! {
     static LOCK_STATE: RefCell<ThreadState> = const { RefCell::new(ThreadState::Initial) };
 }
 

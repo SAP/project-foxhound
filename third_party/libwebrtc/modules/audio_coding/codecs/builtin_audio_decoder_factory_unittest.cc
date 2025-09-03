@@ -54,21 +54,6 @@ TEST(AudioDecoderFactoryTest, CreatePcma) {
       adf->Create(env, SdpAudioFormat("pcma", 16000, 1), std::nullopt));
 }
 
-TEST(AudioDecoderFactoryTest, CreateIlbc) {
-  const Environment env = CreateEnvironment();
-  rtc::scoped_refptr<AudioDecoderFactory> adf =
-      CreateBuiltinAudioDecoderFactory();
-  ASSERT_TRUE(adf);
-  // iLBC supports 8 kHz, 1 channel.
-  EXPECT_FALSE(adf->Create(env, SdpAudioFormat("ilbc", 8000, 0), std::nullopt));
-#ifdef WEBRTC_CODEC_ILBC
-  EXPECT_TRUE(adf->Create(env, SdpAudioFormat("ilbc", 8000, 1), std::nullopt));
-#endif
-  EXPECT_FALSE(adf->Create(env, SdpAudioFormat("ilbc", 8000, 2), std::nullopt));
-  EXPECT_FALSE(
-      adf->Create(env, SdpAudioFormat("ilbc", 16000, 1), std::nullopt));
-}
-
 TEST(AudioDecoderFactoryTest, CreateL16) {
   const Environment env = CreateEnvironment();
   rtc::scoped_refptr<AudioDecoderFactory> adf =
@@ -95,9 +80,6 @@ TEST(AudioDecoderFactoryTest, MaxNrOfChannels) {
   std::vector<std::string> codecs = {
 #ifdef WEBRTC_CODEC_OPUS
       "opus",
-#endif
-#ifdef WEBRTC_CODEC_ILBC
-      "ilbc",
 #endif
       "pcmu", "pcma", "l16", "G722", "G711",
   };
@@ -136,8 +118,8 @@ TEST(AudioDecoderFactoryTest, CreateOpus) {
   rtc::scoped_refptr<AudioDecoderFactory> adf =
       CreateBuiltinAudioDecoderFactory();
   ASSERT_TRUE(adf);
-  // Opus supports 48 kHz, 2 channels, and wants a "stereo" parameter whose
-  // value is either "0" or "1".
+  // Opus supports 48 kHz and 2 channels. It is possible to specify a "stereo"
+  // parameter whose value is either "0" or "1".
   for (int hz : {8000, 16000, 32000, 48000}) {
     for (int channels : {0, 1, 2, 3}) {
       for (std::string stereo : {"XX", "0", "1", "2"}) {

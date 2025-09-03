@@ -30,21 +30,11 @@ appmenu-update-restart2 =
     .secondarybuttonlabel = Dismiss
     .secondarybuttonaccesskey = m
 appmenu-update-restart-message2 = Get the latest version of { -brand-shorter-name }. Open tabs and windows will be restored.
-appmenu-update-other-instance =
-    .label = { -brand-shorter-name } is unable to automatically update to the latest version.
-    .buttonlabel = Update { -brand-shorter-name } anyway
-    .buttonaccesskey = U
-    .secondarybuttonlabel = Not Now
-    .secondarybuttonaccesskey = N
-appmenu-update-other-instance-message = A new { -brand-shorter-name } update is available, but it can’t be installed because another copy of { -brand-shorter-name } is running. Close it to continue the update, or choose to update anyway (the other copy may not work correctly until you restart it).
 
-appmenu-addon-private-browsing-installed2 =
-    .buttonlabel = Okay
-    .buttonaccesskey = O
+appmenu-theme-installed =
+    .secondarybuttonlabel = Undo
+    .secondarybuttonaccesskey = U
 appmenu-addon-post-install-message3 = Manage your add-ons and themes through the application menu.
-appmenu-addon-post-install-incognito-checkbox =
-    .label = Allow this extension to run in Private Windows
-    .accesskey = A
 
 appmenu-new-tab-controlled-changes =
     .label = Your new tab has changed.

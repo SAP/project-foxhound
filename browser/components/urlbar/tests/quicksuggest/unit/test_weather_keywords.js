@@ -575,7 +575,7 @@ async function doShowLessFrequentlyTest({
   }
   await QuickSuggestTestUtils.setRemoteSettingsRecords(records);
 
-  let feature = QuickSuggest.weather;
+  let feature = QuickSuggest.getFeature("WeatherSuggestions");
   let expectedResult = QuickSuggestTestUtils.weatherResult();
 
   for (let { input, before, after } of tests) {
@@ -605,15 +605,16 @@ async function doShowLessFrequentlyTest({
       "feature.showLessFrequentlyCount before"
     );
 
-    feature.handleCommand(
-      {
-        acknowledgeFeedback: () => {},
-        invalidateResultMenuCommands: () => {},
+    triggerCommand({
+      feature,
+      result: expectedResult,
+      command: "show_less_frequently",
+      searchString: input,
+      expectedCountsByCall: {
+        acknowledgeFeedback: 1,
+        invalidateResultMenuCommands: after.canShowLessFrequently ? 0 : 1,
       },
-      expectedResult,
-      "show_less_frequently",
-      input
-    );
+    });
 
     Assert.equal(
       UrlbarPrefs.get("weather.minKeywordLength"),

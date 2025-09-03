@@ -2559,7 +2559,7 @@ class ADBDevice(ADBCommand):
             tmpf = tempfile.NamedTemporaryFile(mode="w", delete=False)
             tmpf.write("\n".join(commands))
             tmpf.close()
-            script = f"/sdcard/{os.path.basename(tmpf.name)}"
+            script = posixpath.join("/data/local/tmp", os.path.basename(tmpf.name))
             self.push(tmpf.name, script)
             self.shell_output(
                 f"sh {script}", enable_run_as=enable_run_as, timeout=timeout
@@ -3929,16 +3929,17 @@ class ADBDevice(ADBCommand):
         """
         if self.version >= version_codes.M:
             permissions = [
-                "android.permission.READ_EXTERNAL_STORAGE",
                 "android.permission.ACCESS_COARSE_LOCATION",
                 "android.permission.ACCESS_FINE_LOCATION",
                 "android.permission.CAMERA",
                 "android.permission.RECORD_AUDIO",
             ]
             if self.version < version_codes.R:
-                # WRITE_EXTERNAL_STORAGE is no longer available
-                # in Android 11+
+                # WRITE_EXTERNAL_STORAGE is no longer available in Android 11+
                 permissions.append("android.permission.WRITE_EXTERNAL_STORAGE")
+            if self.version < version_codes.TIRAMISU:
+                # READ_EXTERNAL_STORAGE is no longer available in Android 13+
+                permissions.append("android.permission.READ_EXTERNAL_STORAGE")
             self._logger.info("Granting important runtime permissions to %s" % app_name)
             for permission in permissions:
                 try:
@@ -4466,3 +4467,21 @@ class ADBDevice(ADBCommand):
         output = self.command_output(cmd, timeout=timeout)
         self.reboot(timeout=timeout)
         return output
+
+    def enable_notifications(self, package_id):
+        """Using pm grant we enable notifications for an app
+
+        :param str package_id: The package_id for the app we are enabling notifications for
+        :raises: :exc:`ADBTimeoutError`
+                 :exc:`ADBError`
+        """
+        self.shell(f"pm grant {package_id} android.permission.POST_NOTIFICATIONS")
+
+    def disable_notifications(self, package_id):
+        """Using pm revoke we disable notifications for an app
+
+        :param str package_id: The package_id for the app we are disabling notifications for
+        :raises: :exc:`ADBTimeoutError`
+                 :exc:`ADBError`
+        """
+        self.shell(f"pm revoke {package_id} android.permission.POST_NOTIFICATIONS")

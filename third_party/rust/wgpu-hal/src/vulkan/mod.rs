@@ -24,24 +24,32 @@ Otherwise, we manage a pool of `VkFence` objects behind each `hal::Fence`.
 
 !*/
 
+#![allow(clippy::std_instead_of_alloc, clippy::std_instead_of_core)]
+
 mod adapter;
 mod command;
 mod conv;
 mod device;
 mod instance;
+mod sampler;
 
 use std::{
     borrow::Borrow,
-    collections::HashSet,
+    boxed::Box,
     ffi::{CStr, CString},
     fmt, mem,
     num::NonZeroU32,
+    ops::DerefMut,
     sync::Arc,
+    vec::Vec,
 };
 
 use arrayvec::ArrayVec;
 use ash::{ext, khr, vk};
+use hashbrown::HashSet;
 use parking_lot::{Mutex, RwLock};
+
+use naga::FastHashMap;
 use wgt::InternalCounter;
 
 const MILLIS_TO_NANOS: u64 = 1_000_000;
@@ -532,8 +540,7 @@ struct PrivateCapabilities {
     robust_image_access2: bool,
     zero_initialize_workgroup_memory: bool,
     image_format_list: bool,
-    #[cfg(windows)]
-    external_memory_win32: bool,
+    maximum_samplers: u32,
 }
 
 bitflags::bitflags!(
@@ -613,7 +620,7 @@ struct FramebufferAttachment {
     /// Can be NULL if the framebuffer is image-less
     raw: vk::ImageView,
     raw_image_flags: vk::ImageCreateFlags,
-    view_usage: crate::TextureUses,
+    view_usage: wgt::TextureUses,
     view_format: wgt::TextureFormat,
     raw_view_formats: Vec<vk::Format>,
 }
@@ -641,9 +648,24 @@ struct DeviceShared {
     private_caps: PrivateCapabilities,
     workarounds: Workarounds,
     features: wgt::Features,
-    render_passes: Mutex<rustc_hash::FxHashMap<RenderPassKey, vk::RenderPass>>,
-    framebuffers: Mutex<rustc_hash::FxHashMap<FramebufferKey, vk::Framebuffer>>,
+    render_passes: Mutex<FastHashMap<RenderPassKey, vk::RenderPass>>,
+    framebuffers: Mutex<FastHashMap<FramebufferKey, vk::Framebuffer>>,
+    sampler_cache: Mutex<sampler::SamplerCache>,
     memory_allocations_counter: InternalCounter,
+}
+
+impl Drop for DeviceShared {
+    fn drop(&mut self) {
+        for &raw in self.render_passes.lock().values() {
+            unsafe { self.raw.destroy_render_pass(raw, None) };
+        }
+        for &raw in self.framebuffers.lock().values() {
+            unsafe { self.raw.destroy_framebuffer(raw, None) };
+        }
+        if self.drop_guard.is_none() {
+            unsafe { self.raw.destroy_device(None) };
+        }
+    }
 }
 
 pub struct Device {
@@ -655,7 +677,14 @@ pub struct Device {
     naga_options: naga::back::spv::Options<'static>,
     #[cfg(feature = "renderdoc")]
     render_doc: crate::auxil::renderdoc::RenderDoc,
-    counters: wgt::HalCounters,
+    counters: Arc<wgt::HalCounters>,
+}
+
+impl Drop for Device {
+    fn drop(&mut self) {
+        unsafe { self.mem_allocator.lock().cleanup(&*self.shared) };
+        unsafe { self.desc_allocator.lock().cleanup(&*self.shared) };
+    }
 }
 
 /// Semaphores for forcing queue submissions to run in order.
@@ -739,6 +768,13 @@ pub struct Queue {
     device: Arc<DeviceShared>,
     family_index: u32,
     relay_semaphores: Mutex<RelaySemaphores>,
+    signal_semaphores: Mutex<(Vec<vk::Semaphore>, Vec<u64>)>,
+}
+
+impl Drop for Queue {
+    fn drop(&mut self) {
+        unsafe { self.relay_semaphores.lock().destroy(&self.device.raw) };
+    }
 }
 
 #[derive(Debug)]
@@ -754,6 +790,7 @@ pub struct AccelerationStructure {
     raw: vk::AccelerationStructureKHR,
     buffer: vk::Buffer,
     block: Mutex<gpu_alloc::MemoryBlock<vk::DeviceMemory>>,
+    compacted_size_query: Option<vk::QueryPool>,
 }
 
 impl crate::DynAccelerationStructure for AccelerationStructure {}
@@ -764,7 +801,7 @@ pub struct Texture {
     drop_guard: Option<crate::DropGuard>,
     external_memory: Option<vk::DeviceMemory>,
     block: Option<gpu_alloc::MemoryBlock<vk::DeviceMemory>>,
-    usage: crate::TextureUses,
+    usage: wgt::TextureUses,
     format: wgt::TextureFormat,
     raw_flags: vk::ImageCreateFlags,
     copy_size: crate::CopyExtent,
@@ -803,6 +840,7 @@ impl TextureView {
 #[derive(Debug)]
 pub struct Sampler {
     raw: vk::Sampler,
+    create_info: vk::SamplerCreateInfo<'static>,
 }
 
 impl crate::DynSampler for Sampler {}
@@ -891,6 +929,30 @@ pub struct CommandEncoder {
     /// If set, the end of the next render/compute pass will write a timestamp at
     /// the given pool & location.
     end_of_pass_timer_query: Option<(vk::QueryPool, u32)>,
+
+    counters: Arc<wgt::HalCounters>,
+}
+
+impl Drop for CommandEncoder {
+    fn drop(&mut self) {
+        // SAFETY:
+        //
+        // VUID-vkDestroyCommandPool-commandPool-00041: wgpu_hal requires that a
+        // `CommandBuffer` must live until its execution is complete, and that a
+        // `CommandBuffer` must not outlive the `CommandEncoder` that built it.
+        // Thus, we know that none of our `CommandBuffers` are in the "pending"
+        // state.
+        //
+        // The other VUIDs are pretty obvious.
+        unsafe {
+            // `vkDestroyCommandPool` also frees any command buffers allocated
+            // from that pool, so there's no need to explicitly call
+            // `vkFreeCommandBuffers` on `cmd_encoder`'s `free` and `discarded`
+            // fields.
+            self.device.raw.destroy_command_pool(self.raw, None);
+        }
+        self.counters.command_encoders.sub(1);
+    }
 }
 
 impl CommandEncoder {
@@ -923,7 +985,7 @@ pub enum ShaderModule {
     Raw(vk::ShaderModule),
     Intermediate {
         naga_shader: crate::NagaShader,
-        runtime_checks: bool,
+        runtime_checks: wgt::ShaderRuntimeChecks,
     },
 }
 
@@ -1159,6 +1221,15 @@ impl crate::Queue for Queue {
             signal_values.push(!0);
         }
 
+        let mut guards = self.signal_semaphores.lock();
+        let (ref mut pending_signal_semaphores, ref mut pending_signal_semaphore_values) =
+            guards.deref_mut();
+        assert!(pending_signal_semaphores.len() == pending_signal_semaphore_values.len());
+        if !pending_signal_semaphores.is_empty() {
+            signal_semaphores.append(pending_signal_semaphores);
+            signal_values.append(pending_signal_semaphore_values);
+        }
+
         // In order for submissions to be strictly ordered, we encode a dependency between each submission
         // using a pair of semaphores. This adds a wait if it is needed, and signals the next semaphore.
         let semaphore_state = self.relay_semaphores.lock().advance(&self.device)?;
@@ -1287,6 +1358,19 @@ impl crate::Queue for Queue {
     }
 }
 
+impl Queue {
+    pub fn raw_device(&self) -> &ash::Device {
+        &self.device.raw
+    }
+
+    pub fn add_signal_semaphore(&self, semaphore: vk::Semaphore, semaphore_value: Option<u64>) {
+        let mut guards = self.signal_semaphores.lock();
+        let (ref mut semaphores, ref mut semaphore_values) = guards.deref_mut();
+        semaphores.push(semaphore);
+        semaphore_values.push(semaphore_value.unwrap_or(!0));
+    }
+}
+
 /// Maps
 ///
 /// - VK_ERROR_OUT_OF_HOST_MEMORY
@@ -1395,4 +1479,13 @@ fn get_lost_err() -> crate::DeviceError {
 
     #[allow(unreachable_code)]
     crate::DeviceError::Lost
+}
+
+#[derive(Clone)]
+#[repr(C)]
+struct RawTlasInstance {
+    transform: [f32; 12],
+    custom_data_and_mask: u32,
+    shader_binding_table_record_offset_and_flags: u32,
+    acceleration_structure_reference: u64,
 }

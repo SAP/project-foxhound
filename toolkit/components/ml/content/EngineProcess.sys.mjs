@@ -2,15 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-const lazy = {};
-ChromeUtils.defineESModuleGetters(
-  lazy,
-  {
-    HiddenFrame: "resource://gre/modules/HiddenFrame.sys.mjs",
-  },
-  { global: "current" }
-);
-
 /**
  * @typedef {import("../actors/MLEngineParent.sys.mjs").MLEngineParent} MLEngineParent
  * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
@@ -30,28 +21,67 @@ export const DEFAULT_ENGINE_ID = "default-engine";
  * @description Supported tasks with their default model identifiers.
  */
 export const DEFAULT_MODELS = Object.freeze({
-  "test-echo": "test-echo",
-  "text-classification":
-    "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
-  "token-classification": "Xenova/bert-base-multilingual-cased-ner-hrl",
-  "question-answering": "Xenova/distilbert-base-cased-distilled-squad",
-  "fill-mask": "Xenova/bert-base-uncased",
-  summarization: "Xenova/distilbart-cnn-6-6",
-  translation: "Xenova/t5-small",
-  "text2text-generation": "Xenova/flan-t5-small",
-  "text-generation": "Xenova/gpt2",
-  "zero-shot-classification": "Xenova/distilbert-base-uncased-mnli",
-  "image-to-text": "Mozilla/distilvit",
-  "image-classification": "Xenova/vit-base-patch16-224",
-  "image-segmentation": "Xenova/detr-resnet-50-panoptic",
-  "zero-shot-image-classification": "Xenova/clip-vit-base-patch32",
-  "object-detection": "Xenova/detr-resnet-50",
-  "zero-shot-object-detection": "Xenova/owlvit-base-patch32",
-  "document-question-answering": "Xenova/donut-base-finetuned-docvqa",
-  "image-to-image": "Xenova/swin2SR-classical-sr-x2-64",
-  "depth-estimation": "Xenova/dpt-large",
-  "feature-extraction": "Xenova/all-MiniLM-L6-v2",
-  "image-feature-extraction": "Xenova/vit-base-patch16-224-in21k",
+  "test-echo": { modelId: "test-echo", dtype: "q8" },
+  "text-classification": {
+    modelId: "Xenova/distilbert-base-uncased-finetuned-sst-2-english",
+    dtype: "q8",
+  },
+  "token-classification": {
+    modelId: "Xenova/bert-base-multilingual-cased-ner-hrl",
+    dtype: "q8",
+  },
+  "question-answering": {
+    modelId: "Xenova/distilbert-base-cased-distilled-squad",
+    dtype: "q8",
+  },
+  "fill-mask": { modelId: "Xenova/bert-base-uncased", dtype: "q8" },
+  summarization: { modelId: "Xenova/distilbart-cnn-6-6", dtype: "q8" },
+  translation: { modelId: "Xenova/t5-small", dtype: "q8" },
+  "text2text-generation": { modelId: "Xenova/flan-t5-small", dtype: "q8" },
+  "text-generation": { modelId: "Xenova/gpt2", dtype: "q8" },
+  "zero-shot-classification": {
+    modelId: "Xenova/distilbert-base-uncased-mnli",
+    dtype: "q8",
+  },
+  "image-to-text": { modelId: "Mozilla/distilvit", dtype: "q8" },
+  "image-classification": {
+    modelId: "Xenova/vit-base-patch16-224",
+    dtype: "q8",
+  },
+  "image-segmentation": {
+    modelId: "Xenova/detr-resnet-50-panoptic",
+    dtype: "q8",
+  },
+  "zero-shot-image-classification": {
+    modelId: "Xenova/clip-vit-base-patch32",
+    dtype: "q8",
+  },
+  "object-detection": { modelId: "Xenova/detr-resnet-50", dtype: "q8" },
+  "zero-shot-object-detection": {
+    modelId: "Xenova/owlvit-base-patch32",
+    dtype: "q8",
+  },
+  "document-question-answering": {
+    modelId: "Xenova/donut-base-finetuned-docvqa",
+    dtype: "q8",
+  },
+  "image-to-image": {
+    modelId: "Xenova/swin2SR-classical-sr-x2-64",
+    dtype: "q8",
+  },
+  "depth-estimation": { modelId: "Xenova/dpt-large", dtype: "q8" },
+  "feature-extraction": {
+    modelId: "Xenova/all-MiniLM-L6-v2",
+    dtype: "q8",
+  },
+  "image-feature-extraction": {
+    modelId: "Xenova/vit-base-patch16-224-in21k",
+    dtype: "q8",
+  },
+  "text-to-speech": {
+    modelId: "Xenova/speecht5_tts",
+    dtype: "q8",
+  },
 });
 
 /**
@@ -62,6 +92,8 @@ const FEATURES = [
   "pdfjs-alt-text", // see toolkit/components/pdfjs/content/PdfjsParent.sys.mjs
   "suggest-intent-classification", // see browser/components/urlbar/private/MLSuggest.sys.mjs
   "suggest-NER", // see browser/components/urlbar/private/MLSuggest.sys.mjs
+  "smart-tab-embedding", // see browser/components/tabbrowser/SmartTabGrouping.sys.mjs,
+  "smart-tab-topic", // see browser/components/tabbrowser/SmartTabGrouping.sys.mjs
 ];
 
 /**
@@ -106,10 +138,12 @@ export const ModelHub = {
       case ModelHub.HUGGINGFACE:
         options.modelHubRootUrl = "https://huggingface.co/";
         options.modelHubUrlTemplate = "{model}/resolve/{revision}";
+        options.modelRevision = "main";
         break;
       case ModelHub.MOZILLA:
         options.modelHubRootUrl = "https://model-hub.mozilla.org/";
         options.modelHubUrlTemplate = "{model}/{revision}";
+        options.modelRevision = "main";
         break;
       default:
         throw new Error(`Unknown model hub: ${hub}`);
@@ -194,10 +228,16 @@ export const LogLevel = {
  * @typedef {import("../../translations/actors/TranslationsEngineParent.sys.mjs").TranslationsEngineParent} TranslationsEngineParent
  */
 
+const PIPELINE_TEST_NAMES = ["moz-echo", "test-echo"];
+
 /**
  * This class encapsulates the options for a pipeline process.
  */
 export class PipelineOptions {
+  /**
+   * External model data file list.
+   */
+  useExternalDataFormat = false;
   /**
    * The identifier for the engine to be used by the pipeline.
    *
@@ -347,6 +387,21 @@ export class PipelineOptions {
   }
 
   /**
+   * Determines if the pipeline is mocked.
+   *
+   * It is made static to enable easier global overriding during unit tests and to allow the
+   * check to be performed without requiring an instance of the class.
+   *
+   * @param {object} options - The options for the pipeline.
+   */
+  static isMocked(options) {
+    return (
+      PIPELINE_TEST_NAMES.includes(options.taskName) ||
+      PIPELINE_TEST_NAMES.includes(options.modelId)
+    );
+  }
+
+  /**
    * Private method to validate enum fields.
    *
    * @param {string} field - The field being validated (e.g., 'dtype', 'device', 'executionPriority').
@@ -490,6 +545,7 @@ export class PipelineOptions {
       "dtype",
       "numThreads",
       "executionPriority",
+      "useExternalDataFormat",
     ];
 
     if (options instanceof PipelineOptions) {
@@ -582,6 +638,7 @@ export class PipelineOptions {
       dtype: this.dtype,
       numThreads: this.numThreads,
       executionPriority: this.executionPriority,
+      useExternalDataFormat: this.useExternalDataFormat,
     };
   }
 
@@ -642,47 +699,31 @@ export class PipelineOptions {
  */
 export class EngineProcess {
   /**
-   * @type {Promise<{ hiddenFrame: HiddenFrame, actor: TranslationsEngineParent }> | null}
+   * Get a reference to all running "inference" processes.
+   *
+   * @returns {sequence<nsIDOMProcessParent>}
    */
-
-  /** @type {Promise<HiddenFrame> | null} */
-  static #hiddenFrame = null;
-  /** @type {Promise<TranslationsEngineParent> | null} */
-  static translationsEngineParent = null;
-  /** @type {Promise<MLEngineParent> | null} */
-  static mlEngineParent = null;
-
-  /** @type {((actor: TranslationsEngineParent) => void) | null} */
-  resolveTranslationsEngineParent = null;
-
-  /** @type {((actor: MLEngineParent) => void) | null} */
-  resolveMLEngineParent = null;
+  static #inferenceProcesses() {
+    return ChromeUtils.getAllDOMProcesses().filter(
+      p => p.remoteType == "inference"
+    );
+  }
 
   /**
-   * See if all engines are terminated. This is useful for testing.
+   * See if all engines are terminated and the "inference" process has been shut
+   * down. This is useful for testing.
    *
    * @returns {boolean}
    */
   static areAllEnginesTerminated() {
-    return (
-      !EngineProcess.#hiddenFrame &&
-      !EngineProcess.translationsEngineParent &&
-      !EngineProcess.mlEngineParent
-    );
+    return !EngineProcess.#inferenceProcesses().length;
   }
 
   /**
    * @returns {Promise<TranslationsEngineParent>}
    */
   static async getTranslationsEngineParent() {
-    if (!this.translationsEngineParent) {
-      this.translationsEngineParent = this.#attachBrowser({
-        id: "translations-engine-browser",
-        url: "chrome://global/content/translations/translations-engine.html",
-        resolverName: "resolveTranslationsEngineParent",
-      });
-    }
-    return this.translationsEngineParent;
+    return EngineProcess.#getEngineActor({ actorName: "TranslationsEngine" });
   }
 
   /**
@@ -694,177 +735,78 @@ export class EngineProcess {
       throw new Error("MLEngine is disabled. Check the browser.ml prefs.");
     }
 
-    if (!this.mlEngineParent) {
-      this.mlEngineParent = this.#attachBrowser({
-        id: "ml-engine-browser",
-        url: "chrome://global/content/ml/MLEngine.html",
-        resolverName: "resolveMLEngineParent",
-      });
-    }
-    return this.mlEngineParent;
+    return EngineProcess.#getEngineActor({ actorName: "MLEngine" });
   }
 
   /**
-   * @param {object} config
-   * @param {string} config.url
-   * @param {string} config.id
-   * @param {string} config.resolverName
-   * @returns {Promise<TranslationsEngineParent|MLEngineParent>}
+   * @returns {Promise<JSProcessActorParent>}
    */
-  static async #attachBrowser({ url, id, resolverName }) {
-    const hiddenFrame = await this.#getHiddenFrame();
-    const chromeWindow = await hiddenFrame.get();
-    const doc = chromeWindow.document;
-
-    if (doc.getElementById(id)) {
-      throw new Error(
-        "Attempting to append the translations-engine.html <browser> when one " +
-          "already exists."
-      );
-    }
-
-    const browser = doc.createXULElement("browser");
-    browser.setAttribute("id", id);
-    browser.setAttribute("remote", "true");
-    browser.setAttribute("remoteType", "inference");
-    browser.setAttribute("disableglobalhistory", "true");
-    browser.setAttribute("type", "content");
-    browser.setAttribute("src", url);
-
-    ChromeUtils.addProfilerMarker(
-      "EngineProcess",
-      {},
-      `Creating the "${id}" process`
+  static async #getEngineActor({ actorName }) {
+    let keepAlive = await ChromeUtils.ensureHeadlessContentProcess(
+      "inference",
+      { preferUsed: true }
     );
-    doc.documentElement.appendChild(browser);
-
-    const { promise, resolve } = Promise.withResolvers();
-
-    // The engine parents must resolve themselves when they are ready.
-    this[resolverName] = resolve;
-
-    return promise;
-  }
-
-  /**
-   * @returns {HiddenFrame}
-   */
-  static async #getHiddenFrame() {
-    if (!EngineProcess.#hiddenFrame) {
-      EngineProcess.#hiddenFrame = new lazy.HiddenFrame();
+    if (!keepAlive?.domProcess?.canSend) {
+      return null;
     }
-    return EngineProcess.#hiddenFrame;
-  }
 
-  /**
-   * Destroy the translations engine, and remove the hidden frame if no other
-   * engines exist.
-   */
-  static destroyTranslationsEngine() {
-    return this.#destroyEngine({
-      id: "translations-engine-browser",
-      keyName: "translationsEngineParent",
-    });
-  }
-
-  /**
-   * Destroy the ML engine, and remove the hidden frame if no other engines exist.
-   */
-  static destroyMLEngine() {
-    return this.#destroyEngine({
-      id: "ml-engine-browser",
-      keyName: "mlEngineParent",
-    });
-  }
-
-  /**
-   * Destroy the specified engine and maybe the entire hidden frame as well if no engines
-   * are remaining.
-   */
-  static async #destroyEngine({ id, keyName }) {
-    ChromeUtils.addProfilerMarker(
-      "EngineProcess",
-      {},
-      `Destroying the "${id}" engine`
-    );
-
-    let actorShutdown = this.forceActorShutdown(id, keyName);
-
-    this[keyName] = null;
-
-    const hiddenFrame = EngineProcess.#hiddenFrame;
-    if (hiddenFrame && !this.translationsEngineParent && !this.mlEngineParent) {
-      EngineProcess.#hiddenFrame = null;
-
-      // Both actors are destroyed, also destroy the hidden frame.
-      actorShutdown = actorShutdown.then(() => {
-        // Double check a race condition that no new actors have been created during
-        // shutdown.
-        if (this.translationsEngineParent && this.mlEngineParent) {
-          return;
-        }
-        if (!hiddenFrame) {
-          return;
-        }
-        hiddenFrame.destroy();
+    try {
+      const actor = keepAlive.domProcess.getActor(actorName);
+      if (actor && !actor.processKeepAlive) {
         ChromeUtils.addProfilerMarker(
           "EngineProcess",
           {},
-          `Removing the hidden frame`
+          `Setting ${actorName} "inference" process keep-alive`
         );
-      });
-    }
-
-    // Infallibly resolve this promise even if there are errors.
-    try {
-      await actorShutdown;
-    } catch (error) {
-      console.error(error);
+        actor.processKeepAlive = keepAlive;
+        keepAlive = null;
+      }
+      return actor;
+    } finally {
+      if (keepAlive) {
+        keepAlive.invalidateKeepAlive();
+      }
     }
   }
 
   /**
-   * Shut down an actor and remove its <browser> element.
-   *
-   * @param {string} id
-   * @param {string} keyName
+   * Send the `ForceShutdown` message to the TranslationsEngine, terminating
+   * running engines, and potentially leading to "inference" process shutdown.
    */
-  static async forceActorShutdown(id, keyName) {
-    const actorPromise = this[keyName];
-    if (!actorPromise) {
-      return;
-    }
+  static destroyTranslationsEngine() {
+    return EngineProcess.#forceShutdownEngine({
+      actorName: "TranslationsEngine",
+    });
+  }
 
-    let actor;
-    try {
-      actor = await actorPromise;
-    } catch {
-      // The actor failed to initialize, so it doesn't need to be shut down.
-      return;
-    }
+  /**
+   * Send the `ForceShutdown` message to the MLEngine, terminating running
+   * queries, and potentially leading to "inference" process shutdown.
+   */
+  static destroyMLEngine() {
+    return EngineProcess.#forceShutdownEngine({ actorName: "MLEngine" });
+  }
 
-    // Shut down the actor.
-    try {
-      await actor.forceShutdown();
-    } catch (error) {
-      console.error("Failed to shut down the actor " + id, error);
-      return;
-    }
+  static #forceShutdownEngine({ actorName }) {
+    return Promise.allSettled(
+      EngineProcess.#inferenceProcesses().map(async process => {
+        let actor = process.getExistingActor(actorName);
+        if (actor) {
+          await actor.forceShutdown();
 
-    if (!EngineProcess.#hiddenFrame) {
-      // The hidden frame was already removed.
-      return;
-    }
-
-    // Remove the <brower> element.
-    const chromeWindow = EngineProcess.#hiddenFrame.getWindow();
-    const doc = chromeWindow.document;
-    const element = doc.getElementById(id);
-    if (!element) {
-      console.error("Could not find the <browser> element for " + id);
-      return;
-    }
-    element.remove();
+          // The actor should have cleared its own KeepAlive.
+          if (actor.processKeepAlive) {
+            ChromeUtils.addProfilerMarker(
+              "EngineProcess",
+              {},
+              `Force-dropping ${actorName} "inference" process keep-alive`
+            );
+            actor.processKeepAlive.invalidateKeepAlive();
+            actor.processKeepAlive = null;
+          }
+        }
+      })
+    );
   }
 }
 

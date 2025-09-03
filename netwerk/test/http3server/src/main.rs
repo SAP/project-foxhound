@@ -16,8 +16,7 @@ use neqo_http3::{
 };
 use neqo_transport::server::ConnectionRef;
 use neqo_transport::{
-    ConnectionEvent, ConnectionParameters, Output, RandomConnectionIdGenerator, StreamId,
-    StreamType,
+    ConnectionEvent, ConnectionParameters, Output, RandomConnectionIdGenerator, StreamType,
 };
 use std::env;
 
@@ -50,7 +49,7 @@ use std::net::SocketAddr;
 
 const MAX_TABLE_SIZE: u64 = 65536;
 const MAX_BLOCKED_STREAMS: u16 = 10;
-const PROTOCOLS: &[&str] = &["h3-29", "h3"];
+const PROTOCOLS: &[&str] = &["h3"];
 const ECH_CONFIG_ID: u8 = 7;
 const ECH_PUBLIC_NAME: &str = "public.example";
 
@@ -67,7 +66,7 @@ struct Http3TestServer {
     responses: HashMap<Http3OrWebTransportStream, Vec<u8>>,
     current_connection_hash: u64,
     sessions_to_close: HashMap<Instant, Vec<WebTransportRequest>>,
-    sessions_to_create_stream: Vec<(WebTransportRequest, StreamType, bool)>,
+    sessions_to_create_stream: Vec<(WebTransportRequest, StreamType, Option<Vec<u8>>)>,
     webtransport_bidi_stream: HashSet<Http3OrWebTransportStream>,
     wt_unidi_conn_to_stream: HashMap<ConnectionRef, Http3OrWebTransportStream>,
     wt_unidi_echo_back: HashMap<Http3OrWebTransportStream, Http3OrWebTransportStream>,
@@ -154,9 +153,8 @@ impl Http3TestServer {
         let session = tuple.0;
         let wt_server_stream = session.create_stream(tuple.1).unwrap();
         if tuple.1 == StreamType::UniDi {
-            if tuple.2 {
-                wt_server_stream.send_data(b"qwerty").unwrap();
-                wt_server_stream.stream_close_send().unwrap();
+            if let Some(data) = tuple.2 {
+                self.new_response(wt_server_stream, data);
             } else {
                 // relaying Http3ServerEvent::Data to uni streams
                 // slows down netwerk/test/unit/test_webtransport_simple.js
@@ -165,12 +163,8 @@ impl Http3TestServer {
                     .insert(wt_server_stream.conn.clone(), wt_server_stream);
             }
         } else {
-            if tuple.2 {
-                wt_server_stream.send_data(b"asdfg").unwrap();
-                wt_server_stream.stream_close_send().unwrap();
-                wt_server_stream
-                    .stream_stop_sending(Error::HttpNoError.code())
-                    .unwrap();
+            if let Some(data) = tuple.2 {
+                self.new_response(wt_server_stream, data);
             } else {
                 self.webtransport_bidi_stream.insert(wt_server_stream);
             }
@@ -179,7 +173,7 @@ impl Http3TestServer {
 }
 
 impl HttpServer for Http3TestServer {
-    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram<&[u8]>>, now: Instant) -> Output {
         let output = self.server.process(dgram, now);
 
         let output = if self.sessions_to_close.is_empty() {
@@ -393,6 +387,29 @@ impl HttpServer for Http3TestServer {
                                         .unwrap();
                                     stream.stream_close_send().unwrap();
                                 }
+                            } else if path == "/alt_svc_header" {
+                                if let Some(alt_svc) =
+                                    headers.iter().find(|h| h.name() == "x-altsvc")
+                                {
+                                    stream
+                                        .send_headers(&[
+                                            Header::new(":status", "200"),
+                                            Header::new("cache-control", "no-cache"),
+                                            Header::new("content-type", "text/plain"),
+                                            Header::new("content-length", 100.to_string()),
+                                            Header::new("alt-svc", format!("h3={}", alt_svc.value())),
+                                        ])
+                                        .unwrap();
+                                    self.new_response(stream, vec![b'a'; 100]);
+                                } else {
+                                    stream
+                                        .send_headers(&[
+                                            Header::new(":status", "200"),
+                                            Header::new("cache-control", "no-cache"),
+                                        ])
+                                        .unwrap();
+                                    self.new_response(stream, vec![b'a'; 100]);
+                                }
                             } else {
                                 match path.trim_matches(|p| p == '/').parse::<usize>() {
                                     Ok(v) => {
@@ -535,7 +552,7 @@ impl HttpServer for Http3TestServer {
                                 self.sessions_to_create_stream.push((
                                     session,
                                     StreamType::UniDi,
-                                    false,
+                                    None,
                                 ));
                             } else if path == "/create_unidi_stream_and_hello" {
                                 session
@@ -544,7 +561,7 @@ impl HttpServer for Http3TestServer {
                                 self.sessions_to_create_stream.push((
                                     session,
                                     StreamType::UniDi,
-                                    true,
+                                    Some(Vec::from("qwerty")),
                                 ));
                             } else if path == "/create_bidi_stream" {
                                 session
@@ -553,7 +570,7 @@ impl HttpServer for Http3TestServer {
                                 self.sessions_to_create_stream.push((
                                     session,
                                     StreamType::BiDi,
-                                    false,
+                                    None,
                                 ));
                             } else if path == "/create_bidi_stream_and_hello" {
                                 self.webtransport_bidi_stream.clear();
@@ -563,7 +580,18 @@ impl HttpServer for Http3TestServer {
                                 self.sessions_to_create_stream.push((
                                     session,
                                     StreamType::BiDi,
-                                    true,
+                                    Some(Vec::from("asdfg")),
+                                ));
+                            } else if path == "/create_bidi_stream_and_large_data" {
+                                self.webtransport_bidi_stream.clear();
+                                let data: Vec<u8> = vec![1u8; 32 * 1024 * 1024];
+                                session
+                                    .response(&WebTransportSessionAcceptAction::Accept)
+                                    .unwrap();
+                                self.sessions_to_create_stream.push((
+                                    session,
+                                    StreamType::BiDi,
+                                    Some(data),
                                 ));
                             } else {
                                 session
@@ -637,7 +665,7 @@ impl ::std::fmt::Display for Server {
 }
 
 impl HttpServer for Server {
-    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram<&[u8]>>, now: Instant) -> Output {
         self.0.process(dgram, now)
     }
 
@@ -673,12 +701,9 @@ struct Http3ProxyServer {
     server: Http3Server,
     responses: HashMap<Http3OrWebTransportStream, Vec<u8>>,
     server_port: i32,
-    request_header: HashMap<StreamId, Vec<Header>>,
-    request_body: HashMap<StreamId, Vec<u8>>,
+    requests: HashMap<Http3OrWebTransportStream, (Vec<Header>, Vec<u8>)>,
     #[cfg(not(target_os = "android"))]
-    stream_map: HashMap<StreamId, Http3OrWebTransportStream>,
-    #[cfg(not(target_os = "android"))]
-    response_to_send: HashMap<StreamId, Receiver<(Vec<Header>, Vec<u8>)>>,
+    response_to_send: HashMap<Http3OrWebTransportStream, Receiver<(Vec<Header>, Vec<u8>)>>,
 }
 
 impl ::std::fmt::Display for Http3ProxyServer {
@@ -693,10 +718,7 @@ impl Http3ProxyServer {
             server,
             responses: HashMap::new(),
             server_port,
-            request_header: HashMap::new(),
-            request_body: HashMap::new(),
-            #[cfg(not(target_os = "android"))]
-            stream_map: HashMap::new(),
+            requests: HashMap::new(),
             #[cfg(not(target_os = "android"))]
             response_to_send: HashMap::new(),
         }
@@ -840,9 +862,7 @@ impl Http3ProxyServer {
                 }
             }
         });
-
-        self.response_to_send.insert(stream.stream_id(), receiver);
-        self.stream_map.insert(stream.stream_id(), stream);
+        self.response_to_send.insert(stream, receiver);
     }
 
     #[cfg(target_os = "android")]
@@ -861,15 +881,14 @@ impl Http3ProxyServer {
         self.response_to_send
             .retain(|id, receiver| match receiver.try_recv() {
                 Ok((headers, body)) => {
-                    data_to_send.insert(*id, (headers.clone(), body.clone()));
+                    data_to_send.insert(id.clone(), (headers.clone(), body.clone()));
                     false
                 }
                 Err(TryRecvError::Empty) => true,
                 Err(TryRecvError::Disconnected) => false,
             });
-        while let Some(id) = data_to_send.keys().next().cloned() {
-            let stream = self.stream_map.remove(&id).unwrap();
-            let (header, data) = data_to_send.remove(&id).unwrap();
+        while let Some(stream) = data_to_send.keys().next().cloned() {
+            let (header, data) = data_to_send.remove(&stream).unwrap();
             qtrace!("response headers: {:?}", header);
             match stream.send_headers(&header) {
                 Ok(()) => {
@@ -882,7 +901,7 @@ impl Http3ProxyServer {
 }
 
 impl HttpServer for Http3ProxyServer {
-    fn process(&mut self, dgram: Option<Datagram>, now: Instant) -> Output {
+    fn process(&mut self, dgram: Option<Datagram<&[u8]>>, now: Instant) -> Output {
         let output = self.server.process(dgram, now);
 
         #[cfg(not(target_os = "android"))]
@@ -925,10 +944,7 @@ impl HttpServer for Http3ProxyServer {
                                     if let Some(length_str) = content_length {
                                         if let Ok(len) = length_str.value().parse::<u32>() {
                                             if len > 0 {
-                                                self.request_header
-                                                    .insert(stream.stream_id(), headers);
-                                                self.request_body
-                                                    .insert(stream.stream_id(), Vec::new());
+                                                self.requests.insert(stream, (headers, Vec::new()));
                                             } else {
                                                 self.fetch(stream, &headers, b"".to_vec());
                                             }
@@ -973,13 +989,12 @@ impl HttpServer for Http3ProxyServer {
                     mut data,
                     fin,
                 } => {
-                    if let Some(d) = self.request_body.get_mut(&stream.stream_id()) {
-                        d.append(&mut data);
+                    if let Some((_, body)) = self.requests.get_mut(&stream) {
+                        body.append(&mut data);
                     }
                     if fin {
-                        if let Some(d) = self.request_body.remove(&stream.stream_id()) {
-                            let headers = self.request_header.remove(&stream.stream_id()).unwrap();
-                            self.fetch(stream, &headers, d);
+                        if let Some((headers, body)) = self.requests.remove(&stream) {
+                            self.fetch(stream, &headers, body);
                         }
                     }
                 }
@@ -1015,7 +1030,7 @@ impl ::std::fmt::Display for NonRespondingServer {
 }
 
 impl HttpServer for NonRespondingServer {
-    fn process(&mut self, _dgram: Option<Datagram>, _now: Instant) -> Output {
+    fn process(&mut self, _dgram: Option<Datagram<&[u8]>>, _now: Instant) -> Output {
         Output::None
     }
 
@@ -1038,7 +1053,11 @@ fn new_runner(
     port: u16,
 ) -> Result<(SocketAddr, Option<Vec<u8>>, ServerRunner), io::Error> {
     let mut ech_config = None;
-    let addr: SocketAddr = format!("127.0.0.1:{}", port).parse().unwrap();
+    let addr: SocketAddr = if cfg!(target_os = "windows") {
+        format!("127.0.0.1:{}", port).parse().unwrap()
+    } else {
+        format!("[::]:{}", port).parse().unwrap()
+    };
 
     let socket = match neqo_bin::udp::Socket::bind(&addr) {
         Err(err) => {
@@ -1230,4 +1249,6 @@ extern "C" fn __tsan_default_suppressions() -> *const std::os::raw::c_char {
 #[cfg_attr(target_os = "windows", link(name = "runtimeobject"))]
 extern "C" {}
 #[cfg_attr(target_os = "windows", link(name = "propsys"))]
+extern "C" {}
+#[cfg_attr(target_os = "windows", link(name = "iphlpapi"))]
 extern "C" {}

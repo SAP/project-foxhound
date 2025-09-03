@@ -28,7 +28,7 @@
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/AntitrackingMetrics.h"
 
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/NullPrincipal.h"
@@ -695,6 +695,16 @@ void nsDocShellLoadState::SetLoadType(uint32_t aLoadType) {
   mLoadType = aLoadType;
 }
 
+mozilla::dom::UserNavigationInvolvement
+nsDocShellLoadState::UserNavigationInvolvement() const {
+  return mUserNavigationInvolvement;
+}
+
+void nsDocShellLoadState::SetUserNavigationInvolvement(
+    mozilla::dom::UserNavigationInvolvement aUserNavigationInvolvement) {
+  mUserNavigationInvolvement = aUserNavigationInvolvement;
+}
+
 nsISHEntry* nsDocShellLoadState::SHEntry() const { return mSHEntry; }
 
 void nsDocShellLoadState::SetSHEntry(nsISHEntry* aSHEntry) {
@@ -780,8 +790,9 @@ void nsDocShellLoadState::MaybeStripTrackerQueryStrings(
     return;
   }
 
-  Telemetry::AccumulateCategorical(
-      Telemetry::LABELS_QUERY_STRIPPING_COUNT::Navigation);
+  glean::contentblocking::query_stripping_count
+      .EnumGet(glean::contentblocking::QueryStrippingCountLabel::eNavigation)
+      .Add();
 
   nsCOMPtr<nsIURI> strippedURI;
 
@@ -800,9 +811,12 @@ void nsDocShellLoadState::MaybeStripTrackerQueryStrings(
     }
     SetURI(strippedURI);
 
-    Telemetry::AccumulateCategorical(
-        Telemetry::LABELS_QUERY_STRIPPING_COUNT::StripForNavigation);
-    Telemetry::Accumulate(Telemetry::QUERY_STRIPPING_PARAM_COUNT, numStripped);
+    glean::contentblocking::query_stripping_count
+        .EnumGet(glean::contentblocking::QueryStrippingCountLabel::
+                     eStripfornavigation)
+        .Add();
+    glean::contentblocking::query_stripping_param_count.AccumulateSingleSample(
+        numStripped);
   }
 
 #ifdef DEBUG
@@ -1326,6 +1340,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.ShouldCheckForRecursion() = mShouldCheckForRecursion;
   loadState.IsFormSubmission() = mIsFormSubmission;
   loadState.LoadType() = mLoadType;
+  loadState.userNavigationInvolvement() = mUserNavigationInvolvement;
   loadState.Target() = mTarget;
   loadState.TargetBrowsingContext() = mTargetBrowsingContext;
   loadState.LoadFlags() = mLoadFlags;

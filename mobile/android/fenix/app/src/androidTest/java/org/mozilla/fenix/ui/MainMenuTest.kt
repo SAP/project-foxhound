@@ -21,6 +21,7 @@ import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestHelper.clickSnackbarButton
+import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.nimbus.FxNimbus
@@ -249,6 +250,20 @@ class MainMenuTest : TestSetup() {
 
             navigationToolbar {
             }.enterURLAndEnterToBrowser(defaultWebPage.url) {
+            }.openThreeDotMenu {
+            }.openReportSiteIssue {
+                verifyWebCompatReporterViewItems(websiteURL = defaultWebPage.url.toString())
+            }.closeWebCompatReporter {
+            }.openThreeDotMenu {
+            }.openSettings {
+            }.openSettingsSubMenuDataCollection {
+                clickUsageAndTechnicalDataToggle()
+                verifyUsageAndTechnicalDataToggle(enabled = false)
+            }
+
+            exitMenu()
+
+            browserScreen {
             }.openThreeDotMenu {
             }.openReportSiteIssue {
                 verifyUrl("webcompat.com/issues/new")

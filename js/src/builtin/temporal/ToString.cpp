@@ -11,22 +11,20 @@
 #include <cstdlib>
 #include <stddef.h>
 #include <stdint.h>
-#include <type_traits>
-#include <utility>
+#include <string_view>
 
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Crash.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
+#include "builtin/temporal/PlainDateTime.h"
 #include "builtin/temporal/PlainMonthDay.h"
 #include "builtin/temporal/PlainYearMonth.h"
 #include "builtin/temporal/Temporal.h"
-#include "builtin/temporal/TemporalRoundingMode.h"
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TemporalUnit.h"
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "gc/Policy.h"
 #include "js/RootingAPI.h"
 #include "util/StringBuilder.h"
 #include "vm/StringType.h"
@@ -211,8 +209,8 @@ static void FormatFractionalSeconds(TemporalStringBuilder& result,
 /**
  * FormatTimeString ( hour, minute, second, subSecondNanoseconds, precision )
  */
-static void FormatTimeString(TemporalStringBuilder& result,
-                             const PlainTime& time, Precision precision) {
+static void FormatTimeString(TemporalStringBuilder& result, const Time& time,
+                             Precision precision) {
   // Step 1.
   result.appendTwoDigit(time.hour);
 
@@ -232,7 +230,7 @@ static void FormatTimeString(TemporalStringBuilder& result,
 }
 
 static void FormatDateString(TemporalStringBuilder& result,
-                             const PlainDate& date) {
+                             const ISODate& date) {
   result.appendYear(date.year);
   result.append('-');
   result.appendTwoDigit(date.month);
@@ -241,7 +239,7 @@ static void FormatDateString(TemporalStringBuilder& result,
 }
 
 static void FormatDateTimeString(TemporalStringBuilder& result,
-                                 const PlainDateTime& dateTime,
+                                 const ISODateTime& dateTime,
                                  Precision precision) {
   FormatDateString(result, dateTime.date);
   result.append('T');
@@ -310,8 +308,6 @@ static void FormatDateTimeUTCOffsetRounded(TemporalStringBuilder& result,
 static bool FormatCalendarAnnotation(TemporalStringBuilder& result,
                                      const CalendarValue& calendar,
                                      ShowCalendar showCalendar) {
-  // FIXME: spec issue - MaybeFormatCalendarAnnotation no longer needed
-
   switch (showCalendar) {
     case ShowCalendar::Never:
       return true;
@@ -324,12 +320,12 @@ static bool FormatCalendarAnnotation(TemporalStringBuilder& result,
     }
 
     case ShowCalendar::Always: {
-      auto id = ToTemporalCalendarIdentifier(calendar);
+      auto id = CalendarIdentifier(calendar);
       return result.appendCalendarAnnnotation(id, Critical::No);
     }
 
     case ShowCalendar::Critical: {
-      auto id = ToTemporalCalendarIdentifier(calendar);
+      auto id = CalendarIdentifier(calendar);
       return result.appendCalendarAnnnotation(id, Critical::Yes);
     }
   }
@@ -358,7 +354,7 @@ static bool FormatTimeZoneAnnotation(TemporalStringBuilder& result,
  * TemporalInstantToString ( instant, timeZone, precision )
  */
 JSString* js::temporal::TemporalInstantToString(JSContext* cx,
-                                                const Instant& instant,
+                                                const EpochNanoseconds& epochNs,
                                                 Handle<TimeZoneValue> timeZone,
                                                 Precision precision) {
   TemporalStringBuilder result(cx, TemporalStringFormat::Instant);
@@ -366,19 +362,21 @@ JSString* js::temporal::TemporalInstantToString(JSContext* cx,
     return nullptr;
   }
 
-  // Steps 1-3.
+  // Steps 1-2.
   int64_t offsetNanoseconds = 0;
   if (timeZone) {
-    if (!GetOffsetNanosecondsFor(cx, timeZone, instant, &offsetNanoseconds)) {
+    if (!GetOffsetNanosecondsFor(cx, timeZone, epochNs, &offsetNanoseconds)) {
       return nullptr;
     }
     MOZ_ASSERT(std::abs(offsetNanoseconds) < ToNanoseconds(TemporalUnit::Day));
   }
 
-  // Step 4.
-  auto dateTime = GetPlainDateTimeFor(instant, offsetNanoseconds);
+  // Step 3. (Not applicable in our implementation.)
 
-  // Step 5. (Inlined TemporalDateTimeToString)
+  // Step 4.
+  auto dateTime = GetISODateTimeFor(epochNs, offsetNanoseconds);
+
+  // Step 5. (Inlined ISODateTimeToString)
   FormatDateTimeString(result, dateTime, precision);
 
   // Steps 6-7.
@@ -399,7 +397,7 @@ JSString* js::temporal::TemporalInstantToString(JSContext* cx,
 JSString* js::temporal::TemporalDateToString(
     JSContext* cx, Handle<PlainDateObject*> temporalDate,
     ShowCalendar showCalendar) {
-  auto date = ToPlainDate(temporalDate);
+  auto date = temporalDate->date();
 
   TemporalStringBuilder result(cx, TemporalStringFormat::Date);
   if (!result.reserve()) {
@@ -420,41 +418,37 @@ JSString* js::temporal::TemporalDateToString(
 }
 
 /**
- * TemporalDateTimeToString ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar, precision, showCalendar )
+ * ISODateTimeToString ( isoDateTime, calendar, precision, showCalendar )
  */
-JSString* js::temporal::TemporalDateTimeToString(JSContext* cx,
-                                                 const PlainDateTime& dateTime,
-                                                 Handle<CalendarValue> calendar,
-                                                 Precision precision,
-                                                 ShowCalendar showCalendar) {
-  // Step 1.
-  MOZ_ASSERT(IsValidISODateTime(dateTime));
+JSString* js::temporal::ISODateTimeToString(JSContext* cx,
+                                            const ISODateTime& isoDateTime,
+                                            Handle<CalendarValue> calendar,
+                                            Precision precision,
+                                            ShowCalendar showCalendar) {
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
   TemporalStringBuilder result(cx, TemporalStringFormat::DateTime);
   if (!result.reserve()) {
     return nullptr;
   }
 
-  // Steps 1-6.
-  FormatDateTimeString(result, dateTime, precision);
+  // Steps 1-5.
+  FormatDateTimeString(result, isoDateTime, precision);
 
-  // Step 7.
+  // Step 6.
   if (!FormatCalendarAnnotation(result, calendar, showCalendar)) {
     return nullptr;
   }
 
-  // Step 8.
+  // Step 7.
   return result.finishString();
 }
 
 /**
- * TemporalTimeToString ( hour, minute, second, millisecond, microsecond,
- * nanosecond, precision )
+ * TimeRecordToString ( time, precision )
  */
-JSString* js::temporal::TemporalTimeToString(JSContext* cx,
-                                             const PlainTime& time,
-                                             Precision precision) {
+JSString* js::temporal::TimeRecordToString(JSContext* cx, const Time& time,
+                                           Precision precision) {
   TemporalStringBuilder result(cx, TemporalStringFormat::Time);
   if (!result.reserve()) {
     return nullptr;
@@ -478,7 +472,7 @@ JSString* js::temporal::TemporalMonthDayToString(
   }
 
   // Steps 1-4.
-  auto date = ToPlainDate(monthDay);
+  auto date = monthDay->date();
   if (showCalendar == ShowCalendar::Always ||
       showCalendar == ShowCalendar::Critical ||
       monthDay->calendar().identifier() != CalendarId::ISO8601) {
@@ -510,7 +504,7 @@ JSString* js::temporal::TemporalYearMonthToString(
   }
 
   // Steps 1-4.
-  auto date = ToPlainDate(yearMonth);
+  auto date = yearMonth->date();
   if (showCalendar == ShowCalendar::Always ||
       showCalendar == ShowCalendar::Critical ||
       yearMonth->calendar().identifier() != CalendarId::ISO8601) {
@@ -546,25 +540,25 @@ JSString* js::temporal::TemporalZonedDateTimeToString(
 
   // Steps 1-3. (Not applicable in our implementation.)
 
-  // Step 4.
-  auto ns = RoundTemporalInstant(zonedDateTime.instant(), increment, unit,
-                                 roundingMode);
+  // Steps 4-5.
+  auto epochNs = RoundTemporalInstant(zonedDateTime.epochNanoseconds(),
+                                      increment, unit, roundingMode);
 
-  // Step 5.
+  // Step 6.
   auto timeZone = zonedDateTime.timeZone();
 
-  // Steps 6-8.
+  // Step 7.
   int64_t offsetNanoseconds;
-  if (!GetOffsetNanosecondsFor(cx, timeZone, ns, &offsetNanoseconds)) {
+  if (!GetOffsetNanosecondsFor(cx, timeZone, epochNs, &offsetNanoseconds)) {
     return nullptr;
   }
   MOZ_ASSERT(std::abs(offsetNanoseconds) < ToNanoseconds(TemporalUnit::Day));
 
   // Step 8.
-  auto temporalDateTime = GetPlainDateTimeFor(ns, offsetNanoseconds);
+  auto isoDateTime = GetISODateTimeFor(epochNs, offsetNanoseconds);
 
-  // Step 9. (Inlined TemporalDateTimeToString)
-  FormatDateTimeString(result, temporalDateTime, precision);
+  // Step 9. (Inlined ISODateTimeToString)
+  FormatDateTimeString(result, isoDateTime, precision);
 
   // Steps 10-11.
   if (showOffset != ShowOffset::Never) {

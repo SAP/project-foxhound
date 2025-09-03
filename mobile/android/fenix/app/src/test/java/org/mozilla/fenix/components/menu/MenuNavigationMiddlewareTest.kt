@@ -16,6 +16,7 @@ import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.CustomTabConfig
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ReaderState
+import mozilla.components.browser.state.state.createCustomTab
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.addons.Addon
@@ -45,6 +46,7 @@ import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.SupportUtils.AMO_HOMEPAGE_FOR_ANDROID
 import org.mozilla.fenix.settings.SupportUtils.SumoTopic
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.webcompat.WEB_COMPAT_REPORTER_URL
 
 class MenuNavigationMiddlewareTest {
 
@@ -584,6 +586,65 @@ class MenuNavigationMiddlewareTest {
             navController.nav(
                 R.id.menuDialogFragment,
                 MenuDialogFragmentDirections.actionMenuDialogFragmenToAddonDetailsFragment(addon = addon),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN the user is on a tab WHEN the user clicks on the web compat button THEN navigate to the web compat reporter feature`() = runTest {
+        every { settings.isTelemetryEnabled } returns true
+        val expectedTabUrl = "www.mozilla.org"
+        createStore(
+            menuState = MenuState(
+                browserMenuState = BrowserMenuState(
+                    selectedTab = createTab(
+                        url = expectedTabUrl,
+                    ),
+                ),
+            ),
+        ).dispatch(MenuAction.Navigate.WebCompatReporter)
+
+        verify {
+            navController.nav(
+                R.id.menuDialogFragment,
+                MenuDialogFragmentDirections.actionMenuDialogFragmentToWebCompatReporterFragment(tabUrl = expectedTabUrl),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN the user is on a tab WHEN the user clicks on the web compat button and telemetry is disabled THEN open browser`() = runTest {
+        every { settings.isTelemetryEnabled } returns false
+        var params: BrowserNavigationParams? = null
+        val expectedTabUrl = "www.mozilla.org"
+        val store = createStore(
+            customTab = createCustomTab(
+                url = expectedTabUrl,
+            ),
+            openToBrowser = {
+                params = it
+            },
+        )
+
+        store.dispatch(MenuAction.Navigate.WebCompatReporter).join()
+
+        assertEquals("$WEB_COMPAT_REPORTER_URL$expectedTabUrl", params?.url)
+    }
+
+    @Test
+    fun `GIVEN the user is on a custom tab WHEN the user clicks on the web compat button THEN navigate to the web compat reporter feature`() = runTest {
+        every { settings.isTelemetryEnabled } returns true
+        val expectedTabUrl = "www.mozilla.org"
+        createStore(
+            customTab = createCustomTab(
+                url = expectedTabUrl,
+            ),
+        ).dispatch(MenuAction.Navigate.WebCompatReporter)
+
+        verify {
+            navController.nav(
+                R.id.menuDialogFragment,
+                MenuDialogFragmentDirections.actionMenuDialogFragmentToWebCompatReporterFragment(tabUrl = expectedTabUrl),
             )
         }
     }

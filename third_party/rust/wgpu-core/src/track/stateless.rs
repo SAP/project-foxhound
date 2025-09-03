@@ -1,4 +1,5 @@
-use std::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
+use core::slice::Iter;
 
 /// A tracker that holds strong references to resources.
 ///
@@ -22,5 +23,14 @@ impl<T> StatelessTracker<T> {
     pub fn insert_single(&mut self, resource: Arc<T>) -> &Arc<T> {
         self.resources.push(resource);
         unsafe { self.resources.last().unwrap_unchecked() }
+    }
+}
+
+impl<'a, T> IntoIterator for &'a StatelessTracker<T> {
+    type Item = &'a Arc<T>;
+    type IntoIter = Iter<'a, Arc<T>>;
+
+    fn into_iter(self) -> Self::IntoIter {
+        self.resources.as_slice().iter()
     }
 }

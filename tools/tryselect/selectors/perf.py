@@ -96,7 +96,7 @@ class InvalidRegressionDetectorQuery(Exception):
 
 class PerfParser(CompareParser):
     name = "perf"
-    common_groups = ["push", "task"]
+    common_groups = ["push"]
     task_configs = [
         "artifact",
         "browsertime",
@@ -118,11 +118,11 @@ class PerfParser(CompareParser):
 
     arguments = [
         [
-            ["--show-all"],
+            ["--show-all", "--full", "--all-tasks"],
             {
                 "action": "store_true",
                 "default": False,
-                "help": "Show all available tasks.",
+                "help": "Show all available tasks. Alternatively, --full may be used.",
             },
         ],
         [
@@ -199,7 +199,7 @@ class PerfParser(CompareParser):
                 "type": str,
                 "default": None,
                 "help": "Query to run in either the perf-category selector, "
-                "or the fuzzy selector if --show-all is provided.",
+                "or the fuzzy selector if --show-all/--full is provided.",
             },
         ],
         [
@@ -228,7 +228,7 @@ class PerfParser(CompareParser):
                 "default": None,
                 "help": "See --browsertime-upload-apk. This option does the same "
                 "thing except it's for mozperftest tests such as the startup ones. "
-                "Note that those tests only exist through --show-all as they "
+                "Note that those tests only exist through --show-all/--full as they "
                 "aren't contained in any existing categories.",
             },
         ],
@@ -759,7 +759,14 @@ class PerfParser(CompareParser):
                 platform_queries = {
                     suite: (
                         category_info["query"][suite]
-                        + [PerfParser.platforms[platform.value]["query"]]
+                        + [
+                            PerfParser.platforms[platform.value]["query"].get(
+                                suite,
+                                PerfParser.platforms[platform.value]["query"][
+                                    "default"
+                                ],
+                            )
+                        ]
                     )
                     for suite in category_info["suites"]
                 }
@@ -1528,7 +1535,7 @@ class PerfParser(CompareParser):
             "\nAPK is setup for uploading. Please commit the changes, "
             "and re-run this command. \nEnsure you supply the --android, "
             "and select the correct tasks (fenix, geckoview) or use "
-            "--show-all for mozperftest task selection. \nFor Fenix, ensure "
+            "--show-all/--full for mozperftest task selection. \nFor Fenix, ensure "
             "you also provide the --fenix flag."
         )
 

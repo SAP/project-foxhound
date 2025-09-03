@@ -7,9 +7,9 @@
 #ifndef MOZILLA_GFX_RENDERCOMPOSITOR_H
 #define MOZILLA_GFX_RENDERCOMPOSITOR_H
 
-#include "mozilla/ipc/FileDescriptor.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/UniquePtr.h"
+#include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/webrender/WebRenderTypes.h"
 #include "Units.h"
 
@@ -130,6 +130,13 @@ class RenderCompositor {
   virtual void CreateSurface(wr::NativeSurfaceId aId,
                              wr::DeviceIntPoint aVirtualOffset,
                              wr::DeviceIntSize aTileSize, bool aIsOpaque) {}
+  virtual void CreateSwapChainSurface(wr::NativeSurfaceId aId,
+                                      wr::DeviceIntSize aSize, bool aIsOpaque) {
+  }
+  virtual void ResizeSwapChainSurface(wr::NativeSurfaceId aId,
+                                      wr::DeviceIntSize aSize) {}
+  virtual void BindSwapChain(wr::NativeSurfaceId aId) {}
+  virtual void PresentSwapChain(wr::NativeSurfaceId aId) {}
   virtual void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) {}
   virtual void CreateBackdropSurface(wr::NativeSurfaceId aId,
                                      wr::ColorF aColor) {}
@@ -156,6 +163,7 @@ class RenderCompositor {
   virtual void GetCompositorCapabilities(CompositorCapabilities* aCaps);
 
   virtual void GetWindowVisibility(WindowVisibility* aVisibility);
+  virtual void GetWindowProperties(WindowProperties* aProperties);
 
   // Interface for partial present
   virtual bool UsePartialPresent() { return false; }
@@ -198,8 +206,8 @@ class RenderCompositor {
   // Release fence is a fence that is used for waiting until usage/composite of
   // AHardwareBuffer is ended. The fence is delivered to client side via
   // ImageBridge. It is used only on android.
-  virtual ipc::FileDescriptor GetAndResetReleaseFence() {
-    return ipc::FileDescriptor();
+  virtual UniqueFileHandle GetAndResetReleaseFence() {
+    return UniqueFileHandle();
   }
 
   virtual bool IsPaused() { return false; }

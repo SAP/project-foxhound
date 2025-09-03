@@ -109,6 +109,7 @@ void SHEntrySharedParentState::CopyFrom(SHEntrySharedParentState* aEntry) {
   mDynamicallyCreated = aEntry->mDynamicallyCreated;
   mCacheKey = aEntry->mCacheKey;
   mLastTouched = aEntry->mLastTouched;
+  mNavigationState = aEntry->mNavigationState;
 }
 
 void dom::SHEntrySharedParentState::NotifyListenersDocumentViewerEvicted() {
@@ -357,8 +358,8 @@ void nsSHEntryShared::ContentInserted(nsIContent* aChild) {
   }
 }
 
-void nsSHEntryShared::ContentRemoved(nsIContent* aChild,
-                                     nsIContent* aPreviousSibling) {
+void nsSHEntryShared::ContentWillBeRemoved(nsIContent* aChild,
+                                           const BatchRemovalState*) {
   if (!IgnoreMutationForBfCache(*aChild)) {
     RemoveFromBFCacheAsync();
   }

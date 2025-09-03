@@ -118,3 +118,173 @@ browser.ui.interaction:
     telemetry_mirror: BROWSER_UI_INTERACTION_ALL_TABS_PANEL_ENTRYPOINT
     no_lint:
       - COMMON_PREFIX
+
+browser.ml.interaction:
+  smart_tab_topic:
+    type: event
+    description: >
+      Recorded when the user saves a tab group label with the ml topic
+      model
+    notification_emails:
+      - rrando@mozilla.com
+      - vbaungally@mozilla.com
+    bugs:
+      - https://bugzil.la/1949010
+    data_reviews:
+      - https://bugzil.la/1949010
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      action:
+        description: >
+          whether the user saved or canceled generating a label
+        type: string
+      num_tabs_in_group:
+        description: >
+          number of tabs in the group for which model is generating a
+          label
+        type: quantity
+      ml_label_length:
+        description: length of label suggested by model
+        type: quantity
+      user_label_length:
+        description: length of label saved by the user
+        type: quantity
+      levenshtein_distance:
+        description: >
+          Levenshtein distance between label suggested by model
+          and saved by user
+        type: quantity
+    expires: never
+    no_lint:
+      - COMMON_PREFIX
+
+  smart_tab_suggest:
+    type: event
+    description: >
+      Recorded when the user saves suggested tabs using the ml
+      embedding model
+    notification_emails:
+      - rrando@mozilla.com
+      - vbaungally@mozilla.com
+    bugs:
+      - https://bugzil.la/1949010
+    data_reviews:
+      - https://bugzil.la/1949010
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      action:
+        description: whether the user saved or canceled
+        type: string
+      num_tabs_in_window:
+        description: number of tabs in current window
+        type: quantity
+      num_tabs_in_group:
+        description: number of tabs in the current group
+        type: quantity
+      num_tabs_suggested:
+        description: number of tabs suggested by the ml model
+        type: quantity
+      num_tabs_approved:
+        description: number of tabs the user saved from the suggestions
+        type: quantity
+      num_tabs_removed:
+        description: >
+          number of tabs the user removed from the
+          suggestions
+        type: quantity
+    expires: never
+    no_lint:
+      - COMMON_PREFIX
+
+tabgroup:
+  create_group:
+    type: event
+    description: >
+      Recorded when the user creates a new tab group via
+      the tab context menu or through drag and drop.
+    notification_emails:
+      - dao@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/1938423
+      - https://bugzil.la/1954500
+    data_reviews:
+      - https://bugzil.la/1938423
+      - https://bugzil.la/1954500
+    data_sensitivity:
+      - interaction
+    extra_keys:
+      source:
+        description: The means by which the tab group was created
+        type: string
+      tabs:
+        description: The number of tabs in the group when it was created
+        type: quantity
+      layout:
+        description: The layout of the tab strip when the group was created (either "horizontal" or "vertical")
+        type: string
+      id:
+        description: The ID of the created tab group
+        type: string
+    expires: never
+
+  active_groups:
+    type: labeled_quantity
+    description: >
+      Records the number of groups present in the tab bar, split by expanded or collapsed.
+    notification_emails:
+      - dao@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    data_reviews:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    expires: never
+    unit: tab groups
+    labels:
+      - expanded
+      - collapsed
+
+  tabs_per_active_group:
+    type: labeled_quantity
+    description: >
+      Records statistics about the number of tabs per active group: max, median, average and min.
+    notification_emails:
+      - dao@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    data_reviews:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    expires: never
+    unit: tabs
+    labels:
+      - max
+      - median
+      - average
+      - min
+
+  tab_count_in_groups:
+    type: labeled_quantity
+    description: >
+      Records the latest number of tabs in the tab bar, split by being inside a group or outside.
+    notification_emails:
+      - dao@mozilla.com
+      - jswinarton@mozilla.com
+    bugs:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    data_reviews:
+      - https://bugzil.la/1938397
+      - https://bugzil.la/1954500
+    expires: never
+    unit: tabs
+    labels:
+      - inside
+      - outside

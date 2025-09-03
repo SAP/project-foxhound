@@ -3,12 +3,12 @@
 
 "use strict";
 
-const { ActionsProviderContextualSearch } = ChromeUtils.importESModule(
-  "resource:///modules/ActionsProviderContextualSearch.sys.mjs"
-);
-
 const { AddonTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/AddonTestUtils.sys.mjs"
+);
+
+const { ActionsProviderQuickActions } = ChromeUtils.importESModule(
+  "resource:///modules/ActionsProviderQuickActions.sys.mjs"
 );
 
 const CONFIG = [
@@ -80,6 +80,82 @@ add_task(async function test_no_engine() {
     UrlbarTestUtils.getResultCount(window) > 0,
     "At least one result is shown"
   );
+  await UrlbarTestUtils.promisePopupClose(window);
+});
+
+add_task(async function test_engine_match() {
+  let promiseClearHistory =
+    PlacesTestUtils.waitForNotification("history-cleared");
+  await PlacesUtils.history.clear();
+  await promiseClearHistory;
+  await updateConfig(CONFIG);
+  await loadUri("https://example.org/");
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "non",
+  });
+
+  Assert.ok(
+    !(await hasActions(1)),
+    "Contextual result does not match because site has not been visited"
+  );
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    gURLBar.blur();
+  });
+
+  let tab = await BrowserTestUtils.openNewForegroundTab(
+    gBrowser,
+    "https://example.net/"
+  );
+  BrowserTestUtils.removeTab(tab);
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "non",
+  });
+
+  Assert.ok(await hasActions(1), "Contextual search is matched after visit");
+
+  let onLoad = BrowserTestUtils.browserLoaded(
+    gBrowser.selectedBrowser,
+    false,
+    "https://example.net/?q=test"
+  );
+  let btn = window.document.querySelector(".urlbarView-action-btn");
+  EventUtils.synthesizeMouseAtCenter(btn, {}, window);
+  EventUtils.sendString("test");
+  EventUtils.synthesizeKey("KEY_Enter");
+
+  await onLoad;
+  await updateConfig(null);
+});
+
+add_task(async function test_actions() {
+  let testActionCalled = 0;
+  await updateConfig(CONFIG);
+  await loadUri("https://example.net/");
+
+  ActionsProviderQuickActions.addAction("testaction", {
+    commands: ["example"],
+    label: "quickactions-downloads2",
+    onPick: () => testActionCalled++,
+  });
+
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "example.net",
+  });
+
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Tab");
+  EventUtils.synthesizeKey("KEY_Enter");
+  await UrlbarTestUtils.promisePopupClose(window);
+
+  Assert.equal(testActionCalled, 1, "Test action was called");
+
+  await updateConfig(null);
+  ActionsProviderQuickActions.removeAction("testaction");
 });
 
 add_task(async function test_selectContextualSearchResult_already_installed() {
@@ -127,88 +203,11 @@ add_task(async function test_selectContextualSearchResult_already_installed() {
     false,
     expectedUrl
   );
-  EventUtils.sendString(query);
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onLoad;
-
-  Assert.equal(
-    gBrowser.selectedBrowser.currentURI.spec,
-    expectedUrl,
-    "Selecting the contextual search result opens the search URL"
-  );
-  window.document.querySelector("#searchmode-switcher-close").click();
-});
-
-add_task(async function test_selectContextualSearchResult_not_installed() {
-  const ENGINE_TEST_URL =
-    "http://mochi.test:8888/browser/browser/components/search/test/browser/opensearch.html";
-  const EXPECTED_URL =
-    "http://mochi.test:8888/browser/browser/components/search/test/browser/?search&test=search";
-
-  await loadUri(ENGINE_TEST_URL);
-  const query = "search";
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
     value: query,
   });
-
-  await UrlbarTestUtils.promiseSearchComplete(window);
-
-  Assert.ok(
-    !Services.search.getEngineByName("Foo"),
-    "Engine is not currently installed."
-  );
-
-  info("Focus and select the contextual search result");
-  let onLoad = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    EXPECTED_URL
-  );
-  EventUtils.synthesizeKey("KEY_Tab");
-  EventUtils.synthesizeKey("KEY_Enter");
-  await onLoad;
-
-  await UrlbarTestUtils.assertSearchMode(window, null);
-
-  Assert.equal(
-    gBrowser.selectedBrowser.currentURI.spec,
-    EXPECTED_URL,
-    "Selecting the contextual search result opens the search URL"
-  );
-
-  let engine = Services.search.getEngineByName("Foo");
-  Assert.ok(engine != null, "Engine was installed.");
-  Assert.equal(
-    engine.wrappedJSObject.getAttr("auto-installed"),
-    true,
-    "Engine was marks as auto installed."
-  );
-
-  window.document.querySelector("#searchmode-switcher-close").click();
-  await UrlbarTestUtils.promisePopupClose(window);
-  await Services.search.removeEngine(engine);
-});
-
-add_task(async function test_contextual_search_engine() {
-  await updateConfig(CONFIG);
-  await loadUri("https://example.org/");
-
-  await UrlbarTestUtils.promiseAutocompleteResultPopup({
-    window,
-    value: "test",
-  });
-
-  let expectedUrl = "https://example.org/?q=test";
-  info("Focus and select the contextual search result");
-  let onLoad = BrowserTestUtils.browserLoaded(
-    gBrowser.selectedBrowser,
-    false,
-    expectedUrl
-  );
-
-  EventUtils.synthesizeKey("KEY_Tab");
   EventUtils.synthesizeKey("KEY_Enter");
   await onLoad;
 
@@ -217,55 +216,61 @@ add_task(async function test_contextual_search_engine() {
     expectedUrl,
     "Selecting the contextual search result opens the search URL"
   );
-
-  let engine = Services.search.getEngineByName("config-engine");
-  Assert.ok(engine != null, "Engine was installed.");
-  Assert.equal(engine.name, "config-engine", "Correct engine was installed.");
-
-  window.document.querySelector("#searchmode-switcher-close").click();
-  await UrlbarTestUtils.promisePopupClose(window);
-  await updateConfig(null);
+  await UrlbarTestUtils.exitSearchMode(window, {
+    clickClose: true,
+    waitForSearch: false,
+  });
 });
 
 add_task(async function test_tab_to_search_engine() {
-  await updateConfig(CONFIG);
-  await loadUri("https://example.org/");
+  let newConfig = [CONFIG[0]].concat([
+    {
+      identifier: "namematch-engine",
+      base: {
+        urls: {
+          search: { base: "https://example.net", searchTermParamName: "q" },
+        },
+      },
+    },
+  ]);
+  await updateConfig(newConfig);
 
   await UrlbarTestUtils.promiseAutocompleteResultPopup({
     window,
-    value: "example.ne",
+    value: "namematch",
   });
 
-  let expectedUrl = "https://example.net/?q=test";
-  info("Focus and select the contextual search result");
   let onLoad = BrowserTestUtils.browserLoaded(
     gBrowser.selectedBrowser,
     false,
-    expectedUrl
+    "https://example.net/?q=test"
   );
 
   EventUtils.synthesizeKey("KEY_Tab");
-
   await UrlbarTestUtils.assertSearchMode(window, {
-    engineName: "non-default-engine",
+    engineName: "namematch-engine",
     entry: "keywordoffer",
     isPreview: true,
     source: 3,
   });
 
-  EventUtils.sendString("test");
-  EventUtils.synthesizeKey("KEY_Enter");
+  await UrlbarTestUtils.promisePopupClose(window, () => {
+    EventUtils.sendString("test");
+    EventUtils.synthesizeKey("KEY_Enter");
+  });
+
   await onLoad;
-
-  Assert.equal(
-    gBrowser.selectedBrowser.currentURI.spec,
-    expectedUrl,
-    "Selecting the contextual search result opens the search URL"
-  );
-
-  window.document.querySelector("#searchmode-switcher-close").click();
   await updateConfig(null);
 });
+
+async function hasActions(index) {
+  if (UrlbarTestUtils.getResultCount(window) <= index) {
+    return false;
+  }
+  let result = (await UrlbarTestUtils.waitForAutocompleteResultAt(window, 1))
+    .result;
+  return result.providerName == "UrlbarProviderGlobalActions";
+}
 
 async function waitForIdle() {
   for (let i = 0; i < 10; i++) {

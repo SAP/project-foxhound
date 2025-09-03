@@ -7,6 +7,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUsageTelemetry: "resource:///modules/BrowserUsageTelemetry.sys.mjs",
+  GroupsPanel: "resource:///modules/GroupsList.sys.mjs",
+  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   TabsPanel: "resource:///modules/TabsList.sys.mjs",
 });
 
@@ -19,6 +21,8 @@ var gTabsPanel = {
     containerTabsView: "allTabsMenu-containerTabsView",
     hiddenTabsButton: "allTabsMenu-hiddenTabsButton",
     hiddenTabsView: "allTabsMenu-hiddenTabsView",
+    groupsView: "allTabsMenu-groupsView",
+    groupsSubView: "allTabsMenu-groupsSubView",
   },
   _initialized: false,
   _initializedElements: false,
@@ -52,7 +56,7 @@ var gTabsPanel = {
 
     this.hiddenAudioTabsPopup = new TabsPanel({
       view: this.allTabsView,
-      insertBefore: document.getElementById("allTabsMenu-tabsSeparator"),
+      insertBefore: document.getElementById("allTabsMenu-hiddenTabsSeparator"),
       filterFn: tab => tab.hidden && tab.soundPlaying,
     });
     this.allTabsPanel = new TabsPanel({
@@ -60,6 +64,16 @@ var gTabsPanel = {
       containerNode: this.allTabsViewTabs,
       filterFn: tab => !tab.hidden,
       dropIndicator: this.dropIndicator,
+      showGroups: true,
+    });
+    this.groupsPanel = new GroupsPanel({
+      view: this.allTabsView,
+      containerNode: this.groupsView,
+    });
+    this.showAllGroupsPanel = new GroupsPanel({
+      view: this.groupsSubView,
+      containerNode: document.getElementById("allTabsMenu-groupsSubView-body"),
+      showAll: true,
     });
 
     this.allTabsView.addEventListener("ViewShowing", () => {
@@ -116,6 +130,9 @@ var gTabsPanel = {
           break;
         case "allTabsMenu-syncedTabs":
           SidebarController.show("viewTabsSidebar");
+          break;
+        case "allTabsMenu-groupsViewShowMore":
+          PanelUI.showSubView(this.kElements.groupsSubView, target);
           break;
       }
     });
@@ -198,8 +215,9 @@ var gTabsPanel = {
   },
 
   hideAllTabsPanel() {
-    if (this.allTabsView) {
-      PanelMultiView.hidePopup(this.allTabsView.closest("panel"));
+    let panel = this.allTabsView?.closest("panel");
+    if (panel) {
+      PanelMultiView.hidePopup(panel);
     }
   },
 

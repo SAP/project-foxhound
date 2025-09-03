@@ -13,9 +13,9 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   DownloadUtils: "resource://gre/modules/DownloadUtils.sys.mjs",
   HttpInference: "chrome://global/content/ml/HttpInference.sys.mjs",
-  IndexedDBCache: "chrome://global/content/ml/ModelHub.sys.mjs",
   ModelHub: "chrome://global/content/ml/ModelHub.sys.mjs",
   getInferenceProcessInfo: "chrome://global/content/ml/Utils.sys.mjs",
+  getOptimalCPUConcurrency: "chrome://global/content/ml/Utils.sys.mjs",
 });
 
 const { ExecutionPriority, EngineProcess, PipelineOptions } =
@@ -65,10 +65,14 @@ const TASKS = [
 ];
 
 const DTYPE = ["fp32", "fp16", "q8", "int8", "uint8", "q4", "bnb4", "q4f16"];
-const NUM_THREADS = Array.from(
-  { length: navigator.hardwareConcurrency || 4 },
-  (_, i) => i + 1
-);
+
+function getNumThreadsArray() {
+  return Array.from(
+    { length: lazy.getOptimalCPUConcurrency() },
+    (_, i) => i + 1
+  );
+}
+
 let engineParent = null;
 
 /**
@@ -165,6 +169,20 @@ function formatBytes(bytes) {
 }
 
 let updateStatusInterval = null;
+
+function ts2str(ts) {
+  try {
+    return new Date(ts).toLocaleString("en-US", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+  } catch (e) {
+    return "?";
+  }
+}
 
 /**
  * Displays engines info in a table.
@@ -347,15 +365,15 @@ async function updateProcInfo() {
 }
 
 async function updateModels() {
-  let cache = await lazy.IndexedDBCache.init();
-  let models = await cache.listModels();
+  const hub = getModelHub();
+  const models = await hub.listModels();
   let modelFilesDiv = document.getElementById("modelFiles");
 
   // Use DocumentFragment to avoid reflows
   let fragment = document.createDocumentFragment();
 
   for (const { name: model, revision } of models) {
-    let files = await cache.listFiles({ model, revision });
+    let files = await hub.listFiles({ model, revision });
 
     // Create a new table for the current model
     let table = document.createElement("table");
@@ -367,7 +385,7 @@ async function updateModels() {
     let deleteButton = document.createElement("button");
     document.l10n.setAttributes(deleteButton, "about-inference-delete-button");
     deleteButton.onclick = async () => {
-      await cache.deleteModels({ model, revision });
+      await hub.deleteModels({ model, revision });
       modelFilesDiv.removeChild(table); // Remove the table from the DOM
     };
 
@@ -381,11 +399,22 @@ async function updateModels() {
     let thFile = document.createElement("th");
     document.l10n.setAttributes(thFile, "about-inference-file");
     headerRow.appendChild(thFile);
+
     thFile = document.createElement("th");
     document.l10n.setAttributes(thFile, "about-inference-size");
     headerRow.appendChild(thFile);
+    thFile = document.createElement("th");
+    document.l10n.setAttributes(thFile, "about-inference-last-used");
+    headerRow.appendChild(thFile);
+    thFile = document.createElement("th");
+    document.l10n.setAttributes(thFile, "about-inference-last-updated");
+    headerRow.appendChild(thFile);
+
     thead.appendChild(headerRow);
     table.appendChild(thead);
+
+    var lastUsed = 0;
+    var lastUpdated = 0;
 
     // Create table body
     let tbody = document.createElement("tbody");
@@ -400,9 +429,29 @@ async function updateModels() {
         file.headers.fileSize || file.headers["Content-Length"] || 0
       );
 
+      if ("lastUsed" in file.headers && file.headers.lastUsed > lastUsed) {
+        lastUsed = file.headers.lastUsed;
+      }
+      if (
+        "lastUpdated" in file.headers &&
+        file.headers.lastUpdated > lastUpdated
+      ) {
+        lastUpdated = file.headers.lastUpdated;
+      }
+
       tdFile = document.createElement("td");
       tdFile.textContent = formatBytes(fileSize);
       row.appendChild(tdFile);
+
+      tdFile = document.createElement("td");
+      tdFile.textContent = ts2str(file.headers.lastUsed);
+      row.appendChild(tdFile);
+
+      tdFile = document.createElement("td");
+      tdFile.textContent = ts2str(file.headers.lastUpdated);
+
+      row.appendChild(tdFile);
+
       tbody.appendChild(row);
       totalSize += fileSize;
     }
@@ -416,8 +465,16 @@ async function updateModels() {
     let tdTotalValue = document.createElement("td");
     tdTotalValue.textContent = formatBytes(totalSize);
     totalRow.appendChild(tdTotalValue);
-    tbody.appendChild(totalRow);
 
+    let tdTotalLastUsed = document.createElement("td");
+    tdTotalLastUsed.textContent = ts2str(lastUsed);
+    totalRow.appendChild(tdTotalLastUsed);
+
+    let tdTotalLastUpdated = document.createElement("td");
+    tdTotalLastUpdated.textContent = ts2str(lastUpdated);
+    totalRow.appendChild(tdTotalLastUpdated);
+
+    tbody.appendChild(totalRow);
     table.appendChild(tbody);
     fragment.appendChild(table);
   }
@@ -430,8 +487,7 @@ async function refreshPage() {
   const ml_enable = Services.prefs.getBoolPref("browser.ml.enable");
   const gpu_enabled =
     Services.prefs.getBoolPref("dom.webgpu.enabled") &&
-    Services.prefs.getBoolPref("dom.webgpu.workers.enabled") &&
-    Services.prefs.getBoolPref("gfx.webgpu.force-enabled");
+    Services.prefs.getBoolPref("dom.webgpu.workers.enabled");
 
   const content = document.getElementById("content");
   const warning = document.getElementById("warning");
@@ -449,7 +505,7 @@ async function refreshPage() {
         "browser.ml.enable is set to False ! Toggle it to activate local inference.";
     } else if (!gpu_enabled) {
       text =
-        "WebGPU is not enabled, set dom.webgpu.enabled, dom.webgpu.workers.enabled and gfx.webgpu.force-enabled to true.";
+        "WebGPU is not enabled, set dom.webgpu.enabled and dom.webgpu.workers.enabled to true.";
     }
 
     warning.setAttribute("message", text);
@@ -816,7 +872,7 @@ window.onload = async function () {
 
   fillSelect("dtype", DTYPE);
   fillSelect("taskName", TASKS);
-  fillSelect("numThreads", NUM_THREADS);
+  fillSelect("numThreads", getNumThreadsArray());
   fillSelect("predefined", PREDEFINED);
 
   document.getElementById("predefined").value = "summary";

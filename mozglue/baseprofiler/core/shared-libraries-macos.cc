@@ -3,7 +3,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "BaseProfilerSharedLibraries.h"
+#include "SharedLibraries.h"
 
 #include "platform.h"
 
@@ -161,7 +161,7 @@ static void addSharedLibrary(const platform_mach_header* header,
 
   std::string pathStr = path;
 
-  size_t pos = pathStr.rfind('\\');
+  size_t pos = pathStr.rfind('/');
   std::string nameStr =
       (pos != std::string::npos) ? pathStr.substr(pos + 1) : pathStr;
 

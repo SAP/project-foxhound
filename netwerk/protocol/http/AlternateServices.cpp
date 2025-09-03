@@ -64,6 +64,7 @@ void AltSvcMapping::ProcessHeader(
     bool privateBrowsing, nsIInterfaceRequestor* callbacks,
     nsProxyInfo* proxyInfo, uint32_t caps,
     const OriginAttributes& originAttributes,
+    nsHttpConnectionInfo* aTransConnInfo,
     bool aDontValidate /* = false */) {  // aDontValidate is only used for
                                          // testing
   MOZ_ASSERT(NS_IsMainThread());
@@ -188,6 +189,21 @@ void AltSvcMapping::ProcessHeader(
   }
 
   auto doUpdateAltSvcMapping = [&](AltSvcMapping* aMapping) {
+    if (aTransConnInfo) {
+      if (!aTransConnInfo->GetEchConfig().IsEmpty()) {
+        LOG(("Server has ECH, use HTTPS RR to connect instead"));
+        return;
+      }
+      if (StaticPrefs::network_http_skip_alt_svc_validation_on_https_rr()) {
+        RefPtr<nsHttpConnectionInfo> ci;
+        aMapping->GetConnectionInfo(getter_AddRefs(ci), proxyInfo,
+                                    originAttributes);
+        if (ci->HashKey().Equals(aTransConnInfo->HashKey())) {
+          LOG(("The transaction's conninfo is the same, no need to validate"));
+          aDontValidate = true;
+        }
+      }
+    }
     if (!aDontValidate) {
       gHttpHandler->UpdateAltServiceMapping(aMapping, proxyInfo, callbacks,
                                             caps, originAttributes);
@@ -212,8 +228,8 @@ void AltSvcMapping::ProcessHeader(
                 doUpdateAltSvcMapping);
 
   if (numEntriesInHeader) {  // Ignore headers that were just "alt-svc: clear"
-    Telemetry::Accumulate(Telemetry::HTTP_ALTSVC_ENTRIES_PER_HEADER,
-                          numEntriesInHeader);
+    glean::http::altsvc_entries_per_header.AccumulateSingleSample(
+        numEntriesInHeader);
   }
 }
 
@@ -997,7 +1013,9 @@ already_AddRefed<AltSvcMapping> AltSvcCache::LookupMapping(
   return mapping.forget();
 }
 
-// This is only used for testing!
+// For cases where the connection's hash key matches the hash key generated
+// from the alt-svc header, validation is skipped since an equivalent connection
+// already exists.
 void AltSvcCache::UpdateAltServiceMappingWithoutValidation(
     AltSvcMapping* map, nsProxyInfo* pi, nsIInterfaceRequestor* aCallbacks,
     uint32_t caps, const OriginAttributes& originAttributes) {
@@ -1057,8 +1075,9 @@ void AltSvcCache::UpdateAltServiceMapping(
                this, map, existing.get()));
         }
       }
-      Telemetry::Accumulate(Telemetry::HTTP_ALTSVC_MAPPING_CHANGED_TARGET,
-                            false);
+      glean::http::altsvc_mapping_changed_target
+          .EnumGet(glean::http::AltsvcMappingChangedTargetLabel::eFalse)
+          .Add();
       return;
     }
 
@@ -1073,7 +1092,9 @@ void AltSvcCache::UpdateAltServiceMapping(
     // new alternate. start new validation
     LOG(("AltSvcCache::UpdateAltServiceMapping %p map %p may overwrite %p\n",
          this, map, existing.get()));
-    Telemetry::Accumulate(Telemetry::HTTP_ALTSVC_MAPPING_CHANGED_TARGET, true);
+    glean::http::altsvc_mapping_changed_target
+        .EnumGet(glean::http::AltsvcMappingChangedTargetLabel::eTrue)
+        .Add();
   }
 
   if (existing && !existing->Validated()) {

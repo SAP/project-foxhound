@@ -3,8 +3,9 @@ tags = "search-telemetry"
 support-files = ["head.js", "head-spa.js"]
 prefs = ["browser.search.log=true"]
 
-["browser_search_glean_serp_event_telemetry_categorization_enabled_by_nimbus_variable.js"]
+["browser_search_glean_serp_event_telemetry_categorization_enabled_by_pref.js"]
 support-files = ["searchTelemetryDomainCategorizationReporting.html"]
+skip-if = ["os == 'mac'"] # Bug 1943499 - Frequent intermittent failure on Mac.
 
 ["browser_search_telemetry_abandonment.js"]
 support-files = [
@@ -236,6 +237,20 @@ support-files = ["searchTelemetrySinglePageApp.html"]
 
 ["browser_search_telemetry_spa_single_tab.js"]
 support-files = ["searchTelemetrySinglePageApp.html"]
+
+["browser_search_telemetry_subframe.js"]
+support-files = [
+  "searchTelemetryAd_with_sponsored_subframe_hidden.html",
+  "searchTelemetryAd_with_sponsored_subframe_visible.html",
+  "searchTelemetrySubframe.html",
+]
+
+["browser_search_telemetry_subframe_click.js"]
+support-files = [
+  "searchTelemetryAd_with_sponsored_subframe_hidden.html",
+  "searchTelemetryAd_with_sponsored_subframe_visible.html",
+  "searchTelemetrySubframe.html",
+]
 
 ["browser_search_telemetry_visibility_helper_horizontal.js"]
 

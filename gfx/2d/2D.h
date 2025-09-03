@@ -702,6 +702,9 @@ class SourceSurface : public SupportsThreadSafeWeakPtr<SourceSurface> {
     return surface.forget();
   }
 
+  /** Utility function to quickly determine the underlying surface type. */
+  virtual SurfaceType GetUnderlyingType() const { return GetType(); }
+
   /** Tries to get this SourceSurface's native surface.  This will fail if aType
    * is not the type of this SourceSurface's native surface.
    */
@@ -718,6 +721,11 @@ class SourceSurface : public SupportsThreadSafeWeakPtr<SourceSurface> {
    */
   virtual already_AddRefed<SourceSurface> ExtractSubrect(const IntRect& aRect) {
     return nullptr;
+  }
+
+  /** Tries to generate a SurfaceDescriptor for the surface, if possible. */
+  virtual bool GetSurfaceDescriptor(layers::SurfaceDescriptor& aDesc) const {
+    return false;
   }
 
  protected:
@@ -2356,19 +2364,20 @@ class GFX2D_API Factory {
 
   static already_AddRefed<DataSourceSurface>
   CreateBGRA8DataSourceSurfaceForD3D11Texture(ID3D11Texture2D* aSrcTexture,
-                                              uint32_t aArrayIndex = 0);
+                                              uint32_t aArrayIndex,
+                                              gfx::ColorSpace2 aColorSpace,
+                                              gfx::ColorRange aColorRange);
 
   static nsresult CreateSdbForD3D11Texture(
       ID3D11Texture2D* aSrcTexture, const IntSize& aSrcSize,
       layers::SurfaceDescriptorBuffer& aSdBuffer,
       const std::function<layers::MemoryOrShmem(uint32_t)>& aAllocate);
 
-  static bool ReadbackTexture(layers::TextureData* aDestCpuTexture,
-                              ID3D11Texture2D* aSrcTexture);
-
   static bool ReadbackTexture(DataSourceSurface* aDestCpuTexture,
                               ID3D11Texture2D* aSrcTexture,
-                              uint32_t aArrayIndex = 0);
+                              uint32_t aArrayIndex,
+                              gfx::ColorSpace2 aColorSpace,
+                              gfx::ColorRange aColorRange);
 
  private:
   static StaticRefPtr<ID2D1Device> mD2D1Device;
@@ -2383,10 +2392,11 @@ class GFX2D_API Factory {
                               ID3D11Texture2D* aSrcTexture);
 
   // DestTextureT can be TextureData or DataSourceSurface.
-  template <typename DestTextureT>
-  static bool ConvertSourceAndRetryReadback(DestTextureT* aDestCpuTexture,
+  static bool ConvertSourceAndRetryReadback(DataSourceSurface* aDestCpuTexture,
                                             ID3D11Texture2D* aSrcTexture,
-                                            uint32_t aArrayIndex = 0);
+                                            uint32_t aArrayIndex,
+                                            gfx::ColorSpace2 aColorSpace,
+                                            gfx::ColorRange aColorRange);
 
  protected:
   // This guards access to the singleton devices above, as well as the

@@ -34,6 +34,10 @@ cert-error-trust-symantec = Certificates issued by GeoTrust, RapidSSL, Symantec,
 #   $hostname (string) - Hostname of the website with cert error.
 cert-error-trust-certificate-transparency = { -brand-short-name } doesn’t trust { $hostname } because it couldn’t prove it meets public certificate transparency requirements.
 
+# Variables:
+#   $hostname (string) - Hostname of the website with cert error.
+cert-error-revoked = Websites prove their identity via certificates. { -brand-short-name } doesn’t trust { $hostname } because it uses a certificate that has been revoked.
+
 cert-error-untrusted-default = The certificate does not come from a trusted source.
 
 # Variables:
@@ -96,8 +100,6 @@ cert-error-details-key-pinning-label = HTTP Public Key Pinning: { $hasHPKP }
 
 cert-error-details-cert-chain-label = Certificate chain:
 
-open-in-new-window-for-csp-or-xfo-error = Open Site in New Window
-
 # Variables:
 #   $hostname (string) - Hostname of the website blocked by csp or xfo error.
 csp-xfo-blocked-long-desc = To protect your security, { $hostname } will not allow { -brand-short-name } to display the page if another site has embedded it. To see this page, you need to open it in a new window.
@@ -109,11 +111,6 @@ deniedPortAccess-title = This address is restricted
 # "Hmm" is a sound made when considering or puzzling over something.
 # You don't have to include it in your translation if your language does not have a written word like this.
 dnsNotFound-title = Hmm. We’re having trouble finding that site.
-
-dns-not-found-trr-only-title2 =
-  Possible security risk looking up this domain
-dns-not-found-native-fallback-title2 =
-  Possible security risk looking up this domain
 
 fileNotFound-title = File not found
 fileAccessDenied-title = Access to the file was denied
@@ -129,6 +126,7 @@ contentEncodingError-title = Content Encoding Error
 unsafeContentType-title = Unsafe File Type
 netReset-title = The connection was reset
 netTimeout-title = The connection has timed out
+httpErrorPage-title = Looks like there’s a problem with this site
 serverError-title = Looks like there’s a problem with this site
 unknownProtocolFound-title = The address wasn’t understood
 proxyConnectFailure-title = The proxy server is refusing connections

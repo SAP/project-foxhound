@@ -10,16 +10,19 @@ $schema: moz://mozilla.org/schemas/glean/metrics/2-0-0
 $tags:
   - 'Core :: Storage: localStorage & sessionStorage'
 
-ls.preparelsdatabase:
-  processing_time:
+localstorage.request:
+  prepare_datastore_processing_time:
     type: timing_distribution
     time_unit: microsecond
     description: >
-      Time it took for the content process to fully prepare a new LSDatabase,
-      including any time required to prepare a Datastore in the parent.
-      This duration can be significantly affected by Datastore preloading,
-      which is triggered when a page begins to load.
-      If an error occurs, the time is not recorded.
+      Measures the time taken by the parent process to prepare a datastore.
+      This duration can be significantly affected by datastore preloading,
+      which is triggered when a page begins to load. When a datastore is
+      already preloaded, preparation is usually fast since no additional I/O
+      is required. If an error occurs, the time is not recorded.
+      In the future, we may introduce separate metrics to distinguish between
+      different types of datastore preparations (e.g., loading data from disk
+      vs. using preloaded data).
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
     data_reviews:
@@ -30,38 +33,13 @@ ls.preparelsdatabase:
       - hsingh@mozilla.com
       - jvarga@mozilla.com
       - storage-telemetry@mozilla.com
-    expires: 138
-ls.preparedatastore:
-  processing_time:
-    type: timing_distribution
-    time_unit: microsecond
-    description: >
-      Time it took for the parent process to prepare a Datastore.
-      This duration can be significantly affected by Datastore preloading,
-      which is triggered when a page begins to load.
-      When a Datastore is already preloaded, the preparation is usually fast
-      since it doesn't need to do any I/O.
-      If an error occurs, the time is not recorded.
-      In future, we might want to introduce additional separate metrics for different
-      types of datastore preparations (data needs to be loaded from disk, data already available, etc.)
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
-    data_sensitivity:
-      - technical
-    notification_emails:
-      - hsingh@mozilla.com
-      - jvarga@mozilla.com
-      - storage-telemetry@mozilla.com
-      - storage-telemetry@mozilla.com
-    expires: 138
-ls.request:
-  send_cancellation:
+    expires: never
+  send_cancel_counter:
     type: counter
     description: >
-      Upticks whenever a LS request cancellation message is sent.
-      This includes requests for ensuring either LSDatabase or LSObserver.
+      Increments whenever a request cancellation message is successfully sent.
+      This includes cancellations for requests related to either databases or
+      observers.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
     data_reviews:
@@ -71,12 +49,13 @@ ls.request:
     notification_emails:
       - hsingh@mozilla.com
       - jvarga@mozilla.com
-    expires: 138
-  recv_cancellation:
+    expires: never
+  recv_cancel_counter:
     type: counter
     description: >
-      Upticks whenever a LS request cancellation message is received.
-      This includes requests for ensuring either LSDatabase or LSObserver in the child.
+      Increments whenever a request cancellation message is successfully
+      received. This includes cancellations for requests related to either
+      databases or observers.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
     data_reviews:
@@ -87,8 +66,28 @@ ls.request:
       - hsingh@mozilla.com
       - jvarga@mozilla.com
       - storage-telemetry@mozilla.com
-    expires: 138
+    expires: never
 localstorage.database:
+  new_object_setup_time:
+    type: timing_distribution
+    time_unit: microsecond
+    description: >
+      Measures the time taken for the content process to fully set up a new
+      database, including any time required for datastore preparation in the
+      parent process. This duration can be significantly affected by datastore
+      preloading, which is triggered when a page begins loading. If an error
+      occurs, the time is not recorded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1590635
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - hsingh@mozilla.com
+      - jvarga@mozilla.com
+      - storage-telemetry@mozilla.com
+    expires: never
   request_allow_to_close_response_time:
     type: timing_distribution
     time_unit: microsecond
@@ -106,4 +105,4 @@ localstorage.database:
     notification_emails:
       - jvarga@mozilla.com
       - storage-telemetry@mozilla.com
-    expires: 136
+    expires: 139

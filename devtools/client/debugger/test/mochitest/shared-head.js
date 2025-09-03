@@ -89,14 +89,19 @@ function waitForState(dbg, predicate, msg = "") {
       return;
     }
 
-    const unsubscribe = dbg.store.subscribe(() => {
-      result = predicate(dbg.store.getState());
-      if (result) {
-        info(`Finished waiting for state change: ${msg}`);
-        unsubscribe();
-        resolve(result);
-      }
-    });
+    const unsubscribe = dbg.store.subscribe(
+      () => {
+        result = predicate(dbg.store.getState());
+        if (result) {
+          info(`Finished waiting for state change: ${msg}`);
+          unsubscribe();
+          resolve(result);
+        }
+      },
+      // The `visibilityHandlerStore` wrapper may prevent the test helper from being
+      // notified about store updates while the debugger is in background.
+      { ignoreVisibility: true }
+    );
   });
 }
 
@@ -248,12 +253,23 @@ function waitForSelectedSource(dbg, sourceOrUrl) {
         }
       }
 
-      // Only when we are paused on that specific source (and this isn't a WASM source, which has no AST):
-      // wait for symbols/AST to be parsed
+      const selectedFrame = getSelectedFrame(getCurrentThread());
+      // Only when we are paused on that specific source
+      const isPausedInSource =
+        selectedFrame?.location.source.id == location.source.id;
+      // Wait for symbols/AST to be parsed only when CM5 is enabled or
+      // when paused in original sources, as parserWorker.getClosestFunctionName
+      // is called when mapping original frames (TODO: Remove when Bug 1943945 is fixed)
+      const hasSymbols =
+        !isCm6Enabled || selectedFrame?.location.source.isOriginal
+          ? getSymbols(location)
+          : true;
+      // And this isn't a WASM source (which has no AST)
       if (
-        getSelectedFrame(getCurrentThread())?.location.source.id ==
-          location.source.id &&
-        !getSymbols(location) &&
+        // Only when we are paused on that specific source
+        selectedFrame?.location.source.id == location.source.id &&
+        !hasSymbols &&
+        // And this isn't a WASM source (which has no AST)
         !isWasmBinarySource(location.source)
       ) {
         return false;
@@ -368,7 +384,7 @@ async function _assertDebugLine(dbg, line, column) {
   const source = dbg.selectors.getSelectedSource();
   // WASM lines are hex addresses which have to be mapped to decimal line number
   if (isWasmBinarySource(source)) {
-    line = dbg.wasmOffsetToLine(source.id, line) + 1;
+    line = wasmOffsetToLine(dbg, source.id, line);
   }
 
   // Check the debug line
@@ -592,7 +608,8 @@ async function waitForPaused(
     await waitForLoadedScopes(dbg);
   }
 
-  // Note that this will wait for symbols, which are fetched on pause
+  // Note that this will wait for symbols (when CM5 is enabled),
+  // which are fetched on pause
   await waitForSelectedSource(dbg, url);
 }
 
@@ -646,21 +663,43 @@ function isSelectedFrameSelected(dbg) {
 }
 
 /**
- * Checks to see if the frame is selected and the title is correct.
+ * Checks to see if the frame is selected and the displayed title is correct.
  *
  * @param {Object} dbg
- * @param {Integer} index
- * @param {String} title
+ * @param {DOM Node} frameElement
+ * @param {String} expectedTitle
  */
-function isFrameSelected(dbg, index, title) {
-  const $frame = findElement(dbg, "frame", index);
+function assertFrameIsSelected(dbg, frameElement, expectedTitle) {
+  const selectedFrame = dbg.selectors.getSelectedFrame();
+  ok(frameElement.classList.contains("selected"), "The frame is selected");
+  is(
+    frameElement.querySelector(".title").innerText,
+    expectedTitle,
+    "The selected frame element has the expected title"
+  );
+  // For `<anonymous>` frames, there is likely no displayName
+  is(
+    selectedFrame.displayName,
+    expectedTitle == "<anonymous>" ? undefined : expectedTitle,
+    "The selected frame has the correct display title"
+  );
+}
 
-  const frame = dbg.selectors.getSelectedFrame();
-
-  const elSelected = $frame.classList.contains("selected");
-  const titleSelected = frame.displayName == title;
-
-  return elSelected && titleSelected;
+/**
+ * Checks to see if the frame is  not selected.
+ *
+ * @param {Object} dbg
+ * @param {DOM Node} frameElement
+ * @param {String} expectedTitle
+ */
+function assertFrameIsNotSelected(dbg, frameElement, expectedTitle) {
+  const selectedFrame = dbg.selectors.getSelectedFrame();
+  ok(!frameElement.classList.contains("selected"), "The frame is selected");
+  is(
+    frameElement.querySelector(".title").innerText,
+    expectedTitle,
+    "The selected frame element has the expected title"
+  );
 }
 
 /**
@@ -853,7 +892,7 @@ async function triggerSourceTreeContextMenu(
   const onHidden = new Promise(resolve => {
     menupopup.addEventListener("popuphidden", resolve, { once: true });
   });
-  selectContextMenuItem(dbg, contextMenuItem);
+  selectDebuggerContextMenuItem(dbg, contextMenuItem);
   await onHidden;
 }
 
@@ -1098,6 +1137,12 @@ async function addBreakpointViaGutter(dbg, line) {
   return waitForDispatch(dbg.store, "SET_BREAKPOINT");
 }
 
+async function removeBreakpointViaGutter(dbg, line) {
+  const onRemoved = waitForDispatch(dbg.store, "REMOVE_BREAKPOINT");
+  await clickGutter(dbg, line);
+  await onRemoved;
+}
+
 function disableBreakpoint(dbg, source, line, column) {
   if (column === 0) {
     throw new Error("disableBreakpoint expect a 1-based column argument");
@@ -1249,6 +1294,12 @@ async function assertScopes(dbg, items) {
 
 function findSourceTreeThreadByName(dbg, name) {
   return [...findAllElements(dbg, "sourceTreeThreads")].find(el => {
+    return el.textContent.includes(name);
+  });
+}
+
+function findSourceTreeGroupByName(dbg, name) {
+  return [...findAllElements(dbg, "sourceTreeGroups")].find(el => {
     return el.textContent.includes(name);
   });
 }
@@ -1416,6 +1467,7 @@ const keyMappings = {
   fileSearchNext: { code: "g", modifiers: { metaKey: true } },
   fileSearchPrev: { code: "g", modifiers: cmdShift },
   goToLine: { code: "g", modifiers: { ctrlKey: true } },
+  sourceeditorGoToLine: { code: "j", modifiers: cmdOrCtrl },
   Enter: { code: "VK_RETURN" },
   ShiftEnter: { code: "VK_RETURN", modifiers: { shiftKey: true } },
   AltEnter: {
@@ -1532,7 +1584,15 @@ async function getEditorLineGutter(dbg, line) {
 
 // Handles virtualization scenarios
 async function scrollAndGetEditorLineGutterElement(dbg, line) {
-  await scrollEditorIntoView(dbg, isCm6Enabled ? line : line - 1, 0);
+  const editor = getCMEditor(dbg);
+  await scrollEditorIntoView(dbg, line, 0);
+  const selectedSource = dbg.selectors.getSelectedSource();
+  // For WASM sources get the hexadecimal line number displayed in the gutter
+  if (editor.isWasm && !selectedSource.isOriginal) {
+    const wasmLineFormatter = editor.getWasmLineNumberFormatter();
+    line = wasmLineFormatter(line);
+  }
+
   const els = findAllElementsWithSelector(
     dbg,
     isCm6Enabled
@@ -1568,6 +1628,8 @@ async function getNodeAtEditorGutterLine(dbg, line) {
   if (isCm6Enabled) {
     return scrollAndGetEditorLineGutterElement(dbg, line);
   }
+  // Note: In CM5 both the line gutter elements and the
+  // line content elements are within the editor line.
   return getEditorLineGutter(dbg, line);
 }
 
@@ -1831,8 +1893,10 @@ const selectors = {
   scopeValue: i =>
     `.scopes-list .tree-node:nth-child(${i}) .object-delimiter + *`,
   mapScopesCheckbox: ".map-scopes-header input",
-  frame: i => `.frames [role="list"] [role="listitem"]:nth-child(${i})`,
-  frames: '.frames [role="list"] [role="listitem"]',
+  asyncframe: i =>
+    `.frames div[role=listbox] .location-async-cause:nth-child(${i})`,
+  frame: i => `.frames div[role=listbox] .frame:nth-child(${i})`,
+  frames: ".frames [role='listbox'] .frame",
   gutterBreakpoint: isCm6Enabled ? "breakpoint-marker" : "new-breakpoint",
   // This is used to trigger events (click etc) on the gutter
   gutterElement: i =>
@@ -1873,6 +1937,7 @@ const selectors = {
   sourceNode: i => `.sources-list .tree-node:nth-child(${i}) .node`,
   sourceNodes: ".sources-list .tree-node",
   sourceTreeThreads: '.sources-list .tree-node[aria-level="1"]',
+  sourceTreeGroups: '.sources-list .tree-node[aria-level="2"]',
   sourceTreeFiles: ".sources-list .tree-node[data-expandable=false]",
   threadSourceTree: i => `.threads-list .sources-pane:nth-child(${i})`,
   sourceDirectoryLabel: i => `.sources-list .tree-node:nth-child(${i}) .label`,
@@ -1926,6 +1991,9 @@ const selectors = {
   previewPopupInvokeGetterButton: ".preview-popup .invoke-getter",
   previewPopupObjectNumber: ".preview-popup .objectBox-number",
   previewPopupObjectObject: ".preview-popup .objectBox-object",
+  previewPopupObjectFunction: ".preview-popup .objectBox-function",
+  previewPopupObjectFunctionJumpToDefinition:
+    ".preview-popup .objectBox-function .jump-definition",
   sourceTreeRootNode: ".sources-panel .node .window",
   sourceTreeFolderNode: ".sources-panel .node .folder",
   excludePatternsInput: ".project-text-search .exclude-patterns-field input",
@@ -2071,8 +2139,13 @@ function findContextMenu(dbg, selector) {
   return popup.querySelector(selector);
 }
 
+async function assertContextMenuItemDisabled(dbg, selector, expectedState) {
+  const item = await waitFor(() => findContextMenu(dbg, selector));
+  is(item.disabled, expectedState, "The context menu item is disabled");
+}
+
 // Waits for the context menu to exist and to fully open. Once this function
-// completes, selectContextMenuItem can be called.
+// completes, selectDebuggerContextMenuItem can be called.
 // waitForContextMenu must be called after menu opening has been triggered, e.g.
 // after synthesizing a right click / contextmenu event.
 async function waitForContextMenu(dbg) {
@@ -2113,7 +2186,7 @@ async function closeContextMenu(dbg, popup) {
   return onHidden;
 }
 
-function selectContextMenuItem(dbg, selector) {
+function selectDebuggerContextMenuItem(dbg, selector) {
   const item = findContextMenu(dbg, selector);
   item.closest("menupopup").activateItem(item);
 }
@@ -2139,12 +2212,16 @@ async function assertContextMenuLabel(dbg, selector, expectedLabel) {
 }
 
 async function typeInPanel(dbg, text, inLogPanel = false) {
-  await waitForElement(
-    dbg,
-    inLogPanel ? "logPanelInput" : "conditionalPanelInput"
-  );
+  const panelName = inLogPanel ? "logPanelInput" : "conditionalPanelInput";
+  await waitForElement(dbg, panelName);
+
+  // Wait a bit for panel's codemirror document to complete any updates
+  // so the  input does not lose focus after the it has been opened
+  await waitForInPanelDocumentLoadComplete(dbg, panelName);
+
   // Position cursor reliably at the end of the text.
   pressKey(dbg, "End");
+
   type(dbg, text);
   // Wait for any possible CM6 scroll actions in the conditional panel editor
   // to complete
@@ -2233,6 +2310,13 @@ function getCMEditor(dbg) {
   return dbg.win.codeMirrorSourceEditorTestInstance;
 }
 
+function wasmOffsetToLine(dbg, sourceId, offset) {
+  if (isCm6Enabled) {
+    return getCMEditor(dbg).wasmOffsetToLine(offset) + 1;
+  }
+  return dbg.wasmOffsetToLine(sourceId, offset) + 1;
+}
+
 // Gets the number of lines in the editor
 function getLineCount(dbg) {
   return getCMEditor(dbg).getLineCount();
@@ -2246,11 +2330,24 @@ function waitForSearchState(dbg) {
 }
 
 /**
- * Wait for CodeMirror Document to completely load (for CM6 only)
+ * Wait for the document of the main debugger editor codemirror instance
+ * to completely load (for CM6 only)
  */
 function waitForDocumentLoadComplete(dbg) {
   return waitFor(() =>
     isCm6Enabled ? getCMEditor(dbg).codeMirror.isDocumentLoadComplete : true
+  );
+}
+
+/**
+ * Wait for the document of the conditional/log point panel's codemirror instance
+ * to completely load (for CM6 only)
+ */
+function waitForInPanelDocumentLoadComplete(dbg, panelName) {
+  return waitFor(() =>
+    isCm6Enabled
+      ? getCodeMirrorInstance(dbg, panelName).isDocumentLoadComplete
+      : true
   );
 }
 
@@ -2260,6 +2357,27 @@ function waitForDocumentLoadComplete(dbg) {
  */
 function getEditorContent(dbg) {
   return getCMEditor(dbg).getEditorContent();
+}
+
+/**
+ * Retrieve the codemirror instance for the provided debugger instance.
+ * Optionally provide a panel name such as "logPanelInput" or
+ * "conditionalPanelInput" to retrieve the codemirror instances specific to
+ * those panels.
+ *
+ * @param {Object} dbg
+ * @param {string} panelName
+ * @returns {CodeMirror}
+ *     The codemirror instance corresponding to the provided debugger and panel name.
+ */
+function getCodeMirrorInstance(dbg, panelName = null) {
+  if (panelName !== null) {
+    const panel = findElement(dbg, panelName);
+    return dbg.win.codeMirrorSourceEditorTestInstance.CodeMirror.findFromDOM(
+      panel
+    );
+  }
+  return dbg.win.codeMirrorSourceEditorTestInstance.codeMirror;
 }
 
 /**
@@ -2280,12 +2398,13 @@ function setEditorCursorAt(dbg, line, column) {
  * @param {*} dbg
  * @param {Number} line
  * @param {Number} column
+ * @param {String|null} yAlign
  * @returns
  */
-async function scrollEditorIntoView(dbg, line, column) {
+async function scrollEditorIntoView(dbg, line, column, yAlign) {
   const onScrolled = waitForScrolling(dbg);
   line = isCm6Enabled ? line + 1 : line;
-  getCMEditor(dbg).scrollTo(line, column);
+  getCMEditor(dbg).scrollTo(line, column, yAlign);
   // Ensure the line is visible with margin because the bar at the bottom of
   // the editor overlaps into what the editor thinks is its own space, blocking
   // the click event below.
@@ -2863,6 +2982,41 @@ async function assertInlineExceptionPreview(
   await closePreviewForToken(dbg, tokenEl, "previewPopup");
 }
 
+/**
+ * Wait until a preview popup containing the given result is shown
+ * @param {*} dbg
+ * @param {String} result
+ */
+async function waitForPreviewWithResult(dbg, result) {
+  await waitUntil(async () => {
+    const previewEl = await waitForElement(dbg, "previewPopup");
+    return previewEl.innerText.includes(result);
+  });
+}
+
+/**
+ * Expand or collapse a node in the preview popup
+ * @param {*} dbg
+ * @param {Number} index
+ */
+async function toggleExpanded(dbg, index) {
+  let initialNodesLength;
+  await waitFor(() => {
+    const nodes = findElement(dbg, "previewPopup")?.querySelectorAll(".node");
+    if (nodes?.length > index) {
+      initialNodesLength = nodes.length;
+      nodes[index].querySelector(".theme-twisty").click();
+      return true;
+    }
+    return false;
+  });
+  await waitFor(
+    () =>
+      findElement(dbg, "previewPopup").querySelectorAll(".node").length !==
+      initialNodesLength
+  );
+}
+
 async function waitForBreakableLine(dbg, source, lineNumber) {
   await waitForState(
     dbg,
@@ -3242,15 +3396,21 @@ async function clickOnSourceMapMenuItem(dbg, className) {
 }
 
 async function setLogPoint(dbg, index, value) {
+  // Wait a bit for CM6 to complete any updates so the log panel
+  // does not lose focus after the it has been opened
+  await waitForDocumentLoadComplete(dbg);
   rightClickElement(dbg, "gutterElement", index);
   await waitForContextMenu(dbg);
-  selectContextMenuItem(
+  selectDebuggerContextMenuItem(
     dbg,
     `${selectors.addLogItem},${selectors.editLogItem}`
   );
-  const onBreakpointSet = waitForDispatch(dbg.store, "SET_BREAKPOINT");
-  await typeInPanel(dbg, value, true);
-  await onBreakpointSet;
+  await waitForConditionalPanelFocus(dbg);
+  if (value) {
+    const onBreakpointSet = waitForDispatch(dbg.store, "SET_BREAKPOINT");
+    await typeInPanel(dbg, value, true);
+    await onBreakpointSet;
+  }
 }
 /**
  * Opens the project search panel
@@ -3365,7 +3525,7 @@ async function selectBlackBoxContextMenuItem(dbg, itemName) {
   }
 
   info(`Select the ${itemName} context menu item`);
-  selectContextMenuItem(dbg, `#node-menu-${itemName}`);
+  selectDebuggerContextMenuItem(dbg, `#node-menu-${itemName}`);
   return wait;
 }
 
@@ -3431,6 +3591,6 @@ async function toggleJsTracerMenuItem(dbg, selector) {
   );
   const popup = await waitForContextMenu(dbg);
   const onHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-  selectContextMenuItem(dbg, selector);
+  selectDebuggerContextMenuItem(dbg, selector);
   await onHidden;
 }

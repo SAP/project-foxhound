@@ -19,6 +19,7 @@ import kotlinx.coroutines.withContext
 import mozilla.components.browser.state.state.CustomTabSessionState
 import mozilla.components.browser.state.state.ExternalAppType
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.feature.contextmenu.ContextMenuCandidate
 import mozilla.components.feature.customtabs.CustomTabWindowFeature
@@ -41,7 +42,6 @@ import org.mozilla.fenix.components.toolbar.ToolbarMenu
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.navbar.CustomTabNavBar
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
-import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.requireComponents
@@ -181,6 +181,13 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
     override fun onUpdateToolbarForConfigurationChange(toolbar: BrowserToolbarView) {
         super.onUpdateToolbarForConfigurationChange(toolbar)
         initializeNavBar()
+        customTabsIntegration.withFeature {
+            it.updateToolbarLayout(
+                context = requireContext(),
+                isNavBarEnabled = isNavBarEnabled,
+                isWindowSizeSmall = AcornWindowSize.getWindowSize(requireContext()) == AcornWindowSize.Small,
+            )
+        }
     }
 
     override fun removeSessionIfNeeded(): Boolean {
@@ -229,6 +236,8 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
 
     @Suppress("LongMethod")
     private fun initializeNavBar() {
+        NavigationBar.customTabInitializeTimespan.start()
+
         // Update the contents of the bottomToolbarContainer with the CustomTabNavBar configuration
         // only if a navbar should be used and it was initialized in the parent.
         // Follow up: https://bugzilla.mozilla.org/show_bug.cgi?id=1888300
@@ -265,8 +274,6 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                         // the toolbar might have been already set.
                         (browserToolbarView.view.parent as? ViewGroup)?.removeView(browserToolbarView.view)
                         AndroidView(factory = { _ -> browserToolbarView.view })
-                    } else {
-                        Divider()
                     }
 
                     CustomTabNavBar(
@@ -274,33 +281,28 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                         browserStore = requireComponents.core.store,
                         menuButton = navbarIntegration.navbarMenu,
                         onBackButtonClick = {
-                            NavigationBar.customBackTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                                ToolbarMenu.Item.Back(viewHistory = false),
+                                ToolbarMenu.Item.Back(viewHistory = false, isOnNavBar = true, isCustomTab = true),
                             )
                         },
                         onBackButtonLongPress = {
-                            NavigationBar.customBackLongTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                                ToolbarMenu.Item.Back(viewHistory = true),
+                                ToolbarMenu.Item.Back(viewHistory = true, isOnNavBar = true, isCustomTab = true),
                             )
                         },
                         onForwardButtonClick = {
-                            NavigationBar.customForwardTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                                ToolbarMenu.Item.Forward(viewHistory = false),
+                                ToolbarMenu.Item.Forward(viewHistory = false, isOnNavBar = true, isCustomTab = true),
                             )
                         },
                         onForwardButtonLongPress = {
-                            NavigationBar.customForwardLongTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                                ToolbarMenu.Item.Forward(viewHistory = true),
+                                ToolbarMenu.Item.Forward(viewHistory = true, isOnNavBar = true, isCustomTab = true),
                             )
                         },
                         onOpenInBrowserButtonClick = {
-                            NavigationBar.customOpenInFenixTapped.record(NoExtras())
                             browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                                ToolbarMenu.Item.OpenInFenix,
+                                ToolbarMenu.Item.OpenInFenix(isOnNavBar = true),
                             )
                         },
                         onMenuButtonClick = {
@@ -315,6 +317,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                             )
                         },
                         isSandboxCustomTab = args.isSandboxCustomTab,
+                        showDivider = !isToolbarAtBottom,
                         onVisibilityUpdated = {
                             configureEngineViewWithDynamicToolbarsMaxHeight()
                         },
@@ -322,5 +325,7 @@ class ExternalAppBrowserFragment : BaseBrowserFragment() {
                 }
             }
         }
+
+        NavigationBar.customTabInitializeTimespan.stop()
     }
 }

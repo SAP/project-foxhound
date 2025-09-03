@@ -6,9 +6,13 @@
 
 #include "jit/BaselineCacheIRCompiler.h"
 
+#include "mozilla/RandomNum.h"
+
 #include "gc/GC.h"
 #include "jit/CacheIR.h"
+#include "jit/CacheIRAOT.h"
 #include "jit/CacheIRCloner.h"
+#include "jit/CacheIRSpewer.h"
 #include "jit/CacheIRWriter.h"
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
@@ -481,6 +485,21 @@ bool BaselineCacheIRCompiler::emitGuardSpecificSymbol(SymbolOperandId symId,
 
   Address addr(stubAddress(expectedOffset));
   masm.branchPtr(Assembler::NotEqual, addr, sym, failure->label());
+  return true;
+}
+
+bool BaselineCacheIRCompiler::emitGuardSpecificValue(ValOperandId valId,
+                                                     uint32_t expectedOffset) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+  ValueOperand val = allocator.useValueRegister(masm, valId);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  Address addr(stubAddress(expectedOffset));
+  masm.branchTestValue(Assembler::NotEqual, addr, val, failure->label());
   return true;
 }
 
@@ -1177,7 +1196,7 @@ bool BaselineCacheIRCompiler::emitIsTypedArrayResult(ObjOperandId objId,
 
   allocator.discardStack(masm);
 
-  Label notTypedArray, isProxy, done;
+  Label notTypedArray, isWrapper, done;
   masm.loadObjClassUnsafe(obj, scratch);
   masm.branchIfClassIsNotTypedArray(scratch, &notTypedArray);
   masm.moveValue(BooleanValue(true), output.valueReg());
@@ -1185,14 +1204,18 @@ bool BaselineCacheIRCompiler::emitIsTypedArrayResult(ObjOperandId objId,
 
   masm.bind(&notTypedArray);
   if (isPossiblyWrapped) {
-    masm.branchTestClassIsProxy(true, scratch, &isProxy);
+    Label notProxy;
+    masm.branchTestClassIsProxy(false, scratch, &notProxy);
+    masm.branchTestProxyHandlerFamily(Assembler::Equal, obj, scratch,
+                                      &Wrapper::family, &isWrapper);
+    masm.bind(&notProxy);
   }
   masm.moveValue(BooleanValue(false), output.valueReg());
 
   if (isPossiblyWrapped) {
     masm.jump(&done);
 
-    masm.bind(&isProxy);
+    masm.bind(&isWrapper);
 
     AutoStubFrame stubFrame(*this);
     stubFrame.enter(masm, scratch);
@@ -2044,7 +2067,9 @@ bool BaselineCacheIRCompiler::init(CacheKind kind) {
   switch (kind) {
     case CacheKind::NewArray:
     case CacheKind::NewObject:
+    case CacheKind::Lambda:
     case CacheKind::LazyConstant:
+    case CacheKind::GetImport:
       MOZ_ASSERT(numInputs == 0);
       outputUnchecked_.emplace(R0);
       break;
@@ -2542,54 +2567,72 @@ static bool AddToFoldedStub(JSContext* cx, const CacheIRWriter& writer,
   return true;
 }
 
-ICAttachResult js::jit::AttachBaselineCacheIRStub(
-    JSContext* cx, const CacheIRWriter& writer, CacheKind kind,
-    JSScript* outerScript, ICScript* icScript, ICFallbackStub* stub,
-    const char* name) {
-  // We shouldn't GC or report OOM (or any other exception) here.
-  AutoAssertNoPendingException aanpe(cx);
-  JS::AutoCheckCannotGC nogc;
+#ifdef ENABLE_JS_AOT_ICS
+void DumpNonAOTICStubAndQuit(CacheKind kind, const CacheIRWriter& writer) {
+  // Generate a random filename (unlikely to conflict with others).
+  char filename[64];
+  snprintf(filename, sizeof(filename), "IC-%" PRIu64,
+           mozilla::RandomUint64OrDie());
+  FILE* f = fopen(filename, "w");
+  MOZ_RELEASE_ASSERT(f);
 
-  if (writer.tooLarge()) {
-    return ICAttachResult::TooLarge;
+  // Generate the CacheIR text to dump to a file.
+  {
+    Fprinter printer(f);
+    SpewCacheIROpsAsAOT(printer, kind, writer);
   }
-  if (writer.oom()) {
-    return ICAttachResult::OOM;
-  }
-  MOZ_ASSERT(!writer.failed());
+  fflush(f);
+  fclose(f);
+  fprintf(stderr, "UNEXPECTED NEW IC BODY\n");
 
-  // Just a sanity check: the caller should ensure we don't attach an
-  // unlimited number of stubs.
-#ifdef DEBUG
-  static const size_t MaxOptimizedCacheIRStubs = 16;
-  MOZ_ASSERT(stub->numOptimizedStubs() < MaxOptimizedCacheIRStubs);
+  fprintf(stderr,
+          "Please add the file '%s' to the ahead-of-time known IC bodies in "
+          "js/src/ics/.\n"
+          "\n"
+          "To keep running and dump all new ICs (useful for updating with "
+          "test-suites),\n"
+          "set the environment variable AOT_ICS_KEEP_GOING=1 and rerun.\n",
+          filename);
+
+  if (!getenv("AOT_ICS_KEEP_GOING")) {
+    abort();
+  }
+}
 #endif
 
-  constexpr uint32_t stubDataOffset = sizeof(ICCacheIRStub);
-  static_assert(stubDataOffset % sizeof(uint64_t) == 0,
-                "Stub fields must be aligned");
+static constexpr uint32_t StubDataOffset = sizeof(ICCacheIRStub);
+static_assert(StubDataOffset % sizeof(uint64_t) == 0,
+              "Stub fields must be aligned");
 
-  JitZone* jitZone = cx->zone()->jitZone();
-
-  // Check if we already have JitCode for this stub.
-  CacheIRStubInfo* stubInfo;
+static bool LookupOrCompileStub(JSContext* cx, CacheKind kind,
+                                const CacheIRWriter& writer,
+                                CacheIRStubInfo*& stubInfo, JitCode*& code,
+                                const char* name, bool isAOTFill,
+                                JitZone* jitZone) {
   CacheIRStubKey::Lookup lookup(kind, ICStubEngine::Baseline,
                                 writer.codeStart(), writer.codeLength());
 
-  JitCode* code = jitZone->getBaselineCacheIRStubCode(lookup, &stubInfo);
+  code = jitZone->getBaselineCacheIRStubCode(lookup, &stubInfo);
+
+#ifdef ENABLE_JS_AOT_ICS
+  if (JitOptions.enableAOTICEnforce && !stubInfo && !isAOTFill &&
+      !jitZone->isIncompleteAOTICs()) {
+    DumpNonAOTICStubAndQuit(kind, writer);
+  }
+#endif
 
   if (!code && !IsPortableBaselineInterpreterEnabled()) {
     // We have to generate stub code.
     TempAllocator temp(&cx->tempLifoAlloc());
     JitContext jctx(cx);
-    BaselineCacheIRCompiler comp(cx, temp, writer, stubDataOffset);
+    BaselineCacheIRCompiler comp(cx, temp, writer, StubDataOffset);
     if (!comp.init(kind)) {
-      return ICAttachResult::OOM;
+      return false;
     }
 
     code = comp.compile();
     if (!code) {
-      return ICAttachResult::OOM;
+      return false;
     }
 
     comp.perfSpewer().saveProfile(code, name);
@@ -2601,14 +2644,14 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     MOZ_ASSERT(!stubInfo);
     stubInfo =
         CacheIRStubInfo::New(kind, ICStubEngine::Baseline, comp.makesGCCalls(),
-                             stubDataOffset, writer);
+                             StubDataOffset, writer);
     if (!stubInfo) {
-      return ICAttachResult::OOM;
+      return false;
     }
 
     CacheIRStubKey key(stubInfo);
     if (!jitZone->putBaselineCacheIRStubCode(lookup, key, code)) {
-      return ICAttachResult::OOM;
+      return false;
     }
   } else if (!stubInfo) {
     MOZ_ASSERT(IsPortableBaselineInterpreterEnabled());
@@ -2621,21 +2664,76 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
     // we don't invoke the BaselineCacheIRCompiler so we otherwise
     // don't know for sure.
     stubInfo = CacheIRStubInfo::New(kind, ICStubEngine::Baseline,
-                                    /* makes GC calls = */ true, stubDataOffset,
+                                    /* makes GC calls = */ true, StubDataOffset,
                                     writer);
     if (!stubInfo) {
-      return ICAttachResult::OOM;
+      return false;
     }
 
     CacheIRStubKey key(stubInfo);
     if (!jitZone->putBaselineCacheIRStubCode(lookup, key,
                                              /* stubCode = */ nullptr)) {
-      return ICAttachResult::OOM;
+      return false;
     }
   }
   MOZ_ASSERT_IF(IsBaselineInterpreterEnabled(), code);
   MOZ_ASSERT(stubInfo);
-  MOZ_ASSERT(stubInfo->stubDataSize() == writer.stubDataSize());
+  // Assert that the StubInfo recomputing its stub-data size exactly
+  // matches the writer's stub-data size, but only if we're not
+  // loading an AOT IC -- otherwise, trust the recomputation from
+  // field types.
+  //
+  // Why ignore if AOT? Because the AOT corpus might have been dumped
+  // on a machine with a different word size than our machine (e.g.,
+  // 64 to 32 bits). The field types are serialized and deserialized,
+  // and they are authoritative; the CacheIRWriter's stubDataSize is
+  // computed during build and used only for this assert, so it is
+  // strictly a redundant check.
+  //
+  // (This cross-machine movement of the corpus is acceptable/correct
+  // because the CacheIR itself, and our encoding of it in the corpus
+  // source code, is platform-independent. The worst that happens is
+  // that some platforms may not generate all possible ICs for another
+  // platform (e.g. due to limited registers on x86-32) but it is always
+  // fine not to have an IC preloaded in the corpus.
+  MOZ_ASSERT_IF(!isAOTFill, stubInfo->stubDataSize() == writer.stubDataSize());
+
+  return true;
+}
+
+ICAttachResult js::jit::AttachBaselineCacheIRStub(
+    JSContext* cx, const CacheIRWriter& writer, CacheKind kind,
+    JSScript* outerScript, ICScript* icScript, ICFallbackStub* stub,
+    const char* name) {
+  // We shouldn't GC or report OOM (or any other exception) here.
+  AutoAssertNoPendingException aanpe(cx);
+  JS::AutoCheckCannotGC nogc;
+
+  if (writer.tooLarge()) {
+    cx->runtime()->setUseCounter(cx->global(), JSUseCounter::IC_STUB_TOO_LARGE);
+    return ICAttachResult::TooLarge;
+  }
+  if (writer.oom()) {
+    cx->runtime()->setUseCounter(cx->global(), JSUseCounter::IC_STUB_OOM);
+    return ICAttachResult::OOM;
+  }
+  MOZ_ASSERT(!writer.failed());
+
+  // Just a sanity check: the caller should ensure we don't attach an
+  // unlimited number of stubs.
+#ifdef DEBUG
+  static const size_t MaxOptimizedCacheIRStubs = 16;
+  MOZ_ASSERT(stub->numOptimizedStubs() < MaxOptimizedCacheIRStubs);
+#endif
+
+  // Check if we already have JitCode for this stub.
+  CacheIRStubInfo* stubInfo;
+  JitCode* code;
+
+  if (!LookupOrCompileStub(cx, kind, writer, stubInfo, code, name,
+                           /* isAOTFill = */ false, cx->zone()->jitZone())) {
+    return ICAttachResult::OOM;
+  }
 
   ICEntry* icEntry = icScript->icEntryForStub(stub);
 
@@ -2707,7 +2805,7 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
 
   size_t bytesNeeded = stubInfo->stubDataOffset() + stubInfo->stubDataSize();
 
-  void* newStubMem = jitZone->stubSpace()->alloc(bytesNeeded);
+  void* newStubMem = cx->zone()->jitZone()->stubSpace()->alloc(bytesNeeded);
   if (!newStubMem) {
     return ICAttachResult::OOM;
   }
@@ -2748,6 +2846,35 @@ ICAttachResult js::jit::AttachBaselineCacheIRStub(
   owningScript->updateLastICStubCounter();
   return ICAttachResult::Attached;
 }
+
+#ifdef ENABLE_JS_AOT_ICS
+
+#  ifndef ENABLE_PORTABLE_BASELINE_INTERP
+// The AOT loading of ICs doesn't work (yet) in modes with a native
+// JIT enabled because compilation tries to access state that doesn't
+// exist yet (trampolines?) when we create the JitZone.
+#    error AOT ICs are only supported (for now) in PBL builds.
+#  endif
+
+void js::jit::FillAOTICs(JSContext* cx, JitZone* zone) {
+  if (JitOptions.enableAOTICs) {
+    for (auto& stub : GetAOTStubs()) {
+      CacheIRWriter writer(cx, stub);
+      if (writer.failed()) {
+        zone->setIncompleteAOTICs();
+        break;
+      }
+      CacheIRStubInfo* stubInfo;
+      JitCode* code;
+      (void)LookupOrCompileStub(cx, stub.kind, writer, stubInfo, code,
+                                "aot stub",
+                                /* isAOTFill = */ true, zone);
+      (void)stubInfo;
+      (void)code;
+    }
+  }
+}
+#endif
 
 uint8_t* ICCacheIRStub::stubDataStart() {
   return reinterpret_cast<uint8_t*>(this) + stubInfo_->stubDataOffset();
@@ -2918,8 +3045,7 @@ void BaselineCacheIRCompiler::pushStandardArguments(
     // We use a scratch register to avoid clobbering argc, which is an input
     // reg.
     Register countReg = scratch;
-    masm.move32(argcReg, countReg);
-    masm.add32(Imm32(additionalArgc), countReg);
+    masm.add32(Imm32(additionalArgc), argcReg, countReg);
 
     // Align the stack such that the JitFrameLayout is aligned on the
     // JitStackAlignment.
@@ -4082,6 +4208,51 @@ bool BaselineCacheIRCompiler::emitNewPlainObjectResult(uint32_t numFixedSlots,
 
   masm.bind(&done);
   masm.tagValue(JSVAL_TYPE_OBJECT, obj, output.valueReg());
+  return true;
+}
+
+bool BaselineCacheIRCompiler::emitNewFunctionCloneResult(
+    uint32_t canonicalOffset, gc::AllocKind allocKind) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoOutputRegister output(*this);
+  AutoScratchRegisterMaybeOutput result(allocator, masm, output);
+  AutoScratchRegister canonical(allocator, masm);
+  AutoScratchRegister envChain(allocator, masm);
+  AutoScratchRegister scratch(allocator, masm);
+
+  // Load the canonical function and the frame's environment chain.
+  masm.loadPtr(stubAddress(canonicalOffset), canonical);
+  Address envAddr(baselineFrameReg_,
+                  BaselineFrame::reverseOffsetOfEnvironmentChain());
+  masm.loadPtr(envAddr, envChain);
+
+  allocator.discardStack(masm);
+
+  // Try to allocate a new function object in JIT code.
+  Label done, fail;
+  masm.createFunctionClone(result, canonical, envChain, scratch, allocKind,
+                           &fail);
+  masm.jump(&done);
+
+  {
+    masm.bind(&fail);
+
+    AutoStubFrame stubFrame(*this);
+    stubFrame.enter(masm, scratch);
+
+    masm.Push(envChain);
+    masm.Push(canonical);
+
+    using Fn = JSObject* (*)(JSContext*, HandleFunction, HandleObject);
+    callVM<Fn, js::Lambda>(masm);
+
+    stubFrame.leave(masm);
+    masm.storeCallPointerResult(result);
+  }
+
+  masm.bind(&done);
+  masm.tagValue(JSVAL_TYPE_OBJECT, result, output.valueReg());
   return true;
 }
 

@@ -106,16 +106,14 @@ class CfrToolsPreferencesMiddlewareTest {
                     val actualValue = !actual.newValue
                     assertEquals(it.value, actualValue)
                 }
-                CfrPreferencesRepository.CfrPreference.NavButtons -> {
-                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.NavButtonsCfrUpdated
+                CfrPreferencesRepository.CfrPreference.HomepageSearchBar -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.HomepageSearchbarCfrUpdated
                     val actualValue = !actual.newValue
                     assertEquals(it.value, actualValue)
                 }
-                CfrPreferencesRepository.CfrPreference.AddPrivateTabToHome -> {
-                    // Note that the new value is not inverted in this CFR because of the different
-                    // logic for the pref key
-                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.AddPrivateTabToHomeCfrUpdated
-                    val actualValue = actual.newValue
+                CfrPreferencesRepository.CfrPreference.NavButtons -> {
+                    val actual = middleware.mapRepoUpdateToStoreAction(it) as CfrToolsAction.NavButtonsCfrUpdated
+                    val actualValue = !actual.newValue
                     assertEquals(it.value, actualValue)
                 }
                 CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner -> {
@@ -215,6 +213,48 @@ class CfrToolsPreferencesMiddlewareTest {
             cfrPreferencesRepository.updateCfrPreference(
                 CfrPreferencesRepository.CfrPreferenceUpdate(
                     preferenceType = CfrPreferencesRepository.CfrPreference.HomepageNavToolbar,
+                    value = true,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN the homepage searchbar CFR should not be shown WHEN the toggle homepage searchbar CFR action is dispatched THEN its preference is set to should be shown`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = true,
+            ),
+            middlewares = listOf(
+                middleware,
+            ),
+        )
+        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
+                    value = false,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN the homepage searchbar CFR should be shown WHEN the toggle homepage searchbar CFR action is dispatched THEN its preference is set to should not be shown`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = false,
+            ),
+            middlewares = listOf(
+                middleware,
+            ),
+        )
+        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
+        verify {
+            cfrPreferencesRepository.updateCfrPreference(
+                CfrPreferencesRepository.CfrPreferenceUpdate(
+                    preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
                     value = true,
                 ),
             )

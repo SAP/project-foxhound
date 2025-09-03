@@ -58,8 +58,7 @@ constexpr TimeDelta kDefaultExpectedRetransmissionTime = TimeDelta::Millis(125);
 ModuleRtpRtcpImpl::RtpSenderContext::RtpSenderContext(
     const Environment& env,
     const RtpRtcpInterface::Configuration& config)
-    : packet_history(&env.clock(),
-                     RtpPacketHistory::PaddingMode::kRecentLargePacket),
+    : packet_history(env, RtpPacketHistory::PaddingMode::kRecentLargePacket),
       sequencer_(config.local_media_ssrc,
                  config.rtx_send_ssrc,
                  /*require_marker_before_media_padding=*/!config.audio,
@@ -74,15 +73,7 @@ ModuleRtpRtcpImpl::RtpSenderContext::RtpSenderContext(
 
 std::unique_ptr<RtpRtcp> RtpRtcp::Create(const Environment& env,
                                          const Configuration& configuration) {
-  RTC_DCHECK(configuration.field_trials == nullptr);
-  RTC_DCHECK(configuration.clock == nullptr);
-  RTC_DCHECK(configuration.event_log == nullptr);
-
-  Configuration config = configuration;
-  config.field_trials = &env.field_trials();
-  config.clock = &env.clock();
-  config.event_log = &env.event_log();
-  return std::make_unique<ModuleRtpRtcpImpl>(env, config);
+  return std::make_unique<ModuleRtpRtcpImpl>(env, configuration);
 }
 
 ModuleRtpRtcpImpl::ModuleRtpRtcpImpl(const Environment& env,
@@ -228,7 +219,8 @@ void ModuleRtpRtcpImpl::RegisterSendPayloadFrequency(int payload_type,
   rtcp_sender_.SetRtpClockRate(payload_type, payload_frequency);
 }
 
-int32_t ModuleRtpRtcpImpl::DeRegisterSendPayload(const int8_t payload_type) {
+int32_t ModuleRtpRtcpImpl::DeRegisterSendPayload(
+    const int8_t /* payload_type */) {
   return 0;
 }
 
@@ -310,8 +302,8 @@ RTCPSender::FeedbackState ModuleRtpRtcpImpl::GetFeedbackState() {
   if (std::optional<RtpRtcpInterface::SenderReportStats> last_sr =
           rtcp_receiver_.GetSenderReportStats();
       last_sr.has_value()) {
-    state.remote_sr = CompactNtp(last_sr->last_remote_timestamp);
-    state.last_rr = last_sr->last_arrival_timestamp;
+    state.remote_sr = CompactNtp(last_sr->last_remote_ntp_timestamp);
+    state.last_rr = last_sr->last_arrival_ntp_timestamp;
   }
 
   state.last_xr_rtis = rtcp_receiver_.ConsumeReceivedXrReferenceTimeInfo();
@@ -412,7 +404,7 @@ ModuleRtpRtcpImpl::FetchFecPackets() {
 }
 
 void ModuleRtpRtcpImpl::OnAbortedRetransmissions(
-    rtc::ArrayView<const uint16_t> sequence_numbers) {
+    rtc::ArrayView<const uint16_t> /* sequence_numbers */) {
   RTC_DCHECK_NOTREACHED()
       << "Stream flushing not supported with legacy rtp modules.";
 }

@@ -91,15 +91,15 @@ nsLayoutDebuggingTools::Init(mozIDOMWindow* aWin) {
 NS_IMETHODIMP
 nsLayoutDebuggingTools::SetReflowCounts(bool aShow) {
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  if (PresShell* presShell = GetPresShell(mDocShell)) {
 #ifdef MOZ_REFLOW_PERF
+  if (PresShell* presShell = GetPresShell(mDocShell)) {
     presShell->SetPaintFrameCount(aShow);
-#else
-    printf("************************************************\n");
-    printf("Sorry, you have not built with MOZ_REFLOW_PERF=1\n");
-    printf("************************************************\n");
-#endif
   }
+#else
+  printf("************************************************\n");
+  printf("Sorry, you have not built with MOZ_REFLOW_PERF=1\n");
+  printf("************************************************\n");
+#endif
   return NS_OK;
 }
 
@@ -195,16 +195,16 @@ static void DumpTextRunsRecur(nsIDocShell* aDocShell, FILE* out) {
 }
 
 NS_IMETHODIMP
-nsLayoutDebuggingTools::DumpFrames() {
+nsLayoutDebuggingTools::DumpFrames(uint8_t aFlags) {
   NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  DumpFramesRecur(mDocShell, stdout);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-nsLayoutDebuggingTools::DumpFramesInCSSPixels() {
-  NS_ENSURE_TRUE(mDocShell, NS_ERROR_NOT_INITIALIZED);
-  DumpFramesRecur(mDocShell, stdout, nsIFrame::ListFlag::DisplayInCSSPixels);
+  nsIFrame::ListFlags flags{};
+  if (aFlags & nsILayoutDebuggingTools::DUMP_FRAME_FLAGS_CSS_PIXELS) {
+    flags += nsIFrame::ListFlag::DisplayInCSSPixels;
+  }
+  if (aFlags & nsILayoutDebuggingTools::DUMP_FRAME_FLAGS_DETERMINISTIC) {
+    flags += nsIFrame::ListFlag::OnlyListDeterministicInfo;
+  }
+  DumpFramesRecur(mDocShell, stdout, flags);
   return NS_OK;
 }
 

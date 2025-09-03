@@ -73,6 +73,7 @@
 #include "mozilla/PresShell.h"
 #include "mozilla/Services.h"
 #include "mozilla/Unused.h"
+#include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_full_screen_api.h"
 #include "mozilla/Try.h"
 #include "mozilla/widget/IMEData.h"
@@ -267,14 +268,11 @@ static bool ActionIdComparableAndLower(uint64_t aActionId,
 
 // given a frame content node, retrieve the nsIDOMWindow displayed in it
 static nsPIDOMWindowOuter* GetContentWindow(nsIContent* aContent) {
-  Document* doc = aContent->GetComposedDoc();
-  if (doc) {
-    Document* subdoc = doc->GetSubDocumentFor(aContent);
-    if (subdoc) {
+  if (Document* doc = aContent->GetComposedDoc()) {
+    if (Document* subdoc = doc->GetSubDocumentFor(aContent)) {
       return subdoc->GetWindow();
     }
   }
-
   return nullptr;
 }
 
@@ -440,10 +438,10 @@ nsresult nsFocusManager::SetFocusedWindowWithCallerType(
     // clear the focus. Otherwise, focus should already be in this frame, or
     // already cleared. This ensures that focus will be in this frame and not
     // in a child.
-    nsIContent* content = windowToFocus->GetFocusedElement();
-    if (content) {
-      if (nsCOMPtr<nsPIDOMWindowOuter> childWindow = GetContentWindow(content))
+    if (Element* el = windowToFocus->GetFocusedElement()) {
+      if (nsCOMPtr<nsPIDOMWindowOuter> childWindow = GetContentWindow(el)) {
         ClearFocus(windowToFocus);
+      }
     }
   }
 
@@ -753,8 +751,7 @@ void nsFocusManager::WindowRaised(mozIDOMWindowProxy* aWindow,
   // ensure that the window is enabled and visible
   nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
   docShellAsItem->GetTreeOwner(getter_AddRefs(treeOwner));
-  nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(treeOwner);
-  if (baseWindow) {
+  if (nsCOMPtr<nsIBaseWindow> baseWindow = do_QueryInterface(treeOwner)) {
     bool isEnabled = true;
     if (NS_SUCCEEDED(baseWindow->GetEnabled(&isEnabled)) && !isEnabled) {
       return;
@@ -770,25 +767,31 @@ void nsFocusManager::WindowRaised(mozIDOMWindowProxy* aWindow,
     ActivateOrDeactivate(window, true);
   }
 
-  // retrieve the last focused element within the window that was raised
+  // Retrieve the last focused element within the window that was raised.
+  MoveFocusToWindowAfterRaise(window, aActionId);
+}
+
+void nsFocusManager::MoveFocusToWindowAfterRaise(nsPIDOMWindowOuter* aWindow,
+                                                 uint64_t aActionId) {
   nsCOMPtr<nsPIDOMWindowOuter> currentWindow;
   RefPtr<Element> currentFocus = GetFocusedDescendant(
-      window, eIncludeAllDescendants, getter_AddRefs(currentWindow));
+      aWindow, eIncludeAllDescendants, getter_AddRefs(currentWindow));
 
   NS_ASSERTION(currentWindow, "window raised with no window current");
   if (!currentWindow) {
     return;
   }
 
-  nsCOMPtr<nsIAppWindow> appWin(do_GetInterface(baseWindow));
   // We use mFocusedWindow here is basically for the case that iframe navigate
   // from a.com to b.com for example, so it ends up being loaded in a different
   // process after Fission, but
   // currentWindow->GetBrowsingContext() == GetFocusedBrowsingContext() would
   // still be true because focused browsing context is synced, and we won't
   // fire a focus event while focusing if we use it as condition.
-  Focus(currentWindow, currentFocus, 0, currentWindow != mFocusedWindow, false,
-        appWin != nullptr, true, aActionId);
+  Focus(currentWindow, currentFocus, /* aFlags = */ 0,
+        /* aIsNewDocument = */ currentWindow != mFocusedWindow,
+        /* aFocusChanged = */ false,
+        /* aWindowRaised = */ true, /* aAdjustWidget = */ true, aActionId);
 }
 
 void nsFocusManager::WindowLowered(mozIDOMWindowProxy* aWindow,
@@ -1271,8 +1274,13 @@ void nsFocusManager::FireDelayedEvents(Document* aDocument) {
 
 void nsFocusManager::WasNuked(nsPIDOMWindowOuter* aWindow) {
   MOZ_ASSERT(aWindow, "Expected non-null window.");
-  MOZ_ASSERT(aWindow != mActiveWindow,
-             "How come we're nuking a window that's still active?");
+  if (aWindow == mActiveWindow) {
+    // TODO(emilio, bug 1933555): Figure out if we can assert below.
+    // MOZ_ASSERT_UNREACHABLE("How come we're nuking a window that's still
+    // active?");
+    mActiveWindow = nullptr;
+    SetActiveBrowsingContextInChrome(nullptr, GenerateFocusActionId());
+  }
   if (aWindow == mFocusedWindow) {
     mFocusedWindow = nullptr;
     SetFocusedBrowsingContext(nullptr, GenerateFocusActionId());
@@ -1461,12 +1469,12 @@ void nsFocusManager::ActivateOrDeactivate(nsPIDOMWindowOuter* aWindow,
     MOZ_ASSERT(bc == chromeTop);
 
     chromeTop->SetIsActiveBrowserWindow(aActive);
-    chromeTop->CallOnAllTopDescendants(
+    chromeTop->CallOnTopDescendants(
         [aActive](CanonicalBrowsingContext* aBrowsingContext) {
           aBrowsingContext->SetIsActiveBrowserWindow(aActive);
           return CallState::Continue;
         },
-        /* aIncludeNestedBrowsers = */ true);
+        CanonicalBrowsingContext::TopDescendantKind::All);
   }
 
   if (aWindow->GetExtantDoc()) {
@@ -2112,13 +2120,14 @@ void nsFocusManager::AdjustWindowFocus(
 }
 
 bool nsFocusManager::IsWindowVisible(nsPIDOMWindowOuter* aWindow) {
-  if (!aWindow || aWindow->IsFrozen()) {
+  if (!aWindow || nsGlobalWindowOuter::Cast(aWindow)->IsFrozen()) {
     return false;
   }
 
   // Check if the inner window is frozen as well. This can happen when a focus
   // change occurs while restoring a previous page.
-  nsPIDOMWindowInner* innerWindow = aWindow->GetCurrentInnerWindow();
+  auto* innerWindow =
+      nsGlobalWindowInner::Cast(aWindow->GetCurrentInnerWindow());
   if (!innerWindow || innerWindow->IsFrozen()) {
     return false;
   }
@@ -2539,6 +2548,38 @@ void nsFocusManager::ActivateRemoteFrameIfNeeded(Element& aElement,
     bbc->Activate(aActionId);
     LOGFOCUS(("Out-of-process iframe activated %p, actionid: %" PRIu64, bbc,
               aActionId));
+  }
+}
+
+void nsFocusManager::FixUpFocusBeforeFrameLoaderChange(Element& aElement,
+                                                       BrowsingContext* aBc) {
+  // If focus is out of process we don't need to do anything.
+  if (!mFocusedWindow || !aBc) {
+    return;
+  }
+  auto* docShell = aBc->GetDocShell();
+  if (!docShell) {
+    return;
+  }
+  if (!IsSameOrAncestor(docShell->GetWindow(), mFocusedWindow)) {
+    // The window about to go away is not focused.
+    return;
+  }
+  LOGFOCUS(("About to swap frame loaders on focused in-process window %p",
+            mFocusedWindow.get()));
+  mFocusedWindow = GetCurrentWindow(&aElement);
+  mFocusedElement = &aElement;
+}
+
+void nsFocusManager::FixUpFocusAfterFrameLoaderChange(Element& aElement) {
+  MOZ_ASSERT(mFocusedElement == &aElement);
+  MOZ_ASSERT(nsContentUtils::IsSafeToRunScript());
+  if (GetContentWindow(&aElement)) {
+    // This will focus the content window.
+    SetFocusInner(&aElement, 0, false, false);
+  } else {
+    // If we're remote, activate the frame.
+    ActivateRemoteFrameIfNeeded(aElement, GenerateFocusActionId());
   }
 }
 
@@ -3006,6 +3047,11 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow,
 
   if (XRE_IsParentProcess()) {
     if (aWindow == mActiveWindow) {
+      if (!mFocusedWindow ||
+          !IsSameOrAncestor(aWindow->GetBrowsingContext(),
+                            mFocusedWindow->GetBrowsingContext())) {
+        MoveFocusToWindowAfterRaise(aWindow, aActionId);
+      }
       return;
     }
   } else {
@@ -3025,15 +3071,13 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow,
     // care of lowering the present active window. This happens in
     // a separate runnable to avoid touching multiple windows in
     // the current runnable.
-
-    nsCOMPtr<nsPIDOMWindowOuter> window(aWindow);
-    RefPtr<nsFocusManager> self(this);
     NS_DispatchToCurrentThread(NS_NewRunnableFunction(
         "nsFocusManager::RaiseWindow",
         // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1770093)
-        [self, window]() MOZ_CAN_RUN_SCRIPT_BOUNDARY -> void {
-          self->WindowRaised(window, GenerateFocusActionId());
-        }));
+        [self = RefPtr{this}, window = nsCOMPtr{aWindow}]()
+            MOZ_CAN_RUN_SCRIPT_BOUNDARY -> void {
+              self->WindowRaised(window, GenerateFocusActionId());
+            }));
     return;
   }
 
@@ -3048,36 +3092,6 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow,
     }
   }
 
-#if defined(XP_WIN)
-  // Windows would rather we focus the child widget, otherwise, the toplevel
-  // widget will always end up being focused. Fortunately, focusing the child
-  // widget will also have the effect of raising the window this widget is in.
-  // But on other platforms, we can just focus the toplevel widget to raise
-  // the window.
-  nsCOMPtr<nsPIDOMWindowOuter> childWindow;
-  GetFocusedDescendant(aWindow, eIncludeAllDescendants,
-                       getter_AddRefs(childWindow));
-  if (!childWindow) {
-    childWindow = aWindow;
-  }
-
-  nsCOMPtr<nsIDocShell> docShell = aWindow->GetDocShell();
-  if (!docShell) {
-    return;
-  }
-
-  PresShell* presShell = docShell->GetPresShell();
-  if (!presShell) {
-    return;
-  }
-
-  if (nsViewManager* vm = presShell->GetViewManager()) {
-    nsCOMPtr<nsIWidget> widget = vm->GetRootWidget();
-    if (widget) {
-      widget->SetFocus(nsIWidget::Raise::Yes, aCallerType);
-    }
-  }
-#else
   nsCOMPtr<nsIBaseWindow> treeOwnerAsWin =
       do_QueryInterface(aWindow->GetDocShell());
   if (treeOwnerAsWin) {
@@ -3087,7 +3101,6 @@ void nsFocusManager::RaiseWindow(nsPIDOMWindowOuter* aWindow,
       widget->SetFocus(nsIWidget::Raise::Yes, aCallerType);
     }
   }
-#endif
 }
 
 void nsFocusManager::UpdateCaretForCaretBrowsingMode() {
@@ -3114,7 +3127,7 @@ void nsFocusManager::UpdateCaret(bool aMoveCaretToFocus, bool aUpdateVisibility,
     return;  // Never browse with caret in chrome
   }
 
-  bool browseWithCaret = Preferences::GetBool("accessibility.browsewithcaret");
+  bool browseWithCaret = StaticPrefs::accessibility_browsewithcaret();
 
   const RefPtr<PresShell> presShell = focusedDocShell->GetPresShell();
   if (!presShell) {
@@ -3172,36 +3185,34 @@ void nsFocusManager::MoveCaretToFocus(PresShell* aPresShell,
   nsCOMPtr<Document> doc = aPresShell->GetDocument();
   if (doc) {
     RefPtr<nsFrameSelection> frameSelection = aPresShell->FrameSelection();
-    RefPtr<Selection> domSelection =
-        frameSelection->GetSelection(SelectionType::eNormal);
-    if (domSelection) {
-      // First clear the selection. This way, if there is no currently focused
-      // content, the selection will just be cleared.
-      domSelection->RemoveAllRanges(IgnoreErrors());
-      if (aContent) {
-        ErrorResult rv;
-        RefPtr<nsRange> newRange = doc->CreateRange(rv);
-        if (NS_WARN_IF(rv.Failed())) {
-          rv.SuppressException();
-          return;
-        }
+    RefPtr<Selection> domSelection = &frameSelection->NormalSelection();
+    MOZ_ASSERT(domSelection);
 
-        // Set the range to the start of the currently focused node
-        // Make sure it's collapsed
-        newRange->SelectNodeContents(*aContent, IgnoreErrors());
-
-        if (!aContent->GetFirstChild() ||
-            aContent->IsHTMLFormControlElement()) {
-          // If current focus node is a leaf, set range to before the
-          // node by using the parent as a container.
-          // This prevents it from appearing as selected.
-          newRange->SetStartBefore(*aContent, IgnoreErrors());
-          newRange->SetEndBefore(*aContent, IgnoreErrors());
-        }
-        domSelection->AddRangeAndSelectFramesAndNotifyListeners(*newRange,
-                                                                IgnoreErrors());
-        domSelection->CollapseToStart(IgnoreErrors());
+    // First clear the selection. This way, if there is no currently focused
+    // content, the selection will just be cleared.
+    domSelection->RemoveAllRanges(IgnoreErrors());
+    if (aContent) {
+      ErrorResult rv;
+      RefPtr<nsRange> newRange = doc->CreateRange(rv);
+      if (NS_WARN_IF(rv.Failed())) {
+        rv.SuppressException();
+        return;
       }
+
+      // Set the range to the start of the currently focused node
+      // Make sure it's collapsed
+      newRange->SelectNodeContents(*aContent, IgnoreErrors());
+
+      if (!aContent->GetFirstChild() || aContent->IsHTMLFormControlElement()) {
+        // If current focus node is a leaf, set range to before the
+        // node by using the parent as a container.
+        // This prevents it from appearing as selected.
+        newRange->SetStartBefore(*aContent, IgnoreErrors());
+        newRange->SetEndBefore(*aContent, IgnoreErrors());
+      }
+      domSelection->AddRangeAndSelectFramesAndNotifyListeners(*newRange,
+                                                              IgnoreErrors());
+      domSelection->CollapseToStart(IgnoreErrors());
     }
   }
 }
@@ -3235,23 +3246,21 @@ nsresult nsFocusManager::SetCaretVisible(PresShell* aPresShell, bool aVisible,
 
   if (docFrameSelection && caret &&
       (frameSelection == docFrameSelection || !aContent)) {
-    Selection* domSelection =
-        docFrameSelection->GetSelection(SelectionType::eNormal);
-    if (domSelection) {
-      // First, hide the caret to prevent attempting to show it in
-      // SetCaretDOMSelection
-      aPresShell->SetCaretEnabled(false);
+    Selection& domSelection = docFrameSelection->NormalSelection();
 
-      // Tell the caret which selection to use
-      caret->SetSelection(domSelection);
+    // First, hide the caret to prevent attempting to show it in
+    // SetCaretDOMSelection
+    aPresShell->SetCaretEnabled(false);
 
-      // In content, we need to set the caret. The only special case is edit
-      // fields, which have a different frame selection from the document.
-      // They will take care of making the caret visible themselves.
+    // Tell the caret which selection to use
+    caret->SetSelection(&domSelection);
 
-      aPresShell->SetCaretReadOnly(false);
-      aPresShell->SetCaretEnabled(aVisible);
-    }
+    // In content, we need to set the caret. The only special case is edit
+    // fields, which have a different frame selection from the document.
+    // They will take care of making the caret visible themselves.
+
+    aPresShell->SetCaretReadOnly(false);
+    aPresShell->SetCaretEnabled(aVisible);
   }
 
   return NS_OK;
@@ -3267,10 +3276,8 @@ void nsFocusManager::GetSelectionLocation(Document* aDocument,
   NS_ASSERTION(presContext, "mPresContent is null!!");
 
   RefPtr<Selection> domSelection =
-      aPresShell->ConstFrameSelection()->GetSelection(SelectionType::eNormal);
-  if (!domSelection) {
-    return;
-  }
+      &aPresShell->ConstFrameSelection()->NormalSelection();
+  MOZ_ASSERT(domSelection);
 
   const nsRange* domRange = domSelection->GetRangeAt(0);
   if (!domRange || !domRange->IsPositioned()) {

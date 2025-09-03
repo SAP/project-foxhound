@@ -59,11 +59,11 @@ class CanvasContext final : public nsICanvasRenderingContextInternal,
   NS_IMETHOD GetInputStream(const char* aMimeType,
                             const nsAString& aEncoderOptions,
                             nsIInputStream** aStream) override;
-  already_AddRefed<mozilla::gfx::SourceSurface> GetSurfaceSnapshot(
+  already_AddRefed<gfx::SourceSurface> GetSurfaceSnapshot(
       gfxAlphaType* aOutAlphaType) override;
 
   void SetOpaqueValueFromOpaqueAttr(bool aOpaqueAttrValue) override {}
-  bool GetIsOpaque() override { return true; }
+  bool GetIsOpaque() override;
 
   void ResetBitmap() override { Unconfigure(); }
 

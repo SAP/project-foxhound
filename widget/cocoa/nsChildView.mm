@@ -249,7 +249,7 @@ nsChildView::~nsChildView() {
   // mGeckoChild are used throughout the ChildView class to tell if it's safe
   // to use a ChildView object.
   [mView widgetDestroyed];  // Safe if mView is nil.
-  SetParent(nullptr);
+  ClearParent();
   TearDownView();  // Safe if called twice.
 }
 
@@ -359,7 +359,9 @@ nsCocoaWindow* nsChildView::GetAppWindowWidget() const {
 void nsChildView::Destroy() {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
-  if (mOnDestroyCalled) return;
+  if (mOnDestroyCalled) {
+    return;
+  }
   mOnDestroyCalled = true;
 
   // Stuff below may delete the last ref to this
@@ -524,23 +526,15 @@ void nsChildView::Show(bool aState) {
 }
 
 // Change the parent of this widget
-void nsChildView::DidChangeParent(nsIWidget*) {
+void nsChildView::DidClearParent(nsIWidget*) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   if (mOnDestroyCalled) {
     return;
   }
 
-  nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
-
   // we hold a ref to mView, so this is safe
   [mView removeFromSuperview];
-  mParentView = mParent
-                    ? (NSView<mozView>*)mParent->GetNativeData(NS_NATIVE_WIDGET)
-                    : nullptr;
-  if (mParentView) {
-    [mParentView addSubview:mView];
-  }
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -2277,6 +2271,17 @@ NSEvent* gLastDragMouseDownEvent = nil;  // [strong]
   return [[self window] isKindOfClass:[BaseWindow class]] &&
          [(BaseWindow*)[self window] mainChildView] == self &&
          [(BaseWindow*)[self window] drawsContentsIntoWindowFrame];
+}
+
+- (void)showContextMenuForSelection:(id)sender {
+  if (!mGeckoChild) {
+    return;
+  }
+  nsAutoRetainCocoaObject kungFuDeathGrip(self);
+  WidgetPointerEvent geckoEvent(true, eContextMenu, mGeckoChild,
+                                WidgetMouseEvent::eContextMenuKey);
+  geckoEvent.mRefPoint = {};
+  mGeckoChild->DispatchInputEvent(&geckoEvent);
 }
 
 - (void)viewWillStartLiveResize {
@@ -4424,21 +4429,15 @@ static CFTypeRefPtr<CFURLRef> GetPasteLocation(NSPasteboard* aPasteboard) {
                          [UTIHelper
                              stringFromPboardType:
                                  (NSString*)kPasteboardTypeFileURLPromise]]) {
-        nsCOMPtr<nsIFile> targFile;
-        NS_NewLocalFile(u""_ns, getter_AddRefs(targFile));
-        nsCOMPtr<nsILocalFileMac> macLocalFile = do_QueryInterface(targFile);
-        if (!macLocalFile) {
-          NS_ERROR("No Mac local file");
-          continue;
-        }
-
         CFTypeRefPtr<CFURLRef> url = GetPasteLocation(aPasteboard);
         if (!url) {
           continue;
         }
 
-        if (!NS_SUCCEEDED(macLocalFile->InitWithCFURL(url.get()))) {
-          NS_ERROR("failed InitWithCFURL");
+        nsCOMPtr<nsILocalFileMac> macLocalFile;
+        if (NS_FAILED(NS_NewLocalFileWithCFURL(url.get(),
+                                               getter_AddRefs(macLocalFile)))) {
+          NS_ERROR("failed NS_NewLocalFileWithCFURL");
           continue;
         }
 

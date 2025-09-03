@@ -54,17 +54,32 @@ async function testClipboardPasteNoFormatting(allowPaste) {
   // Since we're only pasting plain text we should only need to do one
   // call.
   is(mockCA.calls.length, 1, "Correct number of calls to Content Analysis");
-  assertContentAnalysisRequest(mockCA.calls[0], CLIPBOARD_TEXT_STRING);
+  assertContentAnalysisRequest(
+    mockCA.calls[0],
+    CLIPBOARD_TEXT_STRING,
+    mockCA.calls[0].userActionId,
+    1
+  );
 
   BrowserTestUtils.removeTab(tab);
 }
 
-function assertContentAnalysisRequest(request, expectedText) {
+function assertContentAnalysisRequest(
+  request,
+  expectedText,
+  expectedUserActionId,
+  expectedRequestsCount
+) {
   is(request.url.spec, PAGE_URL, "request has correct URL");
   is(
     request.analysisType,
     Ci.nsIContentAnalysisRequest.eBulkDataEntry,
     "request has correct analysisType"
+  );
+  is(
+    request.reason,
+    Ci.nsIContentAnalysisRequest.eClipboardPaste,
+    "request has correct reason"
   );
   is(
     request.operationTypeForDisplay,
@@ -75,6 +90,17 @@ function assertContentAnalysisRequest(request, expectedText) {
   if (expectedText !== undefined) {
     is(request.textContent, expectedText, "request textContent should match");
   }
+  is(
+    request.userActionRequestsCount,
+    expectedRequestsCount,
+    "request userActionRequestsCount should match"
+  );
+  is(
+    request.userActionId,
+    expectedUserActionId,
+    "request userActionId should match"
+  );
+  ok(request.userActionId.length, "request userActionId should not be empty");
   is(request.printDataHandle, 0, "request printDataHandle should not be 0");
   is(request.printDataSize, 0, "request printDataSize should not be 0");
   ok(!!request.requestToken.length, "request requestToken should not be empty");
@@ -82,12 +108,32 @@ function assertContentAnalysisRequest(request, expectedText) {
 
 add_task(
   async function testClipboardPasteNoFormattingWithContentAnalysisAllow() {
+    // Make sure this works even if we're analyzing all clipboard formats
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+          false,
+        ],
+      ],
+    });
     await testClipboardPasteNoFormatting(true);
+    await SpecialPowers.popPrefEnv();
   }
 );
 
 add_task(
   async function testClipboardPasteNoFormattingWithContentAnalysisBlock() {
+    // Make sure this works even if we're analyzing all clipboard formats
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+          false,
+        ],
+      ],
+    });
     await testClipboardPasteNoFormatting(false);
+    await SpecialPowers.popPrefEnv();
   }
 );

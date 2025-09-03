@@ -15,10 +15,10 @@
 #include <memory>
 #include <string>
 #include <utility>
-#include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "absl/strings/string_view.h"
+#include "api/array_view.h"
 #include "rtc_base/openssl_stream_adapter.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/stream.h"
@@ -82,31 +82,10 @@ bool IsGcmCryptoSuite(int crypto_suite) {
 
 std::unique_ptr<SSLStreamAdapter> SSLStreamAdapter::Create(
     std::unique_ptr<StreamInterface> stream,
-    absl::AnyInvocable<void(SSLHandshakeError)> handshake_error) {
-  return std::make_unique<OpenSSLStreamAdapter>(std::move(stream),
-                                                std::move(handshake_error));
-}
-
-bool SSLStreamAdapter::GetSslCipherSuite(int* cipher_suite) {
-  return false;
-}
-
-bool SSLStreamAdapter::ExportKeyingMaterial(absl::string_view label,
-                                            const uint8_t* context,
-                                            size_t context_len,
-                                            bool use_context,
-                                            uint8_t* result,
-                                            size_t result_len) {
-  return false;  // Default is unsupported
-}
-
-bool SSLStreamAdapter::SetDtlsSrtpCryptoSuites(
-    const std::vector<int>& crypto_suites) {
-  return false;
-}
-
-bool SSLStreamAdapter::GetDtlsSrtpCryptoSuite(int* crypto_suite) {
-  return false;
+    absl::AnyInvocable<void(SSLHandshakeError)> handshake_error,
+    const webrtc::FieldTrialsView* field_trials) {
+  return std::make_unique<OpenSSLStreamAdapter>(
+      std::move(stream), std::move(handshake_error), field_trials);
 }
 
 bool SSLStreamAdapter::IsBoringSsl() {
@@ -119,8 +98,19 @@ bool SSLStreamAdapter::IsAcceptableCipher(absl::string_view cipher,
                                           KeyType key_type) {
   return OpenSSLStreamAdapter::IsAcceptableCipher(cipher, key_type);
 }
-std::string SSLStreamAdapter::SslCipherSuiteToName(int cipher_suite) {
-  return OpenSSLStreamAdapter::SslCipherSuiteToName(cipher_suite);
+
+// Default shim for backward compat.
+bool SSLStreamAdapter::SetPeerCertificateDigest(
+    absl::string_view digest_alg,
+    const unsigned char* digest_val,
+    size_t digest_len,
+    SSLPeerCertificateDigestError* error) {
+  unsigned char* nonconst_val = const_cast<unsigned char*>(digest_val);
+  SSLPeerCertificateDigestError ret = SetPeerCertificateDigest(
+      digest_alg, rtc::ArrayView<uint8_t>(nonconst_val, digest_len));
+  if (error)
+    *error = ret;
+  return ret == SSLPeerCertificateDigestError::NONE;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -129,6 +119,10 @@ std::string SSLStreamAdapter::SslCipherSuiteToName(int cipher_suite) {
 
 void SSLStreamAdapter::EnableTimeCallbackForTesting() {
   OpenSSLStreamAdapter::EnableTimeCallbackForTesting();
+}
+
+SSLProtocolVersion SSLStreamAdapter::GetMaxSupportedDTLSProtocolVersion() {
+  return OpenSSLStreamAdapter::GetMaxSupportedDTLSProtocolVersion();
 }
 
 ///////////////////////////////////////////////////////////////////////////////

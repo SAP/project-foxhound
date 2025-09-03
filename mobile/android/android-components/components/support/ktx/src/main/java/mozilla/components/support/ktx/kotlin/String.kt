@@ -139,6 +139,16 @@ fun String.isIpv4OrIpv6(): Boolean {
 fun String.isUrl() = URLStringUtils.isURLLike(this)
 
 /**
+ * Checks if this String is a URL of a content resource.
+ */
+fun String.isContentUrl() = this.startsWith("content://")
+
+/**
+ * Checks if this String is an about URL.
+ */
+fun String.isAboutUrl() = this.startsWith("about:")
+
+/**
  * Checks if this String is a URL of an extension page.
  */
 fun String.isExtensionUrl() = this.startsWith("moz-extension://")
@@ -152,7 +162,7 @@ fun String.isResourceUrl() = this.startsWith("resource://")
  * Appends `http` scheme if no scheme is present in this String.
  */
 fun String.toNormalizedUrl(): String {
-    val s = this.trim()
+    val s = this.sanitizeURL()
     // Most commonly we'll encounter http or https schemes.
     // For these, avoid running through toNormalizedURL as an optimization.
     return if (!s.startsWith("http://") &&
@@ -292,10 +302,10 @@ fun String.stripDefaultPort(): String {
 }
 
 /**
- * Remove any unwanted character in url like spaces at the beginning or end.
+ * Remove leading and trailing whitespace and eliminate newline characters.
  */
 fun String.sanitizeURL(): String {
-    return this.trim()
+    return this.trim().replace("\n", "")
 }
 
 /**

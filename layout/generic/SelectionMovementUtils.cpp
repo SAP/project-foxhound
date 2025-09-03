@@ -54,16 +54,16 @@ SelectionMovementUtils::MoveRangeBoundaryToSomewhere(
   MOZ_ASSERT(aDirection == eDirNext || aDirection == eDirPrevious);
   MOZ_ASSERT(aAmount == eSelectCharacter || aAmount == eSelectCluster ||
              aAmount == eSelectWord || aAmount == eSelectBeginLine ||
-             aAmount == eSelectEndLine);
+             aAmount == eSelectEndLine || aAmount == eSelectParagraph);
 
   if (!aRangeBoundary.IsSetAndValid()) {
     return Err(NS_ERROR_FAILURE);
   }
-  if (!aRangeBoundary.Container()->IsContent()) {
+  if (!aRangeBoundary.GetContainer()->IsContent()) {
     return Err(NS_ERROR_FAILURE);
   }
   Result<PeekOffsetStruct, nsresult> result = PeekOffsetForCaretMove(
-      aRangeBoundary.Container()->AsContent(),
+      aRangeBoundary.GetContainer()->AsContent(),
       *aRangeBoundary.Offset(
           RangeBoundaryBase<ParentType,
                             RefType>::OffsetFilter::kValidOrInvalidOffsets),

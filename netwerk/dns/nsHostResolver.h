@@ -53,8 +53,6 @@ static inline uint32_t MaxResolverThreads() {
   (((x) == nsIDNSService::MODE_NATIVEONLY) || \
    ((x) == nsIDNSService::MODE_TRROFF))
 
-extern mozilla::Atomic<bool, mozilla::Relaxed> gNativeIsLocalhost;
-
 #define MAX_NON_PRIORITY_REQUESTS 150
 
 class AHostResolver {
@@ -103,18 +101,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   /**
    * creates an addref'd instance of a nsHostResolver object.
    */
-  static nsresult Create(uint32_t maxCacheEntries,  // zero disables cache
-                         uint32_t defaultCacheEntryLifetime,  // seconds
-                         uint32_t defaultGracePeriod,         // seconds
-                         nsHostResolver** result);
-
-  /**
-   * Set (new) cache limits.
-   */
-  void SetCacheLimits(uint32_t maxCacheEntries,  // zero disables cache
-                      uint32_t defaultCacheEntryLifetime,  // seconds
-                      uint32_t defaultGracePeriod);        // seconds
-
+  static nsresult Create(nsHostResolver** result);
   /**
    * puts the resolver in the shutdown state, which will cause any pending
    * callbacks to be detached.  any future calls to ResolveHost will fail.
@@ -207,9 +194,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   bool TRRServiceEnabledForRecord(nsHostRecord* aRec) MOZ_REQUIRES(mLock);
 
  private:
-  explicit nsHostResolver(uint32_t maxCacheEntries,
-                          uint32_t defaultCacheEntryLifetime,
-                          uint32_t defaultGracePeriod);
+  explicit nsHostResolver();
   virtual ~nsHostResolver();
 
   bool DoRetryTRR(AddrHostRecord* aAddrRec,
@@ -294,9 +279,6 @@ class nsHostResolver : public nsISupports, public AHostResolver {
     METHOD_NETWORK_SHARED = 7
   };
 
-  uint32_t mMaxCacheEntries = 0;
-  uint32_t mDefaultCacheLifetime = 0;  // granularity seconds
-  uint32_t mDefaultGracePeriod = 0;    // granularity seconds
   // mutable so SizeOfIncludingThis can be const
   mutable Mutex mLock{"nsHostResolver.mLock"};
   CondVar mIdleTaskCV;

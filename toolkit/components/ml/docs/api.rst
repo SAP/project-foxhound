@@ -37,6 +37,19 @@ In the example below, a text summarization task is performed using the `summariz
   console.log(res[0]["summary_text"]);
 
 
+
+The code sample above executes the LLM and returns the complete output after the computation is finished.
+Alternatively, you can receive the output incrementally by using the asynchronous generator method
+`runWithGenerator` provided by the engine.
+
+.. code-block:: javascript
+
+  let summaryText = "";
+  for await (const chunk of engine.runWithGenerator(request)){
+     summaryText += chunk.text;
+  }
+
+
 You can use the browser console or toolbox to run this example.
 To enable the browser console, flip the following option in `about:config`: **devtools.chrome.enabled**.
 To get access to the full toolbox, set the **devtools.debugger.remote-enabled** option.
@@ -68,6 +81,8 @@ Below are the options available:
 - **processorRevision**: The revision for any processor required by the model, used for additional input processing.
 - **logLevel**: The log level used in the worker
 - **runtimeFilename**: Name of the runtime wasm file.
+- **dtype**: quantization level, can be `fp32`, `fp16`, `q8`, `int8`, `uint8`, `q4`, `bnb4`, `q4f16``. Defaults to `q8`
+- **device**: device to use (`wasm` or `gpu`). Defaults to `wasm`
 
 **taskName** and **modelId** are required, the others are optional and will be filled automatically
 using values pulled from Remote Settings when the task id is recognized.
@@ -195,7 +210,6 @@ In the example below, an image is converted to text using the `moz-image-to-text
 
   // At this point we are ready to do some inference.
   const res = await engine.run(request);
-
   // The result is a string containing the text extracted from the image
   console.log(res);
 

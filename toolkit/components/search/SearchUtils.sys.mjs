@@ -16,10 +16,22 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
   });
 });
 
+const BinaryInputStream = Components.Constructor(
+  "@mozilla.org/binaryinputstream;1",
+  "nsIBinaryInputStream",
+  "setInputStream"
+);
+
 const BROWSER_SEARCH_PREF = "browser.search.";
 
 /**
  * Load listener
+ *
+ * @implements {nsIRequestObserver}
+ * @implements {nsIStreamListener}
+ * @implements {nsIChannelEventSink}
+ * @implements {nsIInterfaceRequestor}
+ * @implements {nsIProgressEventSink}
  */
 class LoadListener {
   _bytes = [];
@@ -209,7 +221,7 @@ export var SearchUtils = {
    *
    * @param {string} urlSpec
    *        The URL string from which to create an nsIURI.
-   * @returns {nsIURI} an nsIURI object, or null if the creation of the URI failed.
+   * @returns {?nsIURI} an nsIURI object, or null if the creation of the URI failed.
    */
   makeURI(urlSpec) {
     try {
@@ -224,7 +236,7 @@ export var SearchUtils = {
    *
    * @param {string|nsIURI} url
    *   The URL string from which to create an nsIChannel.
-   * @param {nsIContentPolicy} contentPolicyType
+   * @param {nsContentPolicyType} contentPolicyType
    *   The type of document being loaded.
    * @returns {nsIChannel}
    *   an nsIChannel object, or null if the url is invalid.
@@ -235,10 +247,15 @@ export var SearchUtils = {
     }
     try {
       let uri = typeof url == "string" ? Services.io.newURI(url) : url;
+      let principal =
+        uri.scheme == "moz-extension"
+          ? Services.scriptSecurityManager.createContentPrincipal(uri, {})
+          : Services.scriptSecurityManager.createNullPrincipal({});
+
       return Services.io.newChannelFromURI(
         uri,
         null /* loadingNode */,
-        Services.scriptSecurityManager.createNullPrincipal({}),
+        principal,
         null /* triggeringPrincipal */,
         Ci.nsILoadInfo.SEC_ALLOW_CROSS_ORIGIN_SEC_CONTEXT_IS_NULL,
         contentPolicyType
@@ -266,7 +283,7 @@ export var SearchUtils = {
    *   The current settings version.
    */
   get SETTINGS_VERSION() {
-    return 11;
+    return 12;
   },
 
   /**
@@ -433,12 +450,165 @@ export var SearchUtils = {
 
     return [...sortedEngines, ...remainingEngines];
   },
+
+  /**
+   * Chooses the best size out of an array of sizes. If there is no exact match,
+   * chooses the next smaller icon if the difference of the preferred size
+   * to the larger icon is more than 4 times the difference to the the smaller
+   * icon. Otherwise chooses the next larger one.
+   *
+   * @param {number} preferredSize
+   *   The preferred size. Must not be 0.
+   * @param {number[]} availableSizes
+   *   Array of available sizes. Must not be empty.
+   * @returns {number}
+   *   The element of availableSizes chosen by the algorithm.
+   */
+  chooseIconSize(preferredSize, availableSizes) {
+    availableSizes = availableSizes.toSorted((a, b) => b - a);
+    let bestSize = availableSizes.shift();
+    for (let currentSize of availableSizes) {
+      if (currentSize >= preferredSize) {
+        bestSize = currentSize;
+      } else {
+        if (
+          bestSize > preferredSize &&
+          preferredSize - currentSize < (bestSize - preferredSize) / 4
+        ) {
+          bestSize = currentSize;
+        }
+        break;
+      }
+    }
+
+    return bestSize;
+  },
+
+  /**
+   * Fetches an icon without sending cookies to the page and returns
+   * the data and the mime type. Rejects if the icon cannot be fetched.
+   *
+   * @param {string|nsIURI} uri
+   *  The URI to the icon.
+   * @returns {Promise<[Uint8Array, string]>}
+   *   An array containing the data and the mime type.
+   */
+  async fetchIcon(uri) {
+    return new Promise((resolve, reject) => {
+      let chan = SearchUtils.makeChannel(uri, Ci.nsIContentPolicy.TYPE_IMAGE);
+      let listener = new SearchUtils.LoadListener(
+        chan,
+        /^image\//,
+        (byteArray, contentType) => {
+          if (!byteArray) {
+            reject(new Error(""));
+          }
+          resolve([Uint8Array.from(byteArray), contentType]);
+        }
+      );
+      chan.notificationCallbacks = listener;
+      chan.asyncOpen(listener);
+    });
+  },
+
+  /**
+   * Decodes the image to extract the size. Returns `fallbackSize`
+   * if the image is not square or there is a decoding error.
+   *
+   * @param {Uint8Array} byteArray the raw image data
+   * @param {string} contentType the contentType
+   * @param {?number} fallbackSize fallback if size cannot be determined
+   * @returns {?number} the size of the image
+   */
+  decodeSize(byteArray, contentType, fallbackSize = null) {
+    if (contentType == "image/svg+xml") {
+      let svgString;
+      try {
+        svgString = new TextDecoder("UTF-8", { fatal: true }).decode(byteArray);
+      } catch {
+        return fallbackSize;
+      }
+      let parser = new DOMParser();
+      let doc = parser.parseFromString(svgString, contentType);
+      if (doc.querySelector("parsererror")) {
+        return fallbackSize;
+      }
+      if (SVGSVGElement.isInstance(doc.documentElement)) {
+        let width = doc.documentElement.width.baseVal.value;
+        let height = doc.documentElement.height.baseVal.value;
+        if (width != height) {
+          return fallbackSize;
+        }
+        return width;
+      }
+      return fallbackSize;
+    }
+
+    let imageTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
+    let imgDecoded;
+    try {
+      imgDecoded = imageTools.decodeImageFromArrayBuffer(
+        byteArray.buffer,
+        contentType
+      );
+    } catch {
+      return fallbackSize;
+    }
+    if (imgDecoded.width != imgDecoded.height) {
+      return fallbackSize;
+    }
+
+    return imgDecoded.width;
+  },
+
+  /**
+   * Tries to rescale an icon to a given size.
+   *
+   * @param {Uint8Array} byteArray
+   *   Byte array containing the icon payload.
+   * @param {string} contentType
+   *   Mime type of the payload.
+   * @param {number} [size]
+   *   Desired icon size.
+   * @returns {[Uint8Array, string]}
+   *   An array of two elements - an array containing the rescaled icon
+   *   and a string for the content type.
+   * @throws if the icon cannot be rescaled or the rescaled icon is too big.
+   */
+  rescaleIcon(byteArray, contentType, size = 32) {
+    if (contentType == "image/svg+xml") {
+      throw new Error("Cannot rescale SVG image");
+    }
+
+    let imgTools = Cc["@mozilla.org/image/tools;1"].getService(Ci.imgITools);
+    let container = imgTools.decodeImageFromArrayBuffer(
+      byteArray.buffer,
+      contentType
+    );
+    let stream = imgTools.encodeScaledImage(container, "image/png", size, size);
+    let streamSize = stream.available();
+    if (streamSize > SearchUtils.MAX_ICON_SIZE) {
+      throw new Error("Icon is too big");
+    }
+
+    let bis = new BinaryInputStream(stream);
+    let newByteArray = new Uint8Array(streamSize);
+    bis.readArrayBuffer(streamSize, newByteArray.buffer);
+    return [newByteArray, "image/png"];
+  },
 };
 
 XPCOMUtils.defineLazyPreferenceGetter(
   SearchUtils,
   "loggingEnabled",
   BROWSER_SEARCH_PREF + "log",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  SearchUtils,
+  "rustSelectorFeatureGate",
+  BROWSER_SEARCH_PREF + "rustSelector.featureGate",
   false
 );
 

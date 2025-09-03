@@ -38,24 +38,16 @@ Awsy tests
             * awsy-base: trunk
             * awsy-base-dmd: None
 
-      * test-macosx1015-64-shippable-qr/opt
+      * test-macosx1470-64-shippable/opt
             * awsy-base: trunk
             * awsy-base-dmd: None
 
-      * test-windows11-32-2009-qr/opt
-            * awsy-base: None
-            * awsy-base-dmd: None
-
-      * test-windows11-32-2009-shippable-qr/opt
-            * awsy-base: None
-            * awsy-base-dmd: None
-
-      * test-windows11-64-2009-qr/opt
-            * awsy-base: None
-            * awsy-base-dmd: None
-
-      * test-windows11-64-2009-shippable-qr/opt
+      * test-windows11-64-24h2-shippable/opt
             * awsy-base: trunk
+            * awsy-base-dmd: None
+
+      * test-windows11-64-24h2/opt
+            * awsy-base: None
             * awsy-base-dmd: None
 
 
@@ -83,23 +75,15 @@ Awsy tests
             * awsy-base-dmd: None
             * awsy-dmd: None
 
-      * test-macosx1015-64-shippable-qr/opt
+      * test-macosx1470-64-shippable/opt
             * awsy-base-dmd: None
             * awsy-dmd: None
 
-      * test-windows11-32-2009-qr/opt
+      * test-windows11-64-24h2-shippable/opt
             * awsy-base-dmd: None
             * awsy-dmd: None
 
-      * test-windows11-32-2009-shippable-qr/opt
-            * awsy-base-dmd: None
-            * awsy-dmd: None
-
-      * test-windows11-64-2009-qr/opt
-            * awsy-base-dmd: None
-            * awsy-dmd: None
-
-      * test-windows11-64-2009-shippable-qr/opt
+      * test-windows11-64-24h2/opt
             * awsy-base-dmd: None
             * awsy-dmd: None
 
@@ -122,15 +106,11 @@ Awsy tests
 
       * test-linux1804-64-shippable-qr/opt
 
-      * test-macosx1015-64-shippable-qr/opt
+      * test-macosx1470-64-shippable/opt
 
-      * test-windows11-32-2009-qr/opt
+      * test-windows11-64-24h2-shippable/opt
 
-      * test-windows11-32-2009-shippable-qr/opt
-
-      * test-windows11-64-2009-qr/opt
-
-      * test-windows11-64-2009-shippable-qr/opt
+      * test-windows11-64-24h2/opt
 
 
 .. dropdown:: tp6 (FF)
@@ -154,20 +134,14 @@ Awsy tests
       * test-linux1804-64-shippable-qr/opt
             * awsy-tp6: trunk
 
-      * test-macosx1015-64-shippable-qr/opt
+      * test-macosx1470-64-shippable/opt
             * awsy-tp6: trunk
 
-      * test-windows11-32-2009-qr/opt
-            * awsy-tp6: None
-
-      * test-windows11-32-2009-shippable-qr/opt
-            * awsy-tp6: None
-
-      * test-windows11-64-2009-qr/opt
-            * awsy-tp6: None
-
-      * test-windows11-64-2009-shippable-qr/opt
+      * test-windows11-64-24h2-shippable/opt
             * awsy-tp6: trunk
+
+      * test-windows11-64-24h2/opt
+            * awsy-tp6: None
 
 
 
@@ -232,11 +206,11 @@ To run TP5 tests, add the `--tp5` flag: `./mach awsy-test --tp5`
 Explicit Memory
 ================
 
-* This is memory explicitly reported by a memory reporter. It includes all the memory allocated via explicit calls to heap allocation functions (such as malloc and new), and some (only that covered by memory reporters) of the memory allocated via explicit calls to non-heap allocations functions (such as mmap and VirtualAlloc).
+* This is memory explicitly reported by a memory reporter. It includes all the memory allocated via explicit calls to heap allocation functions (such as malloc and new), and some (only that covered by memory reporters) of the memory allocated via explicit calls to non-heap allocation functions (such as mmap and VirtualAlloc).
 
 **Possible regression causes**
 
-* A regression in this usually means a new feature is using or retaining more memory and should be looked at. These are easier to diagnose as we can compare memory reports.
+* A regression in this usually means a new feature is using or retaining more memory and should be looked at. These are easier to diagnose because we can compare memory reports.
 
 See the `about:memory` `mdn page <https://developer.mozilla.org/docs/Mozilla/Performance/about:memory#Explicit_Allocations>`__ for more details.
 
@@ -254,7 +228,7 @@ Images
 
 **Possible regression causes**
 
-* A regressions in this can indicate leaks or poor memory usage in the image subsystem. In the past this was persistent problem.
+* A regression in this can indicate leaks or poor memory usage in the image subsystem. In the past this was a persistent problem.
 
 
 JS
@@ -284,7 +258,7 @@ Base Content Explicit
 
 **Possible regression causes**
 
-A change has caused more JavaScript to load at startup or into blank pages
+A change has caused more JavaScript to load at startup or into blank pages.
 
 * **Common solution**: lazily load any new modules you rely on
 * **Common solution**: Split your code out to only load what is minimally needed initially. You modified the JS engine and it's using more memory
@@ -295,7 +269,7 @@ A change has caused more JavaScript to load at startup or into blank pages
 Base Content Heap Unclassified
 ===============================
 
-* The "heap-unclassified" value represents heap-allocated memory that is not measured by any memory reporter. This is typically 10--20% of "explicit".
+* The "heap-unclassified" value represents heap-allocated memory that is not measured by any memory reporter. This is typically 10-20% of "explicit".
 
 
 **Possible regression causes**

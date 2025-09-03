@@ -237,8 +237,10 @@
           "@base": {
             "value": {
               "default": "transparent",
-              "prefersContrast": "{button.background.color.@base}",
-              "forcedColors": "{button.background.color.@base}"
+              "brand": {
+                "prefersContrast": "{button.background.color.@base}",
+                "forcedColors": "{button.background.color.@base}"
+              }
             }
           },
           "active": {
@@ -247,7 +249,9 @@
           "disabled": {
             "value": {
               "default": "{button.background.color.ghost.@base}",
-              "forcedColors": "{button.background.color.disabled}"
+              "brand": {
+                "forcedColors": "{button.background.color.disabled}"
+              }
             }
           },
           "hover": {
@@ -375,6 +379,14 @@
         "value": "{font.weight.bold}"
       }
     },
+    "icon": {
+      "fill": {
+        "value": "currentColor"
+      },
+      "stroke": {
+        "value": "{button.icon.fill}"
+      }
+    },
     "min": {
       "height": {
         "@base": {
@@ -467,7 +479,11 @@
         "ghost": {
           "@base": {
             "value": {
-              "default": "{button.text.color.@base}"
+              "default": "inherit",
+              "brand": {
+                "prefersContrast": "{button.text.color.@base}",
+                "forcedColors": "{button.text.color.@base}"
+              }
             }
           },
           "active": {
@@ -477,7 +493,11 @@
           },
           "disabled": {
             "value": {
-              "default": "{button.text.color.disabled}"
+              "default": "inherit",
+              "brand": {
+                "prefersContrast": "{button.text.color.disabled}",
+                "forcedColors": "{button.text.color.disabled}"
+              }
             }
           },
           "hover": {
@@ -949,6 +969,33 @@
     },
     "xxlarge": {
       "value": "calc(8 * {space.xsmall})"
+    }
+  },
+  "table": {
+    "row": {
+      "background": {
+        "color": {
+          "@base": {
+            "value": {
+              "default": "{background.color.canvas}"
+            }
+          },
+          "alternate": {
+            "comment": "TODO Bug 1821203 - Gray use needs to be consolidated",
+            "value": {
+              "forcedColors": "{background.color.canvas}",
+              "brand": {
+                "light": "#f0f0f4",
+                "dark": "{color.gray.80}"
+              },
+              "platform": {
+                "light": "rgba(0,0,0,5%)",
+                "dark": "rgba(255,255,255,5%)"
+              }
+            }
+          }
+        }
+      }
     }
   },
   "text": {

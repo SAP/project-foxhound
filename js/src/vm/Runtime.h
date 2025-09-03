@@ -444,10 +444,12 @@ struct JSRuntime {
   js::UnprotectedData<JS::ConsumeStreamCallback> consumeStreamCallback;
   js::UnprotectedData<JS::ReportStreamErrorCallback> reportStreamErrorCallback;
 
-  js::GlobalObject* getIncumbentGlobal(JSContext* cx);
+  bool getHostDefinedData(JSContext* cx,
+                          JS::MutableHandle<JSObject*> data) const;
+
   bool enqueuePromiseJob(JSContext* cx, js::HandleFunction job,
                          js::HandleObject promise,
-                         js::Handle<js::GlobalObject*> incumbentGlobal);
+                         js::HandleObject hostDefinedData);
   void addUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
   void removeUnhandledRejectedPromise(JSContext* cx, js::HandleObject promise);
 
@@ -960,6 +962,8 @@ struct JSRuntime {
  private:
   // Settings for how helper threads can be used.
   mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
+      offthreadBaselineCompilationEnabled_;
+  mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       offthreadIonCompilationEnabled_;
   mozilla::Atomic<bool, mozilla::SequentiallyConsistent>
       parallelParsingEnabled_;
@@ -969,8 +973,18 @@ struct JSRuntime {
  public:
   // Note: these values may be toggled dynamically (in response to about:config
   // prefs changing).
+  void setOffthreadBaselineCompilationEnabled(bool value) {
+    offthreadBaselineCompilationEnabled_ = value;
+  }
+  bool canUseOffthreadBaselineCompilation() const {
+    return offthreadBaselineCompilationEnabled_;
+  }
   void setOffthreadIonCompilationEnabled(bool value) {
     offthreadIonCompilationEnabled_ = value;
+  }
+  void setOffthreadCompilationEnabled(bool value) {
+    setOffthreadBaselineCompilationEnabled(value);
+    setOffthreadIonCompilationEnabled(value);
   }
   bool canUseOffthreadIonCompilation() const {
     return offthreadIonCompilationEnabled_;

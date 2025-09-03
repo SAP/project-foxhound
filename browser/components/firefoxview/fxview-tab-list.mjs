@@ -694,47 +694,70 @@ export class FxviewTabRowBase extends MozLitElement {
     </span>`;
   }
 
+  getIconSrc(actionClass) {
+    let iconSrc;
+    switch (actionClass) {
+      case "delete-button":
+        iconSrc = "chrome://global/skin/icons/delete.svg";
+        break;
+      case "dismiss-button":
+        iconSrc = "chrome://global/skin/icons/close.svg";
+        break;
+      case "options-button":
+        iconSrc = "chrome://global/skin/icons/more.svg";
+        break;
+      default:
+        iconSrc = null;
+        break;
+    }
+    return iconSrc;
+  }
+
   secondaryButtonTemplate() {
     return html`${when(
       this.secondaryL10nId && this.secondaryActionHandler,
-      () => html`<moz-button
-        type="icon ghost"
-        class=${classMap({
-          "fxview-tab-row-button": true,
-          [this.secondaryActionClass]: this.secondaryActionClass,
-        })}
-        id="fxview-tab-row-secondary-button"
-        data-l10n-id=${this.secondaryL10nId}
-        data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
-        aria-haspopup=${ifDefined(this.hasPopup)}
-        @click=${this.secondaryActionHandler}
-        tabindex="${this.active &&
-        this.currentActiveElementId === "fxview-tab-row-secondary-button"
-          ? "0"
-          : "-1"}"
-      ></moz-button>`
+      () =>
+        html`<moz-button
+          type="icon ghost"
+          class=${classMap({
+            "fxview-tab-row-button": true,
+            [this.secondaryActionClass]: this.secondaryActionClass,
+          })}
+          id="fxview-tab-row-secondary-button"
+          data-l10n-id=${this.secondaryL10nId}
+          data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
+          aria-haspopup=${ifDefined(this.hasPopup)}
+          @click=${this.secondaryActionHandler}
+          tabindex=${this.active &&
+          this.currentActiveElementId === "fxview-tab-row-secondary-button"
+            ? "0"
+            : "-1"}
+          iconSrc=${this.getIconSrc(this.secondaryActionClass)}
+        ></moz-button>`
     )}`;
   }
 
   tertiaryButtonTemplate() {
     return html`${when(
       this.tertiaryL10nId && this.tertiaryActionHandler,
-      () => html`<moz-button
-        type="icon ghost"
-        class=${classMap({
-          "fxview-tab-row-button": true,
-          [this.tertiaryActionClass]: this.tertiaryActionClass,
-        })}
-        id="fxview-tab-row-tertiary-button"
-        data-l10n-id=${this.tertiaryL10nId}
-        data-l10n-args=${ifDefined(this.tertiaryL10nArgs)}
-        aria-haspopup=${ifDefined(this.hasPopup)}
-        @click=${this.tertiaryActionHandler}
-        tabindex="${this.active &&
-        this.currentActiveElementId === "fxview-tab-row-tertiary-button"
-          ? "0"
-          : "-1"}"
-      ></moz-button>`
+      () =>
+        html`<moz-button
+          type="icon ghost"
+          class=${classMap({
+            "fxview-tab-row-button": true,
+            [this.tertiaryActionClass]: this.tertiaryActionClass,
+          })}
+          id="fxview-tab-row-tertiary-button"
+          data-l10n-id=${this.tertiaryL10nId}
+          data-l10n-args=${ifDefined(this.tertiaryL10nArgs)}
+          aria-haspopup=${ifDefined(this.hasPopup)}
+          @click=${this.tertiaryActionHandler}
+          tabindex=${this.active &&
+          this.currentActiveElementId === "fxview-tab-row-tertiary-button"
+            ? "0"
+            : "-1"}
+          iconSrc=${this.getIconSrc(this.tertiaryActionClass)}
+        ></moz-button>`
     )}`;
   }
 }
@@ -760,8 +783,9 @@ export class FxviewTabRow extends FxviewTabRowBase {
         ${this.faviconTemplate()} ${this.titleTemplate()}
         ${when(
           !this.compact,
-          () => html`${this.urlTemplate()} ${this.dateTemplate()}
-          ${this.timeTemplate()}`
+          () =>
+            html`${this.urlTemplate()} ${this.dateTemplate()}
+            ${this.timeTemplate()}`
         )}
       </a>
       ${this.secondaryButtonTemplate()} ${this.tertiaryButtonTemplate()}

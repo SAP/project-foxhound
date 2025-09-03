@@ -28,6 +28,7 @@
 #include "cert_storage/src/cert_storage.h"
 #include "mozilla/Logging.h"
 #include "mozilla/dom/BrowsingContext.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/ipc/Endpoint.h"
 #include "mozilla/net/SocketProcessBackgroundChild.h"
 #include "mozilla/psm/SelectTLSClientAuthCertChild.h"
@@ -770,16 +771,6 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
 
   nsTArray<nsTArray<uint8_t>> caNames(CollectCANames(caNamesDecoded));
 
-  // Currently, the IPC client certs module only refreshes its view of
-  // available certificates and keys if the platform issues a search for all
-  // certificates or keys. In the socket process, such a search may not have
-  // happened, so this ensures it has.
-  // Additionally, instantiating certificates in NSS is not thread-safe and has
-  // performance implications, so search for them here (on the socket thread)
-  // when not in the socket process.
-  UniqueCERTCertList potentialClientCertificates(
-      FindClientCertificatesWithPrivateKeys());
-
   RefPtr<ClientAuthCertificateSelected> continuation(
       new ClientAuthCertificateSelected(info));
   // If this is the socket process, dispatch an IPC call to select a client
@@ -864,6 +855,11 @@ SECStatus SSLGetClientAuthDataHook(void* arg, PRFileDesc* socket,
     PR_SetError(PR_WOULD_BLOCK_ERROR, 0);
     return SECWouldBlock;
   }
+
+  // Instantiating certificates in NSS is not thread-safe and has performance
+  // implications, so search for them here (on the socket thread).
+  UniqueCERTCertList potentialClientCertificates(
+      FindClientCertificatesWithPrivateKeys());
 
   nsTArray<nsTArray<nsTArray<uint8_t>>> potentialClientCertificateChains;
   FilterPotentialClientCertificatesByCANames(potentialClientCertificates,

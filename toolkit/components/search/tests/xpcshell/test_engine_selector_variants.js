@@ -61,9 +61,9 @@ const CONFIG = [
                 value: "foo",
               },
             ],
+            searchTermParamName: "search-param",
           },
         },
-        searchTermParamName: "search-param",
       },
     ],
   },
@@ -73,42 +73,9 @@ const CONFIG_CLONE = structuredClone(CONFIG);
 
 const engineSelector = new SearchEngineSelector();
 
-/**
- * This function asserts if the actual engines returned equals the expected
- * engines.
- *
- * @param {object} config
- *   A fake search config containing engines.
- * @param {object} userEnv
- *   A fake user's environment including locale and region, experiment, etc.
- * @param {Array} expectedEngines
- *   The array of expected engines to be returned from the fake config.
- * @param {string} message
- *   The assertion message.
- */
-async function assertActualEnginesEqualsExpected(
-  config,
-  userEnv,
-  expectedEngines,
-  message
-) {
-  engineSelector._configuration = null;
-  SearchTestUtils.setRemoteSettingsConfig(config);
-
-  if (expectedEngines.length) {
-    let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);
-    Assert.deepEqual(engines, expectedEngines, message);
-  } else {
-    await Assert.rejects(
-      engineSelector.fetchEngineConfiguration(userEnv),
-      /Could not find any engines in the filtered configuration/,
-      message
-    );
-  }
-}
-
 add_task(async function test_no_variants_match() {
-  await assertActualEnginesEqualsExpected(
+  await assertSelectorEnginesEqualsExpected(
+    engineSelector,
     CONFIG,
     {
       locale: "fi",
@@ -120,7 +87,8 @@ add_task(async function test_no_variants_match() {
 });
 
 add_task(async function test_match_and_apply_last_variants() {
-  await assertActualEnginesEqualsExpected(
+  await assertSelectorEnginesEqualsExpected(
+    engineSelector,
     CONFIG,
     {
       locale: "en-US",
@@ -135,9 +103,9 @@ add_task(async function test_match_and_apply_last_variants() {
           search: {
             ...STATIC_SEARCH_URL_DATA,
             params: [{ name: "partner-code", value: "foo" }],
+            searchTermParamName: "search-param",
           },
         },
-        searchTermParamName: "search-param",
       },
     ],
     "Should match and apply last variant."
@@ -145,7 +113,8 @@ add_task(async function test_match_and_apply_last_variants() {
 });
 
 add_task(async function test_match_middle_variant() {
-  await assertActualEnginesEqualsExpected(
+  await assertSelectorEnginesEqualsExpected(
+    engineSelector,
     CONFIG,
     {
       locale: "en-US",
@@ -170,7 +139,8 @@ add_task(async function test_match_middle_variant() {
 });
 
 add_task(async function test_match_first_and_last_variant() {
-  await assertActualEnginesEqualsExpected(
+  await assertSelectorEnginesEqualsExpected(
+    engineSelector,
     CONFIG,
     {
       locale: "en-GB",
@@ -185,9 +155,9 @@ add_task(async function test_match_first_and_last_variant() {
           search: {
             ...STATIC_SEARCH_URL_DATA,
             params: [{ name: "partner-code", value: "foo" }],
+            searchTermParamName: "search-param",
           },
         },
-        searchTermParamName: "search-param",
       },
     ],
     "Should match first and last variant."
@@ -195,7 +165,8 @@ add_task(async function test_match_first_and_last_variant() {
 });
 
 add_task(async function test_match_variant_with_empty_params() {
-  await assertActualEnginesEqualsExpected(
+  await assertSelectorEnginesEqualsExpected(
+    engineSelector,
     CONFIG,
     {
       locale: "it",

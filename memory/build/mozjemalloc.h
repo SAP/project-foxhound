@@ -108,6 +108,8 @@ struct MozJemallocPHC : public MozJemalloc {
 
   static void jemalloc_stats_internal(jemalloc_stats_t*, jemalloc_bin_stats_t*);
 
+  static void jemalloc_stats_lite(jemalloc_stats_lite_t*);
+
   static void jemalloc_ptr_info(const void*, jemalloc_ptr_info_t*);
 
 #    define MALLOC_DECL(name, return_type, ...) \
@@ -166,6 +168,13 @@ struct DummyArenaAllocator {
   static void moz_dispose_arena(arena_id_t) {}
 
   static void moz_set_max_dirty_page_modifier(int32_t) {}
+
+  static bool moz_enable_deferred_purge(bool aEnable) { return false; }
+
+  static purge_result_t moz_may_purge_one_now(bool aPeekOnly,
+                                              uint32_t aReuseGraceMS) {
+    return purge_result_t::Done;
+  }
 
 #define MALLOC_DECL(name, return_type, ...)                 \
   static return_type moz_arena_##name(                      \

@@ -5,6 +5,7 @@
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  error: "chrome://remote/content/shared/messagehandler/Errors.sys.mjs",
   PollPromise: "chrome://remote/content/shared/Sync.sys.mjs",
 });
 
@@ -70,16 +71,27 @@ export function isInitialDocument(browsingContext) {
  * @param {object=} options
  * @param {string=} options.browserId
  *    The id of the browser to filter the browsing contexts by (optional).
+ * @param {string=} options.userContext
+ *    The id of the user context to filter the browsing contexts by (optional).
  *
  * @returns {boolean}
  *     True if the browsing context is valid, false otherwise.
  */
 export function isBrowsingContextCompatible(browsingContext, options = {}) {
-  const { browserId } = options;
+  const { browserId, userContext } = options;
 
   // If a browserId was provided, skip browsing contexts which are not
   // associated with this browserId.
   if (browserId !== undefined && browsingContext.browserId !== browserId) {
+    return false;
+  }
+
+  // If a userContext was provided, skip browsing contexts which are not
+  // associated with this userContext.
+  if (
+    userContext !== undefined &&
+    browsingContext.originAttributes.userContextId !== userContext
+  ) {
     return false;
   }
 
@@ -110,7 +122,8 @@ export function isBrowsingContextCompatible(browsingContext, options = {}) {
  *
  * @returns {Promise}
  *     Promise which resolves when `currentWindowGlobal` is set on the browsing
- *     context or throws after 100ms.
+ *     context or throws a `DiscardedBrowsingContextError` error if it is still
+ *     not available after 100ms.
  */
 export async function waitForCurrentWindowGlobal(browsingContext) {
   await lazy.PollPromise(
@@ -122,8 +135,13 @@ export async function waitForCurrentWindowGlobal(browsingContext) {
       }
     },
     {
-      errorMessage: `currentWindowGlobal was not available for Browsing Context with id: ${browsingContext.id}`,
       timeout: 100,
     }
   );
+
+  if (!browsingContext.currentWindowGlobal) {
+    throw new lazy.error.DiscardedBrowsingContextError(
+      `BrowsingContext does no longer exist`
+    );
+  }
 }

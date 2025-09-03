@@ -214,6 +214,16 @@ JSString::OwnedChars<CharT>::OwnedChars(JSString::OwnedChars<CharT>&& other)
 }
 
 template <typename CharT>
+JSString::OwnedChars<CharT>& JSString::OwnedChars<CharT>::operator=(
+    JSString::OwnedChars<CharT>&& other) {
+  reset();
+  chars_ = other.chars_;
+  kind_ = other.kind_;
+  other.release();
+  return *this;
+}
+
+template <typename CharT>
 CharT* JSString::OwnedChars<CharT>::release() {
   CharT* chars = chars_.data();
   chars_ = {};
@@ -271,17 +281,16 @@ JSString::OwnedChars<CharT>::OwnedChars(RefPtr<mozilla::StringBuffer>&& buffer,
   buffer.forget(&buf);
 }
 
-MOZ_ALWAYS_INLINE bool JSString::validateLength(JSContext* maybecx,
-                                                size_t length) {
-  return validateLengthInternal<js::CanGC>(maybecx, length);
+MOZ_ALWAYS_INLINE bool JSString::validateLength(JSContext* cx, size_t length) {
+  return validateLengthInternal<js::CanGC>(cx, length);
 }
 
 template <js::AllowGC allowGC>
-MOZ_ALWAYS_INLINE bool JSString::validateLengthInternal(JSContext* maybecx,
+MOZ_ALWAYS_INLINE bool JSString::validateLengthInternal(JSContext* cx,
                                                         size_t length) {
   if (MOZ_UNLIKELY(length > JSString::MAX_LENGTH)) {
     if constexpr (allowGC) {
-      js::ReportOversizedAllocation(maybecx, JSMSG_ALLOC_OVERFLOW);
+      js::ReportOversizedAllocation(cx, JSMSG_ALLOC_OVERFLOW);
     }
     return false;
   }
@@ -326,12 +335,17 @@ inline size_t JSLinearString::maybeMallocCharsOnPromotion(
     chars = reinterpret_cast<const void**>(&d.s.u2.nonInlineCharsLatin1);
   }
 
-  size_t nbytes = length() * sizeof(CharT);
-  if (nursery->maybeMoveBufferOnPromotion(const_cast<void**>(chars), this,
-                                          nbytes, js::MemoryUse::StringContents,
-                                          js::StringBufferArena) ==
-      js::Nursery::BufferMoved) {
-    return nbytes;
+  size_t bytesUsed = length() * sizeof(CharT);
+  size_t bytesCapacity =
+      isExtensible() ? (asExtensible().capacity() * sizeof(CharT)) : bytesUsed;
+  MOZ_ASSERT(bytesUsed <= bytesCapacity);
+
+  if (nursery->maybeMoveBufferOnPromotion(
+          const_cast<void**>(chars), this, bytesUsed, bytesCapacity,
+          js::MemoryUse::StringContents,
+          js::StringBufferArena) == js::Nursery::BufferMoved) {
+    MOZ_ASSERT(allocSize() == bytesCapacity);
+    return bytesCapacity;
   }
 
   return 0;
@@ -619,9 +633,6 @@ inline js::PropertyName* JSLinearString::toPropertyName(JSContext* cx) {
   uint32_t dummy;
   MOZ_ASSERT(!isIndex(&dummy));
 #endif
-  if (isAtom()) {
-    return asAtom().asPropertyName();
-  }
   JSAtom* atom = js::AtomizeString(cx, this);
   if (!atom) {
     return nullptr;

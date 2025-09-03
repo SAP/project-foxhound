@@ -109,9 +109,6 @@ declare_args() {
   # TLS-TURN server. In return disabling this saves around 100kb in the binary.
   rtc_builtin_ssl_root_certificates = true
 
-  # Include the iLBC audio codec?
-  rtc_include_ilbc = true
-
   # Disable this to avoid building the Opus audio codec.
   rtc_include_opus = true
 
@@ -128,7 +125,7 @@ declare_args() {
 
   # Used to specify an external OpenSSL include path when not compiling the
   # library that comes with WebRTC (i.e. rtc_build_ssl == 0).
-  rtc_ssl_root = "unused"
+  rtc_ssl_root = ""
 
   # Enable when an external authentication mechanism is used for performing
   # packet authentication for RTP packets instead of libsrtp.
@@ -298,16 +295,6 @@ declare_args() {
   rtc_build_opus = !build_with_mozilla
   rtc_build_ssl = !build_with_mozilla
 
-  # Enable libevent task queues on platforms that support it.
-  if (is_win || is_mac || is_ios || is_nacl || is_fuchsia ||
-      target_cpu == "wasm") {
-    rtc_enable_libevent = false
-    rtc_build_libevent = false
-  } else {
-    rtc_enable_libevent = true
-    rtc_build_libevent = !build_with_mozilla
-  }
-
   # Excluded in Chromium since its prerequisites don't require Pulse Audio.
   rtc_include_pulse_audio = !build_with_chromium
 
@@ -354,7 +341,7 @@ declare_args() {
 }
 
 # Enable liboam only on non-mozilla builds.
-enable_libaom = !build_with_mozilla
+enable_libaom = true
 
 # Make it possible to provide custom locations for some libraries (move these
 # up into declare_args should we need to actually use them for the GN build).
@@ -543,13 +530,17 @@ template("rtc_test") {
       public_configs += invoker.public_configs
     }
     if (!build_with_chromium && is_android) {
+      use_default_launcher = false
       android_manifest = webrtc_root + "test/android/AndroidManifest.xml"
       use_raw_android_executable = false
       min_sdk_version = 21
       target_sdk_version = 23
       deps += [
         "//chromium/build/android/gtest_apk:native_test_instrumentation_test_runner_java",
+        webrtc_root + "sdk/android:native_test_jni_onload",
+        webrtc_root + "sdk/android:base_java",
         webrtc_root + "test:native_test_java",
+        webrtc_root + "test:native_test_support",
       ]
     }
 
@@ -1047,6 +1038,24 @@ template("rtc_executable") {
         # Give executables the default manifest on Windows (a no-op elsewhere).
         "//chromium/build/win:default_exe_manifest",
       ]
+    }
+
+    # Convert abseil dependencies to //third_party/abseil-cpp:absl_full when
+    # build_with_chromium=true so that webrtc targets won't need exceptions to
+    # depend on individual absl targets.
+    # Note that //third_party/abseil-cpp:absl_full build target includes flags,
+    # but //third_party/abseil-cpp:absl target - doesn't. That allows webrtc
+    # executables, but not libraries to use absl flags.
+    if (build_with_chromium && defined(deps)) {
+      absl_dependencies =
+          filter_labels_include(deps, [ "//third_party/abseil-cpp/*" ])
+      if (absl_dependencies != []) {
+        filtered_deps =
+            filter_labels_exclude(deps, [ "//third_party/abseil-cpp/*" ])
+        deps = []
+        deps = filtered_deps
+        deps += [ "//third_party/abseil-cpp:absl_full" ]
+      }
     }
   }
 }

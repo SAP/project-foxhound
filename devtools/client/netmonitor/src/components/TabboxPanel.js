@@ -10,11 +10,17 @@ const {
 } = require("resource://devtools/client/shared/vendor/react.js");
 const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
+  connect,
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
+const {
   L10N,
 } = require("resource://devtools/client/netmonitor/src/utils/l10n.js");
 const {
   PANELS,
 } = require("resource://devtools/client/netmonitor/src/constants.js");
+const {
+  getOverriddenUrl,
+} = require("resource://devtools/client/netmonitor/src/selectors/index.js");
 
 // Components
 const Tabbar = createFactory(
@@ -78,6 +84,10 @@ class TabboxPanel extends Component {
       openNetworkDetails: PropTypes.func.isRequired,
       showMessagesView: PropTypes.bool,
       targetSearchResult: PropTypes.object,
+      defaultRawResponse: PropTypes.bool,
+      setDefaultRawResponse: PropTypes.func,
+      isOverridden: PropTypes.bool,
+      overriddenUrl: PropTypes.string,
     };
   }
   static get defaultProps() {
@@ -108,8 +118,12 @@ class TabboxPanel extends Component {
       connector,
       hideToggleButton,
       openLink,
+      defaultRawResponse,
+      isOverridden,
+      overriddenUrl,
       request,
       selectTab,
+      setDefaultRawResponse,
       sourceMapURLService,
       toggleNetworkDetails,
       targetSearchResult,
@@ -123,7 +137,6 @@ class TabboxPanel extends Component {
     const isSse = request.isEventStream;
 
     const showMessagesView = (isWs || isSse) && this.props.showMessagesView;
-
     return Tabbar(
       {
         activeTabId,
@@ -185,7 +198,15 @@ class TabboxPanel extends Component {
         {
           id: PANELS.RESPONSE,
           title: RESPONSE_TITLE,
-          className: "panel-with-code",
+          className:
+            "panel-with-code" +
+            (isOverridden ? " tab-response-overridden" : ""),
+          tooltip: isOverridden
+            ? L10N.getFormatStr(
+                "netmonitor.tab.response-overridden.tooltip",
+                overriddenUrl
+              )
+            : RESPONSE_TITLE,
         },
         ResponsePanel({
           request,
@@ -193,6 +214,8 @@ class TabboxPanel extends Component {
           connector,
           showMessagesView,
           targetSearchResult,
+          defaultRawResponse,
+          setDefaultRawResponse,
         })
       ),
       (request.fromCache || request.status == "304") &&
@@ -239,4 +262,23 @@ class TabboxPanel extends Component {
   }
 }
 
-module.exports = TabboxPanel;
+module.exports = {
+  ConnectedTabboxPanel: connect(
+    (state, props) => {
+      const overriddenUrl = getOverriddenUrl(
+        state,
+        props.request.urlDetails?.url
+      );
+      return {
+        isOverridden: !!overriddenUrl,
+        overriddenUrl,
+      };
+    },
+    {},
+    undefined,
+    { storeKey: "toolbox-store" }
+  )(TabboxPanel),
+  // Export the non-connected variant of the component for the browser console
+  // which might not have toolbox store available.
+  TabboxPanel,
+};

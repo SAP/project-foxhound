@@ -10,6 +10,8 @@ with Files("**"):
 XPIDL_SOURCES += [
     "nsIBackgroundChannelRegistrar.idl",
     "nsIBinaryHttp.idl",
+    "nsICORSPreflightCache.idl",
+    "nsICORSPreflightCacheEntry.idl",
     "nsIEarlyHintObserver.idl",
     "nsIHttpActivityObserver.idl",
     "nsIHttpAuthenticableChannel.idl",
@@ -114,6 +116,7 @@ UNIFIED_SOURCES += [
     "Http2Stream.cpp",
     "Http2StreamBase.cpp",
     "Http2StreamTunnel.cpp",
+    "Http2WebTransportSession.cpp",
     "Http3Session.cpp",
     "Http3Stream.cpp",
     "Http3WebTransportSession.cpp",

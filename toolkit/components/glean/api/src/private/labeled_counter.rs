@@ -9,7 +9,10 @@ use glean::traits::Counter;
 use super::CommonMetricData;
 
 use crate::ipc::{need_ipc, with_ipc_payload};
+#[cfg(test)]
+use crate::private::MetricGetter;
 use crate::private::{CounterMetric, MetricId};
+
 use std::collections::HashMap;
 
 /// A counter metric that knows it's a labeled counter's submetric.
@@ -33,10 +36,10 @@ impl LabeledCounterMetric {
     }
 
     #[cfg(test)]
-    pub(crate) fn metric_id(&self) -> MetricId {
+    pub(crate) fn metric_id(&self) -> MetricGetter {
         match self {
             LabeledCounterMetric::Parent(p) => p.metric_id(),
-            LabeledCounterMetric::Child { id, .. } => *id,
+            LabeledCounterMetric::Child { id, .. } => (*id).into(),
         }
     }
 }
@@ -56,6 +59,19 @@ impl Counter for LabeledCounterMetric {
         match self {
             LabeledCounterMetric::Parent(p) => p.add(amount),
             LabeledCounterMetric::Child { id, label } => {
+                #[cfg(feature = "with_gecko")]
+                if gecko_profiler::can_accept_markers() {
+                    gecko_profiler::add_marker(
+                        "LabeledCounter::add",
+                        super::profiler_utils::TelemetryProfilerCategory,
+                        Default::default(),
+                        super::profiler_utils::IntLikeMetricMarker::new(
+                            (*id).into(),
+                            Some(label.clone()),
+                            amount,
+                        ),
+                    );
+                }
                 with_ipc_payload(move |payload| {
                     if let Some(map) = payload.labeled_counters.get_mut(id) {
                         if let Some(v) = map.get_mut(label) {
@@ -129,7 +145,10 @@ mod test {
         let metric = &metrics::test_only_ipc::a_labeled_counter;
         metric.get("a_label").add(1);
 
-        assert_eq!(1, metric.get("a_label").test_get_value("store1").unwrap());
+        assert_eq!(
+            1,
+            metric.get("a_label").test_get_value("test-ping").unwrap()
+        );
     }
 
     #[test]
@@ -156,7 +175,10 @@ mod test {
 
             let child_metric = parent_metric.get(label);
 
-            let metric_id = child_metric.metric_id();
+            let metric_id = child_metric
+                .metric_id()
+                .metric_id()
+                .expect("Cannot perform IPC calls without a MetricId");
 
             child_metric.add(42);
 
@@ -191,7 +213,10 @@ mod test {
 
         assert_eq!(
             45,
-            parent_metric.get(label).test_get_value("store1").unwrap(),
+            parent_metric
+                .get(label)
+                .test_get_value("test-ping")
+                .unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

@@ -22,6 +22,8 @@ ChromeUtils.defineESModuleGetters(lazy, {
   setDefaultAndAssertSerializationOptions:
     "chrome://remote/content/webdriver-bidi/RemoteValue.sys.mjs",
   TabManager: "chrome://remote/content/shared/TabManager.sys.mjs",
+  UserContextManager:
+    "chrome://remote/content/shared/UserContextManager.sys.mjs",
   WindowGlobalMessageHandler:
     "chrome://remote/content/shared/messagehandler/WindowGlobalMessageHandler.sys.mjs",
 });
@@ -41,6 +43,25 @@ const ScriptEvaluateResultType = {
   Success: "success",
 };
 
+/**
+ * An object that holds information about the preload script.
+ *
+ * @typedef PreloadScript
+ *
+ * @property {Array<ChannelValue>=} arguments
+ *    The arguments to pass to the function call.
+ * @property {Array<string>=} navigables
+ *    The list of navigable browser ids where
+ *    the preload script should be executed.
+ * @property {string} functionDeclaration
+ *    The expression to evaluate.
+ * @property {string=} sandbox
+ *    The name of the sandbox.
+ * @property {Array<string>=} userContexts
+ *    The list of internal user context ids where
+ *    the preload script should be executed.
+ */
+
 class ScriptModule extends RootBiDiModule {
   #preloadScriptMap;
   #subscribedEvents;
@@ -49,8 +70,7 @@ class ScriptModule extends RootBiDiModule {
     super(messageHandler);
 
     // Map in which the keys are UUIDs, and the values are structs
-    // with an item named expression, which is a string,
-    // and an item named sandbox which is a string or null.
+    // of the type PreloadScript.
     this.#preloadScriptMap = new Map();
 
     // Set of event names which have active subscriptions.
@@ -108,6 +128,8 @@ class ScriptModule extends RootBiDiModule {
    * @param {string=} options.sandbox
    *     The name of the sandbox. If the value is null or empty
    *     string, the default realm will be used.
+   * @param {Array<string>=} options.userContexts
+   *     The list of the user context ids.
    *
    * @returns {AddPreloadScriptResult}
    *
@@ -120,34 +142,34 @@ class ScriptModule extends RootBiDiModule {
       contexts: contextIds = null,
       functionDeclaration,
       sandbox = null,
+      userContexts: userContextIds = null,
     } = options;
-    let contexts = null;
+    let userContexts = null;
+    let navigables = null;
 
-    if (contextIds != null) {
-      lazy.assert.array(
+    if (contextIds !== null) {
+      lazy.assert.isNonEmptyArray(
         contextIds,
-        lazy.pprint`Expected "contexts" to be an array, got ${contextIds}`
+        lazy.pprint`Expected "contexts" to be a non-empty array, got ${contextIds}`
       );
-      lazy.assert.that(
-        contexts => !!contexts.length,
-        lazy.pprint`Expected "contexts" array to have at least one item, got ${contextIds}`
-      )(contextIds);
 
-      contexts = new Set();
       for (const contextId of contextIds) {
         lazy.assert.string(
           contextId,
           lazy.pprint`Expected elements of "contexts" to be a string, got ${contextId}`
         );
-        const context = this.#getBrowsingContext(contextId);
+      }
+    } else if (userContextIds !== null) {
+      lazy.assert.isNonEmptyArray(
+        userContextIds,
+        lazy.pprint`Expected "userContextIds" to be a non-empty array, got ${userContextIds}`
+      );
 
-        if (context.parent) {
-          throw new lazy.error.InvalidArgumentError(
-            `Context with id ${contextId} is not a top-level browsing context`
-          );
-        }
-
-        contexts.add(context.browserId);
+      for (const userContextId of userContextIds) {
+        lazy.assert.string(
+          userContextId,
+          lazy.pprint`Expected elements of "userContexts" to be a string, got ${userContextId}`
+        );
       }
     }
 
@@ -167,6 +189,7 @@ class ScriptModule extends RootBiDiModule {
       commandArguments,
       lazy.pprint`Expected "arguments" to be an array, got ${commandArguments}`
     );
+
     commandArguments.forEach(({ type, value }) => {
       lazy.assert.that(
         t => t === "channel",
@@ -175,12 +198,49 @@ class ScriptModule extends RootBiDiModule {
       this.#assertChannelArgument(value);
     });
 
+    if (contextIds !== null && userContextIds !== null) {
+      throw new lazy.error.InvalidArgumentError(
+        `Providing both "contexts" and "userContexts" arguments is not supported`
+      );
+    }
+
+    if (contextIds !== null) {
+      navigables = new Set();
+
+      for (const contextId of contextIds) {
+        const context = this.#getBrowsingContext(contextId);
+
+        lazy.assert.topLevel(
+          context,
+          lazy.pprint`Browsing context with id ${contextId} is not top-level`
+        );
+
+        navigables.add(context.browserId);
+      }
+    } else if (userContextIds !== null) {
+      userContexts = new Set();
+
+      for (const userContextId of userContextIds) {
+        const internalId =
+          lazy.UserContextManager.getInternalIdById(userContextId);
+
+        if (internalId === null) {
+          throw new lazy.error.NoSuchUserContextError(
+            `User context with id: ${userContextId} doesn't exist`
+          );
+        }
+
+        userContexts.add(internalId);
+      }
+    }
+
     const script = lazy.generateUUID();
     const preloadScript = {
       arguments: commandArguments,
-      contexts,
+      contexts: navigables,
       functionDeclaration,
       sandbox,
+      userContexts,
     };
 
     this.#preloadScriptMap.set(script, preloadScript);
@@ -196,7 +256,7 @@ class ScriptModule extends RootBiDiModule {
       ],
     };
 
-    if (contexts === null) {
+    if (navigables === null && userContexts === null) {
       await this.messageHandler.addSessionDataItem({
         ...preloadScriptDataItem,
         contextDescriptor: {
@@ -205,15 +265,29 @@ class ScriptModule extends RootBiDiModule {
       });
     } else {
       const preloadScriptDataItems = [];
-      for (const id of contexts) {
-        preloadScriptDataItems.push({
-          ...preloadScriptDataItem,
-          contextDescriptor: {
-            type: lazy.ContextDescriptorType.TopBrowsingContext,
-            id,
-          },
-          method: lazy.SessionDataMethod.Add,
-        });
+
+      if (navigables === null) {
+        for (const id of userContexts) {
+          preloadScriptDataItems.push({
+            ...preloadScriptDataItem,
+            contextDescriptor: {
+              type: lazy.ContextDescriptorType.UserContext,
+              id,
+            },
+            method: lazy.SessionDataMethod.Add,
+          });
+        }
+      } else {
+        for (const id of navigables) {
+          preloadScriptDataItems.push({
+            ...preloadScriptDataItem,
+            contextDescriptor: {
+              type: lazy.ContextDescriptorType.TopBrowsingContext,
+              id,
+            },
+            method: lazy.SessionDataMethod.Add,
+          });
+        }
       }
 
       await this.messageHandler.updateSessionData(preloadScriptDataItems);
@@ -634,7 +708,10 @@ class ScriptModule extends RootBiDiModule {
       ],
     };
 
-    if (preloadScript.contexts === null) {
+    if (
+      preloadScript.contexts === null &&
+      preloadScript.userContexts === null
+    ) {
       await this.messageHandler.removeSessionDataItem({
         ...sessionDataItem,
         contextDescriptor: {
@@ -643,15 +720,29 @@ class ScriptModule extends RootBiDiModule {
       });
     } else {
       const sessionDataItemToUpdate = [];
-      for (const id of preloadScript.contexts) {
-        sessionDataItemToUpdate.push({
-          ...sessionDataItem,
-          contextDescriptor: {
-            type: lazy.ContextDescriptorType.TopBrowsingContext,
-            id,
-          },
-          method: lazy.SessionDataMethod.Remove,
-        });
+
+      if (preloadScript.contexts === null) {
+        for (const id of preloadScript.userContexts) {
+          sessionDataItemToUpdate.push({
+            ...sessionDataItem,
+            contextDescriptor: {
+              type: lazy.ContextDescriptorType.UserContext,
+              id,
+            },
+            method: lazy.SessionDataMethod.Remove,
+          });
+        }
+      } else {
+        for (const id of preloadScript.contexts) {
+          sessionDataItemToUpdate.push({
+            ...sessionDataItem,
+            contextDescriptor: {
+              type: lazy.ContextDescriptorType.TopBrowsingContext,
+              id,
+            },
+            method: lazy.SessionDataMethod.Remove,
+          });
+        }
       }
 
       await this.messageHandler.updateSessionData(sessionDataItemToUpdate);
@@ -676,9 +767,9 @@ class ScriptModule extends RootBiDiModule {
     );
     lazy.setDefaultAndAssertSerializationOptions(serializationOptions);
     lazy.assert.that(
-      ownership =>
+      ownershipValue =>
         [lazy.OwnershipModel.None, lazy.OwnershipModel.Root].includes(
-          ownership
+          ownershipValue
         ),
       `Expected channel argument "ownership" to be one of ${Object.values(
         lazy.OwnershipModel
@@ -792,7 +883,7 @@ class ScriptModule extends RootBiDiModule {
       },
     };
     const realms = await this.#getRealmInfos(destination);
-    const realm = realms.find(realm => realm.realm == realmId);
+    const realm = realms.find(el => el.realm == realmId);
 
     if (realm && realm.context !== null) {
       return this.#getBrowsingContext(realm.context);

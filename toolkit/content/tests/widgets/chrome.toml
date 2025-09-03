@@ -6,24 +6,27 @@ support-files = [
   "window_label_checkbox.xhtml",
   "window_menubar.xhtml",
   "seek_with_sound.webm",
-  "input-test-helpers.js",
+  "lit-test-helpers.js",
 ]
 prefs = ["app.support.baseURL='https://support.mozilla.org/'"]
 
 ["test_contextmenu_menugroup.xhtml"]
-skip-if = ["os == 'linux'"] # Bug 1115088
 
 ["test_contextmenu_nested.xhtml"]
-skip-if = ["os == 'linux'"] # Bug 1116215
 
 ["test_editor_currentURI.xhtml"]
 
 ["test_label_checkbox.xhtml"]
 
 ["test_menubar.xhtml"]
-skip-if = ["os == 'mac'"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1933983
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1933983
+]
 
 ["test_moz_base_input_element.html"]
+
+["test_moz_box_button.html"]
 
 ["test_moz_button.html"]
 
@@ -37,10 +40,15 @@ skip-if = ["os == 'mac'"]
 
 ["test_moz_five_star.html"]
 
+["test_moz_input_color.html"]
+
+["test_moz_input_search.html"]
+
+["test_moz_input_text.html"]
+
 ["test_moz_label.html"]
 
 ["test_moz_lit_element.html"]
-
 
 ["test_moz_message_bar.html"]
 
@@ -60,6 +68,8 @@ skip-if = ["os == 'mac'"]
 
 ["test_panel_item_checkbox.html"]
 
+["test_panel_item_disabled.html"]
+
 ["test_panel_list_accessibility.html"]
 
 ["test_panel_list_anchoring.html"]
@@ -70,7 +80,6 @@ skip-if = ["os == 'mac'"]
 
 ["test_popupanchor.xhtml"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04'", # Bug 1335894 perma-fail on linux 16.04
   "verify && os == 'win'",
 ]
 
@@ -85,10 +94,6 @@ support-files = [
 ]
 skip-if = [
   "os == 'android'",
-  "os == 'linux' && debug", # Bug 1765783
 ]
 
 ["test_videocontrols_onclickplay.html"]
-skip-if = [
-   "os == 'linux' && os_version == '18.04' && debug", # Bug 1787007
-]

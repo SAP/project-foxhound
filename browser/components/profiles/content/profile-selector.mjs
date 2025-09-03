@@ -29,11 +29,48 @@ export class ProfileSelector extends MozLitElement {
   };
 
   #initPromise = null;
+  #startupParams = null;
 
   constructor() {
     super();
 
     this.#initPromise = this.init();
+    if (window.arguments?.[0] instanceof Ci.nsIDialogParamBlock) {
+      this.#startupParams = window.arguments[0];
+    }
+  }
+
+  get isStartupUI() {
+    return !!this.#startupParams;
+  }
+
+  /**
+   * Sets the return block for the startup UI.
+   *
+   * @param {SelectableProfile} profile The profile to launch
+   * @param {string[]} args Any additional command line arguments to append
+   */
+  async setLaunchArguments(profile, args = []) {
+    if (!this.#startupParams) {
+      return;
+    }
+
+    this.#startupParams.SetInt(
+      0,
+      Ci.nsIToolkitProfileService.launchWithProfile
+    );
+    // Set start offline to false.
+    this.#startupParams.SetInt(1, 0);
+    // Number of new arguments.
+    this.#startupParams.SetInt(2, args.length);
+
+    this.#startupParams.objects.insertElementAt(await profile.rootDir, 0);
+    this.#startupParams.objects.insertElementAt(await profile.localDir, 1);
+
+    this.#startupParams.SetNumberStrings(args.length);
+    for (let i = 0; i < args.length; i++) {
+      this.#startupParams.SetString(i, args[i]);
+    }
   }
 
   async getUpdateComplete() {
@@ -63,34 +100,51 @@ export class ProfileSelector extends MozLitElement {
 
     this.initialized = true;
     this.#initPromise = null;
+
+    if (this.isStartupUI) {
+      window.addEventListener("unload", () => {
+        // In case the user closed the window manually.
+        this.selectableProfileService.uninit();
+      });
+    }
   }
 
   handleCheckboxToggle() {
+    let state = this.checkbox.checked ? "enabled" : "disabled";
+    Glean.profilesSelectorWindow.showAtStartup.record({ value: state });
     this.selectableProfileService.showProfileSelectorWindow(
       this.checkbox.checked
     );
   }
 
+  async launchProfile(profile, url) {
+    if (this.isStartupUI) {
+      await this.setLaunchArguments(profile, url ? ["-url", url] : []);
+      await this.selectableProfileService.uninit();
+    } else {
+      this.selectableProfileService.launchInstance(profile, url);
+    }
+
+    window.close();
+  }
+
   async handleEvent(event) {
     switch (event.type) {
       case "LaunchProfile": {
+        Glean.profilesSelectorWindow.launch.record();
         let { profile, url } = event.detail;
-        this.selectableProfileService.launchInstance(profile, url);
-        window.close();
+        await this.launchProfile(profile, url);
         break;
       }
       case "CreateProfile": {
-        await this.selectableProfileService.createNewProfile();
-        this.profiles = await this.selectableProfileService.getAllProfiles();
+        let profile =
+          await this.selectableProfileService.createNewProfile(false);
+        await this.launchProfile(profile, "about:newprofile");
         break;
       }
       case "DeleteProfile": {
         let profile = event.detail;
-        this.selectableProfileService.launchInstance(
-          profile,
-          "about:deleteprofile"
-        );
-        window.close();
+        await this.launchProfile(profile, "about:deleteprofile");
         break;
       }
     }
@@ -109,7 +163,12 @@ export class ProfileSelector extends MozLitElement {
         rel="stylesheet"
         href="chrome://global/skin/in-content/common.css"
       />
-      <img class="logo" src="chrome://branding/content/about-logo.svg" />
+      <img
+        class="logo"
+        data-l10n-id="profile-window-logo"
+        data-l10n-attrs="alt"
+        src="chrome://branding/content/about-logo.svg"
+      />
       <h1 data-l10n-id="profile-window-heading"></h1>
       <p class="profiles-body-text" data-l10n-id="profile-window-body"></p>
       <div class="profile-list">
@@ -120,7 +179,7 @@ export class ProfileSelector extends MozLitElement {
       </div>
       <moz-checkbox
         @click=${this.handleCheckboxToggle}
-        data-l10n-id="profile-window-checkbox-label"
+        data-l10n-id="profile-window-checkbox-label-2"
         ?checked=${this.selectableProfileService.groupToolkitProfile
           .showProfileSelector}
       ></moz-checkbox>`;

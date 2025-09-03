@@ -255,11 +255,15 @@ nsresult CSPToCSPInfo(nsIContentSecurityPolicy* aCSP, CSPInfo* aCSPInfo) {
   uint64_t windowID = aCSP->GetInnerWindowID();
   bool skipAllowInlineStyleCheck = aCSP->GetSkipAllowInlineStyleCheck();
 
+  RequireTrustedTypesForDirectiveState requireTrustedTypesForDirectiveState =
+      aCSP->GetRequireTrustedTypesForDirectiveState();
+
   nsTArray<ContentSecurityPolicy> policies;
   static_cast<nsCSPContext*>(aCSP)->SerializePolicies(policies);
 
   *aCSPInfo = CSPInfo(std::move(policies), requestingPrincipalInfo, selfURISpec,
-                      referrer, windowID, skipAllowInlineStyleCheck);
+                      referrer, windowID, requireTrustedTypesForDirectiveState,
+                      skipAllowInlineStyleCheck);
   return NS_OK;
 }
 
@@ -541,13 +545,13 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
         redirectChain, interceptionInfo->FromThirdParty()));
   }
 
-  Maybe<uint64_t> overriddenFingerprintingSettingsArg;
-  Maybe<RFPTarget> overriddenFingerprintingSettings =
+  Maybe<RFPTargetSet> overriddenFingerprintingSettingsArg;
+  Maybe<RFPTargetSet> overriddenFingerprintingSettings =
       aLoadInfo->GetOverriddenFingerprintingSettings();
 
   if (overriddenFingerprintingSettings) {
     overriddenFingerprintingSettingsArg =
-        Some(uint64_t(overriddenFingerprintingSettings.ref()));
+        Some(overriddenFingerprintingSettings.ref());
   }
 
   *outLoadInfoArgs = LoadInfoArgs(
@@ -573,10 +577,10 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetFrameBrowsingContextID(),
       aLoadInfo->GetInitialSecurityCheckDone(),
       aLoadInfo->GetIsInThirdPartyContext(), isThirdPartyContextToTopWindow,
-      aLoadInfo->GetIsFormSubmission(), aLoadInfo->GetIsGETRequest(),
-      aLoadInfo->GetSendCSPViolationEvents(), aLoadInfo->GetOriginAttributes(),
-      redirectChainIncludingInternalRedirects, redirectChain,
-      aLoadInfo->GetHasInjectedCookieForCookieBannerHandling(),
+      aLoadInfo->GetIsOn3PCBExceptionList(), aLoadInfo->GetIsFormSubmission(),
+      aLoadInfo->GetIsGETRequest(), aLoadInfo->GetSendCSPViolationEvents(),
+      aLoadInfo->GetOriginAttributes(), redirectChainIncludingInternalRedirects,
+      redirectChain, aLoadInfo->GetHasInjectedCookieForCookieBannerHandling(),
       aLoadInfo->GetSchemelessInput(), aLoadInfo->GetHttpsUpgradeTelemetry(),
       ipcClientInfo, ipcReservedClientInfo, ipcInitialClientInfo, ipcController,
       aLoadInfo->CorsUnsafeHeaders(), aLoadInfo->GetForcePreflight(),
@@ -598,7 +602,8 @@ nsresult LoadInfoToLoadInfoArgs(nsILoadInfo* aLoadInfo,
       aLoadInfo->GetStoragePermission(), overriddenFingerprintingSettingsArg,
       aLoadInfo->GetIsMetaRefresh(), aLoadInfo->GetLoadingEmbedderPolicy(),
       aLoadInfo->GetIsOriginTrialCoepCredentiallessEnabledForTopLevel(),
-      unstrippedURI, interceptionInfoArg, aLoadInfo->GetIsNewWindowTarget());
+      unstrippedURI, interceptionInfoArg, aLoadInfo->GetIsNewWindowTarget(),
+      aLoadInfo->GetUserNavigationInvolvement());
 
   return NS_OK;
 }
@@ -785,10 +790,10 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
   CookieJarSettings::Deserialize(loadInfoArgs.cookieJarSettings(),
                                  getter_AddRefs(cookieJarSettings));
 
-  Maybe<RFPTarget> overriddenFingerprintingSettings;
+  Maybe<RFPTargetSet> overriddenFingerprintingSettings;
   if (loadInfoArgs.overriddenFingerprintingSettings().isSome()) {
     overriddenFingerprintingSettings.emplace(
-        RFPTarget(loadInfoArgs.overriddenFingerprintingSettings().ref()));
+        loadInfoArgs.overriddenFingerprintingSettings().ref());
   }
 
   nsCOMPtr<nsIContentSecurityPolicy> cspToInherit;
@@ -865,8 +870,9 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
       loadInfoArgs.browsingContextID(), loadInfoArgs.frameBrowsingContextID(),
       loadInfoArgs.initialSecurityCheckDone(),
       loadInfoArgs.isInThirdPartyContext(), isThirdPartyContextToTopWindow,
-      loadInfoArgs.isFormSubmission(), loadInfoArgs.isGETRequest(),
-      loadInfoArgs.sendCSPViolationEvents(), loadInfoArgs.originAttributes(),
+      loadInfoArgs.isOn3PCBExceptionList(), loadInfoArgs.isFormSubmission(),
+      loadInfoArgs.isGETRequest(), loadInfoArgs.sendCSPViolationEvents(),
+      loadInfoArgs.originAttributes(),
       std::move(redirectChainIncludingInternalRedirects),
       std::move(redirectChain), std::move(ancestorPrincipals),
       ancestorBrowsingContextIDs, loadInfoArgs.corsUnsafeHeaders(),
@@ -892,7 +898,8 @@ nsresult LoadInfoArgsToLoadInfo(const LoadInfoArgs& loadInfoArgs,
       loadInfoArgs.unstrippedURI(), interceptionInfo,
       loadInfoArgs.hasInjectedCookieForCookieBannerHandling(),
       loadInfoArgs.schemelessInput(), loadInfoArgs.httpsUpgradeTelemetry(),
-      loadInfoArgs.isNewWindowTarget());
+      loadInfoArgs.isNewWindowTarget(),
+      loadInfoArgs.userNavigationInvolvement());
 
   if (loadInfoArgs.isFromProcessingFrameAttributes()) {
     loadInfo->SetIsFromProcessingFrameAttributes();
@@ -948,13 +955,13 @@ void LoadInfoToParentLoadInfoForwarder(
         aLoadInfo->GetIsThirdPartyContextToTopWindow());
   }
 
-  Maybe<uint64_t> overriddenFingerprintingSettingsArg;
-  Maybe<RFPTarget> overriddenFingerprintingSettings =
+  Maybe<RFPTargetSet> overriddenFingerprintingSettingsArg;
+  Maybe<RFPTargetSet> overriddenFingerprintingSettings =
       aLoadInfo->GetOverriddenFingerprintingSettings();
 
   if (overriddenFingerprintingSettings) {
     overriddenFingerprintingSettingsArg =
-        Some(uint64_t(overriddenFingerprintingSettings.ref()));
+        Some(overriddenFingerprintingSettings.ref());
   }
 
   *aForwarderArgsOut = ParentLoadInfoForwarderArgs(
@@ -975,7 +982,8 @@ void LoadInfoToParentLoadInfoForwarder(
       aLoadInfo->GetRequestBlockingReason(), aLoadInfo->GetStoragePermission(),
       overriddenFingerprintingSettingsArg, aLoadInfo->GetIsMetaRefresh(),
       isThirdPartyContextToTopWindow, aLoadInfo->GetIsInThirdPartyContext(),
-      unstrippedURI);
+      aLoadInfo->GetIsOn3PCBExceptionList(), unstrippedURI,
+      aLoadInfo->GetUserNavigationInvolvement());
 }
 
 nsresult MergeParentLoadInfoForwarder(
@@ -1059,8 +1067,11 @@ nsresult MergeParentLoadInfoForwarder(
     nsresult rv =
         aLoadInfo->GetCookieJarSettings(getter_AddRefs(cookieJarSettings));
     if (NS_SUCCEEDED(rv) && cookieJarSettings) {
-      static_cast<CookieJarSettings*>(cookieJarSettings.get())
-          ->Merge(cookieJarSettingsArgs.ref());
+      nsCOMPtr<nsICookieJarSettings> mergedCookieJarSettings;
+      mergedCookieJarSettings =
+          static_cast<CookieJarSettings*>(cookieJarSettings.get())
+              ->Merge(cookieJarSettingsArgs.ref());
+      aLoadInfo->SetCookieJarSettings(mergedCookieJarSettings);
     }
   }
 
@@ -1070,11 +1081,11 @@ nsresult MergeParentLoadInfoForwarder(
   rv = aLoadInfo->SetIsMetaRefresh(aForwarderArgs.isMetaRefresh());
   NS_ENSURE_SUCCESS(rv, rv);
 
-  const Maybe<uint64_t> overriddenFingerprintingSettings =
+  const Maybe<RFPTargetSet> overriddenFingerprintingSettings =
       aForwarderArgs.overriddenFingerprintingSettings();
   if (overriddenFingerprintingSettings.isSome()) {
     aLoadInfo->SetOverriddenFingerprintingSettings(
-        RFPTarget(overriddenFingerprintingSettings.ref()));
+        overriddenFingerprintingSettings.ref());
   }
 
   static_cast<LoadInfo*>(aLoadInfo)->ClearIsThirdPartyContextToTopWindow();
@@ -1088,6 +1099,10 @@ nsresult MergeParentLoadInfoForwarder(
       aForwarderArgs.isInThirdPartyContext());
   NS_ENSURE_SUCCESS(rv, rv);
 
+  rv = aLoadInfo->SetIsOn3PCBExceptionList(
+      aForwarderArgs.isOn3PCBExceptionList());
+  NS_ENSURE_SUCCESS(rv, rv);
+
   rv = aLoadInfo->SetUnstrippedURI(aForwarderArgs.unstrippedURI());
   NS_ENSURE_SUCCESS(rv, rv);
 
@@ -1095,6 +1110,9 @@ nsresult MergeParentLoadInfoForwarder(
     aLoadInfo->SetContainerFeaturePolicyInfo(
         *aForwarderArgs.containerFeaturePolicyInfo());
   }
+
+  aLoadInfo->SetUserNavigationInvolvement(
+      uint8_t(aForwarderArgs.userNavigationInvolvement()));
 
   return NS_OK;
 }

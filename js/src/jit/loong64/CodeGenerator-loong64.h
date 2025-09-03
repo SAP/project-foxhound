@@ -14,7 +14,6 @@ namespace js {
 namespace jit {
 
 class CodeGeneratorLOONG64;
-class OutOfLineBailout;
 class OutOfLineTableSwitch;
 
 using OutOfLineWasmTruncateCheck =
@@ -34,9 +33,9 @@ class CodeGeneratorLOONG64 : public CodeGeneratorShared {
   Operand ToOperand(const LDefinition* def);
 
 #ifdef JS_PUNBOX64
-  Operand ToOperandOrRegister64(const LInt64Allocation input);
+  Operand ToOperandOrRegister64(const LInt64Allocation& input);
 #else
-  Register64 ToOperandOrRegister64(const LInt64Allocation input);
+  Register64 ToOperandOrRegister64(const LInt64Allocation& input);
 #endif
 
   MoveOperand toMoveOperand(LAllocation a) const;
@@ -139,7 +138,6 @@ class CodeGeneratorLOONG64 : public CodeGeneratorShared {
 
  public:
   // Out of line visitors.
-  void visitOutOfLineBailout(OutOfLineBailout* ool);
   void visitOutOfLineTableSwitch(OutOfLineTableSwitch* ool);
   void visitOutOfLineWasmTruncateCheck(OutOfLineWasmTruncateCheck* ool);
 
@@ -153,28 +151,9 @@ class CodeGeneratorLOONG64 : public CodeGeneratorShared {
   void emitWasmLoadI64(T* ins);
   template <typename T>
   void emitWasmStoreI64(T* ins);
-
-  ValueOperand ToValue(LInstruction* ins, size_t pos);
-  ValueOperand ToTempValue(LInstruction* ins, size_t pos);
-
-  // Functions for LTestVAndBranch.
-  void splitTagForTest(const ValueOperand& value, ScratchTagScope& tag);
 };
 
 typedef CodeGeneratorLOONG64 CodeGeneratorSpecific;
-
-// An out-of-line bailout thunk.
-class OutOfLineBailout : public OutOfLineCodeBase<CodeGeneratorLOONG64> {
- protected:
-  LSnapshot* snapshot_;
-
- public:
-  OutOfLineBailout(LSnapshot* snapshot) : snapshot_(snapshot) {}
-
-  void accept(CodeGeneratorLOONG64* codegen) override;
-
-  LSnapshot* snapshot() const { return snapshot_; }
-};
 
 }  // namespace jit
 }  // namespace js

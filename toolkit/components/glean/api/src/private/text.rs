@@ -8,11 +8,6 @@ use std::sync::Arc;
 use super::{CommonMetricData, MetricId};
 use crate::ipc::need_ipc;
 
-#[cfg(feature = "with_gecko")]
-use super::profiler_utils::StringLikeMetricMarker;
-#[cfg(feature = "with_gecko")]
-use gecko_profiler::gecko_profiler_category;
-
 /// A text metric.
 ///
 /// Record a string value with arbitrary content. Supports non-ASCII
@@ -45,6 +40,10 @@ use gecko_profiler::gecko_profiler_category;
 #[derive(Clone)]
 pub enum TextMetric {
     Parent {
+        /// The metric's ID. Used for testing and profiler markers. Text
+        /// metrics canot be labeled, so we only store a MetricId. If this
+        /// changes, this should be changed to a MetricGetter to distinguish
+        /// between metrics and sub-metrics.
         id: MetricId,
         inner: Arc<glean::private::TextMetric>,
     },
@@ -61,7 +60,7 @@ impl TextMetric {
             TextMetric::Child(TextMetricIpc)
         } else {
             TextMetric::Parent {
-                id: id,
+                id,
                 inner: Arc::new(glean::private::TextMetric::new(meta)),
             }
         }
@@ -89,14 +88,11 @@ impl glean::traits::Text for TextMetric {
             TextMetric::Parent { id, inner } => {
                 let value = value.into();
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
-                    gecko_profiler::add_marker(
-                        "Text::set",
-                        gecko_profiler_category!(Telemetry),
-                        Default::default(),
-                        StringLikeMetricMarker::new(*id, &value),
-                    );
-                }
+                gecko_profiler::lazy_add_marker!(
+                    "Text::set",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    super::profiler_utils::StringLikeMetricMarker::new((*id).into(), &value)
+                );
                 inner.set(value);
             }
             TextMetric::Child(_) => {
@@ -166,7 +162,10 @@ mod test {
 
         metric.set("test_text_value");
 
-        assert_eq!("test_text_value", metric.test_get_value("store1").unwrap());
+        assert_eq!(
+            "test_text_value",
+            metric.test_get_value("test-ping").unwrap()
+        );
     }
 
     #[test]
@@ -193,7 +192,7 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "test_parent_value" == parent_metric.test_get_value("store1").unwrap(),
+            "test_parent_value" == parent_metric.test_get_value("test-ping").unwrap(),
             "Text metrics should only work in the parent process"
         );
     }

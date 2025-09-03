@@ -93,6 +93,14 @@ export class Aggregator {
       setNotification(notification) {
         aggregator.forEachViewModel(vm => vm.setNotification(notification));
       },
+
+      setDisplayMode(displayMode) {
+        aggregator.forEachViewModel(vm => vm.setDisplayMode(displayMode));
+      },
+
+      discardChangesConfirmed() {
+        aggregator.forEachViewModel(vm => vm.discardChangesConfirmed());
+      },
     };
   }
 }

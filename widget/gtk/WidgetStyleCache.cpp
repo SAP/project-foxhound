@@ -60,18 +60,6 @@ static GtkWidget* CreateScrollbarWidget(WidgetNodeType aAppearance,
   return widget;
 }
 
-static GtkWidget* CreateCheckboxWidget() {
-  GtkWidget* widget = gtk_check_button_new_with_label("M");
-  AddToWindowContainer(widget);
-  return widget;
-}
-
-static GtkWidget* CreateRadiobuttonWidget() {
-  GtkWidget* widget = gtk_radio_button_new_with_label(nullptr, "M");
-  AddToWindowContainer(widget);
-  return widget;
-}
-
 static GtkWidget* CreateMenuPopupWidget() {
   GtkWidget* widget = gtk_menu_new();
   GtkStyleContext* style = gtk_widget_get_style_context(widget);
@@ -130,12 +118,6 @@ static GtkWidget* CreateButtonArrowWidget() {
   GtkWidget* widget = gtk_arrow_new(GTK_ARROW_DOWN, GTK_SHADOW_OUT);
   gtk_container_add(GTK_CONTAINER(GetWidget(MOZ_GTK_TOGGLE_BUTTON)), widget);
   gtk_widget_show(widget);
-  return widget;
-}
-
-static GtkWidget* CreateSpinWidget() {
-  GtkWidget* widget = gtk_spin_button_new(nullptr, 1, 0);
-  AddToWindowContainer(widget);
   return widget;
 }
 
@@ -441,18 +423,20 @@ static void CreateHeaderBarWidget(WidgetNodeType aAppearance) {
   gtk_style_context_add_class(fixedStyle, "titlebar");
 
   GtkWidget* headerBar = gtk_header_bar_new();
+  // From create_headerbar in gtkwindow.c
+  g_object_set(headerBar, "title", "Title", "has-subtitle", FALSE,
+               "show-close-button", TRUE, NULL);
 
   // Emulate what create_titlebar() at gtkwindow.c does.
   GtkStyleContext* headerBarStyle = gtk_widget_get_style_context(headerBar);
-  gtk_style_context_add_class(headerBarStyle, "titlebar");
+  gtk_style_context_add_class(headerBarStyle, GTK_STYLE_CLASS_TITLEBAR);
 
   // TODO: Define default-decoration titlebar style as workaround
-  // to ensure the titlebar buttons does not overflow outside.
-  // Recently the titlebar size is calculated as
-  // tab size + titlebar border/padding (default-decoration has 6px padding
-  // at default Adwaita theme).
-  // We need to fix titlebar size calculation to also include
-  // titlebar button sizes. (Bug 1419442)
+  // to ensure the titlebar buttons does not overflow outside. Recently the
+  // titlebar size is calculated as tab size + titlebar border/padding
+  // (default-decoration has 6px padding at default Adwaita theme).
+  // We need to fix titlebar size calculation to also include titlebar button
+  // sizes. (Bug 1419442)
   gtk_style_context_add_class(headerBarStyle, "default-decoration");
 
   sWidgetStorage[aAppearance] = headerBar;
@@ -480,6 +464,7 @@ static void CreateHeaderBarWidget(WidgetNodeType aAppearance) {
 
   gtk_style_context_invalidate(headerBarStyle);
   gtk_style_context_invalidate(fixedStyle);
+  gtk_widget_show_all(headerBar);
 
   // Some themes like Elementary's style the container of the headerbar rather
   // than the header bar itself.
@@ -685,12 +670,8 @@ static GtkWidget* CreateWidget(WidgetNodeType aAppearance) {
       return CreateWindowWidget();
     case MOZ_GTK_WINDOW_CONTAINER:
       return CreateWindowContainerWidget();
-    case MOZ_GTK_CHECKBUTTON_CONTAINER:
-      return CreateCheckboxWidget();
     case MOZ_GTK_PROGRESSBAR:
       return CreateProgressWidget();
-    case MOZ_GTK_RADIOBUTTON_CONTAINER:
-      return CreateRadiobuttonWidget();
     case MOZ_GTK_SCROLLBAR_VERTICAL:
       return CreateScrollbarWidget(aAppearance, GTK_ORIENTATION_VERTICAL);
     case MOZ_GTK_MENUPOPUP:
@@ -701,8 +682,6 @@ static GtkWidget* CreateWidget(WidgetNodeType aAppearance) {
       return CreateExpanderWidget();
     case MOZ_GTK_FRAME:
       return CreateFrameWidget();
-    case MOZ_GTK_SPINBUTTON:
-      return CreateSpinWidget();
     case MOZ_GTK_BUTTON:
       return CreateButtonWidget();
     case MOZ_GTK_TOGGLE_BUTTON:
@@ -1022,25 +1001,12 @@ static GtkStyleContext* GetCssNodeStyleInternal(WidgetNodeType aNodeType) {
       style = CreateChildCSSNode(GTK_STYLE_CLASS_SLIDER,
                                  MOZ_GTK_SCROLLBAR_TROUGH_VERTICAL);
       break;
-    case MOZ_GTK_RADIOBUTTON:
-      style = CreateChildCSSNode(GTK_STYLE_CLASS_RADIO,
-                                 MOZ_GTK_RADIOBUTTON_CONTAINER);
-      break;
-    case MOZ_GTK_CHECKBUTTON:
-      style = CreateChildCSSNode(GTK_STYLE_CLASS_CHECK,
-                                 MOZ_GTK_CHECKBUTTON_CONTAINER);
-      break;
     case MOZ_GTK_PROGRESS_TROUGH:
       /* Progress bar background (trough) */
       style = CreateChildCSSNode(GTK_STYLE_CLASS_TROUGH, MOZ_GTK_PROGRESSBAR);
       break;
     case MOZ_GTK_PROGRESS_CHUNK:
       style = CreateChildCSSNode("progress", MOZ_GTK_PROGRESS_TROUGH);
-      break;
-    case MOZ_GTK_SPINBUTTON_ENTRY:
-      // TODO - create from CSS node
-      style =
-          CreateSubStyleWithClass(MOZ_GTK_SPINBUTTON, GTK_STYLE_CLASS_ENTRY);
       break;
     case MOZ_GTK_SCROLLED_WINDOW:
       // TODO - create from CSS node
@@ -1123,8 +1089,7 @@ static GtkStyleContext* GetCssNodeStyleInternal(WidgetNodeType aNodeType) {
     }
     case MOZ_GTK_NOTEBOOK:
     case MOZ_GTK_NOTEBOOK_HEADER:
-    case MOZ_GTK_TABPANELS:
-    case MOZ_GTK_TAB_SCROLLARROW: {
+    case MOZ_GTK_TABPANELS: {
       // TODO - create from CSS node
       GtkWidget* widget = GetWidget(MOZ_GTK_NOTEBOOK);
       return gtk_widget_get_style_context(widget);
@@ -1166,14 +1131,6 @@ static GtkStyleContext* GetWidgetStyleInternal(WidgetNodeType aNodeType) {
       style = CreateSubStyleWithClass(MOZ_GTK_SCROLLBAR_VERTICAL,
                                       GTK_STYLE_CLASS_SLIDER);
       break;
-    case MOZ_GTK_RADIOBUTTON:
-      style = CreateSubStyleWithClass(MOZ_GTK_RADIOBUTTON_CONTAINER,
-                                      GTK_STYLE_CLASS_RADIO);
-      break;
-    case MOZ_GTK_CHECKBUTTON:
-      style = CreateSubStyleWithClass(MOZ_GTK_CHECKBUTTON_CONTAINER,
-                                      GTK_STYLE_CLASS_CHECK);
-      break;
     case MOZ_GTK_PROGRESS_TROUGH:
       style =
           CreateSubStyleWithClass(MOZ_GTK_PROGRESSBAR, GTK_STYLE_CLASS_TROUGH);
@@ -1182,10 +1139,6 @@ static GtkStyleContext* GetWidgetStyleInternal(WidgetNodeType aNodeType) {
       style = CreateSubStyleWithClass(MOZ_GTK_PROGRESSBAR,
                                       GTK_STYLE_CLASS_PROGRESSBAR);
       gtk_style_context_remove_class(style, GTK_STYLE_CLASS_TROUGH);
-      break;
-    case MOZ_GTK_SPINBUTTON_ENTRY:
-      style =
-          CreateSubStyleWithClass(MOZ_GTK_SPINBUTTON, GTK_STYLE_CLASS_ENTRY);
       break;
     case MOZ_GTK_SCROLLED_WINDOW:
       style = CreateSubStyleWithClass(MOZ_GTK_SCROLLED_WINDOW,
@@ -1249,8 +1202,7 @@ static GtkStyleContext* GetWidgetStyleInternal(WidgetNodeType aNodeType) {
       break;
     case MOZ_GTK_NOTEBOOK:
     case MOZ_GTK_NOTEBOOK_HEADER:
-    case MOZ_GTK_TABPANELS:
-    case MOZ_GTK_TAB_SCROLLARROW: {
+    case MOZ_GTK_TABPANELS: {
       GtkWidget* widget = GetWidget(MOZ_GTK_NOTEBOOK);
       return gtk_widget_get_style_context(widget);
     }

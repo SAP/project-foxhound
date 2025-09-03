@@ -22,6 +22,7 @@ import mozilla.components.browser.menu.view.MenuButton
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.thumbnails.loader.ThumbnailLoader
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import mozilla.components.concept.base.images.ImageLoadRequest
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import org.mozilla.fenix.R
@@ -31,12 +32,9 @@ import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.components.toolbar.navbar.BrowserNavBar
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.components.toolbar.navbar.updateNavBarForConfigurationChange
-import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.databinding.TabPreviewBinding
 import org.mozilla.fenix.ext.components
-import org.mozilla.fenix.ext.isLargeWindow
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.theme.AcornWindowSize
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.ThemeManager
 import kotlin.math.min
@@ -96,12 +94,11 @@ class TabPreview @JvmOverloads constructor(
                                 // before adding fake navigation bar in the preview, remove fake toolbar
                                 removeView(mockToolbarView)
                                 AndroidView(factory = { _ -> mockToolbarView })
-                            } else {
-                                Divider()
                             }
 
                             BrowserNavBar(
                                 isPrivateMode = browserStore.state.selectedTab?.content?.private ?: false,
+                                showDivider = isToolbarAtTop,
                                 browserStore = browserStore,
                                 menuButton = MenuButton(context).apply {
                                     setColorFilter(
@@ -158,10 +155,8 @@ class TabPreview @JvmOverloads constructor(
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
 
-        val store = context.components.core.store
-        store.state.selectedTab?.let {
-            val count = store.state.getNormalOrPrivateTabs(it.content.private).size
-            binding.tabButton.setCount(count)
+        currentOpenedTabsCount?.let {
+            binding.tabButton.setCount(it)
         }
 
         binding.previewThumbnail.translationY = if (context.settings().toolbarPosition == ToolbarPosition.TOP) {
@@ -174,21 +169,18 @@ class TabPreview @JvmOverloads constructor(
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (context.settings().navigationToolbarEnabled) {
-            val isTablet = context.isLargeWindow()
             val isLargeWindow = (AcornWindowSize.getWindowSize(context).isNotSmall())
 
             initNavBarLandscapeChanges(isLargeWindow)
 
-            if (!isTablet) {
-                updateNavBarForConfigurationChange(
-                    context = context,
-                    parent = this,
-                    toolbarView = mockToolbarView,
-                    bottomToolbarContainerView = bottomToolbarContainerView?.toolbarContainerView,
-                    reinitializeNavBar = ::initializeView,
-                    reinitializeMicrosurveyPrompt = {},
-                )
-            }
+            updateNavBarForConfigurationChange(
+                context = context,
+                parent = this,
+                toolbarView = mockToolbarView,
+                bottomToolbarContainerView = bottomToolbarContainerView?.toolbarContainerView,
+                reinitializeNavBar = ::initializeView,
+                reinitializeMicrosurveyPrompt = {},
+            )
         }
     }
 
@@ -206,6 +198,12 @@ class TabPreview @JvmOverloads constructor(
         binding.fakeNewTabButton.isVisible = isLargeWindow
         binding.fakeTabCounter.isVisible = isLargeWindow
         binding.fakeMenuButton.isVisible = isLargeWindow
+
+        if (isLargeWindow) {
+            currentOpenedTabsCount?.let {
+                binding.fakeTabCounter.setCount(it)
+            }
+        }
     }
 
     /**
@@ -221,4 +219,12 @@ class TabPreview @JvmOverloads constructor(
             )
         }
     }
+
+    private val currentOpenedTabsCount: Int?
+        get() {
+            val store = context.components.core.store
+            return store.state.selectedTab?.let {
+                store.state.getNormalOrPrivateTabs(it.content.private).size
+            }
+        }
 }

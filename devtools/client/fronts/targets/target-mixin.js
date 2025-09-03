@@ -277,8 +277,26 @@ function TargetMixin(parentClass) {
       return this.typeName === "windowGlobalTarget";
     }
 
+    /**
+     * Return the name to be displayed in the debugger and console context selector.
+     */
     get name() {
-      if (this.isWebExtension || this.isContentProcess) {
+      // When debugging Web Extensions, all documents have moz-extension://${uuid}/... URL
+      // When the developer don't set a custom title, fallback on displaying the pathname
+      // to avoid displaying long URL prefix with the addon internal UUID.
+      if (this.commands.descriptorFront.isWebExtensionDescriptor) {
+        if (this._title) {
+          return this._title;
+        }
+        const parsedURL = URL.parse(this._url);
+        if (parsedURL) {
+          return parsedURL.pathname;
+        }
+        // If document URL can't be parsed, fallback to the raw URL.
+        return this._url;
+      }
+
+      if (this.isContentProcess) {
         return this.targetForm.name;
       }
       return this.title;
@@ -296,18 +314,6 @@ function TargetMixin(parentClass) {
       // XXX Remove the check on `workerDescriptor` as part of Bug 1667404.
       return (
         this.typeName === "workerTarget" || this.typeName === "workerDescriptor"
-      );
-    }
-
-    // @backward-compat { version 133 } Once 133 is released, this attribute can be removed.
-    // This will never be true anymore. Instead the usage in 'name' getter will be irrelevant
-    // as 'title' served by the backend will be correct for WebExtensions.
-    get isWebExtension() {
-      return !!(
-        this.targetForm &&
-        this.targetForm.actor &&
-        (this.targetForm.actor.match(/conn\d+\.webExtension(Target)?\d+/) ||
-          this.targetForm.actor.match(/child\d+\/webExtension(Target)?\d+/))
       );
     }
 

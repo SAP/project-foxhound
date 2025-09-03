@@ -7,11 +7,10 @@ package org.mozilla.fenix.components.toolbar.navbar
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.theme.AcornWindowSize
 
 /**
  * Returns true if navigation bar should be displayed. The returned value depends on the feature state, as well as the
@@ -20,7 +19,7 @@ import org.mozilla.fenix.theme.AcornWindowSize
  */
 fun Context.shouldAddNavigationBar(
     isWindowSmall: Boolean = AcornWindowSize.getWindowSize(this) == AcornWindowSize.Small,
-) = settings().navigationToolbarEnabled && isWindowSmall && !isTabStripEnabled()
+) = settings().navigationToolbarEnabled && isWindowSmall
 
 /**
  *

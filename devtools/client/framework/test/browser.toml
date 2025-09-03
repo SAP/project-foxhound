@@ -26,6 +26,8 @@ support-files = [
   "code_math.js",
   "code_no_race.js",
   "doc_backward_forward_navigation.html",
+  "doc_broken_xml.xml",
+  "doc_broken_xml_frame.html",
   "doc_cached-resource.html",
   "doc_cached-resource_iframe.html",
   "doc_empty-tab-01.html",
@@ -142,7 +144,17 @@ skip-if = [
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1770314
 ]
 
+["browser_toolbox_broken_xml_frame.js"]
+
 ["browser_toolbox_browsertoolbox_host.js"]
+
+["browser_toolbox_connecting_with_frozen_process.js"]
+skip-if = [
+  "debug",
+  "tsan",
+  "asan",
+  "ccov",
+]
 
 ["browser_toolbox_contentpage_contextmenu.js"]
 
@@ -160,6 +172,8 @@ skip-if = [
 ]
 
 ["browser_toolbox_frames_list.js"]
+
+["browser_toolbox_fullscreen.js"]
 
 ["browser_toolbox_getpanelwhenready.js"]
 
@@ -180,7 +194,10 @@ skip-if = [
 ]
 
 ["browser_toolbox_many_toggles.js"]
-skip-if = ["os == 'win'"] # Content process killing throws on Window
+skip-if = [
+  "os == 'win'", # Content process killing throws on Window
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug" # Frequent failures on linux debug
+]
 
 ["browser_toolbox_meatball.js"]
 
@@ -289,6 +306,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_toolbox_view_source_style_editor_fallback.js"]
 
 ["browser_toolbox_watchedByDevTools.js"]
+
+["browser_toolbox_window_global_debugging.js"]
 
 ["browser_toolbox_window_reload_target.js"]
 

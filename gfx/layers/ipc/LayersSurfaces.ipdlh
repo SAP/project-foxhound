@@ -17,6 +17,7 @@ using mozilla::gfx::ChromaSubsampling from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorDepth from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorRange from "mozilla/gfx/Types.h";
 using mozilla::gfx::ColorSpace2 from "mozilla/gfx/Types.h";
+using mozilla::gfx::TransferFunction from "mozilla/gfx/Types.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
 using mozilla::gfx::IntRect from "mozilla/gfx/Rect.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/Point.h";
@@ -28,6 +29,7 @@ using gfxImageFormat from "gfxTypes.h";
 using mozilla::layers::MaybeVideoBridgeSource from "mozilla/layers/VideoBridgeUtils.h";
 using mozilla::layers::RemoteTextureId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::RemoteTextureOwnerId from "mozilla/layers/LayersTypes.h";
+[RefCounted] using mozilla::layers::GpuFence from "mozilla/layers/GpuFence.h";
 using mozilla::layers::GpuProcessTextureId from "mozilla/layers/LayersTypes.h";
 using mozilla::layers::GpuProcessQueryId from "mozilla/layers/LayersTypes.h";
 using mozilla::wr::ExternalImageSource from "mozilla/webrender/WebRenderTypes.h";
@@ -66,10 +68,12 @@ namespace layers {
   uint32_t surfaceId;
   bool isOpaque;
   YUVColorSpace yUVColorSpace;
+  nullable GpuFence gpuFence;
 };
 
 [Comparable] struct SurfaceDescriptorDMABuf {
   uint32_t bufferType;
+  uint32_t fourccFormat;
   uint64_t[] modifier;
   uint32_t flags;
   FileHandleWrapper[] fds;
@@ -82,6 +86,8 @@ namespace layers {
   uint32_t[] offsets;
   YUVColorSpace yUVColorSpace;
   ColorRange colorRange;
+  ColorSpace2 colorPrimaries;
+  TransferFunction transferFunction;
   FileHandleWrapper[] fence;
   uint32_t uid;
   FileDescriptor[] refCount;
@@ -199,6 +205,11 @@ namespace layers {
   RemoteTextureOwnerId ownerId;
 };
 
+[Comparable] struct SurfaceDescriptorCanvasSurface {
+  uint32_t managerId;
+  uintptr_t surfaceId;
+};
+
 [Comparable] union SurfaceDescriptor {
   SurfaceDescriptorBuffer;
   SurfaceDescriptorD3D10;
@@ -213,6 +224,7 @@ namespace layers {
   SurfaceDescriptorRemoteTexture;
   SurfaceDescriptorDcompSurface;
   SurfaceDescriptorExternalImage;
+  SurfaceDescriptorCanvasSurface;
   null_t;
 };
 

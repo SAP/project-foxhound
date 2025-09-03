@@ -38,6 +38,8 @@ class WorkerTargetActor extends BaseTargetActor {
    * @param {String} workerDebuggerData.id: The worker debugger id
    * @param {String} workerDebuggerData.url: The worker debugger url
    * @param {String} workerDebuggerData.type: The worker debugger type
+   * @param {Number?} workerDebuggerData.relatedDocumentInnerWindowId: (optional)
+   *                  If the worker is spawned from a document, the innerWindowId of it.
    * @param {Boolean} workerDebuggerData.workerConsoleApiMessagesDispatchedToMainThread:
    *                  Value of the dom.worker.console.dispatch_events_to_main_thread pref
    * @param {Object} sessionContext: The Session Context to help know what is debugged.
@@ -58,6 +60,8 @@ class WorkerTargetActor extends BaseTargetActor {
     } else if (workerDebuggerData.type == 1) {
       this.targetType = Targets.TYPES.SHARED_WORKER;
     }
+    this._relatedDocumentInnerWindowId =
+      workerDebuggerData.relatedDocumentInnerWindowId;
 
     this._workerDebuggerData = workerDebuggerData;
     this._sourcesManager = null;
@@ -101,6 +105,7 @@ class WorkerTargetActor extends BaseTargetActor {
   form() {
     return {
       actor: this.actorID,
+      targetType: this.targetType,
 
       consoleActor: this._consoleActor?.actorID,
       threadActor: this.threadActor?.actorID,
@@ -108,8 +113,10 @@ class WorkerTargetActor extends BaseTargetActor {
       objectsManagerActor: this.objectsManagerActor?.actorID,
 
       id: this._workerDebuggerData.id,
+      name: this._workerDebuggerData.name,
       type: this._workerDebuggerData.type,
       url: this._workerDebuggerData.url,
+      relatedDocumentInnerWindowId: this._relatedDocumentInnerWindowId,
       traits: {
         // See trait description in browsing-context.js
         supportsTopLevelTargetFlag: false,

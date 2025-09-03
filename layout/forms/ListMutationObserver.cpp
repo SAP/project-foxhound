@@ -76,8 +76,8 @@ void ListMutationObserver::ContentInserted(nsIContent* aChild) {
   mOwningElementFrame->InvalidateFrame();
 }
 
-void ListMutationObserver::ContentRemoved(nsIContent* aChild,
-                                          nsIContent* aPreviousSibling) {
+void ListMutationObserver::ContentWillBeRemoved(nsIContent* aChild,
+                                                const BatchRemovalState*) {
   mOwningElementFrame->InvalidateFrame();
 }
 

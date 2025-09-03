@@ -9,12 +9,7 @@ use super::{CommonMetricData, MetricId};
 use crate::ipc::need_ipc;
 
 #[cfg(feature = "with_gecko")]
-use super::profiler_utils::{
-    lookup_canonical_metric_name, truncate_string_for_marker, LookupError,
-};
-
-#[cfg(feature = "with_gecko")]
-use gecko_profiler::gecko_profiler_category;
+use super::profiler_utils::{truncate_string_for_marker, TelemetryProfilerCategory};
 
 #[cfg(feature = "with_gecko")]
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -37,7 +32,7 @@ impl gecko_profiler::ProfilerMarker for UrlMetricMarker {
         schema.add_key_label_format_searchable(
             "id",
             "Metric",
-            Format::String,
+            Format::UniqueString,
             Searchable::Searchable,
         );
         schema.add_key_label_format_searchable("val", "Value", Format::Url, Searchable::Searchable);
@@ -45,10 +40,8 @@ impl gecko_profiler::ProfilerMarker for UrlMetricMarker {
     }
 
     fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
-        json_writer.string_property(
-            "id",
-            lookup_canonical_metric_name(&self.id).unwrap_or_else(LookupError::as_str),
-        );
+        let name = self.id.get_name();
+        json_writer.unique_string_property("id", &name);
         json_writer.string_property("val", self.val.as_str());
     }
 }
@@ -61,6 +54,10 @@ impl gecko_profiler::ProfilerMarker for UrlMetricMarker {
 #[derive(Clone)]
 pub enum UrlMetric {
     Parent {
+        /// The metric's ID. Used for testing and profiler markers. URL
+        /// metrics canot be labeled, so we only store a MetricId. If this
+        /// changes, this should be changed to a MetricGetter to distinguish
+        /// between metrics and sub-metrics.
         id: MetricId,
         inner: glean::private::UrlMetric,
     },
@@ -99,17 +96,14 @@ impl glean::traits::Url for UrlMetric {
             UrlMetric::Parent { id, inner } => {
                 let value: String = value.into();
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
-                    gecko_profiler::add_marker(
-                        "Url::set",
-                        gecko_profiler_category!(Telemetry),
-                        Default::default(),
-                        UrlMetricMarker {
-                            id: *id,
-                            val: truncate_string_for_marker(value.clone()),
-                        },
-                    );
-                }
+                gecko_profiler::lazy_add_marker!(
+                    "Url::set",
+                    TelemetryProfilerCategory,
+                    UrlMetricMarker {
+                        id: *id,
+                        val: truncate_string_for_marker(value.clone()),
+                    }
+                );
                 inner.set(value)
             }
             UrlMetric::Child(_) => {
@@ -161,7 +155,7 @@ mod test {
 
         assert_eq!(
             "https://example.com",
-            metric.test_get_value("store1").unwrap()
+            metric.test_get_value("test-ping").unwrap()
         );
     }
 
@@ -189,7 +183,7 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "https://example.com/parent" == parent_metric.test_get_value("store1").unwrap(),
+            "https://example.com/parent" == parent_metric.test_get_value("test-ping").unwrap(),
             "Url metrics should only work in the parent process"
         );
     }

@@ -26,6 +26,7 @@
  */
 #include "config.h"
 
+#include <errno.h>
 #include <stdint.h>
 
 #include "src/cpu.h"
@@ -50,6 +51,10 @@
 #if defined(__FreeBSD__)
 #define cpu_set_t cpuset_t
 #endif
+#endif
+
+#if HAVE_GETAUXVAL || HAVE_ELF_AUX_INFO
+#include <sys/auxv.h>
 #endif
 
 unsigned dav1d_cpu_flags = 0U;
@@ -106,4 +111,19 @@ COLD int dav1d_num_logical_processors(Dav1dContext *const c) {
     if (c)
         dav1d_log(c, "Unable to detect thread count, defaulting to single-threaded mode\n");
     return 1;
+}
+
+COLD unsigned long dav1d_getauxval(unsigned long type) {
+#if HAVE_GETAUXVAL
+    return getauxval(type);
+#elif HAVE_ELF_AUX_INFO
+    unsigned long aux = 0;
+    int ret = elf_aux_info(type, &aux, sizeof(aux));
+    if (ret != 0)
+        errno = ret;
+    return aux;
+#else
+    errno = ENOSYS;
+    return 0;
+#endif
 }

@@ -6,6 +6,9 @@
 
 #include "jit/x64/CodeGenerator-x64.h"
 
+#include "mozilla/CheckedInt.h"
+#include "mozilla/FloatingPoint.h"
+
 #include "jit/CodeGenerator.h"
 #include "jit/MIR-wasm.h"
 #include "jit/MIR.h"
@@ -23,14 +26,6 @@ CodeGeneratorX64::CodeGeneratorX64(MIRGenerator* gen, LIRGraph* graph,
                                    MacroAssembler* masm)
     : CodeGeneratorX86Shared(gen, graph, masm) {}
 
-ValueOperand CodeGeneratorX64::ToValue(LInstruction* ins, size_t pos) {
-  return ValueOperand(ToRegister(ins->getOperand(pos)));
-}
-
-ValueOperand CodeGeneratorX64::ToTempValue(LInstruction* ins, size_t pos) {
-  return ValueOperand(ToRegister(ins->getTemp(pos)));
-}
-
 Operand CodeGeneratorX64::ToOperand64(const LInt64Allocation& a64) {
   const LAllocation& a = a64.value();
   MOZ_ASSERT(!a.isFloatReg());
@@ -41,7 +36,7 @@ Operand CodeGeneratorX64::ToOperand64(const LInt64Allocation& a64) {
 }
 
 void CodeGenerator::visitBox(LBox* box) {
-  const LAllocation* in = box->getOperand(0);
+  const LAllocation* in = box->payload();
   ValueOperand result = ToOutValue(box);
 
   masm.moveValue(TypedOrValueRegister(box->type(), ToAnyRegister(in)), result);
@@ -60,7 +55,7 @@ void CodeGenerator::visitUnbox(LUnbox* unbox) {
   Register result = ToRegister(unbox->output());
 
   if (mir->fallible()) {
-    const ValueOperand value = ToValue(unbox, LUnbox::Input);
+    ValueOperand value = ToValue(unbox->input());
     Label bail;
     switch (mir->type()) {
       case MIRType::Int32:
@@ -147,7 +142,7 @@ void CodeGenerator::visitDivOrModI64(LDivOrModI64* lir) {
   if (lir->canBeDivideByZero()) {
     Label nonZero;
     masm.branchTestPtr(Assembler::NonZero, rhs, rhs, &nonZero);
-    masm.wasmTrap(wasm::Trap::IntegerDivideByZero, lir->bytecodeOffset());
+    masm.wasmTrap(wasm::Trap::IntegerDivideByZero, lir->trapSiteDesc());
     masm.bind(&nonZero);
   }
 
@@ -159,7 +154,7 @@ void CodeGenerator::visitDivOrModI64(LDivOrModI64* lir) {
     if (lir->mir()->isMod()) {
       masm.xorl(output, output);
     } else {
-      masm.wasmTrap(wasm::Trap::IntegerOverflow, lir->bytecodeOffset());
+      masm.wasmTrap(wasm::Trap::IntegerOverflow, lir->trapSiteDesc());
     }
     masm.jump(&done);
     masm.bind(&notOverflow);
@@ -193,7 +188,7 @@ void CodeGenerator::visitUDivOrModI64(LUDivOrModI64* lir) {
   if (lir->canBeDivideByZero()) {
     Label nonZero;
     masm.branchTestPtr(Assembler::NonZero, rhs, rhs, &nonZero);
-    masm.wasmTrap(wasm::Trap::IntegerDivideByZero, lir->bytecodeOffset());
+    masm.wasmTrap(wasm::Trap::IntegerDivideByZero, lir->trapSiteDesc());
     masm.bind(&nonZero);
   }
 
@@ -326,7 +321,7 @@ void CodeGenerator::visitAtomicTypedArrayElementBinop64(
 
   Register elements = ToRegister(lir->elements());
   Register64 value = ToRegister64(lir->value());
-  Register64 temp = ToTempRegister64OrInvalid(lir->temp());
+  Register64 temp = ToTempRegister64OrInvalid(lir->temp0());
   Register64 out = ToOutRegister64(lir);
 
   Scalar::Type arrayType = lir->mir()->arrayType();
@@ -475,18 +470,6 @@ void CodeGenerator::visitWasmCompareAndSelect(LWasmCompareAndSelect* ins) {
   }
 }
 
-void CodeGenerator::visitWasmReinterpretFromI64(LWasmReinterpretFromI64* lir) {
-  MOZ_ASSERT(lir->mir()->type() == MIRType::Double);
-  MOZ_ASSERT(lir->mir()->input()->type() == MIRType::Int64);
-  masm.vmovq(ToRegister(lir->input()), ToFloatRegister(lir->output()));
-}
-
-void CodeGenerator::visitWasmReinterpretToI64(LWasmReinterpretToI64* lir) {
-  MOZ_ASSERT(lir->mir()->type() == MIRType::Int64);
-  MOZ_ASSERT(lir->mir()->input()->type() == MIRType::Double);
-  masm.vmovq(ToFloatRegister(lir->input()), ToRegister(lir->output()));
-}
-
 void CodeGenerator::visitWasmUint32ToDouble(LWasmUint32ToDouble* lir) {
   masm.convertUInt32ToDouble(ToRegister(lir->input()),
                              ToFloatRegister(lir->output()));
@@ -526,6 +509,12 @@ void CodeGeneratorX64::wasmStore(const wasm::MemoryAccessDesc& access,
         masm.movl(cst, dstAddr);
         break;
       case Scalar::Int64:
+        MOZ_ASSERT_IF(mir->type() == MIRType::Int64,
+                      mozilla::CheckedInt32(mir->toInt64()).isValid());
+        masm.append(access, wasm::TrapMachineInsn::Store64,
+                    FaultingCodeOffset(masm.currentOffset()));
+        masm.movq(cst, dstAddr);
+        break;
       case Scalar::Simd128:
       case Scalar::Float16:
       case Scalar::Float32:
@@ -577,7 +566,7 @@ void CodeGeneratorX64::emitWasmStore(T* ins) {
   mir->access().assertOffsetInGuardPages();
   uint32_t offset = access.offset32();
 
-  const LAllocation* value = ins->getOperand(ins->ValueIndex);
+  const LAllocation* value = ins->value();
   const LAllocation* ptr = ins->ptr();
   Register memoryBase = ToRegister(ins->memoryBase());
   Operand dstAddr =
@@ -601,7 +590,6 @@ void CodeGenerator::visitWasmCompareExchangeHeap(
   Register oldval = ToRegister(ins->oldValue());
   Register newval = ToRegister(ins->newValue());
   Register memoryBase = ToRegister(ins->memoryBase());
-  MOZ_ASSERT(ins->addrTemp()->isBogusTemp());
 
   Scalar::Type accessType = mir->access().type();
   BaseIndex srcAddr(memoryBase, ptr, TimesOne, mir->access().offset32());
@@ -621,7 +609,6 @@ void CodeGenerator::visitWasmAtomicExchangeHeap(LWasmAtomicExchangeHeap* ins) {
   Register ptr = ToRegister(ins->ptr());
   Register value = ToRegister(ins->value());
   Register memoryBase = ToRegister(ins->memoryBase());
-  MOZ_ASSERT(ins->addrTemp()->isBogusTemp());
 
   Scalar::Type accessType = mir->access().type();
 
@@ -643,10 +630,8 @@ void CodeGenerator::visitWasmAtomicBinopHeap(LWasmAtomicBinopHeap* ins) {
   Register ptr = ToRegister(ins->ptr());
   Register memoryBase = ToRegister(ins->memoryBase());
   const LAllocation* value = ins->value();
-  Register temp =
-      ins->temp()->isBogusTemp() ? InvalidReg : ToRegister(ins->temp());
+  Register temp = ToTempRegisterOrInvalid(ins->temp0());
   Register output = ToRegister(ins->output());
-  MOZ_ASSERT(ins->addrTemp()->isBogusTemp());
 
   Scalar::Type accessType = mir->access().type();
   if (accessType == Scalar::Uint32) {
@@ -678,7 +663,6 @@ void CodeGenerator::visitWasmAtomicBinopHeapForEffect(
   Register ptr = ToRegister(ins->ptr());
   Register memoryBase = ToRegister(ins->memoryBase());
   const LAllocation* value = ins->value();
-  MOZ_ASSERT(ins->addrTemp()->isBogusTemp());
 
   Scalar::Type accessType = mir->access().type();
   AtomicOp op = mir->operation();
@@ -702,55 +686,158 @@ void CodeGenerator::visitWasmAtomicBinopHeapForEffect(
   }
 }
 
+class js::jit::OutOfLineTruncate : public OutOfLineCodeBase<CodeGeneratorX64> {
+  FloatRegister input_;
+  Register output_;
+  Register temp_;
+
+ public:
+  OutOfLineTruncate(FloatRegister input, Register output, Register temp)
+      : input_(input), output_(output), temp_(temp) {}
+
+  void accept(CodeGeneratorX64* codegen) override {
+    codegen->visitOutOfLineTruncate(this);
+  }
+
+  FloatRegister input() const { return input_; }
+  Register output() const { return output_; }
+  Register temp() const { return temp_; }
+};
+
+void CodeGeneratorX64::visitOutOfLineTruncate(OutOfLineTruncate* ool) {
+  FloatRegister input = ool->input();
+  Register output = ool->output();
+  Register temp = ool->temp();
+
+  // Inline implementation of `JS::ToInt32(double)` for double values whose
+  // exponent is ≥63.
+
+#ifdef DEBUG
+  Label ok;
+  masm.branchTruncateDoubleMaybeModUint32(input, output, &ok);
+  masm.assumeUnreachable("OOL path only used when vcvttsd2sq failed");
+  masm.bind(&ok);
+#endif
+
+  constexpr uint32_t ShiftedExponentBits =
+      mozilla::FloatingPoint<double>::kExponentBits >>
+      mozilla::FloatingPoint<double>::kExponentShift;
+  static_assert(ShiftedExponentBits == 0x7ff);
+
+  constexpr uint32_t ExponentBiasAndShift =
+      mozilla::FloatingPoint<double>::kExponentBias +
+      mozilla::FloatingPoint<double>::kExponentShift;
+  static_assert(ExponentBiasAndShift == (1023 + 52));
+
+  constexpr size_t ResultWidth = CHAR_BIT * sizeof(int32_t);
+
+  // Extract the bit representation of |input|.
+  masm.moveDoubleToGPR64(input, Register64(output));
+
+  // Extract the exponent.
+  masm.rshiftPtr(Imm32(mozilla::FloatingPoint<double>::kExponentShift), output,
+                 temp);
+  masm.and32(Imm32(ShiftedExponentBits), temp);
+#ifdef DEBUG
+  // The biased exponent must be at least `1023 + 63`, because otherwise
+  // vcvttsd2sq wouldn't have failed.
+  constexpr uint32_t MinBiasedExponent =
+      mozilla::FloatingPoint<double>::kExponentBias + 63;
+
+  Label exponentOk;
+  masm.branch32(Assembler::GreaterThanOrEqual, temp, Imm32(MinBiasedExponent),
+                &exponentOk);
+  masm.assumeUnreachable("exponent is greater-than-or-equals to 63");
+  masm.bind(&exponentOk);
+#endif
+  masm.sub32(Imm32(ExponentBiasAndShift), temp);
+
+  // If the exponent is greater than or equal to |ResultWidth|, the number is
+  // either infinite, NaN, or too large to have lower-order bits. We have to
+  // return zero in this case.
+  {
+    ScratchRegisterScope scratch(masm);
+    masm.movePtr(ImmWord(0), scratch);
+    masm.cmp32MovePtr(Assembler::AboveOrEqual, temp, Imm32(ResultWidth),
+                      scratch, output);
+  }
+
+  // Negate if the sign bit is set.
+  {
+    ScratchRegisterScope scratch(masm);
+    masm.movePtr(output, scratch);
+    masm.negPtr(scratch);
+    masm.testPtr(output, output);
+    masm.cmovCCq(Assembler::Signed, scratch, output);
+  }
+
+  // The significand contains the bits that will determine the final result.
+  // Shift those bits left by the exponent value in |temp|.
+  masm.lshift32(temp, output);
+
+  // Return from OOL path.
+  masm.jump(ool->rejoin());
+}
+
 void CodeGenerator::visitTruncateDToInt32(LTruncateDToInt32* ins) {
   FloatRegister input = ToFloatRegister(ins->input());
   Register output = ToRegister(ins->output());
+  Register temp = ToRegister(ins->temp0());
 
-  // On x64, branchTruncateDouble uses vcvttsd2sq. Unlike the x86
-  // implementation, this should handle most doubles and we can just
-  // call a stub if it fails.
-  emitTruncateDouble(input, output, ins->mir());
+  auto* ool = new (alloc()) OutOfLineTruncate(input, output, temp);
+  addOutOfLineCode(ool, ins->mir());
+
+  masm.branchTruncateDoubleMaybeModUint32(input, output, ool->entry());
+  masm.bind(ool->rejoin());
 }
 
 void CodeGenerator::visitWasmBuiltinTruncateDToInt32(
     LWasmBuiltinTruncateDToInt32* lir) {
-  FloatRegister input = ToFloatRegister(lir->getOperand(0));
-  Register output = ToRegister(lir->getDef(0));
+  FloatRegister input = ToFloatRegister(lir->input());
+  Register output = ToRegister(lir->output());
+  Register temp = ToRegister(lir->temp0());
+  MOZ_ASSERT(lir->instance()->isBogus(), "instance not used for x64");
 
-  emitTruncateDouble(input, output, lir->mir());
+  auto* ool = new (alloc()) OutOfLineTruncate(input, output, temp);
+  addOutOfLineCode(ool, lir->mir());
+
+  masm.branchTruncateDoubleMaybeModUint32(input, output, ool->entry());
+  masm.bind(ool->rejoin());
 }
 
 void CodeGenerator::visitWasmBuiltinTruncateFToInt32(
     LWasmBuiltinTruncateFToInt32* lir) {
-  FloatRegister input = ToFloatRegister(lir->getOperand(0));
-  Register output = ToRegister(lir->getDef(0));
+  FloatRegister input = ToFloatRegister(lir->input());
+  Register output = ToRegister(lir->output());
+  MOZ_ASSERT(lir->instance()->isBogus(), "instance not used for x64");
 
-  emitTruncateFloat32(input, output, lir->mir());
+  masm.truncateFloat32ModUint32(input, output);
 }
 
 void CodeGenerator::visitTruncateFToInt32(LTruncateFToInt32* ins) {
   FloatRegister input = ToFloatRegister(ins->input());
   Register output = ToRegister(ins->output());
 
-  // On x64, branchTruncateFloat32 uses vcvttss2sq. Unlike the x86
-  // implementation, this should handle most floats and we can just
-  // call a stub if it fails.
-  emitTruncateFloat32(input, output, ins->mir());
+  masm.truncateFloat32ModUint32(input, output);
 }
 
 void CodeGenerator::visitWrapInt64ToInt32(LWrapInt64ToInt32* lir) {
-  const LAllocation* input = lir->getOperand(0);
+  LInt64Allocation input = lir->input();
   Register output = ToRegister(lir->output());
 
   if (lir->mir()->bottomHalf()) {
-    masm.movl(ToOperand(input), output);
+    if (input.value().isMemory()) {
+      masm.load32(ToAddress(input), output);
+    } else {
+      masm.move64To32(ToRegister64(input), output);
+    }
   } else {
     MOZ_CRASH("Not implemented.");
   }
 }
 
 void CodeGenerator::visitExtendInt32ToInt64(LExtendInt32ToInt64* lir) {
-  const LAllocation* input = lir->getOperand(0);
+  const LAllocation* input = lir->input();
   Register output = ToRegister(lir->output());
 
   if (lir->mir()->isUnsigned()) {
@@ -777,9 +864,9 @@ void CodeGenerator::visitWasmWrapU32Index(LWasmWrapU32Index* lir) {
 }
 
 void CodeGenerator::visitSignExtendInt64(LSignExtendInt64* ins) {
-  Register64 input = ToRegister64(ins->getInt64Operand(0));
+  Register64 input = ToRegister64(ins->input());
   Register64 output = ToOutRegister64(ins);
-  switch (ins->mode()) {
+  switch (ins->mir()->mode()) {
     case MSignExtendInt64::Byte:
       masm.movsbq(Operand(input.reg), output.reg);
       break;
@@ -805,7 +892,7 @@ void CodeGenerator::visitWasmTruncateToInt64(LWasmTruncateToInt64* lir) {
   addOutOfLineCode(ool, mir);
 
   FloatRegister temp =
-      mir->isUnsigned() ? ToFloatRegister(lir->temp()) : InvalidFloatReg;
+      mir->isUnsigned() ? ToFloatRegister(lir->temp0()) : InvalidFloatReg;
 
   Label* oolEntry = ool->entry();
   Label* oolRejoin = ool->rejoin();
@@ -830,25 +917,26 @@ void CodeGenerator::visitWasmTruncateToInt64(LWasmTruncateToInt64* lir) {
 }
 
 void CodeGenerator::visitInt64ToFloatingPoint(LInt64ToFloatingPoint* lir) {
-  Register64 input = ToRegister64(lir->getInt64Operand(0));
+  Register64 input = ToRegister64(lir->input());
   FloatRegister output = ToFloatRegister(lir->output());
+  Register temp = ToTempRegisterOrInvalid(lir->temp0());
 
   MInt64ToFloatingPoint* mir = lir->mir();
   bool isUnsigned = mir->isUnsigned();
 
   MIRType outputType = mir->type();
   MOZ_ASSERT(outputType == MIRType::Double || outputType == MIRType::Float32);
-  MOZ_ASSERT(isUnsigned == !lir->getTemp(0)->isBogusTemp());
+  MOZ_ASSERT(isUnsigned == (temp != InvalidReg));
 
   if (outputType == MIRType::Double) {
     if (isUnsigned) {
-      masm.convertUInt64ToDouble(input, output, ToRegister(lir->getTemp(0)));
+      masm.convertUInt64ToDouble(input, output, temp);
     } else {
       masm.convertInt64ToDouble(input, output);
     }
   } else {
     if (isUnsigned) {
-      masm.convertUInt64ToFloat32(input, output, ToRegister(lir->getTemp(0)));
+      masm.convertUInt64ToFloat32(input, output, temp);
     } else {
       masm.convertInt64ToFloat32(input, output);
     }
@@ -856,9 +944,9 @@ void CodeGenerator::visitInt64ToFloatingPoint(LInt64ToFloatingPoint* lir) {
 }
 
 void CodeGenerator::visitBitNotI64(LBitNotI64* ins) {
-  const LAllocation* input = ins->getOperand(0);
-  MOZ_ASSERT(!input->isConstant());
-  Register inputR = ToRegister(input);
-  MOZ_ASSERT(inputR == ToRegister(ins->output()));
-  masm.notq(inputR);
+  LInt64Allocation input = ins->input();
+  MOZ_ASSERT(!IsConstant(input));
+  Register64 inputR = ToRegister64(input);
+  MOZ_ASSERT(inputR == ToOutRegister64(ins));
+  masm.notq(inputR.reg);
 }

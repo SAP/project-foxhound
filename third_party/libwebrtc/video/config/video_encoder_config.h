@@ -23,6 +23,7 @@
 #include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_codec.h"
+#include "api/video_codecs/video_encoder.h"
 #include "rtc_base/ref_count.h"
 
 namespace webrtc {
@@ -36,7 +37,7 @@ struct VideoStream {
 
   // Width/Height in pixels.
   // This is the actual width and height used to configure encoder,
-  // which might be less than `requested_resolution` due to adaptation
+  // which might be less than `scale_resolution_down_to` due to adaptation
   // or due to the source providing smaller frames than requested.
   size_t width;
   size_t height;
@@ -75,14 +76,14 @@ struct VideoStream {
 
   // An optional user supplied max_frame_resolution
   // than can be set independently of (adapted) VideoSource.
-  // This value is set from RtpEncodingParameters::requested_resolution
+  // This value is set from RtpEncodingParameters::scale_resolution_down_to
   // (i.e. used for signaling app-level settings).
   //
   // The actual encode resolution is in `width` and `height`,
-  // which can be lower than requested_resolution,
+  // which can be lower than scale_resolution_down_to,
   // e.g. if source only provides lower resolution or
   // if resource adaptation is active.
-  std::optional<Resolution> requested_resolution;
+  std::optional<Resolution> scale_resolution_down_to;
 };
 
 class VideoEncoderConfig {
@@ -151,6 +152,9 @@ class VideoEncoderConfig {
         int frame_height,
         const VideoEncoderConfig& encoder_config) = 0;
 
+    // Mozilla: Patching in necessary info our custom VideoStreamFactory will need to know.
+    virtual void SetEncoderInfo(const VideoEncoder::EncoderInfo& info) {}
+
    protected:
     ~VideoStreamFactoryInterface() override {}
   };
@@ -166,7 +170,7 @@ class VideoEncoderConfig {
   ~VideoEncoderConfig();
   std::string ToString() const;
 
-  bool HasRequestedResolution() const;
+  bool HasScaleResolutionDownTo() const;
 
   // TODO(bugs.webrtc.org/6883): Consolidate on one of these.
   VideoCodecType codec_type;

@@ -48,7 +48,7 @@ with Files("update-packaging/**"):
     BUG_COMPONENT = ("Release Engineering", "General")
 
 with Files("update-verify/**"):
-    BUG_COMPONENT = ("Release Engineering", "Release Automation: Updates")
+    BUG_COMPONENT = ("Release Engineering", "Release Automation")
 
 with Files("vcs/**"):
     BUG_COMPONENT = ("Firefox Build System", "General")
@@ -64,6 +64,8 @@ SPHINX_TREES["sanitizer"] = "sanitizer/docs"
 SPHINX_TREES["code-coverage"] = "code-coverage/docs"
 
 SPHINX_TREES["profiler"] = "profiler/docs"
+
+SPHINX_TREES["update-verify"] = "update-verify/docs"
 
 with Files("tryselect/docs/**"):
     SCHEDULES.exclusive = ["docs"]

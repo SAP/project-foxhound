@@ -122,7 +122,9 @@ function serializeNode(aNode) {
 
   if (PlacesUtils.nodeIsURI(aNode)) {
     // Check for url validity.
-    new URL(aNode.uri);
+    if (!URL.canParse(aNode.uri)) {
+      throw new Error(aNode.uri + " is not a valid URL");
+    }
     data.type = PlacesUtils.TYPE_X_MOZ_PLACE;
     data.uri = aNode.uri;
     if (aNode.tags) {
@@ -501,7 +503,7 @@ export var PlacesUtils = {
   },
 
   /**
-   * Converts a string or n URL object to an nsIURI.
+   * Converts a string or an URL object to an nsIURI.
    *
    * @param url (URL) or (String)
    *        the URL to convert.
@@ -1121,12 +1123,13 @@ export var PlacesUtils = {
    */
   unwrapNodes: function PU_unwrapNodes(blob, type) {
     // We split on "\n"  because the transferable system converts "\r\n" to "\n"
-    var nodes = [];
+    let validNodes = [];
+    let invalidNodes = [];
     switch (type) {
       case this.TYPE_X_MOZ_PLACE:
       case this.TYPE_X_MOZ_PLACE_SEPARATOR:
       case this.TYPE_X_MOZ_PLACE_CONTAINER:
-        nodes = JSON.parse("[" + blob + "]");
+        validNodes = JSON.parse("[" + blob + "]");
         break;
       case this.TYPE_X_MOZ_URL: {
         let parts = blob.split("\n");
@@ -1137,47 +1140,61 @@ export var PlacesUtils = {
           break;
         }
         for (let i = 0; i < parts.length; i = i + 2) {
-          let uriString = parts[i];
+          let uriString = parts[i].trimStart();
+          if (!uriString) {
+            continue;
+          }
+          let uri = null;
+          try {
+            uri = Services.io.newURI(uriString);
+          } catch (e) {
+            console.error(e);
+            invalidNodes.push({
+              uri: uriString,
+            });
+          }
+          if (!uri || uri.scheme == "place") {
+            continue;
+          }
           let titleString = "";
           if (parts.length > i + 1) {
             titleString = parts[i + 1];
-          } else {
-            // for drag and drop of files, try to use the leafName as title
-            try {
-              titleString = Services.io
-                .newURI(uriString)
-                .QueryInterface(Ci.nsIURL).fileName;
-            } catch (ex) {}
+          } else if (uri instanceof Ci.nsIURL) {
+            // for drag and drop of files, use the fileName as title
+            titleString = uri.fileName;
           }
-          // note:  Services.io.newURI() will throw if uriString is not a valid URI
-          let uri = Services.io.newURI(uriString);
-          if (Services.io.newURI(uriString) && uri.scheme != "place") {
-            nodes.push({
-              uri: uriString,
-              title: titleString ? titleString : uriString,
-              type: this.TYPE_X_MOZ_URL,
-            });
-          }
+
+          validNodes.push({
+            uri: uriString,
+            title: titleString || uriString,
+            type: this.TYPE_X_MOZ_URL,
+          });
         }
         break;
       }
       case this.TYPE_PLAINTEXT: {
         let parts = blob.split("\n");
         for (let i = 0; i < parts.length; i++) {
-          let uriString = parts[i];
+          let uriString = parts[i].trimStart();
           // text/uri-list is converted to TYPE_PLAINTEXT but it could contain
           // comments line prepended by #, we should skip them, as well as
           // empty uris.
           if (uriString.substr(0, 1) == "\x23" || uriString == "") {
             continue;
           }
-          // note: Services.io.newURI) will throw if uriString is not a valid URI
-          let uri = Services.io.newURI(uriString);
-          if (uri.scheme != "place") {
-            nodes.push({
+          try {
+            let uri = Services.io.newURI(uriString);
+            if (uri.scheme != "place") {
+              validNodes.push({
+                uri: uriString,
+                title: uriString,
+                type: this.TYPE_X_MOZ_URL,
+              });
+            }
+          } catch (e) {
+            console.error(e);
+            invalidNodes.push({
               uri: uriString,
-              title: uriString,
-              type: this.TYPE_X_MOZ_URL,
             });
           }
         }
@@ -1186,7 +1203,8 @@ export var PlacesUtils = {
       default:
         throw Components.Exception("", Cr.NS_ERROR_INVALID_ARG);
     }
-    return nodes;
+
+    return { validNodes, invalidNodes };
   },
 
   /**
@@ -1643,10 +1661,9 @@ export var PlacesUtils = {
       switch (type) {
         case PlacesUtils.bookmarks.TYPE_BOOKMARK: {
           item.type = PlacesUtils.TYPE_X_MOZ_PLACE;
-          // If this throws due to an invalid url, the item will be skipped.
-          try {
-            item.uri = new URL(aRow.getResultByName("url")).href;
-          } catch (ex) {
+          // If this fails due to an invalid url, the item will be skipped.
+          item.uri = URL.parse(aRow.getResultByName("url"))?.href;
+          if (!item.uri) {
             let error = new Error("Invalid bookmark URL");
             error.becauseInvalidURL = true;
             throw error;
@@ -2923,14 +2940,15 @@ function promiseKeywordsCache() {
         let brokenKeywords = [];
         for (let row of rows) {
           let keyword = row.getResultByName("keyword");
-          try {
+          let url = URL.parse(row.getResultByName("url"));
+          if (url) {
             let entry = {
               keyword,
-              url: new URL(row.getResultByName("url")),
+              url,
               postData: row.getResultByName("post_data") || null,
             };
             cache.set(keyword, entry);
-          } catch (ex) {
+          } else {
             // The url is invalid, don't load the keyword and remove it, or it
             // would break the whole keywords API.
             brokenKeywords.push(keyword);

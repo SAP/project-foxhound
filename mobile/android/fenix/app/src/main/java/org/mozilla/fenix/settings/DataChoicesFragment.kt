@@ -4,10 +4,8 @@
 
 package org.mozilla.fenix.settings
 
+import android.content.Context
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.widget.Toast
 import androidx.annotation.VisibleForTesting
 import androidx.navigation.findNavController
 import androidx.preference.Preference
@@ -22,7 +20,7 @@ import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
-import kotlin.system.exitProcess
+import org.mozilla.fenix.utils.Settings
 
 /**
  * Lets the user toggle telemetry on/off.
@@ -37,23 +35,12 @@ class DataChoicesFragment : PreferenceFragmentCompat() {
             if (key == getPreferenceKey(R.string.pref_key_telemetry)) {
                 if (context.settings().isTelemetryEnabled) {
                     context.components.analytics.metrics.start(MetricServiceType.Data)
+                    context.settings().isExperimentationEnabled = true
+                    requireComponents.nimbus.sdk.globalUserParticipation = true
                 } else {
                     context.components.analytics.metrics.stop(MetricServiceType.Data)
-                    if (context.settings().isExperimentationEnabled) {
-                        context.settings().isExperimentationEnabled = false
-                        requireComponents.nimbus.sdk.globalUserParticipation = false
-                        if (SHOULD_EXIT_APP_AFTER_TURNING_OFF_STUDIES) {
-                            Toast.makeText(
-                                context,
-                                getString(R.string.quit_application),
-                                Toast.LENGTH_LONG,
-                            ).show()
-                            Handler(Looper.getMainLooper()).postDelayed(
-                                { quitTheApp() },
-                                EXIT_DELAY,
-                            )
-                        }
-                    }
+                    context.settings().isExperimentationEnabled = false
+                    requireComponents.nimbus.sdk.globalUserParticipation = false
                 }
                 updateStudiesSection()
                 // Reset experiment identifiers on both opt-in and opt-out; it's likely
@@ -65,6 +52,14 @@ class DataChoicesFragment : PreferenceFragmentCompat() {
                     context.components.analytics.metrics.start(MetricServiceType.Marketing)
                 } else {
                     context.components.analytics.metrics.stop(MetricServiceType.Marketing)
+                }
+            } else if (key == getPreferenceKey(R.string.pref_key_daily_usage_ping)) {
+                with(context.components.analytics.metrics) {
+                    if (context.settings().isDailyUsagePingEnabled) {
+                        start(MetricServiceType.UsageReporting)
+                    } else {
+                        stop(MetricServiceType.UsageReporting)
+                    }
                 }
             }
         }
@@ -81,23 +76,81 @@ class DataChoicesFragment : PreferenceFragmentCompat() {
 
         requirePreference<SwitchPreference>(R.string.pref_key_telemetry).apply {
             isChecked = context.settings().isTelemetryEnabled
-
-            val appName = context.getString(R.string.app_name)
-            summary = context.getString(R.string.preferences_usage_data_description, appName)
-
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
-        requirePreference<SwitchPreference>(R.string.pref_key_marketing_telemetry).apply {
-            isChecked = (context.settings().isMarketingTelemetryEnabled) && (!Config.channel.isMozillaOnline)
+        val marketingTelemetryPref =
+            requirePreference<SwitchPreference>(R.string.pref_key_marketing_telemetry).apply {
+                isChecked =
+                    context.settings().isMarketingTelemetryEnabled && !Config.channel.isMozillaOnline
+                onPreferenceChangeListener = SharedPreferenceUpdater()
+                isVisible = !Config.channel.isMozillaOnline &&
+                    shouldShowMarketingTelemetryPreference(requireContext().settings())
+            }
+
+        requirePreference<Preference>(R.string.pref_key_learn_about_marketing_telemetry).apply {
+            isVisible = marketingTelemetryPref.isVisible
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_daily_usage_ping).apply {
+            isChecked = context.settings().isDailyUsagePingEnabled
             onPreferenceChangeListener = SharedPreferenceUpdater()
-            isVisible = false
         }
 
         requirePreference<SwitchPreference>(R.string.pref_key_crash_reporting_always_report).apply {
             isChecked = context.settings().crashReportAlwaysSend
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
+    }
+
+    @VisibleForTesting
+    internal fun shouldShowMarketingTelemetryPreference(settings: Settings) =
+        settings.hasMadeMarketingTelemetrySelection
+
+    override fun onPreferenceTreeClick(preference: Preference): Boolean {
+        context?.also { context ->
+            when (preference.key) {
+                getPreferenceKey(R.string.pref_key_learn_about_telemetry) -> openLearnMoreUrlInSandboxedTab(
+                    context,
+                    SupportUtils.getSumoURLForTopic(
+                        context = context,
+                        topic = SupportUtils.SumoTopic.TECHNICAL_AND_INTERACTION_DATA,
+                    ),
+                )
+
+                getPreferenceKey(R.string.pref_key_learn_about_marketing_telemetry) -> openLearnMoreUrlInSandboxedTab(
+                    context,
+                    SupportUtils.getSumoURLForTopic(
+                        context = context,
+                        topic = SupportUtils.SumoTopic.MARKETING_DATA,
+                    ),
+                )
+
+                getPreferenceKey(R.string.pref_key_learn_about_daily_usage_ping) -> openLearnMoreUrlInSandboxedTab(
+                    context,
+                    SupportUtils.getSumoURLForTopic(
+                        context = context,
+                        topic = SupportUtils.SumoTopic.USAGE_PING_SETTINGS,
+                    ),
+                )
+
+                getPreferenceKey(R.string.pref_key_learn_about_crash_reporting) -> openLearnMoreUrlInSandboxedTab(
+                    context,
+                    SupportUtils.getSumoURLForTopic(
+                        context = context,
+                        topic = SupportUtils.SumoTopic.CRASH_REPORTS,
+                    ),
+                )
+            }
+        }
+        return super.onPreferenceTreeClick(preference)
+    }
+
+    private fun openLearnMoreUrlInSandboxedTab(context: Context, url: String) {
+        SupportUtils.launchSandboxCustomTab(
+            context = context,
+            url = url,
+        )
     }
 
     private fun updateStudiesSection() {
@@ -116,17 +169,5 @@ class DataChoicesFragment : PreferenceFragmentCompat() {
             view?.findNavController()?.nav(R.id.dataChoicesFragment, action)
             true
         }
-    }
-
-    @VisibleForTesting
-    internal fun quitTheApp() {
-        exitProcess(0)
-    }
-
-    companion object {
-        private const val EXIT_DELAY = 2000L
-
-        @VisibleForTesting
-        var SHOULD_EXIT_APP_AFTER_TURNING_OFF_STUDIES = true
     }
 }

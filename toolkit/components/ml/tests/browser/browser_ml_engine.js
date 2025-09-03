@@ -7,8 +7,11 @@
 
 requestLongerTimeout(2);
 
-const RAW_PIPELINE_OPTIONS = { taskName: "moz-echo" };
-const PIPELINE_OPTIONS = new PipelineOptions({ taskName: "moz-echo" });
+const RAW_PIPELINE_OPTIONS = { taskName: "moz-echo", timeoutMS: -1 };
+const PIPELINE_OPTIONS = new PipelineOptions({
+  taskName: "moz-echo",
+  timeoutMS: -1,
+});
 
 async function checkForRemoteType(remoteType) {
   let procinfo3 = await ChromeUtils.requestProcInfo();
@@ -613,7 +616,7 @@ add_task(async function test_ml_engine_get_status() {
   const { cleanup, remoteClients } = await setup();
 
   info("Get the engine");
-  const engineInstance = await createEngine(RAW_PIPELINE_OPTIONS);
+  const engineInstance = await createEngine({ taskName: "moz-echo" });
 
   info("Check the inference process is running");
   Assert.equal(await checkForRemoteType("inference"), true);
@@ -635,6 +638,7 @@ add_task(async function test_ml_engine_get_status() {
     "default-engine": {
       status: "IDLING",
       options: {
+        useExternalDataFormat: false,
         engineId: "default-engine",
         featureId: null,
         taskName: "moz-echo",
@@ -652,7 +656,7 @@ add_task(async function test_ml_engine_get_status() {
         runtimeFilename: "ort-wasm-simd-threaded.jsep.wasm",
         device: null,
         dtype: "q8",
-        numThreads: null,
+        numThreads: "NOT_COMPARED",
         executionPriority: null,
         modelHub: null,
       },
@@ -662,6 +666,8 @@ add_task(async function test_ml_engine_get_status() {
 
   let status = await engineInstance.mlEngineParent.getStatus();
   status = JSON.parse(JSON.stringify(Object.fromEntries(status)));
+
+  status["default-engine"].options.numThreads = "NOT_COMPARED";
   Assert.deepEqual(status, expected);
 
   await ok(
@@ -682,7 +688,7 @@ add_task(async function test_ml_engine_not_enough_memory() {
   info("Get the greedy engine");
   const engineInstance = await createEngine({
     modelId: "testing/greedy",
-    taskName: "summarization",
+    taskName: "moz-echo",
     dtype: "q8",
     numThreads: 1,
     device: "wasm",
@@ -946,6 +952,13 @@ const pipelineOptionsCases = [
     options: { modelRevision: "1.0.0" },
     expected: { modelRevision: "1.0.0" },
   },
+
+  // Valid engineID cases
+  {
+    description: "Valid engineID (qwen)",
+    options: { engineId: "SUM-ONNX-COMMUNITY_QWEN2_5-0_5B-INSTRUCT_BIG" },
+    expected: { engineId: "SUM-ONNX-COMMUNITY_QWEN2_5-0_5B-INSTRUCT_BIG" },
+  },
 ];
 
 /**
@@ -1050,6 +1063,8 @@ add_task(async function test_ml_engine_blessed_model() {
     "test-echo",
     "The blessed model was picked."
   );
+
+  Assert.equal(res.config.dtype, "q8", "With the right quantization level");
 
   ok(
     !EngineProcess.areAllEnginesTerminated(),

@@ -13,8 +13,10 @@ XPIDL_SOURCES += [
     "nsIQuotaArtificialFailure.idl",
     "nsIQuotaCallbacks.idl",
     "nsIQuotaManagerService.idl",
+    "nsIQuotaManagerServiceInternal.idl",
     "nsIQuotaRequests.idl",
     "nsIQuotaResults.idl",
+    "nsIQuotaUtilsService.idl",
 ]
 
 XPIDL_MODULE = "dom_quota"
@@ -143,6 +145,7 @@ UNIFIED_SOURCES += [
     "QuotaManagerService.cpp",
     "QuotaObject.cpp",
     "QuotaParent.cpp",
+    "QuotaPrefs.cpp",
     "QuotaRequestBase.cpp",
     "QuotaRequests.cpp",
     "QuotaResults.cpp",
@@ -168,6 +171,10 @@ IPDL_SOURCES += [
     "PQuotaRequest.ipdl",
     "PQuotaUsageRequest.ipdl",
     "PRemoteQuotaObject.ipdl",
+]
+
+EXTRA_JS_MODULES += [
+    "QuotaUtilsService.sys.mjs",
 ]
 
 include("/ipc/chromium/chromium-config.mozbuild")

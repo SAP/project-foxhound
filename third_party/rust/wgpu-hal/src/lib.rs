@@ -82,12 +82,12 @@
 //!
 //! - Metal on macOS, using the [`metal`] crate's bindings.
 //!
-//! - Direct3D 12 on Windows, using the [`d3d12`] crate's bindings.
+//! - Direct3D 12 on Windows, using the [`windows`] crate's bindings.
 //!
 //! [`ash`]: https://crates.io/crates/ash
 //! [MoltenVK]: https://github.com/KhronosGroup/MoltenVK
 //! [`metal`]: https://crates.io/crates/metal
-//! [`d3d12`]: https://crates.io/crates/d3d12
+//! [`windows`]: https://crates.io/crates/windows
 //!
 //! ## Secondary backends
 //!
@@ -202,6 +202,7 @@
 //!
 //! [wiki-debug]: https://github.com/gfx-rs/wgpu/wiki/Debugging-wgpu-Applications
 
+#![no_std]
 #![cfg_attr(docsrs, feature(doc_cfg, doc_auto_cfg))]
 #![allow(
     // this happens on the GL backend, where it is both thread safe and non-thread safe in the same code.
@@ -226,7 +227,10 @@
     clippy::pattern_type_mismatch,
 )]
 #![warn(
+    clippy::alloc_instead_of_core,
     clippy::ptr_as_ptr,
+    clippy::std_instead_of_alloc,
+    clippy::std_instead_of_core,
     trivial_casts,
     trivial_numeric_casts,
     unsafe_op_in_unsafe_fn,
@@ -234,17 +238,25 @@
     unused_qualifications
 )]
 
+extern crate alloc;
+extern crate wgpu_types as wgt;
+// TODO(https://github.com/gfx-rs/wgpu/issues/6826): disable std except on noop and gles-WebGL.
+// Requires Rust 1.81 for core::error::Error.
+#[macro_use]
+extern crate std;
+
 /// DirectX12 API internals.
 #[cfg(dx12)]
 pub mod dx12;
-/// A dummy API implementation.
-pub mod empty;
 /// GLES API internals.
 #[cfg(gles)]
 pub mod gles;
 /// Metal API internals.
 #[cfg(metal)]
 pub mod metal;
+/// A dummy API implementation.
+// TODO(https://github.com/gfx-rs/wgpu/issues/7120): this should have a cfg
+pub mod noop;
 /// Vulkan API internals.
 #[cfg(vulkan)]
 pub mod vulkan;
@@ -253,11 +265,11 @@ pub mod auxil;
 pub mod api {
     #[cfg(dx12)]
     pub use super::dx12::Api as Dx12;
-    pub use super::empty::Api as Empty;
     #[cfg(gles)]
     pub use super::gles::Api as Gles;
     #[cfg(metal)]
     pub use super::metal::Api as Metal;
+    pub use super::noop::Api as Noop;
     #[cfg(vulkan)]
     pub use super::vulkan::Api as Vulkan;
 }
@@ -273,14 +285,17 @@ pub use dynamic::{
     DynShaderModule, DynSurface, DynSurfaceTexture, DynTexture, DynTextureView,
 };
 
-use std::{
-    borrow::{Borrow, Cow},
+#[allow(unused)]
+use alloc::boxed::Box;
+use alloc::{borrow::Cow, string::String, sync::Arc, vec::Vec};
+use core::{
+    borrow::Borrow,
     fmt,
     num::NonZeroU32,
     ops::{Range, RangeInclusive},
     ptr::NonNull,
-    sync::Arc,
 };
+use std::error::Error; // TODO(https://github.com/gfx-rs/wgpu/issues/6826): use core::error after MSRV bump
 
 use bitflags::bitflags;
 use parking_lot::Mutex;
@@ -296,12 +311,16 @@ pub const MAX_VERTEX_BUFFERS: usize = 16;
 pub const MAX_COLOR_ATTACHMENTS: usize = 8;
 pub const MAX_MIP_LEVELS: u32 = 16;
 /// Size of a single occlusion/timestamp query, when copied into a buffer, in bytes.
+/// cbindgen:ignore
 pub const QUERY_SIZE: wgt::BufferAddress = 8;
 
 pub type Label<'a> = Option<&'a str>;
 pub type MemoryRange = Range<wgt::BufferAddress>;
 pub type FenceValue = u64;
-pub type AtomicFenceValue = std::sync::atomic::AtomicU64;
+#[cfg(supports_64bit_atomics)]
+pub type AtomicFenceValue = core::sync::atomic::AtomicU64;
+#[cfg(not(supports_64bit_atomics))]
+pub type AtomicFenceValue = portable_atomic::AtomicU64;
 
 /// A callback to signal that wgpu is no longer using a resource.
 #[cfg(any(gles, vulkan))]
@@ -413,7 +432,7 @@ pub struct InstanceError {
 
     /// Underlying error value, if any is available.
     #[source]
-    source: Option<Arc<dyn std::error::Error + Send + Sync + 'static>>,
+    source: Option<Arc<dyn Error + Send + Sync + 'static>>,
 }
 
 impl InstanceError {
@@ -425,10 +444,7 @@ impl InstanceError {
         }
     }
     #[allow(dead_code)] // may be unused on some platforms
-    pub(crate) fn with_source(
-        message: String,
-        source: impl std::error::Error + Send + Sync + 'static,
-    ) -> Self {
+    pub(crate) fn with_source(message: String, source: impl Error + Send + Sync + 'static) -> Self {
         Self {
             message,
             source: Some(Arc::new(source)),
@@ -581,13 +597,13 @@ pub trait Surface: WasmNotSendSync {
     ///
     /// [`texture`]: AcquiredSurfaceTexture::texture
     /// [`SurfaceTexture`]: Api::SurfaceTexture
-    /// [`borrow`]: std::borrow::Borrow::borrow
+    /// [`borrow`]: alloc::borrow::Borrow::borrow
     /// [`Texture`]: Api::Texture
     /// [`Fence`]: Api::Fence
     /// [`self.discard_texture`]: Surface::discard_texture
     unsafe fn acquire_texture(
         &self,
-        timeout: Option<std::time::Duration>,
+        timeout: Option<core::time::Duration>,
         fence: &<Self::A as Api>::Fence,
     ) -> Result<Option<AcquiredSurfaceTexture<Self::A>>, SurfaceError>;
 
@@ -676,7 +692,7 @@ pub trait Adapter: WasmNotSendSync {
 /// 1)  Free resources with methods like [`Device::destroy_texture`] or
 ///     [`Device::destroy_shader_module`].
 ///
-/// 1)  Shut down the device by calling [`Device::exit`].
+/// 1)  Drop the device.
 ///
 /// [`vkDevice`]: https://registry.khronos.org/vulkan/specs/1.3-extensions/html/vkspec.html#VkDevice
 /// [`ID3D12Device`]: https://learn.microsoft.com/en-us/windows/win32/api/d3d12/nn-d3d12-id3d12device
@@ -706,11 +722,9 @@ pub trait Adapter: WasmNotSendSync {
 pub trait Device: WasmNotSendSync {
     type A: Api;
 
-    /// Exit connection to this logical device.
-    unsafe fn exit(self, queue: <Self::A as Api>::Queue);
     /// Creates a new buffer.
     ///
-    /// The initial usage is `BufferUses::empty()`.
+    /// The initial usage is `wgt::BufferUses::empty()`.
     unsafe fn create_buffer(
         &self,
         desc: &BufferDescriptor,
@@ -776,8 +790,8 @@ pub trait Device: WasmNotSendSync {
     /// - The returned [`BufferMapping::ptr`] must not be used after a call to
     ///   [`Device::unmap_buffer`].
     ///
-    /// [`MAP_READ`]: BufferUses::MAP_READ
-    /// [`MAP_WRITE`]: BufferUses::MAP_WRITE
+    /// [`MAP_READ`]: wgt::BufferUses::MAP_READ
+    /// [`MAP_WRITE`]: wgt::BufferUses::MAP_WRITE
     unsafe fn map_buffer(
         &self,
         buffer: &<Self::A as Api>::Buffer,
@@ -815,7 +829,7 @@ pub trait Device: WasmNotSendSync {
 
     /// Creates a new texture.
     ///
-    /// The initial usage for all subresources is `TextureUses::UNINITIALIZED`.
+    /// The initial usage for all subresources is `wgt::TextureUses::UNINITIALIZED`.
     unsafe fn create_texture(
         &self,
         desc: &TextureDescriptor,
@@ -844,7 +858,6 @@ pub trait Device: WasmNotSendSync {
         &self,
         desc: &CommandEncoderDescriptor<<Self::A as Api>::Queue>,
     ) -> Result<<Self::A as Api>::CommandEncoder, DeviceError>;
-    unsafe fn destroy_command_encoder(&self, pool: <Self::A as Api>::CommandEncoder);
 
     /// Creates a bind group layout.
     unsafe fn create_bind_group_layout(
@@ -937,6 +950,8 @@ pub trait Device: WasmNotSendSync {
     /// Calling `wait` with a lower [`FenceValue`] than `fence`'s current value
     /// returns immediately.
     ///
+    /// Returns `Ok(true)` on success and `Ok(false)` on timeout.
+    ///
     /// [`Fence`]: Api::Fence
     /// [`FencePool`]: vulkan/enum.Fence.html#variant.FencePool
     unsafe fn wait(
@@ -973,6 +988,7 @@ pub trait Device: WasmNotSendSync {
         &self,
         acceleration_structure: <Self::A as Api>::AccelerationStructure,
     );
+    fn tlas_instance_to_bytes(&self, instance: TlasInstance) -> Vec<u8>;
 
     fn get_internal_counters(&self) -> wgt::HalCounters;
 
@@ -1111,8 +1127,6 @@ pub trait Queue: WasmNotSendSync {
 /// - A `CommandBuffer` must not outlive the `CommandEncoder` that
 ///   built it.
 ///
-/// - A `CommandEncoder` must not outlive its `Device`.
-///
 /// It is the user's responsibility to meet this requirements. This
 /// allows `CommandEncoder` implementations to keep their state
 /// tracking to a minimum.
@@ -1202,12 +1216,12 @@ pub trait CommandEncoder: WasmNotSendSync + fmt::Debug {
 
     /// Copy from an external image to an internal texture.
     /// Works with a single array layer.
-    /// Note: `dst` current usage has to be `TextureUses::COPY_DST`.
+    /// Note: `dst` current usage has to be `wgt::TextureUses::COPY_DST`.
     /// Note: the copy extent is in physical size (rounded to the block size)
     #[cfg(webgl)]
     unsafe fn copy_external_image_to_texture<T>(
         &mut self,
-        src: &wgt::ImageCopyExternalImage,
+        src: &wgt::CopyExternalImageSourceInfo,
         dst: &<Self::A as Api>::Texture,
         dst_premultiplication: bool,
         regions: T,
@@ -1216,12 +1230,12 @@ pub trait CommandEncoder: WasmNotSendSync + fmt::Debug {
 
     /// Copy from one texture to another.
     /// Works with a single array layer.
-    /// Note: `dst` current usage has to be `TextureUses::COPY_DST`.
+    /// Note: `dst` current usage has to be `wgt::TextureUses::COPY_DST`.
     /// Note: the copy extent is in physical size (rounded to the block size)
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &<Self::A as Api>::Texture,
-        src_usage: TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &<Self::A as Api>::Texture,
         regions: T,
     ) where
@@ -1229,7 +1243,7 @@ pub trait CommandEncoder: WasmNotSendSync + fmt::Debug {
 
     /// Copy from buffer to texture.
     /// Works with a single array layer.
-    /// Note: `dst` current usage has to be `TextureUses::COPY_DST`.
+    /// Note: `dst` current usage has to be `wgt::TextureUses::COPY_DST`.
     /// Note: the copy extent is in physical size (rounded to the block size)
     unsafe fn copy_buffer_to_texture<T>(
         &mut self,
@@ -1245,12 +1259,18 @@ pub trait CommandEncoder: WasmNotSendSync + fmt::Debug {
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &<Self::A as Api>::Texture,
-        src_usage: TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &<Self::A as Api>::Buffer,
         regions: T,
     ) where
         T: Iterator<Item = BufferTextureCopy>;
 
+    unsafe fn copy_acceleration_structure_to_acceleration_structure(
+        &mut self,
+        src: &<Self::A as Api>::AccelerationStructure,
+        dst: &<Self::A as Api>::AccelerationStructure,
+        copy: wgt::AccelerationStructureCopy,
+    );
     // pass common
 
     /// Sets the bind group at `index` to `group`.
@@ -1511,16 +1531,27 @@ pub trait CommandEncoder: WasmNotSendSync + fmt::Debug {
         &mut self,
         barrier: AccelerationStructureBarrier,
     );
+    // modeled off dx12, because this is able to be polyfilled in vulkan as opposed to the other way round
+    unsafe fn read_acceleration_structure_compact_size(
+        &mut self,
+        acceleration_structure: &<Self::A as Api>::AccelerationStructure,
+        buf: &<Self::A as Api>::Buffer,
+    );
 }
 
 bitflags!(
     /// Pipeline layout creation flags.
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub struct PipelineLayoutFlags: u32 {
-        /// Include support for `first_vertex` / `first_instance` drawing.
+        /// D3D12: Add support for `first_vertex` and `first_instance` builtins
+        /// via push constants for direct execution.
         const FIRST_VERTEX_INSTANCE = 1 << 0;
-        /// Include support for num work groups builtin.
+        /// D3D12: Add support for `num_workgroups` builtins via push constants
+        /// for direct execution.
         const NUM_WORK_GROUPS = 1 << 1;
+        /// D3D12: Add support for the builtins that the other flags enable for
+        /// indirect execution.
+        const INDIRECT_BUILTIN_UPDATE = 1 << 2;
     }
 );
 
@@ -1544,36 +1575,38 @@ bitflags!(
         /// Format can be sampled with a min/max reduction sampler.
         const SAMPLED_MINMAX = 1 << 2;
 
+        /// Format can be used as storage with read-only access.
+        const STORAGE_READ_ONLY = 1 << 3;
         /// Format can be used as storage with write-only access.
-        const STORAGE = 1 << 3;
-        /// Format can be used as storage with read and read/write access.
-        const STORAGE_READ_WRITE = 1 << 4;
+        const STORAGE_WRITE_ONLY = 1 << 4;
+        /// Format can be used as storage with both read and write access.
+        const STORAGE_READ_WRITE = 1 << 5;
         /// Format can be used as storage with atomics.
-        const STORAGE_ATOMIC = 1 << 5;
+        const STORAGE_ATOMIC = 1 << 6;
 
         /// Format can be used as color and input attachment.
-        const COLOR_ATTACHMENT = 1 << 6;
+        const COLOR_ATTACHMENT = 1 << 7;
         /// Format can be used as color (with blending) and input attachment.
-        const COLOR_ATTACHMENT_BLEND = 1 << 7;
+        const COLOR_ATTACHMENT_BLEND = 1 << 8;
         /// Format can be used as depth-stencil and input attachment.
-        const DEPTH_STENCIL_ATTACHMENT = 1 << 8;
+        const DEPTH_STENCIL_ATTACHMENT = 1 << 9;
 
         /// Format can be multisampled by x2.
-        const MULTISAMPLE_X2   = 1 << 9;
+        const MULTISAMPLE_X2   = 1 << 10;
         /// Format can be multisampled by x4.
-        const MULTISAMPLE_X4   = 1 << 10;
+        const MULTISAMPLE_X4   = 1 << 11;
         /// Format can be multisampled by x8.
-        const MULTISAMPLE_X8   = 1 << 11;
+        const MULTISAMPLE_X8   = 1 << 12;
         /// Format can be multisampled by x16.
-        const MULTISAMPLE_X16  = 1 << 12;
+        const MULTISAMPLE_X16  = 1 << 13;
 
         /// Format can be used for render pass resolve targets.
-        const MULTISAMPLE_RESOLVE = 1 << 13;
+        const MULTISAMPLE_RESOLVE = 1 << 14;
 
         /// Format can be copied from.
-        const COPY_SRC = 1 << 14;
+        const COPY_SRC = 1 << 15;
         /// Format can be copied to.
-        const COPY_DST = 1 << 15;
+        const COPY_DST = 1 << 16;
     }
 );
 
@@ -1607,7 +1640,7 @@ impl FormatAspects {
 
     /// Returns `true` if only one flag is set
     pub fn is_one(&self) -> bool {
-        self.bits().count_ones() == 1
+        self.bits().is_power_of_two()
     }
 
     pub fn map(&self) -> wgt::TextureAspect {
@@ -1657,95 +1690,11 @@ bitflags!(
     }
 );
 
-bitflags::bitflags! {
-    /// Similar to `wgt::BufferUsages` but for internal use.
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-    pub struct BufferUses: u16 {
-        /// The argument to a read-only mapping.
-        const MAP_READ = 1 << 0;
-        /// The argument to a write-only mapping.
-        const MAP_WRITE = 1 << 1;
-        /// The source of a hardware copy.
-        const COPY_SRC = 1 << 2;
-        /// The destination of a hardware copy.
-        const COPY_DST = 1 << 3;
-        /// The index buffer used for drawing.
-        const INDEX = 1 << 4;
-        /// A vertex buffer used for drawing.
-        const VERTEX = 1 << 5;
-        /// A uniform buffer bound in a bind group.
-        const UNIFORM = 1 << 6;
-        /// A read-only storage buffer used in a bind group.
-        const STORAGE_READ = 1 << 7;
-        /// A read-write or write-only buffer used in a bind group.
-        const STORAGE_READ_WRITE = 1 << 8;
-        /// The indirect or count buffer in a indirect draw or dispatch.
-        const INDIRECT = 1 << 9;
-        /// A buffer used to store query results.
-        const QUERY_RESOLVE = 1 << 10;
-        const ACCELERATION_STRUCTURE_SCRATCH = 1 << 11;
-        const BOTTOM_LEVEL_ACCELERATION_STRUCTURE_INPUT = 1 << 12;
-        const TOP_LEVEL_ACCELERATION_STRUCTURE_INPUT = 1 << 13;
-        /// The combination of states that a buffer may be in _at the same time_.
-        const INCLUSIVE = Self::MAP_READ.bits() | Self::COPY_SRC.bits() |
-            Self::INDEX.bits() | Self::VERTEX.bits() | Self::UNIFORM.bits() |
-            Self::STORAGE_READ.bits() | Self::INDIRECT.bits() | Self::BOTTOM_LEVEL_ACCELERATION_STRUCTURE_INPUT.bits() | Self::TOP_LEVEL_ACCELERATION_STRUCTURE_INPUT.bits();
-        /// The combination of states that a buffer must exclusively be in.
-        const EXCLUSIVE = Self::MAP_WRITE.bits() | Self::COPY_DST.bits() | Self::STORAGE_READ_WRITE.bits() | Self::ACCELERATION_STRUCTURE_SCRATCH.bits();
-        /// The combination of all usages that the are guaranteed to be be ordered by the hardware.
-        /// If a usage is ordered, then if the buffer state doesn't change between draw calls, there
-        /// are no barriers needed for synchronization.
-        const ORDERED = Self::INCLUSIVE.bits() | Self::MAP_WRITE.bits();
-    }
-}
-
-bitflags::bitflags! {
-    /// Similar to `wgt::TextureUsages` but for internal use.
-    #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-    pub struct TextureUses: u16 {
-        /// The texture is in unknown state.
-        const UNINITIALIZED = 1 << 0;
-        /// Ready to present image to the surface.
-        const PRESENT = 1 << 1;
-        /// The source of a hardware copy.
-        const COPY_SRC = 1 << 2;
-        /// The destination of a hardware copy.
-        const COPY_DST = 1 << 3;
-        /// Read-only sampled or fetched resource.
-        const RESOURCE = 1 << 4;
-        /// The color target of a renderpass.
-        const COLOR_TARGET = 1 << 5;
-        /// Read-only depth stencil usage.
-        const DEPTH_STENCIL_READ = 1 << 6;
-        /// Read-write depth stencil usage
-        const DEPTH_STENCIL_WRITE = 1 << 7;
-        /// Read-only storage buffer usage. Corresponds to a UAV in d3d, so is exclusive, despite being read only.
-        const STORAGE_READ = 1 << 8;
-        /// Read-write or write-only storage buffer usage.
-        const STORAGE_READ_WRITE = 1 << 9;
-        /// The combination of states that a texture may be in _at the same time_.
-        const INCLUSIVE = Self::COPY_SRC.bits() | Self::RESOURCE.bits() | Self::DEPTH_STENCIL_READ.bits();
-        /// The combination of states that a texture must exclusively be in.
-        const EXCLUSIVE = Self::COPY_DST.bits() | Self::COLOR_TARGET.bits() | Self::DEPTH_STENCIL_WRITE.bits() | Self::STORAGE_READ.bits() | Self::STORAGE_READ_WRITE.bits() | Self::PRESENT.bits();
-        /// The combination of all usages that the are guaranteed to be be ordered by the hardware.
-        /// If a usage is ordered, then if the texture state doesn't change between draw calls, there
-        /// are no barriers needed for synchronization.
-        const ORDERED = Self::INCLUSIVE.bits() | Self::COLOR_TARGET.bits() | Self::DEPTH_STENCIL_WRITE.bits() | Self::STORAGE_READ.bits();
-
-        /// Flag used by the wgpu-core texture tracker to say a texture is in different states for every sub-resource
-        const COMPLEX = 1 << 10;
-        /// Flag used by the wgpu-core texture tracker to say that the tracker does not know the state of the sub-resource.
-        /// This is different from UNINITIALIZED as that says the tracker does know, but the texture has not been initialized.
-        const UNKNOWN = 1 << 11;
-    }
-}
-
 #[derive(Clone, Debug)]
 pub struct InstanceDescriptor<'a> {
     pub name: &'a str,
     pub flags: wgt::InstanceFlags,
-    pub dx12_shader_compiler: wgt::Dx12Compiler,
-    pub gles_minor_version: wgt::Gles3MinorVersion,
+    pub backend_options: wgt::BackendOptions,
 }
 
 #[derive(Clone, Debug)]
@@ -1773,6 +1722,12 @@ pub struct Alignments {
     /// [`Uniform`]: wgt::BufferBindingType::Uniform
     /// [size]: BufferBinding::size
     pub uniform_bounds_check_alignment: wgt::BufferSize,
+
+    /// The size of the raw TLAS instance
+    pub raw_tlas_instance_size: usize,
+
+    /// What the scratch buffer for building an acceleration structure must be aligned to
+    pub ray_tracing_scratch_buffer_alignment: u32,
 }
 
 #[derive(Clone, Debug)]
@@ -1813,8 +1768,8 @@ pub struct SurfaceCapabilities {
 
     /// Supported texture usage flags.
     ///
-    /// Must have at least `TextureUses::COLOR_TARGET`
-    pub usage: TextureUses,
+    /// Must have at least `wgt::TextureUses::COLOR_TARGET`
+    pub usage: wgt::TextureUses,
 
     /// List of supported V-sync modes.
     ///
@@ -1852,7 +1807,7 @@ pub struct BufferMapping {
 pub struct BufferDescriptor<'a> {
     pub label: Label<'a>,
     pub size: wgt::BufferAddress,
-    pub usage: BufferUses,
+    pub usage: wgt::BufferUses,
     pub memory_flags: MemoryFlags,
 }
 
@@ -1864,7 +1819,7 @@ pub struct TextureDescriptor<'a> {
     pub sample_count: u32,
     pub dimension: wgt::TextureDimension,
     pub format: wgt::TextureFormat,
-    pub usage: TextureUses,
+    pub usage: wgt::TextureUses,
     pub memory_flags: MemoryFlags,
     /// Allows views of this texture to have a different format
     /// than the texture does.
@@ -1903,7 +1858,7 @@ pub struct TextureViewDescriptor<'a> {
     pub label: Label<'a>,
     pub format: wgt::TextureFormat,
     pub dimension: wgt::TextureViewDimension,
-    pub usage: TextureUses,
+    pub usage: wgt::TextureUses,
     pub range: wgt::ImageSubresourceRange,
 }
 
@@ -2015,7 +1970,7 @@ impl<'a, T: DynBuffer + ?Sized> Clone for BufferBinding<'a, T> {
 #[derive(Debug)]
 pub struct TextureBinding<'a, T: DynTextureView + ?Sized> {
     pub view: &'a T,
-    pub usage: TextureUses,
+    pub usage: wgt::TextureUses,
 }
 
 impl<'a, T: DynTextureView + ?Sized> Clone for TextureBinding<'a, T> {
@@ -2027,6 +1982,7 @@ impl<'a, T: DynTextureView + ?Sized> Clone for TextureBinding<'a, T> {
     }
 }
 
+/// cbindgen:ignore
 #[derive(Clone, Debug)]
 pub struct BindGroupEntry {
     pub binding: u32,
@@ -2095,26 +2051,12 @@ pub enum ShaderInput<'a> {
 pub struct ShaderModuleDescriptor<'a> {
     pub label: Label<'a>,
 
-    /// Enforce bounds checks in shaders, even if the underlying driver doesn't
-    /// support doing so natively.
+    /// # Safety
     ///
-    /// When this is `true`, `wgpu_hal` promises that shaders can only read or
-    /// write the [accessible region][ar] of a bindgroup's buffer bindings. If
-    /// the underlying graphics platform cannot implement these bounds checks
-    /// itself, `wgpu_hal` will inject bounds checks before presenting the
-    /// shader to the platform.
+    /// See the documentation for each flag in [`ShaderRuntimeChecks`][src].
     ///
-    /// When this is `false`, `wgpu_hal` only enforces such bounds checks if the
-    /// underlying platform provides a way to do so itself. `wgpu_hal` does not
-    /// itself add any bounds checks to generated shader code.
-    ///
-    /// Note that `wgpu_hal` users may try to initialize only those portions of
-    /// buffers that they anticipate might be read from. Passing `false` here
-    /// may allow shaders to see wider regions of the buffers than expected,
-    /// making such deferred initialization visible to the application.
-    ///
-    /// [ar]: struct.BufferBinding.html#accessible-region
-    pub runtime_checks: bool,
+    /// [src]: wgt::ShaderRuntimeChecks
+    pub runtime_checks: wgt::ShaderRuntimeChecks,
 }
 
 #[derive(Debug, Clone)]
@@ -2231,7 +2173,7 @@ pub struct SurfaceConfiguration {
     /// `SurfaceCapabilities::extents` range.
     pub extent: wgt::Extent3d,
     /// Allowed usage of surface textures,
-    pub usage: TextureUses,
+    pub usage: wgt::TextureUses,
     /// Allows views of swapchain texture to have a different format
     /// than the texture does.
     pub view_formats: Vec<wgt::TextureFormat>,
@@ -2245,17 +2187,23 @@ pub struct Rect<T> {
     pub h: T,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateTransition<T> {
+    pub from: T,
+    pub to: T,
+}
+
 #[derive(Debug, Clone)]
 pub struct BufferBarrier<'a, B: DynBuffer + ?Sized> {
     pub buffer: &'a B,
-    pub usage: Range<BufferUses>,
+    pub usage: StateTransition<wgt::BufferUses>,
 }
 
 #[derive(Debug, Clone)]
 pub struct TextureBarrier<'a, T: DynTexture + ?Sized> {
     pub texture: &'a T,
     pub range: wgt::ImageSubresourceRange,
-    pub usage: Range<TextureUses>,
+    pub usage: StateTransition<wgt::TextureUses>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -2291,7 +2239,7 @@ pub struct TextureCopy {
 
 #[derive(Clone, Debug)]
 pub struct BufferTextureCopy {
-    pub buffer_layout: wgt::ImageDataLayout,
+    pub buffer_layout: wgt::TexelCopyBufferLayout,
     pub texture_base: TextureCopyBase,
     pub size: CopyExtent,
 }
@@ -2301,7 +2249,7 @@ pub struct Attachment<'a, T: DynTextureView + ?Sized> {
     pub view: &'a T,
     /// Contains either a single mutating usage as a target,
     /// or a valid combination of read-only usages.
-    pub usage: TextureUses,
+    pub usage: wgt::TextureUses,
 }
 
 #[derive(Clone, Debug)]
@@ -2392,6 +2340,7 @@ pub struct AccelerationStructureDescriptor<'a> {
     pub label: Label<'a>,
     pub size: wgt::BufferAddress,
     pub format: AccelerationStructureFormat,
+    pub allow_compaction: bool,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -2478,6 +2427,11 @@ pub struct AccelerationStructureAABBs<'a, B: DynBuffer + ?Sized> {
     pub flags: AccelerationStructureGeometryFlags,
 }
 
+pub struct AccelerationStructureCopy {
+    pub copy_flags: wgt::AccelerationStructureCopy,
+    pub type_flags: wgt::AccelerationStructureType,
+}
+
 /// * `offset` - offset in bytes
 #[derive(Clone, Debug)]
 pub struct AccelerationStructureInstances<'a, B: DynBuffer + ?Sized> {
@@ -2514,10 +2468,24 @@ bitflags::bitflags! {
         const BUILD_OUTPUT = 1 << 1;
         // Tlas used in a shader
         const SHADER_INPUT = 1 << 2;
+        // Blas used to query compacted size
+        const QUERY_INPUT = 1 << 3;
+        // BLAS used as a src for a copy operation
+        const COPY_SRC = 1 << 4;
+        // BLAS used as a dst for a copy operation
+        const COPY_DST = 1 << 5;
     }
 }
 
 #[derive(Debug, Clone)]
 pub struct AccelerationStructureBarrier {
-    pub usage: Range<AccelerationStructureUses>,
+    pub usage: StateTransition<AccelerationStructureUses>,
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct TlasInstance {
+    pub transform: [f32; 12],
+    pub custom_data: u32,
+    pub mask: u8,
+    pub blas_address: u64,
 }

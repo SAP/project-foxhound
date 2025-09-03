@@ -53,11 +53,12 @@
 #include "nsDebug.h"
 #include "nsISupports.h"
 #include "nsXPCOM.h"
-#include "shared-libraries.h"
+#include "SharedLibraries.h"
 #include "VTuneProfiler.h"
 #include "ETWTools.h"
 
 #include "js/ProfilingFrameIterator.h"
+#include "memory_counter.h"
 #include "memory_hooks.h"
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/AutoProfilerLabel.h"
@@ -65,7 +66,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/ProcesstoolsMetrics.h"
 #include "mozilla/Monitor.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Printf.h"
@@ -420,8 +421,10 @@ static uint32_t AvailableFeatures() {
   }
 #else
   // The memory hooks are not available.
-  ProfilerFeature::ClearMemory(features);
   ProfilerFeature::ClearNativeAllocations(features);
+#endif
+#if !defined(MOZ_MEMORY) or !defined(MOZ_PROFILER_MEMORY)
+  ProfilerFeature::ClearMemory(features);
 #endif
 
 #if !defined(GP_OS_windows)
@@ -1199,6 +1202,10 @@ class ActivePS {
         "mMaybePowerCounters should have been deleted before ~ActivePS()");
     MOZ_ASSERT(!mMaybeCPUFreq,
                "mMaybeCPUFreq should have been deleted before ~ActivePS()");
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+    MOZ_ASSERT(!mMemoryCounter,
+               "mMemoryCounter should have been deleted before ~ActivePS()");
+#endif
 
 #if !defined(RELEASE_OR_BETA)
     if (ShouldInterposeIOs()) {
@@ -1287,6 +1294,14 @@ class ActivePS {
       delete sInstance->mMaybeCPUFreq;
       sInstance->mMaybeCPUFreq = nullptr;
     }
+
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+    if (sInstance->mMemoryCounter) {
+      locked_profiler_remove_sampled_counter(aLock,
+                                             sInstance->mMemoryCounter.get());
+      sInstance->mMemoryCounter = nullptr;
+    }
+#endif
 
     ProfilerBandwidthCounter* counter = CorePS::GetBandwidthCounter();
     if (counter && counter->IsRegistered()) {
@@ -1594,11 +1609,11 @@ class ActivePS {
   // This is a counter to collect process CPU utilization during profiling.
   // It cannot be a raw `ProfilerCounter` because we need to manually add/remove
   // it while the profiler lock is already held.
-  class ProcessCPUCounter final : public BaseProfilerCount {
+  class ProcessCPUCounter final : public AtomicProfilerCount {
    public:
     explicit ProcessCPUCounter(PSLockRef aLock)
-        : BaseProfilerCount("processCPU", &mCounter, nullptr, "CPU",
-                            "Process CPU utilization") {
+        : AtomicProfilerCount("processCPU", &mCounter, nullptr, "CPU",
+                              "Process CPU utilization") {
       // Adding on construction, so it's ready before the sampler starts.
       locked_profiler_add_sampled_counter(aLock, this);
       // Note: Removed from ActivePS::Destroy, because a lock is needed.
@@ -1759,17 +1774,19 @@ class ActivePS {
     return profiles;
   }
 
-#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
-  static void SetMemoryCounter(const BaseProfilerCount* aMemoryCounter) {
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+  static void SetMemoryCounter(UniquePtr<BaseProfilerCount> aMemoryCounter,
+                               PSLockRef aLock) {
     MOZ_ASSERT(sInstance);
 
-    sInstance->mMemoryCounter = aMemoryCounter;
+    sInstance->mMemoryCounter = std::move(aMemoryCounter);
   }
 
-  static bool IsMemoryCounter(const BaseProfilerCount* aMemoryCounter) {
+  static bool IsMemoryCounter(const BaseProfilerCount* aMemoryCounter,
+                              PSLockRef aLock) {
     MOZ_ASSERT(sInstance);
 
-    return sInstance->mMemoryCounter == aMemoryCounter;
+    return sInstance->mMemoryCounter.get() == aMemoryCounter;
   }
 #endif
 
@@ -1871,8 +1888,8 @@ class ActivePS {
   };
   Vector<ExitProfile> mExitProfiles;
 
-#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
-  Atomic<const BaseProfilerCount*> mMemoryCounter;
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+  UniquePtr<BaseProfilerCount> mMemoryCounter;
 #endif
 };
 
@@ -3061,12 +3078,10 @@ static void AddSharedLibraryInfoToStream(JSONWriter& aWriter,
   aWriter.IntProperty("start", SafeJSInteger(aLib.GetStart()));
   aWriter.IntProperty("end", SafeJSInteger(aLib.GetEnd()));
   aWriter.IntProperty("offset", SafeJSInteger(aLib.GetOffset()));
-  aWriter.StringProperty("name", NS_ConvertUTF16toUTF8(aLib.GetModuleName()));
-  aWriter.StringProperty("path", NS_ConvertUTF16toUTF8(aLib.GetModulePath()));
-  aWriter.StringProperty("debugName",
-                         NS_ConvertUTF16toUTF8(aLib.GetDebugName()));
-  aWriter.StringProperty("debugPath",
-                         NS_ConvertUTF16toUTF8(aLib.GetDebugPath()));
+  aWriter.StringProperty("name", aLib.GetModuleName());
+  aWriter.StringProperty("path", aLib.GetModulePath());
+  aWriter.StringProperty("debugName", aLib.GetDebugName());
+  aWriter.StringProperty("debugPath", aLib.GetDebugPath());
   aWriter.StringProperty("breakpadId", aLib.GetBreakpadId());
   aWriter.StringProperty("codeId", aLib.GetCodeId());
   aWriter.StringProperty("arch", aLib.GetArch());
@@ -3099,25 +3114,18 @@ static void StreamCategories(SpliceableJSONWriter& aWriter) {
   //   },
   //   ...
   // ]
-
-#define CATEGORY_JSON_BEGIN_CATEGORY(name, labelAsString, color) \
-  aWriter.Start();                                               \
-  aWriter.StringProperty("name", labelAsString);                 \
-  aWriter.StringProperty("color", color);                        \
-  aWriter.StartArrayProperty("subcategories");
-#define CATEGORY_JSON_SUBCATEGORY(supercategory, name, labelAsString) \
-  aWriter.StringElement(labelAsString);
-#define CATEGORY_JSON_END_CATEGORY \
-  aWriter.EndArray();              \
-  aWriter.EndObject();
-
-  MOZ_PROFILING_CATEGORY_LIST(CATEGORY_JSON_BEGIN_CATEGORY,
-                              CATEGORY_JSON_SUBCATEGORY,
-                              CATEGORY_JSON_END_CATEGORY)
-
-#undef CATEGORY_JSON_BEGIN_CATEGORY
-#undef CATEGORY_JSON_SUBCATEGORY
-#undef CATEGORY_JSON_END_CATEGORY
+  for (const auto& categoryInfo :
+       mozilla::baseprofiler::GetProfilingCategoryList()) {
+    aWriter.Start();
+    aWriter.StringProperty("name", MakeStringSpan(categoryInfo.mName));
+    aWriter.StringProperty("color", MakeStringSpan(categoryInfo.mColor));
+    aWriter.StartArrayProperty("subcategories");
+    for (const auto& subcategoryName : categoryInfo.mSubcategoryNames) {
+      aWriter.StringElement(MakeStringSpan(subcategoryName));
+    }
+    aWriter.EndArray();
+    aWriter.EndObject();
+  }
 }
 
 static void StreamMarkerSchema(SpliceableJSONWriter& aWriter) {
@@ -3749,7 +3757,9 @@ locked_profiler_stream_json_for_this_process(
 
   // Put page data
   aWriter.StartArrayProperty("pages");
-  { StreamPages(aLock, aWriter); }
+  {
+    StreamPages(aLock, aWriter);
+  }
   aWriter.EndArray();
   aProgressLogger.SetLocalProgress(6_pc, "Wrote pages");
 
@@ -4657,8 +4667,8 @@ void SamplerThread::Run() {
             buffer.AddEntry(ProfileBufferEntry::CounterId(counter));
             buffer.AddEntry(
                 ProfileBufferEntry::Time(counterSampleStartDeltaMs));
-#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
-            if (ActivePS::IsMemoryCounter(counter)) {
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+            if (ActivePS::IsMemoryCounter(counter, lock)) {
               // For the memory counter, substract the size of our buffer to
               // avoid giving the misleading impression that the memory use
               // keeps on growing when it's just the profiler session that's
@@ -5839,7 +5849,7 @@ void profiler_dump_and_stop() {
 #if defined(GECKO_PROFILER_ASYNC_POSIX_SIGNAL_CONTROL)
 void profiler_init_signal_handlers() {
   // Set a handler to start the profiler
-  struct sigaction prof_start_sa {};
+  struct sigaction prof_start_sa{};
   memset(&prof_start_sa, 0, sizeof(struct sigaction));
   prof_start_sa.sa_sigaction = profiler_start_signal_handler;
   prof_start_sa.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -5848,7 +5858,7 @@ void profiler_init_signal_handlers() {
   MOZ_ASSERT(rstart == 0, "Failed to install Profiler SIGUSR1 handler");
 
   // Set a handler to stop the profiler
-  struct sigaction prof_stop_sa {};
+  struct sigaction prof_stop_sa{};
   memset(&prof_stop_sa, 0, sizeof(struct sigaction));
   prof_stop_sa.sa_sigaction = profiler_stop_signal_handler;
   prof_stop_sa.sa_flags = SA_RESTART | SA_SIGINFO;
@@ -6106,19 +6116,6 @@ void profiler_init(void* aStackTop) {
   // so let's record it again now.
   profiler_mark_thread_awake();
 
-#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
-  if (ProfilerFeature::ShouldInstallMemoryHooks(features)) {
-    // Start counting memory allocations (outside of lock because this may call
-    // profiler_add_sampled_counter which would attempt to take the lock.)
-    ActivePS::SetMemoryCounter(mozilla::profiler::install_memory_hooks());
-  } else {
-    // Unregister the memory counter in case it was registered before. This will
-    // make sure that the empty memory counter from the previous profiler run is
-    // removed completely and we don't serialize the memory counters.
-    mozilla::profiler::unregister_memory_counter();
-  }
-#endif
-
   invoke_profiler_state_change_callbacks(ProfilingState::Started);
 
   // We do this with gPSMutex unlocked. The comment in profiler_stop() explains
@@ -6148,8 +6145,13 @@ void profiler_shutdown(IsFastShutdown aIsFastShutdown) {
   }
   invoke_profiler_state_change_callbacks(ProfilingState::ShuttingDown);
 
-  const auto preRecordedMetaInformation =
-      PreRecordMetaInformation(/* aShutdown = */ true);
+  // We collect information here to be used below so it can be done outside of
+  // the lock. We only need it if MOZ_PROFILER_SHUTDOWN is set and not empty.
+  const char* filename = getenv("MOZ_PROFILER_SHUTDOWN");
+  PreRecordedMetaInformation preRecordedMetaInformation = {};
+  if (filename && filename[0] != '\0') {
+    preRecordedMetaInformation = PreRecordMetaInformation(/* aShutdown */ true);
+  }
 
   ProfilerParent::ProfilerWillStopIfStarted();
 
@@ -6161,7 +6163,6 @@ void profiler_shutdown(IsFastShutdown aIsFastShutdown) {
 
     // Save the profile on shutdown if requested.
     if (ActivePS::Exists(lock)) {
-      const char* filename = getenv("MOZ_PROFILER_SHUTDOWN");
       if (filename && filename[0] != '\0') {
         locked_profiler_save_profile_to_file(lock, filename,
                                              preRecordedMetaInformation,
@@ -6676,6 +6677,14 @@ static void locked_profiler_start(PSLockRef aLock, PowerOfTwo32 aCapacity,
   }
 #endif
 
+#if defined(MOZ_MEMORY) && defined(MOZ_PROFILER_MEMORY)
+  if (ActivePS::FeatureMemory(aLock)) {
+    auto counter = mozilla::profiler::create_memory_counter();
+    locked_profiler_add_sampled_counter(aLock, counter.get());
+    ActivePS::SetMemoryCounter(std::move(counter), aLock);
+  }
+#endif
+
 #if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
   if (ActivePS::FeatureNativeAllocations(aLock)) {
     if (isMainThreadBeingProfiled) {
@@ -6734,19 +6743,6 @@ RefPtr<GenericPromise> profiler_start(PowerOfTwo32 aCapacity, double aInterval,
   }
 
   PollJSSamplingForCurrentThread();
-
-#if defined(MOZ_REPLACE_MALLOC) && defined(MOZ_PROFILER_MEMORY)
-  if (ProfilerFeature::ShouldInstallMemoryHooks(aFeatures)) {
-    // Start counting memory allocations (outside of lock because this may call
-    // profiler_add_sampled_counter which would attempt to take the lock.)
-    ActivePS::SetMemoryCounter(mozilla::profiler::install_memory_hooks());
-  } else {
-    // Unregister the memory counter in case it was registered before. This will
-    // make sure that the empty memory counter from the previous profiler run is
-    // removed completely and we don't serialize the memory counters.
-    mozilla::profiler::unregister_memory_counter();
-  }
-#endif
 
   invoke_profiler_state_change_callbacks(ProfilingState::Started);
 

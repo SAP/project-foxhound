@@ -43,8 +43,9 @@
 #include "nsNetUtil.h"
 #include "nsSerializationHelper.h"
 #include "mozilla/Attributes.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/ipc/InputStreamUtils.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/ipc/BackgroundUtils.h"
@@ -451,9 +452,9 @@ void HttpChannelChild::OnStartRequest(
   ClassOfService::ToString(mClassOfService, cosString);
   if (!mAsyncOpenTime.IsNull() &&
       !aArgs.timing().transactionPending().IsNull()) {
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::NETWORK_ASYNC_OPEN_CHILD_TO_TRANSACTION_PENDING_EXP_MS,
-        cosString, mAsyncOpenTime, aArgs.timing().transactionPending());
+    glean::network::async_open_child_to_transaction_pending_exp.Get(cosString)
+        .AccumulateRawDuration(aArgs.timing().transactionPending() -
+                               mAsyncOpenTime);
     PerfStats::RecordMeasurement(
         PerfStats::Metric::HttpChannelAsyncOpenToTransactionPending,
         aArgs.timing().transactionPending() - mAsyncOpenTime);
@@ -461,9 +462,8 @@ void HttpChannelChild::OnStartRequest(
 
   const TimeStamp now = TimeStamp::Now();
   if (!aArgs.timing().responseStart().IsNull()) {
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::NETWORK_RESPONSE_START_PARENT_TO_CONTENT_EXP_MS, cosString,
-        aArgs.timing().responseStart(), now);
+    glean::network::response_start_parent_to_content_exp.Get(cosString)
+        .AccumulateRawDuration(now - aArgs.timing().responseStart());
     PerfStats::RecordMeasurement(
         PerfStats::Metric::HttpChannelResponseStartParentToContent,
         now - aArgs.timing().responseStart());
@@ -489,8 +489,8 @@ void HttpChannelChild::OnStartRequest(
                                       false);
   }
 
-  if (!aArgs.cookie().IsEmpty()) {
-    SetCookie(aArgs.cookie());
+  if (!aArgs.cookieHeaders().IsEmpty()) {
+    SetCookieHeaders(aArgs.cookieHeaders());
   }
 
   // Note: this is where we would notify "http-on-after-examine-response"
@@ -570,7 +570,8 @@ void HttpChannelChild::OnAfterLastPart(const nsresult& aStatus) {
 void HttpChannelChild::DoOnStartRequest(nsIRequest* aRequest) {
   nsresult rv;
 
-  LOG(("HttpChannelChild::DoOnStartRequest [this=%p]\n", this));
+  LOG(("HttpChannelChild::DoOnStartRequest [this=%p, request=%p]\n", this,
+       aRequest));
 
   // We handle all the listener chaining before OnStartRequest at this moment.
   // Prevent additional listeners being added to the chain after the request
@@ -811,9 +812,11 @@ void HttpChannelChild::DoOnDataAvailable(nsIRequest* aRequest,
                                          nsIInputStream* aStream,
                                          uint64_t aOffset, uint32_t aCount) {
   AUTO_PROFILER_LABEL("HttpChannelChild::DoOnDataAvailable", NETWORK);
-  LOG(("HttpChannelChild::DoOnDataAvailable [this=%p]\n", this));
+  LOG(("HttpChannelChild::DoOnDataAvailable [this=%p, request=%p]\n", this,
+       aRequest));
   if (mCanceled) return;
 
+  mGotDataAvailable = true;
   if (mListener) {
     nsCOMPtr<nsIStreamListener> listener(mListener);
     nsresult rv = listener->OnDataAvailable(aRequest, aStream, aOffset, aCount);
@@ -1019,8 +1022,12 @@ void HttpChannelChild::OnStopRequest(
     nsAutoCString requestMethod;
     GetRequestMethod(requestMethod);
     nsAutoCString contentType;
+    mozilla::Maybe<mozilla::net::HttpVersion> httpVersion = Nothing();
+    mozilla::Maybe<uint32_t> responseStatus = Nothing();
     if (mResponseHead) {
       mResponseHead->ContentType(contentType);
+      httpVersion = Some(mResponseHead->Version());
+      responseStatus = Some(mResponseHead->Status());
     }
     int32_t priority = PRIORITY_NORMAL;
     GetPriority(&priority);
@@ -1029,7 +1036,8 @@ void HttpChannelChild::OnStopRequest(
         mLastStatusReported, now, mTransferSize, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
+        mClassOfService.Flags(), mStatus, &mTransactionTimings,
+        std::move(mSource), httpVersion, responseStatus,
         Some(nsDependentCString(contentType.get())));
   }
 
@@ -1048,9 +1056,8 @@ void HttpChannelChild::OnStopRequest(
   if (!aTiming.responseEnd().IsNull()) {
     nsAutoCString cosString;
     ClassOfService::ToString(mClassOfService, cosString);
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::NETWORK_RESPONSE_END_PARENT_TO_CONTENT_MS, cosString,
-        aTiming.responseEnd(), now);
+    glean::network::response_end_parent_to_content.Get(cosString)
+        .AccumulateRawDuration(now - aTiming.responseEnd());
     PerfStats::RecordMeasurement(
         PerfStats::Metric::HttpChannelResponseEndParentToContent,
         now - aTiming.responseEnd());
@@ -1205,7 +1212,8 @@ void HttpChannelChild::CollectMixedContentTelemetry() {
 void HttpChannelChild::DoOnStopRequest(nsIRequest* aRequest,
                                        nsresult aChannelStatus) {
   AUTO_PROFILER_LABEL("HttpChannelChild::DoOnStopRequest", NETWORK);
-  LOG(("HttpChannelChild::DoOnStopRequest [this=%p]\n", this));
+  LOG(("HttpChannelChild::DoOnStopRequest [this=%p, request=%p]\n", this,
+       aRequest));
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!LoadIsPending());
 
@@ -1511,9 +1519,9 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvRedirect1Begin(
     const uint32_t& aRegistrarId, nsIURI* aNewUri,
     const uint32_t& aNewLoadFlags, const uint32_t& aRedirectFlags,
     const ParentLoadInfoForwarderArgs& aLoadInfoForwarder,
-    const nsHttpResponseHead& aResponseHead,
-    nsITransportSecurityInfo* aSecurityInfo, const uint64_t& aChannelId,
-    const NetAddr& aOldPeerAddr, const ResourceTimingStructArgs& aTiming) {
+    nsHttpResponseHead&& aResponseHead, nsITransportSecurityInfo* aSecurityInfo,
+    const uint64_t& aChannelId, const NetAddr& aOldPeerAddr,
+    const ResourceTimingStructArgs& aTiming) {
   // TODO: handle security info
   LOG(("HttpChannelChild::RecvRedirect1Begin [this=%p]\n", this));
   // We set peer address of child to the old peer,
@@ -1526,7 +1534,7 @@ mozilla::ipc::IPCResult HttpChannelChild::RecvRedirect1Begin(
   mEventQ->RunOrEnqueue(new NeckoTargetChannelFunctionEvent(
       this, [self = UnsafePtr<HttpChannelChild>(this), aRegistrarId,
              newUri = RefPtr{aNewUri}, aNewLoadFlags, aRedirectFlags,
-             aLoadInfoForwarder, aResponseHead,
+             aLoadInfoForwarder, aResponseHead = std::move(aResponseHead),
              aSecurityInfo = nsCOMPtr{aSecurityInfo}, aChannelId, aTiming]() {
         self->Redirect1Begin(aRegistrarId, newUri, aNewLoadFlags,
                              aRedirectFlags, aLoadInfoForwarder, aResponseHead,
@@ -1602,7 +1610,9 @@ void HttpChannelChild::Redirect1Begin(
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
         0, kCacheUnknown, mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
+        mClassOfService.Flags(), mStatus, &mTransactionTimings,
+        std::move(mSource), Some(responseHead.Version()),
+        Some(responseHead.Status()),
         Some(nsDependentCString(contentType.get())), newOriginalURI,
         redirectFlags, channelId);
   }
@@ -1925,7 +1935,7 @@ HttpChannelChild::CompleteRedirectSetup(nsIStreamListener* aListener) {
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version());
+        mClassOfService.Flags(), mStatus);
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -2268,7 +2278,7 @@ nsresult HttpChannelChild::AsyncOpenInternal(nsIStreamListener* aListener) {
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version());
+        mClassOfService.Flags(), mStatus);
   }
   StoreIsPending(true);
   StoreWasOpened(true);
@@ -3056,15 +3066,22 @@ HttpChannelChild::RetargetDeliveryTo(nsISerialEventTarget* aNewTarget) {
     return rv;
   }
 
-  // We allow multiple retargeting. However all such modification must happen
-  // before we have have received the first OnDataAvailable.
-  // See Bug 1887783
-  MOZ_ASSERT(mOnDataAvailableStartTime.IsNull());
-  {
-    MutexAutoLock lock(mEventTargetMutex);
-    RetargetDeliveryToImpl(aNewTarget, lock);
+  MutexAutoLock lock(mEventTargetMutex);
+  // Don't assert if the target hasn't changed, or if we haven't gotten
+  // OnDataAvailable (backed off on this last bit, see bug 1917901)
+  if (mODATarget == aNewTarget) {
+    // Same target
+    return NS_OK;
+  } else if (mODATarget) {
+    // We already retargetted (valentin: unclear if this should be allowed)
+    NS_WARNING("Retargeting delivery when already retargeted");
+    return NS_ERROR_ALREADY_INITIALIZED;
+  } else if (mGotDataAvailable) {
+    // Too late to retarget now.
+    return NS_ERROR_FAILURE;
   }
 
+  RetargetDeliveryToImpl(aNewTarget, lock);
   return NS_OK;
 }
 

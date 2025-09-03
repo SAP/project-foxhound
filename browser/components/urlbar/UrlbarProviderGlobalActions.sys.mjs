@@ -25,6 +25,10 @@ const SCOTCH_BONNET_PREF = "scotchBonnet.enableOverride";
 const ACTIONS_PREF = "secondaryActions.featureGate";
 const QUICK_ACTIONS_PREF = "suggest.quickactions";
 
+// Prefs relating to the onboarding label shown to new users.
+const TIMES_TO_SHOW_PREF = "quickactions.timesToShowOnboardingLabel";
+const TIMES_SHOWN_PREF = "quickactions.timesShownOnboardingLabel";
+
 ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   UrlbarResult: "resource:///modules/UrlbarResult.sys.mjs",
@@ -32,10 +36,12 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 import { ActionsProviderQuickActions } from "resource:///modules/ActionsProviderQuickActions.sys.mjs";
 import { ActionsProviderContextualSearch } from "resource:///modules/ActionsProviderContextualSearch.sys.mjs";
+import { ActionsProviderTabGroups } from "resource:///modules/ActionsProviderTabGroups.sys.mjs";
 
 let globalActionsProviders = [
   ActionsProviderContextualSearch,
   ActionsProviderQuickActions,
+  ActionsProviderTabGroups,
 ];
 
 /**
@@ -64,9 +70,17 @@ class ProviderGlobalActions extends UrlbarProvider {
   async startQuery(queryContext, addCallback) {
     this.#actions.clear();
 
+    let searchModeEngine = "";
+
     for (let provider of globalActionsProviders) {
       if (provider.isActive(queryContext)) {
         for (let action of (await provider.queryActions(queryContext)) || []) {
+          if (action.engine && !searchModeEngine) {
+            searchModeEngine = action.engine;
+          } else if (action.engine) {
+            // We only allow one action that provides an engine search mode.
+            continue;
+          }
           this.#actions.set(action.key, action);
         }
       }
@@ -76,14 +90,34 @@ class ProviderGlobalActions extends UrlbarProvider {
       return;
     }
 
+    let showOnboardingLabel =
+      lazy.UrlbarPrefs.get(TIMES_TO_SHOW_PREF) >
+      lazy.UrlbarPrefs.get(TIMES_SHOWN_PREF);
+
+    let results = [...this.#actions.keys()];
+
+    let query = results.includes("matched-contextual-search")
+      ? ""
+      : queryContext.searchString;
+
+    let payload = {
+      results,
+      dynamicType: DYNAMIC_TYPE_NAME,
+      inputLength: queryContext.searchString.length,
+      input: query,
+      showOnboardingLabel,
+      query,
+    };
+
+    if (searchModeEngine) {
+      payload.providesSearchMode = true;
+      payload.engine = searchModeEngine;
+    }
+
     let result = new lazy.UrlbarResult(
       UrlbarUtils.RESULT_TYPE.DYNAMIC,
       UrlbarUtils.RESULT_SOURCE.ACTIONS,
-      {
-        results: [...this.#actions.keys()],
-        dynamicType: DYNAMIC_TYPE_NAME,
-        inputLength: queryContext.searchString.length,
-      }
+      payload
     );
     result.suggestedIndex = SUGGESTED_INDEX;
     addCallback(this, result);
@@ -91,7 +125,7 @@ class ProviderGlobalActions extends UrlbarProvider {
 
   onSelection(result, element) {
     let key = element.dataset.action;
-    this.#actions.get(key).onSelection(result, element);
+    this.#actions.get(key).onSelection?.(result, element);
   }
 
   onEngagement(queryContext, controller, details) {
@@ -104,49 +138,79 @@ class ProviderGlobalActions extends UrlbarProvider {
   }
 
   onSearchSessionEnd(queryContext, controller, details) {
+    let showOnboardingLabel = queryContext.results?.find(
+      r => r.providerName == this.name
+    )?.payload.showOnboardingLabel;
+    if (showOnboardingLabel) {
+      lazy.UrlbarPrefs.set(
+        TIMES_SHOWN_PREF,
+        lazy.UrlbarPrefs.get(TIMES_SHOWN_PREF) + 1
+      );
+    }
     for (let provider of globalActionsProviders) {
       provider.onSearchSessionEnd?.(queryContext, controller, details);
     }
   }
 
   getViewTemplate(result) {
-    return {
-      children: [
-        {
-          name: "buttons",
-          tag: "div",
-          children: result.payload.results.map((key, i) => {
-            let action = this.#actions.get(key);
-            return {
-              name: `button-${i}`,
-              tag: "span",
-              classList: ["urlbarView-action-btn"],
-              attributes: {
-                inputLength: result.payload.inputLength,
-                "data-action": key,
-                role: "button",
-              },
-              children: [
-                {
-                  tag: "img",
-                  attributes: {
-                    src: action.icon || DEFAULT_ICON,
-                  },
-                },
-                {
-                  name: `label-${i}`,
-                  tag: "span",
-                },
-              ],
-            };
-          }),
+    let children = result.payload.results.map((key, i) => {
+      let action = this.#actions.get(key);
+      let btn = {
+        name: `button-${i}`,
+        tag: "span",
+        classList: ["urlbarView-action-btn"],
+        attributes: {
+          inputLength: result.payload.inputLength,
+          "data-action": key,
+          role: "button",
         },
-      ],
-    };
+        children: [
+          {
+            tag: "img",
+            attributes: {
+              src: action.icon || DEFAULT_ICON,
+            },
+          },
+          {
+            name: `label-${i}`,
+            tag: "span",
+          },
+        ],
+      };
+
+      if (action.dataset?.style) {
+        let style = "";
+        for (let [prop, val] of Object.entries(action.dataset.style)) {
+          style += `${prop}: ${val};`;
+        }
+        btn.attributes.style = style;
+      }
+
+      if (action.dataset?.providesSearchMode) {
+        btn.attributes["data-provides-searchmode"] = "true";
+      }
+
+      return btn;
+    });
+
+    if (result.payload.showOnboardingLabel) {
+      children.unshift({
+        name: "press-tab-label",
+        tag: "span",
+        classList: ["urlbarView-press-tab-label"],
+      });
+    }
+
+    return { children };
   }
 
   getViewUpdate(result) {
     let viewUpdate = {};
+    if (result.payload.showOnboardingLabel) {
+      viewUpdate["press-tab-label"] = {
+        l10n: { id: "press-tab-label", cacheable: true },
+      };
+    }
     result.payload.results.forEach((key, i) => {
       let action = this.#actions.get(key);
       viewUpdate[`label-${i}`] = {

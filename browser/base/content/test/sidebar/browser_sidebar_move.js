@@ -4,22 +4,41 @@ registerCleanupFunction(() => {
 });
 
 const EXPECTED_START_ORDINALS = [
+  ["sidebar-wrapper", ""],
+  ["tabbrowser-tabbox", 6],
+];
+
+const EXPECTED_WRAPPER_START_ORDINALS = [
   ["sidebar-main", 1],
-  ["sidebar-box", 2],
-  ["sidebar-splitter", 3],
-  ["tabbrowser-tabbox", 4],
+  ["sidebar-launcher-splitter", 2],
+  ["sidebar-box", 3],
+  ["sidebar-splitter", 4],
+  ["after-splitter", 5],
 ];
 
 const EXPECTED_END_ORDINALS = [
-  ["sidebar-main", 5],
+  ["sidebar-wrapper", ""],
+  ["tabbrowser-tabbox", 1],
+];
+
+const EXPECTED_WRAPPER_END_ORDINALS = [
+  ["sidebar-main", 6],
+  ["sidebar-launcher-splitter", 5],
   ["sidebar-box", 4],
   ["sidebar-splitter", 3],
-  ["tabbrowser-tabbox", 2],
+  ["after-splitter", 2],
 ];
 
 function getBrowserChildrenWithOrdinals() {
   let browser = document.getElementById("browser");
   return [...browser.children].map(node => {
+    return [node.id, node.style.order];
+  });
+}
+
+function getSidebarWrapperChildrenWithOrdinals() {
+  let wrapper = SidebarController.sidebarWrapper;
+  return [...wrapper.children].map(node => {
     return [node.id, node.style.order];
   });
 }
@@ -38,7 +57,12 @@ add_task(async function () {
   Assert.deepEqual(
     getBrowserChildrenWithOrdinals(),
     EXPECTED_START_ORDINALS,
-    "Correct ordinal (start)"
+    "Correct browser ordinal (start)"
+  );
+  Assert.deepEqual(
+    getSidebarWrapperChildrenWithOrdinals(),
+    EXPECTED_WRAPPER_START_ORDINALS,
+    "Correct wrapper ordinal (start)"
   );
   ok(!box.hasAttribute("positionend"), "Positioned start");
 
@@ -48,7 +72,12 @@ add_task(async function () {
   Assert.deepEqual(
     getBrowserChildrenWithOrdinals(),
     EXPECTED_END_ORDINALS,
-    "Correct ordinal (end)"
+    "Correct browser ordinal (end)"
+  );
+  Assert.deepEqual(
+    getSidebarWrapperChildrenWithOrdinals(),
+    EXPECTED_WRAPPER_END_ORDINALS,
+    "Correct wrapper ordinal (end)"
   );
   isnot(
     reversePositionButton.getAttribute("label"),
@@ -63,7 +92,12 @@ add_task(async function () {
   Assert.deepEqual(
     getBrowserChildrenWithOrdinals(),
     EXPECTED_START_ORDINALS,
-    "Correct ordinal (start)"
+    "Correct browser ordinal (start)"
+  );
+  Assert.deepEqual(
+    getSidebarWrapperChildrenWithOrdinals(),
+    EXPECTED_WRAPPER_START_ORDINALS,
+    "Correct wrapper ordinal (start)"
   );
   ok(!box.hasAttribute("positionend"), "Positioned start");
   is(

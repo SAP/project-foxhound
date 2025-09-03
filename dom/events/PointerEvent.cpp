@@ -6,8 +6,9 @@
  *
  * Portions Copyright 2013 Microsoft Open Technologies, Inc. */
 
+#include "PointerEvent.h"
+
 #include "mozilla/dom/MouseEventBinding.h"
-#include "mozilla/dom/PointerEvent.h"
 #include "mozilla/dom/PointerEventBinding.h"
 #include "mozilla/dom/PointerEventHandler.h"
 #include "mozilla/MouseEvents.h"
@@ -117,10 +118,10 @@ already_AddRefed<PointerEvent> PointerEvent::Constructor(
   RefPtr<PointerEvent> e = new PointerEvent(aOwner, nullptr, nullptr);
   bool trusted = e->Init(aOwner);
 
-  e->InitMouseEvent(aType, aParam.mBubbles, aParam.mCancelable, aParam.mView,
-                    aParam.mDetail, aParam.mScreenX, aParam.mScreenY,
-                    aParam.mClientX, aParam.mClientY, false, false, false,
-                    false, aParam.mButton, aParam.mRelatedTarget);
+  e->InitMouseEventInternal(
+      aType, aParam.mBubbles, aParam.mCancelable, aParam.mView, aParam.mDetail,
+      aParam.mScreenX, aParam.mScreenY, aParam.mClientX, aParam.mClientY, false,
+      false, false, false, aParam.mButton, aParam.mRelatedTarget);
   e->InitializeExtraMouseEventDictionaryMembers(aParam);
   e->mPointerType = Some(aParam.mPointerType);
 
@@ -246,12 +247,12 @@ int32_t PointerEvent::PointerId() {
              : mEvent->AsPointerEvent()->pointerId;
 }
 
-int32_t PointerEvent::Width() {
-  return ShouldResistFingerprinting() ? 1 : mEvent->AsPointerEvent()->mWidth;
+double PointerEvent::Width() const {
+  return ShouldResistFingerprinting() ? 1.0 : mEvent->AsPointerEvent()->mWidth;
 }
 
-int32_t PointerEvent::Height() {
-  return ShouldResistFingerprinting() ? 1 : mEvent->AsPointerEvent()->mHeight;
+double PointerEvent::Height() const {
+  return ShouldResistFingerprinting() ? 1.0 : mEvent->AsPointerEvent()->mHeight;
 }
 
 float PointerEvent::Pressure() {
@@ -368,9 +369,6 @@ void PointerEvent::GetCoalescedEvents(
       // duplicate its private data to avoid the widget event is destroyed.
       domEvent->DuplicatePrivateData();
 
-      // Setup mPresContext again after DuplicatePrivateData since it clears
-      // mPresContext.
-      domEvent->mPresContext = mPresContext;
       mCoalescedEvents.AppendElement(domEvent);
     }
   }

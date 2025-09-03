@@ -14,6 +14,7 @@ name = "cubeb-pulse"
 version = "0.5.0"
 authors = ["Dan Glastonbury <dglastonbury@mozilla.com>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -21,6 +22,9 @@ autobenches = false
 description = "Cubeb backed for PulseAudio written in Rust"
 readme = "README.md"
 license = "ISC"
+
+[features]
+pulse-dlopen = ["pulse-ffi/dlopen"]
 
 [lib]
 name = "cubeb_pulse"
@@ -40,6 +44,3 @@ path = "pulse-rs"
 
 [dependencies.pulse-ffi]
 path = "pulse-ffi"
-
-[features]
-pulse-dlopen = ["pulse-ffi/dlopen"]

@@ -31,6 +31,32 @@ extern LazyLogModule gMediaDecoderLog;
 #define LOG(x, ...) \
   MOZ_LOG(gMediaDecoderLog, LogLevel::Debug, (x, ##__VA_ARGS__))
 
+// Gets the pixel aspect ratio from the decoded video size and the rendered
+// size.
+inline double GetPixelAspectRatio(const gfx::IntSize& aImage,
+                                  const gfx::IntSize& aDisplay) {
+  if (MOZ_UNLIKELY(aImage.IsEmpty() || aDisplay.IsEmpty())) {
+    return 0.0;
+  }
+  return (static_cast<double>(aDisplay.Width()) / aImage.Width()) /
+         (static_cast<double>(aDisplay.Height()) / aImage.Height());
+}
+
+// Returns the render size based on the PAR and the new image size.
+inline gfx::IntSize ApplyPixelAspectRatio(double aPixelAspectRatio,
+                                          const gfx::IntSize& aImage) {
+  // No need to apply PAR, or an invalid PAR.
+  if (aPixelAspectRatio == 1.0 || MOZ_UNLIKELY(aPixelAspectRatio <= 0)) {
+    return aImage;
+  }
+  double width = aImage.Width() * aPixelAspectRatio;
+  // Ignore values that would cause overflow.
+  if (MOZ_UNLIKELY(width > std::numeric_limits<int32_t>::max())) {
+    return aImage;
+  }
+  return gfx::IntSize(static_cast<int32_t>(width), aImage.Height());
+}
+
 // H264ChangeMonitor is used to ensure that only AVCC or AnnexB is fed to the
 // underlying MediaDataDecoder. The H264ChangeMonitor allows playback of content
 // where the SPS NAL may not be provided in the init segment (e.g. AVC3 or Annex
@@ -205,30 +231,35 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
     }
 
     RefPtr<MediaByteBuffer> extraData =
-        aSample->mKeyframe || !mGotSPS ? H265::ExtractHVCCExtraData(aSample)
-                                       : nullptr;
+        aSample->mKeyframe || !mSPS.IsEmpty()
+            ? H265::ExtractHVCCExtraData(aSample)
+            : nullptr;
     // Sample doesn't contain any SPS and we already have SPS, do nothing.
     auto curConfig = HVCCConfig::Parse(mCurrentConfig.mExtraData);
+    LOG("current config: %s",
+        curConfig.isOk() ? curConfig.inspect().ToString().get() : "invalid");
     if ((!extraData || extraData->IsEmpty()) && curConfig.unwrap().HasSPS()) {
       return NS_OK;
     }
 
-    auto newConfig = HVCCConfig::Parse(extraData);
+    auto rv = HVCCConfig::Parse(extraData);
     // Ignore a corrupted extradata.
-    if (newConfig.isErr()) {
+    if (rv.isErr()) {
       LOG("Ignore corrupted extradata");
       return NS_OK;
     }
+    const HVCCConfig newConfig = rv.unwrap();
+    LOG("new config: %s", newConfig.ToString().get());
 
-    if (!newConfig.unwrap().HasSPS() && !curConfig.unwrap().HasSPS()) {
+    if (!newConfig.HasSPS() && !curConfig.unwrap().HasSPS()) {
       // We don't have inband data and the original config didn't contain a SPS.
       // We can't decode this content.
       LOG("No sps found, waiting for initialization");
       return NS_ERROR_NOT_INITIALIZED;
     }
 
-    mGotSPS = true;
     if (H265::CompareExtraData(extraData, mCurrentConfig.mExtraData)) {
+      LOG("No config changed");
       return NS_OK;
     }
     UpdateConfigFromExtraData(extraData);
@@ -246,13 +277,15 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
   MediaResult PrepareSample(MediaDataDecoder::ConversionRequired aConversion,
                             MediaRawData* aSample,
                             bool aNeedKeyFrame) override {
-    MOZ_DIAGNOSTIC_ASSERT(aConversion ==
-                          MediaDataDecoder::ConversionRequired::kNeedAnnexB);
+    MOZ_DIAGNOSTIC_ASSERT(
+        aConversion == MediaDataDecoder::ConversionRequired::kNeedAnnexB ||
+        aConversion == MediaDataDecoder::ConversionRequired::kNeedHVCC);
+    MOZ_DIAGNOSTIC_ASSERT(AnnexB::IsHVCC(aSample));
 
     aSample->mExtraData = mCurrentConfig.mExtraData;
     aSample->mTrackInfo = mTrackInfo;
 
-    if (AnnexB::IsHVCC(aSample)) {
+    if (aConversion == MediaDataDecoder::ConversionRequired::kNeedAnnexB) {
       auto res = AnnexB::ConvertHVCCSampleToAnnexB(aSample, aNeedKeyFrame);
       if (res.isErr()) {
         return MediaResult(res.unwrapErr(),
@@ -269,49 +302,91 @@ class HEVCChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
 
  private:
   void UpdateConfigFromExtraData(MediaByteBuffer* aExtraData) {
-    if (auto rv = H265::DecodeSPSFromHVCCExtraData(aExtraData); rv.isOk()) {
-      const auto sps = rv.unwrap();
-      mCurrentConfig.mImage.width = sps.GetImageSize().Width();
-      mCurrentConfig.mImage.height = sps.GetImageSize().Height();
-      mCurrentConfig.mDisplay.width = sps.GetDisplaySize().Width();
-      mCurrentConfig.mDisplay.height = sps.GetDisplaySize().Height();
-      mCurrentConfig.mColorDepth = sps.ColorDepth();
-      mCurrentConfig.mColorSpace = Some(sps.ColorSpace());
-      mCurrentConfig.mColorPrimaries = gfxUtils::CicpToColorPrimaries(
-          static_cast<gfx::CICP::ColourPrimaries>(sps.ColorPrimaries()),
-          gMediaDecoderLog);
-      mCurrentConfig.mTransferFunction = gfxUtils::CicpToTransferFunction(
-          static_cast<gfx::CICP::TransferCharacteristics>(
-              sps.TransferFunction()));
-      mCurrentConfig.mColorRange = sps.IsFullColorRange()
-                                       ? gfx::ColorRange::FULL
-                                       : gfx::ColorRange::LIMITED;
+    auto rv = HVCCConfig::Parse(aExtraData);
+    MOZ_ASSERT(rv.isOk());
+    const auto hvcc = rv.unwrap();
+
+    // If there are any new SPS/PPS/VPS, update the current stored ones.
+    if (auto nalu = hvcc.GetFirstAvaiableNALU(H265NALU::NAL_TYPES::SPS_NUT)) {
+      mSPS.Clear();
+      mSPS.AppendElements(nalu->mNALU);
+      if (auto rv = H265::DecodeSPSFromSPSNALU(*nalu); rv.isOk()) {
+        const auto sps = rv.unwrap();
+        mCurrentConfig.mImage.width = sps.GetImageSize().Width();
+        mCurrentConfig.mImage.height = sps.GetImageSize().Height();
+        if (const auto& vui = sps.vui_parameters;
+            vui && vui->HasValidAspectRatio()) {
+          mCurrentConfig.mDisplay = ApplyPixelAspectRatio(
+              vui->GetPixelAspectRatio(), mCurrentConfig.mImage);
+        } else {
+          mCurrentConfig.mDisplay.width = sps.GetDisplaySize().Width();
+          mCurrentConfig.mDisplay.height = sps.GetDisplaySize().Height();
+        }
+        mCurrentConfig.mColorDepth = sps.ColorDepth();
+        mCurrentConfig.mColorSpace = Some(sps.ColorSpace());
+        mCurrentConfig.mColorPrimaries = gfxUtils::CicpToColorPrimaries(
+            static_cast<gfx::CICP::ColourPrimaries>(sps.ColorPrimaries()),
+            gMediaDecoderLog);
+        mCurrentConfig.mTransferFunction = gfxUtils::CicpToTransferFunction(
+            static_cast<gfx::CICP::TransferCharacteristics>(
+                sps.TransferFunction()));
+        mCurrentConfig.mColorRange = sps.IsFullColorRange()
+                                         ? gfx::ColorRange::FULL
+                                         : gfx::ColorRange::LIMITED;
+      }
     }
-    MOZ_ASSERT(HVCCConfig::Parse(aExtraData).isOk());
-    mCurrentConfig.mExtraData = aExtraData;
+    if (auto nalu = hvcc.GetFirstAvaiableNALU(H265NALU::NAL_TYPES::PPS_NUT)) {
+      mPPS.Clear();
+      mPPS.AppendElements(nalu->mNALU);
+    }
+    if (auto nalu = hvcc.GetFirstAvaiableNALU(H265NALU::NAL_TYPES::VPS_NUT)) {
+      mVPS.Clear();
+      mVPS.AppendElements(nalu->mNALU);
+    }
+    if (auto nalu =
+            hvcc.GetFirstAvaiableNALU(H265NALU::NAL_TYPES::PREFIX_SEI_NUT)) {
+      mSEI.Clear();
+      mSEI.AppendElements(nalu->mNALU);
+    }
+
+    // Construct a new extradata. A situation we encountered previously involved
+    // the initial extradata containing all required NALUs, while the inband
+    // extradata included only an SPS without the PPS or VPS. If we replace the
+    // extradata with the inband version alone, we risk losing the VPS and PPS,
+    // leading to decoder initialization failure on macOS. To avoid this, we
+    // should update only the differing NALUs, ensuring all essential
+    // information remains in the extradata.
+    MOZ_ASSERT(!mSPS.IsEmpty());  // SPS is something MUST to have
+    nsTArray<H265NALU> nalus;
+    // Append NALU by the order of NALU type. If we don't do so, it would cause
+    // an error on the FFmpeg decoder on Linux.
+    if (!mVPS.IsEmpty()) {
+      nalus.AppendElement(H265NALU(mVPS.Elements(), mVPS.Length()));
+    }
+    nalus.AppendElement(H265NALU(mSPS.Elements(), mSPS.Length()));
+    if (!mPPS.IsEmpty()) {
+      nalus.AppendElement(H265NALU(mPPS.Elements(), mPPS.Length()));
+    }
+    if (!mSEI.IsEmpty()) {
+      nalus.AppendElement(H265NALU(mSEI.Elements(), mSEI.Length()));
+    }
+    mCurrentConfig.mExtraData = H265::CreateNewExtraData(hvcc, nalus);
     mTrackInfo = new TrackInfoSharedPtr(mCurrentConfig, mStreamID++);
+    LOG("Updated extradata, hasSPS=%d, hasPPS=%d, hasVPS=%d, hasSEI=%d",
+        !mSPS.IsEmpty(), !mPPS.IsEmpty(), !mVPS.IsEmpty(), !mSEI.IsEmpty());
   }
 
   VideoInfo mCurrentConfig;
+
+  // Full bytes content for nalu.
+  nsTArray<uint8_t> mSPS;
+  nsTArray<uint8_t> mPPS;
+  nsTArray<uint8_t> mVPS;
+  nsTArray<uint8_t> mSEI;
+
   uint32_t mStreamID = 0;
-  bool mGotSPS = false;
   RefPtr<TrackInfoSharedPtr> mTrackInfo;
 };
-
-// Gets the pixel aspect ratio from the decoded video size and the rendered
-// size.
-inline double GetPixelAspectRatio(const gfx::IntSize& aImage,
-                                  const gfx::IntSize& aDisplay) {
-  return (static_cast<double>(aDisplay.Width()) / aImage.Width()) /
-         (static_cast<double>(aDisplay.Height()) / aImage.Height());
-}
-
-// Returns the render size based on the PAR and the new image size.
-inline gfx::IntSize ApplyPixelAspectRatio(double aPixelAspectRatio,
-                                          const gfx::IntSize& aImage) {
-  return gfx::IntSize(static_cast<int32_t>(aImage.Width() * aPixelAspectRatio),
-                      aImage.Height());
-}
 
 class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
  public:
@@ -338,10 +413,15 @@ class VPXChangeMonitor : public MediaChangeMonitor::CodecChangeMonitor {
   }
 
   bool CanBeInstantiated() const override {
+    if (mCodec == VPXDecoder::Codec::VP8 && mCurrentConfig.mImage.IsEmpty()) {
+      // libvpx VP8 decoder via FFmpeg requires the image size to be set when
+      // initializing.
+      return false;
+    }
+
     // We want to see at least one sample before we create a decoder so that we
     // can create the vpcC content on mCurrentConfig.mExtraData.
-    return mCodec == VPXDecoder::Codec::VP8 || mInfo ||
-           mCurrentConfig.mCrypto.IsEncrypted();
+    return mInfo || mCurrentConfig.mCrypto.IsEncrypted();
   }
 
   MediaResult CheckForChange(MediaRawData* aSample) override {

@@ -4,8 +4,6 @@
 
 package mozilla.components.lib.crash
 
-import android.app.ActivityOptions
-import android.app.ActivityOptions.MODE_BACKGROUND_ACTIVITY_START_ALLOWED
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -33,7 +31,6 @@ import mozilla.components.lib.crash.service.CrashReporterService
 import mozilla.components.lib.crash.service.CrashTelemetryService
 import mozilla.components.lib.crash.service.SendCrashReportService
 import mozilla.components.lib.crash.service.SendCrashTelemetryService
-import mozilla.components.support.base.android.NotificationsDelegate
 import mozilla.components.support.base.log.logger.Logger
 
 /**
@@ -105,7 +102,6 @@ class CrashReporter internal constructor(
     private val nonFatalCrashIntent: PendingIntent? = null,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
     private val maxBreadCrumbs: Int = 30,
-    private val notificationsDelegate: NotificationsDelegate,
     private val runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
     databaseProvider: () -> CrashDatabase,
     private val useLegacyReporting: Boolean = true,
@@ -121,7 +117,6 @@ class CrashReporter internal constructor(
         nonFatalCrashIntent: PendingIntent? = null,
         scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
         maxBreadCrumbs: Int = 30,
-        notificationsDelegate: NotificationsDelegate,
         runtimeTagProviders: List<RuntimeTagProvider> = emptyList(),
         useLegacyReporting: Boolean = true,
     ) : this(
@@ -133,7 +128,6 @@ class CrashReporter internal constructor(
         nonFatalCrashIntent = nonFatalCrashIntent,
         scope = scope,
         maxBreadCrumbs = maxBreadCrumbs,
-        notificationsDelegate = notificationsDelegate,
         runtimeTagProviders = runtimeTagProviders,
         databaseProvider = { CrashDatabase.get(context) },
         useLegacyReporting = useLegacyReporting,
@@ -335,9 +329,6 @@ class CrashReporter internal constructor(
             val onFinished = null
             val handler = null
             val requiredPermission = null
-            val activityOptions = ActivityOptions.makeBasic()
-            activityOptions.pendingIntentBackgroundActivityStartMode =
-                MODE_BACKGROUND_ACTIVITY_START_ALLOWED
 
             nonFatalCrashIntent?.send(
                 context,
@@ -346,7 +337,6 @@ class CrashReporter internal constructor(
                 onFinished,
                 handler,
                 requiredPermission,
-                activityOptions.toBundle(),
             )
         } else {
             nonFatalCrashIntent?.send(context, 0, additionalIntent)
@@ -373,7 +363,7 @@ class CrashReporter internal constructor(
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     internal fun showNotification(context: Context, crash: Crash) {
-        val notification = CrashNotification(context, crash, promptConfiguration, notificationsDelegate)
+        val notification = CrashNotification(context, crash, promptConfiguration)
         notification.show()
     }
 
@@ -438,6 +428,8 @@ class CrashReporter internal constructor(
     )
 
     companion object {
+        const val RELEASE_RUNTIME_TAG = "release"
+
         @Volatile
         private var instance: CrashReporter? = null
 

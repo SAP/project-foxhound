@@ -726,6 +726,18 @@ class NPZCSupport final
     return std::make_pair(angle, radius);
   }
 
+  static void SetTiltXY(float aOrientation, float aTilt,
+                        SingleTouchData& aSingleTouchData) {
+    float r = sinf(aTilt);
+    float z = cosf(aTilt);
+
+    float x = atan2f(sinf(-aOrientation) * r, z);
+    float y = atan2f(cosf(-aOrientation) * r, z);
+
+    aSingleTouchData.mTiltX = int32_t(floorf(x * 180.0 / M_PI));
+    aSingleTouchData.mTiltY = int32_t(floorf(y * 180.0 / M_PI));
+  }
+
   void HandleMotionEvent(
       const java::PanZoomController::NativeProvider::LocalRef& aInstance,
       jni::Object::Param aEventData, float aScreenX, float aScreenY,
@@ -775,6 +787,14 @@ class NPZCSupport final
     input.mTouches.SetCapacity(endIndex - startIndex);
     input.mScreenOffset =
         ExternalIntPoint(int32_t(floorf(aScreenX)), int32_t(floorf(aScreenY)));
+    switch (eventData->ToolType()) {
+      case java::sdk::MotionEvent::TOOL_TYPE_STYLUS:
+        input.mInputSource = MouseEvent_Binding::MOZ_SOURCE_PEN;
+        break;
+      default:
+        input.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
+        break;
+    }
 
     size_t historySize = eventData->HistorySize();
     nsTArray<int64_t> historicalTime(
@@ -806,6 +826,7 @@ class NPZCSupport final
     nsTArray<float> y(eventData->Y()->GetElements());
     nsTArray<float> orientation(eventData->Orientation()->GetElements());
     nsTArray<float> pressure(eventData->Pressure()->GetElements());
+    nsTArray<float> tilt(eventData->Tilt()->GetElements());
     nsTArray<float> toolMajor(eventData->ToolMajor()->GetElements());
     nsTArray<float> toolMinor(eventData->ToolMinor()->GetElements());
 
@@ -813,6 +834,7 @@ class NPZCSupport final
     MOZ_ASSERT(y.Length() == pointerCount);
     MOZ_ASSERT(orientation.Length() == pointerCount);
     MOZ_ASSERT(pressure.Length() == pointerCount);
+    MOZ_ASSERT(tilt.Length() == pointerCount);
     MOZ_ASSERT(toolMajor.Length() == pointerCount);
     MOZ_ASSERT(toolMinor.Length() == pointerCount);
 
@@ -823,6 +845,7 @@ class NPZCSupport final
       ScreenIntPoint point(int32_t(floorf(x[i])), int32_t(floorf(y[i])));
       SingleTouchData singleTouchData(pointerId[i], point, radius, orien,
                                       pressure[i]);
+      SetTiltXY(orientation[i], tilt[i], singleTouchData);
 
       for (size_t historyIndex = 0; historyIndex < historySize;
            historyIndex++) {
@@ -1959,10 +1982,12 @@ void GeckoViewSupport::AttachAccessibility(
           sessionAccessibility);
 }
 
-auto GeckoViewSupport::OnLoadRequest(
-    mozilla::jni::String::Param aUri, int32_t aWindowType, int32_t aFlags,
-    mozilla::jni::String::Param aTriggeringUri, bool aHasUserGesture,
-    bool aIsTopLevel) const -> java::GeckoResult::LocalRef {
+auto GeckoViewSupport::OnLoadRequest(mozilla::jni::String::Param aUri,
+                                     int32_t aWindowType, int32_t aFlags,
+                                     mozilla::jni::String::Param aTriggeringUri,
+                                     bool aHasUserGesture,
+                                     bool aIsTopLevel) const
+    -> java::GeckoResult::LocalRef {
   GeckoSession::Window::LocalRef window(mGeckoViewWindow);
   if (!window) {
     return nullptr;
@@ -2250,8 +2275,6 @@ void nsWindow::Destroy() {
   // Stuff below may release the last ref to this
   nsCOMPtr<nsIWidget> kungFuDeathGrip(this);
 
-  RemoveAllChildren();
-
   // Ensure the compositor has been shutdown before this nsWindow is potentially
   // deleted
   nsBaseWidget::DestroyCompositor();
@@ -2304,7 +2327,7 @@ void nsWindow::OnGeckoViewReady() {
   acc->OnReady();
 }
 
-void nsWindow::DidChangeParent(nsIWidget*) {
+void nsWindow::DidClearParent(nsIWidget*) {
   // if we are now in the toplevel window's hierarchy, schedule a redraw
   if (FindTopLevel() == nsWindow::TopWindow()) {
     RedrawAll();
@@ -2910,7 +2933,6 @@ void nsWindow::DispatchHitTest(const WidgetTouchEvent& aEvent) {
     WidgetMouseEvent hittest(true, eMouseHitTest, this,
                              WidgetMouseEvent::eReal);
     hittest.mRefPoint = aEvent.mTouches[0]->mRefPoint;
-    hittest.mInputSource = MouseEvent_Binding::MOZ_SOURCE_TOUCH;
     nsEventStatus status;
     DispatchEvent(&hittest, status);
   }

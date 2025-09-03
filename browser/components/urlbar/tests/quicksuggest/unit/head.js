@@ -19,131 +19,8 @@ add_setup(async function setUpQuickSuggestXpcshellTest() {
   // jumping through a bunch of hoops. Suggest's use of TelemetryEnvironment is
   // tested in browser tests, and there's no other necessary reason to wait for
   // TelemetryEnvironment initialization in xpcshell tests, so just skip it.
-  UrlbarPrefs._testSkipTelemetryEnvironmentInit = true;
+  QuickSuggest._testSkipTelemetryEnvironmentInit = true;
 });
-
-let gAddTasksWithRustSetup;
-
-/**
- * Adds two tasks: One with the Rust backend disabled and one with it enabled.
- * The names of the task functions will be the name of the passed-in task
- * function appended with "_rustDisabled" and "_rustEnabled". If the passed-in
- * task doesn't have a name, "anonymousTask" will be used.
- *
- * Call this with the usual `add_task()` arguments. Additionally, an object with
- * the following properties can be specified as any argument:
- *
- * {boolean} skip_if_rust_enabled
- *   If true, a "_rustEnabled" task won't be added. Useful when Rust is enabled
- *   by default but the task doesn't make sense with Rust and you still want to
- *   test some behavior when Rust is disabled.
- *
- * @param {...any} args
- *   The usual `add_task()` arguments.
- */
-function add_tasks_with_rust(...args) {
-  let skipIfRustEnabled = false;
-  let i = args.findIndex(a => a.skip_if_rust_enabled);
-  if (i >= 0) {
-    skipIfRustEnabled = true;
-    args.splice(i, 1);
-  }
-
-  let taskFnIndex = args.findIndex(a => typeof a == "function");
-  let taskFn = args[taskFnIndex];
-
-  for (let rustEnabled of [false, true]) {
-    let newTaskName =
-      (taskFn.name || "anonymousTask") +
-      (rustEnabled ? "_rustEnabled" : "_rustDisabled");
-
-    if (rustEnabled && skipIfRustEnabled) {
-      info(
-        "add_tasks_with_rust: Skipping due to skip_if_rust_enabled: " +
-          newTaskName
-      );
-      continue;
-    }
-
-    let newTaskFn = async (...taskFnArgs) => {
-      info("add_tasks_with_rust: Setting rustEnabled: " + rustEnabled);
-      UrlbarPrefs.set("quicksuggest.rustEnabled", rustEnabled);
-      info("add_tasks_with_rust: Done setting rustEnabled: " + rustEnabled);
-
-      // The current backend may now start syncing, so wait for it to finish.
-      info("add_tasks_with_rust: Forcing sync");
-      await QuickSuggestTestUtils.forceSync();
-      info("add_tasks_with_rust: Done forcing sync");
-
-      if (gAddTasksWithRustSetup) {
-        info("add_tasks_with_rust: Calling setup function");
-        await gAddTasksWithRustSetup();
-        info("add_tasks_with_rust: Done calling setup function");
-      }
-
-      let rv;
-      try {
-        info(
-          "add_tasks_with_rust: Calling original task function: " + taskFn.name
-        );
-        rv = await taskFn(...taskFnArgs);
-      } catch (e) {
-        // Clearly report any unusual errors to make them easier to spot and to
-        // make the flow of the test clearer. The harness throws NS_ERROR_ABORT
-        // when a normal assertion fails, so don't report that.
-        if (e.result != Cr.NS_ERROR_ABORT) {
-          Assert.ok(
-            false,
-            "add_tasks_with_rust: The original task function threw an error: " +
-              e
-          );
-        }
-        throw e;
-      } finally {
-        info(
-          "add_tasks_with_rust: Done calling original task function: " +
-            taskFn.name
-        );
-        info("add_tasks_with_rust: Clearing rustEnabled");
-        UrlbarPrefs.clear("quicksuggest.rustEnabled");
-        info("add_tasks_with_rust: Done clearing rustEnabled");
-
-        // The current backend may now start syncing, so wait for it to finish.
-        info("add_tasks_with_rust: Forcing sync");
-        await QuickSuggestTestUtils.forceSync();
-        info("add_tasks_with_rust: Done forcing sync");
-      }
-      return rv;
-    };
-
-    Object.defineProperty(newTaskFn, "name", { value: newTaskName });
-
-    let addTaskArgs = [];
-    for (let j = 0; j < args.length; j++) {
-      addTaskArgs[j] =
-        j == taskFnIndex
-          ? newTaskFn
-          : Cu.cloneInto(args[j], this, { cloneFunctions: true });
-    }
-    add_task(...addTaskArgs);
-  }
-}
-
-/**
- * Registers a setup function that `add_tasks_with_rust()` will await before
- * calling each of your original tasks. Call this at most once in your test file
- * (i.e., in `add_setup()`). This is useful when enabling/disabling Rust has
- * side effects related to your particular test that need to be handled or
- * awaited for each of your tasks. On the other hand, if only one or two of your
- * tasks need special setup, do it directly in those tasks instead of using
- * this.
- *
- * @param {Function} setupFn
- *   A function that will be awaited before your original tasks are called.
- */
-function registerAddTasksWithRustSetup(setupFn) {
-  gAddTasksWithRustSetup = setupFn;
-}
 
 /**
  * Tests quick suggest prefs migrations.
@@ -163,11 +40,11 @@ function registerAddTasksWithRustSetup(setupFn) {
  *     default-branch values. These should be the default prefs for the given
  *     `migrationVersion` and will be set as defaults before migration occurs.
  *
- * @param {string} options.scenario
- *   The scenario to set at the time migration occurs.
  * @param {object} options.expectedPrefs
  *   The expected prefs after migration: `{ defaultBranch, userBranch }`
  *   Pref names should be relative to `browser.urlbar`.
+ * @param {boolean} options.shouldEnable
+ *   Whether Suggest should be enabled when migration occurs.
  * @param {object} [options.initialUserBranch]
  *   Prefs to set on the user branch before migration ocurs. Use these to
  *   simulate user actions like disabling prefs or opting in or out of the
@@ -175,8 +52,8 @@ function registerAddTasksWithRustSetup(setupFn) {
  */
 async function doMigrateTest({
   testOverrides,
-  scenario,
   expectedPrefs,
+  shouldEnable = true,
   initialUserBranch = {},
 }) {
   info(
@@ -184,7 +61,7 @@ async function doMigrateTest({
       JSON.stringify({
         testOverrides,
         initialUserBranch,
-        scenario,
+        shouldEnable,
         expectedPrefs,
       })
   );
@@ -229,9 +106,7 @@ async function doMigrateTest({
   let userBranch = Services.prefs.getBranch("browser.urlbar.");
 
   // Set initial prefs. `initialDefaultBranch` are firefox.js values, i.e.,
-  // defaults immediately after startup and before any scenario update and
-  // migration happens.
-  UrlbarPrefs._updatingFirefoxSuggestScenario = true;
+  // defaults immediately after startup, before Suggest init and migration.
   UrlbarPrefs.clear("quicksuggest.migrationVersion");
   let initialDefaultBranch = {
     "suggest.quicksuggest.nonsponsored": false,
@@ -251,19 +126,17 @@ async function doMigrateTest({
       }
     }
   }
-  UrlbarPrefs._updatingFirefoxSuggestScenario = false;
 
-  // Update the scenario and check prefs twice. The first time the migration
+  // Reinitialize Suggest and check prefs twice. The first time the migration
   // should happen, and the second time the migration should not happen and
   // all the prefs should stay the same.
   for (let i = 0; i < 2; i++) {
-    info(`Calling updateFirefoxSuggestScenario, i=${i}`);
+    info(`Reinitializing Suggest, i=${i}`);
 
-    // Do the scenario update and set `isStartup` to simulate startup.
-    await UrlbarPrefs.updateFirefoxSuggestScenario({
+    // Reinitialize Suggest.
+    await QuickSuggest._test_reinit({
       ...testOverrides,
-      scenario,
-      isStartup: true,
+      shouldEnable,
     });
 
     // Check expected pref values. Store expected effective values as we go so
@@ -287,7 +160,7 @@ async function doMigrateTest({
       }
 
       info(
-        `Checking expected prefs on ${branchType} branch after updating scenario`
+        `Checking expected prefs on ${branchType} branch after Suggest init`
       );
       for (let [name, value] of entries) {
         expectedEffectivePrefs[name] = value;
@@ -328,7 +201,7 @@ async function doMigrateTest({
 
     let currentVersion =
       testOverrides?.migrationVersion === undefined
-        ? UrlbarPrefs.FIREFOX_SUGGEST_MIGRATION_VERSION
+        ? QuickSuggest.MIGRATION_VERSION
         : testOverrides.migrationVersion;
     Assert.equal(
       UrlbarPrefs.get("quicksuggest.migrationVersion"),
@@ -338,7 +211,6 @@ async function doMigrateTest({
   }
 
   // Clean up.
-  UrlbarPrefs._updatingFirefoxSuggestScenario = true;
   UrlbarPrefs.clear("quicksuggest.migrationVersion");
   let userBranchNames = [
     ...Object.keys(initialUserBranch),
@@ -347,7 +219,6 @@ async function doMigrateTest({
   for (let name of userBranchNames) {
     userBranch.clearUserPref(name);
   }
-  UrlbarPrefs._updatingFirefoxSuggestScenario = false;
 }
 
 /**
@@ -625,8 +496,6 @@ async function doOneShowLessFrequentlyTest({
  *     The order doesn't matter.
  */
 async function doRustProvidersTests({ searchString, tests }) {
-  UrlbarPrefs.set("quicksuggest.rustEnabled", true);
-
   for (let { prefs, expectedUrls } of tests) {
     info(
       "Starting Rust providers test: " + JSON.stringify({ prefs, expectedUrls })
@@ -654,8 +523,76 @@ async function doRustProvidersTests({ searchString, tests }) {
     }
     await QuickSuggestTestUtils.forceSync();
   }
+}
 
-  info("Clearing rustEnabled pref and forcing sync");
-  UrlbarPrefs.clear("quicksuggest.rustEnabled");
-  await QuickSuggestTestUtils.forceSync();
+/**
+ * Simulates performing a command for a feature by calling its `onEngagement()`.
+ *
+ * @param {object} options
+ *   Options object.
+ * @param {SuggestFeature} options.feature
+ *   The feature whose command will be triggered.
+ * @param {string} options.command
+ *   The name of the command to trigger.
+ * @param {UrlbarResult} options.result
+ *   The result that the command will act on.
+ * @param {string} options.searchString
+ *   The search string to pass to `onEngagement()`.
+ * @param {object} options.expectedCountsByCall
+ *   If non-null, this should map controller and view method names to the number
+ *   of times they should be called in response to the command.
+ * @returns {Map}
+ *   A map from names of methods on the controller and view to the number of
+ *   times they were called.
+ */
+function triggerCommand({
+  feature,
+  command,
+  result,
+  searchString = "",
+  expectedCountsByCall = null,
+}) {
+  info(`Calling ${feature.name}.onEngagement() to trigger command: ${command}`);
+
+  let countsByCall = new Map();
+  let addCall = name => {
+    if (!countsByCall.has(name)) {
+      countsByCall.set(name, 0);
+    }
+    countsByCall.set(name, countsByCall.get(name) + 1);
+  };
+
+  feature.onEngagement(
+    // query context
+    {},
+    // controller
+    {
+      removeResult() {
+        addCall("removeResult");
+      },
+      view: {
+        acknowledgeFeedback() {
+          addCall("acknowledgeFeedback");
+        },
+        invalidateResultMenuCommands() {
+          addCall("invalidateResultMenuCommands");
+        },
+      },
+    },
+    // details
+    { result, selType: command },
+    searchString
+  );
+
+  if (expectedCountsByCall) {
+    for (let [name, expectedCount] of Object.entries(expectedCountsByCall)) {
+      Assert.equal(
+        countsByCall.get(name) ?? 0,
+        expectedCount,
+        "Function should have been called the expected number of times: " + name
+      );
+    }
+  }
+
+  return countsByCall;
 }

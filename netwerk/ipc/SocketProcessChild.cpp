@@ -16,7 +16,7 @@
 #include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/FOGIPC.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/GleanTestsTestMetrics.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 #include "mozilla/net/AltSvcTransactionChild.h"
@@ -33,6 +33,7 @@
 #include "mozilla/StaticPrefs_javascript.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Telemetry.h"
+#include "MockNetworkLayerController.h"
 #include "NetworkConnectivityService.h"
 #include "nsDebugImpl.h"
 #include "nsHttpConnectionInfo.h"
@@ -40,6 +41,7 @@
 #include "nsIDNSService.h"
 #include "nsIHttpActivityObserver.h"
 #include "nsIXULRuntime.h"
+#include "nsNetAddr.h"
 #include "nsNetUtil.h"
 #include "nsNSSComponent.h"
 #include "nsSocketTransportService2.h"
@@ -72,6 +74,10 @@
 #if defined(MOZ_SANDBOX) && defined(MOZ_DEBUG) && defined(ENABLE_TESTS)
 #  include "mozilla/SandboxTestingChild.h"
 #endif
+
+namespace TelemetryScalar {
+void Set(mozilla::Telemetry::ScalarID aId, uint32_t aValue);
+}
 
 namespace mozilla {
 namespace net {
@@ -388,7 +394,7 @@ mozilla::ipc::IPCResult SocketProcessChild::RecvInitSandboxTesting(
 
 mozilla::ipc::IPCResult SocketProcessChild::RecvSocketProcessTelemetryPing() {
   const uint32_t kExpectedUintValue = 42;
-  Telemetry::ScalarSet(Telemetry::ScalarID::TELEMETRY_TEST_SOCKET_ONLY_UINT,
+  TelemetryScalar::Set(Telemetry::ScalarID::TELEMETRY_TEST_SOCKET_ONLY_UINT,
                        kExpectedUintValue);
   return IPC_OK();
 }
@@ -833,6 +839,22 @@ SocketProcessChild::GetIPCClientCertsActor() {
 
   mIPCClientCertsChild = actor;
   return actor.forget();
+}
+
+mozilla::ipc::IPCResult SocketProcessChild::RecvAddNetAddrOverride(
+    const NetAddr& aFrom, const NetAddr& aTo) {
+  nsCOMPtr<nsIMockNetworkLayerController> controller =
+      MockNetworkLayerController::GetSingleton();
+  RefPtr<nsNetAddr> from = new nsNetAddr(&aFrom);
+  RefPtr<nsNetAddr> to = new nsNetAddr(&aTo);
+  Unused << controller->AddNetAddrOverride(from, to);
+  return IPC_OK();
+}
+mozilla::ipc::IPCResult SocketProcessChild::RecvClearNetAddrOverrides() {
+  nsCOMPtr<nsIMockNetworkLayerController> controller =
+      MockNetworkLayerController::GetSingleton();
+  Unused << controller->ClearNetAddrOverrides();
+  return IPC_OK();
 }
 
 }  // namespace net

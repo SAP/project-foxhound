@@ -798,7 +798,10 @@ export const ASRouterTriggerListeners = new Map([
           this._closedTabs++;
           this._triggerHandler(gBrowser.selectedBrowser, {
             id: this.id,
-            context: { tabsClosedCount: this._closedTabs },
+            context: {
+              tabsClosedCount: this._closedTabs,
+              currentTabsOpen: gBrowser.tabs.length,
+            },
           });
         }
       },
@@ -808,6 +811,154 @@ export const ASRouterTriggerListeners = new Map([
           this._initialized = false;
           this._triggerHandler = null;
           this._closedTabs = 0;
+        }
+      },
+    },
+  ],
+  [
+    "nthTabOpened",
+    {
+      id: "nthTabOpened",
+      _initialized: false,
+      _triggerHandler: null,
+      // Number of tabs the user opened this session
+      _openTabs: 0,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("TabOpen", this);
+            },
+            win => {
+              win.removeEventListener("TabOpen", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          if (!event.target.ownerGlobal.gBrowser) {
+            return;
+          }
+          const { gBrowser } = event.target.ownerGlobal;
+          this._openTabs++;
+          this._triggerHandler(gBrowser.selectedBrowser, {
+            id: this.id,
+            context: {
+              tabsOpenedCount: this._openTabs,
+              currentTabsOpen: gBrowser.tabs.length,
+            },
+          });
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._openTabs = 0;
+        }
+      },
+    },
+  ],
+  [
+    "tabGroupCreated",
+    {
+      id: "tabGroupCreated",
+      _initialized: false,
+      _triggerHandler: null,
+      // Number of tab groups the user created this session
+      _tabGroupsCreated: 0,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("TabGroupCreateDone", this);
+            },
+            win => {
+              win.removeEventListener("TabGroupCreateDone", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          if (!event.target.ownerGlobal.gBrowser) {
+            return;
+          }
+          const { gBrowser } = event.target.ownerGlobal;
+          this._tabGroupsCreated++;
+          this._triggerHandler(gBrowser.selectedBrowser, {
+            id: this.id,
+            context: {
+              tabGroupsCreatedCount: this._tabGroupsCreated,
+            },
+          });
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._tabGroupsCreated = 0;
+        }
+      },
+    },
+  ],
+  [
+    "tabGroupSaved",
+    {
+      id: "tabGroupSaved",
+      _initialized: false,
+      _triggerHandler: null,
+      // Number of tab groups the user saved and closed this session
+      _tabGroupsSaved: 0,
+
+      init(triggerHandler) {
+        this._triggerHandler = triggerHandler;
+        if (!this._initialized) {
+          lazy.EveryWindow.registerCallback(
+            this.id,
+            win => {
+              win.addEventListener("TabGroupSaved", this);
+            },
+            win => {
+              win.removeEventListener("TabGroupSaved", this);
+            }
+          );
+          this._initialized = true;
+        }
+      },
+      handleEvent(event) {
+        if (this._initialized) {
+          if (!event.target.ownerGlobal.gBrowser) {
+            return;
+          }
+          const { gBrowser } = event.target.ownerGlobal;
+          this._tabGroupsSaved++;
+          this._triggerHandler(gBrowser.selectedBrowser, {
+            id: this.id,
+            context: {
+              tabGroupsSavedCount: this._tabGroupsSaved,
+            },
+          });
+        }
+      },
+      uninit() {
+        if (this._initialized) {
+          lazy.EveryWindow.unregisterCallback(this.id);
+          this._initialized = false;
+          this._triggerHandler = null;
+          this._tabGroupsSaved = 0;
         }
       },
     },

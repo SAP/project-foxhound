@@ -30,6 +30,8 @@ export default class MozCheckbox extends MozBaseInputElement {
     checked: { type: Boolean, reflect: true },
   };
 
+  static activatedProperty = "checked";
+
   constructor() {
     super();
     this.checked = false;
@@ -45,33 +47,19 @@ export default class MozCheckbox extends MozBaseInputElement {
     this.checked = event.target.checked;
   }
 
-  /**
-   * Dispatches an event from the host element so that outside
-   * listeners can react to these events
-   *
-   * @param {Event} event
-   * @memberof MozCheckbox
-   */
-  redispatchEvent(event) {
-    let newEvent = new Event(event.type, event);
-    this.dispatchEvent(newEvent);
-  }
-
   inputTemplate() {
-    return html`
-      <input
-        id="input"
-        type="checkbox"
-        name=${this.name}
-        value=${this.value}
-        .checked=${this.checked}
-        @click=${this.handleStateChange}
-        @change=${this.redispatchEvent}
-        .disabled=${this.disabled}
-        aria-describedby="description"
-        accesskey=${ifDefined(this.accessKey)}
-      />
-    `;
+    return html`<input
+      id="input"
+      type="checkbox"
+      name=${this.name}
+      value=${this.value}
+      .checked=${this.checked}
+      @click=${this.handleStateChange}
+      @change=${this.redispatchEvent}
+      .disabled=${this.disabled}
+      aria-describedby="description"
+      accesskey=${ifDefined(this.accessKey)}
+    />`;
   }
 }
 customElements.define("moz-checkbox", MozCheckbox);

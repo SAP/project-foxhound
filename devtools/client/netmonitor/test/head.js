@@ -128,6 +128,8 @@ const IMAGE_CACHE_URL = HTTPS_EXAMPLE_URL + "html_image-cache.html";
 const STYLESHEET_CACHE_URL = HTTPS_EXAMPLE_URL + "html_stylesheet-cache.html";
 const SCRIPT_CACHE_URL = HTTPS_EXAMPLE_URL + "html_script-cache.html";
 const SLOW_REQUESTS_URL = EXAMPLE_URL + "html_slow-requests-test-page.html";
+const HTTPS_SLOW_REQUESTS_URL =
+  HTTPS_EXAMPLE_URL + "html_slow-requests-test-page.html";
 
 const SIMPLE_SJS = EXAMPLE_URL + "sjs_simple-test-server.sjs";
 const HTTPS_SIMPLE_SJS = HTTPS_EXAMPLE_URL + "sjs_simple-test-server.sjs";
@@ -194,7 +196,8 @@ Services.prefs.setCharPref(
 
 Services.prefs.setCharPref(
   "devtools.netmonitor.columnsData",
-  '[{"name":"status","minWidth":30,"width":5},' +
+  '[{"name":"override","minWidth":20,"width":2},' +
+    '{"name":"status","minWidth":30,"width":5},' +
     '{"name":"method","minWidth":30,"width":5},' +
     '{"name":"domain","minWidth":30,"width":10},' +
     '{"name":"file","minWidth":30,"width":25},' +
@@ -214,6 +217,7 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.cache.disabled");
   Services.prefs.clearUserPref("devtools.netmonitor.columnsData");
   Services.prefs.clearUserPref("devtools.netmonitor.visibleColumns");
+  Services.prefs.clearUserPref("devtools.netmonitor.ui.default-raw-response");
   Services.cookies.removeAll();
 });
 
@@ -1307,50 +1311,32 @@ function validateRequests(requests, monitor, options = {}) {
 }
 
 /**
- * Retrieve the context menu element corresponding to the provided id, for the provided
- * netmonitor instance.
- * @param {Object} monitor
- *        The network monnitor object
- * @param {String} id
- *        The id of the context menu item
+ * @see getNetmonitorContextMenuItem in shared-head.js
  */
 function getContextMenuItem(monitor, id) {
-  const Menu = require("resource://devtools/client/framework/menu.js");
-  return Menu.getMenuElementById(id, monitor.panelWin.document);
+  return getNetmonitorContextMenuItem(monitor, id);
 }
 
-async function maybeOpenAncestorMenu(menuItem) {
-  const parentPopup = menuItem.parentNode;
-  if (parentPopup.state == "shown") {
+/**
+ * Hides the provided netmonitor context menu
+ *
+ * @param {XULPopupElement} popup
+ *        The popup to hide.
+ */
+async function hideContextMenu(popup) {
+  if (popup.state !== "open") {
     return;
   }
-  const shown = BrowserTestUtils.waitForEvent(parentPopup, "popupshown");
-  if (parentPopup.state == "showing") {
-    await shown;
-    return;
-  }
-  const parentMenu = parentPopup.parentNode;
-  await maybeOpenAncestorMenu(parentMenu);
-  parentMenu.openMenu(true);
-  await shown;
+  const onPopupHidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+  popup.hidePopup();
+  await onPopupHidden;
 }
 
-/*
- * Selects and clicks the context menu item, it should
- * also wait for the popup to close.
- * @param {Object} monitor
- *        The network monnitor object
- * @param {String} id
- *        The id of the context menu item
+/**
+ * @see selectNetmonitorContextMenuItem in shared-head.js
  */
 async function selectContextMenuItem(monitor, id) {
-  const contextMenuItem = getContextMenuItem(monitor, id);
-
-  const popup = contextMenuItem.parentNode;
-  await maybeOpenAncestorMenu(contextMenuItem);
-  const hidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
-  popup.activateItem(contextMenuItem);
-  await hidden;
+  return selectNetmonitorContextMenuItem(monitor, id);
 }
 
 /**
@@ -1587,4 +1573,156 @@ function testAutocompleteContents(expected, document) {
       `${expected[i]} found`
     );
   });
+}
+
+/**
+ * Check if a valid numerical size is displayed in the request column for the
+ * provided request.
+ *
+ * @param {Element} request
+ *     A request element from the netmonitor requests list.
+ * @return {boolean}
+ *     True if the size column contains a valid size, false otherwise.
+ *
+ */
+function hasValidSize(request) {
+  const VALID_SIZE_RE = /^\d+(\.\d+)? \w+/;
+  return VALID_SIZE_RE.test(
+    request.querySelector(".requests-list-size").innerText
+  );
+}
+
+function getThrottleProfileItem(monitor, profileId) {
+  const toolboxDoc = monitor.toolbox.doc;
+
+  const popup = toolboxDoc.querySelector("#network-throttling-menu");
+  const menuItems = [...popup.querySelectorAll(".menuitem > .command")];
+  return menuItems.find(menuItem => menuItem.id == profileId);
+}
+
+async function selectThrottle(monitor, profileId) {
+  const panelDoc = monitor.panelWin.document;
+  const toolboxDoc = monitor.toolbox.doc;
+
+  info("Opening the throttling menu");
+
+  const onShown = BrowserTestUtils.waitForPopupEvent(toolboxDoc, "shown");
+  panelDoc.getElementById("network-throttling").click();
+
+  info("Waiting for the throttling menu to be displayed");
+  await onShown;
+
+  const profileItem = getThrottleProfileItem(monitor, profileId);
+  ok(profileItem, "Found a profile throttling menu item for id " + profileId);
+
+  info(`Selecting the '${profileId}' profile`);
+  profileItem.click();
+
+  info(`Waiting for the '${profileId}' profile to be applied`);
+  await monitor.panelWin.api.once(TEST_EVENTS.THROTTLING_CHANGED);
+}
+
+/**
+ * Resize a netmonitor column.
+ *
+ * @param {Element} columnHeader
+ * @param {number} newPercent
+ * @param {number} parentWidth
+ * @param {string} dir
+ */
+function resizeColumn(columnHeader, newPercent, parentWidth, dir = "ltr") {
+  const newWidthInPixels = (newPercent * parentWidth) / 100;
+  const win = columnHeader.ownerDocument.defaultView;
+  const currentWidth = columnHeader.getBoundingClientRect().width;
+  const mouseDown = dir === "rtl" ? 0 : currentWidth;
+  const mouseMove =
+    dir === "rtl" ? currentWidth - newWidthInPixels : newWidthInPixels;
+
+  EventUtils.synthesizeMouse(
+    columnHeader,
+    mouseDown,
+    1,
+    { type: "mousedown" },
+    win
+  );
+  EventUtils.synthesizeMouse(
+    columnHeader,
+    mouseMove,
+    1,
+    { type: "mousemove" },
+    win
+  );
+  EventUtils.synthesizeMouse(
+    columnHeader,
+    mouseMove,
+    1,
+    { type: "mouseup" },
+    win
+  );
+}
+
+/**
+ * Resize the waterfall netmonitor column.
+ * Uses slightly different logic than for the other columns.
+ *
+ * @param {Element} columnHeader
+ * @param {number} newPercent
+ * @param {number} parentWidth
+ * @param {string} dir
+ */
+function resizeWaterfallColumn(
+  columnHeader,
+  newPercent,
+  parentWidth,
+  dir = "ltr"
+) {
+  const newWidthInPixels = (newPercent * parentWidth) / 100;
+  const win = columnHeader.ownerDocument.defaultView;
+  const mouseDown =
+    dir === "rtl"
+      ? columnHeader.getBoundingClientRect().right
+      : columnHeader.getBoundingClientRect().left;
+  const mouseMove =
+    dir === "rtl"
+      ? mouseDown +
+        (newWidthInPixels - columnHeader.getBoundingClientRect().width)
+      : mouseDown +
+        (columnHeader.getBoundingClientRect().width - newWidthInPixels);
+
+  EventUtils.synthesizeMouse(
+    columnHeader.parentElement,
+    mouseDown,
+    1,
+    { type: "mousedown" },
+    win
+  );
+  EventUtils.synthesizeMouse(
+    columnHeader.parentElement,
+    mouseMove,
+    1,
+    { type: "mousemove" },
+    win
+  );
+  EventUtils.synthesizeMouse(
+    columnHeader.parentElement,
+    mouseMove,
+    1,
+    { type: "mouseup" },
+    win
+  );
+}
+
+function getCurrentVisibleColumns(monitor) {
+  const { store, windowRequire } = monitor.panelWin;
+  const { getColumns, getVisibleColumns, hasOverride } = windowRequire(
+    "devtools/client/netmonitor/src/selectors/index"
+  );
+  const hasOverrideState = hasOverride(monitor.toolbox.store.getState());
+  const visibleColumns = getVisibleColumns(
+    getColumns(store.getState(), hasOverrideState)
+  );
+
+  // getVisibleColumns returns an array of arrays [name, isVisible=true], flatten
+  // to return name.
+  return visibleColumns.map(([name]) => name);
 }

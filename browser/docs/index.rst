@@ -11,9 +11,11 @@ This is the nascent documentation of the Firefox front-end code.
    BrowserUsageTelemetry
    FrontendCodeReviewBestPractices
    CommandLineParameters
+   BrowserStartup
+   components/customizableui/docs/index
    components/enterprisepolicies/docs/index
    extensions/formautofill/docs/index
-   components/newtab/docs/index
+   extensions/newtab/docs/index
    components/aboutwelcome/docs/index
    installer/windows/installer/index
    components/attribution/docs/index

@@ -226,7 +226,7 @@ add_task(async function tabhistory_searchmode_non_default() {
 
   info(`Go back to ${expectedSearchUrl}`);
   promise = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  gBrowser.goBack();
+  gBrowser.goBack(false);
   await promise;
 
   await TestUtils.waitForCondition(
@@ -251,9 +251,8 @@ add_task(async function tabhistory_searchmode_non_default() {
 
 add_task(async function tabhistory_searchmode_default_engine() {
   info("Load a search with a default search provider.");
-  let { tab, expectedSearchUrl: defaultSearchUrl } = await searchWithTab(
-    SEARCH_STRING
-  );
+  let { tab, expectedSearchUrl: defaultSearchUrl } =
+    await searchWithTab(SEARCH_STRING);
 
   info("Load a search with a non-default search provider.");
   let { expectedSearchUrl: searchModeUrl } =
@@ -264,7 +263,7 @@ add_task(async function tabhistory_searchmode_default_engine() {
     tab.linkedBrowser,
     "pageshow"
   );
-  gBrowser.goBack();
+  gBrowser.goBack(false);
   await promise;
 
   await TestUtils.waitForCondition(
@@ -276,7 +275,7 @@ add_task(async function tabhistory_searchmode_default_engine() {
 
   info(`Go forward to ${searchModeUrl}`);
   promise = BrowserTestUtils.waitForContentEvent(tab.linkedBrowser, "pageshow");
-  gBrowser.goForward();
+  gBrowser.goForward(false);
   await promise;
 
   await TestUtils.waitForCondition(

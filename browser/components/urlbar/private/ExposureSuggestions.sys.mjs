@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { BaseFeature } from "resource:///modules/urlbar/private/BaseFeature.sys.mjs";
+import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
@@ -15,20 +15,20 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /**
  * A feature for exposure suggestions.
  */
-export class ExposureSuggestions extends BaseFeature {
-  get shouldEnable() {
-    return !!this.exposureSuggestionTypes.size;
-  }
-
+export class ExposureSuggestions extends SuggestProvider {
   get enablingPreferences() {
     return ["quicksuggest.exposureSuggestionTypes"];
   }
 
-  get rustSuggestionTypes() {
-    return ["Exposure"];
+  get additionalEnablingPredicate() {
+    return !!this.exposureSuggestionTypes.size;
   }
 
-  getRustProviderConstraints() {
+  get rustSuggestionType() {
+    return "Exposure";
+  }
+
+  get rustProviderConstraints() {
     return {
       exposureSuggestionTypes: [...this.exposureSuggestionTypes],
     };

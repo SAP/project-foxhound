@@ -19,7 +19,7 @@ use wgh::Instance;
 use std::borrow::Cow;
 #[allow(unused_imports)]
 use std::mem;
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 use std::os::fd::{FromRawFd, IntoRawFd, OwnedFd, RawFd};
 use std::os::raw::{c_char, c_void};
 use std::ptr;
@@ -33,11 +33,11 @@ use std::ffi::{c_long, c_ulong};
 #[cfg(target_os = "windows")]
 use windows::Win32::{Foundation, Graphics::Direct3D12};
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 use ash::{khr, vk};
 
 #[cfg(target_os = "macos")]
-use objc::{msg_send, sel, sel_impl};
+use objc::{class, msg_send, sel, sel_impl};
 
 // The seemingly redundant u64 suffixes help cbindgen with generating the right C++ code.
 // See https://github.com/mozilla/cbindgen/issues/849.
@@ -108,7 +108,7 @@ impl std::ops::Deref for Global {
 }
 
 #[no_mangle]
-pub extern "C" fn wgpu_server_new(owner: *mut c_void) -> *mut Global {
+pub extern "C" fn wgpu_server_new(owner: *mut c_void, use_dxc: bool) -> *mut Global {
     log::info!("Initializing WGPU server");
     let backends_pref = static_prefs::pref!("dom.webgpu.wgpu-backend").to_string();
     let backends = if backends_pref.is_empty() {
@@ -125,7 +125,7 @@ pub extern "C" fn wgpu_server_new(owner: *mut c_void) -> *mut Global {
             "Selecting backends based on dom.webgpu.wgpu-backend pref: {:?}",
             backends_pref
         );
-        wgc::instance::parse_backends_from_comma_list(&backends_pref)
+        wgt::Backends::from_comma_list(&backends_pref)
     };
 
     let mut instance_flags = wgt::InstanceFlags::from_build_config().with_env();
@@ -133,13 +133,31 @@ pub extern "C" fn wgpu_server_new(owner: *mut c_void) -> *mut Global {
         instance_flags.insert(wgt::InstanceFlags::DISCARD_HAL_LABELS);
     }
 
+    let dx12_shader_compiler = if use_dxc {
+        wgt::Dx12Compiler::DynamicDxc {
+            dxc_path: "dxcompiler.dll".into(),
+            dxil_path: "dxil.dll".into(),
+            max_shader_model: wgt::DxcShaderModel::V6_6
+        }
+    } else {
+        wgt::Dx12Compiler::Fxc
+    };
+
     let global = wgc::global::Global::new(
         "wgpu",
-        wgt::InstanceDescriptor {
+        &wgt::InstanceDescriptor {
             backends,
             flags: instance_flags,
-            dx12_shader_compiler: wgt::Dx12Compiler::Fxc,
-            gles_minor_version: wgt::Gles3MinorVersion::Automatic,
+            backend_options: wgt::BackendOptions {
+                gl: wgt::GlBackendOptions {
+                    gles_minor_version: wgt::Gles3MinorVersion::Automatic,
+                    fence_behavior: wgt::GlFenceBehavior::Normal,
+                },
+                dx12: wgt::Dx12BackendOptions {
+                    shader_compiler: dx12_shader_compiler,
+                },
+                noop: wgt::NoopBackendOptions { enable: false },
+            },
         },
     );
     let global = Global { global, owner };
@@ -160,6 +178,20 @@ pub unsafe extern "C" fn wgpu_server_delete(global: *mut Global) {
 #[no_mangle]
 pub extern "C" fn wgpu_server_poll_all_devices(global: &Global, force_wait: bool) {
     global.poll_all_devices(force_wait).unwrap();
+}
+
+#[no_mangle]
+pub extern "C" fn wgpu_server_device_poll(
+    global: &Global,
+    device_id: id::DeviceId,
+    force_wait: bool,
+) {
+    let maintain = if force_wait {
+        wgt::PollType::Wait
+    } else {
+        wgt::PollType::Poll
+    };
+    global.device_poll(device_id, maintain).unwrap();
 }
 
 #[repr(C)]
@@ -219,6 +251,33 @@ pub unsafe extern "C" fn wgpu_server_instance_request_adapter(
     }
 }
 
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+#[allow(clippy::upper_case_acronyms)]
+#[cfg(target_os = "macos")]
+struct NSOperatingSystemVersion {
+    major: usize,
+    minor: usize,
+    patch: usize,
+}
+
+#[cfg(target_os = "macos")]
+impl NSOperatingSystemVersion {
+    fn at_least(
+        &self,
+        mac_version: (usize, usize),
+        ios_version: (usize, usize),
+        is_mac: bool,
+    ) -> bool {
+        let version = if is_mac { mac_version } else { ios_version };
+
+        self.major
+            .cmp(&version.0)
+            .then_with(|| self.minor.cmp(&version.1))
+            .is_ge()
+    }
+}
+
 #[allow(unreachable_code)]
 #[allow(unused_variables)]
 fn support_use_external_texture_in_swap_chain(
@@ -263,7 +322,19 @@ fn support_use_external_texture_in_swap_chain(
 
     #[cfg(target_os = "macos")]
     {
-        return backend == wgt::Backend::Metal && is_hardware;
+        if backend != wgt::Backend::Metal || !is_hardware {
+            return false;
+        }
+
+        let version: NSOperatingSystemVersion = unsafe {
+            let process_info: *mut objc::runtime::Object =
+                msg_send![class!(NSProcessInfo), processInfo];
+            msg_send![process_info, operatingSystemVersion]
+        };
+
+        let supports_shared_event = version.at_least((10, 14), (12, 0), /* os_is_mac */ true);
+
+        return supports_shared_event;
     }
 
     false
@@ -307,7 +378,7 @@ pub unsafe extern "C" fn wgpu_server_adapter_pack_info(
             let info = AdapterInformation {
                 id,
                 limits: restrict_limits(global.adapter_limits(id)),
-                features: global.adapter_features(id),
+                features: global.adapter_features(id).features_webgpu,
                 name,
                 vendor,
                 device,
@@ -348,9 +419,7 @@ pub unsafe extern "C" fn wgpu_server_adapter_request_device(
 
         path
     });
-    let trace_path = trace_string
-        .as_ref()
-        .map(|string| std::path::Path::new(string.as_str()));
+    let trace_path = trace_string.as_deref();
     // TODO: in https://github.com/gfx-rs/wgpu/pull/3626/files#diff-033343814319f5a6bd781494692ea626f06f6c3acc0753a12c867b53a646c34eR97
     // which introduced the queue id parameter, the queue id is also the device id. I don't know how applicable this is to
     // other situations (this one in particular).
@@ -523,14 +592,42 @@ pub extern "C" fn wgpu_server_device_drop(global: &Global, self_id: id::DeviceId
     global.device_drop(self_id)
 }
 
+#[repr(C)]
+pub struct DeviceLostClosure {
+    pub callback: unsafe extern "C" fn(user_data: *mut u8, reason: u8, message: *const c_char),
+    pub cleanup_callback: unsafe extern "C" fn(user_data: *mut u8),
+    pub user_data: *mut u8,
+}
+unsafe impl Send for DeviceLostClosure {}
+
+impl DeviceLostClosure {
+    fn call(self, reason: wgt::DeviceLostReason, message: String) {
+        // Ensure message is structured as a null-terminated C string. It only
+        // needs to live as long as the callback invocation.
+        let message = std::ffi::CString::new(message).unwrap();
+        unsafe {
+            (self.callback)(self.user_data, reason as u8, message.as_ptr());
+        }
+        core::mem::forget(self);
+    }
+}
+
+impl Drop for DeviceLostClosure {
+    fn drop(&mut self) {
+        unsafe {
+            (self.cleanup_callback)(self.user_data);
+        }
+    }
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_server_set_device_lost_callback(
     global: &Global,
     self_id: id::DeviceId,
-    callback: wgc::device::DeviceLostClosureC,
+    closure: DeviceLostClosure,
 ) {
-    global
-        .device_set_device_lost_closure(self_id, wgc::device::DeviceLostClosure::from_c(callback));
+    let closure = Box::new(move |reason, message| closure.call(reason, message));
+    global.device_set_device_lost_closure(self_id, closure);
 }
 
 impl ShaderModuleCompilationMessage {
@@ -613,7 +710,7 @@ pub extern "C" fn wgpu_server_device_create_shader_module(
 
     let desc = wgc::pipeline::ShaderModuleDescriptor {
         label,
-        shader_bound_checks: wgt::ShaderBoundChecks::new(),
+        runtime_checks: Default::default(),
     };
 
     let (_, error) = global.device_create_shader_module(self_id, &desc, source, Some(module_id));
@@ -688,9 +785,45 @@ pub extern "C" fn wgpu_server_device_create_buffer(
     }
 }
 
+/// The status code provided to the buffer mapping closure.
+///
+/// This is very similar to `BufferAccessResult`, except that this is FFI-friendly.
+#[repr(C)]
+pub enum BufferMapAsyncStatus {
+    /// The Buffer is successfully mapped, `get_mapped_range` can be called.
+    ///
+    /// All other variants of this enum represent failures to map the buffer.
+    Success,
+    /// The buffer is already mapped.
+    ///
+    /// While this is treated as an error, it does not prevent mapped range from being accessed.
+    AlreadyMapped,
+    /// Mapping was already requested.
+    MapAlreadyPending,
+    /// An unknown error.
+    Error,
+    /// The context is Lost.
+    ContextLost,
+    /// The buffer is in an invalid state.
+    Invalid,
+    /// The range isn't fully contained in the buffer.
+    InvalidRange,
+    /// The range isn't properly aligned.
+    InvalidAlignment,
+    /// Incompatible usage flags.
+    InvalidUsageFlags,
+}
+
+#[repr(C)]
+pub struct BufferMapClosure {
+    pub callback: unsafe extern "C" fn(user_data: *mut u8, status: BufferMapAsyncStatus),
+    pub user_data: *mut u8,
+}
+unsafe impl Send for BufferMapClosure {}
+
 /// # Safety
 ///
-/// Callers are responsible for ensuring `callback` is well-formed.
+/// Callers are responsible for ensuring `closure` is well-formed.
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_server_buffer_map(
     global: &Global,
@@ -698,16 +831,40 @@ pub unsafe extern "C" fn wgpu_server_buffer_map(
     start: wgt::BufferAddress,
     size: wgt::BufferAddress,
     map_mode: wgc::device::HostMap,
-    callback: wgc::resource::BufferMapCallbackC,
+    closure: BufferMapClosure,
     mut error_buf: ErrorBuffer,
 ) {
-    let callback = wgc::resource::BufferMapCallback::from_c(callback);
+    let closure = Box::new(move |result| {
+        let status = match result {
+            Ok(_) => BufferMapAsyncStatus::Success,
+            Err(BufferAccessError::Device(_)) => BufferMapAsyncStatus::ContextLost,
+            Err(BufferAccessError::InvalidResource(_))
+            | Err(BufferAccessError::DestroyedResource(_)) => BufferMapAsyncStatus::Invalid,
+            Err(BufferAccessError::AlreadyMapped) => BufferMapAsyncStatus::AlreadyMapped,
+            Err(BufferAccessError::MapAlreadyPending) => BufferMapAsyncStatus::MapAlreadyPending,
+            Err(BufferAccessError::MissingBufferUsage(_)) => {
+                BufferMapAsyncStatus::InvalidUsageFlags
+            }
+            Err(BufferAccessError::UnalignedRange)
+            | Err(BufferAccessError::UnalignedRangeSize { .. })
+            | Err(BufferAccessError::UnalignedOffset { .. }) => {
+                BufferMapAsyncStatus::InvalidAlignment
+            }
+            Err(BufferAccessError::OutOfBoundsUnderrun { .. })
+            | Err(BufferAccessError::OutOfBoundsOverrun { .. })
+            | Err(BufferAccessError::NegativeRange { .. }) => BufferMapAsyncStatus::InvalidRange,
+            Err(BufferAccessError::Failed)
+            | Err(BufferAccessError::NotMapped)
+            | Err(BufferAccessError::MapAborted) => BufferMapAsyncStatus::Error,
+            Err(_) => BufferMapAsyncStatus::Invalid,
+        };
+
+        (closure.callback)(closure.user_data, status)
+    });
     let operation = wgc::resource::BufferMapOperation {
         host: map_mode,
-        callback: Some(callback),
+        callback: Some(closure),
     };
-    // All errors are also exposed to the mapping callback, so we handle them there and ignore
-    // the returned value of buffer_map_async.
     let result = global.buffer_map_async(buffer_id, start, Some(size), operation);
 
     if let Err(error) = result {
@@ -833,31 +990,39 @@ pub struct DMABufInfo {
 }
 
 #[derive(Debug)]
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 pub struct VkImageHandle {
     pub device: vk::Device,
     pub image: vk::Image,
     pub memory: vk::DeviceMemory,
-    pub fn_destroy_image: vk::PFN_vkDestroyImage,
-    pub fn_free_memory: vk::PFN_vkFreeMemory,
     pub memory_size: u64,
     pub memory_type_index: u32,
     pub modifier: u64,
     pub layouts: Vec<vk::SubresourceLayout>,
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 impl VkImageHandle {
-    fn destroy(&self) {
+    fn destroy(&self, global: &Global, device_id: id::DeviceId) {
         unsafe {
-            (self.fn_destroy_image)(self.device, self.image, ptr::null());
-            (self.fn_free_memory)(self.device, self.memory, ptr::null());
-        }
+            global.device_as_hal::<wgc::api::Vulkan, _, ()>(device_id, |hal_device| {
+                let hal_device = match hal_device {
+                    None => {
+                        return;
+                    }
+                    Some(hal_device) => hal_device,
+                };
+                let device = hal_device.raw_device();
+
+                (device.fp_v1_0().destroy_image)(self.device, self.image, ptr::null());
+                (device.fp_v1_0().free_memory)(self.device, self.memory, ptr::null());
+            })
+        };
     }
 }
 
 #[no_mangle]
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 pub extern "C" fn wgpu_vkimage_create_with_dma_buf(
     global: &Global,
     device_id: id::DeviceId,
@@ -1090,8 +1255,6 @@ pub extern "C" fn wgpu_vkimage_create_with_dma_buf(
                     device: device.handle(),
                     image: image,
                     memory: memory,
-                    fn_destroy_image: device.fp_v1_0().destroy_image,
-                    fn_free_memory: device.fp_v1_0().free_memory,
                     memory_size: memory_req.size,
                     memory_type_index: index as u32,
                     modifier: image_modifier_properties.drm_format_modifier,
@@ -1112,14 +1275,23 @@ pub extern "C" fn wgpu_vkimage_create_with_dma_buf(
 }
 
 #[no_mangle]
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
-pub unsafe extern "C" fn wgpu_vkimage_delete(handle: *mut VkImageHandle) {
-    let handle = Box::from_raw(handle);
-    handle.destroy();
+#[cfg(target_os = "linux")]
+pub unsafe extern "C" fn wgpu_vkimage_destroy(
+    global: &Global,
+    device_id: id::DeviceId,
+    handle: &VkImageHandle,
+) {
+    handle.destroy(global, device_id);
 }
 
 #[no_mangle]
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
+pub unsafe extern "C" fn wgpu_vkimage_delete(handle: *mut VkImageHandle) {
+    let _ = Box::from_raw(handle);
+}
+
+#[no_mangle]
+#[cfg(target_os = "linux")]
 pub extern "C" fn wgpu_vkimage_get_file_descriptor(
     global: &Global,
     device_id: id::DeviceId,
@@ -1154,7 +1326,7 @@ pub extern "C" fn wgpu_vkimage_get_file_descriptor(
 }
 
 #[no_mangle]
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 pub extern "C" fn wgpu_vkimage_get_dma_buf_info(handle: &VkImageHandle) -> DMABufInfo {
     let mut offsets: [u64; 3] = [0; 3];
     let mut strides: [u64; 3] = [0; 3];
@@ -1170,6 +1342,62 @@ pub extern "C" fn wgpu_vkimage_get_dma_buf_info(handle: &VkImageHandle) -> DMABu
         plane_count: plane_count as u32,
         offsets,
         strides,
+    }
+}
+
+#[cfg(target_os = "macos")]
+pub struct MetalSharedEventHandle(metal::SharedEvent);
+#[cfg(not(target_os = "macos"))]
+pub struct MetalSharedEventHandle;
+
+#[no_mangle]
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
+pub extern "C" fn wgpu_server_get_device_fence_metal_shared_event(
+    global: &Global,
+    device_id: id::DeviceId,
+) -> *mut MetalSharedEventHandle {
+    #[cfg(target_os = "macos")]
+    {
+        let shared_event = unsafe {
+            global.device_fence_as_hal::<wgc::api::Metal, _, Option<metal::SharedEvent>>(
+                device_id,
+                |hal_fence| hal_fence.map(|fence| fence.raw_shared_event().unwrap().clone()),
+            )
+        };
+        let shared_event = match shared_event {
+            Some(shared_event) => shared_event,
+            None => {
+                return ptr::null_mut();
+            }
+        };
+        return Box::into_raw(Box::new(MetalSharedEventHandle(shared_event)));
+    }
+
+    ptr::null_mut()
+}
+
+#[no_mangle]
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
+pub extern "C" fn wgpu_server_metal_shared_event_signaled_value(
+    shared_event: &mut MetalSharedEventHandle,
+) -> u64 {
+    #[cfg(target_os = "macos")]
+    {
+        return shared_event.0.signaled_value();
+    }
+
+    u64::MAX
+}
+
+#[no_mangle]
+#[allow(unreachable_code)]
+#[allow(unused_variables)]
+pub extern "C" fn wgpu_server_delete_metal_shared_event(shared_event: *mut MetalSharedEventHandle) {
+    #[cfg(target_os = "macos")]
+    {
+        let _ = unsafe { Box::from_raw(shared_event) };
     }
 }
 
@@ -1198,24 +1426,35 @@ extern "C" {
         usage: wgt::TextureUsages,
     ) -> bool;
     #[allow(dead_code)]
+    fn wgpu_server_ensure_external_texture_for_readback(
+        param: *mut c_void,
+        swap_chain_id: SwapChainId,
+        device_id: id::DeviceId,
+        texture_id: id::TextureId,
+        width: u32,
+        height: u32,
+        format: wgt::TextureFormat,
+        usage: wgt::TextureUsages,
+    );
+    #[allow(dead_code)]
     fn wgpu_server_get_external_texture_handle(
         param: *mut c_void,
         id: id::TextureId,
     ) -> *mut c_void;
     #[allow(improper_ctypes)]
     #[allow(dead_code)]
-    #[cfg(not(any(target_os = "macos", target_os = "ios")))]
+    #[cfg(target_os = "linux")]
     fn wgpu_server_get_vk_image_handle(
         param: *mut c_void,
         texture_id: id::TextureId,
-    ) -> *mut VkImageHandle;
+    ) -> *const VkImageHandle;
     #[allow(dead_code)]
     fn wgpu_server_get_dma_buf_fd(param: *mut c_void, id: id::TextureId) -> i32;
     #[allow(dead_code)]
     fn wgpu_server_get_external_io_surface_id(param: *mut c_void, id: id::TextureId) -> u32;
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 pub unsafe fn is_dmabuf_supported(
     instance: &ash::Instance,
     physical_device: vk::PhysicalDevice,
@@ -1258,7 +1497,7 @@ pub unsafe fn is_dmabuf_supported(
         .contains(vk::ExternalMemoryHandleTypeFlags::DMA_BUF_EXT)
 }
 
-#[cfg(not(any(target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 pub fn select_memory_type(
     props: &vk::PhysicalDeviceMemoryProperties,
     flags: vk::MemoryPropertyFlags,
@@ -1283,7 +1522,7 @@ pub fn select_memory_type(
     None
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 struct VkImageHolder {
     pub device: vk::Device,
     pub image: vk::Image,
@@ -1292,7 +1531,7 @@ struct VkImageHolder {
     pub fn_free_memory: vk::PFN_vkFreeMemory,
 }
 
-#[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+#[cfg(target_os = "linux")]
 impl VkImageHolder {
     fn destroy(&self) {
         unsafe {
@@ -1396,7 +1635,7 @@ impl Global {
     }
 
     #[allow(dead_code)]
-    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios")))]
+    #[cfg(target_os = "linux")]
     fn create_texture_with_external_texture_dmabuf(
         &self,
         device_id: id::DeviceId,
@@ -1565,7 +1804,7 @@ impl Global {
             sample_count: desc.sample_count,
             dimension: desc.dimension,
             format: desc.format,
-            usage: wgh::TextureUses::COPY_DST | wgh::TextureUses::COLOR_TARGET,
+            usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::COLOR_TARGET,
             memory_flags: wgh::MemoryFlags::empty(),
             view_formats: vec![],
         };
@@ -1747,6 +1986,31 @@ impl Global {
                 };
 
                 if use_external_texture {
+                    let limits = self.device_limits(self_id);
+                    if desc.size.width > limits.max_texture_dimension_2d
+                        || desc.size.height > limits.max_texture_dimension_2d
+                    {
+                        self.create_texture_error(Some(id), &desc);
+                        error_buf.init(ErrMsg {
+                            message: "size exceeds limits.max_texture_dimension_2d",
+                            r#type: ErrorBufferType::Validation,
+                        });
+                        return;
+                    }
+
+                    let features = self.device_features(self_id);
+                    if desc.format == wgt::TextureFormat::Bgra8Unorm
+                        && desc.usage.contains(wgt::TextureUsages::STORAGE_BINDING)
+                        && !features.contains(wgt::Features::BGRA8UNORM_STORAGE)
+                    {
+                        self.create_texture_error(Some(id), &desc);
+                        error_buf.init(ErrMsg {
+                            message: "Bgra8Unorm with GPUStorageBinding usage with BGRA8UNORM_STORAGE disabled",
+                            r#type: ErrorBufferType::Validation,
+                        });
+                        return;
+                    }
+
                     #[cfg(target_os = "windows")]
                     {
                         let is_created = self.create_texture_with_external_texture_d3d11(
@@ -1790,6 +2054,21 @@ impl Global {
                         wgpu_server_disable_external_texture_for_swap_chain(
                             self.owner,
                             swap_chain_id.unwrap(),
+                        )
+                    };
+                }
+
+                if let Some(swap_chain_id) = swap_chain_id {
+                    unsafe {
+                        wgpu_server_ensure_external_texture_for_readback(
+                            self.owner,
+                            swap_chain_id,
+                            self_id,
+                            id,
+                            desc.size.width,
+                            desc.size.height,
+                            desc.format,
+                            desc.usage,
                         )
                     };
                 }
@@ -2048,6 +2327,10 @@ impl Global {
                     error_buf.init(err);
                 }
             }
+            CommandEncoderAction::BuildAccelerationStructuresUnsafeTlas { .. }
+            | CommandEncoderAction::BuildAccelerationStructures { .. } => {
+                unreachable!("internal error: attempted to build acceleration structures")
+            }
         }
     }
 }
@@ -2194,13 +2477,13 @@ pub extern "C" fn wgpu_server_render_bundle_drop(global: &Global, self_id: id::R
 pub unsafe extern "C" fn wgpu_server_encoder_copy_texture_to_buffer(
     global: &Global,
     self_id: id::CommandEncoderId,
-    source: &wgc::command::ImageCopyTexture,
+    source: &wgc::command::TexelCopyTextureInfo,
     dst_buffer: wgc::id::BufferId,
-    dst_layout: &crate::ImageDataLayout,
+    dst_layout: &crate::TexelCopyBufferLayout,
     size: &wgt::Extent3d,
     mut error_buf: ErrorBuffer,
 ) {
-    let destination = wgc::command::ImageCopyBuffer {
+    let destination = wgc::command::TexelCopyBufferInfo {
         buffer: dst_buffer,
         layout: dst_layout.into_wgt(),
     };
@@ -2235,16 +2518,21 @@ pub unsafe extern "C" fn wgpu_server_queue_submit(
     }
 }
 
+#[repr(C)]
+pub struct SubmittedWorkDoneClosure {
+    pub callback: unsafe extern "C" fn(user_data: *mut u8),
+    pub user_data: *mut u8,
+}
+unsafe impl Send for SubmittedWorkDoneClosure {}
+
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_server_on_submitted_work_done(
     global: &Global,
     self_id: id::QueueId,
-    callback: wgc::device::queue::SubmittedWorkDoneClosureC,
+    closure: SubmittedWorkDoneClosure,
 ) {
-    global.queue_on_submitted_work_done(
-        self_id,
-        wgc::device::queue::SubmittedWorkDoneClosure::from_c(callback),
-    );
+    let closure = Box::new(move || (closure.callback)(closure.user_data));
+    global.queue_on_submitted_work_done(self_id, closure);
 }
 
 /// # Safety

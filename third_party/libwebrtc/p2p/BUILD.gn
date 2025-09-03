@@ -18,7 +18,7 @@ group("p2p") {
 rtc_library("rtc_p2p") {
   visibility = [ "*" ]
   sources = [
-    # TODO(bugs.webrtc.org/15769): Finish cleanup and remove.
+    # TODO(bugs.webrtc.org/15796): Finish cleanup and remove.
     "base/active_ice_controller_factory_interface.h",  # To be removed (Chrome)
     "base/active_ice_controller_interface.h",  # To be removed (Internal)
     "base/basic_ice_controller.h",  # To be removed (Chrome)
@@ -61,6 +61,7 @@ rtc_library("rtc_p2p") {
     ":candidate_pair_interface",
     ":connection",
     ":connection_info",
+    ":dtls_stun_piggyback_controller",
     ":dtls_transport",
     ":dtls_transport_internal",
     ":ice_agent_interface",
@@ -73,6 +74,8 @@ rtc_library("rtc_p2p") {
     ":p2p_transport_channel",
     ":p2p_transport_channel_ice_field_trials",
     ":packet_transport_internal",
+    ":port",
+    ":port_allocator",
     ":port_interface",
     ":pseudo_tcp",
     ":regathering_controller",
@@ -263,7 +266,6 @@ rtc_library("basic_port_allocator") {
     ":port",
     ":port_allocator",
     ":relay_port_factory_interface",
-    ":rtc_p2p",
     ":stun_port",
     ":tcp_port",
     ":turn_port",
@@ -389,24 +391,32 @@ rtc_library("default_ice_transport_factory") {
 
 rtc_library("dtls_transport") {
   sources = [
-    "base/dtls_transport.cc",
-    "base/dtls_transport.h",
+    "dtls/dtls_transport.cc",
+    "dtls/dtls_transport.h",
   ]
   deps = [
     ":dtls_transport_internal",
+    ":dtls_utils",
     ":ice_transport_internal",
     ":packet_transport_internal",
     "../api:array_view",
     "../api:dtls_transport_interface",
+    "../api:rtc_error",
+    "../api:scoped_refptr",
     "../api:sequence_checker",
     "../api/crypto:options",
     "../api/rtc_event_log",
+    "../api/units:timestamp",
     "../logging:ice_log",
+    "../rtc_base:async_packet_socket",
     "../rtc_base:buffer",
     "../rtc_base:buffer_queue",
     "../rtc_base:checks",
     "../rtc_base:dscp",
     "../rtc_base:logging",
+    "../rtc_base:macromagic",
+    "../rtc_base:network_route",
+    "../rtc_base:socket",
     "../rtc_base:socket_address",
     "../rtc_base:ssl",
     "../rtc_base:ssl_adapter",
@@ -414,7 +424,9 @@ rtc_library("dtls_transport") {
     "../rtc_base:stringutils",
     "../rtc_base:threading",
     "../rtc_base:timeutils",
+    "../rtc_base/network:ecn_marking",
     "../rtc_base/network:received_packet",
+    "../rtc_base/network:sent_packet",
     "../rtc_base/system:no_unique_address",
     "//third_party/abseil-cpp/absl/memory",
     "//third_party/abseil-cpp/absl/strings:string_view",
@@ -422,24 +434,27 @@ rtc_library("dtls_transport") {
 }
 
 rtc_source_set("dtls_transport_factory") {
-  sources = [ "base/dtls_transport_factory.h" ]
+  sources = [ "dtls/dtls_transport_factory.h" ]
   deps = [
     ":dtls_transport_internal",
     ":ice_transport_internal",
+    "../api/crypto:options",
+    "../rtc_base:ssl_adapter",
   ]
 }
 
 rtc_library("dtls_transport_internal") {
   sources = [
-    "base/dtls_transport_internal.cc",
-    "base/dtls_transport_internal.h",
+    "dtls/dtls_transport_internal.cc",
+    "dtls/dtls_transport_internal.h",
   ]
   deps = [
     ":ice_transport_internal",
     ":packet_transport_internal",
     "../api:dtls_transport_interface",
+    "../api:rtc_error",
     "../api:scoped_refptr",
-    "../api/crypto:options",
+    "../rtc_base:buffer",
     "../rtc_base:callback_list",
     "../rtc_base:ssl",
     "../rtc_base:ssl_adapter",
@@ -505,19 +520,25 @@ rtc_library("ice_transport_internal") {
     "base/ice_transport_internal.h",
   ]
   deps = [
+    ":candidate_pair_interface",
     ":connection",
+    ":connection_info",
     ":p2p_constants",
     ":packet_transport_internal",
     ":port",
     ":stun_dictionary",
     ":transport_description",
+    "../api:array_view",
     "../api:candidate",
     "../api:rtc_error",
     "../api/transport:enums",
+    "../rtc_base:callback_list",
+    "../rtc_base:checks",
     "../rtc_base:network_constants",
     "../rtc_base:timeutils",
     "../rtc_base/system:rtc_export",
     "../rtc_base/third_party/sigslot",
+    "//third_party/abseil-cpp/absl/functional:any_invocable",
     "//third_party/abseil-cpp/absl/strings:string_view",
   ]
 }
@@ -537,6 +558,7 @@ rtc_library("p2p_transport_channel") {
   ]
   deps = [
     ":active_ice_controller_factory_interface",
+    ":active_ice_controller_interface",
     ":basic_ice_controller",
     ":candidate_pair_interface",
     ":connection",
@@ -575,6 +597,7 @@ rtc_library("p2p_transport_channel") {
     "../rtc_base:logging",
     "../rtc_base:macromagic",
     "../rtc_base:net_helper",
+    "../rtc_base:net_helpers",
     "../rtc_base:network",
     "../rtc_base:network_constants",
     "../rtc_base:network_route",
@@ -584,6 +607,7 @@ rtc_library("p2p_transport_channel") {
     "../rtc_base:threading",
     "../rtc_base:timeutils",
     "../rtc_base/experiments:field_trial_parser",
+    "../rtc_base/network:received_packet",
     "../rtc_base/network:sent_packet",
     "../rtc_base/system:rtc_export",
     "../system_wrappers:metrics",
@@ -762,6 +786,40 @@ rtc_library("stun_dictionary") {
   ]
 }
 
+rtc_library("dtls_utils") {
+  sources = [
+    "dtls/dtls_utils.cc",
+    "dtls/dtls_utils.h",
+  ]
+  deps = [
+    "../api:array_view",
+    "../rtc_base:byte_buffer",
+    "../rtc_base:checks",
+  ]
+}
+
+rtc_library("dtls_stun_piggyback_controller") {
+  sources = [
+    "dtls/dtls_stun_piggyback_controller.cc",
+    "dtls/dtls_stun_piggyback_controller.h",
+  ]
+  deps = [
+    ":dtls_utils",
+    "../api:array_view",
+    "../api:sequence_checker",
+    "../api/transport:stun_types",
+    "../rtc_base:buffer",
+    "../rtc_base:byte_buffer",
+    "../rtc_base:checks",
+    "../rtc_base:logging",
+    "../rtc_base:macromagic",
+    "../rtc_base:stringutils",
+    "../rtc_base/system:no_unique_address",
+    "//third_party/abseil-cpp/absl/functional:any_invocable",
+    "//third_party/abseil-cpp/absl/strings:string_view",
+  ]
+}
+
 rtc_library("stun_port") {
   sources = [
     "base/stun_port.cc",
@@ -781,6 +839,7 @@ rtc_library("stun_port") {
     "../rtc_base:ip_address",
     "../rtc_base:logging",
     "../rtc_base:stringutils",
+    "../rtc_base:timeutils",
     "../rtc_base/experiments:field_trial_parser",
     "../rtc_base/network:received_packet",
     "../rtc_base/system:rtc_export",
@@ -826,6 +885,7 @@ rtc_library("tcp_port") {
     "../rtc_base:net_helper",
     "../rtc_base:rate_tracker",
     "../rtc_base:threading",
+    "../rtc_base:timeutils",
     "../rtc_base/containers:flat_map",
     "../rtc_base/network:received_packet",
     "//third_party/abseil-cpp/absl/algorithm:container",
@@ -871,7 +931,6 @@ rtc_source_set("transport_info") {
   sources = [ "base/transport_info.h" ]
   deps = [
     ":p2p_constants",
-    ":rtc_p2p",
     ":transport_description",
     "../api:candidate",
     "../rtc_base:ssl",
@@ -925,7 +984,6 @@ rtc_library("turn_port_factory") {
     ":port",
     ":port_allocator",
     ":relay_port_factory_interface",
-    ":rtc_p2p",
     ":turn_port",
     "../rtc_base:async_packet_socket",
   ]
@@ -970,15 +1028,31 @@ if (rtc_include_tests) {
     visibility = [ "*" ]
     sources = [ "base/fake_ice_transport.h" ]
     deps = [
+      ":candidate_pair_interface",
+      ":connection",
+      ":connection_info",
       ":ice_transport_internal",
+      ":port",
+      ":transport_description",
+      "../api:candidate",
       "../api:ice_transport_interface",
       "../api:libjingle_peerconnection_api",
+      "../api:sequence_checker",
       "../api/task_queue:pending_task_safety_flag",
+      "../api/transport:enums",
       "../api/units:time_delta",
+      "../rtc_base:async_packet_socket",
+      "../rtc_base:checks",
       "../rtc_base:copy_on_write_buffer",
+      "../rtc_base:logging",
+      "../rtc_base:macromagic",
+      "../rtc_base:network_route",
+      "../rtc_base:socket",
       "../rtc_base:task_queue_for_test",
+      "../rtc_base:threading",
       "../rtc_base:timeutils",
       "../rtc_base/network:received_packet",
+      "../rtc_base/network:sent_packet",
       "//third_party/abseil-cpp/absl/algorithm:container",
       "//third_party/abseil-cpp/absl/strings:string_view",
     ]
@@ -1006,7 +1080,6 @@ if (rtc_include_tests) {
   rtc_library("p2p_test_utils") {
     testonly = true
     sources = [
-      "base/fake_dtls_transport.h",
       "base/fake_packet_transport.h",
       "base/mock_active_ice_controller.h",
       "base/mock_dns_resolving_packet_socket_factory.h",
@@ -1017,6 +1090,7 @@ if (rtc_include_tests) {
       "base/test_stun_server.h",
       "base/test_turn_customizer.h",
       "base/test_turn_server.h",
+      "dtls/fake_dtls_transport.h",
     ]
     deps = [
       ":active_ice_controller_factory_interface",
@@ -1034,17 +1108,25 @@ if (rtc_include_tests) {
       ":p2p_server_utils",
       ":packet_transport_internal",
       ":transport_description",
+      "../api:array_view",
       "../api:dtls_transport_interface",
       "../api:libjingle_peerconnection_api",
       "../api:mock_async_dns_resolver",
       "../api:packet_socket_factory",
+      "../api:rtc_error",
+      "../api:scoped_refptr",
       "../api:sequence_checker",
       "../api:turn_customizer",
       "../api/crypto:options",
       "../api/transport:stun_types",
+      "../rtc_base:async_packet_socket",
       "../rtc_base:async_udp_socket",
+      "../rtc_base:buffer",
+      "../rtc_base:checks",
       "../rtc_base:copy_on_write_buffer",
       "../rtc_base:gunit_helpers",
+      "../rtc_base:logging",
+      "../rtc_base:network_route",
       "../rtc_base:rtc_base_tests_utils",
       "../rtc_base:socket",
       "../rtc_base:socket_address",
@@ -1065,7 +1147,6 @@ if (rtc_include_tests) {
 
     sources = [
       "base/async_stun_tcp_socket_unittest.cc",
-      "base/dtls_transport_unittest.cc",
       "base/ice_credentials_iterator_unittest.cc",
       "base/p2p_transport_channel_unittest.cc",
       "base/packet_transport_internal_unittest.cc",
@@ -1084,6 +1165,9 @@ if (rtc_include_tests) {
       "base/turn_server_unittest.cc",
       "base/wrapping_active_ice_controller_unittest.cc",
       "client/basic_port_allocator_unittest.cc",
+      "dtls/dtls_stun_piggyback_controller_unittest.cc",
+      "dtls/dtls_transport_unittest.cc",
+      "dtls/dtls_utils_unittest.cc",
     ]
     deps = [
       ":active_ice_controller_factory_interface",
@@ -1093,7 +1177,10 @@ if (rtc_include_tests) {
       ":basic_packet_socket_factory",
       ":basic_port_allocator",
       ":connection",
+      ":dtls_stun_piggyback_controller",
       ":dtls_transport",
+      ":dtls_transport_internal",
+      ":dtls_utils",
       ":fake_ice_transport",
       ":fake_port_allocator",
       ":ice_credentials_iterator",
@@ -1109,7 +1196,6 @@ if (rtc_include_tests) {
       ":pseudo_tcp",
       ":regathering_controller",
       ":relay_port_factory_interface",
-      ":rtc_p2p",
       ":stun_dictionary",
       ":stun_port",
       ":stun_request",
@@ -1126,6 +1212,7 @@ if (rtc_include_tests) {
       "../api:mock_async_dns_resolver",
       "../api:packet_socket_factory",
       "../api:scoped_refptr",
+      "../api/crypto:options",
       "../api/task_queue",
       "../api/task_queue:pending_task_safety_flag",
       "../api/transport:stun_types",
@@ -1133,6 +1220,7 @@ if (rtc_include_tests) {
       "../rtc_base:async_packet_socket",
       "../rtc_base:buffer",
       "../rtc_base:byte_buffer",
+      "../rtc_base:byte_order",
       "../rtc_base:checks",
       "../rtc_base:copy_on_write_buffer",
       "../rtc_base:crypto_random",
@@ -1163,6 +1251,7 @@ if (rtc_include_tests) {
       "../rtc_base/network:sent_packet",
       "../rtc_base/third_party/sigslot",
       "../system_wrappers:metrics",
+      "../test:field_trial",
       "../test:rtc_expect_death",
       "../test:scoped_key_value_config",
       "../test:test_support",
@@ -1205,6 +1294,7 @@ rtc_library("p2p_server_utils") {
     "../rtc_base:ssl",
     "../rtc_base:ssl_adapter",
     "../rtc_base:stringutils",
+    "../rtc_base:timeutils",
     "../rtc_base/network:received_packet",
     "../rtc_base/third_party/sigslot",
     "//third_party/abseil-cpp/absl/algorithm:container",

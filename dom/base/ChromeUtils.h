@@ -16,6 +16,8 @@
 #include "nsIDOMProcessChild.h"
 #include "nsIDOMProcessParent.h"
 
+class nsIRFPTargetSetIDL;
+
 namespace mozilla {
 
 class ErrorResult;
@@ -191,7 +193,18 @@ class ChromeUtils {
       GlobalObject&, const nsACString& aSchemelessSite,
       const dom::OriginAttributesPatternDictionary& aPattern);
 
-  static void ClearStyleSheetCache(GlobalObject& aGlobal);
+  static void ClearStyleSheetCache(GlobalObject& aGlobal,
+                                   const Optional<bool>& aChrome);
+
+  static void ClearMessagingLayerSecurityStateByPrincipal(
+      GlobalObject&, nsIPrincipal* aPrincipal, ErrorResult& aRv);
+
+  static void ClearMessagingLayerSecurityStateBySite(
+      GlobalObject& aGlobal, const nsACString& aSchemelessSite,
+      const dom::OriginAttributesPatternDictionary& aPattern, ErrorResult& aRv);
+
+  static void ClearMessagingLayerSecurityState(GlobalObject& aGlobal,
+                                               ErrorResult& aRv);
 
   static void ClearScriptCacheByPrincipal(GlobalObject&,
                                           nsIPrincipal* aForPrincipal);
@@ -200,7 +213,11 @@ class ChromeUtils {
       GlobalObject& aGlobal, const nsACString& aSchemelessSite,
       const dom::OriginAttributesPatternDictionary& aPattern);
 
-  static void ClearScriptCache(GlobalObject& aGlobal);
+  static void ClearScriptCache(GlobalObject& aGlobal,
+                               const Optional<bool>& aChrome);
+
+  static void ClearResourceCache(GlobalObject& aGlobal,
+                                 const Optional<bool>& aChrome);
 
   static void SetPerfStatsCollectionMask(GlobalObject& aGlobal, uint64_t aMask);
 
@@ -270,7 +287,7 @@ class ChromeUtils {
                                   ErrorResult& aRv);
 
   static void UnregisterWindowActor(const GlobalObject& aGlobal,
-                                    const nsACString& aName);
+                                    const nsACString& aName, ErrorResult& aRv);
 
   static void RegisterProcessActor(const GlobalObject& aGlobal,
                                    const nsACString& aName,
@@ -278,7 +295,11 @@ class ChromeUtils {
                                    ErrorResult& aRv);
 
   static void UnregisterProcessActor(const GlobalObject& aGlobal,
-                                     const nsACString& aName);
+                                     const nsACString& aName, ErrorResult& aRv);
+
+  static already_AddRefed<Promise> EnsureHeadlessContentProcess(
+      const GlobalObject& aGlobal, const nsACString& aRemoteType,
+      ErrorResult& aRv);
 
   static bool IsClassifierBlockingErrorCode(GlobalObject& aGlobal,
                                             uint32_t aError);
@@ -316,7 +337,8 @@ class ChromeUtils {
 
   static bool ShouldResistFingerprinting(
       GlobalObject& aGlobal, JSRFPTarget aTarget,
-      const Nullable<uint64_t>& aOverriddenFingerprintingSettings);
+      nsIRFPTargetSetIDL* aOverriddenFingerprintingSettings,
+      const Optional<bool>& aIsPBM);
 
 #ifdef MOZ_WMF_CDM
   static already_AddRefed<Promise> GetWMFContentDecryptionModuleInformation(

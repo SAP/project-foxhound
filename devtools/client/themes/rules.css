@@ -352,9 +352,13 @@
   background: var(--theme-tab-toolbar-background);
 }
 
-.ruleview-rule.unmatched,
-.ruleview-rule[unmatched=true] {
-  opacity: 0.5;
+:root[forced-colors-active] .ruleview-rule:is(
+  .unmatched,
+  [unmatched=true]
+) {
+  /* Set an inactive color in High Contrast Mode as we don't have the
+     distinct background that is set in regular mode */
+  color: var(--theme-text-color-inactive);
 }
 
 .ruleview-rule.uneditable :focus,
@@ -557,9 +561,11 @@
 
 .ruleview-propertycontainer .ruleview-expander {
   margin-left: -6px;
+  border: none;
+  background-color: transparent;
 }
 
-.ruleview-propertycontainer .ruleview-expander:dir(rtl):not([open]) {
+.ruleview-propertycontainer .ruleview-expander:dir(rtl)[aria-expanded="false"] {
   /* for preventing .theme-twisty's wrong direction in rtl; Bug 1296648 */
   transform: rotate(-90deg);
 }
@@ -700,7 +706,7 @@
    */
   background-color: var(--inspector-highlight-background-color);
   /* Put the box-shadow inside the element so it's still visible when sibling elements are highlighted  */
-  box-shadow: inset 0px -1px 0px 0px var(--theme-contrast-border);
+  box-shadow: inset 0 -1px 0 0 var(--theme-contrast-border);
 
 
   /* property name and value and unmatched/inactive colors need to be adjusted
@@ -723,7 +729,7 @@
      don't have specific highlighted colors (selectors, semi colons, stylesheet location, ...) */
   :root[forced-colors-active] & {
     color: var(--theme-contrast-color);
-    a {
+    a, .theme-twisty {
       color: var(--theme-contrast-color);
     }
 
@@ -779,6 +785,7 @@
   color: var(--theme-text-color-alt);
 }
 
+.ruleview-rule:is(.unmatched, [unmatched=true]) .ruleview-selector,
 .ruleview-selector.unmatched,
 .ruleview-property:is(.unused, .ruleview-overridden) :is(.ruleview-propertyname,.ruleview-propertyvalue) {
   color: var(--theme-text-color-inactive);
@@ -789,7 +796,8 @@
 :is(
   .ruleview-selector.unmatched,
   .inspector-unmatched,
-  .ruleview-invalid-at-computed-value-time
+  .ruleview-invalid-at-computed-value-time,
+  .ruleview-rule:is(.unmatched, [unmatched=true]) .ruleview-selector,
 ):not(
   /* don't show the strike through when the element is hovered so it's more legible */
   :hover

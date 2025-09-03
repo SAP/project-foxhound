@@ -94,7 +94,7 @@ const ONE_GiB = 1024 * 1024 * 1024;
  * The engine child is responsible for the life cycle and instantiation of the local
  * machine learning inference engine.
  */
-export class MLEngineChild extends JSWindowActorChild {
+export class MLEngineChild extends JSProcessActorChild {
   /**
    * The cached engines.
    *
@@ -126,8 +126,6 @@ export class MLEngineChild extends JSWindowActorChild {
             /* replacement */ false
           );
         }
-        this.#engineDispatchers = null;
-        this.#engineStatuses = null;
         break;
       }
     }
@@ -183,10 +181,19 @@ export class MLEngineChild extends JSWindowActorChild {
       }
 
       this.#engineStatuses.set(engineId, "CREATING");
-      this.#engineDispatchers.set(
-        engineId,
-        await EngineDispatcher.initialize(this, port, options)
-      );
+
+      const dispatcher = new EngineDispatcher(this, port, options);
+      this.#engineDispatchers.set(engineId, dispatcher);
+
+      // When the pipeline is mocked typically in unit tests, the WASM files are
+      // mocked.  In these cases, the pipeline is not resolved during
+      // initialization to allow the test to work.
+      //
+      // NOTE: This is done after adding to #engineDispatchers to ensure other
+      // async calls see the new dispatcher.
+      if (!lazy.PipelineOptions.isMocked(pipelineOptions)) {
+        await dispatcher.ensureInferenceEngineIsReady();
+      }
 
       this.#engineStatuses.set(engineId, "READY");
       port.postMessage({
@@ -198,14 +205,6 @@ export class MLEngineChild extends JSWindowActorChild {
         type: "EnginePort:EngineReady",
         error,
       });
-    }
-  }
-
-  handleEvent(event) {
-    switch (event.type) {
-      case "DOMContentLoaded":
-        this.sendAsyncMessage("MLEngine:Ready");
-        break;
     }
   }
 
@@ -231,10 +230,10 @@ export class MLEngineChild extends JSWindowActorChild {
   }
 
   /**
-   * Retrieves a model file as an ArrayBuffer and headers by communicating with the parent actor.
+   * Retrieves a model file and headers by communicating with the parent actor.
    *
    * @param {object} config - The configuration accepted by the parent function.
-   * @returns {Promise<[ArrayBuffer, object]>} The file content and headers
+   * @returns {Promise<[string, object]>} The file local path and headers
    */
   getModelFile(config) {
     return this.sendQuery("MLEngine:GetModelFile", config);
@@ -252,9 +251,6 @@ export class MLEngineChild extends JSWindowActorChild {
    * @param {boolean} replacement - Flag indicating whether the engine is being replaced.
    */
   removeEngine(engineId, shutDownIfEmpty, replacement) {
-    if (!this.#engineDispatchers) {
-      return;
-    }
     this.#engineDispatchers.delete(engineId);
     this.#engineStatuses.delete(engineId);
 
@@ -348,12 +344,12 @@ class EngineDispatcher {
 
     // If the merged options don't have a modelId and we have a default modelId, we set it
     if (!mergedOptions.modelId) {
-      const defaultModel = lazy.DEFAULT_MODELS[this.#taskName];
-      if (defaultModel) {
+      const defaultModelEntry = lazy.DEFAULT_MODELS[this.#taskName];
+      if (defaultModelEntry) {
         lazy.console.debug(
-          `Using default model ${defaultModel} for task ${this.#taskName}`
+          `Using default model ${defaultModelEntry.modelId} for task ${this.#taskName}`
         );
-        mergedOptions.modelId = defaultModel;
+        mergedOptions.updateOptions(defaultModelEntry);
       } else {
         throw new Error(`No default model found for task ${this.#taskName}`);
       }
@@ -429,28 +425,6 @@ class EngineDispatcher {
     this.#status = "READY";
   }
 
-  /**
-   * Initialize an Engine Dispatcher
-   *
-   * @param {MLEngineChild} mlEngineChild
-   * @param {MessagePort} port
-   * @param {PipelineOptions} pipelineOptions
-   */
-  static async initialize(mlEngineChild, port, pipelineOptions) {
-    const dispatcher = new EngineDispatcher(
-      mlEngineChild,
-      port,
-      pipelineOptions
-    );
-
-    // In unit tests, maintain the current behavior of resolving during execution instead of initialization.
-    if (!Cu.isInAutomation) {
-      await dispatcher.ensureInferenceEngineIsReady();
-    }
-
-    return dispatcher;
-  }
-
   handleInitProgressStatus(port, notificationsData) {
     port.postMessage({
       type: "EnginePort:InitProgress",
@@ -462,14 +436,13 @@ class EngineDispatcher {
    * The worker will be shutdown automatically after some amount of time of not being used, unless:
    *
    * - timeoutMS is set to -1
-   * - we are running a test
    */
   keepAlive() {
     if (this.#keepAliveTimeout) {
       // Clear any previous timeout.
       lazy.clearTimeout(this.#keepAliveTimeout);
     }
-    if (!Cu.isInAutomation && this.timeoutMS >= 0) {
+    if (this.timeoutMS >= 0) {
       this.#keepAliveTimeout = lazy.setTimeout(
         this.terminate.bind(
           this,
@@ -529,7 +502,7 @@ class EngineDispatcher {
           break;
         }
         case "EnginePort:Run": {
-          const { requestId, request } = data;
+          const { requestId, request, engineRunOptions } = data;
           try {
             await this.ensureInferenceEngineIsReady();
           } catch (error) {
@@ -556,7 +529,11 @@ class EngineDispatcher {
             port.postMessage({
               type: "EnginePort:RunResponse",
               requestId,
-              response: await this.#engine.run(request),
+              response: await this.#engine.run(
+                request,
+                requestId,
+                engineRunOptions
+              ),
               error: null,
             });
           } catch (error) {
@@ -611,7 +588,7 @@ class EngineDispatcher {
 }
 
 /**
- * Wrapper for a function that fetches a model file as an ArrayBuffer from a specified URL and task name.
+ * Wrapper for a function that fetches a model file from a specified URL and task name.
  *
  * @param {object} config
  * @param {string} config.engineId - The engine id - defaults to "default-engine".
@@ -620,9 +597,9 @@ class EngineDispatcher {
  * the model hub root or an absolute URL.
  * @param {string} config.modelHubRootUrl - root url of the model hub. When not provided, uses the default from prefs.
  * @param {string} config.modelHubUrlTemplate - url template of the model hub. When not provided, uses the default from prefs.
- * @param {?function(object):Promise<[ArrayBuffer, object]>} config.getModelFileFn - A function that actually retrieves the model data and headers.
+ * @param {?function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
  * @returns {Promise} A promise that resolves to a Meta object containing the URL, response headers,
- * and data as an ArrayBuffer. The data is marked for transfer to avoid cloning.
+ * and model path.
  */
 async function getModelFile({
   engineId,
@@ -639,9 +616,7 @@ async function getModelFile({
     rootUrl: modelHubRootUrl || lazy.MODEL_HUB_ROOT_URL,
     urlTemplate: modelHubUrlTemplate || lazy.MODEL_HUB_URL_TEMPLATE,
   });
-  return new lazy.BasePromiseWorker.Meta([url, headers, data], {
-    transfers: [data],
-  });
+  return new lazy.BasePromiseWorker.Meta([url, headers, data], {});
 }
 
 /**
@@ -748,7 +723,7 @@ class InferenceEngine {
    * @param {ArrayBuffer} config.wasm
    * @param {PipelineOptions} config.pipelineOptions
    * @param {?function(ProgressAndStatusCallbackParams):void} config.notificationsCallback The callback to call for updating about notifications such as dowload progress status.
-   * @param {?function(object):Promise<[ArrayBuffer, object]>} config.getModelFileFn - A function that actually retrieves the model data and headers.
+   * @param {?function(object):Promise<[string, object]>} config.getModelFileFn - A function that actually retrieves the model and headers.
    * @param {?function(object):Promise<object>} config.getInferenceProcessInfoFn - A function to get inference process info
    * @returns {InferenceEngine}
    */
@@ -759,6 +734,10 @@ class InferenceEngine {
     getModelFileFn,
     getInferenceProcessInfoFn,
   }) {
+    // Check for the numThreads value. If it's not set, use the best value for the platform, which is the number of physical cores
+    pipelineOptions.numThreads =
+      pipelineOptions.numThreads || lazy.mlUtils.getOptimalCPUConcurrency();
+
     // Before we start the worker, we want to make sure we have the resources to run it.
     if (lazy.CHECK_FOR_MEMORY) {
       try {
@@ -790,6 +769,7 @@ class InferenceEngine {
             modelHubUrlTemplate: pipelineOptions.modelHubUrlTemplate,
           }),
         getInferenceProcessInfo: getInferenceProcessInfoFn,
+        onInferenceProgress: notificationsCallback,
       }
     );
 
@@ -809,10 +789,13 @@ class InferenceEngine {
 
   /**
    * @param {string} request
+   * @param {string} requestId - The identifier used to internally track this request.
+   * @param {object} engineRunOptions - Additional run options for the engine.
+   * @param {boolean} engineRunOptions.enableInferenceProgress - Whether to enable inference progress.
    * @returns {Promise<string>}
    */
-  run(request) {
-    return this.#worker.post("run", [request]);
+  run(request, requestId, engineRunOptions) {
+    return this.#worker.post("run", [request, requestId, engineRunOptions]);
   }
 
   terminate() {

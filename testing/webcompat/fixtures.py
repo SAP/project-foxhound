@@ -20,7 +20,6 @@ try:
 except ImportError:
     import pathlib2 as pathlib
 
-APS_PREF = "privacy.partition.always_partition_third_party_non_cookie_storage"
 CB_PBM_PREF = "network.cookie.cookieBehavior.pbmode"
 CB_PREF = "network.cookie.cookieBehavior"
 INJECTIONS_PREF = "extensions.webcompat.perform_injections"
@@ -79,9 +78,6 @@ class FirefoxWebDriver(WebDriver):
 
     def capabilities(self, test_config):
         prefs = {}
-
-        if "aps" in test_config:
-            prefs[APS_PREF] = test_config["aps"]
 
         if "use_interventions" in test_config:
             value = test_config["use_interventions"]
@@ -155,8 +151,10 @@ def bug_number(request):
 
 
 @pytest.fixture
-def in_headless_mode(request):
-    return request.config.getoption("headless")
+def in_headless_mode(request, session):
+    # Android cannot be headless even if we request it on the commandline.
+    if session.capabilities["platformName"] == "android":
+        return False
 
 
 @pytest.fixture
@@ -201,20 +199,24 @@ async def test_failed_check(request):
         and request.node.rep_call.failed
     ):
         session = request.node.funcargs["session"]
+        file_name = f'{request.node.nodeid}_failure_{datetime.today().strftime("%Y-%m-%d_%H:%M")}.png'.replace(
+            "/", "_"
+        ).replace(
+            "::", "__"
+        )
+        dest_dir = request.config.getoption("failure_screenshots_dir")
         try:
-            file_name = f'{request.node.nodeid}_failure_{datetime.today().strftime("%Y-%m-%d_%H:%M")}.png'.replace(
-                "/", "_"
-            ).replace(
-                "::", "__"
-            )
-            await take_screenshot(session, file_name)
+            await take_screenshot(session, file_name, dest_dir=dest_dir)
             print("Saved failure screenshot to: ", file_name)
         except Exception as e:
             print("Error saving screenshot: ", e)
 
 
-async def take_screenshot(session, file_name):
-    cwd = pathlib.Path(os.getcwd())
+async def take_screenshot(session, file_name, dest_dir=None):
+    if dest_dir:
+        cwd = pathlib.Path(dest_dir)
+    else:
+        cwd = pathlib.Path(os.getcwd())
     path = cwd / file_name
 
     top = await session.bidi_session.browsing_context.get_tree()
@@ -323,6 +325,13 @@ async def session(driver, test_config):
 
 
 @pytest.fixture(autouse=True)
+def firefox_version(session):
+    raw = session.capabilities["browserVersion"]
+    clean = re.findall(r"(\d+(\.\d+)?)", raw)[0][0]
+    return float(clean)
+
+
+@pytest.fixture(autouse=True)
 def platform(session):
     return session.capabilities["platformName"]
 
@@ -350,6 +359,22 @@ def need_visible_scrollbars(bug_number, check_visible_scrollbars, request, sessi
             and check_visible_scrollbars
         ):
             pytest.skip(f"Bug #{bug_number} skipped: {check_visible_scrollbars}")
+
+
+@pytest.fixture(autouse=True)
+def only_firefox_versions(bug_number, firefox_version, request):
+    if request.node.get_closest_marker("only_firefox_versions"):
+        kwargs = request.node.get_closest_marker("only_firefox_versions").kwargs
+        min = float(kwargs["min"]) if "min" in kwargs else 0.0
+        max = float(kwargs["max"]) if "max" in kwargs else firefox_version
+        if firefox_version > max:
+            pytest.skip(
+                f"Bug #{bug_number} skipped on this Firefox version ({firefox_version} > {max})"
+            ) @ pytest.fixture(autouse=True)
+        elif firefox_version < min:
+            pytest.skip(
+                f"Bug #{bug_number} skipped on this Firefox version ({firefox_version} < {min})"
+            ) @ pytest.fixture(autouse=True)
 
 
 @pytest.fixture(autouse=True)

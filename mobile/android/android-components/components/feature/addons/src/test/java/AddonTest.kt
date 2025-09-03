@@ -54,7 +54,6 @@ class AddonTest {
                 "tabs",
                 "topSites",
                 "trialML",
-                "unlimitedStorage",
                 "userScripts",
                 "webNavigation",
                 "devtools",
@@ -88,7 +87,6 @@ class AddonTest {
             R.string.mozac_feature_addons_permissions_tabs_description,
             R.string.mozac_feature_addons_permissions_top_sites_description,
             R.string.mozac_feature_addons_permissions_trial_ml_description,
-            R.string.mozac_feature_addons_permissions_unlimited_storage_description,
             R.string.mozac_feature_addons_permissions_user_scripts_description,
             R.string.mozac_feature_addons_permissions_web_navigation_description,
             R.string.mozac_feature_addons_permissions_devtools_description,
@@ -129,6 +127,58 @@ class AddonTest {
 
         val enabledAddon = addon.copy(installedState = Addon.InstalledState("id", "1.0", "", enabled = true))
         assertTrue(enabledAddon.isEnabled())
+    }
+
+    @Test
+    fun `classifyOriginPermissions - normalizes origins and returns HostPermissions`() {
+        val origins = listOf(
+            "https://developer.mozilla.org/",
+            "*://*.developer.mozilla.org/*",
+            "*://developer.mozilla.org/*",
+            "https://wikipedia.org/",
+            "*://*.wikipedia.org/*",
+            "*://wikipedia.org/*",
+        )
+
+        val hostNormalizationResult = Addon.classifyOriginPermissions(origins)
+        assertNotNull(hostNormalizationResult.getOrNull())
+
+        val hostPermissions = hostNormalizationResult.getOrNull()!!
+
+        assertEquals(hostPermissions.sites.size, 2)
+        assertEquals(hostPermissions.wildcards.size, 2)
+
+        val displayDomainList = hostPermissions.wildcards + hostPermissions.sites
+
+        assertEquals(displayDomainList.size, 2)
+
+        assertEquals(displayDomainList.first(), "developer.mozilla.org")
+        assertTrue(displayDomainList.contains("wikipedia.org"))
+    }
+
+    @Test
+    fun `permissionsListContainsAllUrls - true if any permission in the list maps to the All Urls permission`() {
+        val permissionsWithoutAllUrls = listOf("privacy", "tabs")
+        val permissionsWithAllUrls = listOf("privacy", "<all_urls>", "tabs")
+
+        val domainsWithoutAllUrls = listOf(
+            "https://www.mozilla.org",
+            "http://testsite.com",
+            "testing.com",
+            "testing.com/*",
+            "*.testing.com/*",
+        )
+
+        val domainsWithAllUrls = listOf(
+            "testing.com",
+            "*://*/*",
+        )
+
+        assertFalse("Found all_urls permission when none exists", Addon.permissionsListContainsAllUrls(permissionsWithoutAllUrls))
+        assertTrue("Did not find the all_urls permission in the list", Addon.permissionsListContainsAllUrls(permissionsWithAllUrls))
+
+        assertFalse("Found all_urls permission when none exists", Addon.permissionsListContainsAllUrls(domainsWithoutAllUrls))
+        assertTrue("Did not find the all_urls permission in the list", Addon.permissionsListContainsAllUrls(domainsWithAllUrls))
     }
 
     @Test

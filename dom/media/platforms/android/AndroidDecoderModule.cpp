@@ -125,6 +125,13 @@ DecodeSupportSet AndroidDecoderModule::SupportsMimeType(
     case MediaCodec::H264:
       return DecodeSupport::SoftwareDecode;
 
+    case MediaCodec::HEVC:
+      if (!StaticPrefs::media_hevc_enabled()) {
+        SLOG("Rejecting HEVC as the preference is disabled");
+        return media::DecodeSupportSet{};
+      }
+      break;
+
     // AV1 doesn't need any special handling.
     case MediaCodec::AV1:
       break;
@@ -331,11 +338,6 @@ already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateVideoDecoder(
 already_AddRefed<MediaDataDecoder> AndroidDecoderModule::CreateAudioDecoder(
     const CreateDecoderParams& aParams) {
   const AudioInfo& config = aParams.AudioConfig();
-  if (config.mBitDepth != 16) {
-    // We only handle 16-bit audio.
-    return nullptr;
-  }
-
   LOG("CreateAudioFormat with mimeType=%s, mRate=%d, channels=%d",
       config.mMimeType.Data(), config.mRate, config.mChannels);
 

@@ -110,9 +110,9 @@ VideoProcessorD3D11::VideoProcessorD3D11(ID3D11Device* aDevice,
 
 VideoProcessorD3D11::~VideoProcessorD3D11() {}
 
-bool VideoProcessorD3D11::Init(const gfx::IntSize& aSize) {
+HRESULT VideoProcessorD3D11::Init(const gfx::IntSize& aSize) {
   if (mSize == aSize) {
-    return true;
+    return S_OK;
   }
 
   mVideoProcessorEnumerator = nullptr;
@@ -136,14 +136,14 @@ bool VideoProcessorD3D11::Init(const gfx::IntSize& aSize) {
   if (FAILED(hr)) {
     gfxCriticalNoteOnce << "Failed to create VideoProcessorEnumerator: "
                         << gfx::hexa(hr);
-    return false;
+    return hr;
   }
 
   hr = mVideoDevice->CreateVideoProcessor(mVideoProcessorEnumerator, 0,
                                           getter_AddRefs(mVideoProcessor));
   if (FAILED(hr)) {
     gfxCriticalNoteOnce << "Failed to create VideoProcessor: " << gfx::hexa(hr);
-    return false;
+    return hr;
   }
 
   // Turn off auto stream processing (the default) that will hurt power
@@ -153,23 +153,20 @@ bool VideoProcessorD3D11::Init(const gfx::IntSize& aSize) {
 
   mSize = aSize;
 
-  return true;
+  return S_OK;
 }
 
 bool VideoProcessorD3D11::CallVideoProcessorBlt(
-    DXGITextureHostD3D11* aTextureHost, ID3D11Texture2D* aInputTexture,
-    ID3D11Texture2D* aOutputTexture) {
+    InputTextureInfo& aTextureInfo, ID3D11Texture2D* aOutputTexture) {
   MOZ_ASSERT(mVideoProcessorEnumerator);
   MOZ_ASSERT(mVideoProcessor);
-  MOZ_ASSERT(aTextureHost);
-  MOZ_ASSERT(aInputTexture);
+  MOZ_ASSERT(aTextureInfo.mTexture);
   MOZ_ASSERT(aOutputTexture);
 
   HRESULT hr;
 
   auto yuvRangedColorSpace = gfx::ToYUVRangedColorSpace(
-      gfx::ToYUVColorSpace(aTextureHost->mColorSpace),
-      aTextureHost->mColorRange);
+      gfx::ToYUVColorSpace(aTextureInfo.mColorSpace), aTextureInfo.mColorRange);
   auto sourceColorSpace = GetSourceDXGIColorSpace(yuvRangedColorSpace);
   if (sourceColorSpace.isNothing()) {
     gfxCriticalNoteOnce << "Unsupported color space";
@@ -188,11 +185,11 @@ bool VideoProcessorD3D11::CallVideoProcessorBlt(
 
   D3D11_VIDEO_PROCESSOR_INPUT_VIEW_DESC inputDesc = {};
   inputDesc.ViewDimension = D3D11_VPIV_DIMENSION_TEXTURE2D;
-  inputDesc.Texture2D.ArraySlice = aTextureHost->mArrayIndex;
+  inputDesc.Texture2D.ArraySlice = aTextureInfo.mIndex;
 
   RefPtr<ID3D11VideoProcessorInputView> inputView;
   hr = mVideoDevice->CreateVideoProcessorInputView(
-      aInputTexture, mVideoProcessorEnumerator, &inputDesc,
+      aTextureInfo.mTexture, mVideoProcessorEnumerator, &inputDesc,
       getter_AddRefs(inputView));
   if (FAILED(hr)) {
     gfxCriticalNoteOnce << "ID3D11VideoProcessorInputView creation failed: "

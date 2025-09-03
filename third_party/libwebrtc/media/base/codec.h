@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "absl/container/inlined_vector.h"
+#include "absl/strings/str_format.h"
 #include "absl/strings/string_view.h"
 #include "api/audio_codecs/audio_format.h"
 #include "api/rtp_parameters.h"
@@ -55,6 +56,7 @@ class FeedbackParams {
 
   bool Has(const FeedbackParam& param) const;
   void Add(const FeedbackParam& param);
+  bool Remove(const FeedbackParam& param);
 
   void Intersect(const FeedbackParams& from);
 
@@ -174,6 +176,26 @@ struct RTC_EXPORT Codec {
 
   bool operator!=(const Codec& c) const { return !(*this == c); }
 
+  template <typename Sink>
+  friend void AbslStringify(Sink& sink, const Codec& c) {
+    absl::Format(&sink, "[%d:", c.id);
+    switch (c.type) {
+      case Codec::Type::kAudio:
+        sink.Append("audio/");
+        break;
+      case Codec::Type::kVideo:
+        sink.Append("video/");
+    }
+    absl::Format(&sink, "%s/%d/%d", c.name, c.clockrate, c.channels);
+    for (auto param : c.params) {
+      sink.Append(";");
+      sink.Append(param.first);
+      sink.Append("=");
+      sink.Append(param.second);
+    }
+    sink.Append("]");
+  }
+
  protected:
   // Creates an empty codec.
   explicit Codec(Type type);
@@ -218,6 +240,7 @@ Codec CreateAudioRtxCodec(int rtx_payload_type, int associated_payload_type);
 Codec CreateVideoCodec(const std::string& name);
 Codec CreateVideoCodec(int id, const std::string& name);
 Codec CreateVideoCodec(const webrtc::SdpVideoFormat& c);
+Codec CreateVideoCodec(int id, const webrtc::SdpVideoFormat& c);
 Codec CreateVideoRtxCodec(int rtx_payload_type, int associated_payload_type);
 
 // Get the codec setting associated with `payload_type`. If there
@@ -228,7 +251,6 @@ bool HasLntf(const Codec& codec);
 bool HasNack(const Codec& codec);
 bool HasRemb(const Codec& codec);
 bool HasRrtr(const Codec& codec);
-bool HasTransportCc(const Codec& codec);
 
 // Returns the first codec in `supported_codecs` that matches `codec`, or
 // nullptr if no codec matches.

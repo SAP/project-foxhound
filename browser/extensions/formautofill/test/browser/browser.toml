@@ -22,6 +22,8 @@ skip-if = [
   "os == 'mac'",
 ]
 
+["browser_autocomplete_region.js"]
+
 ["browser_autofill_address_housenumber.js"]
 
 ["browser_autofill_address_select.js"]
@@ -33,6 +35,9 @@ skip-if = [
 ["browser_autofill_creditCard_type.js"]
 
 ["browser_autofill_duplicate_fields.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1917060
+]
 
 ["browser_autofill_invisible_fields.js"]
 
@@ -59,11 +64,17 @@ skip-if = [
 
 ["browser_fathom_cc.js"]
 
+["browser_fillclear_events.js"]
+
 ["browser_form_changes.js"]
 
 ["browser_iframe_autofill_cc_number.js"]
 
 ["browser_iframe_autofill_sandbox.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1916287
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1916287
+]
 
 ["browser_iframe_capture.js"]
 
@@ -82,6 +93,10 @@ skip-if = [
 ["browser_ml_model.js"]
 
 ["browser_page_navigation_in_subtree.js"]
+skip-if = [
+  "win11_2009", # Bug 1924248
+  "os == 'win' && os_version == '11.26100' && bits == 64", # Bug 1924248
+]
 
 ["browser_previewFormFields.js"]
 

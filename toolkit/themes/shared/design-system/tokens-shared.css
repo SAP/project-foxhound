@@ -64,6 +64,8 @@
     --button-font-size: var(--font-size-root);
     --button-font-size-small: var(--font-size-small);
     --button-font-weight: var(--font-weight-bold);
+    --button-icon-fill: currentColor;
+    --button-icon-stroke: var(--button-icon-fill);
     --button-min-height: var(--size-item-large);
     --button-min-height-small: var(--size-item-medium);
     --button-opacity-disabled: 0.5;
@@ -78,10 +80,10 @@
     --button-text-color-destructive-hover: var(--button-text-color-destructive);
     --button-text-color-destructive-active: var(--button-text-color-destructive);
     --button-text-color-destructive-disabled: var(--button-text-color-destructive);
-    --button-text-color-ghost: var(--button-text-color);
+    --button-text-color-ghost: inherit;
     --button-text-color-ghost-hover: var(--button-text-color-hover);
     --button-text-color-ghost-active: var(--button-text-color-active);
-    --button-text-color-ghost-disabled: var(--button-text-color-disabled);
+    --button-text-color-ghost-disabled: inherit;
     --button-text-color-primary-hover: var(--button-text-color-primary);
     --button-text-color-primary-active: var(--button-text-color-primary-hover);
     --button-text-color-primary-disabled: var(--button-text-color-primary);
@@ -177,6 +179,9 @@
     --space-xlarge: calc(6 * var(--space-xsmall));
     --space-xxlarge: calc(8 * var(--space-xsmall));
 
+    /** Table Row **/
+    --table-row-background-color: var(--background-color-canvas);
+
     /** Text **/
     --text-color-disabled: color-mix(in srgb, currentColor 40%, transparent);
     --text-color-deemphasized: color-mix(in srgb, currentColor 69%, transparent);
@@ -207,7 +212,6 @@
       --border-color-interactive: var(--text-color);
 
       /** Button **/
-      --button-background-color-ghost: var(--button-background-color);
       --button-border-color: var(--button-text-color);
 
       /** Icon **/
@@ -256,8 +260,6 @@
       --button-background-color-destructive-hover: var(--button-background-color-primary-hover);
       --button-background-color-destructive-active: var(--button-background-color-primary-active);
       --button-background-color-destructive-disabled: var(--button-background-color-primary-disabled);
-      --button-background-color-ghost: var(--button-background-color);
-      --button-background-color-ghost-disabled: var(--button-background-color-disabled);
       --button-background-color-primary-disabled: var(--button-text-color-disabled);
       --button-border-color: var(--border-color-interactive);
       --button-border-color-hover: var(--border-color-interactive-hover);
@@ -289,6 +291,9 @@
 
       /** Focus Outline **/
       --focus-outline-color: var(--text-color);
+
+      /** Table Row **/
+      --table-row-background-color-alternate: var(--background-color-canvas); /* TODO Bug 1821203 - Gray use needs to be consolidated */
 
       /** Text **/
       --text-color-disabled: GrayText;

@@ -19,14 +19,14 @@ function debug(...args) {
     return;
   }
 
-  let stringify = o => {
+  const stringify = o => {
     if (typeof o == "string") {
       return o;
     }
     return JSON.stringify(o);
   };
 
-  let stringifiedArgs = args.map(stringify);
+  const stringifiedArgs = args.map(stringify);
   msg += stringifiedArgs.join(" ");
   debugMsgs.push(msg);
 
@@ -567,9 +567,8 @@ async function populateMediaCapabilities() {
       for (const level of levels) {
         const mimeType = `video/mp4; codecs=${profile}${level}`;
         videoConfig.video.contentType = mimeType;
-        const capability = await navigator.mediaCapabilities.decodingInfo(
-          videoConfig
-        );
+        const capability =
+          await navigator.mediaCapabilities.decodingInfo(videoConfig);
 
         if (capability.supported) {
           supportLevels[profile] = level;
@@ -590,9 +589,8 @@ async function populateMediaCapabilities() {
 
     for (const mime of mimeTypes) {
       videoConfig.video.contentType = mime;
-      const capability = await navigator.mediaCapabilities.decodingInfo(
-        videoConfig
-      );
+      const capability =
+        await navigator.mediaCapabilities.decodingInfo(videoConfig);
       const shortMime = mime.split("=")[1];
       if (!capability.supported) {
         capabilities.unsupported.push(shortMime);
@@ -908,6 +906,9 @@ async function populateSensorInfo() {
     // First devicemotion event has accelerationIncludingGravity but not acceleration.
     const property =
       e.acceleration?.x || e.alpha || e.accelerationIncludingGravity?.x;
+    if (!property) {
+      return;
+    }
     const decPlaces = decimalPlaces(property);
     eventDecPlaces[eventName] =
       eventDecPlaces[eventName] > decPlaces
@@ -922,25 +923,29 @@ async function populateSensorInfo() {
     results.decPlaces[eventName] = eventDecPlaces[eventName];
   };
 
+  const listeners = [];
   for (const eventName in events) {
     eventStarts[eventName] = window.performance.now();
-    window.addEventListener(eventName, processEvent(eventName));
+    const listener = processEvent(eventName);
+    window.addEventListener(eventName, listener);
+    listeners.push([eventName, listener]);
     setTimeout(() => processResult(eventName), 10 * 1000);
   }
 
   // A whole extra second to process results
-  setTimeout(
-    () =>
-      resolve({
-        motionDecimals: results.decPlaces.devicemotion,
-        orientationDecimals: results.decPlaces.deviceorientation,
-        orientationabsDecimals: results.decPlaces.deviceorientationabsolute,
-        motionFreq: results.frequency.devicemotion,
-        orientationFreq: results.frequency.deviceorientation,
-        orientationabsFreq: results.frequency.deviceorientationabsolute,
-      }),
-    11 * 1000
-  );
+  setTimeout(() => {
+    for (const [eventName, listener] of listeners) {
+      window.removeEventListener(eventName, listener);
+    }
+    resolve({
+      motionDecimals: results.decPlaces.devicemotion,
+      orientationDecimals: results.decPlaces.deviceorientation,
+      orientationabsDecimals: results.decPlaces.deviceorientationabsolute,
+      motionFreq: results.frequency.devicemotion,
+      orientationFreq: results.frequency.deviceorientation,
+      orientationabsFreq: results.frequency.deviceorientationabsolute,
+    });
+  }, 11 * 1000);
 
   return promise;
 }
@@ -954,7 +959,7 @@ async function populateMathML() {
 
   return mathElements.reduce((acc, el) => {
     // We multiply by 10^15 to include the decimal part.
-    acc["mathml" + el.id] = el.getBoundingClientRect().width * 10 ** 15;
+    acc["mathml" + el.id] = el.getBoundingClientRect().width.toString();
     return acc;
   }, {});
 }
@@ -1058,11 +1063,12 @@ async function startPopulating() {
   await Promise.allSettled(Object.values(data));
 
   debug("Sizes of extractions:");
-  const output = {};
+  const output = new Map();
   for (const key in data) {
     try {
-      output[key] = await data[key];
-      debug(key, output[key] ? output[key].length : "null");
+      let outputValue = await data[key];
+      output.set(key, outputValue);
+      debug(key, output.get(key) ? output.get(key).length : "null");
     } catch (e) {
       debug("Promise rejected for", key, "Error:", e);
       errors.push(`${key}: ${await stringifyError(e)}`);

@@ -217,8 +217,8 @@ export const CustomizableWidgets = [
       const utils = lazy.RecentlyClosedTabsAndWindowsMenuUtils;
       const fragment =
         panelview.id == this.recentlyClosedTabsPanel
-          ? utils.getTabsFragment(window, "toolbarbutton", true)
-          : utils.getWindowsFragment(window, "toolbarbutton", true);
+          ? utils.getTabsFragment(window, "toolbarbutton")
+          : utils.getWindowsFragment(window, "toolbarbutton");
       let elementCount = fragment.childElementCount;
       this._panelMenuView._setEmptyPopupStatus(panelview, !elementCount);
       if (!elementCount) {
@@ -232,13 +232,12 @@ export const CustomizableWidgets = [
       let footer;
       while (--elementCount >= 0) {
         let element = body.children[elementCount];
+        if (element.tagName != "toolbarbutton") {
+          continue;
+        }
         lazy.CustomizableUI.addShortcut(element);
-        element.classList.add("subviewbutton");
         if (element.classList.contains("restoreallitem")) {
           footer = element;
-          element.classList.add("panel-subview-footer-button");
-        } else {
-          element.classList.add("subviewbutton-iconic", "bookmark-item");
         }
       }
       panelview.appendChild(body);
@@ -284,7 +283,7 @@ export const CustomizableWidgets = [
   },
   {
     id: "sidebar-button",
-    tooltiptext: "sidebar-button.tooltiptext2",
+    l10nId: "show-sidebars",
     defaultArea: "nav-bar",
     _introducedByPref: "sidebar.revamp",
     onCommand(aEvent) {
@@ -299,6 +298,7 @@ export const CustomizableWidgets = [
       if (lazy.sidebarRevampEnabled) {
         const { SidebarController } = aNode.ownerGlobal;
         SidebarController.updateToolbarButton(aNode);
+        aNode.setAttribute("overflows", "false");
       } else {
         // Add an observer so the button is checked while the sidebar is open
         let doc = aNode.ownerDocument;

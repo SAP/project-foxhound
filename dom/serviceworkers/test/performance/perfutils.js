@@ -67,7 +67,8 @@ async function startProfiler() {
     sendAsyncMessage("started");
   });
 
-  return script.promiseOneMessage("started");
+  await script.promiseOneMessage("started");
+  script.destroy();
 }
 
 /**
@@ -76,13 +77,15 @@ async function startProfiler() {
  */
 async function stopProfiler() {
   let script = SpecialPowers.loadChromeScript(async () => {
-    Services.profiler.getProfileDataAsync().then(profileData => {
-      Services.profiler.StopProfiler();
-      sendAsyncMessage("done", profileData);
-    });
+    await Services.profiler.Pause();
+    const profileData = await Services.profiler.getProfileDataAsync();
+    await Services.profiler.StopProfiler();
+    sendAsyncMessage("done", profileData);
   });
 
-  return script.promiseOneMessage("done");
+  const profile = await script.promiseOneMessage("done");
+  script.destroy();
+  return profile;
 }
 
 /**

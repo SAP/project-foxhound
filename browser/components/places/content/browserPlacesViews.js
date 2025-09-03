@@ -730,16 +730,17 @@ class PlacesViewBase {
       // Add the "Open All in Tabs" menuitem.
       aPopup._endOptOpenAllInTabs = document.createXULElement("menuitem");
       aPopup._endOptOpenAllInTabs.className = "openintabs-menuitem";
-
-      aPopup._endOptOpenAllInTabs.setAttribute(
-        "oncommand",
-        "PlacesUIUtils.openMultipleLinksInTabs(this.parentNode._placesNode, event, " +
-          "PlacesUIUtils.getViewForNode(this));"
-      );
       aPopup._endOptOpenAllInTabs.setAttribute(
         "label",
         gNavigatorBundle.getString("menuOpenAllInTabs.label")
       );
+      aPopup._endOptOpenAllInTabs.addEventListener("command", event => {
+        PlacesUIUtils.openMultipleLinksInTabs(
+          event.currentTarget.parentNode._placesNode,
+          event,
+          PlacesUIUtils.getViewForNode(event.currentTarget)
+        );
+      });
       aPopup.appendChild(aPopup._endOptOpenAllInTabs);
     }
   }
@@ -825,7 +826,7 @@ class PlacesViewBase {
  */
 class PlacesToolbar extends PlacesViewBase {
   constructor(placesUrl, rootElt, viewElt) {
-    let startTime = Date.now();
+    let timerId = Glean.bookmarksToolbar.init.start();
     super(placesUrl, rootElt, viewElt);
     this._addEventListeners(this._dragRoot, this._cbEvents, false);
     this._addEventListeners(
@@ -851,9 +852,7 @@ class PlacesToolbar extends PlacesViewBase {
       );
     }
 
-    Services.telemetry
-      .getHistogramById("FX_BOOKMARKS_TOOLBAR_INIT_MS")
-      .add(Date.now() - startTime);
+    Glean.bookmarksToolbar.init.stopAndAccumulate(timerId);
   }
 
   // Called by PlacesViewBase so we can init properties that class

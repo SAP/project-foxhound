@@ -45,6 +45,7 @@ support-files = [
   "doc_inactive_css_xul.xhtml",
   "doc_layer_edit.css",
   "head.js",
+  "ostrich-regular.ttf",
   "sjs_imported_stylesheet_edit.sjs",
   "square_svg.sjs",
   "!/devtools/client/inspector/test/head.js",
@@ -193,6 +194,9 @@ skip-if = [
 ["browser_rules_large_base64_background_image.js"]
 
 ["browser_rules_layer.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1845152
+]
 
 ["browser_rules_light_dark.js"]
 
@@ -353,6 +357,7 @@ skip-if = ["!fission"]
 ["browser_rules_selector_highlight.js"]
 
 ["browser_rules_selector_warnings.js"]
+skip-if = ["os == 'win'"] # Bug 1945519, perma failing on windows.
 
 ["browser_rules_shadowdom_slot_rules.js"]
 

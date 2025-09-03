@@ -17,6 +17,7 @@
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/DebugOnly.h"
 #include "mozilla/Fuzzing.h"
+#include "mozilla/FlowMarkers.h"
 #include "mozilla/IntentionalCrash.h"
 #include "mozilla/Logging.h"
 #include "mozilla/Monitor.h"
@@ -712,6 +713,7 @@ bool MessageChannel::OpenOnSameThread(MessageChannel* aTargetChan,
 bool MessageChannel::Send(UniquePtr<Message> aMsg, int32_t* aSeqno) {
   MOZ_RELEASE_ASSERT(!aMsg->is_sync());
   MOZ_RELEASE_ASSERT(aMsg->nested_level() != IPC::Message::NESTED_INSIDE_SYNC);
+  MOZ_RELEASE_ASSERT(aMsg->routing_id() != MSG_ROUTING_NONE);
   AssertWorkerThread();
   mMonitor->AssertNotCurrentThreadOwns();
 
@@ -722,11 +724,6 @@ bool MessageChannel::Send(UniquePtr<Message> aMsg, int32_t* aSeqno) {
   }
   if (aSeqno) {
     *aSeqno = aMsg->seqno();
-  }
-
-  if (MSG_ROUTING_NONE == aMsg->routing_id()) {
-    ReportMessageRouteError("MessageChannel::Send");
-    return false;
   }
 
   MonitorAutoLock lock(*mMonitor);
@@ -950,6 +947,47 @@ bool MessageChannel::ShouldDeferMessage(const Message& aMsg) {
          aMsg.transaction_id() != CurrentNestedInsideSyncTransaction();
 }
 
+class IPCFlowMarker : public BaseMarkerType<IPCFlowMarker> {
+ public:
+  static constexpr const char* Name = "IPCFlowMarker";
+
+  using MS = MarkerSchema;
+  static constexpr MS::PayloadField PayloadFields[] = {
+      {"name", MS::InputType::CString, "Details", MS::Format::String,
+       MS::PayloadFlags::Searchable},
+      {"flow", MS::InputType::Uint64, "Flow", MS::Format::Flow,
+       MS::PayloadFlags::Searchable}};
+
+  static constexpr MS::Location Locations[] = {MS::Location::MarkerChart,
+                                               MS::Location::MarkerTable};
+  static constexpr const char* TableLabel =
+      "{marker.name} - {marker.data.name}(flow={marker.data.flow})";
+  static constexpr const char* ChartLabel = "{marker.name}";
+
+  static constexpr MS::ETWMarkerGroup Group = MS::ETWMarkerGroup::Generic;
+
+  static constexpr bool IsStackBased = true;
+
+  static void StreamJSONMarkerData(
+      mozilla::baseprofiler::SpliceableJSONWriter& aWriter,
+      IPC::Message::msgid_t aMessageType, Flow aFlow) {
+    aWriter.StringProperty(
+        "name",
+        mozilla::MakeStringSpan(IPC::StringFromIPCMessageType(aMessageType)));
+    aWriter.FlowProperty("flow", aFlow);
+  }
+};
+
+static uint64_t LossyNarrowChannelId(const nsID& aID) {
+  // We xor both halves of the UUID together so that the parts of the id where
+  // the variant (m2) and version (m3[0]) get xored with random bits from the
+  // other halve.
+  uint64_t bits[2];
+  memcpy(&bits, &aID, sizeof(bits));
+
+  return bits[0] ^ bits[1];
+}
+
 void MessageChannel::OnMessageReceivedFromLink(UniquePtr<Message> aMsg) {
   mMonitor->AssertCurrentThreadOwns();
   MOZ_ASSERT(mChannelState == ChannelConnected);
@@ -1026,6 +1064,30 @@ void MessageChannel::OnMessageReceivedFromLink(UniquePtr<Message> aMsg) {
 
   IPC_LOG("Receive from link; seqno=%d, xid=%d, shouldWakeUp=%d", aMsg->seqno(),
           aMsg->transaction_id(), shouldWakeUp);
+
+  struct FlowMarkerDispatch {
+    FlowMarkerDispatch(msgid_t type, Flow flow) : type(type), flow(flow) {
+      if (profiler_feature_active(ProfilerFeature::Flows)) {
+        options.Set(MarkerTiming::InstantNow());
+      }
+    }
+    ~FlowMarkerDispatch() {
+      if (!options.IsTimingUnspecified()) {
+        options.TimingRef().SetIntervalEnd();
+        profiler_add_marker("IPCDispatch", baseprofiler::category::OTHER,
+                            std::move(options), IPCFlowMarker{}, type, flow);
+      }
+    }
+    msgid_t type;
+    Flow flow;
+    MarkerOptions options;
+  };
+
+  // We want this marker to span the time when Post is called so that we
+  // can inherit the connection to the runnable.
+  FlowMarkerDispatch marker(
+      aMsg->type(),
+      Flow::Global(aMsg->seqno() ^ LossyNarrowChannelId(mMessageChannelId)));
 
   // There are two cases we're concerned about, relating to the state of the
   // worker thread:
@@ -1853,11 +1915,6 @@ void MessageChannel::ReportConnectionError(const char* aFunctionName,
   mListener->ProcessingError(MsgDropped, errorMsg);
 }
 
-void MessageChannel::ReportMessageRouteError(const char* channelName) const {
-  PrintErrorMessage(mSide, channelName, "Need a route");
-  mListener->ProcessingError(MsgRouteError, "MsgRouteError");
-}
-
 bool MessageChannel::MaybeHandleError(Result code, const Message& aMsg,
                                       const char* channelName) {
   if (MsgProcessed == code) return true;
@@ -1868,6 +1925,9 @@ bool MessageChannel::MaybeHandleError(Result code, const Message& aMsg,
 
   const char* errorMsg = nullptr;
   switch (code) {
+    case MsgDropped:
+      errorMsg = "Message dropped: message could not be delivered";
+      break;
     case MsgNotKnown:
       errorMsg = "Unknown message: not processed";
       break;
@@ -1881,9 +1941,6 @@ bool MessageChannel::MaybeHandleError(Result code, const Message& aMsg,
       errorMsg =
           "Processing error: message was deserialized, but the handler "
           "returned false (indicating failure)";
-      break;
-    case MsgRouteError:
-      errorMsg = "Route error: message sent to unknown actor ID";
       break;
     case MsgValueError:
       errorMsg =
@@ -2153,6 +2210,20 @@ void MessageChannel::DebugAbort(const char* file, int line, const char* cond,
 void MessageChannel::AddProfilerMarker(const IPC::Message& aMessage,
                                        MessageDirection aDirection) {
   mMonitor->AssertCurrentThreadOwns();
+
+  if (profiler_feature_active(ProfilerFeature::Flows) &&
+      // If one of the profiler mutexes is locked on this thread, don't
+      // record markers, because we don't want to expose profiler IPCs due to
+      // the profiler itself, and also to avoid possible re-entrancy issues.
+      !profiler_is_locked_on_current_thread()) {
+    if (aDirection == MessageDirection::eSending) {
+      auto flow = Flow::Global(aMessage.seqno() ^
+                               LossyNarrowChannelId(mMessageChannelId));
+      profiler_add_marker("IPC", baseprofiler::category::OTHER,
+                          MarkerTiming::InstantNow(), IPCFlowMarker{},
+                          aMessage.type(), flow);
+    }
+  }
 
   if (profiler_feature_active(ProfilerFeature::IPCMessages)) {
     base::ProcessId pid = mListener->OtherPidMaybeInvalid();

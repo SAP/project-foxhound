@@ -237,7 +237,7 @@ class DownloadItem {
     return (
       (this.download.stopped || this.download.canceled) &&
       this.download.hasPartialData &&
-      !this.download.error
+      (!this.download.error || this.download.error.becauseSourceFailed)
     );
   }
 
@@ -774,7 +774,7 @@ this.downloads = class extends ExtensionAPIPersistent {
                 const stream = Cc[
                   "@mozilla.org/io/string-input-stream;1"
                 ].createInstance(Ci.nsIStringInputStream);
-                stream.setData(options.body, options.body.length);
+                stream.setByteStringData(options.body);
 
                 channel.QueryInterface(Ci.nsIUploadChannel2);
                 channel.explicitSetUploadStream(

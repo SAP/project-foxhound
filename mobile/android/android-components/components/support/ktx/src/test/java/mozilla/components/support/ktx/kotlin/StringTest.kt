@@ -55,6 +55,30 @@ class StringTest {
     }
 
     @Test
+    fun `GIVEN a content URL WHEN calling isContentUrl THEN true is returned`() {
+        val url = "content://contenturl"
+        assertTrue(url.isContentUrl())
+    }
+
+    @Test
+    fun `GIVEN an internet URL WHEN calling isContentUrl THEN false is returned`() {
+        val url = "https://mozilla.org"
+        assertFalse(url.isContentUrl())
+    }
+
+    @Test
+    fun `GIVEN an about URL WHEN calling isAboutUrl THEN true is returned`() {
+        val url = "about:about"
+        assertTrue(url.isAboutUrl())
+    }
+
+    @Test
+    fun `GIVEN an internet URL WHEN calling isAboutUrl THEN false is returned`() {
+        val url = "https://mozilla.org"
+        assertFalse(url.isAboutUrl())
+    }
+
+    @Test
     fun toNormalizedUrl() {
         val expectedUrl = "http://mozilla.org"
         assertEquals(expectedUrl, "http://mozilla.org".toNormalizedUrl())
@@ -169,7 +193,7 @@ class StringTest {
     @Test
     fun sanitizeURL() {
         val expectedUrl = "http://mozilla.org"
-        assertEquals(expectedUrl, "\nhttp://mozilla.org\n".sanitizeURL())
+        assertEquals(expectedUrl, "\nhttp://mozi\nlla.org\n".sanitizeURL())
     }
 
     @Test
@@ -471,7 +495,7 @@ class StringTest {
 
     // BEGIN test cases borrowed from desktop (shortUrl is used for Top Sites on new tab)
     // Test cases are modified, as we show the eTLD
-    // (https://searchfox.org/mozilla-central/source/browser/components/newtab/test/unit/lib/ShortUrl.test.js)
+    // (https://searchfox.org/mozilla-central/source/toolkit/modules/tests/xpcshell/test_NewTabUtils.js)
     @Test
     fun `should return a blank string if url is blank`() {
         "" shortenedShouldBecome ""

@@ -167,7 +167,9 @@ EXPORTS.js += [
     "../public/MemoryFunctions.h",
     "../public/MemoryMetrics.h",
     "../public/Modules.h",
+    "../public/NativeStackLimits.h",
     "../public/Object.h",
+    "../public/ObjectWithStashedPointer.h",
     "../public/Prefs.h",
     "../public/Principals.h",
     "../public/Printer.h",
@@ -398,8 +400,8 @@ UNIFIED_SOURCES += [
     "vm/MemoryMetrics.cpp",
     "vm/Modules.cpp",
     "vm/NativeObject.cpp",
+    "vm/ObjectWithStashedPointer.cpp",
     "vm/OffThreadPromiseRuntimeState.cpp",
-    "vm/PIC.cpp",
     "vm/PlainObject.cpp",
     "vm/Prefs.cpp",
     "vm/Printer.cpp",
@@ -425,7 +427,6 @@ UNIFIED_SOURCES += [
     "vm/SourceHook.cpp",
     "vm/Stack.cpp",
     "vm/StaticStrings.cpp",
-    "vm/StencilCache.cpp",
     "vm/StencilObject.cpp",
     "vm/StringType.cpp",
     "vm/SymbolType.cpp",
@@ -462,15 +463,6 @@ SOURCES += [
 if CONFIG["ENABLE_PORTABLE_BASELINE_INTERP"]:
     SOURCES += [
         "vm/PortableBaselineInterpret.cpp",
-    ]
-
-if CONFIG["ENABLE_RECORD_TUPLE"]:
-    UNIFIED_SOURCES += [
-        "builtin/RecordObject.cpp",
-        "builtin/TupleObject.cpp",
-        "vm/RecordTupleShared.cpp",
-        "vm/RecordType.cpp",
-        "vm/TupleType.cpp",
     ]
 
 if CONFIG["ENABLE_EXPLICIT_RESOURCE_MANAGEMENT"]:
@@ -557,7 +549,17 @@ if CONFIG["MOZ_VTUNE"]:
         if int(CONFIG["CC_VERSION"].split(".")[0]) >= 8:
             SOURCES["vtune/ittnotify_static.c"].flags += ["-Wno-stringop-truncation"]
 
-DIRS += ["build", "debugger", "frontend", "gc", "irregexp", "jit", "util", "wasm"]
+DIRS += [
+    "build",
+    "debugger",
+    "frontend",
+    "gc",
+    "irregexp",
+    "jit",
+    "util",
+    "wasm",
+    "xsum",
+]
 
 if CONFIG["JS_HAS_TEMPORAL_API"]:
     DIRS += ["builtin/temporal"]
@@ -630,9 +632,6 @@ selfhosted_inputs = [
     else []
 )
 
-if CONFIG["ENABLE_RECORD_TUPLE"]:
-    selfhosted_inputs += ["builtin/Tuple.js"]
-
 if CONFIG["ENABLE_EXPLICIT_RESOURCE_MANAGEMENT"]:
     selfhosted_inputs += [
         "builtin/AsyncDisposableStack.js",
@@ -667,3 +666,6 @@ if CONFIG["JS_HAS_INTL_API"]:
         ]
 
     USE_LIBS += ["intlcomponents"]
+
+if CONFIG["USE_LIBZ_RS"]:
+    DEFINES["USE_LIBZ_RS"] = True

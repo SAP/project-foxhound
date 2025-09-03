@@ -110,13 +110,13 @@ namespace {
 class PayloadTypeSuggesterForTests : public PayloadTypeSuggester {
  public:
   PayloadTypeSuggesterForTests() = default;
-  RTCErrorOr<PayloadType> SuggestPayloadType(const std::string& mid,
+  RTCErrorOr<PayloadType> SuggestPayloadType(const std::string& /* mid */,
                                              cricket::Codec codec) override {
     return payload_type_picker_.SuggestMapping(codec, nullptr);
   }
-  RTCError AddLocalMapping(const std::string& mid,
-                           PayloadType payload_type,
-                           const cricket::Codec& codec) override {
+  RTCError AddLocalMapping(const std::string& /* mid */,
+                           PayloadType /* payload_type */,
+                           const cricket::Codec& /* codec */) override {
     return RTCError::OK();
   }
 
@@ -277,6 +277,10 @@ class Call final : public webrtc::Call,
   void SetPayloadTypeSuggester(PayloadTypeSuggester* suggester) override;
 
   Stats GetStats() const override;
+
+  void EnableSendCongestionControlFeedbackAccordingToRfc8888() override;
+  int FeedbackAccordingToRfc8888Count() override;
+  int FeedbackAccordingToTransportCcCount() override;
 
   const FieldTrialsView& trials() const override;
 
@@ -528,9 +532,9 @@ std::unique_ptr<Call> Call::Create(CallConfig config) {
 // Call perf test will use Internal::Call::CreateVideoSendStream() to inject
 // FecController.
 VideoSendStream* Call::CreateVideoSendStream(
-    VideoSendStream::Config config,
-    VideoEncoderConfig encoder_config,
-    std::unique_ptr<FecController> fec_controller) {
+    VideoSendStream::Config /* config */,
+    VideoEncoderConfig /* encoder_config */,
+    std::unique_ptr<FecController> /* fec_controller */) {
   return nullptr;
 }
 
@@ -1174,6 +1178,19 @@ Call::Stats Call::GetStats() const {
       configured_max_padding_bitrate_bps_.load(std::memory_order_relaxed);
 
   return stats;
+}
+
+void Call::EnableSendCongestionControlFeedbackAccordingToRfc8888() {
+  receive_side_cc_.EnableSendCongestionControlFeedbackAccordingToRfc8888();
+  transport_send_->EnableCongestionControlFeedbackAccordingToRfc8888();
+}
+
+int Call::FeedbackAccordingToRfc8888Count() {
+  return transport_send_->ReceivedCongestionControlFeedbackCount();
+}
+
+int Call::FeedbackAccordingToTransportCcCount() {
+  return transport_send_->ReceivedTransportCcFeedbackCount();
 }
 
 const FieldTrialsView& Call::trials() const {

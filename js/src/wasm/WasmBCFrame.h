@@ -539,13 +539,13 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
   // Note the platform scratch register may be used by branchPtr(), so
   // generally tmp must be something else.
 
-  void checkStack(Register tmp, BytecodeOffset trapOffset) {
+  void checkStack(Register tmp, TrapSiteDesc trapSiteDesc) {
     stackAddOffset_ = masm.sub32FromStackPtrWithPatch(tmp);
     Label ok;
     masm.branchPtr(Assembler::Below,
                    Address(InstanceReg, wasm::Instance::offsetOfStackLimit()),
                    tmp, &ok);
-    masm.wasmTrap(Trap::StackOverflow, trapOffset);
+    masm.wasmTrap(Trap::StackOverflow, trapSiteDesc);
     masm.bind(&ok);
   }
 
@@ -786,7 +786,11 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     pushChunkyBytes(StackSizeOfFloat);
     masm.storeFloat32(r, Address(sp_, stackOffset(currentStackHeight())));
 #else
-    masm.Push(r);
+    if (StackSizeOfFloat == 4) {
+      masm.Push(r);
+    } else {
+      masm.Push(r.asDouble());
+    }
 #endif
     maxFramePushed_ = std::max(maxFramePushed_, masm.framePushed());
     MOZ_ASSERT(stackBefore + StackSizeOfFloat == currentStackHeight());
@@ -841,7 +845,11 @@ class BaseStackFrame final : public BaseStackFrameAllocator {
     masm.loadFloat32(Address(sp_, stackOffset(currentStackHeight())), r);
     popChunkyBytes(StackSizeOfFloat);
 #else
-    masm.Pop(r);
+    if (StackSizeOfFloat == 4) {
+      masm.Pop(r);
+    } else {
+      masm.Pop(r.asDouble());
+    }
 #endif
     MOZ_ASSERT(stackBefore - StackSizeOfFloat == currentStackHeight());
   }

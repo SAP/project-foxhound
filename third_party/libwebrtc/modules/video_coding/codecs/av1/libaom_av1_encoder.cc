@@ -298,8 +298,9 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   } else {
     SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_PALETTE, 0);
   }
-
+#if !defined(WEBRTC_MOZILLA_BUILD) // Mozilla: Need to update AV1 to enable this
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_AUTO_TILES, 1);
+#endif
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ROW_MT, 1);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_ENABLE_OBMC, 0);
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_NOISE_SENSITIVITY, 0);
@@ -332,8 +333,10 @@ int LibaomAv1Encoder::InitEncode(const VideoCodec* codec_settings,
   SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_REFERENCE_FRAMES, 3);
 
   if (adaptive_max_consec_drops_) {
+#if !defined(WEBRTC_MOZILLA_BUILD) // Mozilla: Need to update AV1 to enable this
     SET_ENCODER_PARAM_OR_RETURN_ERROR(AV1E_SET_MAX_CONSEC_FRAME_DROP_MS_CBR,
                                       250);
+#endif
   }
 
   return WEBRTC_VIDEO_CODEC_OK;
@@ -645,6 +648,7 @@ int32_t LibaomAv1Encoder::Encode(
   const size_t num_spatial_layers =
       svc_params_ ? svc_params_->number_spatial_layers : 1;
   auto next_layer_frame = layer_frames.begin();
+  std::vector<std::pair<EncodedImage, CodecSpecificInfo>> encoded_images;
   for (size_t i = 0; i < num_spatial_layers; ++i) {
     // The libaom AV1 encoder requires that `aom_codec_encode` is called for
     // every spatial layer, even if the configured bitrate for that layer is
@@ -710,7 +714,7 @@ int32_t LibaomAv1Encoder::Encode(
                                        ? VideoFrameType::kVideoFrameKey
                                        : VideoFrameType::kVideoFrameDelta;
         encoded_image.SetRtpTimestamp(frame.rtp_timestamp());
-        encoded_image.SetCaptureTimeIdentifier(frame.capture_time_identifier());
+        encoded_image.SetPresentationTimestamp(frame.presentation_timestamp());
         encoded_image.capture_time_ms_ = frame.render_time_ms();
         encoded_image.rotation_ = frame.rotation();
         encoded_image.content_type_ = VideoContentType::UNSPECIFIED;
@@ -763,9 +767,16 @@ int32_t LibaomAv1Encoder::Encode(
           resolutions = {RenderResolution(cfg_.g_w, cfg_.g_h)};
         }
       }
-      encoded_image_callback_->OnEncodedImage(encoded_image,
-                                              &codec_specific_info);
+      encoded_images.emplace_back(std::move(encoded_image),
+                                  std::move(codec_specific_info));
     }
+  }
+  if (!encoded_images.empty()) {
+    encoded_images.back().second.end_of_picture = true;
+  }
+  for (auto& [encoded_image, codec_specific_info] : encoded_images) {
+    encoded_image_callback_->OnEncodedImage(encoded_image,
+                                            &codec_specific_info);
   }
 
   return WEBRTC_VIDEO_CODEC_OK;

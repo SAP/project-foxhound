@@ -49,13 +49,29 @@ add_setup(function test_setup() {
 add_task(function test_gifft_counter() {
   Glean.testOnlyIpc.aCounter.add(20);
   Assert.equal(20, Glean.testOnlyIpc.aCounter.testGetValue());
-  Assert.equal(20, scalarValue("telemetry.test.mirror_for_counter"));
+  let telemetryValue = scalarValue("telemetry.test.mirror_for_counter");
+  Assert.equal(20, telemetryValue);
+  Assert.equal("number", typeof telemetryValue);
+
+  Glean.testOnlyIpc.aCounterForHgram.add(20);
+  Assert.equal(20, Glean.testOnlyIpc.aCounterForHgram.testGetValue());
+  const data = Telemetry.getHistogramById("TELEMETRY_TEST_COUNT").snapshot();
+  const expected = {
+    bucket_count: 3,
+    histogram_type: 4,
+    sum: 20,
+    range: [1, 2],
+    values: { 0: 1, 1: 0 },
+  };
+  Assert.deepEqual(data, expected, "histogram successfully mirrored-to.");
 });
 
 add_task(function test_gifft_boolean() {
   Glean.testOnlyIpc.aBool.set(false);
   Assert.equal(false, Glean.testOnlyIpc.aBool.testGetValue());
-  Assert.equal(false, scalarValue("telemetry.test.boolean_kind"));
+  let telemetryValue = scalarValue("telemetry.test.boolean_kind");
+  Assert.equal(false, telemetryValue);
+  Assert.equal("boolean", typeof telemetryValue);
 });
 
 add_task(function test_gifft_datetime() {
@@ -73,7 +89,9 @@ add_task(function test_gifft_string() {
   Glean.testOnlyIpc.aString.set(value);
 
   Assert.equal(value, Glean.testOnlyIpc.aString.testGetValue());
-  Assert.equal(value, scalarValue("telemetry.test.multiple_stores_string"));
+  let telemetryValue = scalarValue("telemetry.test.multiple_stores_string");
+  Assert.equal(value, telemetryValue);
+  Assert.equal("string", typeof telemetryValue);
 });
 
 add_task(function test_gifft_memory_dist() {
@@ -181,12 +199,34 @@ add_task(async function test_gifft_timing_dist() {
   );
 
   data = Telemetry.getHistogramById("TELEMETRY_TEST_EXPONENTIAL").snapshot();
-  // Suffers from same cast truncation issue of 9.... and 4.... values
-  Assert.greaterOrEqual(data.sum, 13, "Histogram's in milliseconds");
+  Assert.greaterOrEqual(
+    data.sum,
+    13 * NANOS_IN_MILLIS - EPSILON,
+    "Histogram's in nanos"
+  );
   Assert.equal(
     2,
     Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
     "Only two samples"
+  );
+
+  // How about those raw sample APIs?
+  Glean.testOnly.whatTimeIsIt.accumulateSingleSample(42);
+  Glean.testOnly.whatTimeIsIt.accumulateSamples([255, 2047]);
+  data = Glean.testOnly.whatTimeIsIt.testGetValue();
+  Assert.equal(
+    data.sum,
+    (42 + 255 + 2047) * 1000,
+    "test.only.what_time_is_it is in microseconds and testGetValue returns you nanos."
+  );
+
+  data = Telemetry.getHistogramById(
+    "TELEMETRY_TEST_MIRROR_FOR_TIMING"
+  ).snapshot();
+  Assert.equal(
+    data.sum,
+    42 + 255 + 2047,
+    "Telemetry gives back exactly what's put in."
   );
 });
 
@@ -295,6 +335,118 @@ add_task(function test_gifft_labeled_counter() {
       ["1".repeat(72)]: 3,
     },
     value
+  );
+
+  // What about a labeled_counter that maps to a boolean hgram?
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForHgram.true.testGetValue()
+  );
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForHgram.false.testGetValue()
+  );
+
+  Glean.testOnlyIpc.aLabeledCounterForHgram.true.add(1);
+  Glean.testOnlyIpc.aLabeledCounterForHgram.true.add(1);
+  Glean.testOnlyIpc.aLabeledCounterForHgram.false.add(1);
+
+  Assert.equal(
+    2,
+    Glean.testOnlyIpc.aLabeledCounterForHgram.true.testGetValue()
+  );
+  Assert.equal(
+    1,
+    Glean.testOnlyIpc.aLabeledCounterForHgram.false.testGetValue()
+  );
+
+  value = Telemetry.getHistogramById("TELEMETRY_TEST_BOOLEAN");
+  Assert.deepEqual(
+    {
+      bucket_count: 3,
+      histogram_type: 2,
+      sum: 2,
+      range: [1, 2],
+      values: { 0: 1, 1: 2, 2: 0 },
+    },
+    value.snapshot()
+  );
+
+  // What about a labeled_counter that maps to a keyed count hgram?
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.aLabel.testGetValue()
+  );
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.anotherLabel.testGetValue()
+  );
+
+  Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.aLabel.add(2);
+  Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.anotherLabel.add(1);
+
+  Assert.equal(
+    2,
+    Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.aLabel.testGetValue()
+  );
+  Assert.equal(
+    1,
+    Glean.testOnlyIpc.aLabeledCounterForKeyedCountHgram.anotherLabel.testGetValue()
+  );
+
+  value = Telemetry.getKeyedHistogramById("TELEMETRY_TEST_KEYED_COUNT");
+  Assert.deepEqual(
+    {
+      aLabel: {
+        bucket_count: 3,
+        histogram_type: 4,
+        sum: 2,
+        range: [1, 2],
+        values: { 0: 1, 1: 0 },
+      },
+      anotherLabel: {
+        bucket_count: 3,
+        histogram_type: 4,
+        sum: 1,
+        range: [1, 2],
+        values: { 0: 1, 1: 0 },
+      },
+    },
+    value.snapshot()
+  );
+
+  // What about a labeled_counter that maps to a categorical hgram?
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForCategorical.CommonLabel.testGetValue()
+  );
+  Assert.equal(
+    undefined,
+    Glean.testOnlyIpc.aLabeledCounterForCategorical.Label4.testGetValue()
+  );
+
+  Glean.testOnlyIpc.aLabeledCounterForCategorical.CommonLabel.add(1);
+  Glean.testOnlyIpc.aLabeledCounterForCategorical.Label4.add(1);
+
+  Assert.equal(
+    1,
+    Glean.testOnlyIpc.aLabeledCounterForCategorical.CommonLabel.testGetValue()
+  );
+  Assert.equal(
+    1,
+    Glean.testOnlyIpc.aLabeledCounterForCategorical.Label4.testGetValue()
+  );
+
+  value = Telemetry.getHistogramById("TELEMETRY_TEST_CATEGORICAL_OPTOUT");
+  Assert.deepEqual(
+    {
+      bucket_count: 51,
+      histogram_type: 5,
+      sum: 1,
+      range: [1, 50],
+      values: { 0: 1, 1: 1, 2: 0 },
+    },
+    value.snapshot()
   );
 });
 
@@ -617,7 +769,6 @@ add_task(async function test_gifft_labeled_timing_dist() {
   data = Telemetry.getKeyedHistogramById(
     "TELEMETRY_TEST_MIRROR_FOR_LABELED_TIMING"
   ).snapshot();
-  info(JSON.stringify(data));
   Assert.ok("down the drain" in data, "Has the key");
   data = data["down the drain"];
   // Suffers from same cast truncation issue of 9.... and 4.... values
@@ -627,6 +778,22 @@ add_task(async function test_gifft_labeled_timing_dist() {
     Object.entries(data.values).reduce((acc, [, count]) => acc + count, 0),
     "Only two samples"
   );
+
+  // Note that `labeled_timing_distribution` does not mirror calls to
+  // * accumulateSamples
+  // * accumulateSingleSamples
+  // See bug 1943453 for more details.
+  Glean.testOnly.whereHasTheTimeGone["hourglass sands"].accumulateSamples([
+    1, 2, 3,
+  ]);
+  Glean.testOnly.whereHasTheTimeGone["hourglass sands"].accumulateSingleSample(
+    1
+  );
+
+  data = Telemetry.getKeyedHistogramById(
+    "TELEMETRY_TEST_MIRROR_FOR_LABELED_TIMING"
+  ).snapshot();
+  Assert.ok(!("hourglass sands" in data), "Doesn't have the key");
 });
 
 add_task(async function test_gifft_labeled_quantity() {

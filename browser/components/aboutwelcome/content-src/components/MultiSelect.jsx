@@ -4,6 +4,7 @@
 
 import React, { useEffect, useCallback, useMemo, useRef } from "react";
 import { Localized, CONFIGURABLE_STYLES } from "./MSLocalized";
+import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
 
 const MULTI_SELECT_STYLES = [
   ...CONFIGURABLE_STYLES,
@@ -16,6 +17,20 @@ const MULTI_SELECT_STYLES = [
   "alignItems",
   "gap",
 ];
+
+const TILE_STYLES = [
+  "marginBlock",
+  "marginInline",
+  "paddingBlock",
+  "paddingInline",
+];
+
+// Do not include styles applied at the content tile level
+for (let i = MULTI_SELECT_STYLES.length - 1; i >= 0; i--) {
+  if (TILE_STYLES.includes(MULTI_SELECT_STYLES[i])) {
+    MULTI_SELECT_STYLES.splice(i, 1);
+  }
+}
 
 const MULTI_SELECT_ICON_STYLES = [
   ...CONFIGURABLE_STYLES,
@@ -39,26 +54,13 @@ const MULTI_SELECT_ICON_STYLES = [
   "boxShadow",
 ];
 
-function getValidStyle(style, validStyles, allowVars) {
-  if (!style) {
-    return null;
-  }
-  return Object.keys(style)
-    .filter(
-      key => validStyles.includes(key) || (allowVars && key.startsWith("--"))
-    )
-    .reduce((obj, key) => {
-      obj[key] = style[key];
-      return obj;
-    }, {});
-}
-
 export const MultiSelect = ({
   content,
   screenMultiSelects,
   setScreenMultiSelects,
   activeMultiSelect,
   setActiveMultiSelect,
+  multiSelectId,
 }) => {
   const { data } = content.tiles;
 
@@ -71,8 +73,8 @@ export const MultiSelect = ({
         newActiveMultiSelect.push(key);
       }
     });
-    setActiveMultiSelect(newActiveMultiSelect);
-  }, [setActiveMultiSelect]);
+    setActiveMultiSelect(newActiveMultiSelect, multiSelectId);
+  }, [setActiveMultiSelect, multiSelectId]);
 
   const items = useMemo(
     () => {
@@ -87,7 +89,7 @@ export const MultiSelect = ({
           }))
           .sort((a, b) => b.rank - a.rank)
           .map(({ id }) => id);
-        setScreenMultiSelects(orderedIds);
+        setScreenMultiSelects(orderedIds, multiSelectId);
         return orderedIds;
       }
       return getOrderedIds().map(id => data.find(item => item.id === id));
@@ -96,7 +98,12 @@ export const MultiSelect = ({
   );
 
   const containerStyle = useMemo(
-    () => getValidStyle(content.tiles.style, MULTI_SELECT_STYLES, true),
+    () =>
+      AboutWelcomeUtils.getValidStyle(
+        content.tiles.style,
+        MULTI_SELECT_STYLES,
+        true
+      ),
     [content.tiles.style]
   );
 
@@ -110,7 +117,7 @@ export const MultiSelect = ({
           newActiveMultiSelect.push(id);
         }
       });
-      setActiveMultiSelect(newActiveMultiSelect);
+      setActiveMultiSelect(newActiveMultiSelect, multiSelectId);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -135,7 +142,7 @@ export const MultiSelect = ({
           <div
             key={id + label}
             className="checkbox-container multi-select-item"
-            style={getValidStyle(style, MULTI_SELECT_STYLES)}
+            style={AboutWelcomeUtils.getValidStyle(style, MULTI_SELECT_STYLES)}
           >
             <input
               type={type} // checkbox or radio
@@ -143,7 +150,10 @@ export const MultiSelect = ({
               value={id}
               name={group}
               checked={activeMultiSelect?.includes(id)}
-              style={getValidStyle(icon?.style, MULTI_SELECT_ICON_STYLES)}
+              style={AboutWelcomeUtils.getValidStyle(
+                icon?.style,
+                MULTI_SELECT_ICON_STYLES
+              )}
               onChange={handleChange}
               ref={el => (refs.current[id] = el)}
               aria-describedby={description ? `${id}-description` : null}

@@ -67,12 +67,15 @@
 #include "mozilla/ExtensionPolicyService.h"
 #include "mozilla/ResultExtensions.h"
 #include "mozilla/StaticPtr.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/WorkerCommon.h"
 #include "mozilla/dom/WorkerPrivate.h"
 #include "nsContentUtils.h"
 #include "nsJSUtils.h"
 #include "nsILoadInfo.h"
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin
+#include "js/GCVector.h"
+#include "js/Value.h"
 
 // This should be probably defined on some other place... but I couldn't find it
 #define WEBAPPS_PERM_NAME "webapps-manage"
@@ -462,10 +465,30 @@ NS_IMPL_ISUPPORTS(nsScriptSecurityManager, nsIScriptSecurityManager)
 ///////////////// Security Checks /////////////////
 
 bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
-    JSContext* cx, JS::RuntimeCode aKind, JS::Handle<JSString*> aCode) {
+    JSContext* cx, JS::RuntimeCode aKind, JS::Handle<JSString*> aCodeString,
+    JS::CompilationType aCompilationType,
+    JS::Handle<JS::StackGCVector<JSString*>> aParameterStrings,
+    JS::Handle<JSString*> aBodyString,
+    JS::Handle<JS::StackGCVector<JS::Value>> aParameterArgs,
+    JS::Handle<JS::Value> aBodyArg, bool* aOutCanCompileStrings) {
   MOZ_ASSERT(cx == nsContentUtils::GetCurrentJSContext());
 
   nsCOMPtr<nsIPrincipal> subjectPrincipal = nsContentUtils::SubjectPrincipal();
+
+  if (aKind == JS::RuntimeCode::JS) {
+    ErrorResult error;
+    bool areArgumentsTrusted = TrustedTypeUtils::
+        AreArgumentsTrustedForEnsureCSPDoesNotBlockStringCompilation(
+            cx, aCodeString, aCompilationType, aParameterStrings, aBodyString,
+            aParameterArgs, aBodyArg, error);
+    if (error.MaybeSetPendingException(cx)) {
+      return false;
+    }
+    if (!areArgumentsTrusted) {
+      *aOutCanCompileStrings = false;
+      return true;
+    }
+  }
 
   // Check if Eval is allowed per firefox hardening policy
   bool contextForbidsEval =
@@ -477,13 +500,14 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
   if (contextForbidsEval) {
     nsAutoJSString scriptSample;
     if (aKind == JS::RuntimeCode::JS &&
-        NS_WARN_IF(!scriptSample.init(cx, aCode))) {
+        NS_WARN_IF(!scriptSample.init(cx, aCodeString))) {
       return false;
     }
 
     if (!nsContentSecurityUtils::IsEvalAllowed(
             cx, subjectPrincipal->IsSystemPrincipal(), scriptSample)) {
-      return false;
+      *aOutCanCompileStrings = false;
+      return true;
     }
   }
 
@@ -503,6 +527,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     }
     // don't do anything unless there's a CSP
     if (!csp) {
+      *aOutCanCompileStrings = true;
       return true;
     }
   }
@@ -522,7 +547,8 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     nsresult rv = csp->GetAllowsEval(&reportViolation, &evalOK);
     if (NS_FAILED(rv)) {
       NS_WARNING("CSP: failed to get allowsEval");
-      return true;  // fail open to not break sites.
+      *aOutCanCompileStrings = true;  // fail open to not break sites.
+      return true;
     }
   } else {
     if (NS_FAILED(csp->GetAllowsWasmEval(&reportViolation, &evalOK))) {
@@ -545,8 +571,7 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
     auto caller = JSCallingLocation::Get(cx);
     nsAutoJSString scriptSample;
     if (aKind == JS::RuntimeCode::JS &&
-        NS_WARN_IF(!scriptSample.init(cx, aCode))) {
-      JS_ClearPendingException(cx);
+        NS_WARN_IF(!scriptSample.init(cx, aCodeString))) {
       return false;
     }
     uint16_t violationType =
@@ -559,7 +584,8 @@ bool nsScriptSecurityManager::ContentSecurityPolicyPermitsJSAction(
                              caller.mLine, caller.mColumn, u""_ns, u""_ns);
   }
 
-  return evalOK;
+  *aOutCanCompileStrings = evalOK;
+  return true;
 }
 
 // static
@@ -1554,6 +1580,7 @@ void nsScriptSecurityManager::InitJSCallbacks(JSContext* aCx) {
 
   static const JSSecurityCallbacks securityCallbacks = {
       ContentSecurityPolicyPermitsJSAction,
+      TrustedTypeUtils::HostGetCodeForEval,
       JSPrincipalsSubsume,
   };
 

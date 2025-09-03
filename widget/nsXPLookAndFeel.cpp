@@ -22,7 +22,7 @@
 #include "SurfaceCacheUtils.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/ContentChild.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/WidgetMetrics.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Services.h"
 #include "mozilla/ServoStyleSet.h"
@@ -151,6 +151,7 @@ static const char sIntPrefs[][45] = {
     "ui.chosenMenuItemsShouldBlink",
     "ui.windowsAccentColorInTitlebar",
     "ui.windowsMica",
+    "ui.windowsMicaPopups",
     "ui.macBigSurTheme",
     "ui.macRTL",
     "ui.macTitlebarHeight",

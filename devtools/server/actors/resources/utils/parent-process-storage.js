@@ -399,7 +399,23 @@ class StorageActorMock extends EventEmitter {
     const principal =
       hostBrowsingContext.currentWindowGlobal.documentStoragePrincipal;
 
-    return { document: { effectiveStoragePrincipal: principal } };
+    return {
+      document: { effectiveStoragePrincipal: principal },
+    };
+  }
+
+  /**
+   * Get the browsing contexts matching the given host.
+   *
+   * @param {String} host: The host for which we want the browsing contexts
+   * @returns Array<BrowsingContext>
+   */
+  getBrowsingContextsFromHost(host) {
+    return this.watcherActor
+      .getAllBrowsingContexts({ acceptSameProcessIframes: true })
+      .filter(
+        bc => this.getHostName(bc.currentWindowGlobal.documentURI) === host
+      );
   }
 
   get parentActor() {

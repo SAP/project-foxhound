@@ -29,7 +29,7 @@
 #include "nsServiceManagerUtils.h"
 #include "nsTArray.h"
 #include "nsThreadUtils.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/Telemetry.h"
 
 #include "plbase64.h"
@@ -448,10 +448,8 @@ bool gfxWindowsPlatform::HandleDeviceReset() {
   // Remove devices and adapters.
   DeviceManagerDx::Get()->ResetDevices();
 
-  imgLoader::NormalLoader()->ClearCache(true);
-  imgLoader::NormalLoader()->ClearCache(false);
-  imgLoader::PrivateBrowsingLoader()->ClearCache(true);
-  imgLoader::PrivateBrowsingLoader()->ClearCache(false);
+  imgLoader::NormalLoader()->ClearCache(Nothing());
+  imgLoader::PrivateBrowsingLoader()->ClearCache(Nothing());
   gfxAlphaBoxBlur::ShutdownBlurCache();
 
   gfxConfig::Reset(Feature::D3D11_COMPOSITING);
@@ -1112,12 +1110,15 @@ void gfxWindowsPlatform::GetCommonFallbackFonts(
       (b >= 0x20 && b <= 0x2b) || b == 0x2e ||  // BMP symbols/punctuation/etc
       GetGenCategory(aCh) == nsUGenCategory::kSymbol ||
       GetGenCategory(aCh) == nsUGenCategory::kPunctuation) {
+    // Segoe UI handles some punctuation/symbols that are missing from many text
+    // fonts.
+    aFontList.AppendElement("Segoe UI");
     aFontList.AppendElement("Segoe UI Symbol");
     aFontList.AppendElement("Cambria Math");
   }
 
-  // Arial Unicode MS has lots of glyphs for obscure characters; try it as a
-  // last resort.
+  // Arial Unicode MS also has lots of glyphs for obscure characters; try it as
+  // a last resort, if available.
   aFontList.AppendElement("Arial Unicode MS");
 
   // If we didn't begin with the color-emoji fonts, include them here
@@ -1861,8 +1862,10 @@ class D3DVsyncSource final : public VsyncSource {
             }
           }
         }
-      }
-      if (!SUCCEEDED(hr)) {
+      } else {
+        // To mitigate bug 1924932 we only want to use DwmFlush if WaitForVBlank
+        // is disabled, WaitForVBlank is the standard since Vista so we should
+        // probably remove this option entirely.
         hr = DwmFlush();
       }
       if (!SUCCEEDED(hr)) {

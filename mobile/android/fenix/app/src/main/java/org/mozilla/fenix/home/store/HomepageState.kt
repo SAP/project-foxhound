@@ -4,11 +4,18 @@
 
 package org.mozilla.fenix.home.store
 
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.dp
 import mozilla.components.feature.top.sites.TopSite
+import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.components
+import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.shouldShowRecentSyncedTabs
 import org.mozilla.fenix.ext.shouldShowRecentTabs
 import org.mozilla.fenix.home.bookmarks.Bookmark
@@ -19,7 +26,9 @@ import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.home.topsites.TopSiteColors
+import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.wallpapers.WallpaperState
 
 /**
  * State object that describes the homepage.
@@ -27,17 +36,27 @@ import org.mozilla.fenix.utils.Settings
 internal sealed class HomepageState {
 
     /**
+     * Height in [Dp] for the bottom of the scrollable view, based on
+     * what's currently visible on the screen.
+     */
+    abstract val bottomSpacerHeight: Dp
+
+    /**
      * State type corresponding with private browsing mode.
      *
      * @property feltPrivateBrowsingEnabled Whether felt private browsing is enabled.
+     * @property bottomSpacerHeight Height in [Dp] for the bottom of the scrollable view, based on
+     * what's currently visible on the screen.
      */
     internal data class Private(
         val feltPrivateBrowsingEnabled: Boolean,
+        override val bottomSpacerHeight: Dp,
     ) : HomepageState()
 
     /**
      * State corresponding with the homepage in normal browsing mode.
      *
+     * @property nimbusMessage Optional message to display.
      * @property topSites List of [TopSite] to display.
      * @property recentTabs List of [RecentTab] to display.
      * @property syncedTab The [RecentSyncedTab] to display.
@@ -55,8 +74,12 @@ internal sealed class HomepageState {
      * @property cardBackgroundColor Background color for card items.
      * @property buttonBackgroundColor Background [Color] for buttons.
      * @property buttonTextColor Text [Color] for buttons.
+     * @property customizeHomeButtonBackgroundColor Background [Color] for customize home button.
+     * @property bottomSpacerHeight Height in [Dp] for the bottom of the scrollable view, based on
+     * what's currently visible on the screen.
      */
     internal data class Normal(
+        val nimbusMessage: NimbusMessageState?,
         val topSites: List<TopSite>,
         val recentTabs: List<RecentTab>,
         val syncedTab: RecentSyncedTab?,
@@ -74,7 +97,22 @@ internal sealed class HomepageState {
         val cardBackgroundColor: Color,
         val buttonBackgroundColor: Color,
         val buttonTextColor: Color,
-    ) : HomepageState()
+        val customizeHomeButtonBackgroundColor: Color,
+        override val bottomSpacerHeight: Dp,
+    ) : HomepageState() {
+
+        /**
+         * Whether to show customize home button.
+         */
+        val showCustomizeHome: Boolean
+            get() = showTopSites || showRecentTabs || showBookmarks || showRecentlyVisited || showPocketStories
+    }
+
+    val browsingMode: BrowsingMode
+        get() = when (this) {
+            is Normal -> BrowsingMode.Normal
+            is Private -> BrowsingMode.Private
+        }
 
     companion object {
 
@@ -82,20 +120,24 @@ internal sealed class HomepageState {
          * Builds a new [HomepageState] from the current [AppState] and [Settings].
          *
          * @param appState State to build the [HomepageState] from.
+         * @param browsingModeManager Manager holding current state of whether the browser is in private mode or not.
          * @param settings [Settings] corresponding to how the homepage should be displayed.
          */
         @Composable
         internal fun build(
             appState: AppState,
+            browsingModeManager: BrowsingModeManager,
             settings: Settings,
         ): HomepageState {
             return with(appState) {
-                if (mode.isPrivate) {
+                if (browsingModeManager.mode.isPrivate) {
                     Private(
                         feltPrivateBrowsingEnabled = settings.feltPrivateBrowsingEnabled,
+                        bottomSpacerHeight = getBottomSpace(),
                     )
                 } else {
                     Normal(
+                        nimbusMessage = NimbusMessageState.build(appState),
                         topSites = topSites,
                         recentTabs = recentTabs,
                         syncedTab = when (recentSyncedTabState) {
@@ -110,6 +152,7 @@ internal sealed class HomepageState {
                         collectionsState = CollectionsState.build(
                             appState = appState,
                             browserState = components.core.store.state,
+                            browsingModeManager = browsingModeManager,
                         ),
                         pocketState = PocketState.build(appState, settings),
                         showTopSites = settings.showTopSitesFeature && topSites.isNotEmpty(),
@@ -118,14 +161,42 @@ internal sealed class HomepageState {
                         showRecentSyncedTab = shouldShowRecentSyncedTabs(),
                         showRecentlyVisited = settings.historyMetadataUIFeature && recentHistory.isNotEmpty(),
                         showPocketStories = settings.showPocketRecommendationsFeature &&
-                            recommendationState.pocketStories.isNotEmpty(),
+                            recommendationState.pocketStories.isNotEmpty() && firstFrameDrawn,
                         topSiteColors = TopSiteColors.colors(wallpaperState = wallpaperState),
                         cardBackgroundColor = wallpaperState.cardBackgroundColor,
                         buttonBackgroundColor = wallpaperState.buttonBackgroundColor,
                         buttonTextColor = wallpaperState.buttonTextColor,
+                        customizeHomeButtonBackgroundColor = wallpaperState.customizeHomeButtonBackgroundColor(),
+                        bottomSpacerHeight = getBottomSpace(),
                     )
                 }
             }
         }
     }
 }
+
+@Composable
+private fun WallpaperState.customizeHomeButtonBackgroundColor(): Color {
+    var buttonColor: Color = FirefoxTheme.colors.actionTertiary
+
+    composeRunIfWallpaperCardColorsAreAvailable { cardColorLight, cardColorDark ->
+        buttonColor = if (isSystemInDarkTheme()) {
+            cardColorDark
+        } else {
+            cardColorLight
+        }
+    }
+
+    return buttonColor
+}
+
+@Composable
+private fun getBottomSpace(): Dp {
+    val toolbarHeight = LocalContext.current.settings().getBottomToolbarContainerHeight().dp
+    // We need this 88 dp because of this bug: https://github.com/mozilla-mobile/fenix/issues/20833
+    val extraSpace = 88.dp
+
+    return toolbarHeight + extraSpace + HOME_APP_BAR_HEIGHT
+}
+
+private val HOME_APP_BAR_HEIGHT = 48.dp

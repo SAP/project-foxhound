@@ -9,6 +9,8 @@ import { EditProfileCard } from "chrome://browser/content/profiles/edit-profile-
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-support-link.mjs";
 
+const DEFAULT_THEME_ID = "default-theme@mozilla.org";
+
 /**
  * Element used for updating a profile's name, theme, and avatar.
  */
@@ -29,30 +31,48 @@ export class NewProfileCard extends EditProfileCard {
     this.profiles = profiles;
     this.themes = themes;
 
-    this.setInitialInput();
+    await Promise.all([
+      this.setInitialInput(),
+      this.setRandomTheme(isInAutomation),
+    ]);
 
     super.setFavicon();
+  }
 
-    this.initialized = true;
+  async setRandomTheme(isInAutomation) {
+    if (this.profile.themeId !== DEFAULT_THEME_ID) {
+      return;
+    }
+
+    let isDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    let possibleThemes = this.themes.filter(t => t.isDark === isDark);
+    if (isInAutomation) {
+      possibleThemes = possibleThemes.filter(t => t.useInAutomation);
+    }
+    let newTheme =
+      possibleThemes[Math.floor(Math.random() * possibleThemes.length)];
+    await super.updateTheme(newTheme.id);
   }
 
   async setInitialInput() {
+    await super.focusInput();
     if (RPMGetBoolPref("browser.profiles.profile-name.updated", false)) {
       return;
     }
 
-    await this.updateComplete;
+    await this.getUpdateComplete();
 
     this.nameInput.value = "";
   }
 
   onDeleteClick() {
-    RPMSendAsyncMessage("Profiles:DeleteNewProfile");
+    window.removeEventListener("beforeunload", this);
+    RPMSendAsyncMessage("Profiles:DeleteProfile");
   }
 
   headerTemplate() {
     return html`<div>
-      <h1 data-l10n-id="new-profile-page-header"></h1>
+      <h2 data-l10n-id="new-profile-page-header"></h2>
       <p>
         <span data-l10n-id="new-profile-page-header-description"></span>
         <a

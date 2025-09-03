@@ -1,5 +1,5 @@
 // META: title=validation tests for WebNN API element-wise binary operations
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -88,5 +88,6 @@ kElementwiseBinaryOperators.forEach((operatorName) => {
   validateTwoInputsOfSameDataType(operatorName, label);
   validateTwoInputsBroadcastable(operatorName, label);
   validateTwoInputsFromMultipleBuilders(operatorName);
+  validateTwoBroadcastableInputsTensorLimit(operatorName, label);
   runElementWiseBinaryTests(operatorName, tests);
 });

@@ -5,8 +5,14 @@
 package org.mozilla.fenix.onboarding.view
 
 import org.mozilla.fenix.nimbus.AddOnData
+import org.mozilla.fenix.nimbus.CustomizationThemeData
+import org.mozilla.fenix.nimbus.CustomizationToolbarData
+import org.mozilla.fenix.nimbus.MarketingData
 import org.mozilla.fenix.nimbus.OnboardingCardData
 import org.mozilla.fenix.nimbus.OnboardingCardType
+import org.mozilla.fenix.nimbus.TermsOfServiceData
+import org.mozilla.fenix.nimbus.ThemeType
+import org.mozilla.fenix.nimbus.ToolbarType
 import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
 
 /**
@@ -40,7 +46,9 @@ private fun OnboardingCardData.isCardEnabled(
     OnboardingCardType.DEFAULT_BROWSER -> enabled && showDefaultBrowserPage
     OnboardingCardType.NOTIFICATION_PERMISSION -> enabled && showNotificationPage
     OnboardingCardType.ADD_SEARCH_WIDGET -> enabled && showAddWidgetPage
-    OnboardingCardType.ADD_ONS -> extraData.let { it != null && it.addOnsData.isNotEmpty() }
+    OnboardingCardType.ADD_ONS -> extraData?.addOnsData?.isNotEmpty() == true
+    OnboardingCardType.TOOLBAR_PLACEMENT -> enabled && extraData?.customizationToolbarData?.isNotEmpty() == true
+    OnboardingCardType.THEME_SELECTION -> enabled && extraData?.customizationThemeData?.isNotEmpty() == true
     else -> enabled
 }
 
@@ -99,13 +107,15 @@ private fun OnboardingCardData.toPageUiData(privacyCaption: Caption?) = Onboardi
     primaryButtonLabel = primaryButtonLabel,
     secondaryButtonLabel = secondaryButtonLabel.ifEmpty { null },
     privacyCaption = privacyCaption,
-    addOns = extraData?.let {
-        if (it.addOnsData.isEmpty()) {
-            null
-        } else {
-            it.addOnsData.toOnboardingAddOns()
-        }
-    },
+    addOns = extraData?.addOnsData?.takeIf { it.isNotEmpty() }?.toOnboardingAddOns(),
+    toolbarOptions = extraData?.customizationToolbarData
+        ?.takeIf { it.isNotEmpty() }
+        ?.toOnboardingToolbarOptions(),
+    themeOptions = extraData?.customizationThemeData
+        ?.takeIf { it.isNotEmpty() }
+        ?.toOnboardingThemeOptions(),
+    termsOfService = extraData?.termOfServiceData?.toOnboardingTermsOfService(),
+    marketingData = extraData?.marketingData?.toOnboardingMarketingData(),
 )
 
 private fun OnboardingCardType.toPageUiDataType() = when (this) {
@@ -114,9 +124,34 @@ private fun OnboardingCardType.toPageUiDataType() = when (this) {
     OnboardingCardType.NOTIFICATION_PERMISSION -> OnboardingPageUiData.Type.NOTIFICATION_PERMISSION
     OnboardingCardType.ADD_SEARCH_WIDGET -> OnboardingPageUiData.Type.ADD_SEARCH_WIDGET
     OnboardingCardType.ADD_ONS -> OnboardingPageUiData.Type.ADD_ONS
+    OnboardingCardType.TOOLBAR_PLACEMENT -> OnboardingPageUiData.Type.TOOLBAR_PLACEMENT
+    OnboardingCardType.THEME_SELECTION -> OnboardingPageUiData.Type.THEME_SELECTION
+    OnboardingCardType.TERMS_OF_SERVICE -> OnboardingPageUiData.Type.TERMS_OF_SERVICE
+    OnboardingCardType.MARKETING_DATA -> OnboardingPageUiData.Type.MARKETING_DATA
 }
 
 private fun List<AddOnData>.toOnboardingAddOns() = map { it.toOnboardingAddOn() }
+
+private fun List<CustomizationToolbarData>.toOnboardingToolbarOptions() = map { it.toOnboardingCustomizeToolbar() }
+
+private fun TermsOfServiceData.toOnboardingTermsOfService() = with(this) {
+    OnboardingTermsOfService(
+        lineOneText = lineOneText,
+        lineOneLinkText = lineOneLinkText,
+        lineOneLinkUrl = lineOneLinkUrl,
+        lineTwoText = lineTwoText,
+        lineTwoLinkText = lineTwoLinkText,
+        lineTwoLinkUrl = lineTwoLinkUrl,
+        lineThreeText = lineThreeText,
+        lineThreeLinkText = lineThreeLinkText,
+    )
+}
+
+private fun MarketingData.toOnboardingMarketingData() = OnboardingMarketingData(
+    bodyOneText = bodyLineOneText,
+    bodyOneLinkText = bodyLineOneLinkText,
+    bodyTwoText = bodyLineTwoText,
+)
 
 private fun AddOnData.toOnboardingAddOn() = with(this) {
     OnboardingAddOn(
@@ -129,6 +164,35 @@ private fun AddOnData.toOnboardingAddOn() = with(this) {
         installUrl = installUrl,
         status = OnboardingAddonStatus.NOT_INSTALLED,
     )
+}
+
+private fun CustomizationToolbarData.toOnboardingCustomizeToolbar() = with(this) {
+    ToolbarOption(
+        toolbarType = toolbarType.toToolbarOptionType(),
+        imageRes = imageRes.resourceId,
+        label = label,
+    )
+}
+
+private fun ToolbarType.toToolbarOptionType() = when (this) {
+    ToolbarType.TOOLBAR_TOP -> ToolbarOptionType.TOOLBAR_TOP
+    ToolbarType.TOOLBAR_BOTTOM -> ToolbarOptionType.TOOLBAR_BOTTOM
+}
+
+private fun List<CustomizationThemeData>.toOnboardingThemeOptions() = map { it.toOnboardingThemeOption() }
+
+private fun CustomizationThemeData.toOnboardingThemeOption() = with(this) {
+    ThemeOption(
+        label = label,
+        imageRes = imageRes.resourceId,
+        themeType = themeType.toThemeOptionType(),
+    )
+}
+
+private fun ThemeType.toThemeOptionType() = when (this) {
+    ThemeType.THEME_DARK -> ThemeOptionType.THEME_DARK
+    ThemeType.THEME_LIGHT -> ThemeOptionType.THEME_LIGHT
+    ThemeType.THEME_SYSTEM -> ThemeOptionType.THEME_SYSTEM
 }
 
 /**
@@ -147,6 +211,10 @@ internal fun mapToOnboardingPageState(
     onAddFirefoxWidgetClick: () -> Unit,
     onAddFirefoxWidgetSkipClick: () -> Unit,
     onAddOnsButtonClick: () -> Unit,
+    onCustomizeToolbarButtonClick: () -> Unit,
+    onCustomizeThemeClick: () -> Unit,
+    onTermsOfServiceButtonClick: () -> Unit,
+    onMarketingDataContinueClick: () -> Unit = {},
 ): OnboardingPageState = when (onboardingPageUiData.type) {
     OnboardingPageUiData.Type.DEFAULT_BROWSER -> createOnboardingPageState(
         onboardingPageUiData = onboardingPageUiData,
@@ -177,6 +245,30 @@ internal fun mapToOnboardingPageState(
         onPositiveButtonClick = onAddOnsButtonClick,
         onNegativeButtonClick = {}, // No negative button option for add-ons.
     )
+
+    OnboardingPageUiData.Type.TOOLBAR_PLACEMENT -> createOnboardingPageState(
+        onboardingPageUiData = onboardingPageUiData,
+        onPositiveButtonClick = onCustomizeToolbarButtonClick,
+        onNegativeButtonClick = {}, // No negative button option for toolbar placement.
+    )
+
+    OnboardingPageUiData.Type.THEME_SELECTION -> createOnboardingPageState(
+        onboardingPageUiData = onboardingPageUiData,
+        onPositiveButtonClick = onCustomizeThemeClick,
+        onNegativeButtonClick = {}, // No negative button option for theme selection.
+    )
+
+    OnboardingPageUiData.Type.TERMS_OF_SERVICE -> createOnboardingPageState(
+        onboardingPageUiData = onboardingPageUiData,
+        onPositiveButtonClick = onTermsOfServiceButtonClick,
+        onNegativeButtonClick = {}, // No negative button option for terms of service.
+    )
+
+    OnboardingPageUiData.Type.MARKETING_DATA -> createOnboardingPageState(
+        onboardingPageUiData = onboardingPageUiData,
+        onPositiveButtonClick = onMarketingDataContinueClick,
+        onNegativeButtonClick = {}, // No negative button option for marketing data.
+    )
 }
 
 private fun createOnboardingPageState(
@@ -193,4 +285,8 @@ private fun createOnboardingPageState(
     },
     privacyCaption = onboardingPageUiData.privacyCaption,
     addOns = onboardingPageUiData.addOns,
+    themeOptions = onboardingPageUiData.themeOptions,
+    toolbarOptions = onboardingPageUiData.toolbarOptions,
+    termsOfService = onboardingPageUiData.termsOfService,
+    marketingData = onboardingPageUiData.marketingData,
 )

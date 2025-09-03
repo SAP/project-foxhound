@@ -7,12 +7,15 @@
 
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/gfx/MacIOSurface.h"
+#include "mozilla/layers/GpuFenceMTLSharedEvent.h"
 #include "mozilla/layers/ImageDataSerializer.h"
+#include "mozilla/webgpu/WebGPUParent.h"
 
 namespace mozilla::webgpu {
 
 // static
 UniquePtr<ExternalTextureMacIOSurface> ExternalTextureMacIOSurface::Create(
+    WebGPUParent* aParent, const ffi::WGPUDeviceId aDeviceId,
     const uint32_t aWidth, const uint32_t aHeight,
     const struct ffi::WGPUTextureFormat aFormat,
     const ffi::WGPUTextureUsages aUsage) {
@@ -21,21 +24,33 @@ UniquePtr<ExternalTextureMacIOSurface> ExternalTextureMacIOSurface::Create(
     return nullptr;
   }
 
-  RefPtr<MacIOSurface> surface =
-      MacIOSurface::CreateIOSurface(aWidth, aHeight, true);
-  if (!surface) {
+  if (aWidth > MacIOSurface::GetMaxWidth() ||
+      aHeight > MacIOSurface::GetMaxHeight()) {
+    gfxCriticalNoteOnce << "Requested MacIOSurface is too large: (" << aWidth
+                        << ", " << aHeight << ")";
     return nullptr;
   }
 
-  return MakeUnique<ExternalTextureMacIOSurface>(aWidth, aHeight, aFormat,
-                                                 aUsage, std::move(surface));
+  RefPtr<MacIOSurface> surface =
+      MacIOSurface::CreateIOSurface(aWidth, aHeight, true);
+  if (!surface) {
+    gfxCriticalNoteOnce << "Failed to create MacIOSurface: (" << aWidth << ", "
+                        << aHeight << ")";
+    return nullptr;
+  }
+
+  return MakeUnique<ExternalTextureMacIOSurface>(
+      aParent, aDeviceId, aWidth, aHeight, aFormat, aUsage, std::move(surface));
 }
 
 ExternalTextureMacIOSurface::ExternalTextureMacIOSurface(
+    WebGPUParent* aParent, const ffi::WGPUDeviceId aDeviceId,
     const uint32_t aWidth, const uint32_t aHeight,
     const struct ffi::WGPUTextureFormat aFormat,
     const ffi::WGPUTextureUsages aUsage, RefPtr<MacIOSurface>&& aSurface)
     : ExternalTexture(aWidth, aHeight, aFormat, aUsage),
+      mParent(aParent),
+      mDeviceId(aDeviceId),
       mSurface(std::move(aSurface)) {}
 
 ExternalTextureMacIOSurface::~ExternalTextureMacIOSurface() {}
@@ -51,9 +66,22 @@ uint32_t ExternalTextureMacIOSurface::GetIOSurfaceId() {
 Maybe<layers::SurfaceDescriptor>
 ExternalTextureMacIOSurface::ToSurfaceDescriptor(
     Maybe<gfx::FenceInfo>& aFenceInfo) {
+  MOZ_ASSERT(mSubmissionIndex > 0);
+
+  RefPtr<layers::GpuFence> gpuFence;
+  UniquePtr<ffi::WGPUMetalSharedEventHandle> eventHandle(
+      wgpu_server_get_device_fence_metal_shared_event(mParent->GetContext(),
+                                                      mDeviceId));
+  if (eventHandle) {
+    gpuFence = layers::GpuFenceMTLSharedEvent::Create(std::move(eventHandle),
+                                                      mSubmissionIndex);
+  } else {
+    gfxCriticalNoteOnce << "Failed to get MetalSharedEventHandle";
+  }
+
   return Some(layers::SurfaceDescriptorMacIOSurface(
       mSurface->GetIOSurfaceID(), !mSurface->HasAlpha(),
-      mSurface->GetYUVColorSpace()));
+      mSurface->GetYUVColorSpace(), std::move(gpuFence)));
 }
 
 void ExternalTextureMacIOSurface::GetSnapshot(const ipc::Shmem& aDestShmem,
@@ -76,6 +104,8 @@ void ExternalTextureMacIOSurface::GetSnapshot(const ipc::Shmem& aDestShmem,
     src += bytesPerRow;
     dst += stride;
   }
+
+  mSurface->Unlock();
 }
 
 }  // namespace mozilla::webgpu

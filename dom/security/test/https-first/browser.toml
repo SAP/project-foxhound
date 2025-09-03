@@ -23,6 +23,13 @@ support-files = [
 
 ["browser_http_scheme_no_upgrade.js"]
 
+["browser_https_rr_no_downgrade.js"]
+support-files = ["file_https_rr_no_downgrade.sjs"]
+skip-if = [
+  "os == 'mac' && os_version == '10.15'",
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1950553
+]
+
 ["browser_https_telemetry.js"]
 support-files = [
   "file_https_telemetry_hsts.sjs",
@@ -64,8 +71,16 @@ support-files = [
 ["browser_navigation.js"]
 support-files = ["file_navigation.html"]
 
+["browser_redirect_exemption_clearing.js"]
+support-files = ["file_redirect_exemption_clearing.sjs"]
+
 ["browser_schemeless.js"]
 skip-if = ["!debug && tsan"] #Bug 1890170
+
+["browser_schemeless_redirect.js"]
+support-files = [
+  "file_schemeless_redirect.sjs"
+]
 
 ["browser_slow_download.js"]
 support-files = [

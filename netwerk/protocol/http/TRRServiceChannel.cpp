@@ -9,7 +9,8 @@
 
 #include "HttpLog.h"
 #include "AltServiceChild.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/Unused.h"
@@ -426,14 +427,18 @@ nsresult TRRServiceChannel::BeginConnect() {
          this));
     mapping->GetConnectionInfo(getter_AddRefs(mConnectionInfo), proxyInfo,
                                OriginAttributes());
-    Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_USE_ALTSVC, true);
+    glean::http::transaction_use_altsvc
+        .EnumGet(glean::http::TransactionUseAltsvcLabel::eTrue)
+        .Add();
   } else if (mConnectionInfo) {
     LOG(("TRRServiceChannel %p Using channel supplied connection info", this));
   } else {
     LOG(("TRRServiceChannel %p Using default connection info", this));
 
     mConnectionInfo = connInfo;
-    Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_USE_ALTSVC, false);
+    glean::http::transaction_use_altsvc
+        .EnumGet(glean::http::TransactionUseAltsvcLabel::eFalse)
+        .Add();
   }
 
   // Need to re-ask the handler, since mConnectionInfo may not be the connInfo
@@ -913,7 +918,8 @@ void TRRServiceChannel::AfterApplyContentConversions(
   }
 }
 
-void TRRServiceChannel::ProcessAltService() {
+void TRRServiceChannel::ProcessAltService(
+    nsHttpConnectionInfo* aTransConnInfo) {
   // e.g. Alt-Svc: h2=":443"; ma=60
   // e.g. Alt-Svc: h2="otherhost:443"
   // Alt-Svc       = 1#( alternative *( OWS ";" OWS parameter ) )
@@ -962,21 +968,23 @@ void TRRServiceChannel::ProcessAltService() {
     proxyInfo = do_QueryInterface(mProxyInfo);
   }
 
+  RefPtr<nsHttpConnectionInfo> connectionInfo = aTransConnInfo;
   auto processHeaderTask = [altSvc, scheme, originHost, originPort,
                             userName(mUsername),
                             privateBrowsing(mPrivateBrowsing), callbacks,
-                            proxyInfo, caps(mCaps)]() {
+                            proxyInfo, caps(mCaps), connectionInfo]() {
     if (XRE_IsSocketProcess()) {
       AltServiceChild::ProcessHeader(altSvc, scheme, originHost, originPort,
                                      userName, privateBrowsing, callbacks,
                                      proxyInfo, caps & NS_HTTP_DISALLOW_SPDY,
-                                     OriginAttributes());
+                                     OriginAttributes(), connectionInfo);
       return;
     }
 
-    AltSvcMapping::ProcessHeader(
-        altSvc, scheme, originHost, originPort, userName, privateBrowsing,
-        callbacks, proxyInfo, caps & NS_HTTP_DISALLOW_SPDY, OriginAttributes());
+    AltSvcMapping::ProcessHeader(altSvc, scheme, originHost, originPort,
+                                 userName, privateBrowsing, callbacks,
+                                 proxyInfo, caps & NS_HTTP_DISALLOW_SPDY,
+                                 OriginAttributes(), connectionInfo);
   };
 
   if (NS_IsMainThread()) {
@@ -1032,7 +1040,9 @@ TRRServiceChannel::OnStartRequest(nsIRequest* request) {
       }
 
       if ((httpStatus < 500) && (httpStatus != 421) && (httpStatus != 407)) {
-        ProcessAltService();
+        RefPtr<nsHttpConnectionInfo> connectionInfo =
+            mTransaction->GetConnInfo();
+        ProcessAltService(connectionInfo);
       }
 
       if (httpStatus == 300 || httpStatus == 301 || httpStatus == 302 ||
@@ -1206,6 +1216,94 @@ TRRServiceChannel::OnDataAvailable(nsIRequest* request, nsIInputStream* input,
   return NS_ERROR_ABORT;
 }
 
+static void TelemetryReport(nsITimedChannel* aTimedChannel) {
+  TimeStamp asyncOpen;
+  nsresult rv = aTimedChannel->GetAsyncOpen(&asyncOpen);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp domainLookupStart;
+  rv = aTimedChannel->GetDomainLookupStart(&domainLookupStart);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp domainLookupEnd;
+  rv = aTimedChannel->GetDomainLookupEnd(&domainLookupEnd);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp connectStart;
+  rv = aTimedChannel->GetConnectStart(&connectStart);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp secureConnectionStart;
+  rv = aTimedChannel->GetSecureConnectionStart(&secureConnectionStart);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp connectEnd;
+  rv = aTimedChannel->GetConnectEnd(&connectEnd);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp requestStart;
+  rv = aTimedChannel->GetRequestStart(&requestStart);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp responseStart;
+  rv = aTimedChannel->GetResponseStart(&responseStart);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  TimeStamp responseEnd;
+  rv = aTimedChannel->GetResponseEnd(&responseEnd);
+  if (NS_FAILED(rv)) {
+    return;
+  }
+
+  const nsCString& key = TRRService::ProviderKey();
+  if (!domainLookupStart.IsNull()) {
+    mozilla::glean::networking::trr_dns_start.Get(key).AccumulateRawDuration(
+        domainLookupStart - asyncOpen);
+    if (!domainLookupEnd.IsNull()) {
+      mozilla::glean::networking::trr_dns_end.Get(key).AccumulateRawDuration(
+          domainLookupEnd - domainLookupStart);
+    }
+  }
+  if (!connectEnd.IsNull()) {
+    if (!connectStart.IsNull()) {
+      mozilla::glean::networking::trr_tcp_connection.Get(key)
+          .AccumulateRawDuration(connectEnd - connectStart);
+    }
+    if (!secureConnectionStart.IsNull()) {
+      mozilla::glean::networking::trr_tls_handshake.Get(key)
+          .AccumulateRawDuration(connectEnd - secureConnectionStart);
+    }
+  }
+  if (!requestStart.IsNull() && !responseEnd.IsNull()) {
+    mozilla::glean::networking::trr_open_to_first_sent.Get(key)
+        .AccumulateRawDuration(requestStart - asyncOpen);
+    mozilla::glean::networking::trr_first_sent_to_last_received.Get(key)
+        .AccumulateRawDuration(responseEnd - requestStart);
+    mozilla::glean::networking::trr_complete_load.Get(key)
+        .AccumulateRawDuration(responseEnd - asyncOpen);
+    if (!responseStart.IsNull()) {
+      mozilla::glean::networking::trr_open_to_first_received.Get(key)
+          .AccumulateRawDuration(responseStart - asyncOpen);
+    }
+  }
+}
+
 NS_IMETHODIMP
 TRRServiceChannel::OnStopRequest(nsIRequest* request, nsresult status) {
   LOG(("TRRServiceChannel::OnStopRequest [this=%p request=%p status=%" PRIx32
@@ -1236,6 +1334,7 @@ TRRServiceChannel::OnStopRequest(nsIRequest* request, nsresult status) {
   }
 
   ReleaseListeners();
+  TelemetryReport(this);
   return NS_OK;
 }
 

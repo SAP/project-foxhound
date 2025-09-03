@@ -53,22 +53,8 @@ function snapshotHistograms() {
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
   return {
-    resultMethodHist: TelemetryTestUtils.getAndClearHistogram(
-      "FX_URLBAR_SELECTED_RESULT_METHOD"
-    ),
     search_hist: TelemetryTestUtils.getAndClearKeyedHistogram("SEARCH_COUNTS"),
   };
-}
-
-function assertTelemetryResults(histograms, type, index, method) {
-  TelemetryTestUtils.assertHistogram(histograms.resultMethodHist, method, 1);
-
-  TelemetryTestUtils.assertKeyedScalar(
-    TelemetryTestUtils.getProcessScalars("parent", true, true),
-    `urlbar.picked.${type}`,
-    index,
-    1
-  );
 }
 
 add_setup(async function () {
@@ -169,12 +155,6 @@ add_task(async function test_remotetab() {
   await p;
 
   assertSearchTelemetryEmpty(histograms.search_hist);
-  assertTelemetryResults(
-    histograms,
-    "remotetab",
-    1,
-    UrlbarTestUtils.SELECTED_RESULT_METHODS.arrowEnterSelection
-  );
 
   BrowserTestUtils.removeTab(tab);
 });

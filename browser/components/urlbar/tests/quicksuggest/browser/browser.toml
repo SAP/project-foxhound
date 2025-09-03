@@ -19,6 +19,8 @@ prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 
 ["browser_quicksuggest_configuration.js"]
 
+["browser_quicksuggest_contextual_optin.js"]
+
 ["browser_quicksuggest_fakespot.js"]
 
 ["browser_quicksuggest_indexes.js"]
@@ -27,27 +29,21 @@ prefs = ["browser.bookmarks.testing.skipDefaultBookmarksImport=true"]
 
 ["browser_quicksuggest_merinoSessions.js"]
 
-["browser_quicksuggest_onboardingDialog.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks && swgl"] # Bug 1773830
+["browser_quicksuggest_ping_amp.js"]
+tags = "search-telemetry"
+
+["browser_quicksuggest_ping_deletionRequest.js"]
+tags = "search-telemetry"
+
+["browser_quicksuggest_ping_merinoAndNullValues.js"]
+tags = "search-telemetry"
 
 ["browser_quicksuggest_pocket.js"]
 tags = "search-telemetry"
 
 ["browser_quicksuggest_yelp.js"]
 
-["browser_telemetry_gleanEmptyStrings.js"]
-tags = "search-telemetry"
-
-["browser_telemetry_ingestTime.js"]
-tags = "search-telemetry"
-
-["browser_telemetry_nonsponsored.js"]
-tags = "search-telemetry"
-
-["browser_telemetry_other.js"]
-tags = "search-telemetry"
-
-["browser_telemetry_sponsored.js"]
+["browser_telemetry_environment.js"]
 tags = "search-telemetry"
 
 ["browser_telemetry_suggestMetrics.js"]

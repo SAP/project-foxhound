@@ -26,25 +26,15 @@
 }
 
 @media (-moz-windows-accent-color-in-titlebar) or (-moz-windows-mica) {
-  :root[tabsintitlebar] {
+  :root[customtitlebar] {
     @media (-moz-windows-mica) {
       &:not([lwtheme]) {
         background-color: transparent;
-
-        /* Accent color in titlebar overrides Mica. */
-        @media not (-moz-windows-accent-color-in-titlebar) {
-          /* Hide the Firefox buttons since Windows draws their own.
-           * FIXME(emilio): Find a way of hiding the native buttons, or make them
-           * taller, this is very hacky. */
-          .titlebar-buttonbox {
-            opacity: 0;
-          }
-        }
       }
     }
 
     /* stylelint-disable-next-line media-query-no-invalid */
-    @media (-moz-windows-mica) or (-moz-bool-pref: "browser.theme.windows.accent-color-in-tabs.enabled") {
+    @media (-moz-windows-mica) or -moz-pref("browser.theme.windows.accent-color-in-tabs.enabled") {
       &:not([lwtheme]) #TabsToolbar {
         /* These colors match the Linux/HCM default button colors. We need to
          * override these on the tabs toolbar because the accent color is
@@ -296,7 +286,7 @@
 }
 
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "browser.urlbar.experimental.expandTextOnFocus") {
+@media -moz-pref("browser.urlbar.experimental.expandTextOnFocus") {
   #urlbar[breakout-extend] {
     font-size: 1.25em;
   }

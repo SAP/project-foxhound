@@ -17,7 +17,7 @@ The tool is built to be conservative about the number of tests to run, so if you
     optional arguments:
       -h, --help            show this help message and exit
     perf arguments:
-      --show-all            Show all available tasks.
+      --show-all            Show all available tasks. Alternatively, --full may be used.
       --android             Show android test categories (disabled by default).
       --chrome              Show tests available for Chrome-based browsers (disabled by
                             default).
@@ -34,7 +34,7 @@ The tool is built to be conservative about the number of tests to run, so if you
       --single-run          Run tasks without a comparison
       -q QUERY, --query QUERY
                             Query to run in either the perf-category selector, or the fuzzy
-                            selector if --show-all is provided.
+                            selector if --show-all/--full is provided.
       --browsertime-upload-apk BROWSERTIME_UPLOAD_APK
                             Path to an APK to upload. Note that this will replace the APK
                             installed in all Android Performance tests. If the Activity,
@@ -49,7 +49,7 @@ The tool is built to be conservative about the number of tests to run, so if you
       --mozperftest-upload-apk MOZPERFTEST_UPLOAD_APK
                             See --browsertime-upload-apk. This option does the same thing
                             except it's for mozperftest tests such as the startup ones. Note
-                            that those tests only exist through --show-all as they aren't
+                            that those tests only exist through --show-all/--full as they aren't
                             contained in any existing categories.
       --detect-changes      Adds a task that detects performance changes using MWU.
       --comparator COMPARATOR
@@ -111,7 +111,7 @@ The tool is built to be conservative about the number of tests to run, so if you
 Workflow
 --------
 
-Below, you'll find an overview of the features available in ``./mach try perf``. If you'd like to learn more about how to use this tool to enhance your developement process, see the :ref:`Standard Workflow with Mach Try Perf` page.
+Below, you'll find an overview of the features available in ``./mach try perf``. If you'd like to learn more about how to use this tool to enhance your development process, see the :ref:`Standard Workflow with Mach Try Perf` page.
 
 Standard Usage
 --------------
@@ -170,7 +170,7 @@ Ideally, you should be able to use compare view to be more specific in the retri
 Add extra-arguments/options to try run
 --------------------------------------
 
-To add additional arguments to a try tun, there are several approaches you can consider:
+To add additional arguments to a try run, there are several approaches you can consider:
 
 
 Use Treeherder
@@ -210,7 +210,7 @@ An alternative method is to utilize the ``--extra-args`` argument to try perf co
 Running Alert Tests
 -------------------
 
-To run all the tests that triggered a given alert, use ``./mach try perf --alert <ALERT-NUMBER>``. Using this command will run all the tests that generated the alert summary ID provided in the regression bug. **It's recommended to use this when working with performance alerts.** The alert number can be found in comment 0 on any alert bug `such as this one <https://bugzilla.mozilla.org/show_bug.cgi?id=1844510>`_. As seen in the image below, the alert number can be found just above the summary table. The comparison that is produced will be based on the base revision in your local repository (i.e. the base revision your patches, if any, are based on).
+To run all the tests that triggered a given alert, use ``./mach try perf --alert <ALERT-NUMBER>``. Using this command will run all the tests that generated the alert summary ID provided in the regression bug. **It's recommended to use this when working with performance alerts.** The alert number can be found in comment 0 on any alert bug, `such as this one <https://bugzilla.mozilla.org/show_bug.cgi?id=1844510>`_. As seen in the image below, the alert number can be found just above the summary table. The comparison that is produced will be based on the base revision in your local repository (i.e. the base revision your patches, if any, are based on).
 
 .. image:: ./comment-zero-alert-number.png
    :alt: Comment 0 containing an alert number just above the table.
@@ -221,9 +221,9 @@ To run all the tests that triggered a given alert, use ``./mach try perf --alert
 Running Tasks of a Specific Test
 --------------------------------
 
-Using the ``--tests`` option, you can run all tasks that run a specific test. This is based on the test name that is used in the command that runs in the task. For raptor, this is the test specified by ``--test``. For talos, it can either be a specific test in a suite like ``tp5n`` from ``xperf``, or the suite ``xperf`` can be specified. For AWSY though, there are no specific tests that can be selected so the only option to select awsy tests is to specify ``awsy`` as the test.
+Using the ``--tests`` option, you can run all tasks that run a specific test. This is based on the test name that is used in the command that runs in the task. For raptor, this is the test specified by ``--test``. For talos, it can either be a specific test in a suite like ``tp5n`` from ``xperf``, or the suite ``xperf`` can be specified. For AWSY though, there are no specific tests that can be selected so the only option to select AWSY tests is to specify ``AWSY`` as the test.
 
-If it's used with ``--alert <NUM>``, only the tasks that run the specific test will be run on try. If it's used with ``--show-all``, you will only see the tasks that run the specific test in the fuzzy interface. Finally, if it's used without either of those, then categories of the tests that were specified will be displayed in the fuzzy interface. For example, if ``--tests amazon`` is used, then categories like ``amazon linux firefox`` or ``amazon desktop`` will be displayed.
+If it's used with ``--alert <NUM>``, only the tasks that run the specific test will be run on try. If it's used with ``--show-all`` or ``--full``, you will only see the tasks that run the specific test in the fuzzy interface. Finally, if it's used without either of those, then categories of the tests that were specified will be displayed in the fuzzy interface. For example, if ``--tests amazon`` is used, then categories like ``amazon linux firefox`` or ``amazon desktop`` will be displayed.
 
 Chrome and Android
 ------------------
@@ -439,9 +439,9 @@ If you have any questions which aren't already answered below please reach out t
 
      * **Help! I can't find a test in any of the categories. What should I do?**
 
-       Use the option ``--show-all``. This will let you select tests from the ``./mach try fuzzy --full`` interface directly instead of the categories. You will always be able to find your tests this way. Please be careful with your task selections though as it's easy to run far too many tests in this way!
+       Use the option ``--show-all`` or ``--full``. This will let you select tests from the ``./mach try fuzzy --full`` interface directly instead of the categories. You will always be able to find your tests this way. Please be careful with your task selections though as it's easy to run far too many tests in this way!
 
 Future Work
 -----------
 
-The future work for this tool can be `found in this bug <https://bugzilla.mozilla.org/show_bug.cgi?id=1799178>`_. Feel free to file improvments, and bugs against it.
+The future work for this tool can be `found in this bug <https://bugzilla.mozilla.org/show_bug.cgi?id=1799178>`_. Feel free to file improvements, and bugs against it.

@@ -29,10 +29,10 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/StaticPtr.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomMediaMetrics.h"
 #include "mozilla/Unused.h"
 #include "mozilla/dom/DOMTypes.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentUtils.h"
 #include "nsError.h"
@@ -798,7 +798,7 @@ void MediaDecoder::SetStatusUpdateForNewlyCreatedStateMachineIfNeeded() {
   LOG("Set pending statuses if necessary (mLogicallySeeking=%d, "
       "mLogicalPosition=%f, mPlaybackRate=%f)",
       mLogicallySeeking.Ref(), mLogicalPosition, mPlaybackRate);
-  if (mLogicalPosition != 0) {
+  if (mLogicallySeeking) {
     Seek(mLogicalPosition, SeekTarget::Accurate);
   }
   if (mPlaybackRate != 0 && mPlaybackRate != 1.0) {
@@ -832,7 +832,7 @@ void MediaDecoder::EnsureTelemetryReported() {
   }
   for (const nsCString& codec : codecs) {
     LOG("Telemetry MEDIA_CODEC_USED= '%s'", codec.get());
-    Telemetry::Accumulate(Telemetry::HistogramID::MEDIA_CODEC_USED, codec);
+    glean::media::codec_used.Get(codec).Add(1);
   }
 
   mTelemetryReported = true;
@@ -897,10 +897,11 @@ void MediaDecoder::FirstFrameLoaded(
           if (result->mReader.mVideoHardwareAccelerated) {
             flags += FirstFrameLoadedFlag::IsHardwareDecoding;
           }
-          mTelemetryProbesReporter->OntFirstFrameLoaded(
+          mTelemetryProbesReporter->OnFirstFrameLoaded(
               firstFrameLoadedTime, result->mReader.mTotalReadMetadataTimeMs,
               result->mReader.mTotalWaitingForVideoDataTimeMs,
-              result->mStateMachine.mTotalBufferingTimeMs, flags, *mInfo);
+              result->mStateMachine.mTotalBufferingTimeMs, flags, *mInfo,
+              NS_ConvertUTF16toUTF8(result->mReader.mVideoDecoderName));
         });
     mMDSMCreationTime.reset();
   }

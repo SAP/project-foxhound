@@ -4,6 +4,8 @@
 ChromeUtils.defineESModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  EnterprisePolicyTesting:
+    "resource://testing-common/EnterprisePolicyTesting.sys.mjs",
   ExtensionTestUtils:
     "resource://testing-common/ExtensionXPCShellUtils.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
@@ -12,6 +14,7 @@ ChromeUtils.defineESModuleGetters(this, {
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   RemoteSettingsClient:
     "resource://services-settings/RemoteSettingsClient.sys.mjs",
+  SearchEngineClassification: "resource://gre/modules/RustSearch.sys.mjs",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchService: "resource://gre/modules/SearchService.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
@@ -472,6 +475,41 @@ async function assertGleanDefaultEngine(expected) {
 }
 
 /**
+ * Loads a new enterprise policy, and re-initialise the search service
+ * with the new policy. Also waits for the search service to write the settings
+ * file to disk.
+ *
+ * @param {object} policy
+ *   The enterprise policy to use.
+ */
+async function setupPolicyEngineWithJson(policy) {
+  Services.search.wrappedJSObject.reset();
+
+  await this.EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
+
+  let settingsWritten = SearchTestUtils.promiseSearchNotification(
+    "write-settings-to-disk-complete"
+  );
+  await Services.search.init();
+  await settingsWritten;
+}
+
+/**
+ * Makes Services.policies.isEnterprise return true by loading an enterprise
+ * policy and re-initialise the search service with the new policy. Also waits
+ * for the search service to write the settings file to disk.
+ */
+async function enableEnterprise() {
+  await setupPolicyEngineWithJson({
+    // Use any policy.
+    policies: {
+      BlockAboutSupport: true,
+    },
+  });
+  Assert.ok(Services.policies.isEnterprise, "isEnterprise");
+}
+
+/**
  * A simple observer to ensure we get only the expected notifications.
  */
 class SearchObserver {
@@ -582,3 +620,82 @@ registerCleanupFunction(async () => {
     }
   }
 });
+
+/**
+ * This function asserts if the actual engines returned equals the expected
+ * engines.
+ *
+ * @param {SearchEngineSelector} engineSelector
+ *   The search engine selector to use for the test.
+ * @param {object} config
+ *   A fake search config containing engines.
+ * @param {object} userEnv
+ *   A fake user's environment including locale and region, experiment, etc.
+ * @param {Array} expectedEngines
+ *   The array of expected engines to be returned from the fake config.
+ * @param {string} message
+ *   The assertion message.
+ */
+async function assertSelectorEnginesEqualsExpected(
+  engineSelector,
+  config,
+  userEnv,
+  expectedEngines,
+  message
+) {
+  engineSelector._configuration = null;
+  SearchTestUtils.setRemoteSettingsConfig(config);
+
+  if (expectedEngines.length) {
+    let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);
+
+    if (SearchUtils.rustSelectorFeatureGate) {
+      // Add default parameters to match the selector output.
+      for (let i = 0; i < expectedEngines.length; i++) {
+        expectedEngines[i] = {
+          aliases: [],
+          charset: "UTF-8",
+          optional: false,
+          partnerCode: "",
+          telemetrySuffix: "",
+          orderHint: null,
+          ...expectedEngines[i],
+        };
+        expectedEngines[i].classification =
+          expectedEngines[i].classification == "general"
+            ? SearchEngineClassification.GENERAL
+            : SearchEngineClassification.UNKNOWN;
+
+        expectedEngines[i].urls = {
+          suggestions: null,
+          trending: null,
+          searchForm: null,
+          ...expectedEngines[i].urls,
+        };
+        expectedEngines[i].urls.search = {
+          method: "GET",
+          ...expectedEngines[i].urls.search,
+        };
+        if (!expectedEngines[i].urls.search.params) {
+          expectedEngines[i].urls.search.params = [];
+        }
+        for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
+          expectedEngines[i].urls.search.params[j] = {
+            enterpriseValue: null,
+            experimentConfig: null,
+            value: null,
+            ...expectedEngines[i].urls.search.params[j],
+          };
+        }
+      }
+    }
+
+    Assert.deepEqual(engines, expectedEngines, message);
+  } else {
+    await Assert.rejects(
+      engineSelector.fetchEngineConfiguration(userEnv),
+      /Could not find any engines in the filtered configuration/,
+      message
+    );
+  }
+}

@@ -56,7 +56,10 @@ static PAYLOAD_ACCESS_COUNT: AtomicUsize = AtomicUsize::new(0);
 // 1) Not be greedy
 // 2) Allow time for the dispatch to main thread which will actually perform the flush
 // "Why the -1?" Because fetch_add returns the value before the addition.
-const PAYLOAD_ACCESS_WATERMARK: usize = 100000 - 1;
+// bug 1936851 - Perhaps due to longer and more event extras, or object and text metrics,
+//               we're hitting the size limit before hitting the watermark.
+//               Change the watermark from 100k - 1 to 90k - 1.
+const PAYLOAD_ACCESS_WATERMARK: usize = 90000 - 1;
 
 pub fn with_ipc_payload<F, R>(f: F) -> R
 where
@@ -232,7 +235,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
     // TODO: Instrument failures to find metrics by id.
     let ipc_payload: IPCPayload = bincode::deserialize(buf).map_err(|_| ())?;
     for (id, value) in ipc_payload.booleans.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::BOOLEAN_MAP
                 .read()
                 .expect("Read lock for dynamic boolean map was poisoned");
@@ -244,7 +247,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, labeled_bools) in ipc_payload.labeled_booleans.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::LABELED_BOOLEAN_MAP
                 .read()
                 .expect("Read lock for dynamic labeled boolean map was poisoned");
@@ -255,12 +258,12 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
             }
         } else {
             for (label, value) in labeled_bools.into_iter() {
-                __glean_metric_maps::labeled_boolean_get(id.0, &label).set(value);
+                __glean_metric_maps::labeled_boolean_get(*id, &label).set(value);
             }
         }
     }
     for (id, value) in ipc_payload.counters.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::COUNTER_MAP
                 .read()
                 .expect("Read lock for dynamic counter map was poisoned");
@@ -272,7 +275,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, samples) in ipc_payload.custom_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::CUSTOM_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic custom distribution map was poisoned");
@@ -284,7 +287,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, labeled_custom_samples) in ipc_payload.labeled_custom_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::LABELED_CUSTOM_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic labeled custom distribution map was poisoned");
@@ -295,13 +298,13 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
             }
         } else {
             for (label, samples) in labeled_custom_samples.into_iter() {
-                __glean_metric_maps::labeled_custom_distribution_get(id.0, &label)
+                __glean_metric_maps::labeled_custom_distribution_get(*id, &label)
                     .accumulate_samples_signed(samples);
             }
         }
     }
     for (id, value) in ipc_payload.denominators.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::DENOMINATOR_MAP
                 .read()
                 .expect("Read lock for dynamic denominator map was poisoned");
@@ -313,7 +316,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, records) in ipc_payload.events.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::EVENT_MAP
                 .read()
                 .expect("Read lock for dynamic event map was poisoned");
@@ -329,7 +332,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, labeled_counts) in ipc_payload.labeled_counters.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::LABELED_COUNTER_MAP
                 .read()
                 .expect("Read lock for dynamic labeled counter map was poisoned");
@@ -340,12 +343,12 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
             }
         } else {
             for (label, count) in labeled_counts.into_iter() {
-                __glean_metric_maps::labeled_counter_get(id.0, &label).add(count);
+                __glean_metric_maps::labeled_counter_get(*id, &label).add(count);
             }
         }
     }
     for (id, samples) in ipc_payload.memory_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::MEMORY_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic memory dist map was poisoned");
@@ -359,7 +362,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, labeled_memory_samples) in ipc_payload.labeled_memory_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::LABELED_MEMORY_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic labeled memory distribution map was poisoned");
@@ -370,13 +373,13 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
             }
         } else {
             for (label, samples) in labeled_memory_samples.into_iter() {
-                __glean_metric_maps::labeled_memory_distribution_get(id.0, &label)
+                __glean_metric_maps::labeled_memory_distribution_get(*id, &label)
                     .accumulate_samples(samples);
             }
         }
     }
     for (id, value) in ipc_payload.numerators.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::NUMERATOR_MAP
                 .read()
                 .expect("Read lock for dynamic numerator map was poisoned");
@@ -388,7 +391,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, (n, d)) in ipc_payload.rates.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::RATE_MAP
                 .read()
                 .expect("Read lock for dynamic rate map was poisoned");
@@ -402,7 +405,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, strings) in ipc_payload.string_lists.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::STRING_LIST_MAP
                 .read()
                 .expect("Read lock for dynamic string list map was poisoned");
@@ -414,7 +417,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, samples) in ipc_payload.timing_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::TIMING_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic timing distribution map was poisoned");
@@ -426,7 +429,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
         }
     }
     for (id, labeled_timing_samples) in ipc_payload.labeled_timing_samples.into_iter() {
-        if id.0 & (1 << crate::factory::DYNAMIC_METRIC_BIT) > 0 {
+        if id.is_dynamic() {
             let map = crate::factory::__jog_metric_maps::LABELED_TIMING_DISTRIBUTION_MAP
                 .read()
                 .expect("Read lock for dynamic labeled timing distribution map was poisoned");
@@ -437,7 +440,7 @@ pub fn replay_from_buf(buf: &[u8]) -> Result<(), ()> {
             }
         } else {
             for (label, samples) in labeled_timing_samples.into_iter() {
-                __glean_metric_maps::labeled_timing_distribution_get(id.0, &label)
+                __glean_metric_maps::labeled_timing_distribution_get(*id, &label)
                     .accumulate_raw_samples_nanos(samples);
             }
         }

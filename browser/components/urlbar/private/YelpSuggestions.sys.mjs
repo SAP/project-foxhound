@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { BaseFeature } from "resource:///modules/urlbar/private/BaseFeature.sys.mjs";
+import { SuggestProvider } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
@@ -28,21 +28,17 @@ const RESULT_MENU_COMMAND = {
 /**
  * A feature for Yelp suggestions.
  */
-export class YelpSuggestions extends BaseFeature {
-  get shouldEnable() {
-    return (
-      lazy.UrlbarPrefs.get("suggest.quicksuggest.sponsored") &&
-      lazy.UrlbarPrefs.get("yelpFeatureGate") &&
-      lazy.UrlbarPrefs.get("suggest.yelp")
-    );
-  }
-
+export class YelpSuggestions extends SuggestProvider {
   get enablingPreferences() {
-    return ["suggest.quicksuggest.sponsored", "suggest.yelp"];
+    return [
+      "yelpFeatureGate",
+      "suggest.yelp",
+      "suggest.quicksuggest.sponsored",
+    ];
   }
 
-  get rustSuggestionTypes() {
-    return ["Yelp"];
+  get rustSuggestionType() {
+    return "Yelp";
   }
 
   get mlIntent() {
@@ -64,7 +60,7 @@ export class YelpSuggestions extends BaseFeature {
   get canShowLessFrequently() {
     const cap =
       lazy.UrlbarPrefs.get("yelpShowLessFrequentlyCap") ||
-      lazy.QuickSuggest.backend.config?.showLessFrequentlyCap ||
+      lazy.QuickSuggest.config.showLessFrequentlyCap ||
       0;
     return !cap || this.showLessFrequentlyCount < cap;
   }
@@ -177,9 +173,9 @@ export class YelpSuggestions extends BaseFeature {
     let resultProperties = {
       isRichSuggestion: true,
       showFeedbackMenu: true,
+      isBestMatch: lazy.UrlbarPrefs.get("yelpSuggestPriority"),
     };
-    suggestion.is_top_pick = lazy.UrlbarPrefs.get("yelpSuggestPriority");
-    if (!suggestion.is_top_pick) {
+    if (!resultProperties.isBestMatch) {
       let suggestedIndex = lazy.UrlbarPrefs.get("yelpSuggestNonPriorityIndex");
       if (suggestedIndex !== null) {
         resultProperties.isSuggestedIndexRelativeToGroup = true;
@@ -254,8 +250,9 @@ export class YelpSuggestions extends BaseFeature {
     return commands;
   }
 
-  handleCommand(view, result, selType, searchString) {
-    switch (selType) {
+  onEngagement(queryContext, controller, details, searchString) {
+    let { result } = details;
+    switch (details.selType) {
       case RESULT_MENU_COMMAND.MANAGE:
         // "manage" is handled by UrlbarInput, no need to do anything here.
         break;
@@ -264,29 +261,29 @@ export class YelpSuggestions extends BaseFeature {
         // engagement event. As with all commands, it will be recorded with an
         // `engagement_type` value that is the command's name, in this case
         // `inaccurate_location`.
-        view.acknowledgeFeedback(result);
+        controller.view.acknowledgeFeedback(result);
         break;
       // selType == "dismiss" when the user presses the dismiss key shortcut.
       case "dismiss":
       case RESULT_MENU_COMMAND.NOT_RELEVANT:
-        lazy.QuickSuggest.blockedSuggestions.add(result.payload.originalUrl);
+        lazy.QuickSuggest.blockedSuggestions.blockResult(result);
         result.acknowledgeDismissalL10n = {
           id: "firefox-suggest-dismissal-acknowledgment-one-yelp",
         };
-        view.controller.removeResult(result);
+        controller.removeResult(result);
         break;
       case RESULT_MENU_COMMAND.NOT_INTERESTED:
         lazy.UrlbarPrefs.set("suggest.yelp", false);
         result.acknowledgeDismissalL10n = {
           id: "firefox-suggest-dismissal-acknowledgment-all-yelp",
         };
-        view.controller.removeResult(result);
+        controller.removeResult(result);
         break;
       case RESULT_MENU_COMMAND.SHOW_LESS_FREQUENTLY:
-        view.acknowledgeFeedback(result);
+        controller.view.acknowledgeFeedback(result);
         this.incrementShowLessFrequentlyCount();
         if (!this.canShowLessFrequently) {
-          view.invalidateResultMenuCommands();
+          controller.view.invalidateResultMenuCommands();
         }
         lazy.UrlbarPrefs.set("yelp.minKeywordLength", searchString.length + 1);
         break;
@@ -389,9 +386,9 @@ export class YelpSuggestions extends BaseFeature {
     let cache;
 
     this.logger.debug("Querying Rust backend to populate metadata cache");
-    let rs = await lazy.QuickSuggest.rustBackend.query("coffee in atlanta", [
-      "Yelp",
-    ]);
+    let rs = await lazy.QuickSuggest.rustBackend.query("coffee in atlanta", {
+      types: ["Yelp"],
+    });
     if (!rs.length) {
       this.logger.debug("Rust didn't return any Yelp suggestions!");
       cache = {};

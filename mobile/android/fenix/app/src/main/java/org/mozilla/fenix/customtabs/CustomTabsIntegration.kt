@@ -23,6 +23,7 @@ import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.browser.toolbar.display.DisplayToolbar
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import mozilla.components.feature.customtabs.CustomTabsColorsConfig
 import mozilla.components.feature.customtabs.CustomTabsToolbarButtonConfig
 import mozilla.components.feature.customtabs.CustomTabsToolbarFeature
@@ -44,7 +45,6 @@ import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
-import org.mozilla.fenix.theme.AcornWindowSize
 import org.mozilla.fenix.utils.Settings
 
 @Suppress("LongParameterList")
@@ -179,7 +179,6 @@ class CustomTabsIntegration(
                         updateToolbarLayout(
                             context = context,
                             isNavBarEnabled = isNavBarEnabled,
-                            isNavBarVisible = isNavBarVisible,
                             isWindowSizeSmall = AcornWindowSize.getWindowSize(context) == AcornWindowSize.Small,
                         )
                     }
@@ -194,11 +193,10 @@ class CustomTabsIntegration(
 
     override fun onBackPressed() = feature.onBackPressed()
 
-    @VisibleForTesting
+    @VisibleForTesting(otherwise = VisibleForTesting.PROTECTED)
     internal fun updateToolbarLayout(
         context: Context,
         isNavBarEnabled: Boolean,
-        isNavBarVisible: Boolean,
         isWindowSizeSmall: Boolean,
     ) {
         if (isNavBarEnabled) {
@@ -208,15 +206,15 @@ class CustomTabsIntegration(
             )
 
             browserToolbarView.updateMenuVisibility(
-                isVisible = !isNavBarVisible,
+                isVisible = !isWindowSizeSmall,
             )
 
             updateOpenInAction(
-                isNavbarVisible = isNavBarVisible,
+                isNavbarVisible = isWindowSizeSmall,
                 context = context,
             )
 
-            feature.updateMenuVisibility(isVisible = !isNavBarVisible)
+            feature.updateMenuVisibility(isVisible = !isWindowSizeSmall)
         }
     }
 
@@ -307,15 +305,13 @@ class CustomTabsIntegration(
                 },
                 disableInSecondaryState = true,
                 longClickListener = {
-                    NavigationBar.customForwardLongTapped.record(NoExtras())
                     interactor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = true),
+                        ToolbarMenu.Item.Forward(viewHistory = true, isOnToolbar = true, isCustomTab = true),
                     )
                 },
                 listener = {
-                    NavigationBar.customForwardTapped.record(NoExtras())
                     interactor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = false),
+                        ToolbarMenu.Item.Forward(viewHistory = false, isOnToolbar = true, isCustomTab = true),
                     )
                 },
             ).also {
@@ -356,15 +352,13 @@ class CustomTabsIntegration(
                 },
                 disableInSecondaryState = true,
                 longClickListener = {
-                    NavigationBar.customBackLongTapped.record(NoExtras())
                     interactor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = true),
+                        ToolbarMenu.Item.Back(viewHistory = true, isOnToolbar = true, isCustomTab = true),
                     )
                 },
                 listener = {
-                    NavigationBar.customBackTapped.record(NoExtras())
                     interactor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = false),
+                        ToolbarMenu.Item.Back(viewHistory = false, isOnToolbar = true, isCustomTab = true),
                     )
                 },
             ).also {
@@ -422,9 +416,8 @@ class CustomTabsIntegration(
                 disableInSecondaryState = true,
                 weight = { OPEN_IN_ACTION_WEIGHT },
                 listener = {
-                    NavigationBar.customOpenInFenixTapped.record(NoExtras())
                     interactor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.OpenInFenix,
+                        ToolbarMenu.Item.OpenInFenix(isOnToolbar = true),
                     )
                 },
             ).also {

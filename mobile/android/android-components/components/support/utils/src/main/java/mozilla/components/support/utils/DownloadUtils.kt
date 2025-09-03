@@ -151,6 +151,26 @@ object DownloadUtils {
     private const val MAX_FILE_NAME_LENGTH = 255
 
     /**
+     * The maximum allowable length for a file name, including the directory path,
+     * file extension, and a version suffix (e.g., "(1)").
+     * This value is set to 250 to reserve space for a version suffix up to "(999)"
+     * and ensure the total path length does not exceed the file system's limit of 255 characters.
+     */
+    private const val MAX_FILE_NAME_COPY_VERSION_LENGTH = 250
+
+    /**
+     * The maximum allowable length for a file extension, excluding the leading dot.
+     * If the extension exceeds this length, it will be removed to prevent excessively long file names.
+     */
+    private const val MAX_FILE_EXTENSION_LENGTH = 14
+
+    /**
+     * The minimum allowable length for a truncated file name.
+     * Ensures that after truncation, a file retains some recognizable portion of its name.
+     */
+    private const val MIN_FILE_NAME_LENGTH = 5
+
+    /**
      * The HTTP response code for a successful request.
      */
     const val RESPONSE_CODE_SUCCESS = 200
@@ -207,25 +227,70 @@ object DownloadUtils {
      * Checks if the file exists so as not to overwrite one already in the destination directory
      */
     fun uniqueFileName(directory: File, fileName: String): String {
-        var potentialFileName = File(directory, fileName)
-        val baseFileName = potentialFileName.nameWithoutExtension
-        val fileExtension = potentialFileName.extension.let {
-            if (it.isNotEmpty()) {
-                ".$it"
-            } else {
-                it
-            }
-        }
+        val file = File(fileName)
+        val (baseFileName, fileExtension) = truncateFileName(
+            baseFileName = file.nameWithoutExtension,
+            fileExtension = file.extension,
+            path = directory.absolutePath,
+        )
 
+        var potentialFileName = File(directory, createFileName(fileName = baseFileName, fileExtension = fileExtension))
         var copyVersionNumber = 1
-
         while (potentialFileName.exists()) {
-            potentialFileName = File(directory, "$baseFileName($copyVersionNumber)$fileExtension")
-            copyVersionNumber += 1
+            potentialFileName = File(directory, createFileName(baseFileName, copyVersionNumber++, fileExtension))
         }
 
         return potentialFileName.name
     }
+
+    /**
+     * Truncates the file name if its length, combined with the directory path and file extension,
+     * exceeds the maximum allowable path length. If the file extension is too long, it is removed entirely.
+     *
+     * @param baseFileName The base name of the file (excluding the extension).
+     * @param fileExtension The file extension, that does not include the leading dot (e.g., "txt").
+     * @param path The full path of the directory where the file will be created.
+     * @return A pair containing the adjusted base file name and the adjusted file extension.
+     */
+    fun truncateFileName(baseFileName: String, fileExtension: String, path: String): Pair<String, String> {
+        val totalLength = baseFileName.length + fileExtension.length + path.length + 1 // dot
+        if (totalLength <= MAX_FILE_NAME_COPY_VERSION_LENGTH) {
+            return Pair(baseFileName, fileExtension)
+        }
+
+        // If the extension is too long, truncate base file name at the first dot and remove the extension
+        val shouldRemoveExtension = fileExtension.length > MAX_FILE_EXTENSION_LENGTH
+        val adjustedExtension = if (shouldRemoveExtension) "" else fileExtension
+        val adjustedBaseFileName = if (shouldRemoveExtension) {
+            baseFileName.substringBefore('.')
+        } else {
+            baseFileName
+        }
+
+        // Compute the maximum allowed length for the base file name
+        val adjustedExtensionWithDotLength = if (adjustedExtension.isNotEmpty()) adjustedExtension.length + 1 else 0
+        val maxBaseFileNameLength = (MAX_FILE_NAME_COPY_VERSION_LENGTH - path.length - adjustedExtensionWithDotLength)
+            .coerceAtLeast(MIN_FILE_NAME_LENGTH)
+
+        return Pair(
+            adjustedBaseFileName.take(maxBaseFileNameLength),
+            adjustedExtension,
+        )
+    }
+
+    /**
+     * Constructs a file name by appending an optional version number and extension.
+     *
+     * @param fileName The base name of the file.
+     * @param copyVersionNumber An optional version number to be appended.
+     * @param fileExtension An optional file extension to be appended.
+     * @return A formatted file name with the base name, optional version number, and optional extension.
+     */
+    fun createFileName(fileName: String, copyVersionNumber: Int? = null, fileExtension: String? = null) =
+        StringBuilder(fileName).apply {
+            copyVersionNumber?.let { append("($it)") }
+            fileExtension?.takeIf { it.isNotEmpty() }?.let { append(".$it") }
+        }.toString()
 
     /**
      * Create a Content Disposition formatted string with the receiver used as the filename and
@@ -337,8 +402,7 @@ object DownloadUtils {
     private fun changeExtension(filename: String, providedMimeType: String?): String {
         val file = File(filename)
         val mimeTypeMap = MimeTypeMap.getSingleton()
-        val extensionFromMimeType =
-            mimeTypeMap.getExtensionFromMimeType(providedMimeType)
+        val extensionFromMimeType = getExtensionFromMimeType(providedMimeType)
         if (providedMimeType == null || extensionFromMimeType == null) return filename
 
         val mimeTypeFromFilename = mimeTypeMap.getMimeTypeFromExtension(file.extension) ?: ""
@@ -361,13 +425,30 @@ object DownloadUtils {
     }
 
     /**
+     * Get the file extension for a given MIME type.
+     * This function first checks the system mappings, if no extension is found,
+     * checks for custom mappings.
+     *
+     * @param mimeType The MIME type to map.
+     * @return The corresponding file extension or null if no mapping exists.
+     */
+    private fun getExtensionFromMimeType(mimeType: String?): String? {
+        val mimeTypeMap = MimeTypeMap.getSingleton()
+        return mimeTypeMap.getExtensionFromMimeType(mimeType)
+            ?: when (mimeType) {
+                "application/x-pdf" -> "pdf"
+                else -> null
+            }
+    }
+
+    /**
      * Guess the extension for a file using the mime type.
      */
     private fun createExtension(mimeType: String?): String {
         var extension: String? = null
 
         if (mimeType != null) {
-            extension = MimeTypeMap.getSingleton().getExtensionFromMimeType(mimeType)?.let { ".$it" }
+            extension = getExtensionFromMimeType(mimeType)?.let { ".$it" }
         }
         if (extension == null) {
             extension = if (mimeType?.startsWith("text/", ignoreCase = true) == true) {

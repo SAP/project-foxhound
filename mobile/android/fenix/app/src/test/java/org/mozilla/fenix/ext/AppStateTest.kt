@@ -10,12 +10,16 @@ import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryCaps
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStoryShim
+import mozilla.components.service.pocket.PocketStory.SponsoredContent
+import mozilla.components.service.pocket.PocketStory.SponsoredContentCallbacks
+import mozilla.components.service.pocket.PocketStory.SponsoredContentFrequencyCaps
 import org.junit.Assert
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mozilla.fenix.TestUtils.getFakeContentRecommendations
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.components.appstate.recommendations.copyWithRecommendationsState
@@ -144,6 +148,39 @@ class AppStateTest {
     }
 
     @Test
+    fun `GIVEN no category is selected and sponsored contents are available WHEN getFilteredStories is called THEN return stories from the default category combined with the sponsored contents`() {
+        val defaultStoriesCategoryWithManyStories = PocketRecommendedStoriesCategory(
+            POCKET_STORIES_DEFAULT_CATEGORY_NAME,
+            getFakePocketStories(POCKET_STORIES_TO_SHOW_COUNT),
+        )
+        val sponsoredContents = getFakeSponsoredContents(4)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                pocketStoriesCategories = listOf(
+                    otherStoriesCategory,
+                    anotherStoriesCategory,
+                    defaultStoriesCategoryWithManyStories,
+                ),
+                sponsoredContents = sponsoredContents,
+            ),
+        )
+
+        var result = state.getFilteredStories(useSponsoredStoriesState = false).toMutableList()
+
+        assertEquals(POCKET_STORIES_TO_SHOW_COUNT, result.size)
+        assertEquals(sponsoredContents[1], result[1])
+        assertEquals(sponsoredContents[3], result[POCKET_STORIES_TO_SHOW_COUNT - 1])
+
+        result = result.filterIsInstance<PocketRecommendedStory>().toMutableList()
+
+        assertNull(
+            result.firstOrNull {
+                it is PocketRecommendedStory && it.category != POCKET_STORIES_DEFAULT_CATEGORY_NAME
+            },
+        )
+    }
+
+    @Test
     fun `GIVEN a list of sponsored stories WHEN filtering them THEN have them ordered by priority`() {
         val stories = getFakeSponsoredStories(4).mapIndexed { index, story ->
             story.copy(priority = index)
@@ -211,11 +248,54 @@ class AppStateTest {
     }
 
     @Test
-    fun `GIVEN multiple stories of both types WHEN combining them THEN show sponsored stories at positionn 2 and 8`() {
+    fun `WHEN filtering the sponsored contents THEN return the list of sponsored contents sorted by descending priority`() {
+        val sponsoredContents = getFakeSponsoredContents(4).mapIndexed { index, sponsoredContent ->
+            sponsoredContent.copy(priority = index)
+        }
+        val result = getFilteredSponsoredContents(sponsoredContents, 10)
+
+        assertEquals(4, result.size)
+        assertEquals(sponsoredContents.reversed(), result)
+    }
+
+    @Test
+    fun `WHEN filtering the sponsored contents THEN return the list of sponsored content excluding entries that have reached flight impressions limit`() {
+        val sponsoredContents = getFakeSponsoredContents(4).mapIndexed { index, sponsoredContent ->
+            when (index % 2 == 0) {
+                true -> sponsoredContent
+                false -> sponsoredContent.copy(
+                    caps = sponsoredContent.caps.copy(
+                        currentImpressions = listOf(
+                            TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+                            TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+                            TimeUnit.MILLISECONDS.toSeconds(System.currentTimeMillis()),
+                        ),
+                        flightCount = 3,
+                    ),
+                )
+            }
+        }
+        val result = getFilteredSponsoredContents(sponsoredContents, 10)
+
+        assertEquals(2, result.size)
+        assertEquals(sponsoredContents[0], result[0])
+        assertEquals(sponsoredContents[2], result[1])
+    }
+
+    @Test
+    fun `GIVEN a limit is specified WHEN filtering the sponsored contents THEN return a list of sponsored contents that does not exceed the limit size`() {
+        val sponsoredContents = getFakeSponsoredContents(4)
+        val result = getFilteredSponsoredContents(sponsoredContents, 2)
+
+        assertEquals(2, result.size)
+    }
+
+    @Test
+    fun `GIVEN multiple stories of both types WHEN combining them THEN show sponsored stories at position 2 and 8`() {
         val recommendedStories = getFakePocketStories(POCKET_STORIES_TO_SHOW_COUNT, "other")
         val sponsoredStories = getFakeSponsoredStories(4)
 
-        val result = combineRecommendedAndSponsoredStories(recommendedStories, sponsoredStories)
+        val result = combineRecommendationsAndSponsoredContents(recommendedStories, sponsoredStories)
 
         assertEquals(POCKET_STORIES_TO_SHOW_COUNT, result.size)
         assertEquals(recommendedStories[0], result[0])
@@ -226,6 +306,29 @@ class AppStateTest {
         assertEquals(recommendedStories[4], result[5])
         assertEquals(recommendedStories[5], result[6])
         assertEquals(sponsoredStories[1], result[POCKET_STORIES_TO_SHOW_COUNT - 1])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and sponsored stories WHEN combining them THEN show sponsored stories at position 2 and 9`() {
+        val recommendations = getFakeContentRecommendations(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT)
+        val sponsoredStories = getFakeSponsoredStories(4)
+
+        val result = combineRecommendationsAndSponsoredContents(
+            recommendations,
+            sponsoredStories,
+            totalLimit = CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT,
+        )
+
+        assertEquals(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredStories[0], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+        assertEquals(recommendations[4], result[5])
+        assertEquals(recommendations[5], result[6])
+        assertEquals(recommendations[6], result[7])
+        assertEquals(sponsoredStories[1], result[CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT - 1])
     }
 
     @Test
@@ -581,6 +684,164 @@ class AppStateTest {
     }
 
     @Test
+    fun `GIVEN content recommendations with no sponsored stories WHEN getStories is called THEN return a list of content recommendations to displayed sorted by the number of impressions`() {
+        val recommendations = getFakeContentRecommendations(10)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                contentRecommendations = recommendations.sortedByDescending { it.impressions },
+            ),
+        )
+
+        val result = state.getStories()
+
+        assertEquals(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(recommendations[1], result[1])
+        assertEquals(recommendations[2], result[2])
+        assertEquals(recommendations[3], result[3])
+        assertEquals(recommendations[4], result[4])
+        assertEquals(recommendations[5], result[5])
+        assertEquals(recommendations[6], result[6])
+        assertEquals(recommendations[7], result[7])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and sponsored stories WHEN getStories is called THEN return a list of 9 stories with sponsored stories at position 2 and 9`() {
+        val recommendations = getFakeContentRecommendations(10)
+        val sponsoredStories = getFakeSponsoredStories(4)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                pocketSponsoredStories = sponsoredStories,
+                contentRecommendations = recommendations,
+            ),
+        )
+
+        val result = state.getStories()
+
+        assertEquals(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredStories[1], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+        assertEquals(recommendations[4], result[5])
+        assertEquals(recommendations[5], result[6])
+        assertEquals(recommendations[6], result[7])
+        assertEquals(sponsoredStories[3], result[8])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and sponsored contents WHEN getStories is called THEN return a list of 9 stories with sponsored contents at position 2 and 9`() {
+        val recommendations = getFakeContentRecommendations(10)
+        val sponsoredContents = getFakeSponsoredContents(4)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                contentRecommendations = recommendations,
+                sponsoredContents = sponsoredContents,
+            ),
+        )
+
+        val result = state.getStories(useSponsoredStoriesState = false)
+
+        assertEquals(CONTENT_RECOMMENDATIONS_TO_SHOW_COUNT, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredContents[1], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+        assertEquals(recommendations[4], result[5])
+        assertEquals(recommendations[5], result[6])
+        assertEquals(recommendations[6], result[7])
+        assertEquals(sponsoredContents[3], result[8])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and 1 sponsored story WHEN getStories is called THEN return a list of stories with sponsored stories at position 2`() {
+        val recommendations = getFakeContentRecommendations(4)
+        val sponsoredContents = getFakeSponsoredStories(1)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                pocketSponsoredStories = sponsoredContents,
+                contentRecommendations = recommendations,
+            ),
+        )
+
+        val result = state.getStories()
+
+        assertEquals(5, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredContents[0], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and 1 sponsored content WHEN getStories is called THEN return a list of stories with sponsored content at position 2`() {
+        val recommendations = getFakeContentRecommendations(4)
+        val sponsoredContents = getFakeSponsoredContents(1)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                contentRecommendations = recommendations,
+                sponsoredContents = sponsoredContents,
+            ),
+        )
+
+        val result = state.getStories(useSponsoredStoriesState = false)
+
+        assertEquals(5, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredContents[0], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and 2 sponsored story WHEN getStories is called THEN return a list of stories with sponsored stories at position 2 and 6`() {
+        val recommendations = getFakeContentRecommendations(4)
+        val sponsoredStories = getFakeSponsoredStories(2)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                pocketSponsoredStories = sponsoredStories,
+                contentRecommendations = recommendations,
+            ),
+        )
+
+        val result = state.getStories()
+
+        assertEquals(6, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredStories[1], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+        assertEquals(sponsoredStories[0], result[5])
+    }
+
+    @Test
+    fun `GIVEN content recommendations and 2 sponsored contents WHEN getStories is called THEN return a list of stories with sponsored contents at position 2 and 6`() {
+        val recommendations = getFakeContentRecommendations(4)
+        val sponsoredContents = getFakeSponsoredContents(2)
+        val state = AppState(
+            recommendationState = ContentRecommendationsState(
+                contentRecommendations = recommendations,
+                sponsoredContents = sponsoredContents,
+            ),
+        )
+
+        val result = state.getStories(useSponsoredStoriesState = false)
+
+        assertEquals(6, result.size)
+        assertEquals(recommendations[0], result[0])
+        assertEquals(sponsoredContents[1], result[1])
+        assertEquals(recommendations[1], result[2])
+        assertEquals(recommendations[2], result[3])
+        assertEquals(recommendations[3], result[4])
+        assertEquals(sponsoredContents[0], result[5])
+    }
+
+    @Test
     fun `GIVEN recent tabs disabled in settings WHEN checking to show tabs THEN section should not be shown`() {
         val settings = mockk<Settings> {
             every { showRecentTabsFeature } returns false
@@ -670,6 +931,31 @@ private fun getFakeSponsoredStories(limit: Int) = mutableListOf<PocketSponsoredS
                     flightCount = 1 + index * 2,
                     flightPeriod = 1 + index * 3,
                 ),
+            ),
+        )
+    }
+}
+
+private fun getFakeSponsoredContents(limit: Int) = mutableListOf<SponsoredContent>().apply {
+    for (index in 0 until limit) {
+        add(
+            SponsoredContent(
+                url = "https://sponsored.story",
+                title = "Story title $index",
+                callbacks = SponsoredContentCallbacks(
+                    clickUrl = "https://mozilla.com/click$index",
+                    impressionUrl = "https://mozilla.com/impression$index",
+                ),
+                imageUrl = "https://sponsored.image",
+                domain = "Domain $index",
+                excerpt = "Excerpt $index",
+                sponsor = "Sponsor $index",
+                blockKey = "Block key $index",
+                caps = SponsoredContentFrequencyCaps(
+                    flightCount = 1 + index * 2,
+                    flightPeriod = 1 + index * 3,
+                ),
+                priority = 2 + index % 2,
             ),
         )
     }

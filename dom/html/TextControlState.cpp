@@ -339,7 +339,8 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TextInputSelectionController,
                                            nsISelectionController)
 
-  TextInputSelectionController(PresShell* aPresShell, nsIContent* aLimiter);
+  TextInputSelectionController(PresShell* aPresShell,
+                               Element& aEditorRootAnonymousDiv);
 
   void SetScrollContainerFrame(ScrollContainerFrame* aScrollContainerFrame);
   nsFrameSelection* GetConstFrameSelection() { return mFrameSelection; }
@@ -401,12 +402,12 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_WEAK(TextInputSelectionController, mFrameSelection)
 
 TextInputSelectionController::TextInputSelectionController(
-    PresShell* aPresShell, nsIContent* aLimiter) {
+    PresShell* aPresShell, Element& aEditorRootAnonymousDiv) {
   if (aPresShell) {
-    bool accessibleCaretEnabled =
-        PresShell::AccessibleCaretEnabled(aLimiter->OwnerDoc()->GetDocShell());
-    mFrameSelection =
-        new nsFrameSelection(aPresShell, aLimiter, accessibleCaretEnabled);
+    const bool accessibleCaretEnabled = PresShell::AccessibleCaretEnabled(
+        aEditorRootAnonymousDiv.OwnerDoc()->GetDocShell());
+    mFrameSelection = new nsFrameSelection(aPresShell, accessibleCaretEnabled,
+                                           &aEditorRootAnonymousDiv);
     mPresShellWeak = do_GetWeakReference(aPresShell);
   }
 }
@@ -550,10 +551,7 @@ TextInputSelectionController::SetCaretReadOnly(bool aReadOnly) {
     return NS_ERROR_FAILURE;
   }
 
-  Selection* selection = mFrameSelection->GetSelection(SelectionType::eNormal);
-  if (selection) {
-    caret->SetCaretReadOnly(aReadOnly);
-  }
+  caret->SetCaretReadOnly(aReadOnly);
   return NS_OK;
 }
 
@@ -595,10 +593,8 @@ TextInputSelectionController::SetCaretVisibilityDuringSelection(
   if (!caret) {
     return NS_ERROR_FAILURE;
   }
-  Selection* selection = mFrameSelection->GetSelection(SelectionType::eNormal);
-  if (selection) {
-    caret->SetVisibilityDuringSelection(aVisibility);
-  }
+
+  caret->SetVisibilityDuringSelection(aVisibility);
   return NS_OK;
 }
 
@@ -1546,7 +1542,7 @@ TextEditor* TextControlState::GetTextEditor() {
   return mTextEditor;
 }
 
-TextEditor* TextControlState::GetTextEditorWithoutCreation() const {
+TextEditor* TextControlState::GetExtantTextEditor() const {
   return mTextEditor;
 }
 
@@ -1615,14 +1611,14 @@ nsresult TextControlState::BindToFrame(nsTextControlFrame* aFrame) {
 
   mBoundFrame = aFrame;
 
-  Element* rootNode = aFrame->GetRootNode();
-  MOZ_ASSERT(rootNode);
+  MOZ_ASSERT(aFrame->GetRootNode());
+  Element& editorRootAnonymousDiv = *aFrame->GetRootNode();
 
   PresShell* presShell = aFrame->PresContext()->GetPresShell();
   MOZ_ASSERT(presShell);
 
   // Create a SelectionController
-  mSelCon = new TextInputSelectionController(presShell, rootNode);
+  mSelCon = new TextInputSelectionController(presShell, editorRootAnonymousDiv);
   MOZ_ASSERT(!mTextListener, "Should not overwrite the object");
   mTextListener = new TextInputListener(mTextCtrlElement);
 
@@ -1652,9 +1648,11 @@ nsresult TextControlState::BindToFrame(nsTextControlFrame* aFrame) {
 
     // Set the correct direction on the newly created root node
     if (mTextEditor->IsRightToLeft()) {
-      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, u"rtl"_ns, false);
+      editorRootAnonymousDiv.SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
+                                     u"rtl"_ns, false);
     } else if (mTextEditor->IsLeftToRight()) {
-      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, u"ltr"_ns, false);
+      editorRootAnonymousDiv.SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
+                                     u"ltr"_ns, false);
     } else {
       // otherwise, inherit the content node's direction
     }
@@ -2413,17 +2411,19 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
   // Destroy our editor
   DestroyEditor();
 
-  // Clean up the controller
+  // Clean up the controllers if they exist.
   if (!SuppressEventHandlers(mBoundFrame->PresContext())) {
-    nsCOMPtr<nsIControllers> controllers;
-    if (auto* inputElement = HTMLInputElement::FromNode(mTextCtrlElement)) {
-      inputElement->GetControllers(getter_AddRefs(controllers));
-    } else {
-      auto* textAreaElement = HTMLTextAreaElement::FromNode(mTextCtrlElement);
-      if (textAreaElement) {
-        textAreaElement->GetControllers(getter_AddRefs(controllers));
+    const nsCOMPtr<nsIControllers> controllers = [&]() -> nsIControllers* {
+      if (const auto* const inputElement =
+              HTMLInputElement::FromNode(mTextCtrlElement)) {
+        return inputElement->GetExtantControllers();
       }
-    }
+      if (const auto* const textAreaElement =
+              HTMLTextAreaElement::FromNode(mTextCtrlElement)) {
+        return textAreaElement->GetExtantControllers();
+      }
+      return nullptr;
+    }();
 
     if (controllers) {
       uint32_t numControllers;

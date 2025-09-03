@@ -72,7 +72,6 @@
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "p2p/base/basic_async_resolver_factory.h"
 #include "p2p/base/connection_info.h"
-#include "p2p/base/dtls_transport_internal.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/p2p_transport_channel.h"
@@ -80,6 +79,7 @@
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
+#include "p2p/dtls/dtls_transport_internal.h"
 #include "pc/channel_interface.h"
 #include "pc/connection_context.h"
 #include "pc/data_channel_utils.h"
@@ -584,8 +584,7 @@ RTCErrorOr<rtc::scoped_refptr<PeerConnection>> PeerConnection::Create(
         << "PeerConnection constructed with legacy SDP semantics!";
   }
 
-  RTCError config_error = cricket::P2PTransportChannel::ValidateIceConfig(
-      ParseIceConfig(configuration));
+  RTCError config_error = ValidateConfiguration(configuration);
   if (!config_error.ok()) {
     RTC_LOG(LS_ERROR) << "Invalid ICE configuration: "
                       << config_error.message();
@@ -762,10 +761,11 @@ RTCError PeerConnection::Initialize(
   configuration_ = configuration;
 
   legacy_stats_ = std::make_unique<LegacyStatsCollector>(this);
-  stats_collector_ = RTCStatsCollector::Create(this);
+  stats_collector_ = RTCStatsCollector::Create(this, env_);
 
-  sdp_handler_ = SdpOfferAnswerHandler::Create(this, configuration,
-                                               dependencies, context_.get());
+  sdp_handler_ =
+      SdpOfferAnswerHandler::Create(this, configuration, dependencies,
+                                    context_.get(), transport_controller_copy_);
 
   rtp_manager_ = std::make_unique<RtpTransmissionManager>(
       env_, IsUnifiedPlan(), context_.get(), &usage_pattern_, observer_,
@@ -3028,6 +3028,20 @@ void PeerConnection::RequestUsagePatternReportForTesting() {
         ReportUsagePattern();
       },
       /* delay_ms= */ 0);
+}
+
+int PeerConnection::FeedbackAccordingToRfc8888CountForTesting() const {
+  return worker_thread()->BlockingCall([this]() {
+    RTC_DCHECK_RUN_ON(worker_thread());
+    return call_->FeedbackAccordingToRfc8888Count();
+  });
+}
+
+int PeerConnection::FeedbackAccordingToTransportCcCountForTesting() const {
+  return worker_thread()->BlockingCall([this]() {
+    RTC_DCHECK_RUN_ON(worker_thread());
+    return call_->FeedbackAccordingToTransportCcCount();
+  });
 }
 
 std::function<void(const rtc::CopyOnWriteBuffer& packet,

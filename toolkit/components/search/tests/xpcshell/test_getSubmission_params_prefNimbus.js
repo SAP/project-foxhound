@@ -40,11 +40,18 @@ const CONFIG = [
 ];
 
 add_setup(async function () {
-  updateStub = sinon.stub(NimbusFeatures.search, "onUpdate");
-  getVariableStub = sinon.stub(NimbusFeatures.search, "getVariable");
-  sinon.stub(NimbusFeatures.search, "ready").resolves();
+  updateStub = sinon.stub(NimbusFeatures.searchConfiguration, "onUpdate");
+  getVariableStub = sinon.stub(
+    NimbusFeatures.searchConfiguration,
+    "getVariable"
+  );
+  sinon.stub(NimbusFeatures.searchConfiguration, "ready").resolves();
 
   SearchTestUtils.setRemoteSettingsConfig(CONFIG);
+
+  registerCleanupFunction(async () => {
+    sinon.restore();
+  });
 });
 
 add_task(async function test_pref_initial_value() {

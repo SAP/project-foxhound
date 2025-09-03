@@ -77,10 +77,9 @@ document.addEventListener(
           case "cmd_toggleMute":
             gBrowser.toggleMuteAudioOnMultiSelectedTabs(gBrowser.selectedTab);
             break;
-          // TODO: Used with <observes>
-          // cmd_CustomizeToolbars() {
-          //   gCustomizeMode.enter();
-          // },
+          case "cmd_CustomizeToolbars":
+            gCustomizeMode.enter();
+            break;
           case "cmd_toggleOfflineStatus":
             BrowserOffline.toggleOfflineStatus();
             break;
@@ -96,13 +95,12 @@ document.addEventListener(
           case "View:PageInfo":
             BrowserCommands.pageInfo();
             break;
-          // TODO: Used with <observes>
-          // "View:FullScreen": function () {
-          //   BrowserCommands.fullScreen();
-          // },
-          // "View:ReaderView": function (event) {
-          //   AboutReaderParent.toggleReaderMode(event);
-          // },
+          case "View:FullScreen":
+            BrowserCommands.fullScreen();
+            break;
+          case "View:ReaderView":
+            AboutReaderParent.toggleReaderMode(event);
+            break;
           case "View:PictureInPicture":
             PictureInPicture.onCommand(event);
             break;
@@ -118,10 +116,6 @@ document.addEventListener(
           case "cmd_findSelection":
             gLazyFindCommand("onFindSelectionCommand");
             break;
-          // TODO: <observes>
-          // cmd_reportBrokenSite(event) {
-          //   ReportBrokenSite.open(event);
-          // },
           case "cmd_translate":
             FullPageTranslationsPanel.open(event);
             break;
@@ -212,7 +206,7 @@ document.addEventListener(
             gProfiles.handleCommand(event);
             break;
           case "Tools:Search":
-            BrowserSearch.webSearch();
+            SearchUIUtils.webSearch(window);
             break;
           case "Tools:Downloads":
             BrowserCommands.downloadsUI();
@@ -229,10 +223,9 @@ document.addEventListener(
           case "Browser:Screenshot":
             ScreenshotsUtils.notify(window, "Shortcut");
             break;
-          // TODO: <observes>
-          // "History:UndoCloseTab": function () {
-          //   undoCloseTab();
-          // },
+          case "History:UndoCloseTab":
+            undoCloseTab();
+            break;
           case "History:UndoCloseWindow":
             undoCloseWindow();
             break;
@@ -258,6 +251,11 @@ document.addEventListener(
       });
 
     document.getElementById("mainKeyset").addEventListener("command", event => {
+      const SIDEBAR_REVAMP_PREF = "sidebar.revamp";
+      const SIDEBAR_REVAMP_ENABLED = Services.prefs.getBoolPref(
+        SIDEBAR_REVAMP_PREF,
+        false
+      );
       switch (event.target.id) {
         case "goHome":
           BrowserCommands.home();
@@ -270,6 +268,27 @@ document.addEventListener(
           break;
         case "viewBookmarksToolbarKb":
           BookmarkingUI.toggleBookmarksToolbar("shortcut");
+          break;
+        case "viewGenaiChatSidebarKb": {
+          const pref = "browser.ml.chat.enabled";
+          const enabled = Services.prefs.getBoolPref(pref);
+          Glean.genaiChatbot.keyboardShortcut.record({
+            enabled,
+            sidebar: SidebarController.currentID,
+          });
+          if (enabled) {
+            SidebarController.toggle("viewGenaiChatSidebar");
+          }
+          break;
+        }
+        case "toggleSidebarKb":
+          if (SIDEBAR_REVAMP_ENABLED) {
+            SidebarController.handleToolbarButtonClick();
+            Glean.sidebar.keyboardShortcut.record({
+              panel: SidebarController.currentID,
+              opened: SidebarController._state.launcherExpanded,
+            });
+          }
           break;
         case "key_gotoHistory":
           SidebarController.toggle("viewHistorySidebar");

@@ -168,20 +168,22 @@ class NetworkLinkRtcpObserver {
  public:
   virtual ~NetworkLinkRtcpObserver() = default;
 
-  virtual void OnTransportFeedback(Timestamp receive_time,
-                                   const rtcp::TransportFeedback& feedback) {}
+  virtual void OnTransportFeedback(
+      Timestamp /* receive_time */,
+      const rtcp::TransportFeedback& /* feedback */) {}
   // RFC 8888 congestion control feedback.
   virtual void OnCongestionControlFeedback(
-      Timestamp receive_time,
-      const rtcp::CongestionControlFeedback& feedback) {}
-  virtual void OnReceiverEstimatedMaxBitrate(Timestamp receive_time,
-                                             DataRate bitrate) {}
+      Timestamp /* receive_time */,
+      const rtcp::CongestionControlFeedback& /* feedback */) {}
+  virtual void OnReceiverEstimatedMaxBitrate(Timestamp /* receive_time */,
+                                             DataRate /* bitrate */) {}
 
   // Called on an RTCP packet with sender or receiver reports with non zero
   // report blocks. Report blocks are combined from all reports into one array.
-  virtual void OnReport(Timestamp receive_time,
-                        rtc::ArrayView<const ReportBlockData> report_blocks) {}
-  virtual void OnRttUpdate(Timestamp receive_time, TimeDelta rtt) {}
+  virtual void OnReport(
+      Timestamp /* receive_time */,
+      rtc::ArrayView<const ReportBlockData> /* report_blocks */) {}
+  virtual void OnRttUpdate(Timestamp /* receive_time */, TimeDelta /* rtt */) {}
 };
 
 class RtcpEventObserver {
@@ -362,16 +364,8 @@ struct StreamDataCounters {
 };
 
 class RtpSendRates {
-  template <std::size_t... Is>
-  constexpr std::array<DataRate, sizeof...(Is)> make_zero_array(
-      std::index_sequence<Is...>) {
-    return {{(static_cast<void>(Is), DataRate::Zero())...}};
-  }
-
  public:
-  RtpSendRates()
-      : send_rates_(
-            make_zero_array(std::make_index_sequence<kNumMediaTypes>())) {}
+  constexpr RtpSendRates() = default;
   RtpSendRates(const RtpSendRates& rhs) = default;
   RtpSendRates& operator=(const RtpSendRates&) = default;
 

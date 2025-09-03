@@ -666,11 +666,14 @@ static bool IsPercentageAware(const nsIFrame* aFrame, WritingMode aWM) {
 
   const nsStylePosition* pos = aFrame->StylePosition();
 
+  const auto positionProperty = aFrame->StyleDisplay()->mPosition;
   if ((pos->ISizeDependsOnContainer(aWM) && !pos->ISize(aWM).IsAuto()) ||
       pos->MaxISizeDependsOnContainer(aWM) ||
       pos->MinISizeDependsOnContainer(aWM) ||
-      pos->GetInset(LogicalSide::IStart, aWM).HasPercent() ||
-      pos->GetInset(LogicalSide::IEnd, aWM).HasPercent()) {
+      pos->GetAnchorResolvedInset(LogicalSide::IStart, aWM, positionProperty)
+          ->HasPercent() ||
+      pos->GetAnchorResolvedInset(LogicalSide::IEnd, aWM, positionProperty)
+          ->HasPercent()) {
     return true;
   }
 
@@ -1486,6 +1489,33 @@ bool nsLineLayout::NotifyOptionalBreakPosition(nsIFrame* aFrame,
 #define VALIGN_TOP 1
 #define VALIGN_BOTTOM 2
 
+void nsLineLayout::SetSpanForEmptyLine(PerSpanData* aPerSpanData,
+                                       WritingMode aWM,
+                                       const nsSize& aContainerSize,
+                                       nscoord aBStartEdge) {
+  for (PerFrameData* pfd = aPerSpanData->mFirstFrame; pfd; pfd = pfd->mNext) {
+    // Ideally, if the frame would collapse itself - but it depends on
+    // knowing that the line is empty.
+    if (!pfd->mFrame->IsInlineFrame() && !pfd->mFrame->IsRubyFrame() &&
+        !pfd->mFrame->IsPlaceholderFrame()) {
+      continue;
+    }
+    // Collapse the physical size to 0.
+    pfd->mBounds.BStart(aWM) = aBStartEdge;
+    pfd->mBounds.BSize(aWM) = 0;
+    // Initialize mBlockDirAlign (though it doesn't make much difference
+    // because we don't align empty boxes).
+    pfd->mBlockDirAlign = VALIGN_OTHER;
+    pfd->mFrame->SetRect(aWM, pfd->mBounds, aContainerSize);
+    if (pfd->mSpan) {
+      // For child spans, the block-start edge is relative to that of parent,
+      // which is zero (since it is empty). See NOTE in
+      // `nsLineLayout::ReflowFrame`.
+      SetSpanForEmptyLine(pfd->mSpan, aWM, aContainerSize, 0);
+    }
+  }
+}
+
 void nsLineLayout::VerticalAlignLine() {
   // Partially place the children of the block frame. The baseline for
   // this operation is set to zero so that the y coordinates for all
@@ -1494,21 +1524,8 @@ void nsLineLayout::VerticalAlignLine() {
   if (mLineIsEmpty) {
     // This line is empty, and should be consisting of only inline elements.
     // (inline-block elements would make the line non-empty).
-    WritingMode lineWM = psd->mWritingMode;
-    for (PerFrameData* pfd = psd->mFirstFrame; pfd; pfd = pfd->mNext) {
-      // Ideally, if the frame would collapse itself - but it depends on
-      // knowing that the line is empty.
-      if (!pfd->mFrame->IsInlineFrame() && !pfd->mFrame->IsRubyFrame()) {
-        continue;
-      }
-      // Collapse the physical size to 0.
-      pfd->mBounds.BStart(lineWM) = mBStartEdge;
-      pfd->mBounds.BSize(lineWM) = 0;
-      // Initialize mBlockDirAlign (though it doesn't make much difference
-      // because we don't align empty boxes).
-      pfd->mBlockDirAlign = VALIGN_OTHER;
-      pfd->mFrame->SetRect(lineWM, pfd->mBounds, ContainerSize());
-    }
+    SetSpanForEmptyLine(psd, mRootSpan->mWritingMode, ContainerSize(),
+                        mBStartEdge);
 
     mFinalLineBSize = 0;
     if (mGotLineBox) {
@@ -3360,8 +3377,12 @@ void nsLineLayout::RelativePositionFrames(PerSpanData* psd,
     overflowAreas.InkOverflow().UnionRect(
         psd->mFrame->mOverflowAreas.InkOverflow(), adjustedBounds);
   } else {
-    LogicalRect rect(wm, psd->mIStart, mBStartEdge, psd->mICoord - psd->mIStart,
-                     mFinalLineBSize);
+    // Note(dshin, bug 1940938): `mICoord` can be negative due to a negative
+    // `text-indent` value (i.e. "Outdenting"). Ensure that we have a valid
+    // overflow rect for that case.
+    const auto iStart = std::min(psd->mIStart, psd->mICoord);
+    const auto iSize = std::abs(psd->mICoord - psd->mIStart);
+    LogicalRect rect(wm, iStart, mBStartEdge, iSize, mFinalLineBSize);
     // The minimum combined area for the frames that are direct
     // children of the block starts at the upper left corner of the
     // line and is sized to match the size of the line's bounding box

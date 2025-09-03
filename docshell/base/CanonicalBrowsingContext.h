@@ -149,14 +149,23 @@ class CanonicalBrowsingContext final : public BrowsingContext {
       const MaybeDiscardedBrowsingContext& aClonedStaticBrowsingContext);
   MOZ_CAN_RUN_SCRIPT void ReleaseClonedPrint(
       const MaybeDiscardedBrowsingContext& aClonedStaticBrowsingContext);
-  // Call the given callback on all top-level descendant BrowsingContexts.
+
+  enum class TopDescendantKind {
+    // All top descendants are included, even those inside a nested top
+    // browser.
+    All,
+    // Top descendants that are either direct children or under a non-nested
+    // descendant are included, but not those nested inside a separate top.
+    NonNested,
+    // Only our direct children are included. This is usually slightly less
+    // efficient than the alternatives, but might be needed in some cases.
+    ChildrenOnly,
+  };
+  // Call the given callback on top-level descendant BrowsingContexts.
   // Return Callstate::Stop from the callback to stop calling further children.
-  //
-  // If aIncludeNestedBrowsers is true, then all top descendants are included,
-  // even those inside a nested top browser.
-  void CallOnAllTopDescendants(
+  void CallOnTopDescendants(
       const FunctionRef<CallState(CanonicalBrowsingContext*)>& aCallback,
-      bool aIncludeNestedBrowsers);
+      TopDescendantKind aKind);
 
   void SessionHistoryCommit(uint64_t aLoadId, const nsID& aChangeID,
                             uint32_t aLoadType, bool aPersist,
@@ -187,9 +196,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void RemoveFromSessionHistory(const nsID& aChangeID);
 
-  Maybe<int32_t> HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
-                           bool aRequireUserInteraction, bool aUserActivation,
-                           Maybe<ContentParentId> aContentId);
+  MOZ_CAN_RUN_SCRIPT Maybe<int32_t> HistoryGo(
+      int32_t aOffset, uint64_t aHistoryEpoch, bool aRequireUserInteraction,
+      bool aUserActivation, Maybe<ContentParentId> aContentId);
 
   JSObject* WrapObject(JSContext* aCx,
                        JS::Handle<JSObject*> aGivenProto) override;
@@ -229,12 +238,16 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void LoadURI(nsIURI* aURI, const LoadURIOptions& aOptions,
                ErrorResult& aError);
 
+  MOZ_CAN_RUN_SCRIPT
   void GoBack(const Optional<int32_t>& aCancelContentJSEpoch,
               bool aRequireUserInteraction, bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT
   void GoForward(const Optional<int32_t>& aCancelContentJSEpoch,
                  bool aRequireUserInteraction, bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT
   void GoToIndex(int32_t aIndex, const Optional<int32_t>& aCancelContentJSEpoch,
                  bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT
   void Reload(uint32_t aReloadFlags);
   void Stop(uint32_t aStopFlags);
 
@@ -251,6 +264,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   // A NOT_REMOTE_TYPE aRemoteType argument will perform a process switch into
   // the parent process, and the method will resolve with a null BrowserParent.
   using RemotenessPromise = MozPromise<RefPtr<BrowserParent>, nsresult, false>;
+  MOZ_CAN_RUN_SCRIPT
   RefPtr<RemotenessPromise> ChangeRemoteness(
       const NavigationIsolationOptions& aOptions, uint64_t aPendingSwitchId);
 
@@ -310,6 +324,9 @@ class CanonicalBrowsingContext final : public BrowsingContext {
 
   void GetLoadingSessionHistoryInfoFromParent(
       Maybe<LoadingSessionHistoryInfo>& aLoadingInfo);
+
+  mozilla::Span<const SessionHistoryInfo> GetContiguousSessionHistoryInfos(
+      SessionHistoryInfo& aInfo);
 
   void HistoryCommitIndexAndLength();
 
@@ -383,6 +400,7 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   void AddPageAwakeRequest();
   void RemovePageAwakeRequest();
 
+  MOZ_CAN_RUN_SCRIPT
   void CloneDocumentTreeInto(CanonicalBrowsingContext* aSource,
                              const nsACString& aRemoteType,
                              embedding::PrintData&& aPrintData);
@@ -406,6 +424,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   already_AddRefed<nsISHEntry> GetMostRecentLoadingSessionHistoryEntry();
 
   already_AddRefed<BounceTrackingState> GetBounceTrackingState();
+
+  bool CanOpenModalPicker();
 
  protected:
   // Called when the browsing context is being discarded.
@@ -446,11 +466,15 @@ class CanonicalBrowsingContext final : public BrowsingContext {
     friend class CanonicalBrowsingContext;
 
     ~PendingRemotenessChange();
+    MOZ_CAN_RUN_SCRIPT
     void ProcessLaunched();
+    MOZ_CAN_RUN_SCRIPT
     void ProcessReady();
+    MOZ_CAN_RUN_SCRIPT
     void MaybeFinish();
     void Clear();
 
+    MOZ_CAN_RUN_SCRIPT
     nsresult FinishTopContent();
     nsresult FinishSubframe();
 
@@ -616,6 +640,8 @@ class CanonicalBrowsingContext final : public BrowsingContext {
   bool mFullyDiscarded = false;
 
   nsTArray<std::function<void(uint64_t)>> mFullyDiscardedListeners;
+
+  nsTArray<SessionHistoryInfo> mActiveContiguousEntries;
 };
 
 }  // namespace dom

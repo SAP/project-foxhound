@@ -58,7 +58,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/UniquePtr.h"
 #include "nsIToolkitShellService.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/ToolkitProfileMetrics.h"
 #include "nsProxyRelease.h"
 #ifdef MOZ_HAS_REMOTE
 #  include "nsRemoteService.h"
@@ -785,10 +785,8 @@ bool nsToolkitProfileService::IsProfileForCurrentInstall(
   }
 
   nsCOMPtr<nsIFile> lastGreDir;
-  rv = NS_NewNativeLocalFile(""_ns, getter_AddRefs(lastGreDir));
-  NS_ENSURE_SUCCESS(rv, false);
-
-  rv = lastGreDir->SetPersistentDescriptor(lastGreDirStr);
+  rv = NS_NewLocalFileWithPersistentDescriptor(lastGreDirStr,
+                                               getter_AddRefs(lastGreDir));
   NS_ENSURE_SUCCESS(rv, false);
 
 #ifdef XP_WIN
@@ -1149,13 +1147,12 @@ nsresult nsToolkitProfileService::Init() {
     }
 
     nsCOMPtr<nsIFile> rootDir;
-    rv = NS_NewNativeLocalFile(""_ns, getter_AddRefs(rootDir));
-    NS_ENSURE_SUCCESS(rv, rv);
-
     if (isRelative) {
-      rv = rootDir->SetRelativeDescriptor(mAppData, filePath);
+      rv = NS_NewLocalFileWithRelativeDescriptor(mAppData, filePath,
+                                                 getter_AddRefs(rootDir));
     } else {
-      rv = rootDir->SetPersistentDescriptor(filePath);
+      rv = NS_NewLocalFileWithPersistentDescriptor(filePath,
+                                                   getter_AddRefs(rootDir));
     }
     if (NS_FAILED(rv)) continue;
 
@@ -2351,7 +2348,7 @@ nsToolkitProfileService::GetProfileCount(uint32_t* aResult) {
 // have changed since rthey were loaded.
 nsresult WriteProfileInfo(nsIFile* profilesDBFile, nsIFile* installDBFile,
                           const nsCString& installSection,
-                          const CurrentProfileData* profileInfo) {
+                          const GroupProfileData* profileInfo) {
   nsINIParser profilesIni;
   nsresult rv = profilesIni.Init(profilesDBFile);
   NS_ENSURE_SUCCESS(rv, rv);
@@ -2458,12 +2455,12 @@ nsISerialEventTarget* nsToolkitProfileService::AsyncQueue() {
 }
 
 NS_IMETHODIMP
-nsToolkitProfileService::AsyncFlushCurrentProfile(JSContext* aCx,
-                                                  dom::Promise** aPromise) {
+nsToolkitProfileService::AsyncFlushGroupProfile(JSContext* aCx,
+                                                dom::Promise** aPromise) {
 #ifndef MOZ_HAS_REMOTE
   return NS_ERROR_FAILURE;
 #else
-  if (!mCurrent) {
+  if (!mGroupProfile) {
     return NS_ERROR_ILLEGAL_VALUE;
   }
 
@@ -2480,12 +2477,12 @@ nsToolkitProfileService::AsyncFlushCurrentProfile(JSContext* aCx,
     return result.StealNSResult();
   }
 
-  UniquePtr<CurrentProfileData> profileData = MakeUnique<CurrentProfileData>();
-  profileData->mStoreID = mCurrent->mStoreID;
-  profileData->mShowSelector = mCurrent->mShowProfileSelector;
+  UniquePtr<GroupProfileData> profileData = MakeUnique<GroupProfileData>();
+  profileData->mStoreID = mGroupProfile->mStoreID;
+  profileData->mShowSelector = mGroupProfile->mShowProfileSelector;
 
   bool isRelative;
-  GetProfileDescriptor(mCurrent, profileData->mPath, &isRelative);
+  GetProfileDescriptor(mGroupProfile, profileData->mPath, &isRelative);
 
   nsCOMPtr<nsIRemoteService> rs = GetRemoteService();
   RefPtr<nsRemoteService> remoteService =
@@ -2520,7 +2517,7 @@ nsToolkitProfileService::AsyncFlushCurrentProfile(JSContext* aCx,
   // This keeps the promise alive after this method returns.
   nsMainThreadPtrHandle<dom::Promise> promiseHolder(
       new nsMainThreadPtrHolder<dom::Promise>(
-          "nsToolkitProfileService::AsyncFlushCurrentProfile", promise));
+          "nsToolkitProfileService::AsyncFlushGroupProfile", promise));
 
   p->Then(GetCurrentSerialEventTarget(), __func__,
           [requestHolder, promiseHolder](
@@ -2594,7 +2591,7 @@ nsToolkitProfileService::AsyncFlush(JSContext* aCx, dom::Promise** aPromise) {
   // This keeps the promise alive after this method returns.
   nsMainThreadPtrHandle<dom::Promise> promiseHolder(
       new nsMainThreadPtrHolder<dom::Promise>(
-          "nsToolkitProfileService::AsyncFlushCurrentProfile", promise));
+          "nsToolkitProfileService::AsyncFlushGroupProfile", promise));
 
   p->Then(GetCurrentSerialEventTarget(), __func__,
           [requestHolder, promiseHolder](
@@ -2789,11 +2786,9 @@ nsresult nsToolkitProfileService::GetLocalDirFromRootDir(nsIFile* aRootDir,
 
   nsCOMPtr<nsIFile> localDir;
   if (isRelative) {
-    rv = NS_NewNativeLocalFile(""_ns, getter_AddRefs(localDir));
-    NS_ENSURE_SUCCESS(rv, rv);
-
-    rv = localDir->SetRelativeDescriptor(
-        nsToolkitProfileService::gService->mTempData, path);
+    rv = NS_NewLocalFileWithRelativeDescriptor(
+        nsToolkitProfileService::gService->mTempData, path,
+        getter_AddRefs(localDir));
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
     localDir = aRootDir;
@@ -2827,20 +2822,11 @@ nsresult XRE_GetFileFromPath(const char* aPath, nsIFile** aResult) {
       nullptr, (const UInt8*)aPath, pathLen, true);
   if (!fullPath) return NS_ERROR_FAILURE;
 
-  nsCOMPtr<nsIFile> lf;
-  nsresult rv = NS_NewNativeLocalFile(""_ns, getter_AddRefs(lf));
-  if (NS_SUCCEEDED(rv)) {
-    nsCOMPtr<nsILocalFileMac> lfMac = do_QueryInterface(lf, &rv);
-    if (NS_SUCCEEDED(rv)) {
-      rv = lfMac->InitWithCFURL(fullPath);
-      if (NS_SUCCEEDED(rv)) {
-        lf.forget(aResult);
-      }
-    }
-  }
+  nsCOMPtr<nsILocalFileMac> lfMac;
+  nsresult rv = NS_NewLocalFileWithCFURL(fullPath, getter_AddRefs(lfMac));
+  lfMac.forget(aResult);
   CFRelease(fullPath);
   return rv;
-
 #elif defined(XP_UNIX)
   char fullPath[MAXPATHLEN];
 
@@ -2854,7 +2840,6 @@ nsresult XRE_GetFileFromPath(const char* aPath, nsIFile** aResult) {
     return NS_ERROR_FAILURE;
 
   return NS_NewLocalFile(nsDependentString(fullPath), aResult);
-
 #else
 #  error Platform-specific logic needed here.
 #endif

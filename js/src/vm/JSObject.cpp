@@ -68,13 +68,6 @@
 #include "vm/TypedArrayObject.h"
 #include "vm/Watchtower.h"
 #include "vm/WrapperObject.h"
-#ifdef ENABLE_RECORD_TUPLE
-#  include "builtin/RecordObject.h"
-#  include "builtin/TupleObject.h"
-#  include "vm/RecordType.h"
-#  include "vm/TupleType.h"
-#endif
-
 #include "gc/StableCellHasher-inl.h"
 #include "vm/BooleanObject-inl.h"
 #include "vm/EnvironmentObject-inl.h"
@@ -137,10 +130,7 @@ JS_PUBLIC_API const char* JS::InformalValueTypeName(const Value& v) {
     case ValueType::BigInt:
       return "bigint";
     case ValueType::Object:
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive:
-#endif
-      return v.getObjectPayload().getClass()->name;
+      return v.toObject().getClass()->name;
     case ValueType::Magic:
       return "magic";
     case ValueType::PrivateGCThing:
@@ -1015,7 +1005,7 @@ bool js::ObjectMayBeSwapped(const JSObject* obj) {
   return clasp->isProxyObject() || clasp->isDOMClass();
 }
 
-bool NativeObject::prepareForSwap(JSContext* cx,
+bool NativeObject::prepareForSwap(JSContext* cx, JSObject* other,
                                   MutableHandleValueVector slotValuesOut) {
   MOZ_ASSERT(slotValuesOut.empty());
 
@@ -1026,40 +1016,30 @@ bool NativeObject::prepareForSwap(JSContext* cx,
   }
 
   if (hasDynamicSlots()) {
-    ObjectSlots* slotsHeader = getSlotsHeader();
-    size_t size = ObjectSlots::allocSize(slotsHeader->capacity());
-    RemoveCellMemory(this, size, MemoryUse::ObjectSlots);
-    if (!cx->nursery().isInside(slotsHeader)) {
-      if (!isTenured()) {
-        cx->nursery().removeMallocedBuffer(slotsHeader, size);
-      }
-      js_free(slotsHeader);
-    }
     setEmptyDynamicSlots(0);
   }
 
-  if (hasDynamicElements()) {
+  // Copy elements if we're swapping between tenured and nursery objects to
+  // prevent:
+  //  1. Tenured objects with pointers to direct nursery allocations
+  //  2. Tenured objects with pointers to buffers marked as nursery-owned
+  if (hasDynamicElements() && IsInsideNursery(this) != IsInsideNursery(other)) {
     ObjectElements* elements = getElementsHeader();
-    void* allocatedElements = getUnshiftedElementsHeader();
     size_t count = elements->numAllocatedElements();
     size_t size = count * sizeof(HeapSlot);
-
-    if (isTenured()) {
-      RemoveCellMemory(this, size, MemoryUse::ObjectElements);
-    } else if (cx->nursery().isInside(allocatedElements)) {
-      // Move nursery allocated elements in case they end up in a tenured
-      // object.
-      ObjectElements* newElements =
-          reinterpret_cast<ObjectElements*>(js_pod_malloc<HeapSlot>(count));
-      if (!newElements) {
-        return false;
-      }
-
-      memmove(newElements, elements, size);
-      elements_ = newElements->elements();
-    } else {
-      cx->nursery().removeMallocedBuffer(allocatedElements, size);
+    void* buffer = AllocBuffer(cx->zone(), size, IsInsideNursery(other));
+    if (!buffer) {
+      return false;
     }
+
+    memmove(buffer, getUnshiftedElementsHeader(), size);
+
+    uint32_t numShifted = elements->numShiftedElements();
+    auto* newElements = reinterpret_cast<ObjectElements*>(
+        reinterpret_cast<HeapSlot*>(buffer) + numShifted);
+
+    elements_ = newElements->elements();
+
     MOZ_ASSERT(hasDynamicElements());
   }
 
@@ -1107,17 +1087,14 @@ bool NativeObject::fixupAfterSwap(JSContext* cx, Handle<NativeObject*> obj,
     obj->initSlotUnchecked(i, slotValues[i]);
   }
 
-  if (obj->hasDynamicElements()) {
-    ObjectElements* elements = obj->getElementsHeader();
-    void* allocatedElements = obj->getUnshiftedElementsHeader();
-    MOZ_ASSERT(!cx->nursery().isInside(allocatedElements));
-    size_t size = elements->numAllocatedElements() * sizeof(HeapSlot);
-    if (obj->isTenured()) {
-      AddCellMemory(obj, size, MemoryUse::ObjectElements);
-    } else if (!cx->nursery().registerMallocedBuffer(allocatedElements, size)) {
-      return false;
-    }
-  }
+  MOZ_ASSERT_IF(
+      obj->hasDynamicSlots() && gc::IsBufferAlloc(obj->getSlotsHeader()),
+      gc::IsNurseryOwned(obj->getSlotsHeader()) == IsInsideNursery(obj));
+
+  MOZ_ASSERT_IF(obj->hasDynamicElements() &&
+                    gc::IsBufferAlloc(obj->getUnshiftedElementsHeader()),
+                gc::IsNurseryOwned(obj->getUnshiftedElementsHeader()) ==
+                    IsInsideNursery(obj));
 
   return true;
 }
@@ -1300,9 +1277,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
     // When both objects are the same size and in the same heap, just do a plain
     // swap of their contents.
 
-    // Swap slot associations.
-    zone->swapCellMemory(a, b, MemoryUse::ObjectSlots);
-
     size_t size = sa;
     char tmp[sizeof(JSObject_Slots16)];
     MOZ_ASSERT(size <= sizeof(tmp));
@@ -1311,7 +1285,6 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
     js_memcpy(a, b, size);
     js_memcpy(b, tmp, size);
 
-    zone->swapCellMemory(a, b, MemoryUse::ObjectElements);
     zone->swapCellMemory(a, b, MemoryUse::ProxyExternalValueArray);
 
     if (aIsProxyWithInlineValues) {
@@ -1327,10 +1300,10 @@ void JSObject::swap(JSContext* cx, HandleObject a, HandleObject b,
     // objects.
     RootedValueVector avals(cx);
     RootedValueVector bvals(cx);
-    if (na && !na->prepareForSwap(cx, &avals)) {
+    if (na && !na->prepareForSwap(cx, b, &avals)) {
       oomUnsafe.crash("NativeObject::prepareForSwap");
     }
-    if (nb && !nb->prepareForSwap(cx, &bvals)) {
+    if (nb && !nb->prepareForSwap(cx, a, &bvals)) {
       oomUnsafe.crash("NativeObject::prepareForSwap");
     }
 
@@ -1504,14 +1477,10 @@ NativeObject* js::InitClass(JSContext* cx, HandleObject obj,
  * it - e.g. EnqueuePromiseReactionJob - can then unwrap the object and get
  * its global without fear of unwrapping too far.
  */
-bool js::GetObjectFromIncumbentGlobal(JSContext* cx, MutableHandleObject obj) {
-  Rooted<GlobalObject*> globalObj(cx, cx->runtime()->getIncumbentGlobal(cx));
-  if (!globalObj) {
-    obj.set(nullptr);
-    return true;
+bool js::GetObjectFromHostDefinedData(JSContext* cx, MutableHandleObject obj) {
+  if (!cx->runtime()->getHostDefinedData(cx, obj)) {
+    return false;
   }
-
-  obj.set(&globalObj->getObjectPrototype());
 
   // The object might be from a different compartment, so wrap it.
   if (obj && !cx->compartment()->wrap(cx, obj)) {
@@ -2023,6 +1992,23 @@ bool js::SetPrototype(JSContext* cx, HandleObject obj, HandleObject proto) {
   return SetPrototype(cx, obj, proto, result) && result.checkStrict(cx, obj);
 }
 
+/**
+ * IsTypedArrayFixedLength ( O )
+ *
+ * ES2025 draft rev 3e6f71c9402f91344ef9560425cc1e8fc45abf86
+ */
+static bool IsTypedArrayFixedLength(ResizableTypedArrayObject* obj) {
+  MOZ_ASSERT(obj->hasResizableBuffer());
+
+  // Step 1.
+  if (obj->isAutoLength()) {
+    return false;
+  }
+
+  // Steps 2-4.
+  return obj->isSharedMemory();
+}
+
 bool js::PreventExtensions(JSContext* cx, HandleObject obj,
                            ObjectOpResult& result) {
   if (obj->is<ProxyObject>()) {
@@ -2030,6 +2016,11 @@ bool js::PreventExtensions(JSContext* cx, HandleObject obj,
   }
 
   if (obj->is<WasmGcObject>()) {
+    return result.failCantPreventExtensions();
+  }
+
+  if (obj->is<ResizableTypedArrayObject>() &&
+      !IsTypedArrayFixedLength(&obj->as<ResizableTypedArrayObject>())) {
     return result.failCantPreventExtensions();
   }
 
@@ -2230,8 +2221,7 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
   }
 
   if (key == JSProto_FinalizationRegistry &&
-      JS::GetWeakRefsEnabled() ==
-          JS::WeakRefSpecifier::EnabledWithoutCleanupSome &&
+      !JS::Prefs::experimental_weakrefs_expose_cleanupSome() &&
       id == NameToId(cx->names().cleanupSome)) {
     return true;
   }
@@ -2239,43 +2229,12 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
   // It's gently surprising that this is JSProto_Function, but the trick
   // to realize is that this is a -constructor function-, not a function
   // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::array_grouping() &&
-      (id == NameToId(cx->names().groupBy))) {
-    return true;
-  }
-
-  if (key == JSProto_Set && !JS::Prefs::experimental_new_set_methods() &&
-      (id == NameToId(cx->names().union_) ||
-       id == NameToId(cx->names().difference) ||
-       id == NameToId(cx->names().intersection) ||
-       id == NameToId(cx->names().isSubsetOf) ||
-       id == NameToId(cx->names().isSupersetOf) ||
-       id == NameToId(cx->names().isDisjointFrom) ||
-       id == NameToId(cx->names().symmetricDifference))) {
-    return true;
-  }
-
-  if (key == JSProto_ArrayBuffer &&
-      !JS::Prefs::experimental_arraybuffer_resizable() &&
-      (id == NameToId(cx->names().maxByteLength) ||
-       id == NameToId(cx->names().resizable) ||
-       id == NameToId(cx->names().resize))) {
-    return true;
-  }
-
-  if (key == JSProto_SharedArrayBuffer &&
-      !JS::Prefs::experimental_sharedarraybuffer_growable() &&
-      (id == NameToId(cx->names().maxByteLength) ||
-       id == NameToId(cx->names().growable) ||
-       id == NameToId(cx->names().grow))) {
-    return true;
-  }
-
-  if (key == JSProto_ArrayBuffer && !JS::Prefs::arraybuffer_transfer() &&
-      (id == NameToId(cx->names().transfer) ||
-       id == NameToId(cx->names().transferToFixedLength) ||
-       id == NameToId(cx->names().detached))) {
-    return true;
+  if (key == JSProto_Function) {
+    if (!JS::Prefs::experimental_uint8array_base64() &&
+        (id == NameToId(cx->names().fromBase64) ||
+         id == NameToId(cx->names().fromHex))) {
+      return true;
+    }
   }
 
   if (key == JSProto_Uint8Array &&
@@ -2290,64 +2249,62 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
   // It's gently surprising that this is JSProto_Function, but the trick
   // to realize is that this is a -constructor function-, not a function
   // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_uint8array_base64() &&
-      (id == NameToId(cx->names().fromBase64) ||
-       id == NameToId(cx->names().fromHex))) {
-    return true;
+  if (key == JSProto_Function) {
+    if (!JS::Prefs::experimental_uint8array_base64() &&
+        (id == NameToId(cx->names().fromBase64) ||
+         id == NameToId(cx->names().fromHex))) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_promise_try() &&
+        id == NameToId(cx->names().try_)) {
+      return true;
+    }
   }
 
-  // It's gently surprising that this is JSProto_Function, but the trick
-  // to realize is that this is a -constructor function-, not a function
-  // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_promise_try() &&
-      id == NameToId(cx->names().try_)) {
-    return true;
-  }
-
-  // It's gently surprising that this is JSProto_Function, but the trick
-  // to realize is that this is a -constructor function-, not a function
-  // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_regexp_escape() &&
-      id == NameToId(cx->names().escape)) {
-    return true;
-  }
-
-#ifdef NIGHTLY_BUILD
-  if (key == JSProto_Math && !JS::Prefs::experimental_math_sumprecise() &&
-      id == NameToId(cx->names().sumPrecise)) {
-    return true;
-  }
-
-  // It's gently surprising that this is JSProto_Function, but the trick
-  // to realize is that this is a -constructor function-, not a function
-  // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_error_iserror() &&
-      id == NameToId(cx->names().isError)) {
-    return true;
-  }
-
-  // It's gently surprising that this is JSProto_Function, but the trick
-  // to realize is that this is a -constructor function-, not a function
-  // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_iterator_range() &&
-      (id == NameToId(cx->names().range))) {
-    return true;
-  }
-
-  // It's gently surprising that this is JSProto_Function, but the trick
-  // to realize is that this is a -constructor function-, not a function
-  // on the prototype; and the proto of the constructor is JSProto_Function.
-  if (key == JSProto_Function && !JS::Prefs::experimental_joint_iteration() &&
-      (id == NameToId(cx->names().zip) ||
-       id == NameToId(cx->names().zipKeyed))) {
-    return true;
-  }
-
-  if (key == JSProto_Atomics && !JS::Prefs::experimental_atomics_pause() &&
-      id == NameToId(cx->names().pause)) {
+#ifdef JS_HAS_TEMPORAL_API
+  if (key == JSProto_Date && !JS::Prefs::experimental_temporal() &&
+      id == NameToId(cx->names().toTemporalInstant)) {
     return true;
   }
 #endif
+
+#ifdef NIGHTLY_BUILD
+  // It's gently surprising that this is JSProto_Function, but the trick
+  // to realize is that this is a -constructor function-, not a function
+  // on the prototype; and the proto of the constructor is JSProto_Function.
+  if (key == JSProto_Function) {
+    if (!JS::Prefs::experimental_error_iserror() &&
+        id == NameToId(cx->names().isError)) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_iterator_range() &&
+        (id == NameToId(cx->names().range))) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_joint_iteration() &&
+        (id == NameToId(cx->names().zip) ||
+         id == NameToId(cx->names().zipKeyed))) {
+      return true;
+    }
+    if (!JS::Prefs::experimental_iterator_sequencing() &&
+        id == NameToId(cx->names().concat)) {
+      return true;
+    }
+  }
+  if (key == JSProto_Map || key == JSProto_WeakMap) {
+    if (!JS::Prefs::experimental_upsert() &&
+        (id == NameToId(cx->names().getOrInsert) ||
+         id == NameToId(cx->names().getOrInsertComputed))) {
+      return true;
+    }
+  }
+#endif
+
+  if (key == JSProto_Function &&
+      !JS::Prefs::experimental_error_capture_stack_trace() &&
+      id == NameToId(cx->names().captureStackTrace)) {
+    return true;
+  }
 
   if (key == JSProto_JSON &&
       !JS::Prefs::experimental_json_parse_with_source() &&
@@ -2356,13 +2313,13 @@ JS_PUBLIC_API bool js::ShouldIgnorePropertyDefinition(JSContext* cx,
     return true;
   }
 
-  if (key == JSProto_Math && !JS::Prefs::experimental_float16array() &&
-      (id == NameToId(cx->names().f16round))) {
+  if (key == JSProto_Math && !JS::Prefs::experimental_math_sumprecise() &&
+      id == NameToId(cx->names().sumPrecise)) {
     return true;
   }
-  if (key == JSProto_DataView && !JS::Prefs::experimental_float16array() &&
-      (id == NameToId(cx->names().getFloat16) ||
-       id == NameToId(cx->names().setFloat16))) {
+
+  if (key == JSProto_Atomics && !JS::Prefs::experimental_atomics_pause() &&
+      id == NameToId(cx->names().pause)) {
     return true;
   }
 
@@ -2649,22 +2606,6 @@ JSObject* js::PrimitiveToObject(JSContext* cx, const Value& v) {
       RootedBigInt bigInt(cx, v.toBigInt());
       return BigIntObject::create(cx, bigInt);
     }
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive: {
-      JSObject& obj = v.toExtendedPrimitive();
-
-      if (obj.is<RecordType>()) {
-        Rooted<RecordType*> rec(cx, &obj.as<RecordType>());
-        return RecordObject::create(cx, rec);
-      }
-      if (obj.is<TupleType>()) {
-        Rooted<TupleType*> tuple(cx, &obj.as<TupleType>());
-        return TupleObject::create(cx, tuple);
-      }
-
-      MOZ_CRASH("Unexpected ExtendedPrimitive type.");
-    }
-#endif
     case ValueType::Undefined:
     case ValueType::Null:
     case ValueType::Magic:
@@ -2693,16 +2634,6 @@ JSProtoKey js::PrimitiveToProtoKey(JSContext* cx, const Value& v) {
       return JSProto_Symbol;
     case ValueType::BigInt:
       return JSProto_BigInt;
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive:
-      if (v.toExtendedPrimitive().is<TupleType>()) {
-        return JSProto_Tuple;
-      }
-      if (v.toExtendedPrimitive().is<RecordType>()) {
-        return JSProto_Null;
-      }
-      MOZ_CRASH("Unsupported ExtendedPrimitive");
-#endif
     case ValueType::Undefined:
     case ValueType::Null:
     case ValueType::Magic:
@@ -2785,29 +2716,35 @@ JSObject* js::ToObjectSlowForPropertyAccess(JSContext* cx, JS::HandleValue val,
   return PrimitiveToObject(cx, val);
 }
 
+enum class SlotsKind { Fixed, Dynamic };
+
 class GetObjectSlotNameFunctor : public JS::TracingContext::Functor {
-  JSObject* obj;
+  NativeObject* obj;
+  SlotsKind kind;
 
  public:
-  explicit GetObjectSlotNameFunctor(JSObject* ctx) : obj(ctx) {}
-  virtual void operator()(JS::TracingContext* trc, char* buf,
+  explicit GetObjectSlotNameFunctor(NativeObject* obj, SlotsKind kind)
+      : obj(obj), kind(kind) {}
+  virtual void operator()(JS::TracingContext* trc, const char* name, char* buf,
                           size_t bufsize) override;
 };
 
-void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx, char* buf,
+void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx,
+                                          const char* name, char* buf,
                                           size_t bufsize) {
   MOZ_ASSERT(tcx->index() != JS::TracingContext::InvalidIndex);
 
   uint32_t slot = uint32_t(tcx->index());
+  if (kind == SlotsKind::Dynamic) {
+    slot += obj->numFixedSlots();
+  }
 
   Maybe<PropertyKey> key;
-  if (obj->is<NativeObject>()) {
-    NativeShape* shape = obj->as<NativeObject>().shape();
-    for (ShapePropertyIter<NoGC> iter(shape); !iter.done(); iter++) {
-      if (iter->hasSlot() && iter->slot() == slot) {
-        key.emplace(iter->key());
-        break;
-      }
+  NativeShape* shape = obj->as<NativeObject>().shape();
+  for (ShapePropertyIter<NoGC> iter(shape); !iter.done(); iter++) {
+    if (iter->hasSlot() && iter->slot() == slot) {
+      key.emplace(iter->key());
+      break;
     }
   }
 
@@ -2820,8 +2757,9 @@ void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx, char* buf,
         if (false) {
           ;
         }
-#define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp)       \
-  else if ((JSProto_##name) == slot){slotname = #name; \
+#define TEST_SLOT_MATCHES_PROTOTYPE(name, clasp) \
+  else if ((JSProto_##name) == slot) {           \
+    slotname = #name;                            \
   }
         JS_FOR_EACH_PROTOTYPE(TEST_SLOT_MATCHES_PROTOTYPE)
 #undef TEST_SLOT_MATCHES_PROTOTYPE
@@ -2858,7 +2796,7 @@ void GetObjectSlotNameFunctor::operator()(JS::TracingContext* tcx, char* buf,
     } else if (key->isSymbol()) {
       snprintf(buf, bufsize, "**SYMBOL KEY**");
     } else {
-      snprintf(buf, bufsize, "**FINALIZED ATOM KEY**");
+      MOZ_CRASH("Unexpected key kind");
     }
   }
 }
@@ -3302,14 +3240,16 @@ js::gc::AllocKind JSObject::allocKindForTenure(
 void JSObject::addSizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf,
                                       JS::ClassInfo* info,
                                       JS::RuntimeSizes* runtimeSizes) {
+  // TODO: These will eventually count as GC heap memory.
   if (is<NativeObject>() && as<NativeObject>().hasDynamicSlots()) {
     info->objectsMallocHeapSlots +=
-        mallocSizeOf(as<NativeObject>().getSlotsHeader());
+        gc::GetAllocSize(as<NativeObject>().getSlotsHeader());
   }
 
   if (is<NativeObject>() && as<NativeObject>().hasDynamicElements()) {
     void* allocatedElements = as<NativeObject>().getUnshiftedElementsHeader();
-    info->objectsMallocHeapElementsNormal += mallocSizeOf(allocatedElements);
+    info->objectsMallocHeapElementsNormal +=
+        gc::GetAllocSize(allocatedElements);
   }
 
   // Other things may be measured in the future if DMD indicates it is
@@ -3411,23 +3351,44 @@ void JSObject::traceChildren(JSTracer* trc) {
   if (objShape->isNative()) {
     NativeObject* nobj = &as<NativeObject>();
 
-    {
-      GetObjectSlotNameFunctor func(nobj);
-      JS::AutoTracingDetails ctx(trc, func);
-      JS::AutoTracingIndex index(trc);
-      // Tracing can mutate the target but cannot change the slot count,
-      // but the compiler has no way of knowing this.
-      const uint32_t nslots = nobj->slotSpan();
-      for (uint32_t i = 0; i < nslots; ++i) {
-        TraceEdge(trc, &nobj->getSlotRef(i), "object slot");
-        ++index;
+    if (nobj->hasDynamicSlots()) {
+      ObjectSlots* slots = nobj->getSlotsHeader();
+      MOZ_ASSERT(nobj->slots_ == slots->slots());
+      TraceBufferEdge(trc, nobj, &slots, "objectDynamicSlots buffer");
+      if (slots != nobj->getSlotsHeader()) {
+        nobj->slots_ = slots->slots();
       }
-      MOZ_ASSERT(nslots == nobj->slotSpan());
+    }
+
+    if (nobj->hasDynamicElements()) {
+      void* buffer = nobj->getUnshiftedElementsHeader();
+      uint32_t numShifted = nobj->getElementsHeader()->numShiftedElements();
+      TraceBufferEdge(trc, nobj, &buffer, "objectDynamicElements buffer");
+      if (buffer != nobj->getUnshiftedElementsHeader()) {
+        nobj->elements_ =
+            reinterpret_cast<ObjectElements*>(buffer)->elements() + numShifted;
+      }
+    }
+
+    const uint32_t nslots = nobj->slotSpan();
+    const uint32_t nfixed = nobj->numFixedSlots();
+
+    {
+      GetObjectSlotNameFunctor func(nobj, SlotsKind::Fixed);
+      JS::AutoTracingDetails ctx(trc, func);
+      TraceRange(trc, std::min(nslots, nfixed), nobj->fixedSlots(),
+                 "objectFixedSlots");
+    }
+
+    if (nslots > nfixed) {
+      MOZ_ASSERT(nobj->hasDynamicSlots());
+      GetObjectSlotNameFunctor func(nobj, SlotsKind::Dynamic);
+      JS::AutoTracingDetails ctx(trc, func);
+      TraceRange(trc, nslots - nfixed, nobj->slots_, "objectDynamicSlots");
     }
 
     TraceRange(trc, nobj->getDenseInitializedLength(),
-               static_cast<HeapSlot*>(nobj->getDenseElements()),
-               "objectElements");
+               nobj->getDenseElements().begin(), "objectElements");
   }
 
   // Call the trace hook at the end so that during a moving GC the trace hook
@@ -3534,12 +3495,6 @@ bool js::Unbox(JSContext* cx, HandleObject obj, MutableHandleValue vp) {
     vp.setSymbol(obj->as<SymbolObject>().unbox());
   } else if (obj->is<BigIntObject>()) {
     vp.setBigInt(obj->as<BigIntObject>().unbox());
-#ifdef ENABLE_RECORD_TUPLE
-  } else if (obj->is<RecordObject>()) {
-    vp.setExtendedPrimitive(*obj->as<RecordObject>().unbox());
-  } else if (obj->is<TupleObject>()) {
-    vp.setExtendedPrimitive(obj->as<TupleObject>().unbox());
-#endif
   } else {
     vp.setUndefined();
   }

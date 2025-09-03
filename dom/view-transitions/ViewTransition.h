@@ -7,7 +7,9 @@
 
 #include "nsRect.h"
 #include "nsWrapperCache.h"
-#include "nsTHashMap.h"
+#include "nsAtomHashKeys.h"
+#include "nsClassHashtable.h"
+#include "nsRefPtrHashtable.h"
 
 class nsIGlobalObject;
 class nsITimer;
@@ -15,6 +17,13 @@ class nsITimer;
 namespace mozilla {
 
 class ErrorResult;
+struct Keyframe;
+struct PseudoStyleRequest;
+struct StyleLockedDeclarationBlock;
+
+namespace gfx {
+class DataSourceSurface;
+}
 
 namespace dom {
 
@@ -31,6 +40,7 @@ enum class SkipTransitionReason : uint8_t {
   UpdateCallbackRejected,
   DuplicateTransitionNameCapturingOldState,
   DuplicateTransitionNameCapturingNewState,
+  PseudoUpdateFailure,
   Resize,
 };
 
@@ -59,6 +69,17 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   void PerformPendingOperations();
 
   Element* GetRoot() const { return mViewTransitionRoot; }
+  gfx::DataSourceSurface* GetOldSurface(nsAtom* aName) const;
+
+  Element* FindPseudo(const PseudoStyleRequest&) const;
+
+  const StyleLockedDeclarationBlock* GetDynamicRuleFor(const Element&) const;
+
+  static constexpr nsLiteralString kGroupAnimPrefix =
+      u"-ua-view-transition-group-anim-"_ns;
+
+  [[nodiscard]] bool GetGroupKeyframes(nsAtom* aAnimationName,
+                                       nsTArray<Keyframe>&) const;
 
   nsIGlobalObject* GetParentObject() const;
   JSObject* WrapObject(JSContext*, JS::Handle<JSObject*> aGivenProto) override;
@@ -71,14 +92,16 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   MOZ_CAN_RUN_SCRIPT void CallUpdateCallback(ErrorResult&);
   void Activate();
 
-  void ClearActiveTransition();
+  void ClearActiveTransition(bool aIsDocumentHidden);
   void Timeout();
   void Setup();
   [[nodiscard]] Maybe<SkipTransitionReason> CaptureOldState();
   [[nodiscard]] Maybe<SkipTransitionReason> CaptureNewState();
   void SetupTransitionPseudoElements();
+  [[nodiscard]] bool UpdatePseudoElementStyles(bool aNeedsInvalidation);
   void ClearNamedElements();
   void HandleFrame();
+  bool CheckForActiveAnimations() const;
   void SkipTransition(SkipTransitionReason, JS::Handle<JS::Value>);
   void ClearTimeoutTimer();
 
@@ -91,7 +114,7 @@ class ViewTransition final : public nsISupports, public nsWrapperCache {
   RefPtr<ViewTransitionUpdateCallback> mUpdateCallback;
 
   // https://drafts.csswg.org/css-view-transitions/#viewtransition-named-elements
-  using NamedElements = nsTHashMap<RefPtr<nsAtom>, UniquePtr<CapturedElement>>;
+  using NamedElements = nsClassHashtable<nsAtomHashKey, CapturedElement>;
   NamedElements mNamedElements;
 
   // https://drafts.csswg.org/css-view-transitions/#viewtransition-initial-snapshot-containing-block-size

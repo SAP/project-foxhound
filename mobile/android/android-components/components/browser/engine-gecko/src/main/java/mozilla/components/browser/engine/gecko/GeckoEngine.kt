@@ -356,9 +356,8 @@ class GeckoEngine(
 
                 webExtensionDelegate.onInstallPermissionRequest(
                     GeckoWebExtension(ext, runtime),
-                    // We pass both permissions and origins as a single list of
-                    // permissions to be shown to the user.
-                    permissions.toList() + origins.toList(),
+                    permissions.toList(),
+                    origins.toList(),
                 ) { data ->
                     result.complete(
                         NativePermissionPromptResponse(
@@ -1338,17 +1337,97 @@ class GeckoEngine(
                     Engine.HttpsOnlyMode.ENABLED -> GeckoRuntimeSettings.HTTPS_ONLY
                 }
             }
+
+        @Suppress("TooGenericExceptionCaught")
+        override var dohSettingsMode: Engine.DohSettingsMode
+            get() {
+                try {
+                    runtime.settings.trustedRecusiveResolverMode
+                } catch (npe: NullPointerException) {
+                    runtime.settings.setTrustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_OFF)
+                }
+                return when (runtime.settings.trustedRecusiveResolverMode) {
+                    GeckoRuntimeSettings.TRR_MODE_OFF -> Engine.DohSettingsMode.DEFAULT
+                    GeckoRuntimeSettings.TRR_MODE_FIRST -> Engine.DohSettingsMode.INCREASED
+                    GeckoRuntimeSettings.TRR_MODE_ONLY -> Engine.DohSettingsMode.MAX
+                    GeckoRuntimeSettings.TRR_MODE_DISABLED -> Engine.DohSettingsMode.OFF
+                    else -> Engine.DohSettingsMode.DEFAULT
+                }
+            }
+            set(value) {
+                when (value) {
+                    Engine.DohSettingsMode.DEFAULT ->
+                        runtime.settings.setTrustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_OFF)
+
+                    Engine.DohSettingsMode.INCREASED ->
+                        runtime.settings.setTrustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_FIRST)
+
+                    Engine.DohSettingsMode.MAX ->
+                        runtime.settings.setTrustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_ONLY)
+
+                    Engine.DohSettingsMode.OFF ->
+                        runtime.settings.setTrustedRecursiveResolverMode(GeckoRuntimeSettings.TRR_MODE_DISABLED)
+                }
+            }
+
+        @Suppress("TooGenericExceptionCaught")
+        override var dohProviderUrl: String
+            get() {
+                return try {
+                    runtime.settings.trustedRecursiveResolverUri
+                } catch (npe: NullPointerException) {
+                    // network.trr.uri pref has not been set
+                    runtime.settings.setTrustedRecursiveResolverUri("")
+                    runtime.settings.trustedRecursiveResolverUri
+                }
+            }
+            set(value) { runtime.settings.setTrustedRecursiveResolverUri(value) }
+
+        @Suppress("TooGenericExceptionCaught")
+        override var dohDefaultProviderUrl: String?
+            get() {
+                return try {
+                    runtime.settings.defaultRecursiveResolverUri
+                } catch (npe: NullPointerException) {
+                    // network.trr.default_provider_uri pref has not been set
+                    runtime.settings.setDefaultRecursiveResolverUri("")
+                    runtime.settings.defaultRecursiveResolverUri
+                }
+            }
+            set(value) {
+                if (value != null) {
+                    runtime.settings.setDefaultRecursiveResolverUri(value)
+                }
+            }
+
+        @Suppress("TooGenericExceptionCaught")
+        override var dohExceptionsList: List<String>
+            get() {
+                return try {
+                    runtime.settings.trustedRecursiveResolverExcludedDomains
+                } catch (npe: NullPointerException) {
+                    // network.trr.excluded-domains pref has not been set
+                    runtime.settings.setTrustedRecursiveResolverExcludedDomains(emptyList())
+                    runtime.settings.trustedRecursiveResolverExcludedDomains
+                }
+            }
+            set(value) { runtime.settings.setTrustedRecursiveResolverExcludedDomains(value) }
+
         override var globalPrivacyControlEnabled: Boolean
             get() = runtime.settings.globalPrivacyControl
             set(value) { runtime.settings.setGlobalPrivacyControl(value) }
 
-        override var fingerprintingProtection: Boolean
+        override var fingerprintingProtection: Boolean?
             get() = runtime.settings.fingerprintingProtection
-            set(value) { runtime.settings.setFingerprintingProtection(value) }
+            set(value) {
+                value?.let { runtime.settings.setFingerprintingProtection(it) }
+            }
 
-        override var fingerprintingProtectionPrivateBrowsing: Boolean
+        override var fingerprintingProtectionPrivateBrowsing: Boolean?
             get() = runtime.settings.fingerprintingProtectionPrivateBrowsing
-            set(value) { runtime.settings.setFingerprintingProtectionPrivateBrowsing(value) }
+            set(value) {
+                value?.let { runtime.settings.setFingerprintingProtectionPrivateBrowsing(it) }
+            }
 
         override var fingerprintingProtectionOverrides: String?
             get() = runtime.settings.fingerprintingProtectionOverrides
@@ -1385,6 +1464,14 @@ class GeckoEngine(
         override var cookieBehaviorOptInPartitioningPBM: Boolean
             get() = runtime.settings.cookieBehaviorOptInPartitioningPBM
             set(value) { runtime.settings.setCookieBehaviorOptInPartitioningPBM(value) }
+
+        override var certificateTransparencyMode: Int
+            get() = runtime.settings.certificateTransparencyMode
+            set(value) { runtime.settings.setCertificateTransparencyMode(value) }
+
+        override var postQuantumKeyExchangeEnabled: Boolean
+            get() = runtime.settings.postQuantumKeyExchangeEnabled
+            set(value) { runtime.settings.setPostQuantumKeyExchangeEnabled(value) }
     }.apply {
         defaultSettings?.let {
             this.javascriptEnabled = it.javascriptEnabled
@@ -1421,6 +1508,8 @@ class GeckoEngine(
             this.parallelMarkingEnabled = it.parallelMarkingEnabled
             this.cookieBehaviorOptInPartitioning = it.cookieBehaviorOptInPartitioning
             this.cookieBehaviorOptInPartitioningPBM = it.cookieBehaviorOptInPartitioningPBM
+            this.certificateTransparencyMode = it.certificateTransparencyMode
+            this.postQuantumKeyExchangeEnabled = it.postQuantumKeyExchangeEnabled
         }
     }
 
@@ -1579,6 +1668,5 @@ internal fun InstallationMethod.toGeckoInstallationMethod(): String? {
         InstallationMethod.MANAGER -> WebExtensionController.INSTALLATION_METHOD_MANAGER
         InstallationMethod.FROM_FILE -> WebExtensionController.INSTALLATION_METHOD_FROM_FILE
         InstallationMethod.ONBOARDING -> WebExtensionController.INSTALLATION_METHOD_ONBOARDING
-        else -> null
     }
 }

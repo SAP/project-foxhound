@@ -16,56 +16,13 @@ dnl = Application
 dnl =
 dnl ========================================================
 
-MOZ_BRANDING_DIRECTORY=
-MOZ_OFFICIAL_BRANDING=
-
 dnl ========================================================
 dnl = Trademarked Branding
 dnl ========================================================
-MOZ_ARG_ENABLE_BOOL(official-branding,
-[  --enable-official-branding
-                          Enable Official mozilla.org Branding
-                          Do not distribute builds with
-                          --enable-official-branding unless you have
-                          permission to use trademarks per
-                          http://www.mozilla.org/foundation/trademarks/ .],
-    MOZ_OFFICIAL_BRANDING=1,
-    MOZ_OFFICIAL_BRANDING=)
-
-# Allow the application to influence configure with a confvars.sh script.
-AC_MSG_CHECKING([if app-specific confvars.sh exists])
-if test -f "${srcdir}/${MOZ_BUILD_APP}/confvars.sh" ; then
-  AC_MSG_RESULT([${srcdir}/${MOZ_BUILD_APP}/confvars.sh])
-  . "${srcdir}/${MOZ_BUILD_APP}/confvars.sh"
-else
-  AC_MSG_RESULT([no])
-fi
-
-AC_SUBST(MOZ_OFFICIAL_BRANDING)
-if test -n "$MOZ_OFFICIAL_BRANDING"; then
-  if test -z "$MOZ_OFFICIAL_BRANDING_DIRECTORY"; then
-    AC_MSG_ERROR([You must specify MOZ_OFFICIAL_BRANDING_DIRECTORY to use --enable-official-branding.])
-  else
-    MOZ_BRANDING_DIRECTORY=${MOZ_OFFICIAL_BRANDING_DIRECTORY}
-    AC_DEFINE(MOZ_OFFICIAL_BRANDING)
-  fi
-fi
-
-MOZ_ARG_WITH_STRING(branding,
-[  --with-branding=dir     Use branding from the specified directory.],
-    MOZ_BRANDING_DIRECTORY=$withval)
-
-REAL_BRANDING_DIRECTORY="${MOZ_BRANDING_DIRECTORY}"
-if test -z "$REAL_BRANDING_DIRECTORY"; then
-  REAL_BRANDING_DIRECTORY=${MOZ_BUILD_APP}/branding/nightly
-fi
 
 if test -f "${_topsrcdir}/$REAL_BRANDING_DIRECTORY/configure.sh"; then
   . "${_topsrcdir}/$REAL_BRANDING_DIRECTORY/configure.sh"
 fi
-
-AC_SUBST(MOZ_BRANDING_DIRECTORY)
-
 
 dnl ========================================================
 dnl = Mac bundle name
@@ -127,8 +84,6 @@ AC_SUBST(MOZ_EME_PROCESS_BUNDLEID)
 # - MOZ_APP_DISPLAYNAME: Used in user-visible fields (DLL properties,
 # Mac Bundle name, Updater, Installer), it is typically used for nightly
 # builds (e.g. Aurora for Firefox).
-# - MOZ_APP_PROFILE: When set, used for application.ini's
-# "Profile" field, which controls profile location.
 
 # The following environment variables used to have an effect, but don't anymore:
 # - MOZ_APP_VERSION: Defines the application version number. This was replaced with
@@ -140,7 +95,6 @@ AC_SUBST(MOZ_EME_PROCESS_BUNDLEID)
 # browser/config/version_display.txt.
 
 AC_SUBST(MOZ_APP_DISPLAYNAME)
-AC_SUBST(MOZ_APP_PROFILE)
 AC_DEFINE_UNQUOTED(MOZ_APP_UA_VERSION, "$MOZ_APP_VERSION")
 
 dnl Set various defines and substitutions

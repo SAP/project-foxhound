@@ -7,13 +7,16 @@
 import pickle
 import sys
 
+import buildconfig
 from run_glean_parser import parse
 
 
 def main(out_fd, *args):
-    parse_result = parse(args)
+    interesting_yamls = buildconfig.substs.get("MOZ_GLEAN_INTERESTING_METRICS_FILES")
+    parse_result = parse(args, interesting_yamls)
     pickle.dump(parse_result, out_fd)
 
 
 if __name__ == "__main__":
-    main(*sys.argv[1:])
+    with open(sys.argv[1], "wb") as out_fd:
+        main(out_fd, *sys.argv[2:])

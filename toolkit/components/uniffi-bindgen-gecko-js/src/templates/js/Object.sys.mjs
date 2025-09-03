@@ -8,7 +8,7 @@ export class {{ object.js_name() }} {
             throw new UniFFIError("Attempting to construct an object using the JavaScript constructor directly" +
             "Please use a UDL defined constructor, or the init function for the primary constructor")
         }
-        if (!opts[constructUniffiObject] instanceof UniFFIPointer) {
+        if (!(opts[constructUniffiObject] instanceof UniFFIPointer)) {
             throw new UniFFIError("Attempting to create a UniFFI object with a pointer that is not an instance of UniFFIPointer")
         }
         this[uniffiObjectPtr] = opts[constructUniffiObject];
@@ -17,7 +17,7 @@ export class {{ object.js_name() }} {
     {%- for cons in object.constructors() %}
     {{ cons.js_docstring(4) -}}
     static {{ cons.js_name() }}({{cons.js_arg_names()}}) {
-        {%- call js::call_constructor(cons, type_, object.use_async_wrapper_for_constructor(config)) -%}
+        {%- call js::call_constructor(cons, type_, object.call_style_for_constructor(cons, config)) -%}
     }
     {%- endfor %}
 
@@ -25,7 +25,7 @@ export class {{ object.js_name() }} {
 
     {{ meth.js_docstring(4) -}}
     {{ meth.js_name() }}({{ meth.js_arg_names() }}) {
-        {%- call js::call_method(meth, type_, object.use_async_wrapper_for_method(meth, config)) %}
+        {%- call js::call_method(meth, type_, object.call_style_for_method(meth, config)) %}
     }
     {%- endfor %}
 

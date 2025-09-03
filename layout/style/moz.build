@@ -291,6 +291,7 @@ JAR_MANIFESTS += ["jar.mn"]
 
 RESOURCE_FILES += [
     "contenteditable.css",
+    "designmode.css",
 ]
 
 CONTENT_ACCESSIBLE_FILES += [
@@ -361,7 +362,3 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         "ServoStyleConsts.h",
         inputs=["/servo/ports/geckolib", "/servo/components/style"],
     )
-
-    CONFIGURE_SUBST_FILES += [
-        "extra-bindgen-flags",
-    ]

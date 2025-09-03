@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef builtin_temporal_MonthCode_h
+#define builtin_temporal_MonthCode_h
+
 #include "mozilla/Assertions.h"
 #include "mozilla/EnumSet.h"
 
@@ -75,14 +78,6 @@ class MonthCode final {
     code_ = static_cast<Code>(month + (isLeapMonth ? toLeapMonth : 0));
   }
 
-  constexpr bool operator==(const MonthCode& other) const {
-    return other.code_ == code_;
-  }
-
-  constexpr bool operator!=(const MonthCode& other) const {
-    return !(*this == other);
-  }
-
   constexpr auto code() const { return code_; }
 
   constexpr int32_t ordinal() const {
@@ -94,6 +89,33 @@ class MonthCode final {
   }
 
   constexpr bool isLeapMonth() const { return code_ >= Code::M01L; }
+
+  constexpr bool operator==(const MonthCode& other) const {
+    return other.code_ == code_;
+  }
+
+  constexpr bool operator!=(const MonthCode& other) const {
+    return !(*this == other);
+  }
+
+  constexpr bool operator<(const MonthCode& other) const {
+    if (ordinal() != other.ordinal()) {
+      return ordinal() < other.ordinal();
+    }
+    return code_ < other.code_;
+  }
+
+  constexpr bool operator>(const MonthCode& other) const {
+    return other < *this;
+  }
+
+  constexpr bool operator<=(const MonthCode& other) const {
+    return !(other < *this);
+  }
+
+  constexpr bool operator>=(const MonthCode& other) const {
+    return !(*this < other);
+  }
 
   constexpr explicit operator std::string_view() const {
     constexpr const char* name =
@@ -127,26 +149,15 @@ class MonthCode final {
 };
 
 class MonthCodes final {
-  mozilla::EnumSet<MonthCode::Code> monthCodes_{};
+  mozilla::EnumSet<MonthCode::Code> monthCodes_{
+      MonthCode::Code::M01, MonthCode::Code::M02, MonthCode::Code::M03,
+      MonthCode::Code::M04, MonthCode::Code::M05, MonthCode::Code::M06,
+      MonthCode::Code::M07, MonthCode::Code::M08, MonthCode::Code::M09,
+      MonthCode::Code::M10, MonthCode::Code::M11, MonthCode::Code::M12,
+  };
 
  public:
-  constexpr explicit MonthCodes(std::initializer_list<MonthCode> list) {
-    for (auto value : {
-             MonthCode::Code::M01,
-             MonthCode::Code::M02,
-             MonthCode::Code::M03,
-             MonthCode::Code::M04,
-             MonthCode::Code::M05,
-             MonthCode::Code::M06,
-             MonthCode::Code::M07,
-             MonthCode::Code::M08,
-             MonthCode::Code::M09,
-             MonthCode::Code::M10,
-             MonthCode::Code::M11,
-             MonthCode::Code::M12,
-         }) {
-      monthCodes_ += value;
-    }
+  constexpr MOZ_IMPLICIT MonthCodes(std::initializer_list<MonthCode> list) {
     for (auto value : list) {
       monthCodes_ += value.code();
     }
@@ -184,9 +195,9 @@ class MonthCodes final {
 // https://docs.rs/icu/latest/icu/calendar/ethiopian/struct.Ethiopian.html#month-codes
 // https://docs.rs/icu/latest/icu/calendar/hebrew/struct.Hebrew.html#month-codes
 namespace monthcodes {
-inline constexpr auto ISO8601 = MonthCodes{};
+inline constexpr MonthCodes ISO8601 = {};
 
-inline constexpr auto ChineseOrDangi = MonthCodes{
+inline constexpr MonthCodes ChineseOrDangi = {
     // Leap months.
     MonthCode{1, /* isLeapMonth = */ true},
     MonthCode{2, /* isLeapMonth = */ true},
@@ -202,12 +213,12 @@ inline constexpr auto ChineseOrDangi = MonthCodes{
     MonthCode{12, /* isLeapMonth = */ true},
 };
 
-inline constexpr auto CopticOrEthiopian = MonthCodes{
+inline constexpr MonthCodes CopticOrEthiopian = {
     // Short epagomenal month.
     MonthCode{13},
 };
 
-inline constexpr auto Hebrew = MonthCodes{
+inline constexpr MonthCodes Hebrew = {
     // Leap month Adar I.
     MonthCode{5, /* isLeapMonth = */ true},
 };
@@ -481,3 +492,5 @@ constexpr std::pair<int32_t, int32_t> CalendarDaysInMonth(CalendarId id,
 }
 
 }  // namespace js::temporal
+
+#endif /* builtin_temporal_MonthCode_h */

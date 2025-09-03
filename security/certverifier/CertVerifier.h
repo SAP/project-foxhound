@@ -14,10 +14,9 @@
 #include "RootCertificateTelemetryUtils.h"
 #include "ScopedNSSTypes.h"
 #include "mozilla/EnumSet.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/bindings/MetricTypes.h"
 #include "mozpkix/pkixder.h"
 #include "mozpkix/pkixtypes.h"
 #include "nsString.h"
@@ -71,6 +70,16 @@ enum class CRLiteMode {
   ConfirmRevocations = 3,
 };
 
+enum class VerifyUsage {
+  TLSServer = 1,
+  TLSServerCA = 2,
+  TLSClient = 3,
+  TLSClientCA = 4,
+  EmailSigner = 5,
+  EmailRecipient = 6,
+  EmailCA = 7,
+};
+
 enum class NetscapeStepUpPolicy : uint32_t;
 
 // Describes the source of the associated issuer.
@@ -93,7 +102,8 @@ class PinningTelemetryInfo {
 
   // Should we accumulate pinning telemetry for the result?
   bool accumulateResult;
-  Maybe<Telemetry::HistogramID> certPinningResultHistogram;
+  bool isMoz;
+  bool testMode;
   int32_t certPinningResultBucket;
   // Should we accumulate telemetry for the root?
   bool accumulateForRoot;
@@ -102,6 +112,8 @@ class PinningTelemetryInfo {
   void Reset() {
     accumulateForRoot = false;
     accumulateResult = false;
+    isMoz = false;
+    testMode = false;
   }
 };
 
@@ -184,7 +196,7 @@ class CertVerifier {
   // *evOidPolicy == SEC_OID_UNKNOWN means the cert is NOT EV
   // Only one usage per verification is supported.
   mozilla::pkix::Result VerifyCert(
-      const nsTArray<uint8_t>& certBytes, SECCertificateUsage usage,
+      const nsTArray<uint8_t>& certBytes, VerifyUsage usage,
       mozilla::pkix::Time time, void* pinArg, const char* hostname,
       /*out*/ nsTArray<nsTArray<uint8_t>>& builtChain, Flags flags = 0,
       /*optional in*/

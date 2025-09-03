@@ -180,6 +180,9 @@ const mozilla::StyleLockedDeclarationBlock* Gecko_GetStyleAttrDeclarationBlock(
 
 void Gecko_UnsetDirtyStyleAttr(const mozilla::dom::Element* element);
 
+const mozilla::StyleLockedDeclarationBlock* Gecko_GetViewTransitionDynamicRule(
+    const mozilla::dom::Element* element);
+
 const mozilla::StyleLockedDeclarationBlock*
 Gecko_GetHTMLPresentationAttrDeclarationBlock(
     const mozilla::dom::Element* element);
@@ -318,8 +321,8 @@ void Gecko_CopyImageOrientationFrom(nsStyleVisibility* aDst,
 // list-style-image style.
 void Gecko_SetListStyleImageNone(nsStyleList* style_struct);
 
-void Gecko_SetListStyleImageImageValue(
-    nsStyleList* style_struct, const mozilla::StyleComputedImageUrl* url);
+void Gecko_SetListStyleImageImageValue(nsStyleList* style_struct,
+                                       const mozilla::StyleComputedUrl* url);
 
 void Gecko_CopyListStyleImageFrom(nsStyleList* dest, const nsStyleList* src);
 
@@ -333,9 +336,11 @@ bool Gecko_AnimationNameMayBeReferencedFromStyle(const nsPresContext*,
 
 float Gecko_GetScrollbarInlineSize(const nsPresContext*);
 
-// Incremental restyle.
-mozilla::PseudoStyleType Gecko_GetImplementedPseudo(
+// Retrive pseudo type from an element.
+mozilla::PseudoStyleType Gecko_GetImplementedPseudoType(
     const mozilla::dom::Element*);
+// Retrive pseudo identifier from an element if any.
+nsAtom* Gecko_GetImplementedPseudoIdentifier(const mozilla::dom::Element*);
 
 // We'd like to return `nsChangeHint` here, but bindgen bitfield enums don't
 // work as return values with the Linux 32-bit ABI at the moment because
@@ -422,9 +427,6 @@ void Gecko_nsStyleSVG_CopyContextProperties(nsStyleSVG* dst,
 
 void Gecko_GetComputedURLSpec(const mozilla::StyleComputedUrl* url,
                               nsCString* spec);
-
-void Gecko_GetComputedImageURLSpec(const mozilla::StyleComputedUrl* url,
-                                   nsCString* spec);
 
 // Return true if the given image MIME type is supported
 bool Gecko_IsSupportedImageMimeType(const uint8_t* mime_type,
@@ -551,7 +553,8 @@ const nsTArray<mozilla::dom::Element*>* Gecko_Document_GetElementsWithId(
 const nsTArray<mozilla::dom::Element*>* Gecko_ShadowRoot_GetElementsWithId(
     const mozilla::dom::ShadowRoot*, nsAtom* aId);
 
-bool Gecko_ComputeBoolPrefMediaQuery(nsAtom*);
+bool Gecko_EvalMozPrefFeature(nsAtom*,
+                              const mozilla::StyleComputedMozPrefFeatureValue*);
 
 // Check whether font format/tech is supported.
 bool Gecko_IsFontFormatSupported(

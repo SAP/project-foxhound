@@ -14,6 +14,8 @@
 #include "mozilla/webrender/RenderCompositor.h"
 #include "mozilla/webrender/RenderThread.h"
 
+struct IDXGIDevice;
+struct IDXGIFactory;
 struct ID3D11DeviceContext;
 struct ID3D11Device;
 struct ID3D11Query;
@@ -84,6 +86,8 @@ class RenderCompositorANGLE final : public RenderCompositor {
             wr::DeviceIntRect aDirtyRect,
             wr::DeviceIntRect aValidRect) override;
   void Unbind() override;
+  void BindSwapChain(wr::NativeSurfaceId aId) override;
+  void PresentSwapChain(wr::NativeSurfaceId aId) override;
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque) override;
   void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque) override;
@@ -92,12 +96,17 @@ class RenderCompositorANGLE final : public RenderCompositor {
   void DestroyTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY) override;
   void AttachExternalImage(wr::NativeSurfaceId aId,
                            wr::ExternalImageId aExternalImage) override;
+  void CreateSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
+                              bool aIsOpaque) override;
+  void ResizeSwapChainSurface(wr::NativeSurfaceId aId,
+                              wr::DeviceIntSize aSize) override;
   void AddSurface(wr::NativeSurfaceId aId,
                   const wr::CompositorSurfaceTransform& aTransform,
                   wr::DeviceIntRect aClipRect,
                   wr::ImageRendering aImageRendering) override;
   void EnableNativeCompositor(bool aEnable) override;
   void GetCompositorCapabilities(CompositorCapabilities* aCaps) override;
+  void GetWindowProperties(WindowProperties* aProperties) override;
 
   // Interface for partial present
   bool UsePartialPresent() override;
@@ -121,12 +130,16 @@ class RenderCompositorANGLE final : public RenderCompositor {
   void DestroyEGLSurface();
   ID3D11Device* GetDeviceOfEGLDisplay(nsACString& aError);
   bool CreateSwapChain(nsACString& aError);
-  void CreateSwapChainForDCompIfPossible(IDXGIFactory2* aDXGIFactory2);
+  void CreateSwapChainForDCompIfPossible();
+  bool CreateSwapChainForHWND();
   RefPtr<IDXGISwapChain1> CreateSwapChainForDComp(bool aUseTripleBuffering);
   RefPtr<ID3D11Query> GetD3D11Query();
   void ReleaseNativeCompositorResources();
   HWND GetCompositorHwnd();
   bool ShouldUseAlpha() const;
+
+  RefPtr<IDXGIDevice> DXGIDevice();
+  RefPtr<IDXGIFactory> DXGIFactory();
 
   RefPtr<gl::GLContext> mGL;
 

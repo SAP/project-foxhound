@@ -84,6 +84,7 @@ skip-if = [
   "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1840716
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1840716
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1869710
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1840716
 ]
 
 ["browser_durationChange.js"]
@@ -171,6 +172,9 @@ skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64'"] # 
 ["browser_text_tracks_webvtt_2.js"]
 
 ["browser_text_tracks_webvtt_3.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov",
+]
 
 ["browser_thirdPartyIframe.js"]
 
@@ -214,6 +218,10 @@ skip-if = [
 ["browser_touch_toggle_enablepip.js"]
 
 ["browser_urlbar_toggle.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1833445
+  "win11_2009 && processor == 'x86_64'", # Bug 1833445
+]
 
 ["browser_videoEmptied.js"]
 

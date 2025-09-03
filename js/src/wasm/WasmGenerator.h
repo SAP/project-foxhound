@@ -24,6 +24,7 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "jit/MacroAssembler.h"
+#include "jit/PerfSpewer.h"
 #include "threading/ProtectedData.h"
 #include "vm/HelperThreadTask.h"
 #include "wasm/WasmCompile.h"
@@ -85,15 +86,17 @@ struct CompiledCode {
   FuncCompileOutputVector funcs;
   Bytes bytes;
   CodeRangeVector codeRanges;
-  CallSiteVector callSites;
+  CallSites callSites;
   CallSiteTargetVector callSiteTargets;
-  TrapSiteVectorArray trapSites;
+  TrapSites trapSites;
   SymbolicAccessVector symbolicAccesses;
   jit::CodeLabelVector codeLabels;
   StackMaps stackMaps;
   TryNoteVector tryNotes;
   CodeRangeUnwindInfoVector codeRangeUnwindInfos;
   CallRefMetricsPatchVector callRefMetricsPatches;
+  FuncIonPerfSpewerVector funcIonSpewers;
+  FuncBaselinePerfSpewerVector funcBaselineSpewers;
   FeatureUsage featureUsage;
 
   [[nodiscard]] bool swap(jit::MacroAssembler& masm);
@@ -111,6 +114,8 @@ struct CompiledCode {
     tryNotes.clear();
     codeRangeUnwindInfos.clear();
     callRefMetricsPatches.clear();
+    funcIonSpewers.clear();
+    funcBaselineSpewers.clear();
     featureUsage = FeatureUsage::None;
     MOZ_ASSERT(empty());
   }
@@ -120,7 +125,8 @@ struct CompiledCode {
            callSites.empty() && callSiteTargets.empty() && trapSites.empty() &&
            symbolicAccesses.empty() && codeLabels.empty() && tryNotes.empty() &&
            stackMaps.empty() && codeRangeUnwindInfos.empty() &&
-           callRefMetricsPatches.empty() && featureUsage == FeatureUsage::None;
+           callRefMetricsPatches.empty() && funcIonSpewers.empty() &&
+           funcBaselineSpewers.empty() && featureUsage == FeatureUsage::None;
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -213,6 +219,9 @@ class MOZ_STACK_CLASS ModuleGenerator {
   // Data that is used for partial tiering
   SharedCode partialTieringCode_;
 
+  // Data that is used for compiling a complete tier
+  mozilla::TimeStamp completeTierStartTime_;
+
   // Data that is moved into the Module/Code as the result of finish()
   BytecodeRangeVector funcDefRanges_;
   FeatureUsageVector funcDefFeatureUsages_;
@@ -234,6 +243,8 @@ class MOZ_STACK_CLASS ModuleGenerator {
   uint32_t updateCallRefMetricsStubCodeOffset_;
   CallFarJumpVector callFarJumps_;
   CallSiteTargetVector callSiteTargets_;
+  FuncIonPerfSpewerVector funcIonSpewers_;
+  FuncBaselinePerfSpewerVector funcBaselineSpewers_;
   uint32_t lastPatchedCallSite_;
   uint32_t startOfUnpatchedCallsites_;
   uint32_t numCallRefMetrics_;

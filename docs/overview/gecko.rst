@@ -26,13 +26,13 @@ Firefox and Thunderbird.
 
 :ref:`Read more <SpiderMonkey>`
 
-JavaScript modules
-##################
+System Modules
+--------------
 
-SpiderMonkey supports a proprietary type of JavaScript modules that was developed before the
-EcmaScript module standard and even before commonjs was popular. These modules define exports using
-an EXPORTED_SYMBOLS array containing a list of symbol names to be exported. This kind of module is
-being replaced with standard EcmaScript modules.
+Gecko uses a variant of the standard ECMAScript module to implement the browser
+internal.
+
+:ref:`Read more <System Modules>`
 
 XPCOM
 -----

@@ -18,15 +18,8 @@ XPCOMUtils.defineLazyServiceGetter(
   Ci.nsIContentAnalysis
 );
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "_contentAnalysisClipboardEnabled",
-  "browser.contentanalysis.interception_point.clipboard.enabled",
-  true
-);
-
 // imported by adjustableTitle.js loaded in the same context:
-/* globals PromptUtils */
+/* globals PromptUtils, goDoCommand, goUpdateCommand */
 
 var propBag, args, Dialog;
 
@@ -111,6 +104,10 @@ function commonDialogOnLoad() {
     focusTarget: window,
   };
 
+  if (args.isExtra1Secondary) {
+    dialog.setAttribute("extra1-is-secondary", true);
+  }
+
   Dialog = new CommonDialog(args, ui);
   window.addEventListener("dialogclosing", function (aEvent) {
     if (aEvent.detail?.abort) {
@@ -135,6 +132,22 @@ function commonDialogOnLoad() {
     Dialog.setDefaultFocus(isInitialFocus);
   Dialog.onLoad(dialog);
 
+  document.addEventListener("command", event => {
+    switch (event.target.id) {
+      case "cmd_copy":
+      case "cmd_selectAll":
+        goDoCommand(event.target.id);
+        break;
+      case "checkbox":
+        Dialog.onCheckbox();
+        break;
+    }
+  });
+
+  document
+    .getElementById("contentAreaContextMenu")
+    .addEventListener("popupshowing", () => goUpdateCommand("cmd_copy"));
+
   // resize the window to the content
   window.sizeToContent();
 
@@ -142,29 +155,38 @@ function commonDialogOnLoad() {
   // it does, as its layout can change.
   ui.infoIcon.addEventListener("load", () => window.sizeToContent());
   if (lazy.gContentAnalysis.isActive && args.owningBrowsingContext?.isContent) {
-    ui.loginTextbox?.addEventListener("paste", async event => {
-      let data = event.clipboardData.getData("text/plain");
-      if (data?.length > 0 && lazy._contentAnalysisClipboardEnabled) {
-        // Prevent the paste from happening until content analysis returns a response
-        event.preventDefault();
-        // Selections can be forward or backward, so use min/max
-        const startIndex = Math.min(
-          ui.loginTextbox.selectionStart,
-          ui.loginTextbox.selectionEnd
-        );
-        const endIndex = Math.max(
-          ui.loginTextbox.selectionStart,
-          ui.loginTextbox.selectionEnd
-        );
-        const selectionDirection =
-          endIndex < startIndex ? "backward" : "forward";
-        try {
-          const response = await lazy.gContentAnalysis.analyzeContentRequest(
+    let caEventChecker = async event => {
+      let isPaste = event.type == "paste";
+      let dataTransfer = isPaste ? event.clipboardData : event.dataTransfer;
+      let data = dataTransfer.getData("text/plain");
+      if (!data || !data.length) {
+        return;
+      }
+
+      // Prevent the paste/drop from happening until content analysis returns a response
+      event.preventDefault();
+      // Selections can be forward or backward, so use min/max
+      const startIndex = Math.min(
+        ui.loginTextbox.selectionStart,
+        ui.loginTextbox.selectionEnd
+      );
+      const endIndex = Math.max(
+        ui.loginTextbox.selectionStart,
+        ui.loginTextbox.selectionEnd
+      );
+      const selectionDirection = endIndex < startIndex ? "backward" : "forward";
+      try {
+        const response = await lazy.gContentAnalysis.analyzeContentRequests(
+          [
             {
-              requestToken: Services.uuid.generateUUID().toString(),
-              resources: [],
               analysisType: Ci.nsIContentAnalysisRequest.eBulkDataEntry,
-              operationTypeForDisplay: Ci.nsIContentAnalysisRequest.eClipboard,
+              reason: isPaste
+                ? Ci.nsIContentAnalysisRequest.eClipboardPaste
+                : Ci.nsIContentAnalysisRequest.eDragAndDrop,
+              resources: [],
+              operationTypeForDisplay: isPaste
+                ? Ci.nsIContentAnalysisRequest.eClipboard
+                : Ci.nsIContentAnalysisRequest.eDroppedText,
               url: lazy.gContentAnalysis.getURIForBrowsingContext(
                 args.owningBrowsingContext
               ),
@@ -172,28 +194,30 @@ function commonDialogOnLoad() {
               windowGlobalParent:
                 args.owningBrowsingContext.currentWindowContext,
             },
-            true
-          );
-          if (response.shouldAllowContent) {
-            ui.loginTextbox.value =
-              ui.loginTextbox.value.slice(0, startIndex) +
-              data +
-              ui.loginTextbox.value.slice(endIndex);
-            ui.loginTextbox.focus();
-            if (startIndex !== endIndex) {
-              // Select the pasted text
-              ui.loginTextbox.setSelectionRange(
-                startIndex,
-                startIndex + data.length,
-                selectionDirection
-              );
-            }
+          ],
+          true
+        );
+        if (response.shouldAllowContent) {
+          ui.loginTextbox.value =
+            ui.loginTextbox.value.slice(0, startIndex) +
+            data +
+            ui.loginTextbox.value.slice(endIndex);
+          ui.loginTextbox.focus();
+          if (startIndex !== endIndex) {
+            // Select the pasted text
+            ui.loginTextbox.setSelectionRange(
+              startIndex,
+              startIndex + data.length,
+              selectionDirection
+            );
           }
-        } catch (error) {
-          console.error("Content analysis request returned error: ", error);
         }
+      } catch (error) {
+        console.error("Content analysis request returned error: ", error);
       }
-    });
+    };
+    ui.loginTextbox?.addEventListener("paste", caEventChecker);
+    ui.loginTextbox?.addEventListener("drop", caEventChecker);
   }
 
   window.getAttention();
@@ -205,3 +229,6 @@ function commonDialogOnUnload() {
     propBag.setProperty(propName, args[propName]);
   }
 }
+
+document.addEventListener("DOMContentLoaded", commonDialogOnLoad);
+window.addEventListener("unload", commonDialogOnUnload);

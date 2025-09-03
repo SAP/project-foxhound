@@ -161,7 +161,7 @@ static void TraceSuspendableStack(JSTracer* trc,
   MOZ_ASSERT(startFP != exitFP);
 
   WasmFrameIter iter(static_cast<FrameWithInstances*>(startFP), returnAddress);
-  MOZ_ASSERT(iter.stackSwitched());
+  MOZ_ASSERT(iter.currentFrameStackSwitched());
   uintptr_t highestByteVisitedInPrevWasmFrame = 0;
   while (true) {
     MOZ_ASSERT(!iter.done());
@@ -174,7 +174,7 @@ static void TraceSuspendableStack(JSTracer* trc,
       break;
     }
     ++iter;
-    if (iter.stackSwitched()) {
+    if (iter.currentFrameStackSwitched()) {
       highestByteVisitedInPrevWasmFrame = 0;
     }
   }
@@ -433,7 +433,7 @@ void SuspenderObject::suspend(JSContext* cx) {
         DebugAPI::onSuspendWasmFrame(cx, iter.debugFrame());
       }
       ++iter;
-      if (iter.stackSwitched()) {
+      if (iter.currentFrameStackSwitched()) {
         break;
       }
     }
@@ -455,7 +455,7 @@ void SuspenderObject::resume(JSContext* cx) {
       MOZ_RELEASE_ASSERT(!iter.done(), "expecting stackSwitched()");
       if (iter.isWasm()) {
         WasmFrameIter& wasmIter = iter.wasmFrame();
-        if (wasmIter.stackSwitched()) {
+        if (wasmIter.currentFrameStackSwitched()) {
           break;
         }
         if (wasmIter.debugEnabled()) {
@@ -711,11 +711,11 @@ bool CallOnMainStack(JSContext* cx, CallOnMainStackFn fn, void* data) {
 
 #elif defined(__loongarch_lp64)
 #    define CALLER_SAVED_REGS \
-      "ra", "a0", "a1", "a2","a3", "a4", "a5", "a6", "a7", "t0", "t1",    \
-      "t2", "t3", "t4", "t5", "t6", "t7", "t8",                           \
-      "f0", "f1", "f2", "f3", "f4", "f5", "f6", "f7", "f8", "f9", "f10",  \
-      "f11", "f12", "f13", "f14", "f15", "f16", "f17", "f18", "f19",      \
-      "f20", "f21", "f22", "f23"
+      "$ra", "$a0", "$a1", "$a2", "$a3", "$a4", "$a5", "$a6", "$a7",      \
+      "$t0", "$t1", "$t2", "$t3", "$t4", "$t5", "$t6", "$t7", "$t8",      \
+      "$f0", "$f1", "$f2", "$f3", "$f4", "$f5", "$f6", "$f7", "$f8",      \
+      "$f9", "$f10", "$f11", "$f12", "$f13", "$f14", "$f15", "$f16",      \
+      "$f17", "$f18", "$f19", "$f20", "$f21", "$f22", "$f23"
 #    define INLINED_ASM(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP) \
       CHECK_OFFSETS(MAIN_FP, MAIN_SP, SUSPENDABLE_FP, SUSPENDABLE_SP);    \
       asm volatile(                                                       \
@@ -743,7 +743,7 @@ bool CallOnMainStack(JSContext* cx, CallOnMainStackFn fn, void* data) {
           "\n   move    %0, $a0"                                          \
           : "=r"(res)                                                     \
           : "r"(stacks), "r"(fn), "r"(data)                               \
-          : "a0", "a3", CALLER_SAVED_REGS, "cc", "memory")
+          : "$a0", "$a3", CALLER_SAVED_REGS, "cc", "memory")
   INLINED_ASM(24, 32, 40, 48);
 
 #  else
@@ -1151,6 +1151,7 @@ class SuspendingFunctionModuleFactory {
       return nullptr;
     }
     // Build functions and keep bytecodes around until the end.
+    uint32_t funcBytecodeOffset = CallSite::FIRST_VALID_BYTECODE_OFFSET;
     Bytes bytecode;
     if (!encodeExportedFunction(
             *codeMeta, paramsSize, resultsSize, paramsOffset,
@@ -1159,29 +1160,38 @@ class SuspendingFunctionModuleFactory {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    if (!mg.compileFuncDef(ExportedFnIndex, 0, bytecode.begin(),
+    if (!mg.compileFuncDef(ExportedFnIndex, funcBytecodeOffset,
+                           bytecode.begin(),
                            bytecode.begin() + bytecode.length())) {
       return nullptr;
     }
+    funcBytecodeOffset += bytecode.length();
+
     Bytes bytecode2;
     if (!encodeTrampolineFunction(*codeMeta, paramsSize, bytecode2)) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    if (!mg.compileFuncDef(TrampolineFnIndex, 0, bytecode2.begin(),
+    if (!mg.compileFuncDef(TrampolineFnIndex, funcBytecodeOffset,
+                           bytecode2.begin(),
                            bytecode2.begin() + bytecode2.length())) {
       return nullptr;
     }
+    funcBytecodeOffset += bytecode2.length();
+
     Bytes bytecode3;
     if (!encodeContinueOnSuspendableFunction(*codeMeta, paramsSize,
                                              bytecode3)) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    if (!mg.compileFuncDef(ContinueOnSuspendableFnIndex, 0, bytecode3.begin(),
+    if (!mg.compileFuncDef(ContinueOnSuspendableFnIndex, funcBytecodeOffset,
+                           bytecode3.begin(),
                            bytecode3.begin() + bytecode3.length())) {
       return nullptr;
     }
+    funcBytecodeOffset += bytecode3.length();
+
     if (!mg.finishFuncDefs()) {
       return nullptr;
     }
@@ -1573,23 +1583,30 @@ class PromisingFunctionModuleFactory {
     }
     // Build functions and keep bytecodes around until the end.
     Bytes bytecode;
+    uint32_t funcBytecodeOffset = CallSite::FIRST_VALID_BYTECODE_OFFSET;
     if (!encodeExportedFunction(*codeMeta, paramsSize, bytecode)) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    if (!mg.compileFuncDef(ExportedFnIndex, 0, bytecode.begin(),
+    if (!mg.compileFuncDef(ExportedFnIndex, funcBytecodeOffset,
+                           bytecode.begin(),
                            bytecode.begin() + bytecode.length())) {
       return nullptr;
     }
+    funcBytecodeOffset += bytecode.length();
+
     Bytes bytecode2;
     if (!encodeTrampolineFunction(*codeMeta, paramsSize, bytecode2)) {
       ReportOutOfMemory(cx);
       return nullptr;
     }
-    if (!mg.compileFuncDef(TrampolineFnIndex, 0, bytecode2.begin(),
+    if (!mg.compileFuncDef(TrampolineFnIndex, funcBytecodeOffset,
+                           bytecode2.begin(),
                            bytecode2.begin() + bytecode2.length())) {
       return nullptr;
     }
+    funcBytecodeOffset += bytecode2.length();
+
     if (!mg.finishFuncDefs()) {
       return nullptr;
     }

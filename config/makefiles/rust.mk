@@ -62,9 +62,9 @@ RUSTFLAGS += -Zsanitizer=thread
 endif
 
 rustflags_sancov =
-ifdef LIBFUZZER
 ifndef MOZ_TSAN
 ifndef FUZZING_JS_FUZZILLI
+ifdef LIBFUZZER
 # These options should match what is implicitly enabled for `clang -fsanitize=fuzzer`
 #   here: https://github.com/llvm/llvm-project/blob/release/13.x/clang/lib/Driver/SanitizerArgs.cpp#L422
 #
@@ -75,6 +75,15 @@ ifndef FUZZING_JS_FUZZILLI
 #
 # In TSan builds, we must not pass any of these, because sanitizer coverage is incompatible with TSan.
 rustflags_sancov += -Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-inline-8bit-counters -Cllvm-args=-sanitizer-coverage-level=4 -Cllvm-args=-sanitizer-coverage-trace-compares -Cllvm-args=-sanitizer-coverage-pc-table
+else
+ifdef AFLFUZZ
+# Use the same flags as afl-cc, specified here:
+# https://github.com/AFLplusplus/AFLplusplus/blob/4eaacfb095ac164afaaf9c10b8112f98d8ad7c2a/src/afl-cc.c#L2101
+#  -sanitizer-coverage-level=3                   Enable coverage for all blocks, critical edges. Implied by clang as default.
+#  -sanitizer-coverage-pc-table                  Create a static PC table.
+#  -sanitizer-coverage-trace-pc-guard            Adds guard_variable (uint32_t) to every edge
+rustflags_sancov += -Cpasses=sancov-module -Cllvm-args=-sanitizer-coverage-level=3  -Cllvm-args=-sanitizer-coverage-pc-table -Cllvm-args=-sanitizer-coverage-trace-pc-guard
+endif
 endif
 endif
 endif
@@ -193,8 +202,18 @@ ifneq (1,$(PASS_ONLY_BASE_CFLAGS_TO_RUST))
 # base flags don't force-include mozilla-config.h.
 export CFLAGS_$(rust_host_cc_env_name)=$(HOST_CC_BASE_FLAGS) $(COMPUTED_HOST_CFLAGS) -DMOZILLA_CONFIG_H
 export CXXFLAGS_$(rust_host_cc_env_name)=$(HOST_CXX_BASE_FLAGS) $(COMPUTED_HOST_CXXFLAGS) -DMOZILLA_CONFIG_H
-export CFLAGS_$(rust_cc_env_name)=$(CC_BASE_FLAGS) $(COMPUTED_CFLAGS) -DMOZILLA_CONFIG_H
-export CXXFLAGS_$(rust_cc_env_name)=$(CXX_BASE_FLAGS) $(COMPUTED_CXXFLAGS) -DMOZILLA_CONFIG_H
+# We exclude -fprofile-generate from the PGO flags because on non-cross compiles,
+# that affects build scripts, and they fail to link because the linker flags are
+# not adequate, and also, we don't want to run instrumented build scripts.
+# The cc crate will fill in for those flags anyways, but we do need the PGO and
+# LTO flags to fill in for what the cc crate doesn't handle
+# (e.g. -pgo-temporal-instrumentation)
+# We can't use LTO flags with GCC, though: https://github.com/rust-lang/rust/issues/138681
+ifneq (,$(filter clang%,$(CC_TYPE)))
+RUST_LTO_CFLAGS=$(MOZ_LTO_CFLAGS)
+endif
+export CFLAGS_$(rust_cc_env_name)=$(CC_BASE_FLAGS) $(RUST_LTO_CFLAGS) $(COMPUTED_CFLAGS) $(filter-out -fprofile-generate%,$(PGO_CFLAGS)) -DMOZILLA_CONFIG_H
+export CXXFLAGS_$(rust_cc_env_name)=$(CXX_BASE_FLAGS) $(RUST_LTO_CFLAGS) $(COMPUTED_CXXFLAGS) $(filter-out -fprofile-generate%,$(PGO_CFLAGS)) -DMOZILLA_CONFIG_H
 else
 # Because cargo doesn't allow to distinguish builds happening for build
 # scripts/procedural macros vs. those happening for the rust target,

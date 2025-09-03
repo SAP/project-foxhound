@@ -8,7 +8,10 @@ task-defaults:
     variants:
         - geckoview-no-fission
     run-on-projects: []
-    tier: 3
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
     test-manifest-loader: null  # don't load tests in the taskgraph
     target:
         by-app:
@@ -97,7 +100,7 @@ browsertime-tp6m:
         tier:
             by-app:
                 geckoview: 1
-                fenix: 2
+                fenix: 1
                 refbrow: 2
                 default: 3
         treeherder-symbol: Btime(tp6m)
@@ -128,26 +131,7 @@ browsertime-tp6m:
             - youtube
     run-on-projects:
         by-app:
-            geckoview:
-                by-variant:
-                    geckoview-no-fission:
-                        by-test-platform:
-                            android-hw-a55.*shippable.*: [trunk-only]
-                            default: []
-                    default:
-                        by-subtest:
-                            wikipedia:
-                                by-test-platform:
-                                    android-hw-a55.*shippable.*: []
-                                    default: []
-                            google-search-restaurants:
-                                by-test-platform:
-                                    android-hw-a55.*shippable.*: []
-                                    default: []
-                            default:
-                                by-test-platform:
-                                    android-hw-a55.*shippable.*: []
-                                    default: []
+            geckoview: []
             fenix:
                 by-variant:
                     geckoview-no-fission:
@@ -174,16 +158,7 @@ browsertime-tp6m-essential:
             - [youtube-watch, youtube-w]
     run-on-projects:
         by-app:
-            geckoview:
-                by-subtest:
-                    allrecipes:
-                        by-test-platform:
-                            android-hw-a55.*shippable.*: [trunk]
-                            default: []
-                    default:
-                        by-test-platform:
-                            android-hw-a55.*shippable.*: [trunk-only]
-                            default: []
+            geckoview: []
             fenix:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [trunk-only]
@@ -192,6 +167,7 @@ browsertime-tp6m-essential:
     tier:
         by-app:
             geckoview: 1
+            fenix: 1
             refbrow: 2
             default: 3
 
@@ -275,12 +251,39 @@ browsertime-youtube-playback-mobile:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [mozilla-central]
                     default: []
-            geckoview:
-                by-test-platform:
-                    android-hw-a55.*shippable.*: [mozilla-central]
-                    default: []
+            geckoview: []
             default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
     max-run-time: 3600
+
+browsertime-youtube-playback-power-mobile:
+    description: Browsertime YouTube Playback on Android for Power Usage Testing
+    treeherder-symbol: Btime(ytp)
+    tier:
+        by-app:
+            fenix: 1
+            geckoview: 2
+            default: 3
+    raptor:
+        apps: [fenix, geckoview, chrome-m]
+        subtests:
+            - [youtube-playback-h264-720p60, ytp-h264-720]
+            - [youtube-playback-vp9-720p60, ytp-vp9-720]
+    run-on-projects:
+        by-app:
+            fenix:
+                by-test-platform:
+                    android-hw-a55.*shippable.*: [autoland, mozilla-central]
+                    default: []
+            geckoview: []
+            default: []
+    max-run-time: 1800
+    mozharness:
+        extra-options:
+            - --power-test
 
 browsertime-tp6m-live:
     <<: *tp6m-defaults
@@ -337,13 +340,13 @@ browsertime-tp6m-live:
         by-subtest:
             cnn-ampstories:
                 by-app:
-                    geckoview:
-                        by-test-platform:
-                            android-hw-a55.*shippable.*: [autoland]
-                            default: []
+                    geckoview: []
                     default: []
             default: []
-    tier: 3
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
     treeherder-symbol: Btime-live(tp6m)
 
 browsertime-tp6m-profiling:
@@ -364,6 +367,10 @@ browsertime-tp6m-profiling:
         by-test-platform:
             android-hw-a55.*shippable.*/opt: [mozilla-central]
             default: []
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
 
 browsertime-video-playback-latency-mobile:
     <<: *tp6m-defaults
@@ -385,11 +392,15 @@ browsertime-video-playback-latency-mobile:
     run-on-projects:
         by-app:
             chrome-m: []
+            geckoview: []
             default:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [autoland, mozilla-central]
                     default: []
-    tier: 3
+    tier:
+        by-app:
+            fenix: 1
+            default: 3
 
 browsertime-benchmark-speedometer-mobile:
     description: Browsertime Speedometer on Android
@@ -405,10 +416,7 @@ browsertime-benchmark-speedometer-mobile:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [trunk]
                     default: []
-            geckoview:
-                by-test-platform:
-                    android-hw-a55.*shippable.*: [trunk]
-                    default: []
+            geckoview: []
             cstm-car-m:
                 by-test-platform:
                     android-hw-p6.*shippable.*: []
@@ -427,7 +435,7 @@ browsertime-benchmark-speedometer3-mobile:
         apps: [geckoview, fenix, chrome-m, cstm-car-m]
     tier:
         by-app:
-            fenix: 2
+            fenix: 1
             geckoview: 2
             cstm-car-m: 2
             default: 3
@@ -439,12 +447,7 @@ browsertime-benchmark-speedometer3-mobile:
                     android-hw-p6.*shippable.*: [mozilla-central]
                     android-hw-s24.*shippable.*: [mozilla-central]
                     default: []
-            geckoview:
-                by-test-platform:
-                    android-hw-a55.*shippable.*: [trunk-only]
-                    android-hw-p6.*shippable.*: [mozilla-central]
-                    android-hw-s24.*shippable.*: [mozilla-central]
-                    default: []
+            geckoview: []
             cstm-car-m: [mozilla-central]
             chrome-m:
                 by-test-platform:
@@ -467,6 +470,7 @@ browsertime-benchmark-motionmark-1-3:
     run-on-projects:
         by-app:
             chrome-m: []
+            geckoview: []
             default:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [mozilla-central]
@@ -474,15 +478,14 @@ browsertime-benchmark-motionmark-1-3:
     treeherder-symbol: Btime()
     tier:
         by-app:
-            fenix: 2
+            fenix: 1
             geckoview: 2
             default: 3
 
 browsertime-benchmark-jetstream2:
     description: Raptor (browsertime) jetstream 2 benchmark test
-    run-without-variant: false
     raptor:
-        apps: [fenix, chrome-m, cstm-car-m]
+        apps: [geckoview, fenix, chrome-m, cstm-car-m]
         subtests:
             - [jetstream2, js]
     run-on-projects:
@@ -495,7 +498,7 @@ browsertime-benchmark-jetstream2:
     treeherder-symbol: Btime()
     tier:
         by-app:
-            fenix: 2
+            fenix: 1
             default: 3
 
 browsertime-benchmark-unity-webgl-mobile:
@@ -504,17 +507,14 @@ browsertime-benchmark-unity-webgl-mobile:
         apps: [geckoview, refbrow, fenix, chrome-m]
     tier:
         by-app:
+            fenix: 1
             geckoview: 2
             default: 3
     treeherder-symbol: Btime(ugl)
     run-on-projects:
         by-app:
             refbrow: []
-            geckoview:
-                by-test-platform:
-                    # Disabled on autoland due to bug 1720063, and bug 1795826
-                    android-hw-a55.*shippable.*: [mozilla-central]
-                    default: []
+            geckoview: []
             default:
                 by-test-platform:
                     android-hw-a55.*shippable.*: [mozilla-central]
@@ -532,7 +532,10 @@ browsertime-power:
             - idle
             - idle-bg
             - [speedometer, sp]
-    tier: 2
+    tier:
+        by-app:
+            fenix: 1
+            default: 2
     run-on-projects: []
     treeherder-symbol: Btime-P(power)
     mozharness:

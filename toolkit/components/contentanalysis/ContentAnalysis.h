@@ -6,16 +6,15 @@
 #ifndef mozilla_contentanalysis_h
 #define mozilla_contentanalysis_h
 
-#include "mozilla/DataMutex.h"
 #include "mozilla/MoveOnlyFunction.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/MaybeDiscarded.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/WeakPtr.h"
 #include "nsIClipboard.h"
 #include "nsIContentAnalysis.h"
 #include "nsITransferable.h"
-#include "nsProxyRelease.h"
 #include "nsString.h"
 #include "nsTHashMap.h"
 #include "nsTHashSet.h"
@@ -46,6 +45,7 @@ class ContentAnalysisResponse;
 }  // namespace content_analysis::sdk
 
 namespace mozilla::contentanalysis {
+class ContentAnalysisCallback;
 
 enum class DefaultResult : uint8_t {
   eBlock = 0,
@@ -68,7 +68,7 @@ class ContentAnalysisDiagnosticInfo final
         mRequestCount(aRequestCount) {}
 
  private:
-  ~ContentAnalysisDiagnosticInfo() = default;
+  virtual ~ContentAnalysisDiagnosticInfo() = default;
   bool mConnectedToAgent;
   nsString mAgentPath;
   bool mFailedSignatureVerification;
@@ -80,18 +80,28 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   NS_DECL_ISUPPORTS
   NS_DECL_NSICONTENTANALYSISREQUEST
 
-  ContentAnalysisRequest(AnalysisType aAnalysisType, nsString aString,
-                         bool aStringIsFilePath, nsCString aSha256Digest,
-                         nsCOMPtr<nsIURI> aUrl, OperationType aOperationType,
-                         dom::WindowGlobalParent* aWindowGlobalParent);
+  ContentAnalysisRequest(AnalysisType aAnalysisType, Reason aReason,
+                         nsString aString, bool aStringIsFilePath,
+                         nsCString aSha256Digest, nsCOMPtr<nsIURI> aUrl,
+                         OperationType aOperationType,
+                         dom::WindowGlobalParent* aWindowGlobalParent,
+                         dom::WindowGlobalParent* aSourceWindowGlobal = nullptr,
+                         nsCString&& aUserActionId = nsCString());
+
+  ContentAnalysisRequest(AnalysisType aAnalysisType, Reason aReason,
+                         nsITransferable* aTransferable,
+                         dom::WindowGlobalParent* aWindowGlobal,
+                         dom::WindowGlobalParent* aSourceWindowGlobal);
+
   ContentAnalysisRequest(const nsTArray<uint8_t> aPrintData,
                          nsCOMPtr<nsIURI> aUrl, nsString aPrinterName,
+                         Reason aReason,
                          dom::WindowGlobalParent* aWindowGlobalParent);
   static nsresult GetFileDigest(const nsAString& aFilePath,
                                 nsCString& aDigestString);
 
  private:
-  ~ContentAnalysisRequest();
+  virtual ~ContentAnalysisRequest();
 
   // Remove unneeded copy constructor/assignment
   ContentAnalysisRequest(const ContentAnalysisRequest&) = delete;
@@ -99,6 +109,12 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
 
   // See nsIContentAnalysisRequest for values
   AnalysisType mAnalysisType;
+
+  // See nsIContentAnalysisRequest for values
+  Reason mReason;
+
+  RefPtr<nsITransferable> mTransferable;
+  RefPtr<dom::DataTransfer> mDataTransfer;
 
   // Text content to analyze.  Only one of textContent or filePath is defined.
   nsString mTextContent;
@@ -122,6 +138,14 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   // Unique identifier for this request
   nsCString mRequestToken;
 
+  // Unique identifier for this user action.
+  // For example, all requests that come from uploading multiple files
+  // or one clipboard operation should have the same value.
+  nsCString mUserActionId;
+
+  // The number of requests associated with this mUserActionId.
+  int64_t mUserActionRequestsCount = 1;
+
   // Type of text to display, see nsIContentAnalysisRequest for values
   OperationType mOperationTypeForDisplay;
 
@@ -140,26 +164,24 @@ class ContentAnalysisRequest final : public nsIContentAnalysisRequest {
   uint64_t mPrintDataSize = 0;
 #endif
 
+  // WindowGlobalParent that is the origin of the data in the request, if known.
+  RefPtr<mozilla::dom::WindowGlobalParent> mSourceWindowGlobal;
+
   friend class ::ContentAnalysisTest;
 };
 
-#define CONTENTANALYSIS_IID                          \
-  {                                                  \
-    0xa37bed74, 0x4b50, 0x443a, {                    \
-      0xbf, 0x58, 0xf4, 0xeb, 0xbd, 0x30, 0x67, 0xb4 \
-    }                                                \
-  }
+#define CONTENTANALYSIS_IID \
+  {0xa37bed74, 0x4b50, 0x443a, {0xbf, 0x58, 0xf4, 0xeb, 0xbd, 0x30, 0x67, 0xb4}}
 
 class ContentAnalysisResponse;
-class ContentAnalysis final : public nsIContentAnalysis {
+class ContentAnalysis final : public nsIContentAnalysis,
+                              public SupportsWeakPtr {
  public:
   NS_DECLARE_STATIC_IID_ACCESSOR(CONTENTANALYSIS_IID)
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICONTENTANALYSIS
 
   ContentAnalysis();
-  nsCString GetUserActionId();
-  void SetLastResult(nsresult aLastResult) { mLastResult = aLastResult; }
 
 #if defined(XP_WIN)
   struct PrintAllowedResult final {
@@ -194,28 +216,6 @@ class ContentAnalysis final : public nsIContentAnalysis {
       nsIPrintSettings* aPrintSettings);
 #endif  // defined(XP_WIN)
 
-  class SafeContentAnalysisResultCallback final
-      : public nsIContentAnalysisCallback {
-   public:
-    NS_DECL_THREADSAFE_ISUPPORTS
-    NS_DECL_NSICONTENTANALYSISCALLBACK
-    explicit SafeContentAnalysisResultCallback(
-        std::function<void(RefPtr<nsIContentAnalysisResult>&&)> aResolver)
-        : mResolver(std::move(aResolver)) {}
-    void Callback(RefPtr<nsIContentAnalysisResult>&& aResult) {
-      MOZ_ASSERT(mResolver, "Called SafeContentAnalysisResultCallback twice!");
-      if (auto resolver = std::move(mResolver)) {
-        resolver(std::move(aResult));
-      }
-    }
-
-   private:
-    ~SafeContentAnalysisResultCallback() {
-      MOZ_ASSERT(!mResolver, "SafeContentAnalysisResultCallback never called!");
-    }
-    mozilla::MoveOnlyFunction<void(RefPtr<nsIContentAnalysisResult>&&)>
-        mResolver;
-  };
   // Find the outermost browsing context that has same-origin access to
   // aBrowsingContext, and this is the URL we will pass to the Content Analysis
   // agent.
@@ -229,10 +229,18 @@ class ContentAnalysis final : public nsIContentAnalysis {
       nsBaseClipboard* aClipboard, mozilla::dom::WindowGlobalParent* aWindow,
       nsITransferable* aTransferable,
       nsIClipboard::ClipboardType aClipboardType,
-      SafeContentAnalysisResultCallback* aResolver,
-      bool aForFullClipboard = false);
+      ContentAnalysisCallback* aResolver, bool aForFullClipboard = false);
   static RefPtr<ContentAnalysis> GetContentAnalysisFromService();
-  nsresult CancelWithError(nsCString aRequestToken, nsresult aResult);
+
+  // Cancel all outstanding requests for the given user action ID.
+  // aResult is used to determine what kind of cancellation this is
+  // (user-initiated, timeout, blocked user action, internal error, etc).
+  // The cancellation behavior is dependent on that value.  In particular,
+  // some causes lead to programmable default behaviors -- see e.g.
+  // browser.contentanalysis.default_result and
+  // browser.contentanalysis.timeout_result.  Oothers, like user-initiated
+  // and shutdown cancellations, have fixed behavior.
+  void CancelWithError(nsCString&& aUserActionId, nsresult aResult);
 
   // Duration the cache holds requests for. This holds strong references
   // to the elements of the request, such as the WindowGlobalParent,
@@ -243,160 +251,196 @@ class ContentAnalysis final : public nsIContentAnalysis {
       kTextMime, kHTMLMime, kCustomTypesMime, kFileMime};
 
  private:
-  ~ContentAnalysis();
+  virtual ~ContentAnalysis();
   // Remove unneeded copy constructor/assignment
   ContentAnalysis(const ContentAnalysis&) = delete;
   ContentAnalysis& operator=(ContentAnalysis&) = delete;
+  // Only call this through CreateClientIfNecessary(), as it provides
+  // synchronization to avoid doing this multiple times at once.
   nsresult CreateContentAnalysisClient(nsCString&& aPipePathName,
                                        nsString&& aClientSignatureSetting,
                                        bool aIsPerUser);
-  nsresult AnalyzeContentRequestCallbackPrivate(
-      nsIContentAnalysisRequest* aRequest, bool aAutoAcknowledge,
-      nsIContentAnalysisCallback* aCallback);
+
+  // Helper function to retry calling the client in case either the client
+  // does not exist, or calling the client fails (indicating that the DLP agent
+  // has terminated and possibly restarted)
+  //
+  // aClientCallFunc - gets called on a background thread after we have a
+  // client. Returns a Result<T, nsresult>. An Err(nsresult) indicates
+  // that the client call failed and we should try to reconnect. A successful
+  // response indicates success (or at least that we should not try to
+  // reconnect), and that value will be Resolve()d into the returned MozPromise.
+  template <typename T, typename U>
+  RefPtr<MozPromise<T, nsresult, true>> CallClientWithRetry(
+      StaticString aMethodName, U&& aClientCallFunc);
 
   nsresult RunAnalyzeRequestTask(
       const RefPtr<nsIContentAnalysisRequest>& aRequest, bool aAutoAcknowledge,
-      int64_t aRequestCount,
       const RefPtr<nsIContentAnalysisCallback>& aCallback);
   nsresult RunAcknowledgeTask(
       nsIContentAnalysisAcknowledgement* aAcknowledgement,
       const nsACString& aRequestToken);
-  void GenerateUserActionId();
-  static void DoAnalyzeRequest(
-      nsCString aRequestToken,
+  nsresult CreateClientIfNecessary(bool aForceCreate = false);
+
+  static Result<std::shared_ptr<content_analysis::sdk::ContentAnalysisResponse>,
+                nsresult>
+  DoAnalyzeRequest(
+      nsCString&& aUserActionId,
       content_analysis::sdk::ContentAnalysisRequest&& aRequest,
       const std::shared_ptr<content_analysis::sdk::Client>& aClient);
-  void IssueResponse(RefPtr<ContentAnalysisResponse>& response);
+  void IssueResponse(ContentAnalysisResponse* response,
+                     nsCString&& aUserActionId, bool aAutoAcknowledge);
+  void NotifyResponseObservers(ContentAnalysisResponse* aResponse,
+                               nsCString&& aUserActionId,
+                               bool aAutoAcknowledge);
+  void NotifyObserversAndMaybeIssueResponse(ContentAnalysisResponse* aResponse,
+                                            nsCString&& aUserActionId,
+                                            bool aAutoAcknowledge);
   bool LastRequestSucceeded();
   // Did the URL filter completely handle the request or do we need to check
   // with the agent.
   enum UrlFilterResult { eCheck, eDeny, eAllow };
 
-  UrlFilterResult FilterByUrlLists(nsIContentAnalysisRequest* aRequest);
+  UrlFilterResult FilterByUrlLists(nsIContentAnalysisRequest* aRequest,
+                                   nsIURI* aUri);
   void EnsureParsedUrlFilters();
 
-  // Expand a request to analyze a folder into N requests to scan the files
-  // in the folder (recursively).  Approve the request if all files are
-  // approved.
-  // Returns true if the request was for a folder and spawned new requests,
-  // false if the request was not a folder scan, or an nsresult on error.
-  Result<bool, nsresult> MaybeExpandAndAnalyzeFolderContentRequest(
-      nsIContentAnalysisRequest* aRequest, bool aAutoAcknowledge,
-      nsIContentAnalysisCallback* aCallback);
+  using ContentAnalysisRequestArray =
+      CopyableTArray<RefPtr<nsIContentAnalysisRequest>>;
+  using RequestsPromise =
+      MozPromise<ContentAnalysisRequestArray, nsresult, true>;
+
+  // Counts the number of times it receives an "allow content" and (1) calls
+  // ContentResult on mCallback when all requests are approved, (2) calls
+  // ContentResult and cancels outstanding scans when any one request is
+  // rejected, or (3) calls Error and cancels outstanding scans when any one
+  // fails.
+  // Once constructed, this object is required to eventually issue a response to
+  // the given callback.
+  // This class doesn't care if it receives more calls than there are requests.
+  // Canceling issues callback calls with no initiating request.  This class
+  // relays the verdicts on a first-come-first-served basis, so a cancel
+  // that comes before an allow overrides that allow, and vice-versa.
+  class MultipartRequestCallback : public nsIContentAnalysisCallback {
+   public:
+    NS_INLINE_DECL_REFCOUNTING(MultipartRequestCallback, override)
+    NS_IMETHOD QueryInterface(REFNSIID aIID, void** aInstancePtr) override;
+
+    NS_DECL_NSICONTENTANALYSISCALLBACK
+
+    static RefPtr<MultipartRequestCallback> Create(
+        ContentAnalysis* aContentAnalysis,
+        const nsTArray<ContentAnalysis::ContentAnalysisRequestArray>& aRequests,
+        nsIContentAnalysisCallback* aCallback);
+
+   private:
+    MultipartRequestCallback() = default;
+    virtual ~MultipartRequestCallback();
+
+    template <typename T, typename... Args>
+    friend RefPtr<T> mozilla::MakeRefPtr(Args&&...);
+
+    void Initialize(
+        ContentAnalysis* aContentAnalysis,
+        const nsTArray<ContentAnalysis::ContentAnalysisRequestArray>& aRequests,
+        nsIContentAnalysisCallback* aCallback);
+
+    void CancelRequests();
+    void RemoveFromUserActionMap();
+
+    WeakPtr<ContentAnalysis> mWeakContentAnalysis;
+    RefPtr<nsIContentAnalysisCallback> mCallback;
+    nsCString mUserActionId;
+
+    // Number of CA requests remaining for this transaction.
+    size_t mNumCARequestsRemaining;
+
+    // True if we have issued a response for these requests.
+    bool mResponded = false;
+  };
+
+  Result<RefPtr<RequestsPromise::AllPromiseType>,
+         RefPtr<nsIContentAnalysisResult>>
+  GetFinalRequestList(const ContentAnalysisRequestArray& aRequests);
+
+  Result<RefPtr<RequestsPromise>, nsresult> ExpandFolderRequest(
+      nsIContentAnalysisRequest* aRequest, nsIFile* file);
 
   using ClientPromise =
       MozPromise<std::shared_ptr<content_analysis::sdk::Client>, nsresult,
                  false>;
-  nsCString mUserActionId;
   int64_t mRequestCount = 0;
-  RefPtr<ClientPromise::Private> mCaClientPromise;
-  // Only accessed from the main thread
-  bool mClientCreationAttempted;
+  // Must only be resolved/rejected or Then()'d on the main thread.
+  //
+  // Note that if this promise is resolved, the resolve value will
+  // be a non-null content_analysis::sdk::Client. However, if the
+  // DLP agent process has terminated, it is possible that trying to
+  // call into this client will return an error. Therefore, any
+  // method that wants to call into the client should go through
+  // CallClientWithRetry() to make it easy to try reconnecting
+  // to the client.
+  RefPtr<ClientPromise::Private> mCaClientPromise
+      MOZ_GUARDED_BY(sMainThreadCapability);
+  bool mCreatingClient MOZ_GUARDED_BY(sMainThreadCapability) = false;
+  bool mHaveResolvedClientPromise MOZ_GUARDED_BY(sMainThreadCapability) = false;
 
   bool mSetByEnterprise;
-  nsresult mLastResult = NS_OK;
 
-  class CallbackData final {
-   public:
-    CallbackData(
-        nsMainThreadPtrHandle<nsIContentAnalysisCallback>&& aCallbackHolder,
-        bool aAutoAcknowledge)
-        : mCallbackHolder(aCallbackHolder),
-          mAutoAcknowledge(aAutoAcknowledge) {}
-
-    nsMainThreadPtrHandle<nsIContentAnalysisCallback> TakeCallbackHolder() {
-      return std::move(mCallbackHolder);
-    }
-    bool AutoAcknowledge() const { return mAutoAcknowledge; }
-    void SetCanceled() { mCallbackHolder = nullptr; }
-    bool Canceled() const { return !mCallbackHolder; }
-
-   private:
-    nsMainThreadPtrHandle<nsIContentAnalysisCallback> mCallbackHolder;
-    bool mAutoAcknowledge;
+  struct UserActionData final {
+    RefPtr<nsIContentAnalysisCallback> mCallback;
+    nsTHashSet<nsCString> mRequestTokens;
+    RefPtr<mozilla::CancelableRunnable> mTimeoutRunnable;
+    bool mIsHandlingTimeout = false;
   };
-  DataMutex<nsTHashMap<nsCString, CallbackData>> mCallbackMap;
+
+  // This map is stored so that requests can be canceled while they are
+  // still being checked.  It is maintained by our inner class
+  // MultipartRequestCallback.
+  nsTHashMap<nsCString, UserActionData> mUserActionMap;
+  void RemoveFromUserActionMap(nsCString&& aUserActionId);
+
+  // The agent may respond to actions that we have canceled and we need to
+  // remember how we handled them, whether it was to cancel (block) them,
+  // or to issue a default response.
+  struct CanceledResponse {
+    nsIContentAnalysisAcknowledgement::FinalAction mAction;
+    size_t mNumExpectedResponses;
+  };
+  using UserActionIdToCanceledResponseMap =
+      nsTHashMap<nsCString, CanceledResponse>;
+  UserActionIdToCanceledResponseMap mUserActionIdToCanceledResponseMap;
 
   class CachedClipboardResponse {
    public:
     CachedClipboardResponse() = default;
     Maybe<nsIContentAnalysisResponse::Action> GetCachedResponse(
-        nsIURI* aURI, int32_t aClipboardSequenceNumber,
-        const nsTArray<nsCString>& aFlavors) {
-      MOZ_ASSERT(NS_IsMainThread(),
-                 "Expecting main thread access only to avoid synchronization");
-      if (Some(aClipboardSequenceNumber) != mClipboardSequenceNumber) {
-        return Nothing();
-      }
-      Maybe<nsIContentAnalysisResponse::Action> possibleAction;
-      for (const auto& entry : mData) {
-        bool uriEquals = false;
-        if (NS_SUCCEEDED(aURI->Equals(entry.first, &uriEquals)) && uriEquals) {
-          possibleAction = Some(entry.second);
-          break;
-        }
-      }
-      if (possibleAction.isNothing()) {
-        return Nothing();
-      }
-      // Make sure the flavors we have checked are a subset of the ones we
-      // checked before
-      for (const auto& flavor : aFlavors) {
-        if (!mFlavors.Contains(flavor)) {
-          // This only matters if it's a flavor that we check for content
-          // analysis
-          for (const char* knownType : kKnownClipboardTypes) {
-            if (flavor.EqualsASCII(knownType)) {
-              return Nothing();
-            }
-          }
-        }
-      }
-      return possibleAction;
-    }
+        nsIURI* aURI, int32_t aClipboardSequenceNumber);
     void SetCachedResponse(const nsCOMPtr<nsIURI>& aURI,
                            int32_t aClipboardSequenceNumber,
-                           const nsTArray<nsCString>& aFlavors,
-                           nsIContentAnalysisResponse::Action aAction) {
-      MOZ_ASSERT(NS_IsMainThread(),
-                 "Expecting main thread access only to avoid synchronization");
-      if (mClipboardSequenceNumber != Some(aClipboardSequenceNumber)) {
-        mData.Clear();
-        mClipboardSequenceNumber = Some(aClipboardSequenceNumber);
-      }
-      mFlavors.Clear();
-      for (const auto& flavor : aFlavors) {
-        mFlavors.Insert(flavor);
-      }
-      mData.AppendElement(std::make_pair(aURI, aAction));
-    }
+                           nsIContentAnalysisResponse::Action aAction);
 
    private:
     Maybe<int32_t> mClipboardSequenceNumber;
     nsTArray<std::pair<nsCOMPtr<nsIURI>, nsIContentAnalysisResponse::Action>>
         mData;
-    nsTHashSet<nsCString> mFlavors;
   };
   CachedClipboardResponse mCachedClipboardResponse;
 
   struct WarnResponseData {
-    WarnResponseData(CallbackData&& aCallbackData,
-                     RefPtr<ContentAnalysisResponse> aResponse)
-        : mCallbackData(std::move(aCallbackData)), mResponse(aResponse) {}
-    ContentAnalysis::CallbackData mCallbackData;
     RefPtr<ContentAnalysisResponse> mResponse;
+    nsCString mUserActionId;
+    bool mAutoAcknowledge;
   };
-  DataMutex<nsTHashMap<nsCString, WarnResponseData>> mWarnResponseDataMap;
-  void SendWarnResponse(nsCString&& aResponseRequestToken,
-                        CallbackData aCallbackData,
-                        RefPtr<ContentAnalysisResponse>& aResponse);
+  // Request token to warn response map.
+  nsTHashMap<nsCString, WarnResponseData> mWarnResponseDataMap;
 
   std::vector<std::regex> mAllowUrlList;
   std::vector<std::regex> mDenyUrlList;
   bool mParsedUrlLists = false;
+  bool mForbidFutureRequests = false;
+  bool mIsShuttingDown = false;
 
   friend class ContentAnalysisResponse;
-  friend class AnalyzeFilesInDirectoryCallback;
   friend class ::ContentAnalysisTest;
 };
 
@@ -405,34 +449,41 @@ NS_DEFINE_STATIC_IID_ACCESSOR(ContentAnalysis, CONTENTANALYSIS_IID)
 class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
  public:
   NS_DECL_ISUPPORTS
+  NS_DECL_NSICONTENTANALYSISRESULT
   NS_DECL_NSICONTENTANALYSISRESPONSE
 
-  static RefPtr<ContentAnalysisResponse> FromAction(
-      Action aAction, const nsACString& aRequestToken);
-
-  void SetOwner(RefPtr<ContentAnalysis> aOwner);
+  void SetOwner(ContentAnalysis* aOwner);
   void DoNotAcknowledge() { mDoNotAcknowledge = true; }
   void SetCancelError(CancelError aCancelError);
   void SetIsCachedResponse() { mIsCachedResponse = true; }
 
  private:
-  ~ContentAnalysisResponse() = default;
+  virtual ~ContentAnalysisResponse() = default;
   // Remove unneeded copy constructor/assignment
   ContentAnalysisResponse(const ContentAnalysisResponse&) = delete;
   ContentAnalysisResponse& operator=(ContentAnalysisResponse&) = delete;
   explicit ContentAnalysisResponse(
-      content_analysis::sdk::ContentAnalysisResponse&& aResponse);
-  ContentAnalysisResponse(Action aAction, const nsACString& aRequestToken);
+      content_analysis::sdk::ContentAnalysisResponse&& aResponse,
+      const nsCString& aUserActionId);
+  ContentAnalysisResponse(Action aAction, const nsACString& aRequestToken,
+                          const nsACString& aUserActionId);
+
+  // Use MakeRefPtr as factory.
+  template <typename T, typename... Args>
+  friend RefPtr<T> mozilla::MakeRefPtr(Args&&...);
+
   static already_AddRefed<ContentAnalysisResponse> FromProtobuf(
-      content_analysis::sdk::ContentAnalysisResponse&& aResponse);
+      content_analysis::sdk::ContentAnalysisResponse&& aResponse,
+      const nsCString& aUserActionId);
 
   void ResolveWarnAction(bool aAllowContent);
 
   // Action requested by the agent
   Action mAction;
 
-  // Identifier for the corresponding nsIContentAnalysisRequest
+  // Identifiers for the corresponding nsIContentAnalysisRequest
   nsCString mRequestToken;
+  nsCString mUserActionId;
 
   // If mAction is eCanceled, this is the error explaining why the request was
   // canceled, or eUserInitiated if the user canceled it.
@@ -454,6 +505,12 @@ class ContentAnalysisResponse final : public nsIContentAnalysisResponse {
   // so any dialogs (for block/warn) should not be shown.
   bool mIsCachedResponse = false;
 
+  // Whether this is a response from an agent or one synthesized by Firefox.
+  // Synthetic responses ignore browser.contentanalysis.show_blocked_result and
+  // always show a blocked result for blocked content, since there is no agent
+  // that could have shown one for us.
+  bool mIsAgentResponse = false;
+
   friend class ContentAnalysis;
 };
 
@@ -466,28 +523,62 @@ class ContentAnalysisAcknowledgement final
   ContentAnalysisAcknowledgement(Result aResult, FinalAction aFinalAction);
 
  private:
-  ~ContentAnalysisAcknowledgement() = default;
+  virtual ~ContentAnalysisAcknowledgement() = default;
 
   Result mResult;
   FinalAction mFinalAction;
 };
 
+/**
+ * This class:
+ * 1. Asserts if the callback is not called before destruction.
+ * 2. Takes a strong reference to the nsIContentAnalysisResult when
+ *    calling the callback, which guarantees that someone does.  Otherwise,
+ *    if neither the caller nor the callback did, then the result would leak.
+ */
 class ContentAnalysisCallback final : public nsIContentAnalysisCallback {
  public:
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSICONTENTANALYSISCALLBACK
-  ContentAnalysisCallback(std::function<void(nsIContentAnalysisResponse*)>&&
-                              aContentResponseCallback,
-                          std::function<void(nsresult)>&& aErrorCallback)
+  ContentAnalysisCallback(
+      std::function<void(nsIContentAnalysisResult*)>&& aContentResponseCallback,
+      std::function<void(nsresult)>&& aErrorCallback)
       : mContentResponseCallback(std::move(aContentResponseCallback)),
         mErrorCallback(std::move(aErrorCallback)) {}
 
+  explicit ContentAnalysisCallback(
+      std::function<void(nsIContentAnalysisResult*)>&&
+          aContentResponseCallback);
+
+  // Wrap a given callback, in case it doesn't provide the guarantees that
+  // this one does (such as checking that it is eventually called).
+  explicit ContentAnalysisCallback(nsIContentAnalysisCallback* aDecoratedCB) {
+    mContentResponseCallback = [decoratedCB = RefPtr{aDecoratedCB}](
+                                   nsIContentAnalysisResult* aResult) {
+      decoratedCB->ContentResult(aResult);
+    };
+    mErrorCallback = [decoratedCB = RefPtr{aDecoratedCB}](nsresult aRv) {
+      decoratedCB->Error(aRv);
+    };
+  }
+
  private:
-  ~ContentAnalysisCallback() = default;
-  explicit ContentAnalysisCallback(RefPtr<dom::Promise> aPromise);
-  std::function<void(nsIContentAnalysisResponse*)> mContentResponseCallback;
+  virtual ~ContentAnalysisCallback() {
+    MOZ_ASSERT(!mContentResponseCallback && !mErrorCallback && !mPromise,
+               "ContentAnalysisCallback never called!");
+  }
+
+  // Called after callbacks are called.
+  void ClearCallbacks() {
+    mContentResponseCallback = nullptr;
+    mErrorCallback = nullptr;
+    mPromise = nullptr;
+  }
+
+  explicit ContentAnalysisCallback(dom::Promise* aPromise);
+  std::function<void(nsIContentAnalysisResult*)> mContentResponseCallback;
   std::function<void(nsresult)> mErrorCallback;
-  Maybe<nsMainThreadPtrHandle<dom::Promise>> mPromise;
+  RefPtr<dom::Promise> mPromise;
   friend class ContentAnalysis;
 };
 

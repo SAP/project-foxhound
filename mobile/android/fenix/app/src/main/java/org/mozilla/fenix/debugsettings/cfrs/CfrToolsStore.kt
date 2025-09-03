@@ -14,8 +14,8 @@ import mozilla.components.lib.state.UiStore
  *
  * @property homepageSyncShown Whether the homepage sync CFR has been shown.
  * @property homepageNavToolbarShown Whether the homepage navigation toolbar CFR has been shown.
+ * @property homepageSearchBarShown Whether the homepage search toolbar CFR has been shown.
  * @property navButtonsShown Whether the navigation buttons CFR has been shown.
- * @property addPrivateTabToHomeShown Whether the add private tab to home CFR has been shown.
  * @property tabAutoCloseBannerShown Whether the tab auto close banner CFR has been shown.
  * @property inactiveTabsShown Whether the inactive tabs CFR has been shown.
  * @property openInAppShown Whether the open in app CFR has been shown.
@@ -24,8 +24,8 @@ import mozilla.components.lib.state.UiStore
 data class CfrToolsState(
     val homepageSyncShown: Boolean = false,
     val homepageNavToolbarShown: Boolean = false,
+    val homepageSearchBarShown: Boolean = false,
     val navButtonsShown: Boolean = false,
-    val addPrivateTabToHomeShown: Boolean = false,
     val tabAutoCloseBannerShown: Boolean = false,
     val inactiveTabsShown: Boolean = false,
     val openInAppShown: Boolean = false,
@@ -53,14 +53,14 @@ sealed class CfrToolsAction : Action {
     data object HomepageNavToolbarShownToggled : CfrToolsAction()
 
     /**
+     * Toggle whether the homepage searchbar CFR has been shown.
+     */
+    data object HomepageSearchBarShownToggled : CfrToolsAction()
+
+    /**
      * Toggle whether the navigation buttons CFR has been shown.
      */
     data object NavButtonsShownToggled : CfrToolsAction()
-
-    /**
-     * Toggle whether the add private tab to home (private mode) CFR has been shown.
-     */
-    data object AddPrivateTabToHomeShownToggled : CfrToolsAction()
 
     /**
      * Toggle whether the tab auto close banner CFR has been shown.
@@ -109,20 +109,20 @@ sealed class CfrToolsAction : Action {
     data class HomepageNavToolbarCfrUpdated(val newValue: Boolean) : CfrToolsAction(), CfrPreferenceUpdate
 
     /**
+     * [CfrPreferenceUpdate] fired when the user toggles the homepage searchbar CFR.
+     *
+     * @property newValue The updated value of the pref indicating whether or not to show the homepage
+     * searchbar CFR.
+     */
+    data class HomepageSearchbarCfrUpdated(val newValue: Boolean) : CfrToolsAction(), CfrPreferenceUpdate
+
+    /**
      * [CfrPreferenceUpdate] fired when the user toggles the nav buttons CFR.
      *
      * @property newValue The updated value of the pref indicating whether or not to show the nav
      * buttons CFR.
      */
     data class NavButtonsCfrUpdated(val newValue: Boolean) : CfrToolsAction(), CfrPreferenceUpdate
-
-    /**
-     * [CfrPreferenceUpdate] fired when the user toggles the add private tab to home CFR.
-     *
-     * @property newValue The updated value of the pref indicating whether or not to show the add
-     * private tab to home CFR.
-     */
-    data class AddPrivateTabToHomeCfrUpdated(val newValue: Boolean) : CfrToolsAction(), CfrPreferenceUpdate
 
     /**
      * [CfrPreferenceUpdate] fired when the user toggles the tab auto close banner CFR.
@@ -168,10 +168,10 @@ internal object CfrToolsReducer {
                 state.copy(homepageSyncShown = !state.homepageSyncShown)
             is CfrToolsAction.HomepageNavToolbarShownToggled ->
                 state.copy(homepageNavToolbarShown = !state.homepageNavToolbarShown)
+            is CfrToolsAction.HomepageSearchBarShownToggled ->
+                state.copy(homepageSearchBarShown = !state.homepageSearchBarShown)
             is CfrToolsAction.NavButtonsShownToggled ->
                 state.copy(navButtonsShown = !state.navButtonsShown)
-            is CfrToolsAction.AddPrivateTabToHomeShownToggled ->
-                state.copy(addPrivateTabToHomeShown = !state.addPrivateTabToHomeShown)
             is CfrToolsAction.TabAutoCloseBannerShownToggled ->
                 state.copy(tabAutoCloseBannerShown = !state.tabAutoCloseBannerShown)
             is CfrToolsAction.InactiveTabsShownToggled ->
@@ -181,10 +181,10 @@ internal object CfrToolsReducer {
             is CfrToolsAction.PwaShownToggled ->
                 state.copy(pwaShown = !state.pwaShown)
             is CfrToolsAction.ResetLastCFRTimestampButtonClicked -> state
-            is CfrToolsAction.AddPrivateTabToHomeCfrUpdated ->
-                state.copy(addPrivateTabToHomeShown = action.newValue)
             is CfrToolsAction.HomepageNavToolbarCfrUpdated ->
                 state.copy(homepageNavToolbarShown = action.newValue)
+            is CfrToolsAction.HomepageSearchbarCfrUpdated ->
+                state.copy(homepageSearchBarShown = action.newValue)
             is CfrToolsAction.HomepageSyncCfrUpdated ->
                 state.copy(homepageSyncShown = action.newValue)
             is CfrToolsAction.InactiveTabsCfrUpdated ->

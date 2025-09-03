@@ -140,9 +140,9 @@ impl crate::CommandEncoder for super::CommandEncoder {
         vk_barriers.clear();
 
         for bar in barriers {
-            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.start);
+            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.from);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.end);
+            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.to);
             dst_stages |= dst_stage;
 
             vk_barriers.push(
@@ -184,11 +184,11 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 bar.texture.format,
                 &self.device.private_caps,
             );
-            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.start);
-            let src_layout = conv::derive_image_layout(bar.usage.start, bar.texture.format);
+            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.from);
+            let src_layout = conv::derive_image_layout(bar.usage.from, bar.texture.format);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.end);
-            let dst_layout = conv::derive_image_layout(bar.usage.end, bar.texture.format);
+            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.to);
+            let dst_layout = conv::derive_image_layout(bar.usage.to, bar.texture.format);
             dst_stages |= dst_stage;
 
             vk_barriers.push(
@@ -285,7 +285,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &super::Texture,
-        src_usage: crate::TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &super::Texture,
         regions: T,
     ) where
@@ -345,7 +345,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &super::Texture,
-        src_usage: crate::TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &super::Buffer,
         regions: T,
     ) where
@@ -385,6 +385,46 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 vk::PipelineStageFlags::BOTTOM_OF_PIPE,
                 set.raw,
                 index,
+            )
+        };
+    }
+    unsafe fn read_acceleration_structure_compact_size(
+        &mut self,
+        acceleration_structure: &super::AccelerationStructure,
+        buffer: &super::Buffer,
+    ) {
+        let ray_tracing_functions = self
+            .device
+            .extension_fns
+            .ray_tracing
+            .as_ref()
+            .expect("Feature `RAY_TRACING` not enabled");
+        let query_pool = acceleration_structure
+            .compacted_size_query
+            .as_ref()
+            .unwrap();
+        unsafe {
+            self.device
+                .raw
+                .cmd_reset_query_pool(self.active, *query_pool, 0, 1);
+            ray_tracing_functions
+                .acceleration_structure
+                .cmd_write_acceleration_structures_properties(
+                    self.active,
+                    &[acceleration_structure.raw],
+                    vk::QueryType::ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+                    *query_pool,
+                    0,
+                );
+            self.device.raw.cmd_copy_query_pool_results(
+                self.active,
+                *query_pool,
+                0,
+                1,
+                buffer.raw,
+                0,
+                wgt::QUERY_SIZE as vk::DeviceSize,
+                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
             )
         };
     }
@@ -647,10 +687,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
         &mut self,
         barrier: crate::AccelerationStructureBarrier,
     ) {
-        let (src_stage, src_access) =
-            conv::map_acceleration_structure_usage_to_barrier(barrier.usage.start);
-        let (dst_stage, dst_access) =
-            conv::map_acceleration_structure_usage_to_barrier(barrier.usage.end);
+        let (src_stage, src_access) = conv::map_acceleration_structure_usage_to_barrier(
+            barrier.usage.from,
+            self.device.features,
+        );
+        let (dst_stage, dst_access) = conv::map_acceleration_structure_usage_to_barrier(
+            barrier.usage.to,
+            self.device.features,
+        );
 
         unsafe {
             self.device.raw.cmd_pipeline_barrier(
@@ -1148,12 +1192,49 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 .cmd_dispatch_indirect(self.active, buffer.raw, offset)
         }
     }
+
+    unsafe fn copy_acceleration_structure_to_acceleration_structure(
+        &mut self,
+        src: &super::AccelerationStructure,
+        dst: &super::AccelerationStructure,
+        copy: wgt::AccelerationStructureCopy,
+    ) {
+        let ray_tracing_functions = self
+            .device
+            .extension_fns
+            .ray_tracing
+            .as_ref()
+            .expect("Feature `RAY_TRACING` not enabled");
+
+        let mode = match copy {
+            wgt::AccelerationStructureCopy::Clone => vk::CopyAccelerationStructureModeKHR::CLONE,
+            wgt::AccelerationStructureCopy::Compact => {
+                vk::CopyAccelerationStructureModeKHR::COMPACT
+            }
+        };
+
+        unsafe {
+            ray_tracing_functions
+                .acceleration_structure
+                .cmd_copy_acceleration_structure(
+                    self.active,
+                    &vk::CopyAccelerationStructureInfoKHR {
+                        s_type: vk::StructureType::COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+                        p_next: std::ptr::null(),
+                        src: src.raw,
+                        dst: dst.raw,
+                        mode,
+                        _marker: Default::default(),
+                    },
+                );
+        }
+    }
 }
 
 #[test]
 fn check_dst_image_layout() {
     assert_eq!(
-        conv::derive_image_layout(crate::TextureUses::COPY_DST, wgt::TextureFormat::Rgba8Unorm),
+        conv::derive_image_layout(wgt::TextureUses::COPY_DST, wgt::TextureFormat::Rgba8Unorm),
         DST_IMAGE_LAYOUT
     );
 }

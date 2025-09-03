@@ -119,17 +119,11 @@ class nsDNSService final : public mozilla::net::DNSServiceBase,
   nsCString mForceResolve;
   nsCString mMockHTTPSRRDomain;
   mozilla::Atomic<bool, mozilla::Relaxed> mHasMockHTTPSRRDomainSet{false};
-  bool mBlockDotOnion = false;
   bool mNotifyResolution = false;
-  bool mOfflineLocalhost = false;
   bool mForceResolveOn = false;
   nsTHashSet<nsCString> mLocalDomains;
   RefPtr<mozilla::net::TRRService> mTrrService;
 
-  uint32_t mResCacheEntries = 0;
-  uint32_t mResCacheExpiration = 0;
-  uint32_t mResCacheGrace = 0;
-  bool mResolverPrefsUpdated = false;
   nsClassHashtable<nsCStringHashKey, nsTArray<nsCString>> mFailedSVCDomainNames;
 };
 

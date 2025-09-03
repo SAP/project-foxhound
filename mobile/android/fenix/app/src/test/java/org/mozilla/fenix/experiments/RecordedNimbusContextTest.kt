@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.experiments
 
+import android.os.Build
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.buildJsonObject
@@ -11,13 +12,13 @@ import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.put
 import kotlinx.serialization.json.putJsonObject
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.experiments.nimbus.internal.validateEventQueries
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.GleanMetrics.NimbusSystem as GleanNimbus
 
@@ -25,7 +26,7 @@ import org.mozilla.fenix.GleanMetrics.NimbusSystem as GleanNimbus
 class RecordedNimbusContextTest {
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @Test
     fun `GIVEN a nimbusApi object WHEN recorded context with eventQueries is supplied THEN the event queries must be valid`() {
@@ -57,6 +58,15 @@ class RecordedNimbusContextTest {
                 put("install_referrer_response_utm_campaign", "")
                 put("install_referrer_response_utm_term", "")
                 put("install_referrer_response_utm_content", "")
+                put("android_sdk_version", Build.VERSION.SDK_INT.toString())
+                put("app_version", "")
+                put("locale", "")
+                put("days_since_install", 5)
+                put("days_since_update", 0)
+                put("language", "en")
+                put("region", "US")
+                put("device_manufacturer", Build.MANUFACTURER)
+                put("device_model", Build.MODEL)
             },
             contextAsJson,
         )
@@ -77,6 +87,12 @@ class RecordedNimbusContextTest {
         assertNotNull(recordedValue)
         assertEquals(
             buildJsonObject {
+                put("androidSdkVersion", Build.VERSION.SDK_INT.toString())
+                put("appVersion", "")
+                put("daysSinceInstall", 5)
+                put("daysSinceUpdate", 0)
+                put("deviceManufacturer", Build.MANUFACTURER)
+                put("deviceModel", Build.MODEL)
                 putJsonObject("eventQueryValues") {
                     put("daysOpenedInLast28", 1)
                 }
@@ -86,6 +102,9 @@ class RecordedNimbusContextTest {
                 put("installReferrerResponseUtmTerm", "")
                 put("installReferrerResponseUtmContent", "")
                 put("isFirstRun", false)
+                put("language", "en")
+                put("locale", "")
+                put("region", "US")
             },
             recordedValue?.jsonObject,
         )

@@ -130,10 +130,10 @@ case "${BRANCH}" in
     ;;
 esac
 
-BROWSER_ARCHIVE="target.tar.bz2"
+BROWSER_ARCHIVE="target.tar.xz"
 TESTS_ARCHIVE="target.common.tests.tar.gz"
 
-UNPACK_CMD="tar jxf"
+UNPACK_CMD="tar Jxf"
 COMMIT_AUTHOR='ffxbld <ffxbld@mozilla.com>'
 WGET="wget -nv"
 UNTAR="tar -zxf"
@@ -471,7 +471,7 @@ function compare_remote_settings_files {
 
 # Helper for compare_remote_settings_files to download attachments from remote settings.
 # The format and location is documented at:
-# https://firefox-source-docs.mozilla.org/services/common/services/RemoteSettings.html#packaging-attachments
+# https://firefox-source-docs.mozilla.org/services/settings/index.html#services-packaging-attachments
 function update_remote_settings_attachment() {
   local bucket=$1
   local collection=$2

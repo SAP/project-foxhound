@@ -121,6 +121,27 @@ shopping.settings:
     no_lint:
       - GIFFT_NON_PING_LIFETIME
 
+  auto_close_user_disabled:
+    type: boolean
+    lifetime: application
+    description: |
+      Indicates if the user has manually disabled the auto close sidebar feature.
+      Set during shopping component init and updated when changed in browser.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - metrics
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
+
 shopping:
   surface_displayed:
     type: event
@@ -641,26 +662,6 @@ shopping:
     send_in_pings:
       - events
 
-  ads_exposure:
-    type: event
-    description: |
-      On a supported product page, the review checker showed analysis, and
-      the ads exposure pref was enabled, or review checker ads were enabled,
-      and when we tried to fetch an ad from the ad server, an ad was available.
-      Does not indicate whether the ad was actually shown.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
-    data_sensitivity:
-      - interaction
-    expires: 147
-    notification_emails:
-      - betling@mozilla.com
-      - fx-desktop-shopping-eng@mozilla.com
-    send_in_pings:
-      - events
-
   surface_ads_setting_toggled:
     type: event
     description: |
@@ -726,6 +727,30 @@ shopping:
           are `enabled` and `disabled`.
         type: string
 
+  surface_auto_close_setting_toggled:
+    type: event
+    description: |
+      The user clicked the settings toggle to enable or disable auto-close in the
+      sidebar settings component.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      action:
+        description: >
+          Whether the toggle was used to enable or disable auto-open. Possible values
+          are `enabled` and `disabled`.
+        type: string
+
   surface_no_thanks_button_clicked:
     type: event
     description: |
@@ -753,6 +778,93 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_impression:
+    type: event
+    description: |
+      The notification card for changing left or right sidebar position was
+      visible in the Review Checker sidebar panel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_move_right_clicked:
+    type: event
+    description: |
+      The user clicked the 'Move right' button to move the sidebar to the right side.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_move_left_clicked:
+    type: event
+    description: |
+      The user clicked the 'Move left' button to move the sidebar to the left side.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_dismiss_clicked:
+    type: event
+    description: |
+      The user clicked the dismiss button to close the notification card.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_sidebar_settings_clicked:
+    type: event
+    description: |
+      The user clicked the sidebar settings link in the notification card to view
+      the sidebar settings panel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
     data_sensitivity:
       - interaction
     expires: 147

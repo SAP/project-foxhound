@@ -22,6 +22,7 @@
 #ifndef wasm_wasm_baseline_object_h
 #define wasm_wasm_baseline_object_h
 
+#include "jit/PerfSpewer.h"
 #include "wasm/WasmBCDefs.h"
 #include "wasm/WasmBCFrame.h"
 #include "wasm/WasmBCRegDefs.h"
@@ -258,6 +259,9 @@ struct BaseCompiler final {
 
   // Machine code emitter.
   MacroAssembler& masm;
+
+  // Perf spewer for annotated JIT code while profiling.
+  WasmBaselinePerfSpewer perfSpewer_;
 
   ///////////////////////////////////////////////////////////////////////////
   //
@@ -945,7 +949,7 @@ struct BaseCompiler final {
 
   // Insert a breakpoint almost anywhere.  This will create a call, with all the
   // overhead that entails.
-  void insertBreakablePoint(CallSiteDesc::Kind kind);
+  void insertBreakablePoint(CallSiteKind kind);
 
   // Insert code at the end of a function for breakpoint filtering.
   void insertPerFunctionDebugStub();
@@ -1306,6 +1310,10 @@ struct BaseCompiler final {
 
   // Retrieve the current bytecodeOffset.
   inline BytecodeOffset bytecodeOffset() const;
+
+  // Get a trap site description for a trap that would occur in the current
+  // opcode.
+  inline TrapSiteDesc trapSiteDesc() const;
 
   // Generate a trap instruction for the current bytecodeOffset.
   inline void trap(Trap t) const;

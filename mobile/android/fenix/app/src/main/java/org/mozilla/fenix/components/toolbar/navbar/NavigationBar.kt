@@ -10,6 +10,7 @@ import android.view.accessibility.AccessibilityNodeInfo
 import android.widget.Button
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,17 +38,22 @@ import mozilla.components.browser.state.selector.normalTabs
 import mozilla.components.browser.state.selector.privateTabs
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
+import mozilla.components.lib.state.ext.observeAsComposableState
 import mozilla.components.lib.state.ext.observeAsState
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.AppStore
+import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.components.toolbar.NewTabMenu
 import org.mozilla.fenix.compose.IconButton
 import org.mozilla.fenix.compose.LongPressIconButton
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.utils.KeyboardState
 import org.mozilla.fenix.compose.utils.keyboardAsState
+import org.mozilla.fenix.perf.MarkersFragmentLifecycleCallbacks
 import org.mozilla.fenix.search.SearchDialogFragment
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
@@ -57,6 +63,7 @@ import org.mozilla.fenix.theme.ThemeManager
  * Top-level UI for displaying the navigation bar.
  *
  * @param isPrivateMode If browsing in [BrowsingMode.Private].
+ * @param showDivider Whether or not the top divider should be shown.
  * @param browserStore The [BrowserStore] instance used to observe tabs state.
  * @param menuButton A [MenuButton] to be used as an [AndroidView]. The view implementation
  * contains the builder for the menu, so for the time being we are not implementing it as a composable.
@@ -81,6 +88,7 @@ import org.mozilla.fenix.theme.ThemeManager
 @Composable
 fun BrowserNavBar(
     isPrivateMode: Boolean,
+    showDivider: Boolean,
     browserStore: BrowserStore,
     menuButton: MenuButton,
     newTabMenu: TabCounterMenu,
@@ -97,6 +105,9 @@ fun BrowserNavBar(
     onVisibilityUpdated: (Boolean) -> Unit,
     isMenuRedesignEnabled: Boolean = components.settings.enableMenuRedesign,
 ) {
+    // DO NOT ADD ANYTHING ABOVE THIS getProfilerTime CALL!
+    val profilerStartTime = components.core.engine.profiler?.getProfilerTime()
+
     val tabCount = browserStore.observeAsState(initialValue = 0) { browserState ->
         if (isPrivateMode) {
             browserState.privateTabs.size
@@ -110,6 +121,7 @@ fun BrowserNavBar(
     }
 
     NavBar(
+        showDivider = showDivider,
         onVisibilityUpdated = onVisibilityUpdated,
     ) {
         BackButton(
@@ -144,13 +156,22 @@ fun BrowserNavBar(
             onMenuButtonClick = onMenuButtonClick,
         )
     }
+
+    // DO NOT MOVE ANYTHING BELOW THIS addMarker CALL!
+    components.core.engine.profiler?.addMarker(
+        MarkersFragmentLifecycleCallbacks.MARKER_NAME,
+        profilerStartTime,
+        "NavigationBar.BrowserNavBar",
+    )
 }
 
 /**
  * Top-level UI for displaying the navigation bar.
  *
  * @param isPrivateMode If browsing in [BrowsingMode.Private].
+ * @param showDivider Whether or not the top divider should be shown.
  * @param browserStore The [BrowserStore] instance used to observe tabs state.
+ * @param appStore The [AppStore] instance used to observe first frame draw state.
  * @param menuButton A [MenuButton] to be used as an [AndroidView]. The view implementation
  * contains the builder for the menu, so for the time being we are not implementing it as a composable.
  * @param tabsCounterMenu A lazy [TabCounterMenu] to be used as an [AndroidView] for when the user
@@ -166,7 +187,9 @@ fun BrowserNavBar(
 @Composable
 fun HomeNavBar(
     isPrivateMode: Boolean,
+    showDivider: Boolean,
     browserStore: BrowserStore,
+    appStore: AppStore,
     menuButton: MenuButton,
     tabsCounterMenu: Lazy<TabCounterMenu>,
     onSearchButtonClick: () -> Unit,
@@ -175,6 +198,9 @@ fun HomeNavBar(
     onMenuButtonClick: () -> Unit,
     isMenuRedesignEnabled: Boolean = components.settings.enableMenuRedesign,
 ) {
+    // DO NOT ADD ANYTHING ABOVE THIS getProfilerTime CALL!
+    val profilerStartTime = components.core.engine.profiler?.getProfilerTime()
+
     val tabCount = browserStore.observeAsState(initialValue = 0) { browserState ->
         if (isPrivateMode) {
             browserState.privateTabs.size
@@ -183,47 +209,63 @@ fun HomeNavBar(
         }
     }.value
 
-    NavBar {
-        BackButton(
-            onBackButtonClick = {
-                // no-op
-            },
-            onBackButtonLongPress = {
-                // no-op
-            },
-            // Nav buttons are disabled on the home screen
-            enabled = false,
-        )
+    val firstFrameDrawn = appStore.observeAsComposableState { state ->
+        state.firstFrameDrawn
+    }.value
 
-        ForwardButton(
-            onForwardButtonClick = {
-                // no-op
-            },
-            onForwardButtonLongPress = {
-                // no-op
-            },
-            // Nav buttons are disabled on the home screen
-            enabled = false,
-        )
+    // Draw navigation bar only when first frame is drawn in the home screen
+    if (firstFrameDrawn == true) {
+        NavBar(
+            showDivider = showDivider,
+        ) {
+            BackButton(
+                onBackButtonClick = {
+                    // no-op
+                },
+                onBackButtonLongPress = {
+                    // no-op
+                },
+                // Nav buttons are disabled on the home screen
+                enabled = false,
+            )
 
-        SearchWebButton(
-            onSearchButtonClick = onSearchButtonClick,
-        )
+            ForwardButton(
+                onForwardButtonClick = {
+                    // no-op
+                },
+                onForwardButtonLongPress = {
+                    // no-op
+                },
+                // Nav buttons are disabled on the home screen
+                enabled = false,
+            )
 
-        ToolbarTabCounterButton(
-            tabCount = tabCount,
-            isPrivateMode = isPrivateMode,
-            onClick = onTabsButtonClick,
-            menu = tabsCounterMenu,
-            onLongPress = onTabsButtonLongPress,
-        )
+            SearchWebButton(
+                onSearchButtonClick = onSearchButtonClick,
+            )
 
-        MenuButton(
-            menuButton = menuButton,
-            isMenuRedesignEnabled = isMenuRedesignEnabled,
-            onMenuButtonClick = onMenuButtonClick,
-        )
+            ToolbarTabCounterButton(
+                tabCount = tabCount,
+                isPrivateMode = isPrivateMode,
+                onClick = onTabsButtonClick,
+                menu = tabsCounterMenu,
+                onLongPress = onTabsButtonLongPress,
+            )
+
+            MenuButton(
+                menuButton = menuButton,
+                isMenuRedesignEnabled = isMenuRedesignEnabled,
+                onMenuButtonClick = onMenuButtonClick,
+            )
+        }
     }
+
+    // DO NOT MOVE ANYTHING BELOW THIS addMarker CALL!
+    components.core.engine.profiler?.addMarker(
+        MarkersFragmentLifecycleCallbacks.MARKER_NAME,
+        profilerStartTime,
+        "NavigationBar.HomeNavBar",
+    )
 }
 
 /**
@@ -240,6 +282,7 @@ fun HomeNavBar(
  * @param onOpenInBrowserButtonClick Invoked when the user clicks the open in fenix button in the nav bar.
  * @param onMenuButtonClick Invoked when the user clicks on the menu button in the navigation bar.
  * @param isSandboxCustomTab If true, navigation bar should disable "Open in Firefox" icon.
+ * @param showDivider Whether or not the top divider should be shown.
  * @param onVisibilityUpdated Invoked when the visibility of the navigation bar changes
  * informing if the navigation bar is visible.
  * @param isMenuRedesignEnabled Whether or not the menu redesign is enabled.
@@ -257,9 +300,13 @@ fun CustomTabNavBar(
     onOpenInBrowserButtonClick: () -> Unit,
     onMenuButtonClick: () -> Unit,
     isSandboxCustomTab: Boolean,
+    showDivider: Boolean,
     onVisibilityUpdated: (Boolean) -> Unit,
     isMenuRedesignEnabled: Boolean = components.settings.enableMenuRedesign,
 ) {
+    // DO NOT ADD ANYTHING ABOVE THIS getProfilerTime CALL!
+    val profilerStartTime = components.core.engine.profiler?.getProfilerTime()
+
     // A follow up: https://bugzilla.mozilla.org/show_bug.cgi?id=1888573
     val canGoBack by browserStore.observeAsState(initialValue = false) {
         it.findCustomTab(customTabSessionId)?.content?.canGoBack ?: false
@@ -270,6 +317,7 @@ fun CustomTabNavBar(
     val canOpenInFirefox = !isSandboxCustomTab
 
     NavBar(
+        showDivider = showDivider,
         onVisibilityUpdated = onVisibilityUpdated,
     ) {
         BackButton(
@@ -295,12 +343,20 @@ fun CustomTabNavBar(
             onMenuButtonClick = onMenuButtonClick,
         )
     }
+
+    // DO NOT MOVE ANYTHING BELOW THIS addMarker CALL!
+    components.core.engine.profiler?.addMarker(
+        MarkersFragmentLifecycleCallbacks.MARKER_NAME,
+        profilerStartTime,
+        "NavigationBar.CustomTabNavBar",
+    )
 }
 
 /**
  * Navigation bar parent handling the basic configuration and behavior.
  *
  * @param background The background color of the navigation bar.
+ * @param showDivider Whether or not the top divider should be shown.
  * @param onVisibilityUpdated Invoked when the visibility of the navigation bar changes informing if
  * the navigation bar is visible.
  * @param content The content of the navigation bar.
@@ -308,22 +364,31 @@ fun CustomTabNavBar(
 @Composable
 private fun NavBar(
     background: Color = FirefoxTheme.colors.layer1,
+    showDivider: Boolean = true,
     onVisibilityUpdated: (Boolean) -> Unit = {},
     content: @Composable RowScope.() -> Unit,
 ) {
     val keyboardState by keyboardAsState()
     if (keyboardState == KeyboardState.Closed) {
-        Row(
-            modifier = Modifier
-                .background(background)
-                .height(dimensionResource(id = R.dimen.browser_navbar_height))
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .testTag(NavBarTestTags.navbar),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-            content = content,
-        )
+        Box {
+            Row(
+                modifier = Modifier
+                    .background(background)
+                    .height(dimensionResource(id = R.dimen.browser_navbar_height))
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .testTag(NavBarTestTags.navbar),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+                content = content,
+            )
+
+            if (showDivider) {
+                Divider(
+                    modifier = Modifier.align(Alignment.TopCenter),
+                )
+            }
+        }
     }
 
     onVisibilityUpdated(keyboardState == KeyboardState.Opened)
@@ -479,7 +544,9 @@ private fun HomeNavBarPreviewRoot(
 
     HomeNavBar(
         isPrivateMode = isPrivateMode,
+        showDivider = true,
         browserStore = BrowserStore(),
+        appStore = AppStore(initialState = AppState(firstFrameDrawn = true)),
         menuButton = menuButton,
         tabsCounterMenu = tabsCounterMenu,
         onSearchButtonClick = {},
@@ -512,6 +579,7 @@ private fun OpenTabNavBarNavBarPreviewRoot(isPrivateMode: Boolean) {
 
     BrowserNavBar(
         isPrivateMode = false,
+        showDivider = true,
         browserStore = BrowserStore(),
         menuButton = menuButton,
         newTabMenu = newTabMenu,
@@ -560,6 +628,7 @@ private fun CustomTabNavBarPreviewRoot(isPrivateMode: Boolean) {
         onMenuButtonClick = {},
         isMenuRedesignEnabled = false,
         isSandboxCustomTab = false,
+        showDivider = true,
         onVisibilityUpdated = {},
     )
 }

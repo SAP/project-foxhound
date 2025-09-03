@@ -1,16 +1,17 @@
+use alloc::{sync::Arc, vec::Vec};
+
+use smallvec::SmallVec;
+use thiserror::Error;
+
 use crate::{
     device::{
         queue::{EncoderInFlight, SubmittedWorkDoneClosure, TempResource},
-        DeviceError, DeviceLostClosure,
+        DeviceError,
     },
-    resource::{self, Buffer, Texture, Trackable},
+    resource::{Buffer, Texture, Trackable},
     snatch::SnatchGuard,
     SubmissionIndex,
 };
-use smallvec::SmallVec;
-
-use std::sync::Arc;
-use thiserror::Error;
 
 /// A command submitted to the GPU for execution.
 ///
@@ -27,9 +28,6 @@ struct ActiveSubmission {
     /// When `Device::fence`'s value is greater than or equal to this, our queue
     /// submission has completed.
     index: SubmissionIndex,
-
-    /// Temporary resources to be freed once this queue submission has completed.
-    temp_resources: Vec<TempResource>,
 
     /// Buffers to be mapped once this submission has completed.
     mapped: Vec<Arc<Buffer>>,
@@ -112,8 +110,17 @@ pub enum WaitIdleError {
     Device(#[from] DeviceError),
     #[error("Tried to wait using a submission index ({0}) that has not been returned by a successful submission (last successful submission: {1})")]
     WrongSubmissionIndex(SubmissionIndex, SubmissionIndex),
-    #[error("GPU got stuck :(")]
-    StuckGpu,
+    #[error("Timed out trying to wait for the given submission index.")]
+    Timeout,
+}
+
+impl WaitIdleError {
+    pub fn to_poll_error(&self) -> Option<wgt::PollError> {
+        match self {
+            WaitIdleError::Timeout => Some(wgt::PollError::Timeout),
+            _ => None,
+        }
+    }
 }
 
 /// Resource tracking for a device.
@@ -157,11 +164,6 @@ pub(crate) struct LifetimeTracker {
     /// must happen _after_ all mapped buffer callbacks are mapped, so we defer them
     /// here until the next time the device is maintained.
     work_done_closures: SmallVec<[SubmittedWorkDoneClosure; 1]>,
-
-    /// Closure to be called on "lose the device". This is invoked directly by
-    /// device.lose or by the UserCallbacks returned from maintain when the device
-    /// has been destroyed and its queues are empty.
-    pub device_lost_closure: Option<DeviceLostClosure>,
 }
 
 impl LifetimeTracker {
@@ -170,7 +172,6 @@ impl LifetimeTracker {
             active: Vec::new(),
             ready_to_map: Vec::new(),
             work_done_closures: SmallVec::new(),
-            device_lost_closure: None,
         }
     }
 
@@ -180,15 +181,9 @@ impl LifetimeTracker {
     }
 
     /// Start tracking resources associated with a new queue submission.
-    pub fn track_submission(
-        &mut self,
-        index: SubmissionIndex,
-        temp_resources: impl Iterator<Item = TempResource>,
-        encoders: Vec<EncoderInFlight>,
-    ) {
+    pub fn track_submission(&mut self, index: SubmissionIndex, encoders: Vec<EncoderInFlight>) {
         self.active.push(ActiveSubmission {
             index,
-            temp_resources: temp_resources.collect(),
             mapped: Vec::new(),
             encoders,
             work_done_closures: SmallVec::new(),
@@ -261,7 +256,6 @@ impl LifetimeTracker {
     pub fn triage_submissions(
         &mut self,
         last_done: SubmissionIndex,
-        command_allocator: &crate::command::CommandAllocator,
     ) -> SmallVec<[SubmittedWorkDoneClosure; 1]> {
         profiling::scope!("triage_submissions");
 
@@ -277,10 +271,11 @@ impl LifetimeTracker {
         for a in self.active.drain(..done_count) {
             self.ready_to_map.extend(a.mapped);
             for encoder in a.encoders {
-                let raw = unsafe { encoder.land() };
-                command_allocator.release_encoder(raw);
+                // This involves actually decrementing the ref count of all command buffer
+                // resources, so can be _very_ expensive.
+                profiling::scope!("drop command buffer trackers");
+                drop(encoder);
             }
-            drop(a.temp_resources);
             work_done_closures.extend(a.work_done_closures);
         }
         work_done_closures
@@ -295,7 +290,12 @@ impl LifetimeTracker {
             .active
             .iter_mut()
             .find(|a| a.index == last_submit_index)
-            .map(|a| &mut a.temp_resources);
+            .map(|a| {
+                // Because this resource's `last_submit_index` matches `a.index`,
+                // we know that we must have done something with the resource,
+                // so `a.encoders` should not be empty.
+                &mut a.encoders.last_mut().unwrap().temp_resources
+            });
         if let Some(resources) = resources {
             resources.push(temp_resource);
         }
@@ -327,7 +327,6 @@ impl LifetimeTracker {
     #[must_use]
     pub(crate) fn handle_mapping(
         &mut self,
-        raw: &dyn hal::DynDevice,
         snatch_guard: &SnatchGuard,
     ) -> Vec<super::BufferMapPendingClosure> {
         if self.ready_to_map.is_empty() {
@@ -337,61 +336,10 @@ impl LifetimeTracker {
             Vec::with_capacity(self.ready_to_map.len());
 
         for buffer in self.ready_to_map.drain(..) {
-            // This _cannot_ be inlined into the match. If it is, the lock will be held
-            // open through the whole match, resulting in a deadlock when we try to re-lock
-            // the buffer back to active.
-            let mapping = std::mem::replace(
-                &mut *buffer.map_state.lock(),
-                resource::BufferMapState::Idle,
-            );
-            let pending_mapping = match mapping {
-                resource::BufferMapState::Waiting(pending_mapping) => pending_mapping,
-                // Mapping cancelled
-                resource::BufferMapState::Idle => continue,
-                // Mapping queued at least twice by map -> unmap -> map
-                // and was already successfully mapped below
-                resource::BufferMapState::Active { .. } => {
-                    *buffer.map_state.lock() = mapping;
-                    continue;
-                }
-                _ => panic!("No pending mapping."),
-            };
-            let status = if pending_mapping.range.start != pending_mapping.range.end {
-                let host = pending_mapping.op.host;
-                let size = pending_mapping.range.end - pending_mapping.range.start;
-                match super::map_buffer(
-                    raw,
-                    &buffer,
-                    pending_mapping.range.start,
-                    size,
-                    host,
-                    snatch_guard,
-                ) {
-                    Ok(mapping) => {
-                        *buffer.map_state.lock() = resource::BufferMapState::Active {
-                            mapping,
-                            range: pending_mapping.range.clone(),
-                            host,
-                        };
-                        Ok(())
-                    }
-                    Err(e) => {
-                        log::error!("Mapping failed: {e}");
-                        Err(e)
-                    }
-                }
-            } else {
-                *buffer.map_state.lock() = resource::BufferMapState::Active {
-                    mapping: hal::BufferMapping {
-                        ptr: std::ptr::NonNull::dangling(),
-                        is_coherent: true,
-                    },
-                    range: pending_mapping.range,
-                    host: pending_mapping.op.host,
-                };
-                Ok(())
-            };
-            pending_callbacks.push((pending_mapping.op, status));
+            match buffer.map(snatch_guard) {
+                Some(cb) => pending_callbacks.push(cb),
+                None => continue,
+            }
         }
         pending_callbacks
     }

@@ -217,7 +217,8 @@ document.addEventListener(
           break;
         case "context-searchselect": {
           let { searchTerms, usePrivate, principal, csp } = event.target;
-          BrowserSearch.loadSearchFromContext(
+          SearchUIUtils.loadSearchFromContext(
+            window,
             searchTerms,
             usePrivate,
             principal,
@@ -228,7 +229,8 @@ document.addEventListener(
         }
         case "context-searchselect-private": {
           let { searchTerms, principal, csp } = event.target;
-          BrowserSearch.loadSearchFromContext(
+          SearchUIUtils.loadSearchFromContext(
+            window,
             searchTerms,
             true,
             principal,
@@ -295,6 +297,15 @@ document.addEventListener(
         case "context-media-eme-learnmore":
           gContextMenu.drmLearnMore(event);
           break;
+        case "context-copy-link-to-highlight":
+          gContextMenu.copyLinkToHighlight();
+          break;
+        case "context-copy-clean-link-to-highlight":
+          gContextMenu.copyLinkToHighlight(/* stripSiteTracking */ true);
+          break;
+        case "context-remove-all-highlights":
+          gContextMenu.removeAllTextFragments();
+          break;
       }
     });
     contextMenuPopup.addEventListener("popupshowing", event => {
@@ -309,6 +320,13 @@ document.addEventListener(
 
           if (!IS_WEBEXT_PANELS) {
             updateEditUIVisibility();
+          }
+
+          // attempts to generate the text fragment directive of selected text
+          // Note: This is kicking off an async operation that might update
+          // the context menu while it's open (enables an entry).
+          if (gContextMenu.isContentSelected) {
+            gContextMenu.getTextDirective();
           }
           break;
         }

@@ -13,11 +13,8 @@ use glean::traits::Datetime;
 
 #[cfg(feature = "with_gecko")]
 use super::profiler_utils::{
-    glean_to_chrono_datetime, local_now_with_offset, lookup_canonical_metric_name, LookupError,
+    glean_to_chrono_datetime, local_now_with_offset, TelemetryProfilerCategory,
 };
-
-#[cfg(feature = "with_gecko")]
-use gecko_profiler::gecko_profiler_category;
 
 #[cfg(feature = "with_gecko")]
 #[derive(serde::Serialize, serde::Deserialize, Debug)]
@@ -50,13 +47,26 @@ impl gecko_profiler::ProfilerMarker for DatetimeMetricMarker {
     }
 
     fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
-        json_writer.unique_string_property(
-            "id",
-            lookup_canonical_metric_name(&self.id).unwrap_or_else(LookupError::as_str),
-        );
-        // chrono::DateTime format results in an intermediate struct that we need
-        // to format *again*.
-        let datestring = format!("{}", self.time.format("%+"));
+        let name = self.id.get_name();
+        json_writer.unique_string_property("id", &name);
+        // We need to be careful formatting our datestring so that we can match
+        // it to an equivalently formatted string in JavaScript when we're
+        // testing these markers. JavaScript's `toISOString` *always* converts
+        // to a string in line with the "date time string format", which
+        // is /like/ but not the /same/ as ISO 8601 format. It is simplified,
+        // and when printing with `toISOString`, JS always prints with the zone
+        // offset set to `Z`, i.e. UTC. Therefore, we need to convert the date
+        // into a naive date time, i.e. one that is unaware of timezones, and
+        // then format it according to the JS date time format. For more
+        // details, see the following spec:
+        // https://tc39.es/ecma262/multipage/numbers-and-dates.html#sec-date-time-string-format
+        let naive = self.time.naive_utc();
+        // We could use the default `%+` formatting for ISO 8601, but let's be
+        // specific instead, and use the precise JS format, which is
+        // `YYYY-MM-DDTHH:mm:ss.sssZ`. Note that this is expressed differently
+        // in the language of chrono's formatting library. For details see:
+        // https://docs.rs/chrono/latest/chrono/format/strftime/index.html#specifiers
+        let datestring = format!("{}", naive.format("%Y-%m-%dT%H:%M:%S%.3fZ"));
         json_writer.string_property("time", datestring.as_str());
     }
 }
@@ -68,9 +78,9 @@ impl gecko_profiler::ProfilerMarker for DatetimeMetricMarker {
 #[derive(Clone)]
 pub enum DatetimeMetric {
     Parent {
-        /// The metric's ID.
-        ///
-        /// Only useful for emitting markers to the firefox profiler.
+        /// The metric's ID. Date time metrics canot be labeled, so we only
+        /// store a MetricId. If this changes, this should be changed to a
+        /// MetricGetter to distinguish between metrics and sub-metrics.
         id: MetricId,
         inner: glean::private::DatetimeMetric,
     },
@@ -86,7 +96,7 @@ impl DatetimeMetric {
             DatetimeMetric::Child(DatetimeMetricIpc)
         } else {
             DatetimeMetric::Parent {
-                id: id,
+                id,
                 inner: glean::private::DatetimeMetric::new(meta, time_unit),
             }
         }
@@ -148,7 +158,7 @@ impl DatetimeMetric {
                         if gecko_profiler::can_accept_markers() {
                             gecko_profiler::add_marker(
                                 "Datetime::set",
-                                gecko_profiler_category!(Telemetry),
+                                TelemetryProfilerCategory,
                                 Default::default(),
                                 DatetimeMetricMarker { id: *id, time: d },
                             );
@@ -164,22 +174,14 @@ impl DatetimeMetric {
                         // the metric's name here.
                         #[cfg(feature = "with_gecko")]
                         if gecko_profiler::can_accept_markers() {
+                            let name = id.get_name();
                             let payload = format!(
                                 "Conversion failed for metric {}: {} {} {} {} {} {} {} {}",
-                                lookup_canonical_metric_name(id)
-                                    .unwrap_or_else(LookupError::as_str),
-                                year,
-                                month,
-                                day,
-                                hour,
-                                minute,
-                                second,
-                                nano,
-                                offset_seconds
+                                &name, year, month, day, hour, minute, second, nano, offset_seconds
                             );
                             gecko_profiler::add_text_marker(
                                 "Datetime::set",
-                                gecko_profiler_category!(Telemetry),
+                                TelemetryProfilerCategory,
                                 Default::default(),
                                 payload.as_str(),
                             );
@@ -225,7 +227,7 @@ impl Datetime for DatetimeMetric {
                                 .map(|c| {
                                     gecko_profiler::add_marker(
                                         "Datetime::set",
-                                        gecko_profiler_category!(Telemetry),
+                                        TelemetryProfilerCategory,
                                         Default::default(),
                                         DatetimeMetricMarker { id: *id, time: c },
                                     );
@@ -235,7 +237,7 @@ impl Datetime for DatetimeMetric {
                             // Otherwise, record the marker with the time now
                             gecko_profiler::add_marker(
                                 "Datetime::set",
-                                gecko_profiler_category!(Telemetry),
+                                TelemetryProfilerCategory,
                                 Default::default(),
                                 DatetimeMetricMarker {
                                     id: *id,
@@ -327,7 +329,7 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-05-07T11:58:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, metric.test_get_value("store1").unwrap());
+        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
     }
 
     #[test]
@@ -341,7 +343,7 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-05-07T11:58:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, metric.test_get_value("store1").unwrap());
+        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
     }
 
     #[test]
@@ -374,6 +376,6 @@ mod test {
         let expected: glean::Datetime = DateTime::parse_from_rfc3339("2020-10-13T16:41:00+05:00")
             .unwrap()
             .into();
-        assert_eq!(expected, parent_metric.test_get_value("store1").unwrap());
+        assert_eq!(expected, parent_metric.test_get_value("test-ping").unwrap());
     }
 }

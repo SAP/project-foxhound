@@ -93,7 +93,7 @@ class NavigationToolbarTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Login Form")
         }.openSiteSecuritySheet {
             verifyQuickActionSheet(defaultWebPage, true)
             openSecureConnectionSubMenu(true)
@@ -109,7 +109,7 @@ class NavigationToolbarTest : TestSetup() {
 
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
-            waitForPageToLoad()
+            verifyPageContent(defaultWebPage.content)
         }.openSiteSecuritySheet {
             verifyQuickActionSheet(defaultWebPage.url.toString(), false)
             openSecureConnectionSubMenu(false)
@@ -121,14 +121,15 @@ class NavigationToolbarTest : TestSetup() {
     @SmokeTest
     @Test
     fun verifyClearCookiesFromQuickSettingsTest() {
-        val helpPageUrl = "mozilla.org"
+        val loginPage = "https://mozilla-mobile.github.io/testapp/loginForm"
+        val originWebsite = "mozilla-mobile.github.io"
 
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openHelp {
+        navigationToolbar {
+        }.enterURLAndEnterToBrowser(loginPage.toUri()) {
+            waitForPageToLoad(waitingTimeLong)
         }.openSiteSecuritySheet {
             clickQuickActionSheetClearSiteData()
-            verifyClearSiteDataPrompt(helpPageUrl)
+            verifyClearSiteDataPrompt(originWebsite)
         }
     }
 

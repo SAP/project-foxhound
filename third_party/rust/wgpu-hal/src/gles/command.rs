@@ -1,9 +1,13 @@
-use super::{conv, Command as C};
-use arrayvec::ArrayVec;
-use std::{
+use alloc::string::String;
+use core::{
     mem::{self, size_of, size_of_val},
     ops::Range,
+    slice,
 };
+
+use arrayvec::ArrayVec;
+
+use super::{conv, Command as C};
 
 #[derive(Clone, Copy, Debug, Default)]
 struct TextureSlotDesc {
@@ -84,8 +88,7 @@ impl super::CommandBuffer {
     }
 
     fn add_push_constant_data(&mut self, data: &[u32]) -> Range<u32> {
-        let data_raw =
-            unsafe { std::slice::from_raw_parts(data.as_ptr().cast(), size_of_val(data)) };
+        let data_raw = unsafe { slice::from_raw_parts(data.as_ptr().cast(), size_of_val(data)) };
         let start = self.data_bytes.len();
         assert!(start < u32::MAX as usize);
         self.data_bytes.extend_from_slice(data_raw);
@@ -99,6 +102,7 @@ impl Drop for super::CommandEncoder {
     fn drop(&mut self) {
         use crate::CommandEncoder;
         unsafe { self.discard_encoding() }
+        self.counters.command_encoders.sub(1);
     }
 }
 
@@ -191,7 +195,7 @@ impl super::CommandEncoder {
             if dirty_textures & (1 << texture_index) != 0
                 || slot
                     .sampler_index
-                    .map_or(false, |si| dirty_samplers & (1 << si) != 0)
+                    .is_some_and(|si| dirty_samplers & (1 << si) != 0)
             {
                 let sampler = slot
                     .sampler_index
@@ -261,7 +265,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn begin_encoding(&mut self, label: crate::Label) -> Result<(), crate::DeviceError> {
         self.state = State::default();
-        self.cmd_buffer.label = label.map(str::to_string);
+        self.cmd_buffer.label = label.map(String::from);
         Ok(())
     }
     unsafe fn discard_encoding(&mut self) {
@@ -286,16 +290,12 @@ impl crate::CommandEncoder for super::CommandEncoder {
         }
         for bar in barriers {
             // GLES only synchronizes storage -> anything explicitly
-            if !bar
-                .usage
-                .start
-                .contains(crate::BufferUses::STORAGE_READ_WRITE)
-            {
+            if !bar.usage.from.contains(wgt::BufferUses::STORAGE_READ_WRITE) {
                 continue;
             }
             self.cmd_buffer
                 .commands
-                .push(C::BufferBarrier(bar.buffer.raw.unwrap(), bar.usage.end));
+                .push(C::BufferBarrier(bar.buffer.raw.unwrap(), bar.usage.to));
         }
     }
 
@@ -310,19 +310,19 @@ impl crate::CommandEncoder for super::CommandEncoder {
             return;
         }
 
-        let mut combined_usage = crate::TextureUses::empty();
+        let mut combined_usage = wgt::TextureUses::empty();
         for bar in barriers {
             // GLES only synchronizes storage -> anything explicitly
             if !bar
                 .usage
-                .start
-                .contains(crate::TextureUses::STORAGE_READ_WRITE)
+                .from
+                .contains(wgt::TextureUses::STORAGE_READ_WRITE)
             {
                 continue;
             }
             // unlike buffers, there is no need for a concrete texture
             // object to be bound anywhere for a barrier
-            combined_usage |= bar.usage.end;
+            combined_usage |= bar.usage.to;
         }
 
         if !combined_usage.is_empty() {
@@ -367,7 +367,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     #[cfg(webgl)]
     unsafe fn copy_external_image_to_texture<T>(
         &mut self,
-        src: &wgt::ImageCopyExternalImage,
+        src: &wgt::CopyExternalImageSourceInfo,
         dst: &super::Texture,
         dst_premultiplication: bool,
         regions: T,
@@ -392,7 +392,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &super::Texture,
-        _src_usage: crate::TextureUses,
+        _src_usage: wgt::TextureUses,
         dst: &super::Texture,
         regions: T,
     ) where
@@ -438,7 +438,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &super::Texture,
-        _src_usage: crate::TextureUses,
+        _src_usage: wgt::TextureUses,
         dst: &super::Buffer,
         regions: T,
     ) where
@@ -1176,6 +1176,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
     }
 
     unsafe fn dispatch(&mut self, count: [u32; 3]) {
+        // Empty dispatches are invalid in OpenGL, but valid in WebGPU.
+        if count.iter().any(|&c| c == 0) {
+            return;
+        }
         self.cmd_buffer.commands.push(C::Dispatch(count));
     }
     unsafe fn dispatch_indirect(&mut self, buffer: &super::Buffer, offset: wgt::BufferAddress) {
@@ -1205,6 +1209,23 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn place_acceleration_structure_barrier(
         &mut self,
         _barriers: crate::AccelerationStructureBarrier,
+    ) {
+        unimplemented!()
+    }
+
+    unsafe fn copy_acceleration_structure_to_acceleration_structure(
+        &mut self,
+        _src: &super::AccelerationStructure,
+        _dst: &super::AccelerationStructure,
+        _copy: wgt::AccelerationStructureCopy,
+    ) {
+        unimplemented!()
+    }
+
+    unsafe fn read_acceleration_structure_compact_size(
+        &mut self,
+        _acceleration_structure: &super::AccelerationStructure,
+        _buf: &super::Buffer,
     ) {
         unimplemented!()
     }

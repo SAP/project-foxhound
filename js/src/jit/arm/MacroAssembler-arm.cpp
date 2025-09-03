@@ -140,13 +140,17 @@ void MacroAssemblerARM::convertDoubleToInt32(FloatRegister src, Register dest,
   ma_b(fail, Assembler::VFP_NotEqualOrUnordered);
 
   if (negativeZeroCheck) {
+    Label nonzero;
     as_cmp(dest, Imm8(0));
+    ma_b(&nonzero, Assembler::NotEqual);
     // Test and bail for -0.0, when integer result is 0. Move the top word
     // of the double into the output reg, if it is non-zero, then the
     // original value was -0.0.
-    as_vxfer(dest, InvalidReg, src, FloatToCore, Assembler::Equal, 1);
-    ma_cmp(dest, Imm32(0x80000000), scratch, Assembler::Equal);
-    ma_b(fail, Assembler::Equal);
+    as_vxfer(dest, InvalidReg, src, FloatToCore, Assembler::Always, 1);
+    as_cmp(dest, Imm8(0));
+    ma_b(fail, Assembler::LessThan);
+    ma_mov(Imm32(0), dest);
+    bind(&nonzero);
   }
 }
 
@@ -181,14 +185,18 @@ void MacroAssemblerARM::convertFloat32ToInt32(FloatRegister src, Register dest,
   ma_b(fail, Assembler::Equal);
 
   if (negativeZeroCheck) {
+    Label nonzero;
     as_cmp(dest, Imm8(0));
+    ma_b(&nonzero, Assembler::NotEqual);
     // Test and bail for -0.0, when integer result is 0. Move the float into
     // the output reg, and if it is non-zero then the original value was
     // -0.0
     as_vxfer(dest, InvalidReg, VFPRegister(src).singleOverlay(), FloatToCore,
-             Assembler::Equal, 0);
-    ma_cmp(dest, Imm32(0x80000000), scratch, Assembler::Equal);
-    ma_b(fail, Assembler::Equal);
+             Assembler::Always, 0);
+    as_cmp(dest, Imm8(0));
+    ma_b(fail, Assembler::LessThan);
+    ma_mov(Imm32(0), dest);
+    bind(&nonzero);
   }
 }
 
@@ -4268,6 +4276,7 @@ void MacroAssembler::Push(const ImmGCPtr ptr) {
 }
 
 void MacroAssembler::Push(FloatRegister reg) {
+  MOZ_ASSERT(reg.isFloat(), "simd128 not supported");
   VFPRegister r = VFPRegister(reg);
   ma_vpush(VFPRegister(reg));
   adjustFrame(r.size());
@@ -4284,6 +4293,7 @@ void MacroAssembler::Pop(Register reg) {
 }
 
 void MacroAssembler::Pop(FloatRegister reg) {
+  MOZ_ASSERT(reg.isFloat(), "simd128 not supported");
   ma_vpop(reg);
   adjustFrame(-reg.size());
 }
@@ -4649,33 +4659,6 @@ void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
 // ===============================================================
 // Move instructions
 
-void MacroAssembler::moveValue(const TypedOrValueRegister& src,
-                               const ValueOperand& dest) {
-  if (src.hasValue()) {
-    moveValue(src.valueReg(), dest);
-    return;
-  }
-
-  MIRType type = src.type();
-  AnyRegister reg = src.typedReg();
-
-  if (!IsFloatingPointType(type)) {
-    if (reg.gpr() != dest.payloadReg()) {
-      mov(reg.gpr(), dest.payloadReg());
-    }
-    mov(ImmWord(MIRTypeToTag(type)), dest.typeReg());
-    return;
-  }
-
-  ScratchDoubleScope scratch(*this);
-  FloatRegister freg = reg.fpu();
-  if (type == MIRType::Float32) {
-    convertFloat32ToDouble(freg, scratch);
-    freg = scratch;
-  }
-  ma_vxfer(freg, dest.payloadReg(), dest.typeReg());
-}
-
 void MacroAssembler::moveValue(const ValueOperand& src,
                                const ValueOperand& dest) {
   Register s0 = src.typeReg();
@@ -4778,6 +4761,7 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
 void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
                                      const Value& rhs, Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
   // If cond == NotEqual, branch when a.payload != b.payload || a.tag !=
   // b.tag. If the payloads are equal, compare the tags. If the payloads are
   // not equal, short circuit true (NotEqual).
@@ -4793,6 +4777,22 @@ void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
     ma_cmp(lhs.payloadReg(), Imm32(rhs.toNunboxPayload()), scratch);
   }
   ma_cmp(lhs.typeReg(), Imm32(rhs.toNunboxTag()), scratch, Equal);
+  ma_b(label, cond);
+}
+
+void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
+                                        Register temp, Label* label) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  ScratchRegisterScope scratch(*this);
+
+  // When testing for NaN, we want to ignore the sign bit.
+  static_assert(JS::detail::CanonicalizedNaNSignBit == 0);
+  const uint32_t SignBit = mozilla::FloatingPoint<double>::kSignBit >> 32;
+  as_bic(temp, val.typeReg(), Imm8(SignBit));
+
+  Value expected = DoubleValue(JS::GenericNaN());
+  ma_cmp(val.payloadReg(), Imm32(expected.toNunboxPayload()), scratch);
+  ma_cmp(temp, Imm32(expected.toNunboxTag()), scratch, Equal);
   ma_b(label, cond);
 }
 
@@ -4908,40 +4908,32 @@ void MacroAssembler::wasmTruncateFloat32ToInt32(FloatRegister input,
                       isSaturating, oolEntry);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF32ToI32(FloatRegister input,
-                                                  Register output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF32ToI32(
+    FloatRegister input, Register output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   outOfLineWasmTruncateToIntCheck(input, MIRType::Float32, MIRType::Int32,
-                                  flags, rejoin, off);
+                                  flags, rejoin, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF64ToI32(FloatRegister input,
-                                                  Register output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF64ToI32(
+    FloatRegister input, Register output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   outOfLineWasmTruncateToIntCheck(input, MIRType::Double, MIRType::Int32, flags,
-                                  rejoin, off);
+                                  rejoin, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF32ToI64(FloatRegister input,
-                                                  Register64 output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF32ToI64(
+    FloatRegister input, Register64 output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   outOfLineWasmTruncateToIntCheck(input, MIRType::Float32, MIRType::Int64,
-                                  flags, rejoin, off);
+                                  flags, rejoin, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF64ToI64(FloatRegister input,
-                                                  Register64 output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF64ToI64(
+    FloatRegister input, Register64 output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   outOfLineWasmTruncateToIntCheck(input, MIRType::Double, MIRType::Int64, flags,
-                                  rejoin, off);
+                                  rejoin, trapSiteDesc);
 }
 
 void MacroAssembler::wasmLoad(const wasm::MemoryAccessDesc& access,
@@ -6218,7 +6210,7 @@ void MacroAssemblerARM::wasmTruncateToInt32(FloatRegister input,
 
 void MacroAssemblerARM::outOfLineWasmTruncateToIntCheck(
     FloatRegister input, MIRType fromType, MIRType toType, TruncFlags flags,
-    Label* rejoin, wasm::BytecodeOffset trapOffset) {
+    Label* rejoin, const wasm::TrapSiteDesc& trapSiteDesc) {
   // On ARM, saturating truncation codegen handles saturating itself rather
   // than relying on out-of-line fixup code.
   if (flags & TRUNC_SATURATING) {
@@ -6301,10 +6293,10 @@ void MacroAssemblerARM::outOfLineWasmTruncateToIntCheck(
 
   // Handle errors.
   bind(&fail);
-  asMasm().wasmTrap(wasm::Trap::IntegerOverflow, trapOffset);
+  asMasm().wasmTrap(wasm::Trap::IntegerOverflow, trapSiteDesc);
 
   bind(&inputIsNaN);
-  asMasm().wasmTrap(wasm::Trap::InvalidConversionToInteger, trapOffset);
+  asMasm().wasmTrap(wasm::Trap::InvalidConversionToInteger, trapSiteDesc);
 }
 
 void MacroAssemblerARM::wasmLoadImpl(const wasm::MemoryAccessDesc& access,

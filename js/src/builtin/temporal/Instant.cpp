@@ -8,9 +8,6 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Casting.h"
-#include "mozilla/CheckedInt.h"
-#include "mozilla/FloatingPoint.h"
-#include "mozilla/Maybe.h"
 #include "mozilla/Span.h"
 
 #include <algorithm>
@@ -25,8 +22,10 @@
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
+#include "builtin/intl/DateTimeFormat.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Duration.h"
+#include "builtin/temporal/Int128.h"
 #include "builtin/temporal/Int96.h"
 #include "builtin/temporal/PlainDateTime.h"
 #include "builtin/temporal/Temporal.h"
@@ -57,7 +56,6 @@
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
 #include "vm/PlainObject.h"
-#include "vm/StringType.h"
 
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
@@ -128,37 +126,41 @@ static constexpr auto EpochLimitBigIntDigits = NanosecondsMaxInstant();
  * IsValidEpochNanoseconds ( epochNanoseconds )
  */
 bool js::temporal::IsValidEpochNanoseconds(const BigInt* epochNanoseconds) {
-  // Steps 1-3.
+  // Steps 1-2.
   return AbsoluteValueIsLessOrEqual<EpochLimitBigIntDigits>(epochNanoseconds);
 }
 
 static bool IsValidEpochMilliseconds(double epochMilliseconds) {
   MOZ_ASSERT(IsInteger(epochMilliseconds));
 
-  constexpr int64_t MillisecondsMaxInstant = Instant::max().toMilliseconds();
+  constexpr int64_t MillisecondsMaxInstant =
+      EpochNanoseconds::max().toMilliseconds();
   return std::abs(epochMilliseconds) <= double(MillisecondsMaxInstant);
 }
 
 /**
  * IsValidEpochNanoseconds ( epochNanoseconds )
  */
-bool js::temporal::IsValidEpochInstant(const Instant& instant) {
-  MOZ_ASSERT(0 <= instant.nanoseconds && instant.nanoseconds <= 999'999'999);
+bool js::temporal::IsValidEpochNanoseconds(
+    const EpochNanoseconds& epochNanoseconds) {
+  MOZ_ASSERT(0 <= epochNanoseconds.nanoseconds &&
+             epochNanoseconds.nanoseconds <= 999'999'999);
 
-  // Steps 1-3.
-  return Instant::min() <= instant && instant <= Instant::max();
+  // Steps 1-2.
+  return EpochNanoseconds::min() <= epochNanoseconds &&
+         epochNanoseconds <= EpochNanoseconds::max();
 }
 
 #ifdef DEBUG
 /**
  * Validates a nanoseconds amount is at most as large as the difference
- * between two valid nanoseconds from the epoch instants.
+ * between two valid epoch nanoseconds.
  */
-bool js::temporal::IsValidInstantSpan(const InstantSpan& span) {
-  MOZ_ASSERT(0 <= span.nanoseconds && span.nanoseconds <= 999'999'999);
+bool js::temporal::IsValidEpochDuration(const EpochDuration& duration) {
+  MOZ_ASSERT(0 <= duration.nanoseconds && duration.nanoseconds <= 999'999'999);
 
-  // Steps 1-3.
-  return InstantSpan::min() <= span && span <= InstantSpan::max();
+  // Steps 1-2.
+  return EpochDuration::min() <= duration && duration <= EpochDuration::max();
 }
 #endif
 
@@ -210,12 +212,13 @@ static Int96 ToInt96(const BigInt* ns) {
   }
 }
 
-Instant js::temporal::ToInstant(const BigInt* epochNanoseconds) {
+EpochNanoseconds js::temporal::ToEpochNanoseconds(
+    const BigInt* epochNanoseconds) {
   MOZ_ASSERT(IsValidEpochNanoseconds(epochNanoseconds));
 
   auto [seconds, nanos] =
       ToInt96(epochNanoseconds) / ToNanoseconds(TemporalUnit::Second);
-  return {seconds, nanos};
+  return {{seconds, nanos}};
 }
 
 static BigInt* CreateBigInt(JSContext* cx,
@@ -301,60 +304,44 @@ static auto ToBigIntDigits(uint64_t seconds, uint32_t nanoseconds) {
   return accumulator;
 }
 
-BigInt* js::temporal::ToEpochNanoseconds(JSContext* cx,
-                                         const Instant& instant) {
-  MOZ_ASSERT(IsValidEpochInstant(instant));
+BigInt* js::temporal::ToBigInt(JSContext* cx,
+                               const EpochNanoseconds& epochNanoseconds) {
+  MOZ_ASSERT(IsValidEpochNanoseconds(epochNanoseconds));
 
-  auto [seconds, nanoseconds] = instant.abs();
+  auto [seconds, nanoseconds] = epochNanoseconds.abs();
   auto digits = ToBigIntDigits(uint64_t(seconds), uint32_t(nanoseconds));
-  return CreateBigInt(cx, digits, instant.seconds < 0);
+  return CreateBigInt(cx, digits, epochNanoseconds.seconds < 0);
 }
 
 /**
- * GetUTCEpochNanoseconds ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond [ , offsetNanoseconds ] )
+ * GetUTCEpochNanoseconds ( isoDateTime )
  */
-Instant js::temporal::GetUTCEpochNanoseconds(const PlainDateTime& dateTime) {
-  const auto& [date, time] = dateTime;
+EpochNanoseconds js::temporal::GetUTCEpochNanoseconds(
+    const ISODateTime& isoDateTime) {
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
 
-  // Step 1.
-  MOZ_ASSERT(IsValidISODateTime(dateTime));
+  const auto& [date, time] = isoDateTime;
 
-  // Additionally ensure the date-time value can be represented as an Instant.
-  MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
-
-  // Steps 2-5.
-  int64_t ms = MakeDate(dateTime);
+  // Steps 1-4.
+  int64_t ms = MakeDate(isoDateTime);
 
   // Propagate the input range to the compiler.
   int32_t nanos =
       std::clamp(time.microsecond * 1'000 + time.nanosecond, 0, 999'999);
 
-  // Steps 6-8.
-  return Instant::fromMilliseconds(ms) + InstantSpan{0, nanos};
-}
-
-/**
- * GetUTCEpochNanoseconds ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond [ , offsetNanoseconds ] )
- */
-Instant js::temporal::GetUTCEpochNanoseconds(
-    const PlainDateTime& dateTime, const InstantSpan& offsetNanoseconds) {
-  MOZ_ASSERT(offsetNanoseconds.abs() <
-             InstantSpan::fromNanoseconds(ToNanoseconds(TemporalUnit::Day)));
-
-  // Steps 1-6.
-  auto epochNanoseconds = GetUTCEpochNanoseconds(dateTime);
-
-  // Steps 7-9.
-  return epochNanoseconds - offsetNanoseconds;
+  // Step 5.
+  //
+  // The returned epoch nanoseconds value can exceed ±8.64 × 10^21, because it
+  // includes the local time zone offset.
+  return EpochNanoseconds::fromMilliseconds(ms) + EpochDuration{{0, nanos}};
 }
 
 /**
  * CompareEpochNanoseconds ( epochNanosecondsOne, epochNanosecondsTwo )
  */
-static int32_t CompareEpochNanoseconds(const Instant& epochNanosecondsOne,
-                                       const Instant& epochNanosecondsTwo) {
+static int32_t CompareEpochNanoseconds(
+    const EpochNanoseconds& epochNanosecondsOne,
+    const EpochNanoseconds& epochNanosecondsTwo) {
   // Step 1.
   if (epochNanosecondsOne > epochNanosecondsTwo) {
     return 1;
@@ -372,10 +359,10 @@ static int32_t CompareEpochNanoseconds(const Instant& epochNanosecondsOne,
 /**
  * CreateTemporalInstant ( epochNanoseconds [ , newTarget ] )
  */
-InstantObject* js::temporal::CreateTemporalInstant(JSContext* cx,
-                                                   const Instant& instant) {
+InstantObject* js::temporal::CreateTemporalInstant(
+    JSContext* cx, const EpochNanoseconds& epochNanoseconds) {
   // Step 1.
-  MOZ_ASSERT(IsValidEpochInstant(instant));
+  MOZ_ASSERT(IsValidEpochNanoseconds(epochNanoseconds));
 
   // Steps 2-3.
   auto* object = NewBuiltinClassInstance<InstantObject>(cx);
@@ -385,9 +372,9 @@ InstantObject* js::temporal::CreateTemporalInstant(JSContext* cx,
 
   // Step 4.
   object->setFixedSlot(InstantObject::SECONDS_SLOT,
-                       NumberValue(instant.seconds));
+                       NumberValue(epochNanoseconds.seconds));
   object->setFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                       Int32Value(instant.nanoseconds));
+                       Int32Value(epochNanoseconds.nanoseconds));
 
   // Step 5.
   return object;
@@ -413,11 +400,11 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
   }
 
   // Step 4.
-  auto instant = ToInstant(epochNanoseconds);
+  auto epochNs = ToEpochNanoseconds(epochNanoseconds);
   object->setFixedSlot(InstantObject::SECONDS_SLOT,
-                       NumberValue(instant.seconds));
+                       NumberValue(epochNs.seconds));
   object->setFixedSlot(InstantObject::NANOSECONDS_SLOT,
-                       Int32Value(instant.nanoseconds));
+                       Int32Value(epochNs.nanoseconds));
 
   // Step 5.
   return object;
@@ -427,7 +414,7 @@ static InstantObject* CreateTemporalInstant(JSContext* cx, const CallArgs& args,
  * ToTemporalInstant ( item )
  */
 static bool ToTemporalInstant(JSContext* cx, Handle<Value> item,
-                              Instant* result) {
+                              EpochNanoseconds* result) {
   // Step 1.
   Rooted<Value> primitiveValue(cx, item);
   if (item.isObject()) {
@@ -435,17 +422,15 @@ static bool ToTemporalInstant(JSContext* cx, Handle<Value> item,
 
     // Step 1.a.
     if (auto* instant = itemObj->maybeUnwrapIf<InstantObject>()) {
-      *result = ToInstant(instant);
+      *result = instant->epochNanoseconds();
       return true;
     }
-
-    // Step 1.b.
     if (auto* zonedDateTime = itemObj->maybeUnwrapIf<ZonedDateTimeObject>()) {
-      *result = ToInstant(zonedDateTime);
+      *result = zonedDateTime->epochNanoseconds();
       return true;
     }
 
-    // Steps 1.c-d.
+    // Steps 1.b-c.
     if (!ToPrimitive(cx, JSTYPE_STRING, &primitiveValue)) {
       return false;
     }
@@ -461,33 +446,35 @@ static bool ToTemporalInstant(JSContext* cx, Handle<Value> item,
   }
   Rooted<JSString*> string(cx, primitiveValue.toString());
 
-  // Steps 3-4.
-  PlainDateTime dateTime;
+  // Steps 3-7.
+  ISODateTime dateTime;
   int64_t offset;
   if (!ParseTemporalInstantString(cx, string, &dateTime, &offset)) {
     return false;
   }
   MOZ_ASSERT(std::abs(offset) < ToNanoseconds(TemporalUnit::Day));
 
-  // Steps 5-6. (Reordered)
+  // Steps 8-9.
+  //
+  // Modified to call ISODateTimeWithinLimits instead of BalanceISODateTime.
   if (!ISODateTimeWithinLimits(dateTime)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_INSTANT_INVALID);
     return false;
   }
 
-  // Step 4.
+  // Step 10.
   auto epochNanoseconds =
-      GetUTCEpochNanoseconds(dateTime, InstantSpan::fromNanoseconds(offset));
+      GetUTCEpochNanoseconds(dateTime) - EpochDuration::fromNanoseconds(offset);
 
-  // Step 7.
-  if (!IsValidEpochInstant(epochNanoseconds)) {
+  // Step 11.
+  if (!IsValidEpochNanoseconds(epochNanoseconds)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_INSTANT_INVALID);
     return false;
   }
 
-  // Step 8.
+  // Step 12.
   *result = epochNanoseconds;
   return true;
 }
@@ -496,17 +483,18 @@ static bool ToTemporalInstant(JSContext* cx, Handle<Value> item,
  * AddInstant ( epochNanoseconds, hours, minutes, seconds, milliseconds,
  * microseconds, nanoseconds )
  */
-bool js::temporal::AddInstant(JSContext* cx, const Instant& instant,
-                              const NormalizedTimeDuration& duration,
-                              Instant* result) {
-  MOZ_ASSERT(IsValidEpochInstant(instant));
-  MOZ_ASSERT(IsValidNormalizedTimeDuration(duration));
+bool js::temporal::AddInstant(JSContext* cx,
+                              const EpochNanoseconds& epochNanoseconds,
+                              const TimeDuration& duration,
+                              EpochNanoseconds* result) {
+  MOZ_ASSERT(IsValidEpochNanoseconds(epochNanoseconds));
+  MOZ_ASSERT(IsValidTimeDuration(duration));
 
-  // Step 1. (Inlined AddNormalizedTimeDurationToEpochNanoseconds)
-  auto r = instant + duration.to<InstantSpan>();
+  // Step 1. (Inlined AddTimeDurationToEpochNanoseconds)
+  auto r = epochNanoseconds + duration.to<EpochDuration>();
 
   // Step 2.
-  if (!IsValidEpochInstant(r)) {
+  if (!IsValidEpochNanoseconds(r)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_INSTANT_INVALID);
     return false;
@@ -520,18 +508,19 @@ bool js::temporal::AddInstant(JSContext* cx, const Instant& instant,
 /**
  * DifferenceInstant ( ns1, ns2, roundingIncrement, smallestUnit, roundingMode )
  */
-NormalizedTimeDuration js::temporal::DifferenceInstant(
-    const Instant& ns1, const Instant& ns2, Increment roundingIncrement,
-    TemporalUnit smallestUnit, TemporalRoundingMode roundingMode) {
-  MOZ_ASSERT(IsValidEpochInstant(ns1));
-  MOZ_ASSERT(IsValidEpochInstant(ns2));
+TimeDuration js::temporal::DifferenceInstant(
+    const EpochNanoseconds& ns1, const EpochNanoseconds& ns2,
+    Increment roundingIncrement, TemporalUnit smallestUnit,
+    TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(IsValidEpochNanoseconds(ns1));
+  MOZ_ASSERT(IsValidEpochNanoseconds(ns2));
   MOZ_ASSERT(smallestUnit > TemporalUnit::Day);
   MOZ_ASSERT(roundingIncrement <=
              MaximumTemporalDurationRoundingIncrement(smallestUnit));
 
   // Step 1.
-  auto diff = NormalizedTimeDurationFromEpochNanosecondsDifference(ns2, ns1);
-  MOZ_ASSERT(IsValidInstantSpan(diff.to<InstantSpan>()));
+  auto diff = TimeDurationFromEpochNanosecondsDifference(ns2, ns1);
+  MOZ_ASSERT(IsValidEpochDuration(diff.to<EpochDuration>()));
 
   // Steps 2-3.
   return RoundTimeDuration(diff, roundingIncrement, smallestUnit, roundingMode);
@@ -540,9 +529,10 @@ NormalizedTimeDuration js::temporal::DifferenceInstant(
 /**
  * RoundNumberToIncrementAsIfPositive ( x, increment, roundingMode )
  */
-static Instant RoundNumberToIncrementAsIfPositive(
-    const Instant& x, int64_t increment, TemporalRoundingMode roundingMode) {
-  MOZ_ASSERT(IsValidEpochInstant(x));
+static EpochNanoseconds RoundNumberToIncrementAsIfPositive(
+    const EpochNanoseconds& x, int64_t increment,
+    TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(IsValidEpochNanoseconds(x));
   MOZ_ASSERT(increment > 0);
   MOZ_ASSERT(increment <= ToNanoseconds(TemporalUnit::Day));
 
@@ -550,32 +540,29 @@ static Instant RoundNumberToIncrementAsIfPositive(
   // |ToPositiveRoundingMode| and then calling |RoundNumberToIncrement|.
   auto rounded = RoundNumberToIncrement(x.toNanoseconds(), Int128{increment},
                                         ToPositiveRoundingMode(roundingMode));
-  return Instant::fromNanoseconds(rounded);
+  return EpochNanoseconds::fromNanoseconds(rounded);
 }
 
 /**
  * RoundTemporalInstant ( ns, increment, unit, roundingMode )
  */
-Instant js::temporal::RoundTemporalInstant(const Instant& ns,
-                                           Increment increment,
-                                           TemporalUnit unit,
-                                           TemporalRoundingMode roundingMode) {
-  MOZ_ASSERT(IsValidEpochInstant(ns));
+EpochNanoseconds js::temporal::RoundTemporalInstant(
+    const EpochNanoseconds& ns, Increment increment, TemporalUnit unit,
+    TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(IsValidEpochNanoseconds(ns));
   MOZ_ASSERT(increment >= Increment::min());
   MOZ_ASSERT(uint64_t(increment.value()) <= ToNanoseconds(TemporalUnit::Day));
-
-  // Step 1.
   MOZ_ASSERT(unit > TemporalUnit::Day);
 
-  // Step 2.
+  // Step 1.
   int64_t unitLength = ToNanoseconds(unit);
 
-  // Step 3.
+  // Step 2.
   int64_t incrementNs = increment.value() * unitLength;
   MOZ_ASSERT(incrementNs <= ToNanoseconds(TemporalUnit::Day),
-             "incrementNs doesn't overflow instant resolution");
+             "incrementNs doesn't overflow epoch nanoseconds resolution");
 
-  // Step 4.
+  // Step 3.
   return RoundNumberToIncrementAsIfPositive(ns, incrementNs, roundingMode);
 }
 
@@ -585,34 +572,32 @@ Instant js::temporal::RoundTemporalInstant(const Instant& ns,
 static bool DifferenceTemporalInstant(JSContext* cx,
                                       TemporalDifference operation,
                                       const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
-  Instant other;
+  // Step 1.
+  EpochNanoseconds other;
   if (!ToTemporalInstant(cx, args.get(0), &other)) {
     return false;
   }
 
-  // Steps 3-4.
+  // Steps 2-3.
   DifferenceSettings settings;
   if (args.hasDefined(1)) {
-    // Step 3.
+    // Step 2.
     Rooted<JSObject*> options(
         cx, RequireObjectArg(cx, "options", ToName(operation), args[1]));
     if (!options) {
       return false;
     }
 
-    // Step 4.
+    // Step 3.
     if (!GetDifferenceSettings(cx, operation, options, TemporalUnitGroup::Time,
                                TemporalUnit::Nanosecond, TemporalUnit::Second,
                                &settings)) {
       return false;
     }
   } else {
-    // Steps 3-4.
+    // Steps 2-3.
     settings = {
         TemporalUnit::Nanosecond,
         TemporalUnit::Second,
@@ -621,23 +606,24 @@ static bool DifferenceTemporalInstant(JSContext* cx,
     };
   }
 
-  // Steps 5-6.
-  auto difference =
-      DifferenceInstant(instant, other, settings.roundingIncrement,
+  // Steps 4.
+  auto timeDuration =
+      DifferenceInstant(epochNs, other, settings.roundingIncrement,
                         settings.smallestUnit, settings.roundingMode);
 
-  // Step 7.
-  TimeDuration balanced;
-  if (!BalanceTimeDuration(cx, difference, settings.largestUnit, &balanced)) {
+  // Step 5.
+  Duration duration;
+  if (!TemporalDurationFromInternal(cx, timeDuration, settings.largestUnit,
+                                    &duration)) {
     return false;
   }
 
-  // Step 8.
-  auto duration = balanced.toDuration();
+  // Step 6.
   if (operation == TemporalDifference::Since) {
     duration = duration.negate();
   }
 
+  // Step 7.
   auto* obj = CreateTemporalDuration(cx, duration);
   if (!obj) {
     return false;
@@ -647,26 +633,26 @@ static bool DifferenceTemporalInstant(JSContext* cx,
   return true;
 }
 
-enum class InstantDuration { Add, Subtract };
-
 /**
- * AddDurationToOrSubtractDurationFromInstant ( operation, instant,
- * temporalDurationLike )
+ * AddDurationToInstant ( operation, instant, temporalDurationLike )
  */
-static bool AddDurationToOrSubtractDurationFromInstant(
-    JSContext* cx, InstantDuration operation, const CallArgs& args) {
+static bool AddDurationToInstant(JSContext* cx, TemporalAddDuration operation,
+                                 const CallArgs& args) {
   auto* instant = &args.thisv().toObject().as<InstantObject>();
-  auto epochNanoseconds = ToInstant(instant);
+  auto epochNanoseconds = instant->epochNanoseconds();
 
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
+  // Step 1.
   Duration duration;
-  if (!ToTemporalDurationRecord(cx, args.get(0), &duration)) {
+  if (!ToTemporalDuration(cx, args.get(0), &duration)) {
     return false;
   }
 
-  // Steps 3-6.
+  // Step 2.
+  if (operation == TemporalAddDuration::Subtract) {
+    duration = duration.negate();
+  }
+
+  // Steps 3-4. (Inlined DefaultTemporalLargestUnit and TemporalUnitCategory.)
   if (duration.years != 0 || duration.months != 0 || duration.weeks != 0 ||
       duration.days != 0) {
     const char* part = duration.years != 0    ? "years"
@@ -678,19 +664,16 @@ static bool AddDurationToOrSubtractDurationFromInstant(
     return false;
   }
 
-  // Step 7.
-  if (operation == InstantDuration::Subtract) {
-    duration = duration.negate();
-  }
-  auto timeDuration = NormalizeTimeDuration(duration);
+  // Step 5. (Inlined ToInternalDurationRecordWith24HourDays.)
+  auto timeDuration = TimeDurationFromComponents(duration);
 
-  // Step 8.
-  Instant ns;
+  // Step 6.
+  EpochNanoseconds ns;
   if (!AddInstant(cx, epochNanoseconds, timeDuration, &ns)) {
     return false;
   }
 
-  // Step 9.
+  // Step 7.
   auto* result = CreateTemporalInstant(cx, ns);
   if (!result) {
     return false;
@@ -740,13 +723,13 @@ static bool InstantConstructor(JSContext* cx, unsigned argc, Value* vp) {
 static bool Instant_from(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // Steps 1-2.
-  Instant epochInstant;
-  if (!ToTemporalInstant(cx, args.get(0), &epochInstant)) {
+  // Step 1.
+  EpochNanoseconds epochNs;
+  if (!ToTemporalInstant(cx, args.get(0), &epochNs)) {
     return false;
   }
 
-  auto* result = CreateTemporalInstant(cx, epochInstant);
+  auto* result = CreateTemporalInstant(cx, epochNs);
   if (!result) {
     return false;
   }
@@ -790,8 +773,8 @@ static bool Instant_fromEpochMilliseconds(JSContext* cx, unsigned argc,
 
   // Step 5.
   int64_t milliseconds = mozilla::AssertedCast<int64_t>(epochMilliseconds);
-  auto* result =
-      CreateTemporalInstant(cx, Instant::fromMilliseconds(milliseconds));
+  auto* result = CreateTemporalInstant(
+      cx, EpochNanoseconds::fromMilliseconds(milliseconds));
   if (!result) {
     return false;
   }
@@ -820,7 +803,8 @@ static bool Instant_fromEpochNanoseconds(JSContext* cx, unsigned argc,
   }
 
   // Step 3.
-  auto* result = CreateTemporalInstant(cx, ToInstant(epochNanoseconds));
+  auto* result =
+      CreateTemporalInstant(cx, ToEpochNanoseconds(epochNanoseconds));
   if (!result) {
     return false;
   }
@@ -835,13 +819,13 @@ static bool Instant_compare(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  Instant one;
+  EpochNanoseconds one;
   if (!ToTemporalInstant(cx, args.get(0), &one)) {
     return false;
   }
 
   // Step 2.
-  Instant two;
+  EpochNanoseconds two;
   if (!ToTemporalInstant(cx, args.get(1), &two)) {
     return false;
   }
@@ -856,10 +840,10 @@ static bool Instant_compare(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool Instant_epochMilliseconds(JSContext* cx, const CallArgs& args) {
   // Step 3.
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   // Step 4-5.
-  args.rval().setNumber(instant.floorToMilliseconds());
+  args.rval().setNumber(epochNs.floorToMilliseconds());
   return true;
 }
 
@@ -877,13 +861,12 @@ static bool Instant_epochMilliseconds(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool Instant_epochNanoseconds(JSContext* cx, const CallArgs& args) {
   // Step 3.
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
-  auto* nanoseconds = ToEpochNanoseconds(cx, instant);
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
+  auto* nanoseconds = ToBigInt(cx, epochNs);
   if (!nanoseconds) {
     return false;
   }
 
-  // Step 4.
   args.rval().setBigInt(nanoseconds);
   return true;
 }
@@ -901,8 +884,8 @@ static bool Instant_epochNanoseconds(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.add ( temporalDurationLike )
  */
 static bool Instant_add(JSContext* cx, const CallArgs& args) {
-  return AddDurationToOrSubtractDurationFromInstant(cx, InstantDuration::Add,
-                                                    args);
+  // Step 3.
+  return AddDurationToInstant(cx, TemporalAddDuration::Add, args);
 }
 
 /**
@@ -918,8 +901,8 @@ static bool Instant_add(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.subtract ( temporalDurationLike )
  */
 static bool Instant_subtract(JSContext* cx, const CallArgs& args) {
-  return AddDurationToOrSubtractDurationFromInstant(
-      cx, InstantDuration::Subtract, args);
+  // Step 3.
+  return AddDurationToInstant(cx, TemporalAddDuration::Subtract, args);
 }
 
 /**
@@ -935,6 +918,7 @@ static bool Instant_subtract(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.until ( other [ , options ] )
  */
 static bool Instant_until(JSContext* cx, const CallArgs& args) {
+  // Step 3.
   return DifferenceTemporalInstant(cx, TemporalDifference::Until, args);
 }
 
@@ -951,6 +935,7 @@ static bool Instant_until(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.since ( other [ , options ] )
  */
 static bool Instant_since(JSContext* cx, const CallArgs& args) {
+  // Step 3.
   return DifferenceTemporalInstant(cx, TemporalDifference::Since, args);
 }
 
@@ -967,7 +952,7 @@ static bool Instant_since(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.round ( roundTo )
  */
 static bool Instant_round(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   // Steps 3-16.
   auto smallestUnit = TemporalUnit::Auto;
@@ -1025,7 +1010,7 @@ static bool Instant_round(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 17.
-  auto roundedNs = RoundTemporalInstant(instant, roundingIncrement,
+  auto roundedNs = RoundTemporalInstant(epochNs, roundingIncrement,
                                         smallestUnit, roundingMode);
 
   // Step 18.
@@ -1050,16 +1035,16 @@ static bool Instant_round(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.equals ( other )
  */
 static bool Instant_equals(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   // Step 3.
-  Instant other;
+  EpochNanoseconds other;
   if (!ToTemporalInstant(cx, args.get(0), &other)) {
     return false;
   }
 
   // Steps 4-5.
-  args.rval().setBoolean(instant == other);
+  args.rval().setBoolean(epochNs == other);
   return true;
 }
 
@@ -1076,7 +1061,7 @@ static bool Instant_equals(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toString ( [ options ] )
  */
 static bool Instant_toString(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   Rooted<TimeZoneValue> timeZone(cx);
   auto roundingMode = TemporalRoundingMode::Trunc;
@@ -1134,12 +1119,12 @@ static bool Instant_toString(JSContext* cx, const CallArgs& args) {
   }
 
   // Steps 12-13.
-  auto roundedInstant = RoundTemporalInstant(instant, precision.increment,
-                                             precision.unit, roundingMode);
+  auto roundedNs = RoundTemporalInstant(epochNs, precision.increment,
+                                        precision.unit, roundingMode);
 
   // Step 14.
-  JSString* str = TemporalInstantToString(cx, roundedInstant, timeZone,
-                                          precision.precision);
+  JSString* str =
+      TemporalInstantToString(cx, roundedNs, timeZone, precision.precision);
   if (!str) {
     return false;
   }
@@ -1161,18 +1146,10 @@ static bool Instant_toString(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toLocaleString ( [ locales [ , options ] ] )
  */
 static bool Instant_toLocaleString(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
-
-  // Step 3.
-  Rooted<TimeZoneValue> timeZone(cx);
-  JSString* str =
-      TemporalInstantToString(cx, instant, timeZone, Precision::Auto());
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
+  // Steps 3-4.
+  Handle<PropertyName*> required = cx->names().any;
+  Handle<PropertyName*> defaults = cx->names().all;
+  return TemporalObjectToLocaleString(cx, args, required, defaults);
 }
 
 /**
@@ -1188,12 +1165,12 @@ static bool Instant_toLocaleString(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toJSON ( )
  */
 static bool Instant_toJSON(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx);
   JSString* str =
-      TemporalInstantToString(cx, instant, timeZone, Precision::Auto());
+      TemporalInstantToString(cx, epochNs, timeZone, Precision::Auto());
   if (!str) {
     return false;
   }
@@ -1224,7 +1201,7 @@ static bool Instant_valueOf(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.Instant.prototype.toZonedDateTimeISO ( item )
  */
 static bool Instant_toZonedDateTimeISO(JSContext* cx, const CallArgs& args) {
-  auto instant = ToInstant(&args.thisv().toObject().as<InstantObject>());
+  auto epochNs = args.thisv().toObject().as<InstantObject>().epochNanoseconds();
 
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx);
@@ -1234,7 +1211,7 @@ static bool Instant_toZonedDateTimeISO(JSContext* cx, const CallArgs& args) {
 
   // Step 4.
   Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
-  auto* result = CreateTemporalZonedDateTime(cx, instant, timeZone, calendar);
+  auto* result = CreateTemporalZonedDateTime(cx, epochNs, timeZone, calendar);
   if (!result) {
     return false;
   }

@@ -10,14 +10,14 @@ import { ExtensionTaskScheduler } from "resource://gre/modules/ExtensionTaskSche
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  SQLiteKeyValueService: "resource://gre/modules/kvstore.sys.mjs",
+  KeyValueService: "resource://gre/modules/kvstore.sys.mjs",
 });
 
 /**
  * User scripts are internally represented as the options to pass to the
  * WebExtensionContentScript constructor in the child.
  *
- * @typedef {WebExtensionContentScriptInit} InternalUserScript
+ * @typedef {WebExtensionContentScriptInit & {matches: string[]}} InternalUserScript
  *
  * The internal representation is derived from the public representation as
  * defined in user_scripts.json.
@@ -34,7 +34,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 
 /**
- * User scripts are stored in the following format in a SKV database. A SKV
+ * User scripts are stored in the following format in a RKV database. A RKV
  * database is a KeyValue store where the keys are ordered lexicographically.
  *
  * Common operations are querying/removing from extensions.
@@ -44,12 +44,19 @@ ChromeUtils.defineESModuleGetters(lazy, {
  */
 class Store {
   async _init() {
-    const storePath = PathUtils.join(PathUtils.profileDir, "extension-store");
+    // NOTE: Ideally this would be the same location as other extension rkv
+    // databases, but we cannot due to bug 1807010. So the directory name
+    // chosen here differs from those that use rkv in other places, such as
+    // ExtensionPermissions.sys.mjs and ExtensionScriptingStore.sys.mjs.
+    const storePath = PathUtils.join(
+      PathUtils.profileDir,
+      "extension-store-userscripts"
+    );
     await IOUtils.makeDirectory(storePath);
-    // TODO: Add recovery (rename) when implemented in skv (bug 1913238).
-    this._store = await lazy.SQLiteKeyValueService.getOrCreate(
+    this._store = await lazy.KeyValueService.getOrCreateWithOptions(
       storePath,
-      "userScripts"
+      "userScripts",
+      { strategy: lazy.KeyValueService.RecoveryStrategy.RENAME }
     );
   }
 
@@ -73,10 +80,11 @@ class Store {
    *
    * @param {string} [fromKey]
    * @param {string} [toKey]
-   * @returns {Promise<Array<[string,*]>>}
+   * @returns {Promise<Array<[string, *]>>}
    */
   async getAllEntries(fromKey, toKey) {
     await this.lazyInit();
+    /** @type {Array<[string, *]>} */
     const pairs = [];
     const enumerator = await this._store.enumerate(fromKey, toKey);
     while (enumerator.hasMoreElements()) {
@@ -90,7 +98,7 @@ class Store {
    * Write all pairs. If the value is the null value, the key is deleted
    * Otherwise the values must be JSON-serializable and are written.
    *
-   * TODO: Drop when skv supports JSON (bug 1919618).
+   * TODO: Drop if we move from rkv to skv and skv supports JSON (bug 1919618).
    *
    * @param {Array<[string,*]>} pairs
    */
@@ -104,7 +112,19 @@ class Store {
 
   async deleteRange(fromKey, toKey) {
     await this.lazyInit();
-    return this._store.deleteRange(fromKey, toKey);
+
+    // TODO bug 1919530: Use efficient deleteRange if we switch to skv:
+    // return this._store.deleteRange(fromKey, toKey);
+
+    // skv supports deleteRange() with bug 1919674, but rkv does not. So as
+    // part of deletion, we have to query the values despite not needing it.
+    const enumerator = await this._store.enumerate(fromKey, toKey);
+    const pairs = [];
+    while (enumerator.hasMoreElements()) {
+      const { key } = enumerator.getNext();
+      pairs.push([key, null]);
+    }
+    return this._store.writeMany(pairs);
   }
 }
 
@@ -394,7 +414,7 @@ class UserScriptsManager {
     await store.writeMany([[this.#makeDbKey(worldId, "_world_"), null]]);
   }
 
-  /** @returns {WorldProperties[]} */
+  /** @returns {Promise<WorldProperties[]>} */
   async getWorldConfigurations() {
     return Array.from(this.worldConfigs.values());
   }
@@ -519,6 +539,7 @@ class UserScriptsManager {
    */
   async #makePublicUserScript(publicId, internalScript) {
     let hasCodePromise = false;
+    /** @type {(Promise<{code: string}> | {file?: string, code?: string})[]} */
     let js = internalScript.jsPaths.map(jsPath => {
       if (jsPath.startsWith(this.extension.baseURL)) {
         // Return path without leading origin & /.

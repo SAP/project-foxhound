@@ -76,14 +76,13 @@ hazardous behaviors.
 l10n
 ----
 
-The l10n kind takes the last published nightly build, and generates localized builds
-from it. You can read more about how to trigger these on the `wiki
-<https://wiki.mozilla.org/ReleaseEngineering/TryServer#Desktop_l10n_jobs_.28on_Taskcluster.29>`_.
+The l10n kind repacks a build (from the same source) for a subset of locales,
+to exercise the localized repack logic in CI.
 
 shippable-l10n
 --------------
 
-The nightly l10n kind repacks a specific nightly build (from the same source code)
+The nightly l10n kind repacks a shippable build (from the same source code)
 in order to provide localized versions of the same source.
 
 shippable-l10n-signing
@@ -564,6 +563,10 @@ repackage-deb-l10n
 ------------------
 These repackage tasks take the signed langpacks (.xpi) binaries and puts them in Debian packages.
 
+repackage-flatpak
+-----------------
+These repackage tasks take signed Firefox Linux binaries and langpacks, and builds a flatpak.
+
 repackage-signing
 -----------------
 Repackage-signing take the repackaged installers (windows) and signs them.
@@ -777,12 +780,6 @@ startup-test
 ------------
 
 Runs Firefox for a short period of time to see if it crashes
-
-l10n-cross-channel
-------------------
-
-Compiles a set of en-US strings from all shipping release trains and pushes to
-the quarantine strings repo.
 
 attribution
 -----------

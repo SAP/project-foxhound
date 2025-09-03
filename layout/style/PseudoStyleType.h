@@ -9,6 +9,7 @@
 
 #include "mozilla/RefPtr.h"
 #include "nsAtom.h"
+#include "PLDHashTable.h"
 
 #include <cstddef>
 #include <cstdint>
@@ -113,6 +114,17 @@ class PseudoStyle final {
     return aType >= Type::WrapperAnonBoxesStart &&
            aType < Type::WrapperAnonBoxesEnd;
   }
+
+  static bool IsNamedViewTransitionPseudoElement(Type aType) {
+    return aType == Type::viewTransitionGroup ||
+           aType == Type::viewTransitionImagePair ||
+           aType == Type::viewTransitionOld || aType == Type::viewTransitionNew;
+  }
+
+  static bool IsViewTransitionPseudoElement(Type aType) {
+    return aType == Type::viewTransition ||
+           IsNamedViewTransitionPseudoElement(aType);
+  }
 };
 
 /*
@@ -123,19 +135,63 @@ class PseudoStyle final {
 struct PseudoStyleRequest {
   PseudoStyleRequest() = default;
   PseudoStyleRequest(PseudoStyleRequest&&) = default;
+  PseudoStyleRequest(const PseudoStyleRequest&) = default;
   PseudoStyleRequest& operator=(PseudoStyleRequest&&) = default;
+  PseudoStyleRequest& operator=(const PseudoStyleRequest&) = default;
 
   explicit PseudoStyleRequest(PseudoStyleType aType) : mType(aType) {}
   PseudoStyleRequest(PseudoStyleType aType, nsAtom* aIdentifier)
       : mType(aType), mIdentifier(aIdentifier) {}
 
+  bool operator==(const PseudoStyleRequest& aOther) const {
+    return mType == aOther.mType && mIdentifier == aOther.mIdentifier;
+  }
+
+  bool IsNotPseudo() const { return mType == PseudoStyleType::NotPseudo; }
   bool IsPseudoElementOrNotPseudo() const {
-    return mType == PseudoStyleType::NotPseudo ||
-           PseudoStyle::IsPseudoElement(mType);
+    return IsNotPseudo() || PseudoStyle::IsPseudoElement(mType);
+  }
+  bool IsViewTransition() const {
+    return PseudoStyle::IsViewTransitionPseudoElement(mType);
+  }
+
+  static PseudoStyleRequest NotPseudo() { return PseudoStyleRequest(); }
+  static PseudoStyleRequest Before() {
+    return PseudoStyleRequest(PseudoStyleType::before);
+  }
+  static PseudoStyleRequest After() {
+    return PseudoStyleRequest(PseudoStyleType::after);
+  }
+  static PseudoStyleRequest Marker() {
+    return PseudoStyleRequest(PseudoStyleType::marker);
   }
 
   PseudoStyleType mType = PseudoStyleType::NotPseudo;
   RefPtr<nsAtom> mIdentifier;
+};
+
+class PseudoStyleRequestHashKey : public PLDHashEntryHdr {
+ public:
+  using KeyType = PseudoStyleRequest;
+  using KeyTypePointer = const PseudoStyleRequest*;
+
+  explicit PseudoStyleRequestHashKey(KeyTypePointer aKey) : mRequest(*aKey) {}
+  PseudoStyleRequestHashKey(PseudoStyleRequestHashKey&& aOther) = default;
+  ~PseudoStyleRequestHashKey() = default;
+
+  KeyType GetKey() const { return mRequest; }
+  bool KeyEquals(KeyTypePointer aKey) const { return *aKey == mRequest; }
+
+  static KeyTypePointer KeyToPointer(KeyType& aKey) { return &aKey; }
+  static PLDHashNumber HashKey(KeyTypePointer aKey) {
+    return mozilla::HashGeneric(
+        static_cast<uint8_t>(aKey->mType),
+        aKey->mIdentifier ? aKey->mIdentifier->hash() : 0);
+  }
+  enum { ALLOW_MEMMOVE = true };
+
+ private:
+  PseudoStyleRequest mRequest;
 };
 
 }  // namespace mozilla

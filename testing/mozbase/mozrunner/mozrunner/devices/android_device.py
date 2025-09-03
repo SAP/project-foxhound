@@ -297,6 +297,10 @@ def metadata_for_app(app, aab=False):
         package_name = "org.mozilla.firefox"
         activity_name = "org.mozilla.firefox.App"
         subcommand = "installFenixRelease"
+    if app == "org.mozilla.fenix.nightly" or app == "fenix.nightly":
+        # Likely only works for --no-install.
+        package_name = "org.mozilla.fenix"
+        activity_name = "org.mozilla.fenix.App"
     elif "fennec" in app or "firefox" in app:
         activity_name = "org.mozilla.gecko.BrowserApp"
     elif app == "org.mozilla.geckoview.test":
@@ -315,11 +319,11 @@ def metadata_for_app(app, aab=False):
         )
     elif "fenix" in app:
         package_name = "org.mozilla.fenix.debug"
-        activity_name = "org.mozilla.fenix.debug.App"
+        activity_name = "org.mozilla.fenix.IntentReceiverActivity"
         subcommand = "install-fenix"
     elif "focus" in app:
         package_name = "org.mozilla.focus.debug"
-        activity_name = "org.mozilla.focus.activity.MainActivity"
+        activity_name = "org.mozilla.focus.activity.IntentReceiverActivity"
         subcommand = "install-focus"
     return metadata(activity_name, package_name, subcommand)
 
@@ -521,6 +525,7 @@ def run_lldb_server(app, substs, device_serial):
 
 def _setup_or_run_lldb_server(app, substs, device_serial, setup=True):
     device = _get_device(substs, device_serial)
+    device.run_as_package = app
 
     # Don't use enable_run_as here, as this will not give you what you
     # want if we have root access on the device.

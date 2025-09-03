@@ -11,10 +11,10 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/UniquePtrExtensions.h"
 #include "nsPrintfCString.h"
 #include "WebGLBuffer.h"
 #include "WebGLContextUtils.h"
+#include "WebGLFormats.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLProgram.h"
 #include "WebGLRenderbuffer.h"
@@ -238,7 +238,7 @@ bool WebGLContext::ValidateStencilParamsForDrawCall() const {
 
   const auto fnMask = [&](const uint32_t x) { return x & stencilMax; };
   const auto fnClamp = [&](const int32_t x) {
-    return std::max(0, std::min(x, (int32_t)stencilMax));
+    return std::clamp(x, 0, (int32_t)stencilMax);
   };
 
   bool ok = true;
@@ -1058,7 +1058,7 @@ void WebGLContext::DrawElementsInstanced(const GLenum mode,
   {
     ScopedDrawCallWrapper wrapper(*this);
     {
-      UniquePtr<gl::GLContext::LocalErrorScope> errorScope;
+      std::unique_ptr<gl::GLContext::LocalErrorScope> errorScope;
       if (MOZ_UNLIKELY(gl->IsANGLE() &&
                        gl->mDebugFlags &
                            gl::GLContext::DebugFlagAbortOnError)) {

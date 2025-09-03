@@ -552,7 +552,7 @@ class AndroidArtifactJob(ArtifactJob):
 
 
 class LinuxArtifactJob(ArtifactJob):
-    package_re = r"public/build/target\.tar\.bz2$"
+    package_re = r"public/build/target\.tar\.(bz2|xz)$"
     product = "firefox"
 
     _package_artifact_patterns = {
@@ -1206,15 +1206,24 @@ class Artifacts(object):
             target_64bit = True
 
         if self._defines.get("XP_LINUX", False):
+            if self._substs["TARGET_CPU"] == "aarch64":
+                return "linux64-aarch64" + target_suffix
             return ("linux64" if target_64bit else "linux") + target_suffix
         if self._defines.get("XP_WIN", False):
             if self._substs["TARGET_CPU"] == "aarch64":
                 return "win64-aarch64" + target_suffix
             return ("win64" if target_64bit else "win32") + target_suffix
         if self._defines.get("XP_MACOSX", False):
-            # We only produce unified builds in automation, so the target_cpu
-            # check is not relevant.
-            return "macosx64" + target_suffix
+            if (
+                not self._substs.get("MOZ_DEBUG")
+                or self._substs["TARGET_CPU"] == "x86_64"
+            ):
+                # We only produce unified builds in automation, so the target_cpu
+                # check is not relevant.
+                return "macosx64" + target_suffix
+            if self._substs["TARGET_CPU"] == "aarch64":
+                return "macosx64-aarch64" + target_suffix
+
         raise Exception("Cannot determine default job for |mach artifact|!")
 
     def _pushheads_from_rev(self, rev, count):

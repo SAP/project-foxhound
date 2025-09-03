@@ -52,7 +52,7 @@ export default class MozButton extends MozLitElement {
     ariaLabel: { type: String, mapped: true },
     iconSrc: { type: String },
     hasVisibleLabel: { type: Boolean, state: true },
-    accessKey: { type: String, mapped: true },
+    accessKey: { type: String, mapped: true, fluent: true },
   };
 
   static queries = {
@@ -111,7 +111,11 @@ export default class MozButton extends MozLitElement {
           ${this.iconSrc
             ? html`<img src=${this.iconSrc} role="presentation" />`
             : ""}
-          <label is="moz-label" shownaccesskey=${ifDefined(this.accessKey)}>
+          <label
+            is="moz-label"
+            shownaccesskey=${ifDefined(this.accessKey)}
+            part="moz-button-label"
+          >
             ${this.labelTemplate()}
           </label>
         </span>

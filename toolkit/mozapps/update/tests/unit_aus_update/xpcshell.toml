@@ -1,10 +1,14 @@
 [DEFAULT]
 tags = "appupdate"
 head = "head_update.js"
-skip-if = ["os == 'win' && (ccov || msix)"] # Our updater is disabled in MSIX builds
+skip-if = [
+  "os == 'win' && ccov",
+  "msix", # Our updater is disabled in MSIX builds
+]
 prefs = [
   "app.update.staging.enabled=false",
   "app.update.langpack.enabled=false",
+  "app.update.multiSessionInstallLockout.enabled=false",
 ]
 support-files = [
   "../data/shared.js",
@@ -65,10 +69,18 @@ reason = "Feature is Firefox-specific and Windows-specific."
 
 ["initWithPendingUpdate.js"]
 
+["initialStateValidation.js"]
+
 ["languagePackUpdates.js"]
 skip-if = ["socketprocess_networking"] # Bug 1759035
 
 ["mixedUnsupported.js"]
+
+["multiSessionInstallLockout.js"]
+skip-if = [
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1937300
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && ccov", # Bug 1933914
+]
 
 ["multiUpdate.js"]
 skip-if = ["socketprocess_networking"] # Bug 1759035

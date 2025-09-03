@@ -1,3 +1,4 @@
+requires-python:>=3.8
 vendored:testing/web-platform/tests/tools/third_party/h2/src
 vendored:testing/web-platform/tests/tools/third_party/hpack/src
 vendored:testing/web-platform/tests/tools/third_party/html5lib
@@ -8,6 +9,7 @@ vendored:testing/web-platform/tests/tools/wptrunner
 vendored:testing/web-platform/tests/tools/wptserve
 vendored:third_party/python/MarkupSafe/src
 vendored:third_party/python/PyYAML/lib/
+vendored:third_party/python/aiohappyeyeballs
 vendored:third_party/python/aiohttp
 vendored:third_party/python/aiosignal
 vendored:third_party/python/appdirs
@@ -39,6 +41,7 @@ vendored:third_party/python/multidict
 vendored:third_party/python/pathspec
 vendored:third_party/python/platformdirs
 vendored:third_party/python/ply
+vendored:third_party/python/propcache
 vendored:third_party/python/pyasn1
 vendored:third_party/python/pyasn1_modules
 vendored:third_party/python/pygments

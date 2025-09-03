@@ -346,14 +346,14 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
     RecomputeProcessPriority();
   }
 
-  // If we're in a BC tree that is active with respect to the priority manager,
-  // ensure that this new BrowserParent is marked as active. This ensures that
-  // the process will be prioritized in a cross-site iframe navigation in an
-  // active tab, and also that the process is correctly prioritized if we got
-  // created for a browsing context which was already active.
-  if (aBrowsingContext->Top()->IsPriorityActive()) {
-    ProcessPriorityManager::BrowserPriorityChanged(this, true);
-  }
+  // Reflect the BC tree's activeness state on this new BrowserParent. This
+  // ensures that the process will be correctly prioritized based on the
+  // BrowsingContext's current priority after a navigation.
+  // If the BC is not active, we still call `BrowserPriorityChanged` to ensure
+  // the priority is lowered if the BrowsingContext is inactive, but the process
+  // still has FOREGROUND priority from when it was launched.
+  ProcessPriorityManager::BrowserPriorityChanged(
+      this, aBrowsingContext->Top()->IsPriorityActive());
 }
 
 BrowserParent::~BrowserParent() {
@@ -2997,7 +2997,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnProgressChange(
 mozilla::ipc::IPCResult BrowserParent::RecvOnLocationChange(
     const WebProgressData& aWebProgressData, const RequestData& aRequestData,
     nsIURI* aLocation, const uint32_t aFlags, const bool aCanGoBack,
-    const bool aCanGoForward,
+    const bool aCanGoBackIgnoringUserInteraction, const bool aCanGoForward,
     const Maybe<WebProgressLocationChangeData>& aLocationChangeData) {
   RefPtr<CanonicalBrowsingContext> browsingContext =
       BrowsingContextForWebProgress(aWebProgressData);
@@ -3017,8 +3017,8 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnLocationChange(
 
   nsCOMPtr<nsIBrowser> browser = GetBrowser();
   if (!mozilla::SessionHistoryInParent() && browser) {
-    Unused << browser->UpdateWebNavigationForLocationChange(aCanGoBack,
-                                                            aCanGoForward);
+    Unused << browser->UpdateWebNavigationForLocationChange(
+        aCanGoBack, aCanGoBackIgnoringUserInteraction, aCanGoForward);
   }
 
   if (aLocationChangeData.isSome()) {
@@ -3522,10 +3522,22 @@ BrowserParent::GetAuthPrompt(uint32_t aPromptReason, const nsIID& iid,
 }
 
 already_AddRefed<PColorPickerParent> BrowserParent::AllocPColorPickerParent(
+    const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
     const nsString& aTitle, const nsString& aInitialColor,
     const nsTArray<nsString>& aDefaultColors) {
-  return MakeAndAddRef<ColorPickerParent>(aTitle, aInitialColor,
-                                          aDefaultColors);
+  RefPtr<CanonicalBrowsingContext> browsingContext =
+      [&]() -> CanonicalBrowsingContext* {
+    if (aBrowsingContext.IsNullOrDiscarded()) {
+      return nullptr;
+    }
+    if (!aBrowsingContext.get_canonical()->IsOwnedByProcess(
+            Manager()->ChildID())) {
+      return nullptr;
+    }
+    return aBrowsingContext.get_canonical();
+  }();
+  return MakeAndAddRef<ColorPickerParent>(browsingContext, aTitle,
+                                          aInitialColor, aDefaultColors);
 }
 
 already_AddRefed<nsFrameLoader> BrowserParent::GetFrameLoader(

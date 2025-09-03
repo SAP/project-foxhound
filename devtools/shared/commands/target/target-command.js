@@ -11,6 +11,8 @@ const BROWSERTOOLBOX_SCOPE_PREF = "devtools.browsertoolbox.scope";
 const BROWSERTOOLBOX_SCOPE_EVERYTHING = "everything";
 const BROWSERTOOLBOX_SCOPE_PARENTPROCESS = "parent-process";
 
+const SHOW_CONTENT_SCRIPTS_PREF = "devtools.debugger.show-content-scripts";
+
 // eslint-disable-next-line mozilla/reject-some-requires
 const createStore = require("resource://devtools/client/shared/redux/create-store.js");
 const reducer = require("resource://devtools/shared/commands/target/reducers/targets.js");
@@ -60,10 +62,16 @@ class TargetCommand extends EventEmitter {
 
     this._updateBrowserToolboxScope =
       this._updateBrowserToolboxScope.bind(this);
+    this._updateContentScriptListening =
+      this._updateContentScriptListening.bind(this);
 
     Services.prefs.addObserver(
       BROWSERTOOLBOX_SCOPE_PREF,
       this._updateBrowserToolboxScope
+    );
+    Services.prefs.addObserver(
+      SHOW_CONTENT_SCRIPTS_PREF,
+      this._updateContentScriptListening
     );
     // Until Watcher actor notify about new top level target when navigating to another process
     // we have to manually switch to a new target from the client side
@@ -115,6 +123,7 @@ class TargetCommand extends EventEmitter {
       this.rootFront.traits.workerConsoleApiMessagesDispatchedToMainThread ===
       false;
     this.listenForServiceWorkers = false;
+    this.listenForContentScripts = false;
 
     // Tells us if we received the first top level target.
     // If target switching is done on:
@@ -159,6 +168,26 @@ class TargetCommand extends EventEmitter {
           isModeSwitching: true,
         });
       }
+    }
+  }
+
+  /**
+   * Toggle listening to CONTENT_SCRIPT target type based on SHOW_CONTENT_SCRIPTS_PREF pref changes.
+   */
+  _updateContentScriptListening() {
+    const showContentScripts = Services.prefs.getBoolPref(
+      SHOW_CONTENT_SCRIPTS_PREF,
+      false
+    );
+    if (showContentScripts) {
+      // `_computeTargetTypes`, which is used by `startListening` to compute the types to listen to,
+      // will read the pref and force listening to CONTENT_SCRIPT type
+      this.startListening();
+    } else {
+      this.stopListeningForType(TargetCommand.TYPES.CONTENT_SCRIPT, {
+        isTargetSwitching: false,
+        isModeSwitching: false,
+      });
     }
   }
 
@@ -566,6 +595,13 @@ class TargetCommand extends EventEmitter {
       this.hasTargetWatcherSupport(TargetCommand.TYPES.FRAME)
     ) {
       types = [TargetCommand.TYPES.FRAME];
+      const showContentScripts = Services.prefs.getBoolPref(
+        SHOW_CONTENT_SCRIPTS_PREF,
+        false
+      );
+      if (showContentScripts && this.hasTargetWatcherSupport(TargetCommand.TYPES.CONTENT_SCRIPT)) {
+        types.push(TargetCommand.TYPES.CONTENT_SCRIPT);
+      }
     } else if (
       this.descriptorFront.isWebExtensionDescriptor &&
       this.descriptorFront.isServerTargetSwitchingEnabled()
@@ -576,18 +612,32 @@ class TargetCommand extends EventEmitter {
         BROWSERTOOLBOX_SCOPE_PREF
       );
       if (browserToolboxScope == BROWSERTOOLBOX_SCOPE_EVERYTHING) {
-        types = TargetCommand.ALL_TYPES;
+        // Listen for all target types when the browser toolbox is in multiprocess mode.
+        //
+        // Except for CONTENT_SCRIPT targets, as their scripts are already debuggable
+        // via the content process targets.
+        if (!this.listenForContentScripts) {
+          types = TargetCommand.ALL_TYPES.filter(t => t != TargetCommand.TYPES.CONTENT_SCRIPT);
+        } else {
+          types = TargetCommand.ALL_TYPES;
+        }
       }
     }
     if (this.listenForWorkers && !types.includes(TargetCommand.TYPES.WORKER)) {
       types.push(TargetCommand.TYPES.WORKER);
     }
+
+    // Bug 1607778 - For now, shared workers are only displayed in the Browser Toolbox.
+    // The server doesn't expose them yet. See `getWatcherSupportedTargets()` and
+    // `WorkerTargetWatcherClass.shouldHandleWorker`.
     if (
       this.listenForWorkers &&
+      this.descriptorFront.isBrowserProcessDescriptor &&
       !types.includes(TargetCommand.TYPES.SHARED_WORKER)
     ) {
       types.push(TargetCommand.TYPES.SHARED_WORKER);
     }
+
     if (
       this.listenForServiceWorkers &&
       !types.includes(TargetCommand.TYPES.SERVICE_WORKER)
@@ -667,6 +717,14 @@ class TargetCommand extends EventEmitter {
   }
 
   getTargetType(target) {
+    const { targetType } = target.targetForm;
+    if (targetType) {
+      return targetType;
+    }
+
+    // @backward-compat { version 137 } This can be removed as target.targetForm.targetType
+    // will always be defined. We can then remove TargetCommand.getTargetType and TargetMixin.setTargetType
+    // and instead have a getter like this `TargetMixin.targetType() this.targetForm.targetType`.
     const { typeName } = target;
     if (typeName == "windowGlobalTarget") {
       return TargetCommand.TYPES.FRAME;
@@ -677,6 +735,10 @@ class TargetCommand extends EventEmitter {
       typeName == "parentProcessTarget"
     ) {
       return TargetCommand.TYPES.PROCESS;
+    }
+
+    if (typeName == "contentScriptTarget") {
+      return TargetCommand.TYPES.CONTENT_SCRIPT;
     }
 
     if (typeName == "workerDescriptor" || typeName == "workerTarget") {
@@ -1086,6 +1148,10 @@ class TargetCommand extends EventEmitter {
    *        The target front we want the toolbox to focus on.
    */
   selectTarget(targetFront) {
+    // Ignore any target which we may try to select, but is already being destroyed
+    if (targetFront.isDestroyedOrBeingDestroyed()) {
+      return;
+    }
     return this._onTargetSelected(targetFront);
   }
 
@@ -1175,6 +1241,10 @@ class TargetCommand extends EventEmitter {
       BROWSERTOOLBOX_SCOPE_PREF,
       this._updateBrowserToolboxScope
     );
+    Services.prefs.removeObserver(
+      SHOW_CONTENT_SCRIPTS_PREF,
+      this._updateContentScriptListening
+    );
   }
 }
 
@@ -1187,6 +1257,7 @@ TargetCommand.TYPES = TargetCommand.prototype.TYPES = {
   WORKER: "worker",
   SHARED_WORKER: "shared_worker",
   SERVICE_WORKER: "service_worker",
+  CONTENT_SCRIPT: "content_script",
 };
 TargetCommand.ALL_TYPES = TargetCommand.prototype.ALL_TYPES = Object.values(
   TargetCommand.TYPES

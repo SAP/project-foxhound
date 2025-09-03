@@ -161,10 +161,10 @@ class ArrayBufferDataStream {
       return bytes
     }
 
-    writeBytes(uint8Array) {
-      this.writeUint32(uint8Array.length);
+    writeBytes(value) {
+      this.writeUint32(value.length);
       value.forEach((elt) => {
-        dataStream.writeUint8(elt);
+        this.writeUint8(elt);
       })
     }
 }
@@ -226,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -236,7 +267,7 @@ UnitTestObjs.uniffiObjectPtr = uniffiObjectPtr;
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterF64 extends FfiConverter {
-    static computeSize() {
+    static computeSize(_value) {
         return 8;
     }
     static lift(value) {
@@ -290,7 +321,7 @@ export class FfiConverterString extends FfiConverter {
  * Line
  */
 export class Line {
-    constructor({ start, end } = {}) {
+    constructor({ start, end }) {
         try {
             FfiConverterTypePoint.checkType(start)
         } catch (e) {
@@ -373,7 +404,7 @@ export class FfiConverterTypeLine extends FfiConverterArrayBuffer {
  * Point
  */
 export class Point {
-    constructor({ coordX, coordY } = {}) {
+    constructor({ coordX, coordY }) {
         try {
             FfiConverterF64.checkType(coordX)
         } catch (e) {
@@ -468,7 +499,7 @@ export class FfiConverterOptionalTypePoint extends FfiConverterArrayBuffer {
             case 1:
                 return FfiConverterTypePoint.read(dataStream)
             default:
-                throw UniFFIError(`Unexpected code: ${code}`);
+                throw new UniFFIError(`Unexpected code: ${code}`);
         }
     }
 
@@ -511,7 +542,7 @@ export function gradient(ln) {
                 throw e;
             }
             return UniFFIScaffolding.callAsyncWrapper(
-                78, // geometry:uniffi_uniffi_geometry_fn_func_gradient
+                131, // geometry:uniffi_uniffi_geometry_fn_func_gradient
                 FfiConverterTypeLine.lower(ln),
             )
         }
@@ -548,7 +579,7 @@ export function intersection(ln1,ln2) {
                 throw e;
             }
             return UniFFIScaffolding.callAsyncWrapper(
-                79, // geometry:uniffi_uniffi_geometry_fn_func_intersection
+                132, // geometry:uniffi_uniffi_geometry_fn_func_intersection
                 FfiConverterTypeLine.lower(ln1),
                 FfiConverterTypeLine.lower(ln2),
             )

@@ -25,10 +25,14 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import org.mozilla.focus.R
 import org.mozilla.focus.activity.MainActivity
 import org.mozilla.focus.ext.hideToolbar
+import org.mozilla.focus.ext.requireComponents
+import org.mozilla.focus.state.AppAction
 import org.mozilla.focus.ui.theme.FocusTheme
 import org.mozilla.focus.ui.theme.focusColors
 
@@ -38,8 +42,7 @@ import org.mozilla.focus.ui.theme.focusColors
  * Useful for Fragments shown in otherwise fullscreen Activities such that they would be shown
  * beneath the status bar not below it.
  *
- * Classes extending this are expected to provide the [Composable] content and a basic behavior
- * for the toolbar: title and navigate up callback.
+ * Classes extending this are expected to provide the [Composable] content and toolbar title.
  */
 abstract class BaseComposeFragment : Fragment() {
     /**
@@ -49,10 +52,16 @@ abstract class BaseComposeFragment : Fragment() {
 
     open val titleText: String? = null
 
+    open val backgroundColorResource: Int = R.color.settings_background
+
+    private lateinit var composeView: ComposeView
+
     /**
      * Callback for the up navigation button shown in toolbar.
      */
-    abstract fun onNavigateUp(): () -> Unit
+    open fun onNavigateUp(): () -> Unit = {
+        requireComponents.appStore.dispatch(AppAction.NavigateUp())
+    }
 
     /**
      * content of the screen in compose. That will be shown below Toolbar
@@ -65,30 +74,42 @@ abstract class BaseComposeFragment : Fragment() {
         container: ViewGroup?,
         savedInstanceState: Bundle?,
     ): View {
+        return ComposeView(requireContext()).apply {
+            composeView = this
+            isTransitionGroup = true
+            setBackgroundColor(
+                ContextCompat.getColor(
+                    requireContext(),
+                    backgroundColorResource,
+                ),
+            )
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
         hideToolbar()
         (requireActivity() as? MainActivity)?.hideStatusBarBackground()
-
-        return ComposeView(requireContext()).apply {
-            setContent {
-                val title = getTitle()
-                FocusTheme {
-                    Scaffold(
+        val title = getTitle()
+        composeView.setContent {
+            FocusTheme {
+                Scaffold(
+                    modifier = Modifier.statusBarsPadding(),
+                ) { paddingValues ->
+                    Column(
                         modifier = Modifier
-                            .background(colorResource(id = R.color.settings_background))
-                            .statusBarsPadding(),
-                    ) { paddingValues ->
-                        Column {
-                            TopAppBar(
-                                title = title,
-                                modifier = Modifier.padding(paddingValues),
-                                onNavigateUpClick = onNavigateUp(),
-                            )
-                            this@BaseComposeFragment.Content()
-                        }
+                            .background(colorResource(id = backgroundColorResource))
+                            .padding(paddingValues),
+                    ) {
+                        TopAppBar(
+                            title = title,
+                            modifier = Modifier,
+                            onNavigateUpClick = onNavigateUp(),
+                        )
+                        this@BaseComposeFragment.Content()
                     }
                 }
             }
-            isTransitionGroup = true
         }
     }
 
@@ -126,5 +147,6 @@ private fun TopAppBar(
             }
         },
         backgroundColor = colorResource(R.color.settings_background),
+        elevation = 0.dp,
     )
 }

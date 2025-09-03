@@ -31,6 +31,10 @@ class SnackbarBehavior<V : View>(
     private val dependenciesIds = buildList {
         add(R.id.startDownloadDialogContainer)
         add(R.id.viewDynamicDownloadDialog)
+        add(R.id.loginSelectBar)
+        add(R.id.suggestStrongPasswordBar)
+        add(R.id.creditCardSelectBar)
+        add(R.id.addressSelectBar)
         add(R.id.toolbar_navbar_container)
         if (toolbarPosition == ToolbarPosition.BOTTOM) {
             add(R.id.toolbarLayout)

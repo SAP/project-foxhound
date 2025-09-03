@@ -42,7 +42,7 @@ struct PromiseHelperTask;
 class SourceCompressionTask;
 
 namespace frontend {
-struct CompilationStencil;
+struct InitialStencilAndDelazifications;
 }
 
 namespace gc {
@@ -50,6 +50,7 @@ class GCRuntime;
 }
 
 namespace jit {
+class BaselineCompileTask;
 class IonCompileTask;
 class IonFreeTask;
 class JitRuntime;
@@ -176,6 +177,15 @@ bool StartOffThreadPromiseHelperTask(JSContext* cx,
 bool StartOffThreadPromiseHelperTask(PromiseHelperTask* task);
 
 /*
+ * Schedule an off-thread Baseline compilation for a script, given a task.
+ */
+bool StartOffThreadBaselineCompile(jit::BaselineCompileTask* task,
+                                   const AutoLockHelperThreadState& lock);
+
+void FinishOffThreadBaselineCompile(jit::BaselineCompileTask* task,
+                                    const AutoLockHelperThreadState& lock);
+
+/*
  * Schedule an off-thread Ion compilation for a script, given a task.
  */
 bool StartOffThreadIonCompile(jit::IonCompileTask* task,
@@ -234,6 +244,44 @@ bool HasOffThreadIonCompile(JS::Zone* zone);
 #endif
 
 /*
+ * Cancel scheduled or in progress Baseline compilations.
+ */
+void CancelOffThreadBaselineCompile(const CompilationSelector& selector);
+
+inline void CancelOffThreadBaselineCompile(JSScript* script) {
+  CancelOffThreadBaselineCompile(CompilationSelector(script));
+}
+
+inline void CancelOffThreadBaselineCompile(JS::Zone* zone) {
+  CancelOffThreadBaselineCompile(CompilationSelector(zone));
+}
+
+inline void CancelOffThreadBaselineCompile(JSRuntime* runtime,
+                                           JS::shadow::Zone::GCState state) {
+  CancelOffThreadBaselineCompile(
+      CompilationSelector(ZonesInState{runtime, state}));
+}
+
+inline void CancelOffThreadBaselineCompile(JSRuntime* runtime) {
+  CancelOffThreadBaselineCompile(CompilationSelector(runtime));
+}
+
+/*
+ * Cancel baseline and Ion compilations.
+ */
+inline void CancelOffThreadCompile(JSRuntime* runtime,
+                                   JS::shadow::Zone::GCState state) {
+  CancelOffThreadBaselineCompile(
+      CompilationSelector(ZonesInState{runtime, state}));
+  CancelOffThreadIonCompile(CompilationSelector(ZonesInState{runtime, state}));
+}
+
+inline void CancelOffThreadCompile(JSRuntime* runtime) {
+  CancelOffThreadBaselineCompile(runtime);
+  CancelOffThreadIonCompile(runtime);
+}
+
+/*
  * Cancel all scheduled or in progress eager delazification phases for a
  * runtime.
  */
@@ -246,9 +294,9 @@ void WaitForAllDelazifyTasks(JSRuntime* rt);
 
 // Start off-thread delazification task, to race the delazification of inner
 // functions.
-void StartOffThreadDelazification(JSContext* maybeCx,
-                                  const JS::ReadOnlyCompileOptions& options,
-                                  const frontend::CompilationStencil& stencil);
+void StartOffThreadDelazification(
+    JSContext* maybeCx, const JS::ReadOnlyCompileOptions& options,
+    frontend::InitialStencilAndDelazifications* stencils);
 
 // Drain the task queues and wait for all helper threads to finish running.
 //
@@ -284,6 +332,9 @@ void RunPendingSourceCompressions(JSRuntime* runtime);
 // happens on low core count machines where we are concerned about blocking
 // main-thread execution.
 bool IsOffThreadSourceCompressionEnabled();
+
+void AttachFinishedBaselineCompilations(JSContext* cx,
+                                        AutoLockHelperThreadState& lock);
 
 }  // namespace js
 

@@ -43,22 +43,42 @@ const Template = ({
   hasSlottedDescription,
   accesskey,
   supportPage,
-}) => html`
-  <moz-checkbox
-    ?checked=${checked}
-    label=${ifDefined(label)}
-    description=${ifDefined(description)}
-    data-l10n-id=${ifDefined(l10nId)}
-    .iconSrc=${iconSrc}
-    ?disabled=${disabled}
-    accesskey=${ifDefined(accesskey)}
-    support-page=${ifDefined(supportPage)}
-  >
-    ${hasSlottedDescription
-      ? html`<div slot="description">test slot text</div>`
-      : ""}
-  </moz-checkbox>
-`;
+  hasSlottedSupportLink,
+  nestedFields,
+}) => {
+  let checkboxTemplate = html`
+    <moz-checkbox
+      ?checked=${checked}
+      label=${ifDefined(label)}
+      description=${ifDefined(description)}
+      data-l10n-id=${ifDefined(l10nId)}
+      .iconSrc=${iconSrc}
+      ?disabled=${disabled}
+      accesskey=${ifDefined(accesskey)}
+      support-page=${ifDefined(supportPage)}
+    >
+      ${hasSlottedDescription
+        ? html`<div slot="description">test slot text</div>`
+        : ""}
+      ${hasSlottedSupportLink
+        ? html`<a slot="support-link" href="www.example.com">Click me!</a>`
+        : ""}
+      ${nestedFields
+        ? html`<moz-checkbox slot="nested" data-l10n-id=${ifDefined(l10nId)}>
+            </moz-checkbox>
+            <moz-checkbox slot="nested" data-l10n-id=${ifDefined(l10nId)}>
+              <moz-checkbox slot="nested" data-l10n-id=${ifDefined(l10nId)}>
+              </moz-checkbox>
+            </moz-checkbox> `
+        : ""}
+    </moz-checkbox>
+  `;
+  return nestedFields
+    ? html`<moz-fieldset label="Checkbox with nested fields"
+        >${checkboxTemplate}</moz-fieldset
+      >`
+    : checkboxTemplate;
+};
 
 export const Default = Template.bind({});
 Default.args = {
@@ -72,6 +92,8 @@ Default.args = {
   label: "",
   accesskey: "",
   supportPage: "",
+  hasSlottedSupportLink: false,
+  nestedFields: false,
 };
 
 export const WithIcon = Template.bind({});
@@ -110,8 +132,20 @@ WithAccesskey.args = {
   accesskey: "c",
 };
 
-export const WithSupportPage = Template.bind({});
-WithSupportPage.args = {
+export const WithSupportLink = Template.bind({});
+WithSupportLink.args = {
   ...Default.args,
   supportPage: "test",
+};
+
+export const WithSlottedSupportLink = Template.bind({});
+WithSlottedSupportLink.args = {
+  ...Default.args,
+  hasSlottedSupportLink: true,
+};
+
+export const WithNestedFields = Template.bind({});
+WithNestedFields.args = {
+  ...Default.args,
+  nestedFields: true,
 };

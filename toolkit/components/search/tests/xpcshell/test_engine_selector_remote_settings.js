@@ -8,7 +8,7 @@
 
 "use strict";
 
-const TEST_CONFIG = [
+let TEST_CONFIG = [
   {
     recordType: "defaultEngines",
     globalDefault: "lycos",
@@ -31,13 +31,6 @@ for (let engineName of ["lycos", "altavista", "aol", "excite"]) {
         },
       },
     },
-    variants: [
-      {
-        environment: {
-          allRegionsAndLocales: "true",
-        },
-      },
-    ],
     identifier: engineName,
     recordType: "engine",
   });
@@ -49,11 +42,17 @@ add_setup(async function () {
   const searchConfigSettings = await RemoteSettings(SearchUtils.SETTINGS_KEY);
   getStub = sinon.stub(searchConfigSettings, "get");
 
+  TEST_CONFIG = SearchTestUtils.expandPartialConfig(TEST_CONFIG);
+
   // We expect this error from remove settings as we're invalidating the
   // signature.
   consoleAllowList.push("Invalid content signature (abc)");
   // We also test returning an empty configuration.
   consoleAllowList.push("Received empty search configuration");
+
+  registerCleanupFunction(async () => {
+    sinon.restore();
+  });
 });
 
 add_task(async function test_selector_basic_get() {
@@ -147,12 +146,11 @@ add_task(async function test_selector_config_update() {
 
   Assert.ok(listenerSpy.notCalled, "Should not have called the listener yet");
 
-  const NEW_DATA = [
+  const NEW_DATA = SearchTestUtils.expandPartialConfig([
     {
       recordType: "engine",
       identifier: "askjeeves",
       base: { name: "askjeeves" },
-      variants: [{ environment: { allRegionsAndLocales: "true" } }],
     },
     {
       recordType: "defaultEngines",
@@ -163,7 +161,7 @@ add_task(async function test_selector_config_update() {
       orders: [],
       recordType: "engineOrders",
     },
-  ];
+  ]);
 
   getStub.resetHistory();
   getStub.onFirstCall().returns(NEW_DATA);

@@ -57,8 +57,8 @@
 #ifdef HAVE_MAKENSISU
 @BINPATH@/uninstall/helper.exe
 #endif
+@RESPATH@/default.locale
 #ifdef MOZ_UPDATER
-@RESPATH@/update.locale
 @RESPATH@/updater.ini
 #endif
 #if defined(MOZ_UPDATE_AGENT)
@@ -212,6 +212,11 @@
 @BINPATH@/libGLESv2.dll
 #endif # MOZ_ANGLE_RENDERER
 
+#ifdef MOZ_DXCOMPILER
+@BINPATH@/@MOZ_DXC_DLL_NAME@
+@BINPATH@/@MOZ_DXIL_DLL_NAME@
+#endif
+
 ; [Browser Chrome Files]
 @RESPATH@/browser/chrome.manifest
 @RESPATH@/browser/chrome/browser@JAREXT@
@@ -282,6 +287,7 @@
 ; Style Sheets, Graphics and other Resources used by the layout engine.
 @RESPATH@/res/EditorOverride.css
 @RESPATH@/res/contenteditable.css
+@RESPATH@/res/designmode.css
 @RESPATH@/res/table-add-column-after-active.gif
 @RESPATH@/res/table-add-column-after-hover.gif
 @RESPATH@/res/table-add-column-after.gif
@@ -342,7 +348,6 @@ bin/libfreebl_64int_3.so
 @BINPATH@/@DLL_PREFIX@freebl3@DLL_SUFFIX@
 #endif
 @BINPATH@/@DLL_PREFIX@nss3@DLL_SUFFIX@
-@BINPATH@/@DLL_PREFIX@nssckbi@DLL_SUFFIX@
 #ifndef MOZ_FOLD_LIBS
 @BINPATH@/@DLL_PREFIX@nssutil3@DLL_SUFFIX@
 @BINPATH@/@DLL_PREFIX@smime3@DLL_SUFFIX@
@@ -352,16 +357,6 @@ bin/libfreebl_64int_3.so
 #endif
 @RESPATH@/chrome/pippki@JAREXT@
 @RESPATH@/chrome/pippki.manifest
-
-; preprocessor.py doesn't handle parentheses, so while the following could be
-; expressed in a single line, it's more clear to break them up.
-#if defined(XP_WIN) || defined(XP_MACOSX)
-#if !defined(_ARM64_)
-@BINPATH@/@DLL_PREFIX@osclientcerts@DLL_SUFFIX@
-#endif
-#endif
-
-@BINPATH@/@DLL_PREFIX@ipcclientcerts@DLL_SUFFIX@
 
 ; For process sandboxing
 #if defined(MOZ_SANDBOX)

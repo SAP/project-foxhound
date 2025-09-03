@@ -304,18 +304,18 @@ add_task(async function featureGate() {
 add_task(async function notRelevant() {
   let result = makeExpectedResult();
 
-  info("Triggering the 'Not relevant' command");
-  QuickSuggest.getFeature("FakespotSuggestions").handleCommand(
-    {
-      controller: { removeResult() {} },
-    },
+  triggerCommand({
     result,
-    "not_relevant"
-  );
+    command: "not_relevant",
+    feature: QuickSuggest.getFeature("FakespotSuggestions"),
+    expectedCountsByCall: {
+      removeResult: 1,
+    },
+  });
   await QuickSuggest.blockedSuggestions._test_readyPromise;
 
   Assert.ok(
-    await QuickSuggest.blockedSuggestions.has(result.payload.originalUrl),
+    await QuickSuggest.blockedSuggestions.isResultBlocked(result),
     "The result's URL should be blocked"
   );
 
@@ -358,14 +358,14 @@ add_task(async function notRelevant() {
 add_task(async function notInterested() {
   let result = makeExpectedResult();
 
-  info("Triggering the 'Not interested' command");
-  QuickSuggest.getFeature("FakespotSuggestions").handleCommand(
-    {
-      controller: { removeResult() {} },
-    },
+  triggerCommand({
     result,
-    "not_interested"
-  );
+    command: "not_interested",
+    feature: QuickSuggest.getFeature("FakespotSuggestions"),
+    expectedCountsByCall: {
+      removeResult: 1,
+    },
+  });
 
   Assert.ok(
     !UrlbarPrefs.get("suggest.fakespot"),
@@ -482,15 +482,12 @@ add_task(async function showLessFrequently() {
       before.showLessFrequentlyCount
     );
 
-    feature.handleCommand(
-      {
-        acknowledgeFeedback: () => {},
-        invalidateResultMenuCommands: () => {},
-      },
+    triggerCommand({
       result,
-      "show_less_frequently",
-      input
-    );
+      feature,
+      command: "show_less_frequently",
+      searchString: input,
+    });
 
     Assert.equal(
       UrlbarPrefs.get("fakespot.minKeywordLength"),
@@ -860,6 +857,7 @@ function makeExpectedResult({
       totalReviews,
       fakespotGrade,
       fakespotProvider,
+      isSponsored: true,
       dynamicType: "fakespot",
       icon: null,
     },

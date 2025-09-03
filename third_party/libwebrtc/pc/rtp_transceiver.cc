@@ -97,26 +97,11 @@ RTCError VerifyCodecPreferences(
           return codec.MatchesRtpCodec(codec_preference);
         });
     if (!is_recv_codec) {
-      if (!field_trials.IsDisabled(
-              "WebRTC-SetCodecPreferences-ReceiveOnlyFilterInsteadOfThrow")) {
         LOG_AND_RETURN_ERROR(
             RTCErrorType::INVALID_MODIFICATION,
             std::string(
                 "Invalid codec preferences: invalid codec with name \"") +
                 codec_preference.name + "\".");
-      } else {
-        // Killswitch behavior: filter out any codec not in receive codecs.
-        codecs.erase(std::remove_if(
-            codecs.begin(), codecs.end(),
-            [&recv_codecs](const RtpCodecCapability& codec) {
-              return codec.IsMediaCodec() &&
-                     !absl::c_any_of(
-                         recv_codecs,
-                         [&codec](const cricket::Codec& recv_codec) {
-                           return recv_codec.MatchesRtpCodec(codec);
-                         });
-            }));
-      }
     }
   }
 
@@ -150,6 +135,7 @@ RtpTransceiver::RtpTransceiver(cricket::MediaType media_type,
       context_(context) {
   RTC_DCHECK(media_type == cricket::MEDIA_TYPE_AUDIO ||
              media_type == cricket::MEDIA_TYPE_VIDEO);
+  RTC_DCHECK(context_);
 }
 
 RtpTransceiver::RtpTransceiver(
@@ -166,6 +152,7 @@ RtpTransceiver::RtpTransceiver(
       header_extensions_to_negotiate_(
           std::move(header_extensions_to_negotiate)),
       on_negotiation_needed_(std::move(on_negotiation_needed)) {
+  RTC_DCHECK(context_);
   RTC_DCHECK(media_type_ == cricket::MEDIA_TYPE_AUDIO ||
              media_type_ == cricket::MEDIA_TYPE_VIDEO);
   RTC_DCHECK_EQ(sender->media_type(), receiver->media_type());
@@ -229,18 +216,20 @@ RTCError RtpTransceiver::CreateChannel(
     VideoBitrateAllocatorFactory* video_bitrate_allocator_factory,
     std::function<RtpTransportInternal*(absl::string_view)> transport_lookup) {
   RTC_DCHECK_RUN_ON(thread_);
+  RTC_DCHECK(!channel());
+
   if (!media_engine()) {
     // TODO(hta): Must be a better way
     return RTCError(RTCErrorType::INTERNAL_ERROR,
                     "No media engine for mid=" + std::string(mid));
   }
+
   std::unique_ptr<cricket::ChannelInterface> new_channel;
   if (media_type() == cricket::MEDIA_TYPE_AUDIO) {
     // TODO(bugs.webrtc.org/11992): CreateVideoChannel internally switches to
     // the worker thread. We shouldn't be using the `call_ptr_` hack here but
     // simply be on the worker thread and use `call_` (update upstream code).
     RTC_DCHECK(call_ptr);
-    RTC_DCHECK(media_engine());
     // TODO(bugs.webrtc.org/11992): Remove this workaround after updates in
     // PeerConnection and add the expectation that we're already on the right
     // thread.
@@ -253,17 +242,10 @@ RTCError RtpTransceiver::CreateChannel(
           media_send_channel = media_engine()->voice().CreateSendChannel(
               call_ptr, media_config, audio_options, crypto_options,
               codec_pair_id);
-      if (!media_send_channel) {
-        // TODO(bugs.webrtc.org/14912): Consider CHECK or reporting failure
-        return;
-      }
       std::unique_ptr<cricket::VoiceMediaReceiveChannelInterface>
           media_receive_channel = media_engine()->voice().CreateReceiveChannel(
               call_ptr, media_config, audio_options, crypto_options,
               codec_pair_id);
-      if (!media_receive_channel) {
-        return;
-      }
       // Note that this is safe because both sending and
       // receiving channels will be deleted at the same time.
       media_send_channel->SetSsrcListChangedCallback(
@@ -291,16 +273,9 @@ RTCError RtpTransceiver::CreateChannel(
           media_send_channel = media_engine()->video().CreateSendChannel(
               call_ptr, media_config, video_options, crypto_options,
               video_bitrate_allocator_factory);
-      if (!media_send_channel) {
-        return;
-      }
-
       std::unique_ptr<cricket::VideoMediaReceiveChannelInterface>
           media_receive_channel = media_engine()->video().CreateReceiveChannel(
               call_ptr, media_config, video_options, crypto_options);
-      if (!media_receive_channel) {
-        return;
-      }
       // Note that this is safe because both sending and
       // receiving channels will be deleted at the same time.
       media_send_channel->SetSsrcListChangedCallback(
@@ -315,11 +290,6 @@ RTCError RtpTransceiver::CreateChannel(
           std::move(media_receive_channel), mid, srtp_required, crypto_options,
           context()->ssrc_generator());
     });
-  }
-  if (!new_channel) {
-    // TODO(hta): Must be a better way
-    return RTCError(RTCErrorType::INTERNAL_ERROR,
-                    "Failed to create channel for mid=" + std::string(mid));
   }
   SetChannel(std::move(new_channel), transport_lookup);
   return RTCError::OK();
@@ -341,8 +311,7 @@ void RtpTransceiver::SetChannel(
 
   RTC_DCHECK_EQ(media_type(), channel->media_type());
   signaling_thread_safety_ = PendingTaskSafetyFlag::Create();
-
-  std::unique_ptr<cricket::ChannelInterface> channel_to_delete;
+  channel_ = std::move(channel);
 
   // An alternative to this, could be to require SetChannel to be called
   // on the network thread. The channel object operates for the most part
@@ -354,19 +323,16 @@ void RtpTransceiver::SetChannel(
   // helps with keeping the channel implementation requirements being met and
   // avoids synchronization for accessing the pointer or network related state.
   context()->network_thread()->BlockingCall([&]() {
-    if (channel_) {
-      channel_->SetFirstPacketReceivedCallback(nullptr);
-      channel_->SetRtpTransport(nullptr);
-      channel_to_delete = std::move(channel_);
-    }
-
-    channel_ = std::move(channel);
-
     channel_->SetRtpTransport(transport_lookup(channel_->mid()));
     channel_->SetFirstPacketReceivedCallback(
         [thread = thread_, flag = signaling_thread_safety_, this]() mutable {
           thread->PostTask(
               SafeTask(std::move(flag), [this]() { OnFirstPacketReceived(); }));
+        });
+    channel_->SetFirstPacketSentCallback(
+        [thread = thread_, flag = signaling_thread_safety_, this]() mutable {
+          thread->PostTask(
+              SafeTask(std::move(flag), [this]() { OnFirstPacketSent(); }));
         });
   });
   PushNewMediaChannelAndDeleteChannel(nullptr);
@@ -383,22 +349,17 @@ void RtpTransceiver::ClearChannel() {
 
   RTC_LOG_THREAD_BLOCK_COUNT();
 
-  if (channel_) {
-    signaling_thread_safety_->SetNotAlive();
-    signaling_thread_safety_ = nullptr;
-  }
-  std::unique_ptr<cricket::ChannelInterface> channel_to_delete;
+  signaling_thread_safety_->SetNotAlive();
+  signaling_thread_safety_ = nullptr;
 
   context()->network_thread()->BlockingCall([&]() {
-    if (channel_) {
-      channel_->SetFirstPacketReceivedCallback(nullptr);
-      channel_->SetRtpTransport(nullptr);
-      channel_to_delete = std::move(channel_);
-    }
+    channel_->SetFirstPacketReceivedCallback(nullptr);
+    channel_->SetFirstPacketSentCallback(nullptr);
+    channel_->SetRtpTransport(nullptr);
   });
 
   RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(1);
-  PushNewMediaChannelAndDeleteChannel(std::move(channel_to_delete));
+  PushNewMediaChannelAndDeleteChannel(std::move(channel_));
 
   RTC_DCHECK_BLOCK_COUNT_NO_MORE_THAN(2);
 }
@@ -426,9 +387,7 @@ void RtpTransceiver::PushNewMediaChannelAndDeleteChannel(
 
     // Destroy the channel, if we had one, now _after_ updating the receivers
     // who might have had references to the previous channel.
-    if (channel_to_delete) {
-      channel_to_delete.reset(nullptr);
-    }
+    channel_to_delete = nullptr;
   });
 }
 
@@ -520,6 +479,12 @@ std::optional<std::string> RtpTransceiver::mid() const {
 void RtpTransceiver::OnFirstPacketReceived() {
   for (const auto& receiver : receivers_) {
     receiver->internal()->NotifyFirstPacketReceived();
+  }
+}
+
+void RtpTransceiver::OnFirstPacketSent() {
+  for (const auto& sender : senders_) {
+    sender->internal()->NotifyFirstPacketSent();
   }
 }
 

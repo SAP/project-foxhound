@@ -17,6 +17,8 @@
 #include "mozilla/dom/TrustedTypeUtils.h"
 #include "mozilla/dom/nsCSPUtils.h"
 
+using namespace mozilla::dom::TrustedTypeUtils;
+
 namespace mozilla::dom {
 
 NS_IMPL_CYCLE_COLLECTION_WRAPPERCACHE(TrustedTypePolicyFactory, mGlobalObject,
@@ -57,8 +59,8 @@ static CSPViolationData CreateCSPViolationData(JSContext* aJSContext,
 TrustedTypePolicyFactory::~TrustedTypePolicyFactory() = default;
 
 auto TrustedTypePolicyFactory::ShouldTrustedTypePolicyCreationBeBlockedByCSP(
-    JSContext* aJSContext,
-    const nsAString& aPolicyName) const -> PolicyCreation {
+    JSContext* aJSContext, const nsAString& aPolicyName) const
+    -> PolicyCreation {
   // CSP-support for Workers will be added in
   // <https://bugzilla.mozilla.org/show_bug.cgi?id=1901492>.
   // That is, currently only Windows are supported.
@@ -190,10 +192,6 @@ already_AddRefed<TrustedScript> TrustedTypePolicyFactory::EmptyScript() {
   return result.forget();
 }
 
-static constexpr nsLiteralString kTrustedHTML = u"TrustedHTML"_ns;
-static constexpr nsLiteralString kTrustedScript = u"TrustedScript"_ns;
-static constexpr nsLiteralString kTrustedScriptURL = u"TrustedScriptURL"_ns;
-
 // TODO(fwang): Improve this API:
 // - Rename aTagName parameter to use aLocalName instead
 //   (https://github.com/w3c/trusted-types/issues/496)
@@ -206,48 +204,52 @@ void TrustedTypePolicyFactory::GetAttributeType(const nsAString& aTagName,
                                                 const nsAString& aElementNs,
                                                 const nsAString& aAttrNs,
                                                 DOMString& aResult) {
+  // We first determine the namespace IDs for the element and attribute.
+  // Currently, GetTrustedTypeDataForAttribute() only test a few of them so use
+  // direct string comparisons instead of relying on
+  // nsNameSpaceManager::GetNameSpaceID().
+
+  // GetTrustedTypeDataForAttribute() can only return true for empty or XLink
+  // attribute namespaces, so don't bother calling it for other namespaces.
+  int32_t attributeNamespaceID = kNameSpaceID_Unknown;
+  if (aAttrNs.IsEmpty()) {
+    attributeNamespaceID = kNameSpaceID_None;
+  } else if (nsGkAtoms::nsuri_xlink->Equals(aAttrNs)) {
+    attributeNamespaceID = kNameSpaceID_XLink;
+  } else {
+    aResult.SetNull();
+    return;
+  }
+
+  // GetTrustedTypeDataForAttribute() only return true for HTML, SVG or MathML
+  // element namespaces, so don't bother calling it for other namespaces.
+  int32_t elementNamespaceID = kNameSpaceID_Unknown;
+  if (aElementNs.IsEmpty() || nsGkAtoms::nsuri_xhtml->Equals(aElementNs)) {
+    elementNamespaceID = kNameSpaceID_XHTML;
+  } else if (nsGkAtoms::nsuri_svg->Equals(aElementNs)) {
+    elementNamespaceID = kNameSpaceID_SVG;
+  } else if (nsGkAtoms::nsuri_mathml->Equals(aElementNs)) {
+    elementNamespaceID = kNameSpaceID_MathML;
+  } else {
+    aResult.SetNull();
+    return;
+  }
+
   nsAutoString attribute;
   nsContentUtils::ASCIIToLower(aAttribute, attribute);
   RefPtr<nsAtom> attributeAtom = NS_Atomize(attribute);
 
-  // The spec is not really clear about which "event handler content attributes"
-  // we should consider, so we just include everything but XUL's specific ones.
-  // See https://github.com/w3c/trusted-types/issues/520.
-  if (aAttrNs.IsEmpty() &&
-      nsContentUtils::IsEventAttributeName(
-          attributeAtom, EventNameType_All & ~EventNameType_XUL)) {
-    // Event handler content attribute.
-    aResult.SetKnownLiveString(kTrustedScript);
+  nsAutoString localName;
+  nsContentUtils::ASCIIToLower(aTagName, localName);
+  RefPtr<nsAtom> elementAtom = NS_Atomize(localName);
+
+  TrustedType trustedType;
+  nsAutoString unusedSink;
+  if (GetTrustedTypeDataForAttribute(elementAtom, elementNamespaceID,
+                                     attributeAtom, attributeNamespaceID,
+                                     trustedType, unusedSink)) {
+    aResult.SetKnownLiveString(GetTrustedTypeName(trustedType));
     return;
-  }
-  if (aElementNs.IsEmpty() ||
-      aElementNs == nsDependentAtomString(nsGkAtoms::nsuri_xhtml)) {
-    if (nsContentUtils::EqualsIgnoreASCIICase(
-            aTagName, nsDependentAtomString(nsGkAtoms::iframe))) {
-      // HTMLIFrameElement
-      if (aAttrNs.IsEmpty() && attributeAtom == nsGkAtoms::srcdoc) {
-        aResult.SetKnownLiveString(kTrustedHTML);
-        return;
-      }
-    } else if (nsContentUtils::EqualsIgnoreASCIICase(
-                   aTagName, nsDependentAtomString(nsGkAtoms::script))) {
-      // HTMLScriptElement
-      if (aAttrNs.IsEmpty() && attributeAtom == nsGkAtoms::src) {
-        aResult.SetKnownLiveString(kTrustedScriptURL);
-        return;
-      }
-    }
-  } else if (aElementNs == nsDependentAtomString(nsGkAtoms::nsuri_svg)) {
-    if (nsContentUtils::EqualsIgnoreASCIICase(
-            aTagName, nsDependentAtomString(nsGkAtoms::script))) {
-      // SVGScriptElement
-      if ((aAttrNs.IsEmpty() ||
-           aAttrNs == nsDependentAtomString(nsGkAtoms::nsuri_xlink)) &&
-          attributeAtom == nsGkAtoms::href) {
-        aResult.SetKnownLiveString(kTrustedScriptURL);
-        return;
-      }
-    }
   }
 
   aResult.SetNull();
@@ -265,13 +267,12 @@ void TrustedTypePolicyFactory::GetPropertyType(const nsAString& aTagName,
                                                const nsAString& aElementNs,
                                                DOMString& aResult) {
   RefPtr<nsAtom> propertyAtom = NS_Atomize(aProperty);
-  if (aElementNs.IsEmpty() ||
-      aElementNs == nsDependentAtomString(nsGkAtoms::nsuri_xhtml)) {
+  if (aElementNs.IsEmpty() || nsGkAtoms::nsuri_xhtml->Equals(aElementNs)) {
     if (nsContentUtils::EqualsIgnoreASCIICase(
             aTagName, nsDependentAtomString(nsGkAtoms::iframe))) {
       // HTMLIFrameElement
       if (propertyAtom == nsGkAtoms::srcdoc) {
-        aResult.SetKnownLiveString(kTrustedHTML);
+        aResult.SetKnownLiveString(GetTrustedTypeName<TrustedHTML>());
         return;
       }
     } else if (nsContentUtils::EqualsIgnoreASCIICase(
@@ -280,11 +281,11 @@ void TrustedTypePolicyFactory::GetPropertyType(const nsAString& aTagName,
       if (propertyAtom == nsGkAtoms::innerText ||
           propertyAtom == nsGkAtoms::text ||
           propertyAtom == nsGkAtoms::textContent) {
-        aResult.SetKnownLiveString(kTrustedScript);
+        aResult.SetKnownLiveString(GetTrustedTypeName<TrustedScript>());
         return;
       }
       if (propertyAtom == nsGkAtoms::src) {
-        aResult.SetKnownLiveString(kTrustedScriptURL);
+        aResult.SetKnownLiveString(GetTrustedTypeName<TrustedScriptURL>());
         return;
       }
     }
@@ -292,7 +293,7 @@ void TrustedTypePolicyFactory::GetPropertyType(const nsAString& aTagName,
   // *
   if (propertyAtom == nsGkAtoms::innerHTML ||
       propertyAtom == nsGkAtoms::outerHTML) {
-    aResult.SetKnownLiveString(kTrustedHTML);
+    aResult.SetKnownLiveString(GetTrustedTypeName<TrustedHTML>());
     return;
   }
 

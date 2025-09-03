@@ -9,8 +9,9 @@
 #include "mozilla/EndianUtils.h"
 #include "mozilla/dom/TypedArray.h"
 #include "mozilla/HoldDropJSObjects.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 
+#include "MockNetworkLayer.h"
 #include "nsQueryObject.h"
 #include "nsSocketTransport2.h"
 #include "nsUDPSocket.h"
@@ -194,9 +195,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_END
 
 nsUDPMessage::nsUDPMessage(NetAddr* aAddr, nsIOutputStream* aOutputStream,
                            FallibleTArray<uint8_t>&& aData)
-    : mOutputStream(aOutputStream), mData(std::move(aData)) {
-  memcpy(&mAddr, aAddr, sizeof(NetAddr));
-}
+    : mAddr(*aAddr), mOutputStream(aOutputStream), mData(std::move(aData)) {}
 
 nsUDPMessage::~nsUDPMessage() { DropJSObjects(this); }
 
@@ -351,9 +350,7 @@ class UDPMessageProxy final : public nsIUDPMessage {
  public:
   UDPMessageProxy(NetAddr* aAddr, nsIOutputStream* aOutputStream,
                   FallibleTArray<uint8_t>&& aData)
-      : mOutputStream(aOutputStream), mData(std::move(aData)) {
-    memcpy(&mAddr, aAddr, sizeof(mAddr));
-  }
+      : mAddr(*aAddr), mOutputStream(aOutputStream), mData(std::move(aData)) {}
 
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIUDPMESSAGE
@@ -645,6 +642,16 @@ nsUDPSocket::InitWithAddress(const NetAddr* aAddr, nsIPrincipal* aPrincipal,
 
   PRNetAddrToNetAddr(&addr, &mAddr);
 
+  if (StaticPrefs::network_socket_attach_mock_network_layer() &&
+      xpc::AreNonLocalConnectionsDisabled()) {
+    if (NS_FAILED(AttachMockNetworkLayer(mFD))) {
+      UDPSOCKET_LOG(
+          ("nsSocketTransport::InitiateSocket "
+           "AttachMockNetworkLayer failed [this=%p]\n",
+           this));
+    }
+  }
+
   // wait until AsyncListen is called before polling the socket for
   // client connections.
   return NS_OK;
@@ -753,30 +760,26 @@ void nsUDPSocket::CloseSocket() {
 
       if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase()) {
         PRIntervalTime now = PR_IntervalNow();
+        TimeDuration delta = TimeDuration::FromMilliseconds(
+            PR_IntervalToMilliseconds(now - closeStarted));
         if (gIOService->IsNetTearingDown()) {
-          Telemetry::Accumulate(Telemetry::PRCLOSE_UDP_BLOCKING_TIME_SHUTDOWN,
-                                PR_IntervalToMilliseconds(now - closeStarted));
-
+          glean::networking::prclose_udp_blocking_time_shutdown
+              .AccumulateRawDuration(delta);
         } else if (PR_IntervalToSeconds(
                        now - gIOService->LastConnectivityChange()) < 60) {
-          Telemetry::Accumulate(
-              Telemetry::PRCLOSE_UDP_BLOCKING_TIME_CONNECTIVITY_CHANGE,
-              PR_IntervalToMilliseconds(now - closeStarted));
-
+          glean::networking::prclose_udp_blocking_time_connectivity_change
+              .AccumulateRawDuration(delta);
         } else if (PR_IntervalToSeconds(
                        now - gIOService->LastNetworkLinkChange()) < 60) {
-          Telemetry::Accumulate(
-              Telemetry::PRCLOSE_UDP_BLOCKING_TIME_LINK_CHANGE,
-              PR_IntervalToMilliseconds(now - closeStarted));
-
+          glean::networking::prclose_udp_blocking_time_link_change
+              .AccumulateRawDuration(delta);
         } else if (PR_IntervalToSeconds(
                        now - gIOService->LastOfflineStateChange()) < 60) {
-          Telemetry::Accumulate(Telemetry::PRCLOSE_UDP_BLOCKING_TIME_OFFLINE,
-                                PR_IntervalToMilliseconds(now - closeStarted));
-
+          glean::networking::prclose_udp_blocking_time_offline
+              .AccumulateRawDuration(delta);
         } else {
-          Telemetry::Accumulate(Telemetry::PRCLOSE_UDP_BLOCKING_TIME_NORMAL,
-                                PR_IntervalToMilliseconds(now - closeStarted));
+          glean::networking::prclose_udp_blocking_time_normal
+              .AccumulateRawDuration(delta);
         }
       }
     }
@@ -787,7 +790,7 @@ void nsUDPSocket::CloseSocket() {
 NS_IMETHODIMP
 nsUDPSocket::GetAddress(NetAddr* aResult) {
   // no need to enter the lock here
-  memcpy(aResult, &mAddr, sizeof(mAddr));
+  *aResult = mAddr;
   return NS_OK;
 }
 

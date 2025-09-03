@@ -6,8 +6,9 @@ import { html, when } from "chrome://global/content/vendor/lit.all.mjs";
 
 import { SidebarPage } from "./sidebar-page.mjs";
 
-// eslint-disable-next-line import/no-unassigned-import
-import "chrome://global/content/elements/moz-radio-group.mjs";
+const { XPCOMUtils } = ChromeUtils.importESModule(
+  "resource://gre/modules/XPCOMUtils.sys.mjs"
+);
 
 const l10nMap = new Map([
   ["viewGenaiChatSidebar", "sidebar-menu-genai-chat-label"],
@@ -15,31 +16,78 @@ const l10nMap = new Map([
   ["viewHistorySidebar", "sidebar-menu-history-label"],
   ["viewTabsSidebar", "sidebar-menu-synced-tabs-label"],
   ["viewBookmarksSidebar", "sidebar-menu-bookmarks-label"],
+  ["viewCPMSidebar", "sidebar-menu-contextual-password-manager-label"],
 ]);
 const VISIBILITY_SETTING_PREF = "sidebar.visibility";
+const EXPAND_ON_HOVER_PREF = "sidebar.expandOnHover";
+const POSITION_SETTING_PREF = "sidebar.position_start";
 const TAB_DIRECTION_SETTING_PREF = "sidebar.verticalTabs";
+const EXPAND_ON_HOVER_MESSAGE_DISMISSED_PREF =
+  "sidebar.expandOnHoverMessage.dismissed";
 
 export class SidebarCustomize extends SidebarPage {
   constructor() {
     super();
     this.activeExtIndex = 0;
-    this.visibility = Services.prefs.getStringPref(
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this.#prefValues,
+      "visibility",
       VISIBILITY_SETTING_PREF,
-      "always-show"
+      "always-show",
+      (_aPreference, _previousValue, newValue) => {
+        this.visibility = newValue;
+      }
     );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this.#prefValues,
+      "isPositionStart",
+      POSITION_SETTING_PREF,
+      true,
+      (_aPreference, _previousValue, newValue) => {
+        this.isPositionStart = newValue;
+      }
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this.#prefValues,
+      "verticalTabsEnabled",
+      TAB_DIRECTION_SETTING_PREF,
+      false,
+      (_aPreference, _previousValue, newValue) => {
+        this.verticalTabsEnabled = newValue;
+      }
+    );
+    XPCOMUtils.defineLazyPreferenceGetter(
+      this.#prefValues,
+      "expandOnHoverEnabled",
+      EXPAND_ON_HOVER_PREF,
+      false,
+      (_aPreference, _previousValue, newValue) => {
+        this.expandOnHoverEnabled = newValue;
+      }
+    );
+    this.visibility = this.#prefValues.visibility;
+    this.isPositionStart = this.#prefValues.isPositionStart;
+    this.verticalTabsEnabled = this.#prefValues.verticalTabsEnabled;
+    this.expandOnHoverEnabled = this.#prefValues.expandOnHoverEnabled;
+    this.boundObserve = (...args) => this.observe(...args);
   }
+
+  #prefValues = {};
 
   static properties = {
     activeExtIndex: { type: Number },
     visibility: { type: String },
+    isPositionStart: { type: Boolean },
+    verticalTabsEnabled: { type: Boolean },
+    expandOnHoverEnabled: { type: Boolean },
   };
 
   static queries = {
-    toolInputs: { all: ".customize-group moz-checkbox" },
+    toolInputs: { all: ".tool" },
     extensionLinks: { all: ".extension-link" },
-    positionInputs: { all: ".position-setting" },
-    visibilityInputs: { all: ".visibility-setting" },
-    verticalTabsInputs: { all: ".vertical-tabs-setting" },
+    positionInput: "#position",
+    visibilityInput: "#hide-sidebar",
+    verticalTabsInput: "#vertical-tabs",
   };
 
   connectedCallback() {
@@ -56,8 +104,11 @@ export class SidebarCustomize extends SidebarPage {
     this.getWindow().removeEventListener("SidebarItemRemoved", this);
   }
 
-  get sidebarLauncher() {
-    return this.getWindow().document.querySelector("sidebar-launcher");
+  get fluentStrings() {
+    if (!this._fluentStrings) {
+      this._fluentStrings = new Localization(["browser/sidebar.ftl"], true);
+    }
+    return this._fluentStrings;
   }
 
   getWindow() {
@@ -74,7 +125,7 @@ export class SidebarCustomize extends SidebarPage {
     }
   }
 
-  async onToggleInput(e) {
+  async onToggleToolInput(e) {
     e.preventDefault();
     this.getWindow().SidebarController.toggleTool(e.target.id);
     switch (e.target.id) {
@@ -98,6 +149,11 @@ export class SidebarCustomize extends SidebarPage {
           checked: e.target.checked,
         });
         break;
+      case "viewReviewCheckerSidebar":
+        Glean.sidebarCustomize.shoppingReviewCheckerEnabled.record({
+          checked: e.target.checked,
+        });
+        break;
     }
   }
 
@@ -113,18 +169,19 @@ export class SidebarCustomize extends SidebarPage {
     }
   }
 
-  inputTemplate(tool) {
+  toolInputTemplate(tool) {
     if (tool.hidden) {
       return null;
     }
     return html`
       <moz-checkbox
+        class="tool"
         type="checkbox"
         id=${tool.view}
         name=${tool.view}
         iconsrc=${tool.iconUrl}
         data-l10n-id=${this.getInputL10nId(tool.view)}
-        @change=${this.onToggleInput}
+        @change=${this.onToggleToolInput}
         ?checked=${!tool.disabled}
       />
     `;
@@ -168,9 +225,7 @@ export class SidebarCustomize extends SidebarPage {
     SidebarController.reversePosition();
     Glean.sidebarCustomize.sidebarPosition.record({
       position:
-        SidebarController._positionStart !== this.getWindow().RTL_UI
-          ? "left"
-          : "right",
+        this.isPositionStart !== this.getWindow().RTL_UI ? "left" : "right",
     });
   }
 
@@ -195,6 +250,26 @@ export class SidebarCustomize extends SidebarPage {
     </div>`;
   }
 
+  expandOnHoverMessageTemplate() {
+    if (
+      !Services.prefs.getBoolPref(EXPAND_ON_HOVER_MESSAGE_DISMISSED_PREF, false)
+    ) {
+      return html`
+        <moz-message-bar
+          class="setting-message expand-on-hover-message"
+          data-l10n-id="expand-on-hover-message"
+          @message-bar:user-dismissed=${this.onExpandOnHoverMessageDismissed}
+          dismissable
+        ></moz-message-bar>
+      `;
+    }
+    return "";
+  }
+
+  onExpandOnHoverMessageDismissed() {
+    Services.prefs.setBoolPref(EXPAND_ON_HOVER_MESSAGE_DISMISSED_PREF, true);
+  }
+
   render() {
     let extensions = this.getWindow().SidebarController.getExtensions();
     return html`
@@ -203,106 +278,81 @@ export class SidebarCustomize extends SidebarPage {
       <div class="sidebar-panel">
         <sidebar-panel-header data-l10n-id="sidebar-menu-customize-header" data-l10n-attrs="heading" view="viewCustomizeSidebar">
         </sidebar-panel-header>
+        <moz-fieldset class="customize-group no-end-margin" data-l10n-id="sidebar-settings">
+          <moz-checkbox
+            type="checkbox"
+            id="vertical-tabs"
+            name="verticalTabs"
+            iconsrc="chrome://browser/skin/sidebar-collapsed.svg"
+            data-l10n-id="sidebar-vertical-tabs"
+            @change=${this.#handleTabDirectionChange}
+            ?checked=${this.verticalTabsEnabled}
+          >
+          ${when(
+            this.verticalTabsEnabled,
+            () => html`
+              ${when(
+                this.expandOnHoverEnabled,
+                () => html`
+                  <moz-checkbox
+                    slot="nested"
+                    type="checkbox"
+                    id="expand-on-hover"
+                    name="expand-on-hover"
+                    data-l10n-id="expand-sidebar-on-hover"
+                    @change=${this.#toggleExpandOnHover}
+                    ?checked=${this.getWindow().SidebarController._state
+                      .revampVisibility === "expand-on-hover"}
+                    ?disabled=${this.visibility == "hide-sidebar"}
+                  />
+                `
+              )}
+              <moz-checkbox
+                slot="nested"
+                type="checkbox"
+                id="hide-sidebar"
+                name="hideSidebar"
+                data-l10n-id="sidebar-hide-tabs-and-sidebar"
+                @change=${this.#handleVisibilityChange}
+                ?checked=${this.visibility == "hide-sidebar"}
+                ?disabled=${this.getWindow().SidebarController._state
+                  .revampVisibility === "expand-on-hover"}
+              ></moz-checkbox>
+            `
+          )}
+          </moz-checkbox>
+          ${this.expandOnHoverMessageTemplate()}
+        </moz-fieldset>
+        <moz-fieldset class="customize-group medium-top-margin no-label">
+          <moz-checkbox
+            type="checkbox"
+            id="position"
+            name="position"
+            data-l10n-id=${document.dir == "rtl" ? "sidebar-show-on-the-left" : "sidebar-show-on-the-right"}
+            @change=${this.reversePosition}
+            ?checked=${!this.isPositionStart}
+        ></moz-checkbox>
+        </moz-fieldset>
         <moz-fieldset class="customize-group" data-l10n-id="sidebar-customize-firefox-tools-header">
           ${this.getWindow()
             .SidebarController.getTools()
-            .map(tool => this.inputTemplate(tool))}
+            .map(tool => this.toolInputTemplate(tool))}
         </moz-fieldset>
         ${when(
           extensions.length,
-          () => html`<div class="customize-group">
-            <h4
-              class="customize-extensions-heading"
-              data-l10n-id="sidebar-customize-extensions-header"
-            ></h4>
-            <div role="list" class="extensions">
-              ${extensions.map((extension, index) =>
-                this.extensionTemplate(extension, index)
-              )}
-            </div>
-          </div>`
+          () =>
+            html`<div class="customize-group">
+              <h4
+                class="customize-extensions-heading"
+                data-l10n-id="sidebar-customize-extensions-header"
+              ></h4>
+              <div role="list" class="extensions">
+                ${extensions.map((extension, index) =>
+                  this.extensionTemplate(extension, index)
+                )}
+              </div>
+            </div>`
         )}
-        <div class="customize-group">
-          <moz-radio-group
-            @change=${this.#handleVisibilityChange}
-            name="visibility"
-            data-l10n-id="sidebar-customize-button-header"
-          >
-            <moz-radio
-              class="visibility-setting"
-              value="always-show"
-              ?checked=${this.visibility === "always-show"}
-              iconsrc="chrome://browser/skin/sidebar-expanded.svg"
-              data-l10n-id="sidebar-visibility-setting-always-show"
-            ></moz-radio>
-            <moz-radio
-              class="visibility-setting"
-              value="hide-sidebar"
-              ?checked=${this.visibility === "hide-sidebar"}
-            iconsrc="chrome://browser/skin/sidebar-hidden.svg"
-              data-l10n-id="sidebar-visibility-setting-hide-sidebar"
-            ></moz-radio>
-          </moz-radio-group>
-        </div>
-        <div class="customize-group">
-          <moz-radio-group
-              @change=${this.reversePosition}
-              name="position"
-              data-l10n-id="sidebar-customize-position-header">
-            <moz-radio
-              class="position-setting"
-              id="position-left"
-              value=${!this.getWindow().RTL_UI}
-              ?checked=${
-                this.getWindow().RTL_UI
-                  ? !this.getWindow().SidebarController._positionStart
-                  : this.getWindow().SidebarController._positionStart
-              }
-              iconsrc="chrome://browser/skin/sidebar-expanded.svg"
-              data-l10n-id="sidebar-position-left"
-            ></moz-radio>
-            <moz-radio
-              class="position-setting"
-              id="position-right"
-              value=${this.getWindow().RTL_UI}
-              ?checked=${
-                this.getWindow().RTL_UI
-                  ? this.getWindow().SidebarController._positionStart
-                  : !this.getWindow().SidebarController._positionStart
-              }
-              iconsrc="chrome://browser/skin/sidebar-expanded-right.svg"
-              data-l10n-id="sidebar-position-right"
-            ></moz-radio>
-          </moz-radio-group>
-        </div>
-        <div class="customize-group">
-          <moz-radio-group
-              @change=${this.#handleTabDirectionChange}
-              name="tabDirection"
-              data-l10n-id="sidebar-customize-tabs-header">
-            <moz-radio
-              class="vertical-tabs-setting"
-              id="vertical-tabs"
-              value=${true}
-              ?checked=${
-                this.getWindow().SidebarController.sidebarVerticalTabsEnabled
-              }
-              iconsrc="chrome://browser/skin/sidebar-collapsed.svg"
-              data-l10n-id="sidebar-vertical-tabs"
-            ></moz-radio>
-            <moz-radio
-              class="vertical-tabs-setting"
-              id="horizontal-tabs"
-              value=${false}
-              ?checked=${
-                this.getWindow().SidebarController
-                  .sidebarVerticalTabsEnabled === false
-              }
-              iconsrc="chrome://browser/skin/sidebar-horizontal-tabs.svg"
-              data-l10n-id="sidebar-horizontal-tabs"
-            ></moz-radio>
-          </moz-radio-group>
-        </div>
         <div id="manage-settings">
           <img src="chrome://browser/skin/preferences/category-general.svg" class="icon" role="presentation" />
           <a
@@ -317,16 +367,32 @@ export class SidebarCustomize extends SidebarPage {
     `;
   }
 
-  #handleVisibilityChange({ target: { value } }) {
-    this.visibility = value;
-    Services.prefs.setStringPref(VISIBILITY_SETTING_PREF, value);
+  #handleVisibilityChange(e) {
+    e.stopPropagation();
+    this.visibility = e.target.checked ? "hide-sidebar" : "always-show";
+    Services.prefs.setStringPref(
+      VISIBILITY_SETTING_PREF,
+      e.target.checked ? "hide-sidebar" : "always-show"
+    );
     Glean.sidebarCustomize.sidebarDisplay.record({
-      preference: value === "always-show" ? "always" : "hide",
+      preference: e.target.checked ? "hide" : "always",
     });
   }
 
-  #handleTabDirectionChange({ target: { value } }) {
-    const verticalTabsEnabled = value === "true";
+  #toggleExpandOnHover(e) {
+    e.stopPropagation();
+    if (e.target.checked) {
+      Services.prefs.setStringPref("sidebar.visibility", "expand-on-hover");
+      Glean.sidebarCustomize.expandOnHoverEnabled.record({
+        checked: true,
+      });
+    } else {
+      Services.prefs.setStringPref("sidebar.visibility", "always-show");
+    }
+  }
+
+  #handleTabDirectionChange({ target: { checked } }) {
+    const verticalTabsEnabled = checked;
     Services.prefs.setBoolPref(TAB_DIRECTION_SETTING_PREF, verticalTabsEnabled);
     Glean.sidebarCustomize.tabsLayout.record({
       orientation: verticalTabsEnabled ? "vertical" : "horizontal",

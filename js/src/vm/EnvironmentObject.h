@@ -221,10 +221,10 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  * NonSyntacticLexicalEnvironmentObject holds lexical variables and
  * NonSyntacticVariablesObject holds qualified variables. JSMs cannot have
  * unqualified names, but if unqualified names are used by subscript, they
- * goes to NonSyntacticVariablesObject (see B.3 and B.4).
+ * goes to NonSyntacticVariablesObject (see C.3 and C.4).
  * They have the following env chain:
  *
- *   BackstagePass global
+ *   SystemGlobal
  *       |
  *   GlobalLexicalEnvironmentObject[this=global]
  *       |
@@ -232,7 +232,47 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   NonSyntacticLexicalEnvironmentObject[this=nsvo] (lexical vars)
  *
- * B.1 Subscript loading into a target object
+ * B.1. Frame scripts with unique scope
+ *
+ * XUL frame scripts with unique scope are loaded in the same global as
+ * JSMs, with a NonSyntacticVariablesObject as a "polluting global" for
+ * both qualified 'var' variables and unqualified names, and a with
+ * environment wrapping a message manager object, and
+ * NonSyntacticLexicalEnvironmentObject holding the message manager as `this`,
+ * that holds lexical variables.
+ * These environment objects, except for globals, are created for each
+ * execution of js::ExecuteInFrameScriptEnvironment.
+ *
+ *   SystemGlobal
+ *       |
+ *   GlobalLexicalEnvironmentObject[this=global]
+ *       |
+ *   NonSyntacticVariablesObject (qualified 'var's and unqualified names)
+ *       |
+ *   WithEnvironmentObject [SupportUnscopables=No] wrapping messageManager
+ *       |
+ *   NonSyntacticLexicalEnvironmentObject[this=messageManager] (lexical vars)
+ *
+ * B.2. Frame scripts without unique scope
+ *
+ * XUL frame scripts without unique scope are loaded in the same global as
+ * JSMs with JS_ExecuteScript, with a with environment wrapping a message
+ * manager object for qualified 'var' variables, and
+ * NonSyntacticLexicalEnvironmentObject holding the message manager as `this`,
+ * that holds lexical variables.
+ * The environment chain is associated with the message manager object
+ * and cached for subsequent executions.
+ *
+ *   SystemGlobal (unqualified names)
+ *       |
+ *   GlobalLexicalEnvironmentObject[this=global]
+ *       |
+ *   WithEnvironmentObject [SupportUnscopables=No] wrapping messageManager
+ *     (qualified 'var's)
+ *       |
+ *   NonSyntacticLexicalEnvironmentObject[this=messageManager] (lexical vars)
+ *
+ * C.1 Subscript loading into a target object
  *
  * Subscripts may be loaded into a target object and it's associated global.
  * NonSyntacticLexicalEnvironmentObject holds lexical variables and
@@ -249,7 +289,7 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   NonSyntacticLexicalEnvironmentObject[this=target] (lexical vars)
  *
- * B.2 Subscript loading into global this
+ * C.2 Subscript loading into global this
  *
  * Subscript may be loaded into global this. In this case no extra environment
  * object is created.
@@ -258,7 +298,7 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   GlobalLexicalEnvironmentObject[this=global] (lexical vars)
  *
- * B.3 Subscript loading into a target object in JSM
+ * C.3 Subscript loading into a target object in JSM
  *
  * The target object of a subscript load may be in a JSM, in which case we will
  * also have the NonSyntacticVariablesObject on the chain.
@@ -266,7 +306,7 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  * variables and WithEnvironmentObject holds qualified variables.
  * Unqualified names goes to NonSyntacticVariablesObject.
  *
- *   BackstagePass global
+ *   SystemGlobal
  *       |
  *   GlobalLexicalEnvironmentObject[this=global]
  *       |
@@ -279,12 +319,12 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   NonSyntacticLexicalEnvironmentObject[this=target] (lexical vars)
  *
- * B.4 Subscript loading into per-JSM this
+ * C.4 Subscript loading into per-JSM this
  *
  * Subscript may be loaded into global this.  In this case no extra environment
  * object is created.
  *
- *   BackstagePass global
+ *   SystemGlobal
  *       |
  *   GlobalLexicalEnvironmentObject[this=global]
  *       |
@@ -292,19 +332,51 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   NonSyntacticLexicalEnvironmentObject[this=nsvo] (lexical vars)
  *
- * C.1. Frame scripts with unique scope
+ * C.5. Subscript loading into a target object in a frame script with unique
+ *      scope
  *
- * XUL frame scripts with unique scope are loaded in the same global as
- * JSMs, with a NonSyntacticVariablesObject as a "polluting global" for
- * both qualified 'var' variables and unqualified names, and a with
- * environment wrapping a message manager object, and
- * NonSyntacticLexicalEnvironmentObject holding the message manager as `this`,
- * that holds lexical variables.
- * These environment objects except for globals are created for each run and
- * not shared across multiple runs. This is done exclusively in
- * js::ExecuteInFrameScriptEnvironment.
+ * Subscript may be loaded into a target object inside a frame script
+ * environment.  If the frame script has an unique scope, the subscript inherits
+ * the unique scope, with additional WithEnvironmentObject and NSLEO are
+ * created for qualified variables.
  *
- *   BackstagePass global
+ *   SystemGlobal
+ *       |
+ *   GlobalLexicalEnvironmentObject[this=global]
+ *       |
+ *   NonSyntacticVariablesObject (unqualified names)
+ *       |
+ *   WithEnvironmentObject [SupportUnscopables=No] wrapping messageManager
+ *       |
+ *   NonSyntacticLexicalEnvironmentObject[this=messageManager]
+ *       |
+ *   WithEnvironmentObject [SupportUnscopables=No] wrapping target
+ *     (qualified 'var's)
+ *       |
+ *   NonSyntacticLexicalEnvironmentObject[this=target] (lexical vars)
+ *
+ * C.6. Subscript loading into a target object in a frame script without unique
+ *      scope
+ *
+ * If the frame script doesn't have an unique scope, the subscript uses the
+ * global scope, with additional WithEnvironmentObject and NSLEO are
+ * created for qualified variables.
+ *
+ *   SystemGlobal (unqualified names)
+ *       |
+ *   GlobalLexicalEnvironmentObject[this=global]
+ *       |
+ *   WithEnvironmentObject [SupportUnscopables=No] wrapping target
+ *     (qualified 'var's)
+ *       |
+ *   NonSyntacticLexicalEnvironmentObject[this=target] (lexical vars)
+ *
+ * C.7. Subscript loading into a frame script with unique scope
+ *
+ * If a subscript doesn't use a target object and the frame script has an
+ * unique scope, the subscript uses the same environment as the frame script.
+ *
+ *   SystemGlobal
  *       |
  *   GlobalLexicalEnvironmentObject[this=global]
  *       |
@@ -314,23 +386,14 @@ extern PropertyName* EnvironmentCoordinateNameSlow(JSScript* script,
  *       |
  *   NonSyntacticLexicalEnvironmentObject[this=messageManager] (lexical vars)
  *
- * C.2. Frame scripts without unique scope
+ * C.8. Subscript loading into a frame script without unique scope
  *
- * XUL frame scripts without unique scope are loaded in the same global as
- * JSMs, with a with environment wrapping a message manager object for
- * qualified 'var' variables, and NonSyntacticLexicalEnvironmentObject holding
- * the message manager as `this`, that holds lexical variables.
- * The environment chain is associated with the message manager object
- * and cached for subsequent runs.
+ * If a subscript doesn't use a target object and the frame script doesn't have
+ * an unique scope, the subscript uses the global scope.
  *
- *   BackstagePass global (unqualified names)
+ *   SystemGlobal (qualified 'var's and unqualified names)
  *       |
- *   GlobalLexicalEnvironmentObject[this=global]
- *       |
- *   WithEnvironmentObject [SupportUnscopables=No] wrapping messageManager
- *     (qualified 'var's)
- *       |
- *   NonSyntacticLexicalEnvironmentObject[this=messageManager] (lexical vars)
+ *   GlobalLexicalEnvironmentObject[this=global] (lexical vars)
  *
  * D.1. DOM event handlers without direct eval
  *

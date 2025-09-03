@@ -171,6 +171,18 @@ uint32_t HyperTextAccessible::DOMPointToOffset(nsINode* aNode,
     }
   }
 
+  if (descendant && descendant->IsTextLeaf()) {
+    uint32_t length = nsAccUtils::TextLength(descendant);
+    if (offset > length) {
+      // This can happen if text in the accessibility tree is out of date with
+      // DOM, since the accessibility engine updates text asynchronously. This
+      // should only be the case for a very short time, so it shouldn't be a
+      // real problem.
+      NS_WARNING("Offset too large for text leaf");
+      offset = length;
+    }
+  }
+
   return TransformOffset(descendant, offset, aIsEndOffset);
 }
 
@@ -635,70 +647,6 @@ int32_t HyperTextAccessible::CaretOffset() const {
   return DOMPointToOffset(focusNode, focusOffset);
 }
 
-int32_t HyperTextAccessible::CaretLineNumber() {
-  // Provide the line number for the caret, relative to the
-  // currently focused node. Use a 1-based index
-  RefPtr<nsFrameSelection> frameSelection = FrameSelection();
-  if (!frameSelection) return -1;
-
-  dom::Selection* domSel = frameSelection->GetSelection(SelectionType::eNormal);
-  if (!domSel) return -1;
-
-  nsINode* caretNode = domSel->GetFocusNode();
-  if (!caretNode || !caretNode->IsContent()) return -1;
-
-  nsIContent* caretContent = caretNode->AsContent();
-  if (!nsCoreUtils::IsAncestorOf(GetNode(), caretContent)) return -1;
-
-  uint32_t caretOffset = domSel->FocusOffset();
-  CaretAssociationHint hint = frameSelection->GetHint();
-  nsIFrame* caretFrame = SelectionMovementUtils::GetFrameForNodeOffset(
-      caretContent, caretOffset, hint);
-  NS_ENSURE_TRUE(caretFrame, -1);
-
-  AutoAssertNoDomMutations guard;  // The nsILineIterators below will break if
-                                   // the DOM is modified while they're in use!
-  int32_t lineNumber = 1;
-  nsILineIterator* lineIterForCaret = nullptr;
-  nsIContent* hyperTextContent = IsContent() ? mContent.get() : nullptr;
-  while (caretFrame) {
-    if (hyperTextContent == caretFrame->GetContent()) {
-      return lineNumber;  // Must be in a single line hyper text, there is no
-                          // line iterator
-    }
-    nsContainerFrame* parentFrame = caretFrame->GetParent();
-    if (!parentFrame) break;
-
-    // Add lines for the sibling frames before the caret
-    nsIFrame* sibling = parentFrame->PrincipalChildList().FirstChild();
-    while (sibling && sibling != caretFrame) {
-      nsILineIterator* lineIterForSibling = sibling->GetLineIterator();
-      if (lineIterForSibling) {
-        // For the frames before that grab all the lines
-        int32_t addLines = lineIterForSibling->GetNumLines();
-        lineNumber += addLines;
-      }
-      sibling = sibling->GetNextSibling();
-    }
-
-    // Get the line number relative to the container with lines
-    if (!lineIterForCaret) {  // Add the caret line just once
-      lineIterForCaret = parentFrame->GetLineIterator();
-      if (lineIterForCaret) {
-        // Ancestor of caret
-        int32_t addLines = lineIterForCaret->FindLineContaining(caretFrame);
-        lineNumber += addLines;
-      }
-    }
-
-    caretFrame = parentFrame;
-  }
-
-  MOZ_ASSERT_UNREACHABLE(
-      "DOM ancestry had this hypertext but frame ancestry didn't");
-  return lineNumber;
-}
-
 LayoutDeviceIntRect HyperTextAccessible::GetCaretRect(nsIWidget** aWidget) {
   *aWidget = nullptr;
 
@@ -817,39 +765,38 @@ bool HyperTextAccessible::SelectionBoundsAt(int32_t aSelectionNum,
 
   nsRange* range = ranges[aSelectionNum];
 
-  // Get start and end points.
-  nsINode* startNode = range->GetStartContainer();
-  nsINode* endNode = range->GetEndContainer();
-  uint32_t startOffset = range->StartOffset();
-  uint32_t endOffset = range->EndOffset();
-
   // Make sure start is before end, by swapping DOM points.  This occurs when
   // the user selects backwards in the text.
   const Maybe<int32_t> order =
-      nsContentUtils::ComparePoints(endNode, endOffset, startNode, startOffset);
+      nsContentUtils::ComparePoints(range->EndRef(), range->StartRef());
 
   if (!order) {
     MOZ_ASSERT_UNREACHABLE();
     return false;
   }
 
-  if (*order < 0) {
-    std::swap(startNode, endNode);
-    std::swap(startOffset, endOffset);
-  }
+  const RangeBoundary& precedingBoundary =
+      *order < 0 ? range->EndRef() : range->StartRef();
+  const RangeBoundary& followingBoundary =
+      *order < 0 ? range->StartRef() : range->EndRef();
 
-  if (!startNode->IsInclusiveDescendantOf(mContent)) {
+  if (!precedingBoundary.GetContainer()->IsInclusiveDescendantOf(mContent)) {
     *aStartOffset = 0;
   } else {
-    *aStartOffset =
-        DOMPointToOffset(startNode, AssertedCast<int32_t>(startOffset));
+    *aStartOffset = DOMPointToOffset(
+        precedingBoundary.GetContainer(),
+        AssertedCast<int32_t>(*precedingBoundary.Offset(
+            RangeBoundary::OffsetFilter::kValidOrInvalidOffsets)));
   }
 
-  if (!endNode->IsInclusiveDescendantOf(mContent)) {
+  if (!followingBoundary.GetContainer()->IsInclusiveDescendantOf(mContent)) {
     *aEndOffset = CharacterCount();
   } else {
-    *aEndOffset =
-        DOMPointToOffset(endNode, AssertedCast<int32_t>(endOffset), true);
+    *aEndOffset = DOMPointToOffset(
+        followingBoundary.GetContainer(),
+        AssertedCast<int32_t>(*followingBoundary.Offset(
+            RangeBoundary::OffsetFilter::kValidOrInvalidOffsets)),
+        true);
   }
   return true;
 }

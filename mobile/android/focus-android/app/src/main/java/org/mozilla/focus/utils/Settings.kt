@@ -170,16 +170,7 @@ class Settings(
             false,
         )
 
-    var isExperimentationEnabled: Boolean
-        get() = preferences.getBoolean(
-            getPreferenceKey(R.string.pref_key_studies_v2),
-            GleanMetricsService.isTelemetryEnabled(context),
-        )
-        set(value) {
-            preferences.edit()
-                .putBoolean(getPreferenceKey(R.string.pref_key_studies_v2), value)
-                .commit()
-        }
+    var isExperimentationEnabled: Boolean = false
 
     var shouldShowCookieBannerCfr: Boolean
         get() = preferences.getBoolean(
@@ -501,6 +492,12 @@ class Settings(
             else -> CookieBannerOption.CookieBannerDisabled()
         }
     }
+
+    var isDailyUsagePingEnabled by booleanPreference(
+        getPreferenceKey(R.string.pref_key_daily_usage_ping),
+        default = GleanMetricsService.shouldTelemetryBeEnabledByDefault(context),
+        persistDefaultIfNotExists = true,
+    )
 
     private fun getPreferenceKey(resourceId: Int): String =
         context.getString(resourceId)

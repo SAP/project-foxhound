@@ -6,17 +6,35 @@
 
 #include "UiaTextRange.h"
 
+#include "mozilla/a11y/HyperTextAccessibleBase.h"
 #include "nsAccUtils.h"
+#include "nsIAccessibleTypes.h"
 #include "TextLeafRange.h"
 #include <comdef.h>
+#include <propvarutil.h>
 #include <unordered_set>
 
-// Handle MinGW builds - see bug 1929755 for more info
-#if defined(__MINGW32__) || defined(__MINGW64__) || defined(__MINGW__)
-#  include "supplementalMinGWDefinitions.h"
-#endif
-
 namespace mozilla::a11y {
+
+template <typename T>
+HRESULT GetAttribute(TEXTATTRIBUTEID aAttributeId, T const& aRangeOrPoint,
+                     VARIANT& aRetVal);
+
+static int CompareVariants(const VARIANT& aFirst, const VARIANT& aSecond) {
+  // MinGW lacks support for VariantCompare, but does support converting to
+  // PROPVARIANT and PropVariantCompareEx. Use this as a workaround for MinGW
+  // builds, but avoid the extra work otherwise. See Bug 1944732.
+#if defined(__MINGW32__) || defined(__MINGW64__) || defined(__MINGW__)
+  PROPVARIANT firstPropVar;
+  PROPVARIANT secondPropVar;
+  VariantToPropVariant(&aFirst, &firstPropVar);
+  VariantToPropVariant(&aSecond, &secondPropVar);
+  return PropVariantCompareEx(firstPropVar, secondPropVar, PVCU_DEFAULT,
+                              PVCHF_DEFAULT);
+#else
+  return VariantCompare(aFirst, aSecond);
+#endif
+}
 
 // Used internally to safely get a UiaTextRange from a COM pointer provided
 // to us by a client.
@@ -100,9 +118,26 @@ static bool IsUiaEmbeddedObject(const Accessible* aAcc) {
   return true;
 }
 
+static NotNull<Accessible*> GetSelectionContainer(TextLeafRange& aRange) {
+  Accessible* acc = aRange.Start().mAcc;
+  MOZ_ASSERT(acc);
+  if (acc->IsTextLeaf()) {
+    if (Accessible* parent = acc->Parent()) {
+      acc = parent;
+    }
+  }
+  if (acc->IsTextField()) {
+    // Gecko uses an independent selection for <input> and <textarea>.
+    return WrapNotNull(acc);
+  }
+  // For everything else (including contentEditable), Gecko uses the document
+  // selection.
+  return WrapNotNull(nsAccUtils::DocumentFor(acc));
+}
+
 // UiaTextRange
 
-UiaTextRange::UiaTextRange(TextLeafRange& aRange) {
+UiaTextRange::UiaTextRange(const TextLeafRange& aRange) {
   MOZ_ASSERT(aRange);
   SetRange(aRange);
 }
@@ -330,17 +365,181 @@ UiaTextRange::ExpandToEnclosingUnit(enum TextUnit aUnit) {
   return S_OK;
 }
 
+// Search within the text range for the first subrange that has the given
+// attribute value. The resulting range might span multiple text attribute runs.
+// If aBackward, start the search from the end of the range.
 STDMETHODIMP
 UiaTextRange::FindAttribute(TEXTATTRIBUTEID aAttributeId, VARIANT aVal,
                             BOOL aBackward,
                             __RPC__deref_out_opt ITextRangeProvider** aRetVal) {
-  return E_NOTIMPL;
+  if (!aRetVal) {
+    return E_INVALIDARG;
+  }
+  *aRetVal = nullptr;
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  MOZ_ASSERT(range.Start() <= range.End(), "Range must be valid to proceed.");
+
+  VARIANT value{};
+
+  if (!aBackward) {
+    Maybe<TextLeafPoint> matchingRangeStart{};
+    // Begin with a range starting at the start of our original range and ending
+    // at the next attribute run start point.
+    TextLeafPoint startPoint = range.Start();
+    TextLeafPoint endPoint = startPoint;
+    endPoint = endPoint.FindTextAttrsStart(eDirNext);
+    do {
+      // Get the attribute value at the start point. Since we're moving through
+      // text attribute runs, we don't need to check the entire range; this
+      // point's attributes are those of the entire range.
+      GetAttribute(aAttributeId, startPoint, value);
+      //  CompareVariants is not valid if types are different. Verify the type
+      //  first so the result is well-defined.
+      if (aVal.vt == value.vt && CompareVariants(aVal, value) == 0) {
+        if (!matchingRangeStart) {
+          matchingRangeStart = Some(startPoint);
+        }
+      } else if (matchingRangeStart) {
+        // We fell out of a matching range. We're moving forward, so the
+        // matching range is [matchingRangeStart, startPoint).
+        RefPtr uiaRange = new UiaTextRange(
+            TextLeafRange{matchingRangeStart.value(), startPoint});
+        uiaRange.forget(aRetVal);
+        return S_OK;
+      }
+      startPoint = endPoint;
+      // Advance only if startPoint != endPoint to avoid infinite loops if
+      // FindTextAttrsStart returns the TextLeafPoint unchanged. This covers
+      // cases like hitting the end of the document.
+    } while ((endPoint = endPoint.FindTextAttrsStart(eDirNext)) &&
+             endPoint <= range.End() && startPoint != endPoint);
+    if (matchingRangeStart) {
+      // We found a start point and reached the end of the range. The result is
+      // [matchingRangeStart, stopPoint].
+      RefPtr uiaRange = new UiaTextRange(
+          TextLeafRange{matchingRangeStart.value(), range.End()});
+      uiaRange.forget(aRetVal);
+      return S_OK;
+    }
+  } else {
+    Maybe<TextLeafPoint> matchingRangeEnd{};
+    TextLeafPoint endPoint = range.End();
+    TextLeafPoint startPoint = endPoint;
+    startPoint = startPoint.FindTextAttrsStart(eDirPrevious);
+    do {
+      GetAttribute(aAttributeId, startPoint, value);
+      if (aVal.vt == value.vt && CompareVariants(aVal, value) == 0) {
+        if (!matchingRangeEnd) {
+          matchingRangeEnd = Some(endPoint);
+        }
+      } else if (matchingRangeEnd) {
+        // We fell out of a matching range. We're moving backward, so the
+        // matching range is [endPoint, matchingRangeEnd).
+        RefPtr uiaRange =
+            new UiaTextRange(TextLeafRange{endPoint, matchingRangeEnd.value()});
+        uiaRange.forget(aRetVal);
+        return S_OK;
+      }
+      endPoint = startPoint;
+      // Advance only if startPoint != endPoint to avoid infinite loops if
+      // FindTextAttrsStart returns the TextLeafPoint unchanged. This covers
+      // cases like hitting the start of the document.
+    } while ((startPoint = startPoint.FindTextAttrsStart(eDirPrevious)) &&
+             range.Start() <= startPoint && startPoint != endPoint);
+    if (matchingRangeEnd) {
+      // We found an end point and reached the start of the range. The result is
+      // [range.Start(), matchingRangeEnd).
+      RefPtr uiaRange = new UiaTextRange(
+          TextLeafRange{range.Start(), matchingRangeEnd.value()});
+      uiaRange.forget(aRetVal);
+      return S_OK;
+    }
+  }
+  return S_OK;
 }
 
 STDMETHODIMP
 UiaTextRange::FindText(__RPC__in BSTR aText, BOOL aBackward, BOOL aIgnoreCase,
                        __RPC__deref_out_opt ITextRangeProvider** aRetVal) {
-  return E_NOTIMPL;
+  if (!aRetVal) {
+    return E_INVALIDARG;
+  }
+  *aRetVal = nullptr;
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  MOZ_ASSERT(range.Start() <= range.End(), "Range must be valid to proceed.");
+
+  // We can't find anything in an empty range.
+  if (range.Start() == range.End()) {
+    return S_OK;
+  }
+
+  // Iterate over the range's leaf segments and append each leaf's text. Keep
+  // track of the indices in the built string, associating them with the
+  // Accessible pointer whose text begins at that index.
+  nsTArray<std::pair<int32_t, Accessible*>> indexToAcc;
+  nsAutoString rangeText;
+  for (const TextLeafRange leafSegment : range) {
+    Accessible* startAcc = leafSegment.Start().mAcc;
+    MOZ_ASSERT(startAcc, "Start acc of leaf segment was unexpectedly null.");
+    indexToAcc.EmplaceBack(rangeText.Length(), startAcc);
+    startAcc->AppendTextTo(rangeText);
+  }
+
+  // Find the search string's start position in the text of the range, ignoring
+  // case if requested.
+  const nsDependentString searchStr{aText};
+  const int32_t startIndex = [&]() {
+    if (aIgnoreCase) {
+      ToLowerCase(rangeText);
+      nsAutoString searchStrLower;
+      ToLowerCase(searchStr, searchStrLower);
+      return aBackward ? rangeText.RFind(searchStrLower)
+                       : rangeText.Find(searchStrLower);
+    } else {
+      return aBackward ? rangeText.RFind(searchStr) : rangeText.Find(searchStr);
+    }
+  }();
+  if (startIndex == kNotFound) {
+    return S_OK;
+  }
+  const int32_t endIndex = startIndex + searchStr.Length();
+
+  // Binary search for the (index, Accessible*) pair where the index is as large
+  // as possible without exceeding the size of the search index. The associated
+  // Accessible* is the Accessible for the resulting TextLeafPoint.
+  auto GetNearestAccLessThanIndex = [&indexToAcc](int32_t aIndex) {
+    MOZ_ASSERT(aIndex >= 0, "Search index is less than 0.");
+    auto itr =
+        std::lower_bound(indexToAcc.begin(), indexToAcc.end(), aIndex,
+                         [](const std::pair<int32_t, Accessible*>& aPair,
+                            int32_t aIndex) { return aPair.first <= aIndex; });
+    MOZ_ASSERT(itr != indexToAcc.begin(),
+               "Iterator is unexpectedly at the beginning.");
+    --itr;
+    return itr;
+  };
+
+  // Calculate the TextLeafPoint for the start and end of the found text.
+  auto itr = GetNearestAccLessThanIndex(startIndex);
+  Accessible* foundTextStart = itr->second;
+  const int32_t offsetFromStart = startIndex - itr->first;
+  const TextLeafPoint rangeStart{foundTextStart, offsetFromStart};
+
+  itr = GetNearestAccLessThanIndex(endIndex);
+  Accessible* foundTextEnd = itr->second;
+  const int32_t offsetFromEndAccStart = endIndex - itr->first;
+  const TextLeafPoint rangeEnd{foundTextEnd, offsetFromEndAccStart};
+
+  TextLeafRange resultRange{rangeStart, rangeEnd};
+  RefPtr uiaRange = new UiaTextRange(resultRange);
+  uiaRange.forget(aRetVal);
+  return S_OK;
 }
 
 template <TEXTATTRIBUTEID Attr>
@@ -408,6 +607,62 @@ HRESULT GetAttribute(const TextLeafRange& aRange, VARIANT& aVariant) {
   return Traits::WriteToVariant(aVariant, *val);
 }
 
+template <TEXTATTRIBUTEID Attr>
+HRESULT GetAttribute(TextLeafPoint const& aPoint, VARIANT& aVariant) {
+  // Select the traits of the given TEXTATTRIBUTEID. This helps us choose the
+  // correct functions to call to handle each attribute.
+  using Traits = AttributeTraits<Attr>;
+  using AttrType = typename Traits::AttrType;
+
+  // Get the value at the given point.
+  Maybe<AttrType> val = Traits::GetValue(aPoint);
+  if (!val) {
+    // Fall back to the UIA-specified default when we don't have an answer.
+    val = Some(Traits::DefaultValue());
+  }
+  // Write the value to the VARIANT output parameter.
+  return Traits::WriteToVariant(aVariant, *val);
+}
+
+// Dispatch to the proper GetAttribute template specialization for the given
+// TEXTATTRIBUTEID. T may be a TextLeafPoint or TextLeafRange; this function
+// will call the appropriate specialization and overload.
+template <typename T>
+HRESULT GetAttribute(TEXTATTRIBUTEID aAttributeId, T const& aRangeOrPoint,
+                     VARIANT& aRetVal) {
+  switch (aAttributeId) {
+    case UIA_AnnotationTypesAttributeId:
+      return GetAttribute<UIA_AnnotationTypesAttributeId>(aRangeOrPoint,
+                                                          aRetVal);
+    case UIA_FontNameAttributeId:
+      return GetAttribute<UIA_FontNameAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_FontSizeAttributeId:
+      return GetAttribute<UIA_FontSizeAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_FontWeightAttributeId:
+      return GetAttribute<UIA_FontWeightAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_IsHiddenAttributeId:
+      return GetAttribute<UIA_IsHiddenAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_IsItalicAttributeId:
+      return GetAttribute<UIA_IsItalicAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_IsReadOnlyAttributeId:
+      return GetAttribute<UIA_IsReadOnlyAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_StyleIdAttributeId:
+      return GetAttribute<UIA_StyleIdAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_IsSubscriptAttributeId:
+      return GetAttribute<UIA_IsSubscriptAttributeId>(aRangeOrPoint, aRetVal);
+    case UIA_IsSuperscriptAttributeId:
+      return GetAttribute<UIA_IsSuperscriptAttributeId>(aRangeOrPoint, aRetVal);
+    default:
+      // If the attribute isn't supported, return "[t]he address of the value
+      // retrieved by the UiaGetReservedNotSupportedValue function."
+      aRetVal.vt = VT_UNKNOWN;
+      return UiaGetReservedNotSupportedValue(&aRetVal.punkVal);
+      break;
+  }
+  MOZ_ASSERT_UNREACHABLE("Unhandled UIA Attribute ID");
+  return S_OK;
+}
+
 STDMETHODIMP
 UiaTextRange::GetAttributeValue(TEXTATTRIBUTEID aAttributeId,
                                 __RPC__out VARIANT* aRetVal) {
@@ -419,39 +674,8 @@ UiaTextRange::GetAttributeValue(TEXTATTRIBUTEID aAttributeId,
   if (!range) {
     return CO_E_OBJNOTCONNECTED;
   }
-
   MOZ_ASSERT(range.Start() <= range.End(), "Range must be valid to proceed.");
-
-  switch (aAttributeId) {
-    case UIA_AnnotationTypesAttributeId:
-      return GetAttribute<UIA_AnnotationTypesAttributeId>(range, *aRetVal);
-    case UIA_FontNameAttributeId:
-      return GetAttribute<UIA_FontNameAttributeId>(range, *aRetVal);
-    case UIA_FontSizeAttributeId:
-      return GetAttribute<UIA_FontSizeAttributeId>(range, *aRetVal);
-    case UIA_FontWeightAttributeId:
-      return GetAttribute<UIA_FontWeightAttributeId>(range, *aRetVal);
-    case UIA_IsHiddenAttributeId:
-      return GetAttribute<UIA_IsHiddenAttributeId>(range, *aRetVal);
-    case UIA_IsItalicAttributeId:
-      return GetAttribute<UIA_IsItalicAttributeId>(range, *aRetVal);
-    case UIA_IsReadOnlyAttributeId:
-      return GetAttribute<UIA_IsReadOnlyAttributeId>(range, *aRetVal);
-    case UIA_StyleIdAttributeId:
-      return GetAttribute<UIA_StyleIdAttributeId>(range, *aRetVal);
-    case UIA_IsSubscriptAttributeId:
-      return GetAttribute<UIA_IsSubscriptAttributeId>(range, *aRetVal);
-    case UIA_IsSuperscriptAttributeId:
-      return GetAttribute<UIA_IsSuperscriptAttributeId>(range, *aRetVal);
-    default:
-      // If the attribute isn't supported, return "[t]he address of the value
-      // retrieved by the UiaGetReservedNotSupportedValue function."
-      aRetVal->vt = VT_UNKNOWN;
-      return UiaGetReservedNotSupportedValue(&aRetVal->punkVal);
-  }
-
-  MOZ_ASSERT_UNREACHABLE("Unhandled UIA Attribute ID");
-  return S_OK;
+  return GetAttribute(aAttributeId, range, *aRetVal);
 }
 
 STDMETHODIMP
@@ -644,17 +868,72 @@ UiaTextRange::MoveEndpointByRange(
   return S_OK;
 }
 
-STDMETHODIMP
-UiaTextRange::Select() { return E_NOTIMPL; }
+// XXX Use MOZ_CAN_RUN_SCRIPT_BOUNDARY for now due to bug 1543294.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP UiaTextRange::Select() {
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  NotNull<Accessible*> container = GetSelectionContainer(range);
+  nsTArray<TextLeafRange> ranges;
+  TextLeafRange::GetSelection(container, ranges);
+  HyperTextAccessibleBase* conHyp = container->AsHyperTextBase();
+  MOZ_ASSERT(conHyp);
+  // Remove all ranges from the selection.
+  for (int32_t s = ranges.Length() - 1; s >= 0; --s) {
+    conHyp->RemoveFromSelection(s);
+  }
+  // Select just this range.
+  if (!range.SetSelection(0)) {
+    return UIA_E_INVALIDOPERATION;
+  }
+  return S_OK;
+}
 
-STDMETHODIMP
-UiaTextRange::AddToSelection() { return E_NOTIMPL; }
+// XXX Use MOZ_CAN_RUN_SCRIPT_BOUNDARY for now due to bug 1543294.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP UiaTextRange::AddToSelection() {
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  if (!range.SetSelection(-1)) {
+    return UIA_E_INVALIDOPERATION;
+  }
+  return S_OK;
+}
 
-STDMETHODIMP
-UiaTextRange::RemoveFromSelection() { return E_NOTIMPL; }
+// XXX Use MOZ_CAN_RUN_SCRIPT_BOUNDARY for now due to bug 1543294.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP UiaTextRange::RemoveFromSelection() {
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  NotNull<Accessible*> container = GetSelectionContainer(range);
+  nsTArray<TextLeafRange> ranges;
+  TextLeafRange::GetSelection(container, ranges);
+  auto index = ranges.IndexOf(range);
+  if (index != ranges.NoIndex) {
+    HyperTextAccessibleBase* conHyp = container->AsHyperTextBase();
+    MOZ_ASSERT(conHyp);
+    conHyp->RemoveFromSelection(index);
+    return S_OK;
+  }
+  // This range isn't in the collection of selected ranges.
+  return UIA_E_INVALIDOPERATION;
+}
 
-STDMETHODIMP
-UiaTextRange::ScrollIntoView(BOOL aAlignToTop) { return E_NOTIMPL; }
+// XXX Use MOZ_CAN_RUN_SCRIPT_BOUNDARY for now due to bug 1543294.
+MOZ_CAN_RUN_SCRIPT_BOUNDARY STDMETHODIMP
+UiaTextRange::ScrollIntoView(BOOL aAlignToTop) {
+  TextLeafRange range = GetRange();
+  if (!range) {
+    return CO_E_OBJNOTCONNECTED;
+  }
+  range.ScrollIntoView(aAlignToTop
+                           ? nsIAccessibleScrollType::SCROLL_TYPE_TOP_LEFT
+                           : nsIAccessibleScrollType::SCROLL_TYPE_BOTTOM_RIGHT);
+  return S_OK;
+}
 
 STDMETHODIMP
 UiaTextRange::GetChildren(__RPC__deref_out_opt SAFEARRAY** aRetVal) {
@@ -1023,15 +1302,20 @@ struct AttributeTraits<UIA_IsReadOnlyAttributeId> {
     if (!aPoint.mAcc) {
       return {};
     }
-    // Check the parent of the leaf, since the leaf itself will never be
-    // editable, but the parent may. Check for both text fields and hypertexts,
-    // since we might have something like <input> or a contenteditable <span>.
     Accessible* acc = aPoint.mAcc;
-    Accessible* parent = acc->Parent();
-    if (parent && parent->IsHyperText()) {
-      acc = parent;
-    } else {
-      return Some(true);
+    // If the TextLeafPoint we're dealing with is itself a hypertext, don't
+    // bother checking its parent since this is the Accessible we care about.
+    if (!acc->IsHyperText()) {
+      // Check the parent of the leaf, since the leaf itself will never be
+      // editable, but the parent may. Check for both text fields and
+      // hypertexts, since we might have something like <input> or a
+      // contenteditable <span>.
+      Accessible* parent = acc->Parent();
+      if (parent && parent->IsHyperText()) {
+        acc = parent;
+      } else {
+        return Some(true);
+      }
     }
     const uint64_t state = acc->State();
     if (state & states::READONLY) {

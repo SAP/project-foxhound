@@ -11,7 +11,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/dom/DOMTypes.h"
 #include "mozilla/dom/NotificationBinding.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomNotificationMetrics.h"
 #include "nsContentUtils.h"
 #include "nsIAlertsService.h"
 #include "nsINotificationStorage.h"
@@ -153,32 +153,12 @@ nsresult GetOrigin(nsIPrincipal* aPrincipal, nsString& aOrigin) {
     return NS_ERROR_FAILURE;
   }
 
-  MOZ_TRY(
-      nsContentUtils::GetWebExposedOriginSerialization(aPrincipal, aOrigin));
+  nsAutoCString origin;
+  MOZ_TRY(aPrincipal->GetOrigin(origin));
+
+  CopyUTF8toUTF16(origin, aOrigin);
 
   return NS_OK;
-}
-
-void ComputeAlertName(nsIPrincipal* aPrincipal, const nsString& aTag,
-                      const nsString& aId, nsString& aResult) {
-  nsAutoString alertName;
-  nsresult rv = GetOrigin(aPrincipal, alertName);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return;
-  }
-
-  // Get the notification name that is unique per origin + tag/ID.
-  // The name of the alert is of the form origin#tag/ID.
-  alertName.Append('#');
-  if (!aTag.IsEmpty()) {
-    alertName.AppendLiteral("tag:");
-    alertName.Append(aTag);
-  } else {
-    alertName.AppendLiteral("notag:");
-    alertName.Append(aId);
-  }
-
-  aResult = alertName;
 }
 
 nsCOMPtr<nsINotificationStorage> GetNotificationStorage(bool isPrivate) {
@@ -187,7 +167,6 @@ nsCOMPtr<nsINotificationStorage> GetNotificationStorage(bool isPrivate) {
 }
 
 nsresult PersistNotification(nsIPrincipal* aPrincipal, const nsString& aId,
-                             const nsString& aAlertName,
                              const IPCNotificationOptions& aOptions,
                              const nsString& aScope) {
   nsCOMPtr<nsINotificationStorage> notificationStorage =
@@ -202,15 +181,10 @@ nsresult PersistNotification(nsIPrincipal* aPrincipal, const nsString& aId,
     return rv;
   }
 
-  nsAutoString behavior;
-  if (!aOptions.behavior().ToJSON(behavior)) {
-    return NS_ERROR_FAILURE;
-  }
-
   rv = notificationStorage->Put(
       origin, aId, aOptions.title(), GetEnumString(aOptions.dir()),
       aOptions.lang(), aOptions.body(), aOptions.tag(), aOptions.icon(),
-      aAlertName, aOptions.dataSerialized(), behavior, aScope);
+      aOptions.dataSerialized(), aScope);
 
   if (NS_FAILED(rv)) {
     return rv;
@@ -233,12 +207,12 @@ nsresult UnpersistNotification(nsIPrincipal* aPrincipal, const nsString& aId) {
 }
 
 void UnregisterNotification(nsIPrincipal* aPrincipal, const nsString& aId,
-                            const nsString& aAlertName, CloseMode aCloseMode) {
+                            CloseMode aCloseMode) {
   // XXX: unpersist only when explicitly closed, bug 1095073
   UnpersistNotification(aPrincipal, aId);
   if (nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service()) {
     alertService->CloseAlert(
-        aAlertName,
+        aId,
         /* aContextClosed */ aCloseMode == CloseMode::InactiveGlobal);
   }
 }

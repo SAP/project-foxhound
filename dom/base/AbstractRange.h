@@ -94,16 +94,34 @@ class AbstractRange : public nsISupports,
   // object from C++ and needs to check whether it's positioned, should call
   // `IsPositioned()` directly.
 
-  nsINode* GetStartContainer() const { return mStart.Container(); }
+  nsINode* GetStartContainer() const { return mStart.GetContainer(); }
   nsINode* GetMayCrossShadowBoundaryStartContainer() const;
 
-  nsINode* GetEndContainer() const { return mEnd.Container(); }
+  nsINode* GetEndContainer() const { return mEnd.GetContainer(); }
   nsINode* GetMayCrossShadowBoundaryEndContainer() const;
+
+  /**
+   * Return GetStartContainer() and GetEndContainer() if this is positioned.
+   */
+  [[nodiscard]] bool IsPositionedAndSameContainer() const {
+    return MOZ_LIKELY(mIsPositioned) &&
+           mStart.GetContainer() == mEnd.GetContainer();
+  }
+  /**
+   * Return GetMayCrossShadowBoundaryStartContainer() and
+   * GetMayCrossShadowBoundaryEndContainer() if this is positioned.
+   */
+  [[nodiscard]] bool IsPositionedAndSameContainerMayCrossShadowBoundary()
+      const {
+    return MOZ_LIKELY(mIsPositioned) &&
+           GetMayCrossShadowBoundaryStartContainer() ==
+               GetMayCrossShadowBoundaryEndContainer();
+  }
 
   bool MayCrossShadowBoundary() const;
 
   Document* GetComposedDocOfContainers() const {
-    return mStart.Container() ? mStart.Container()->GetComposedDoc() : nullptr;
+    return mStart.GetComposedDoc();
   }
 
   // FYI: Returns 0 if it's not positioned.
@@ -121,7 +139,7 @@ class AbstractRange : public nsISupports,
   uint32_t MayCrossShadowBoundaryEndOffset() const;
 
   bool Collapsed() const {
-    return !mIsPositioned || (mStart.Container() == mEnd.Container() &&
+    return !mIsPositioned || (mStart.GetContainer() == mEnd.GetContainer() &&
                               StartOffset() == EndOffset());
   }
 
@@ -201,8 +219,7 @@ class AbstractRange : public nsISupports,
   /**
    * https://dom.spec.whatwg.org/#concept-tree-inclusive-ancestor
    */
-  void UnregisterClosestCommonInclusiveAncestor(nsINode* aNode,
-                                                bool aIsUnlinking);
+  void UnregisterClosestCommonInclusiveAncestor(bool aIsUnlinking = false);
 
   void UpdateCommonAncestorIfNecessary();
 

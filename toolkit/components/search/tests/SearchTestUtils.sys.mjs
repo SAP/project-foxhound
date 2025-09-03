@@ -87,6 +87,9 @@ class _SearchTestUtils {
    *   The options for the new search engine.
    * @param {string} options.url
    *   The URL of the engine to add.
+   * @param {string} [options.faviconURL]
+   *   The icon to be used for the open search engine, if not specified in the
+   *   OpenSearch engine data.
    * @param {boolean} [options.setAsDefault]
    *   Whether or not to set the engine as default automatically. If this is
    *   true, the engine will be set as default, and the previous default engine
@@ -102,13 +105,14 @@ class _SearchTestUtils {
    */
   async installOpenSearchEngine({
     url,
+    faviconURL,
     setAsDefault = false,
     setAsDefaultPrivate = false,
     skipReset = false,
   }) {
     // OpenSearch engines can only be added via http protocols.
     url = url.replace("chrome://mochitests/content", "https://example.com");
-    let engine = await Services.search.addOpenSearchEngine(url, "");
+    let engine = await Services.search.addOpenSearchEngine(url, faviconURL);
     let previousEngine = Services.search.defaultEngine;
     let previousPrivateEngine = Services.search.defaultPrivateEngine;
     if (setAsDefault) {
@@ -673,6 +677,29 @@ class _SearchTestUtils {
 
     this.idleService._fireObservers("idle");
     await reloadObserved;
+  }
+
+  /**
+   * Fetches a URL and converts the content to a data URL.
+   *
+   * @param {string} url
+   *   The URL of the file that should be fetched.
+   * @returns {Promise<string>}
+   *   The content of the file as a data URL.
+   */
+  async fetchAsDataUrl(url) {
+    let res = await fetch(url);
+    let blob = await res.blob();
+    let reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onload = () => {
+        resolve(reader.result);
+      };
+      reader.onerror = () => {
+        reject(new Error("Failed to read blob."));
+      };
+      reader.readAsDataURL(blob);
+    });
   }
 }
 

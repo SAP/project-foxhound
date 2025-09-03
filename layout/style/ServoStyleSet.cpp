@@ -25,6 +25,7 @@
 #include "mozilla/StyleAnimationValue.h"
 #include "mozilla/css/Loader.h"
 #include "mozilla/dom/AnonymousContent.h"
+#include "mozilla/dom/ViewTransition.h"
 #include "mozilla/dom/CSSBinding.h"
 #include "mozilla/dom/CSSCounterStyleRule.h"
 #include "mozilla/dom/CSSFontFaceRule.h"
@@ -732,15 +733,11 @@ void ServoStyleSet::AddDocStyleSheet(StyleSheet& aSheet) {
   if (index < SheetCount(Origin::Author)) {
     // This case is insert before.
     StyleSheet* beforeSheet = SheetAt(Origin::Author, index);
-
-    // Maintain a mirrored list of sheets on the servo side.
     Servo_StyleSet_InsertStyleSheetBefore(mRawData.get(), &aSheet, beforeSheet);
-    SetStylistStyleSheetsDirty();
   } else {
-    // Maintain a mirrored list of sheets on the servo side.
     Servo_StyleSet_AppendStyleSheet(mRawData.get(), &aSheet);
-    SetStylistStyleSheetsDirty();
   }
+  SetStylistStyleSheetsDirty();
 
   if (mStyleRuleMap) {
     mStyleRuleMap->SheetAdded(aSheet);
@@ -1078,19 +1075,33 @@ bool ServoStyleSet::GetKeyframesForName(
     const StyleComputedTimingFunction& aTimingFunction,
     nsTArray<Keyframe>& aKeyframes) {
   MOZ_ASSERT(!StylistNeedsUpdate());
-  return Servo_StyleSet_GetKeyframesForName(
-      mRawData.get(), &aElement, &aStyle, aName, &aTimingFunction, &aKeyframes);
+  if (Servo_StyleSet_GetKeyframesForName(mRawData.get(), &aElement, &aStyle,
+                                         aName, &aTimingFunction,
+                                         &aKeyframes)) {
+    return true;
+  }
+  if (StringBeginsWith(nsDependentAtomString(aName),
+                       ViewTransition::kGroupAnimPrefix)) {
+    if (auto* vt = mDocument->GetActiveViewTransition()) {
+      if (vt->GetGroupKeyframes(aName, aKeyframes)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 nsTArray<ComputedKeyframeValues> ServoStyleSet::GetComputedKeyframeValuesFor(
     const nsTArray<Keyframe>& aKeyframes, Element* aElement,
-    PseudoStyleType aPseudoType, const ComputedStyle* aStyle) {
+    const PseudoStyleRequest& aPseudo, const ComputedStyle* aStyle) {
   nsTArray<ComputedKeyframeValues> result(aKeyframes.Length());
 
   // Construct each nsTArray<PropertyStyleAnimationValuePair> here.
   result.AppendElements(aKeyframes.Length());
 
-  Servo_GetComputedKeyframeValues(&aKeyframes, aElement, aPseudoType, aStyle,
+  // FIXME: Bug 1922095. For view transition pseudo-element, we should just
+  // use the pseudo-element here.
+  Servo_GetComputedKeyframeValues(&aKeyframes, aElement, aPseudo.mType, aStyle,
                                   mRawData.get(), &result);
   return result;
 }
@@ -1447,9 +1458,10 @@ void ServoStyleSet::MaybeInvalidateRelativeSelectorForEmptyDependency(
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorForNthEdgeDependency(
-    const Element& aElement) {
+    const Element& aElement,
+    StyleRelativeSelectorNthEdgeInvalidateFor aInvalidateFor) {
   Servo_StyleSet_MaybeInvalidateRelativeSelectorNthEdgeDependency(
-      mRawData.get(), &aElement);
+      mRawData.get(), &aElement, aInvalidateFor);
 }
 
 void ServoStyleSet::MaybeInvalidateRelativeSelectorForNthDependencyFromSibling(
@@ -1473,10 +1485,9 @@ void ServoStyleSet::MaybeInvalidateForElementAppend(
                                                           &aFirstContent);
 }
 
-void ServoStyleSet::MaybeInvalidateForElementRemove(
-    const Element& aElement, const nsIContent* aFollowingSibling) {
-  Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(
-      mRawData.get(), &aElement, aFollowingSibling);
+void ServoStyleSet::MaybeInvalidateForElementRemove(const Element& aElement) {
+  Servo_StyleSet_MaybeInvalidateRelativeSelectorForRemoval(mRawData.get(),
+                                                           &aElement);
 }
 
 bool ServoStyleSet::MightHaveNthOfAttributeDependency(

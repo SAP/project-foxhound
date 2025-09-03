@@ -394,6 +394,14 @@ def detect_rustc_target(
         elif narrowed:
             candidates = narrowed
 
+        # The wasm32-wasi target was renamed to wasm32-wasip1
+        if host_or_target.raw_os == "wasi":
+            narrowed = [c for c in candidates if c.target.raw_os == "wasip1"]
+            if len(narrowed) == 1:
+                return narrowed[0].rust_target
+            elif narrowed:
+                candidates = narrowed
+
         # See if we can narrow down with the raw OS and raw CPU
         narrowed = [
             c
@@ -431,7 +439,7 @@ def assert_rust_compile(host_or_target, rustc_target, rustc):
         suffix=".rlib"
     ) as out_path:
         with open(in_path, "w") as fd:
-            source = b'pub extern fn hello() { println!("Hello world"); }'
+            source = b'pub extern "C" fn hello() { println!("Hello world"); }'
             log.debug("Creating `%s` with content:", in_path)
             with LineIO(lambda l: log.debug("| %s", l)) as out:
                 out.write(source)

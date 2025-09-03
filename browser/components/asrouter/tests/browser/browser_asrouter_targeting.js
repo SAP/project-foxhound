@@ -12,6 +12,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
+  InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
@@ -535,8 +536,8 @@ add_task(async function checkAddonsInfo() {
     "service",
   ]);
 
-  const { addons: asRouterAddons, isFullData } = await ASRouterTargeting
-    .Environment.addonsInfo;
+  const { addons: asRouterAddons, isFullData } =
+    await ASRouterTargeting.Environment.addonsInfo;
 
   ok(
     addons.every(({ id }) => asRouterAddons[id]),
@@ -1335,6 +1336,31 @@ add_task(async function test_fxViewButtonAreaType_removed() {
   CustomizableUI.reset();
 });
 
+add_task(async function test_alltabsButtonAreaType_default() {
+  is(
+    typeof (await ASRouterTargeting.Environment.alltabsButtonAreaType),
+    "string",
+    "Should return a string"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.alltabsButtonAreaType,
+    "toolbar",
+    "Should return name of container if button hasn't been removed"
+  );
+});
+
+add_task(async function test_alltabsButtonAreaType_removed() {
+  CustomizableUI.removeWidgetFromArea("alltabs-button");
+
+  is(
+    await ASRouterTargeting.Environment.alltabsButtonAreaType,
+    null,
+    "Should return null if button has been removed"
+  );
+  CustomizableUI.reset();
+});
+
 add_task(async function test_creditCardsSaved() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -1842,6 +1868,31 @@ add_task(
     );
   }
 );
+
+add_task(async function check_activeNotifications_infobar_shown() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  is(
+    await ASRouterTargeting.Environment.activeNotifications,
+    true,
+    "activeNotifications should be true when an Infobar is rendered"
+  );
+
+  // dismiss infobar
+  infobar.notification.closeButton.click();
+  dispatchStub.reset();
+});
 
 add_task(
   async function check_activeNotifications_newtab_topic_selection_modal_shown_recently() {

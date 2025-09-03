@@ -492,7 +492,6 @@ void MacroAssemblerX64::boxValue(JSValueType type, Register src,
                                  Register dest) {
   MOZ_ASSERT(src != dest);
 
-  JSValueShiftedTag tag = (JSValueShiftedTag)JSVAL_TYPE_TO_SHIFTED_TAG(type);
 #ifdef DEBUG
   if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
     Label upper32BitsZeroed;
@@ -502,7 +501,7 @@ void MacroAssemblerX64::boxValue(JSValueType type, Register src,
     bind(&upper32BitsZeroed);
   }
 #endif
-  mov(ImmShiftedTag(tag), dest);
+  mov(ImmShiftedTag(type), dest);
   orq(src, dest);
 }
 
@@ -906,30 +905,6 @@ void MacroAssembler::callWithABINoProfiler(const Address& fun, ABIType result) {
 // ===============================================================
 // Move instructions
 
-void MacroAssembler::moveValue(const TypedOrValueRegister& src,
-                               const ValueOperand& dest) {
-  if (src.hasValue()) {
-    moveValue(src.valueReg(), dest);
-    return;
-  }
-
-  MIRType type = src.type();
-  AnyRegister reg = src.typedReg();
-
-  if (!IsFloatingPointType(type)) {
-    boxValue(ValueTypeFromMIRType(type), reg.gpr(), dest.valueReg());
-    return;
-  }
-
-  ScratchDoubleScope scratch(*this);
-  FloatRegister freg = reg.fpu();
-  if (type == MIRType::Float32) {
-    convertFloat32ToDouble(freg, scratch);
-    freg = scratch;
-  }
-  boxDouble(freg, dest, freg);
-}
-
 void MacroAssembler::moveValue(const ValueOperand& src,
                                const ValueOperand& dest) {
   if (src == dest) {
@@ -1016,10 +991,27 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
 void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
                                      const Value& rhs, Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
   ScratchRegisterScope scratch(*this);
   MOZ_ASSERT(lhs.valueReg() != scratch);
   moveValue(rhs, ValueOperand(scratch));
   cmpPtr(lhs.valueReg(), scratch);
+  j(cond, label);
+}
+
+void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
+                                        Register temp, Label* label) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  ScratchRegisterScope scratch(*this);
+
+  // When testing for NaN, we want to ignore the sign bit.
+  movq(ImmWord(~mozilla::FloatingPoint<double>::kSignBit), scratch);
+  andq(val.valueReg(), scratch);
+
+  // Compare against a NaN with sign bit 0.
+  static_assert(JS::detail::CanonicalizedNaNSignBit == 0);
+  moveValue(DoubleValue(JS::GenericNaN()), ValueOperand(temp));
+  cmpPtr(scratch, temp);
   j(cond, label);
 }
 

@@ -200,9 +200,9 @@ void nsViewManager::FlushDelayedResize() {
 
 // Convert aIn from being relative to and in appunits of aFromView, to being
 // relative to and in appunits of aToView.
-static nsRegion ConvertRegionBetweenViews(const nsRegion& aIn,
-                                          nsView* aFromView, nsView* aToView) {
-  nsRegion out = aIn;
+static nsRect ConvertRectBetweenViews(const nsRect& aIn, nsView* aFromView,
+                                      nsView* aToView) {
+  nsRect out = aIn;
   out.MoveBy(aFromView->GetOffsetTo(aToView));
   out = out.ScaleToOtherAppUnitsRoundOut(
       aFromView->GetViewManager()->AppUnitsPerDevPixel(),
@@ -214,20 +214,13 @@ nsView* nsViewManager::GetDisplayRootFor(nsView* aView) {
   nsView* displayRoot = aView;
   for (;;) {
     nsView* displayParent = displayRoot->GetParent();
-    if (!displayParent) return displayRoot;
-
-    if (displayRoot->GetFloating() && !displayParent->GetFloating())
+    if (!displayParent) {
       return displayRoot;
+    }
 
-    // If we have a combobox dropdown popup within a panel popup, both the view
-    // for the dropdown popup and its parent will be floating, so we need to
-    // distinguish this situation. We do this by looking for a widget. Any view
-    // with a widget is a display root.
-    nsIWidget* widget = displayRoot->GetWidget();
-    if (widget && widget->GetWindowType() == widget::WindowType::Popup) {
-      NS_ASSERTION(displayRoot->GetFloating() && displayParent->GetFloating(),
-                   "this should only happen with floating views that have "
-                   "floating parents");
+    // Any popup view is a display root.
+    if (displayRoot->GetFrame() &&
+        displayRoot->GetFrame()->IsMenuPopupFrame()) {
       return displayRoot;
     }
 
@@ -420,33 +413,20 @@ void nsViewManager::FlushDirtyRegionToWidget(nsView* aView) {
   NS_ASSERTION(aView->GetViewManager() == this,
                "FlushDirtyRegionToWidget called on view we don't own");
 
-  if (!aView->HasNonEmptyDirtyRegion()) {
+  if (!aView->IsDirty()) {
     return;
   }
 
-  nsRegion& dirtyRegion = aView->GetDirtyRegion();
+  const nsRect dirtyRegion = aView->GetDimensions();
   nsView* nearestViewWithWidget = aView;
   while (!nearestViewWithWidget->HasWidget() &&
          nearestViewWithWidget->GetParent()) {
     nearestViewWithWidget = nearestViewWithWidget->GetParent();
   }
-  nsRegion r =
-      ConvertRegionBetweenViews(dirtyRegion, aView, nearestViewWithWidget);
-
+  nsRect r = ConvertRectBetweenViews(dirtyRegion, aView, nearestViewWithWidget);
   nsViewManager* widgetVM = nearestViewWithWidget->GetViewManager();
   widgetVM->InvalidateWidgetArea(nearestViewWithWidget, r);
-  dirtyRegion.SetEmpty();
-}
-
-void nsViewManager::InvalidateView(nsView* aView) {
-  // Mark the entire view as damaged
-  InvalidateView(aView, aView->GetDimensions());
-}
-
-static void AddDirtyRegion(nsView* aView, const nsRegion& aDamagedRegion) {
-  nsRegion& dirtyRegion = aView->GetDirtyRegion();
-  dirtyRegion.Or(dirtyRegion, aDamagedRegion);
-  dirtyRegion.SimplifyOutward(8);
+  aView->SetIsDirty(false);
 }
 
 void nsViewManager::PostPendingUpdate() {
@@ -507,41 +487,20 @@ static bool ShouldIgnoreInvalidation(nsViewManager* aVM) {
   return false;
 }
 
-void nsViewManager::InvalidateView(nsView* aView, const nsRect& aRect) {
+void nsViewManager::InvalidateView(nsView* aView) {
   // If painting is suppressed in the presshell or an ancestor drop all
   // invalidates, it will invalidate everything when it unsuppresses.
   if (ShouldIgnoreInvalidation(this)) {
     return;
   }
 
-  InvalidateViewNoSuppression(aView, aRect);
-}
-
-void nsViewManager::InvalidateViewNoSuppression(nsView* aView,
-                                                const nsRect& aRect) {
-  MOZ_ASSERT(nullptr != aView, "null view");
-
   NS_ASSERTION(aView->GetViewManager() == this,
-               "InvalidateViewNoSuppression called on view we don't own");
+               "InvalidateView called on view we don't own");
 
-  nsRect damagedRect(aRect);
-  if (damagedRect.IsEmpty()) {
+  if (aView->GetBounds().IsEmpty()) {
     return;
   }
-
-  nsView* displayRoot = GetDisplayRootFor(aView);
-  nsViewManager* displayRootVM = displayRoot->GetViewManager();
-  // Propagate the update to the displayRoot, since iframes, for example,
-  // can overlap each other and be translucent.  So we have to possibly
-  // invalidate our rect in each of the widgets we have lying about.
-  damagedRect.MoveBy(aView->GetOffsetTo(displayRoot));
-  int32_t rootAPD = displayRootVM->AppUnitsPerDevPixel();
-  int32_t APD = AppUnitsPerDevPixel();
-  damagedRect = damagedRect.ScaleToOtherAppUnitsRoundOut(APD, rootAPD);
-
-  // accumulate this rectangle in the view's dirty region, so we can
-  // process it later.
-  AddDirtyRegion(displayRoot, nsRegion(damagedRect));
+  GetDisplayRootFor(aView)->SetIsDirty(true);
 }
 
 void nsViewManager::InvalidateAllViews() {
@@ -657,53 +616,6 @@ void nsViewManager::DispatchEvent(WidgetGUIEvent* aEvent, nsView* aView,
   *aStatus = nsEventStatus_eIgnore;
 }
 
-// Recursively reparent widgets if necessary
-
-void nsViewManager::ReparentChildWidgets(nsView* aView, nsIWidget* aNewWidget) {
-  MOZ_ASSERT(aNewWidget, "null widget");
-
-  if (nsIWidget* widget = aView->GetWidget()) {
-    // Check to see if the parent widget is the
-    // same as the new parent. If not then reparent
-    // the widget, otherwise there is nothing more
-    // to do for the view and its descendants
-    if (widget->GetParent() != aNewWidget) {
-      widget->SetParent(aNewWidget);
-    }
-    return;
-  }
-
-  // Need to check each of the views children to see
-  // if they have a widget and reparent it.
-
-  for (nsView* kid = aView->GetFirstChild(); kid; kid = kid->GetNextSibling()) {
-    ReparentChildWidgets(kid, aNewWidget);
-  }
-}
-
-// Reparent a view and its descendant views widgets if necessary
-
-void nsViewManager::ReparentWidgets(nsView* aView, nsView* aParent) {
-  MOZ_ASSERT(aParent, "Must have a parent");
-  MOZ_ASSERT(aView, "Must have a view");
-
-  // Quickly determine whether the view has pre-existing children or a
-  // widget. In most cases the view will not have any pre-existing
-  // children when this is called.  Only in the case
-  // where a view has been reparented by removing it from
-  // a reinserting it into a new location in the view hierarchy do we
-  // have to consider reparenting the existing widgets for the view and
-  // it's descendants.
-  if (aView->HasWidget() || aView->GetFirstChild()) {
-    nsIWidget* parentWidget = aParent->GetNearestWidget(nullptr);
-    if (parentWidget) {
-      ReparentChildWidgets(aView, parentWidget);
-      return;
-    }
-    NS_WARNING("Can not find a widget for the parent view");
-  }
-}
-
 void nsViewManager::InsertChild(nsView* aParent, nsView* aChild,
                                 nsView* aSibling, bool aAfter) {
   MOZ_ASSERT(nullptr != aParent, "null ptr");
@@ -723,7 +635,6 @@ void nsViewManager::InsertChild(nsView* aParent, nsView* aChild,
         // insert at end of document order, i.e., before first view
         // this is the common case, by far
         aParent->InsertChild(aChild, nullptr);
-        ReparentWidgets(aChild, aParent);
       } else {
         // insert at beginning of document order, i.e., after last view
         nsView* kid = aParent->GetFirstChild();
@@ -734,7 +645,6 @@ void nsViewManager::InsertChild(nsView* aParent, nsView* aChild,
         }
         // prev is last view or null if there are no children
         aParent->InsertChild(aChild, prev);
-        ReparentWidgets(aChild, aParent);
       }
     } else {
       nsView* kid = aParent->GetFirstChild();
@@ -748,17 +658,11 @@ void nsViewManager::InsertChild(nsView* aParent, nsView* aChild,
       if (aAfter) {
         // insert after 'kid' in document order, i.e. before in view order
         aParent->InsertChild(aChild, prev);
-        ReparentWidgets(aChild, aParent);
       } else {
         // insert before 'kid' in document order, i.e. after in view order
         aParent->InsertChild(aChild, kid);
-        ReparentWidgets(aChild, aParent);
       }
     }
-
-    // if the parent view is marked as "floating", make the newly added view
-    // float as well.
-    if (aParent->GetFloating()) aChild->SetFloating(true);
   }
 }
 
@@ -793,12 +697,6 @@ void nsViewManager::ResizeView(nsView* aView, const nsRect& aRect) {
   // in the case where mClipRect has been optimized away to just be a null
   // pointer, and this resize is implicitly changing the clip rect, it's OK
   // because layout will change it back again if necessary.
-}
-
-void nsViewManager::SetViewFloating(nsView* aView, bool aFloating) {
-  NS_ASSERTION(aView, "no view");
-
-  aView->SetFloating(aFloating);
 }
 
 void nsViewManager::SetViewVisibility(nsView* aView, ViewVisibility aVisible) {

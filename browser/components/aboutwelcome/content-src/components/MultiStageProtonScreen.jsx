@@ -5,9 +5,6 @@
 import React, { useEffect, useState } from "react";
 import { Localized } from "./MSLocalized";
 import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
-import { MobileDownloads } from "./MobileDownloads";
-import { MultiSelect } from "./MultiSelect";
-import { SingleSelect } from "./SingleSelect";
 import {
   SecondaryCTA,
   StepsIndicator,
@@ -18,10 +15,8 @@ import { CTAParagraph } from "./CTAParagraph";
 import { HeroImage } from "./HeroImage";
 import { OnboardingVideo } from "./OnboardingVideo";
 import { AdditionalCTA } from "./AdditionalCTA";
-import { EmbeddedMigrationWizard } from "./EmbeddedMigrationWizard";
-import { AddonsPicker } from "./AddonsPicker";
 import { LinkParagraph } from "./LinkParagraph";
-import { ActionChecklist } from "./ActionChecklist";
+import { ContentTiles } from "./ContentTiles";
 
 export const MultiStageProtonScreen = props => {
   const { autoAdvance, handleAction, order } = props;
@@ -113,10 +108,22 @@ export const ProtonScreenActionButtons = props => {
 
   // If we have a multi-select screen, we want to disable the primary button
   // until the user has selected at least one item.
-  const isPrimaryDisabled = primaryDisabledValue =>
-    primaryDisabledValue === "hasActiveMultiSelect"
-      ? !(activeMultiSelect?.length > 0)
-      : primaryDisabledValue;
+  const isPrimaryDisabled = primaryDisabledValue => {
+    if (primaryDisabledValue === "hasActiveMultiSelect") {
+      if (!activeMultiSelect) {
+        return true;
+      }
+
+      // Check if there's at least one selection in any of the multiselects
+      for (const selectKey in activeMultiSelect) {
+        if (activeMultiSelect[selectKey]?.length > 0) {
+          return false;
+        }
+      }
+      return true;
+    }
+    return primaryDisabledValue;
+  };
 
   return (
     <div
@@ -287,69 +294,6 @@ export class ProtonScreen extends React.PureComponent {
     );
   }
 
-  renderContentTiles() {
-    const { content } = this.props;
-    return (
-      <React.Fragment>
-        {content.tiles &&
-        content.tiles.type === "addons-picker" &&
-        content.tiles.data ? (
-          <AddonsPicker
-            content={content}
-            installedAddons={this.props.installedAddons}
-            message_id={this.props.messageId}
-            handleAction={this.props.handleAction}
-          />
-        ) : null}
-        {content.tiles &&
-        (content.tiles.type === "theme" ||
-          content.tiles.type === "single-select") &&
-        content.tiles.data ? (
-          <SingleSelect
-            content={content}
-            activeTheme={this.props.activeTheme}
-            handleAction={this.props.handleAction}
-            activeSingleSelect={this.props.activeSingleSelect}
-            setActiveSingleSelect={this.props.setActiveSingleSelect}
-          />
-        ) : null}
-        {content.tiles &&
-        content.tiles.type === "mobile_downloads" &&
-        content.tiles.data ? (
-          <MobileDownloads
-            data={content.tiles.data}
-            handleAction={this.props.handleAction}
-          />
-        ) : null}
-        {content.tiles &&
-        content.tiles.type === "multiselect" &&
-        content.tiles.data ? (
-          <MultiSelect
-            content={content}
-            screenMultiSelects={this.props.screenMultiSelects}
-            setScreenMultiSelects={this.props.setScreenMultiSelects}
-            activeMultiSelect={this.props.activeMultiSelect}
-            setActiveMultiSelect={this.props.setActiveMultiSelect}
-          />
-        ) : null}
-        {content.tiles && content.tiles.type === "migration-wizard" ? (
-          <EmbeddedMigrationWizard
-            handleAction={this.props.handleAction}
-            content={content}
-          />
-        ) : null}
-        {content.tiles &&
-        content.tiles.type === "action_checklist" &&
-        content.tiles.data ? (
-          <ActionChecklist
-            content={content}
-            message_id={this.props.messageId}
-          />
-        ) : null}
-      </React.Fragment>
-    );
-  }
-
   renderNoodles() {
     return (
       <React.Fragment>
@@ -375,11 +319,11 @@ export class ProtonScreen extends React.PureComponent {
   }
 
   renderDismissButton() {
-    const { size, marginBlock, marginInline, label } =
+    const { size, marginBlock, marginInline, label, background } =
       this.props.content.dismiss_button;
     return (
       <button
-        className="dismiss-button"
+        className={`dismiss-button ${background ? "with-background" : ""}`}
         onClick={this.props.handleAction}
         value="dismiss_button"
         data-l10n-id={label?.string_id || "spotlight-dialog-close-button"}
@@ -544,6 +488,13 @@ export class ProtonScreen extends React.PureComponent {
           ${screenClassName} ${textColorClass}`}
         reverse-split={content.reverse_split ? "" : null}
         fullscreen={content.fullscreen ? "" : null}
+        style={
+          content.screen_style &&
+          AboutWelcomeUtils.getValidStyle(content.screen_style, [
+            "overflow",
+            "display",
+          ])
+        }
         role={ariaRole ?? "alertdialog"}
         layout={content.layout}
         pos={content.position || "center"}
@@ -565,6 +516,13 @@ export class ProtonScreen extends React.PureComponent {
               : null
           }
           role="document"
+          style={
+            content.screen_style &&
+            AboutWelcomeUtils.getValidStyle(content.screen_style, [
+              "width",
+              "padding",
+            ])
+          }
         >
           {content.secondary_button_top ? (
             <SecondaryCTA
@@ -639,9 +597,18 @@ export class ProtonScreen extends React.PureComponent {
                             ? "steps"
                             : ""
                         }
+                        id="mainContentSubheader"
                       />
                     </Localized>
                   ) : null}
+                  {content.action_buttons_above_content && (
+                    <ProtonScreenActionButtons
+                      content={content}
+                      addonName={this.props.addonName}
+                      handleAction={this.props.handleAction}
+                      activeMultiSelect={this.props.activeMultiSelect}
+                    />
+                  )}
                   {content.cta_paragraph ? (
                     <CTAParagraph
                       content={content.cta_paragraph}
@@ -656,7 +623,7 @@ export class ProtonScreen extends React.PureComponent {
                   handleAction={this.props.handleAction}
                 />
               ) : null}
-              {this.renderContentTiles()}
+              <ContentTiles {...this.props} />
               {this.renderLanguageSwitcher()}
               {content.above_button_content
                 ? this.renderOrderedContent(content.above_button_content)
@@ -664,12 +631,14 @@ export class ProtonScreen extends React.PureComponent {
               {!hideStepsIndicator && aboveButtonStepsIndicator
                 ? this.renderStepsIndicator()
                 : null}
-              <ProtonScreenActionButtons
-                content={content}
-                addonName={this.props.addonName}
-                handleAction={this.props.handleAction}
-                activeMultiSelect={this.props.activeMultiSelect}
-              />
+              {!content.action_buttons_above_content && (
+                <ProtonScreenActionButtons
+                  content={content}
+                  addonName={this.props.addonName}
+                  handleAction={this.props.handleAction}
+                  activeMultiSelect={this.props.activeMultiSelect}
+                />
+              )}
             </div>
             {!hideStepsIndicator && !aboveButtonStepsIndicator
               ? this.renderStepsIndicator()

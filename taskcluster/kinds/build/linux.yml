@@ -1435,7 +1435,7 @@ linux64-fuzzing-ccov/opt:
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-llvm-symbolizer
-            - linux64-rust
+            - linux64-rust-1.83
             - linux64-rust-size
             - linux64-sccache
             - linux64-nasm
@@ -1796,7 +1796,7 @@ linux64-ccov/opt:
     fetches:
         toolchain:
             - linux64-clang
-            - linux64-rust
+            - linux64-rust-1.83
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
@@ -1836,7 +1836,7 @@ linux64-ccov/debug:
     fetches:
         toolchain:
             - linux64-clang
-            - linux64-rust
+            - linux64-rust-1.83
             - linux64-cbindgen
             - linux64-dump_syms
             - linux64-sccache
@@ -1891,6 +1891,7 @@ linux64-aarch64/opt:
         product: firefox
         job-name: linux64-aarch64-opt
     attributes:
+        enable-build-signing: true
         enable-full-crashsymbols: true
     treeherder:
         platform: linux64-aarch64/opt
@@ -1908,6 +1909,52 @@ linux64-aarch64/opt:
                 - ac_add_options --target=aarch64
                 - unset MOZ_STDCXX_COMPAT
         script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+    run-on-projects: ['integration']
+    use-sccache: true
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-sccache
+            - linux64-node
+            - linux64-pkgconf
+            - sysroot-aarch64-linux-gnu
+            - sysroot-x86_64-linux-gnu
+            - sysroot-wasm32-wasi
+
+linux64-aarch64/debug:
+    description: "Linux AArch64 (a.k.a. ARM64) Debug"
+    index:
+        product: firefox
+        job-name: linux64-aarch64-debug
+    attributes:
+        enable-full-crashsymbols: true
+        skip-verify-test-packaging: true
+    treeherder:
+        platform: linux64-aarch64/debug
+        symbol: B
+    worker:
+        max-run-time: 7200
+        env:
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+        extra-config:
+            extra_mozconfig_content:
+                - ac_add_options --target=aarch64
+                - unset MOZ_STDCXX_COMPAT
+        script: "mozharness/scripts/fx_desktop_build.py"
+        custom-build-variant-cfg: debug
+        mozconfig-variant: debug
         secrets: true
         tooltool-downloads: public
     run-on-projects: ['integration']
@@ -1946,6 +1993,7 @@ linux64-aarch64-shippable/opt:
     worker:
         max-run-time: 9000
         env:
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
             # bug 1690154 - enable full symbols on all branches, but only
             # upload them on the official set. In conjunction with
             # `enable-full-crashsymbols`.
@@ -1964,8 +2012,63 @@ linux64-aarch64-shippable/opt:
         script: "mozharness/scripts/fx_desktop_build.py"
         secrets: true
         tooltool-downloads: public
-    run-on-projects: ['mozilla-central']
-    run-on-releases: ['nightly']
+    run-on-projects: ['release']
+    fetches:
+        toolchain:
+            - linux64-clang
+            - linux64-rust
+            - linux64-rust-size
+            - linux64-cbindgen
+            - linux64-dump_syms
+            - linux64-node
+            - linux64-pkgconf
+            - sysroot-aarch64-linux-gnu
+            - sysroot-x86_64-linux-gnu
+            - sysroot-wasm32-wasi
+
+linux64-aarch64-devedition/opt:
+    description: "Linux AArch64 (a.k.a. ARM64) DevEdition (shippable)"
+    use-pgo: linux64-shippable/opt
+    attributes:
+        shippable: true
+        enable-full-crashsymbols: true
+        skip-verify-test-packaging: true
+    shipping-phase: build
+    shipping-product: devedition
+    index:
+        product: devedition
+        job-name: linux64-aarch64-opt
+        type: shippable
+    treeherder:
+        platform: linux64-aarch64-devedition/opt
+        symbol: Bpgo(B)
+    worker-type: b-linux-xlarge-gcp
+    worker:
+        max-run-time: 9000
+        env:
+            MOZ_AUTOMATION_PACKAGE_TESTS: "1"
+            # bug 1690154 - enable full symbols on all branches, but only
+            # upload them on the official set. In conjunction with
+            # `enable-full-crashsymbols`.
+            MOZ_ENABLE_FULL_SYMBOLS: "1"
+    run:
+        using: mozharness
+        actions: [get-secrets, build]
+        config:
+            - builds/releng_base_firefox.py
+            - builds/releng_base_linux_64_builds.py
+            - taskcluster_nightly.py
+        extra-config:
+            stage_platform: 'linux64-aarch64-devedition'
+            max_build_output_timeout: 3600
+            extra_mozconfig_content:
+                - ac_add_options --target=aarch64
+                - unset MOZ_STDCXX_COMPAT
+        script: "mozharness/scripts/fx_desktop_build.py"
+        secrets: true
+        tooltool-downloads: public
+        mozconfig-variant: devedition
+    run-on-projects: ['mozilla-beta']
     fetches:
         toolchain:
             - linux64-clang

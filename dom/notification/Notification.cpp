@@ -17,7 +17,6 @@
 #include "mozilla/OwningNonNull.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Unused.h"
-#include "mozilla/dom/AppNotificationServiceOptionsBinding.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/Document.h"
@@ -31,6 +30,7 @@
 #include "mozilla/dom/WorkerRunnable.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/dom/quota/ResultExtensions.h"
+#include "mozilla/glean/DomNotificationMetrics.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -47,7 +47,6 @@
 #include "nsIPermissionManager.h"
 #include "nsIScriptError.h"
 #include "nsIServiceWorkerManager.h"
-#include "nsIUUIDGenerator.h"
 #include "nsNetUtil.h"
 #include "nsProxyRelease.h"
 #include "nsServiceManagerUtils.h"
@@ -68,36 +67,29 @@ struct NotificationStrings {
   const nsString mTag;
   const nsString mIcon;
   const nsString mData;
-  const nsString mBehavior;
   const nsString mServiceWorkerRegistrationScope;
 };
 
-class ScopeCheckingGetCallback : public nsINotificationStorageCallback {
-  const nsString mScope;
-
+class GetCallbackBase : public nsINotificationStorageCallback {
  public:
-  explicit ScopeCheckingGetCallback(const nsAString& aScope) : mScope(aScope) {}
-
   NS_IMETHOD Handle(const nsAString& aID, const nsAString& aTitle,
                     const nsAString& aDir, const nsAString& aLang,
                     const nsAString& aBody, const nsAString& aTag,
                     const nsAString& aIcon, const nsAString& aData,
-                    const nsAString& aBehavior,
                     const nsAString& aServiceWorkerRegistrationScope) final {
     AssertIsOnMainThread();
     MOZ_ASSERT(!aID.IsEmpty());
 
-    // Skip scopes that don't match when called from getNotifications().
-    if (!mScope.IsEmpty() && !mScope.Equals(aServiceWorkerRegistrationScope)) {
-      return NS_OK;
-    }
-
     NotificationStrings strings = {
-        nsString(aID),       nsString(aTitle),
-        nsString(aDir),      nsString(aLang),
-        nsString(aBody),     nsString(aTag),
-        nsString(aIcon),     nsString(aData),
-        nsString(aBehavior), nsString(aServiceWorkerRegistrationScope),
+        nsString(aID),
+        nsString(aTitle),
+        nsString(aDir),
+        nsString(aLang),
+        nsString(aBody),
+        nsString(aTag),
+        nsString(aIcon),
+        nsString(aData),
+        nsString(aServiceWorkerRegistrationScope),
     };
 
     mStrings.AppendElement(std::move(strings));
@@ -107,35 +99,31 @@ class ScopeCheckingGetCallback : public nsINotificationStorageCallback {
   NS_IMETHOD Done() override = 0;
 
  protected:
-  virtual ~ScopeCheckingGetCallback() = default;
+  virtual ~GetCallbackBase() = default;
 
   nsTArray<NotificationStrings> mStrings;
 };
 
-class NotificationStorageCallback final : public ScopeCheckingGetCallback {
+class NotificationStorageCallback final : public GetCallbackBase {
  public:
   NS_DECL_CYCLE_COLLECTING_ISUPPORTS
   NS_DECL_CYCLE_COLLECTION_CLASS(NotificationStorageCallback)
 
-  NotificationStorageCallback(nsIGlobalObject* aWindow, const nsAString& aScope,
-                              Promise* aPromise)
-      : ScopeCheckingGetCallback(aScope), mWindow(aWindow), mPromise(aPromise) {
+  NotificationStorageCallback(nsIGlobalObject* aWindow, Promise* aPromise)
+      : mWindow(aWindow), mPromise(aPromise) {
     AssertIsOnMainThread();
     MOZ_ASSERT(aWindow);
     MOZ_ASSERT(aPromise);
   }
 
   NS_IMETHOD Done() final {
-    AutoTArray<RefPtr<Notification>, 5> notifications;
+    nsTArray<RefPtr<Notification>> notifications(mStrings.Length());
 
-    for (uint32_t i = 0; i < mStrings.Length(); ++i) {
+    for (const NotificationStrings& strings : mStrings) {
       auto result = Notification::ConstructFromFields(
-          mWindow, mStrings[i].mID, mStrings[i].mTitle, mStrings[i].mDir,
-          mStrings[i].mLang, mStrings[i].mBody, mStrings[i].mTag,
-          mStrings[i].mIcon, mStrings[i].mData,
-          /* mStrings[i].mBehavior, not
-           * supported */
-          mStrings[i].mServiceWorkerRegistrationScope);
+          mWindow, strings.mID, strings.mTitle, strings.mDir, strings.mLang,
+          strings.mBody, strings.mTag, strings.mIcon, strings.mData,
+          strings.mServiceWorkerRegistrationScope);
       if (result.isErr()) {
         continue;
       }
@@ -167,16 +155,19 @@ NS_INTERFACE_MAP_END
 class NotificationGetRunnable final : public Runnable {
   bool mIsPrivate;
   const nsString mOrigin;
+  const nsString mScope;
   const nsString mTag;
   nsCOMPtr<nsINotificationStorageCallback> mCallback;
 
  public:
-  NotificationGetRunnable(const nsAString& aOrigin, const nsAString& aTag,
+  NotificationGetRunnable(const nsAString& aOrigin, const nsAString& aScope,
+                          const nsAString& aTag,
                           nsINotificationStorageCallback* aCallback,
                           bool aIsPrivate)
       : Runnable("NotificationGetRunnable"),
         mIsPrivate(aIsPrivate),
         mOrigin(aOrigin),
+        mScope(aScope),
         mTag(aTag),
         mCallback(aCallback) {}
 
@@ -188,7 +179,7 @@ class NotificationGetRunnable final : public Runnable {
       return NS_ERROR_UNEXPECTED;
     }
 
-    nsresult rv = notificationStorage->Get(mOrigin, mTag, mCallback);
+    nsresult rv = notificationStorage->Get(mOrigin, mScope, mTag, mCallback);
     // XXXnsm Is it guaranteed mCallback will be called in case of failure?
     Unused << NS_WARN_IF(NS_FAILED(rv));
     return rv;
@@ -416,8 +407,7 @@ Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
                            NotificationDirection aDir, const nsAString& aLang,
                            const nsAString& aTag, const nsAString& aIconUrl,
                            bool aRequireInteraction, bool aSilent,
-                           nsTArray<uint32_t>&& aVibrate,
-                           const NotificationBehavior& aBehavior)
+                           nsTArray<uint32_t>&& aVibrate)
     : DOMEventTargetHelper(aGlobal),
       mID(aID),
       mTitle(aTitle),
@@ -429,7 +419,6 @@ Notification::Notification(nsIGlobalObject* aGlobal, const nsAString& aID,
       mRequireInteraction(aRequireInteraction),
       mSilent(aSilent),
       mVibrate(std::move(aVibrate)),
-      mBehavior(aBehavior),
       mData(JS::NullValue()) {
   KeepAliveIfHasListenersFor(nsGkAtoms::onclick);
   KeepAliveIfHasListenersFor(nsGkAtoms::onshow);
@@ -514,6 +503,34 @@ Notification::ConstructFromFields(
   return notification.forget();
 }
 
+// static
+Result<already_AddRefed<Notification>, QMResult> Notification::ConstructFromIPC(
+    nsIGlobalObject* aGlobal, const IPCNotification& aIPCNotification,
+    const nsAString& aServiceWorkerRegistrationScope) {
+  MOZ_ASSERT(aGlobal);
+
+  const IPCNotificationOptions& ipcOptions = aIPCNotification.options();
+
+  RootedDictionary<NotificationOptions> options(RootingCx());
+  options.mDir = ipcOptions.dir();
+  options.mLang = ipcOptions.lang();
+  options.mBody = ipcOptions.body();
+  options.mTag = ipcOptions.tag();
+  options.mIcon = ipcOptions.icon();
+  IgnoredErrorResult rv;
+  RefPtr<Notification> notification = CreateInternal(
+      aGlobal, aIPCNotification.id(), ipcOptions.title(), options, rv);
+  if (NS_WARN_IF(rv.Failed())) {
+    return Err(ToQMResult(NS_ERROR_FAILURE));
+  }
+
+  QM_TRY(notification->InitFromBase64(ipcOptions.dataSerialized()));
+
+  notification->SetScope(aServiceWorkerRegistrationScope);
+
+  return notification.forget();
+}
+
 void Notification::MaybeNotifyClose() {
   if (mIsClosed) {
     return;
@@ -526,24 +543,6 @@ void Notification::MaybeNotifyClose() {
 already_AddRefed<Notification> Notification::CreateInternal(
     nsIGlobalObject* aGlobal, const nsAString& aID, const nsAString& aTitle,
     const NotificationOptions& aOptions, ErrorResult& aRv) {
-  nsresult rv;
-  nsString id;
-  if (!aID.IsEmpty()) {
-    id = aID;
-  } else {
-    nsCOMPtr<nsIUUIDGenerator> uuidgen =
-        do_GetService("@mozilla.org/uuid-generator;1");
-    NS_ENSURE_TRUE(uuidgen, nullptr);
-    nsID uuid;
-    rv = uuidgen->GenerateUUIDInPlace(&uuid);
-    NS_ENSURE_SUCCESS(rv, nullptr);
-
-    char buffer[NSID_LENGTH];
-    uuid.ToProvidedString(buffer);
-    NS_ConvertASCIItoUTF16 convertedID(buffer);
-    id = convertedID;
-  }
-
   // Step 20: Set notification’s silent preference to options["silent"].
   bool silent = false;
   if (StaticPrefs::dom_webnotifications_silent_enabled()) {
@@ -578,13 +577,12 @@ already_AddRefed<Notification> Notification::CreateInternal(
   // that does not return failure, set notification’s icon URL to the return
   // value. (Otherwise icon URL is not set.)
   nsString iconUrl = aOptions.mIcon;
-  NotificationBehavior behavior{aOptions.mMozbehavior};
-  ResolveIconAndSoundURL(aGlobal, iconUrl, behavior.mSoundFile);
+  ResolveIconURL(aGlobal, iconUrl);
 
   RefPtr<Notification> notification = new Notification(
-      aGlobal, id, aTitle, aOptions.mBody, aOptions.mDir, aOptions.mLang,
+      aGlobal, aID, aTitle, aOptions.mBody, aOptions.mDir, aOptions.mLang,
       aOptions.mTag, iconUrl, aOptions.mRequireInteraction, silent,
-      std::move(vibrate), behavior);
+      std::move(vibrate));
   return notification.forget();
 }
 
@@ -625,7 +623,7 @@ bool Notification::RequestPermissionEnabledForScope(JSContext* aCx,
 // static
 already_AddRefed<Promise> Notification::RequestPermission(
     const GlobalObject& aGlobal,
-    const Optional<OwningNonNull<NotificationPermissionCallback> >& aCallback,
+    const Optional<OwningNonNull<NotificationPermissionCallback>>& aCallback,
     ErrorResult& aRv) {
   AssertIsOnMainThread();
 
@@ -715,10 +713,13 @@ NotificationPermission Notification::GetPermissionInternal(
                                    aWindow->IsSecureContext(), aPurpose);
 }
 
-nsresult Notification::ResolveIconAndSoundURL(nsIGlobalObject* aGlobal,
-                                              nsString& iconUrl,
-                                              nsString& soundUrl) {
+nsresult Notification::ResolveIconURL(nsIGlobalObject* aGlobal,
+                                      nsString& aIconUrl) {
   nsresult rv = NS_OK;
+
+  if (aIconUrl.IsEmpty()) {
+    return rv;
+  }
 
   nsCOMPtr<nsIURI> baseUri = nullptr;
 
@@ -744,26 +745,54 @@ nsresult Notification::ResolveIconAndSoundURL(nsIGlobalObject* aGlobal,
     baseUri = workerPrivate->GetBaseURI();
   }
 
-  if (baseUri) {
-    if (iconUrl.Length() > 0) {
-      nsCOMPtr<nsIURI> srcUri;
-      rv = NS_NewURI(getter_AddRefs(srcUri), iconUrl, encoding, baseUri);
-      if (NS_SUCCEEDED(rv)) {
-        nsAutoCString src;
-        srcUri->GetSpec(src);
-        CopyUTF8toUTF16(src, iconUrl);
-      }
-    }
-    if (soundUrl.Length() > 0) {
-      nsCOMPtr<nsIURI> srcUri;
-      rv = NS_NewURI(getter_AddRefs(srcUri), soundUrl, encoding, baseUri);
-      if (NS_SUCCEEDED(rv)) {
-        nsAutoCString src;
-        srcUri->GetSpec(src);
-        CopyUTF8toUTF16(src, soundUrl);
-      }
-    }
+  if (!baseUri) {
+    return rv;
   }
+
+  nsCOMPtr<nsIURI> srcUri;
+  rv = NS_NewURI(getter_AddRefs(srcUri), aIconUrl, encoding, baseUri);
+  if (NS_SUCCEEDED(rv)) {
+    nsAutoCString src;
+    srcUri->GetSpec(src);
+    CopyUTF8toUTF16(src, aIconUrl);
+  }
+
+  if (encoding == UTF_8_ENCODING) {
+    return rv;
+  }
+
+  // If it was not UTF8, let's try UTF8 and see whether the result differs. If
+  // no difference is found then we can just use UTF8 everywhere.
+  // See: https://github.com/whatwg/notifications/issues/209
+  glean::web_notification::IconUrlEncodingLabel label =
+      glean::web_notification::IconUrlEncodingLabel::eNeitherWay;
+
+  nsCOMPtr<nsIURI> srcUriUtf8;
+  nsresult rvUtf8 =
+      NS_NewURI(getter_AddRefs(srcUri), aIconUrl, UTF_8_ENCODING, baseUri);
+
+  if (NS_SUCCEEDED(rv)) {
+    if (NS_SUCCEEDED(rvUtf8)) {
+      bool equals = false;
+      if (NS_SUCCEEDED(baseUri->Equals(srcUri, &equals))) {
+        if (equals) {
+          // Okay to be parsed with UTF8
+          label = glean::web_notification::IconUrlEncodingLabel::eUtf8;
+        } else {
+          // Can be parsed either way but with difference, unclear which one is
+          // intended without fetching
+          label = glean::web_notification::IconUrlEncodingLabel::eEitherWay;
+        }
+      }
+    } else {
+      label = glean::web_notification::IconUrlEncodingLabel::eDocumentCharset;
+    }
+  } else if (NS_SUCCEEDED(rvUtf8)) {
+    // Can be only parsed with UTF8
+    label = glean::web_notification::IconUrlEncodingLabel::eUtf8;
+  }
+
+  glean::web_notification::icon_url_encoding.EnumGet(label).Add();
 
   return rv;
 }
@@ -792,10 +821,10 @@ already_AddRefed<Promise> Notification::Get(
   }
 
   nsCOMPtr<nsINotificationStorageCallback> callback =
-      new NotificationStorageCallback(aWindow->AsGlobal(), aScope, promise);
+      new NotificationStorageCallback(aWindow->AsGlobal(), promise);
 
   RefPtr<NotificationGetRunnable> r = new NotificationGetRunnable(
-      origin, aFilter.mTag, callback, doc->IsInPrivateBrowsing());
+      origin, aScope, aFilter.mTag, callback, doc->IsInPrivateBrowsing());
 
   aRv = aWindow->AsGlobal()->Dispatch(r.forget());
   if (NS_WARN_IF(aRv.Failed())) {
@@ -824,15 +853,15 @@ class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
       return;
     }
 
-    AutoTArray<RefPtr<Notification>, 5> notifications;
-    for (uint32_t i = 0; i < mStrings.Length(); ++i) {
+    nsTArray<RefPtr<Notification>> notifications(mStrings.Length());
+    for (const NotificationStrings& strings : mStrings) {
       auto result = Notification::ConstructFromFields(
-          aWorkerPrivate->GlobalScope(), mStrings[i].mID, mStrings[i].mTitle,
-          mStrings[i].mDir, mStrings[i].mLang, mStrings[i].mBody,
-          mStrings[i].mTag, mStrings[i].mIcon, mStrings[i].mData,
-          /* mStrings[i].mBehavior, not
+          aWorkerPrivate->GlobalScope(), strings.mID, strings.mTitle,
+          strings.mDir, strings.mLang, strings.mBody, strings.mTag,
+          strings.mIcon, strings.mData,
+          /* strings.mBehavior, not
            * supported */
-          mStrings[i].mServiceWorkerRegistrationScope);
+          strings.mServiceWorkerRegistrationScope);
       if (result.isErr()) {
         continue;
       }
@@ -845,14 +874,14 @@ class WorkerGetResultRunnable final : public NotificationWorkerRunnable {
   }
 };
 
-class WorkerGetCallback final : public ScopeCheckingGetCallback {
+class WorkerGetCallback final : public GetCallbackBase {
   RefPtr<PromiseWorkerProxy> mPromiseProxy;
 
  public:
   NS_DECL_ISUPPORTS
 
-  WorkerGetCallback(PromiseWorkerProxy* aProxy, const nsAString& aScope)
-      : ScopeCheckingGetCallback(aScope), mPromiseProxy(aProxy) {
+  explicit WorkerGetCallback(PromiseWorkerProxy* aProxy)
+      : mPromiseProxy(aProxy) {
     AssertIsOnMainThread();
     MOZ_ASSERT(aProxy);
   }
@@ -908,7 +937,7 @@ class WorkerGetRunnable final : public Runnable {
     auto isPrivate = principal->GetIsInPrivateBrowsing();
 
     nsCOMPtr<nsINotificationStorageCallback> callback =
-        new WorkerGetCallback(mPromiseProxy, mScope);
+        new WorkerGetCallback(mPromiseProxy);
 
     nsCOMPtr<nsINotificationStorage> notificationStorage =
         GetNotificationStorage(isPrivate);
@@ -923,7 +952,7 @@ class WorkerGetRunnable final : public Runnable {
       return rv;
     }
 
-    rv = notificationStorage->Get(origin, mTag, callback);
+    rv = notificationStorage->Get(origin, mScope, mTag, callback);
     if (NS_WARN_IF(NS_FAILED(rv))) {
       callback->Done();
       return rv;
@@ -1135,7 +1164,7 @@ bool Notification::CreateActor() {
       mozilla::ipc::BackgroundChild::GetOrCreateForCurrentThread();
   IPCNotificationOptions options(mTitle, mDir, mLang, mBody, mTag, mIconUrl,
                                  mRequireInteraction, mSilent, mVibrate,
-                                 mDataAsBase64, mBehavior);
+                                 mDataAsBase64);
 
   // Note: We are not using the typical PBackground managed actor here as we
   // want the actor to be in the main thread of the main process. Instead we

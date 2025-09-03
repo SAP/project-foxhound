@@ -388,8 +388,7 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
                        nsIInterfaceRequestor* aCallbacks /* = nullptr */,
                        nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
                        nsIIOService* aIoService /* = nullptr */,
-                       uint32_t aSandboxFlags /* = 0 */,
-                       bool aSkipCheckForBrokenURLOrZeroSized /* = false */) {
+                       uint32_t aSandboxFlags /* = 0 */) {
   return NS_NewChannelInternal(
       outChannel, aUri,
       nullptr,  // aLoadingNode,
@@ -397,8 +396,7 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
       nullptr,  // aTriggeringPrincipal
       Maybe<ClientInfo>(), Maybe<ServiceWorkerDescriptor>(), aSecurityFlags,
       aContentPolicyType, aCookieJarSettings, aPerformanceStorage, aLoadGroup,
-      aCallbacks, aLoadFlags, aIoService, aSandboxFlags,
-      aSkipCheckForBrokenURLOrZeroSized);
+      aCallbacks, aLoadFlags, aIoService, aSandboxFlags);
 }
 
 nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
@@ -413,22 +411,21 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
                        nsIInterfaceRequestor* aCallbacks /* = nullptr */,
                        nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
                        nsIIOService* aIoService /* = nullptr */,
-                       uint32_t aSandboxFlags /* = 0 */,
-                       bool aSkipCheckForBrokenURLOrZeroSized /* = false */) {
+                       uint32_t aSandboxFlags /* = 0 */) {
   AssertLoadingPrincipalAndClientInfoMatch(
       aLoadingPrincipal, aLoadingClientInfo, aContentPolicyType);
 
   Maybe<ClientInfo> loadingClientInfo;
   loadingClientInfo.emplace(aLoadingClientInfo);
 
-  return NS_NewChannelInternal(
-      outChannel, aUri,
-      nullptr,  // aLoadingNode,
-      aLoadingPrincipal,
-      nullptr,  // aTriggeringPrincipal
-      loadingClientInfo, aController, aSecurityFlags, aContentPolicyType,
-      aCookieJarSettings, aPerformanceStorage, aLoadGroup, aCallbacks,
-      aLoadFlags, aIoService, aSandboxFlags, aSkipCheckForBrokenURLOrZeroSized);
+  return NS_NewChannelInternal(outChannel, aUri,
+                               nullptr,  // aLoadingNode,
+                               aLoadingPrincipal,
+                               nullptr,  // aTriggeringPrincipal
+                               loadingClientInfo, aController, aSecurityFlags,
+                               aContentPolicyType, aCookieJarSettings,
+                               aPerformanceStorage, aLoadGroup, aCallbacks,
+                               aLoadFlags, aIoService, aSandboxFlags);
 }
 
 nsresult NS_NewChannelInternal(
@@ -442,8 +439,8 @@ nsresult NS_NewChannelInternal(
     nsILoadGroup* aLoadGroup /* = nullptr */,
     nsIInterfaceRequestor* aCallbacks /* = nullptr */,
     nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
-    nsIIOService* aIoService /* = nullptr */, uint32_t aSandboxFlags /* = 0 */,
-    bool aSkipCheckForBrokenURLOrZeroSized /* = false */) {
+    nsIIOService* aIoService /* = nullptr */,
+    uint32_t aSandboxFlags /* = 0 */) {
   NS_ENSURE_ARG_POINTER(outChannel);
 
   nsCOMPtr<nsIIOService> grip;
@@ -454,8 +451,7 @@ nsresult NS_NewChannelInternal(
   rv = aIoService->NewChannelFromURIWithClientAndController(
       aUri, aLoadingNode, aLoadingPrincipal, aTriggeringPrincipal,
       aLoadingClientInfo, aController, aSecurityFlags, aContentPolicyType,
-      aSandboxFlags, aSkipCheckForBrokenURLOrZeroSized,
-      getter_AddRefs(channel));
+      aSandboxFlags, getter_AddRefs(channel));
   if (NS_FAILED(rv)) {
     return rv;
   }
@@ -577,8 +573,7 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
                        nsIInterfaceRequestor* aCallbacks /* = nullptr */,
                        nsLoadFlags aLoadFlags /* = nsIRequest::LOAD_NORMAL */,
                        nsIIOService* aIoService /* = nullptr */,
-                       uint32_t aSandboxFlags /* = 0 */,
-                       bool aSkipCheckForBrokenURLOrZeroSized /* = false */) {
+                       uint32_t aSandboxFlags /* = 0 */) {
   NS_ASSERTION(aLoadingNode, "Can not create channel without a loading Node!");
   return NS_NewChannelInternal(
       outChannel, aUri, aLoadingNode, aLoadingNode->NodePrincipal(),
@@ -586,7 +581,7 @@ nsresult NS_NewChannel(nsIChannel** outChannel, nsIURI* aUri,
       Maybe<ClientInfo>(), Maybe<ServiceWorkerDescriptor>(), aSecurityFlags,
       aContentPolicyType, aLoadingNode->OwnerDoc()->CookieJarSettings(),
       aPerformanceStorage, aLoadGroup, aCallbacks, aLoadFlags, aIoService,
-      aSandboxFlags, aSkipCheckForBrokenURLOrZeroSized);
+      aSandboxFlags);
 }
 
 nsresult NS_GetIsDocumentChannel(nsIChannel* aChannel, bool* aIsDocument) {
@@ -3350,13 +3345,18 @@ bool NS_IsOffline() {
 
 /**
  * This function returns true if this channel should be classified by
- * the URL Classifier, false otherwise.
+ * the URL Classifier, false otherwise. There are two types of classification:
+ *   1. SafeBrowsing
+ *   2. Enhanced Tracking Protection (ETP)
  *
  * The idea of the algorithm to determine if a channel should be
  * classified is based on:
- * 1. Channels created by non-privileged code should be classified.
+ * 1. Channels created by non-privileged code should be classified for
+ *    ETP. For SafeBrowsing, it depends on the pref
+ *    "browser.safebrowsing.only_top_level" to decide if it should be
+ *    classified.
  * 2. Top-level document’s channels, if loaded by privileged code
- *    (system principal), should be classified.
+ *    (system principal), should be classified for both types.
  * 3. Any other channel, created by privileged code, is considered safe.
  *
  * A bad/hacked/corrupted safebrowsing database, plus a mistakenly
@@ -3374,7 +3374,7 @@ bool NS_IsOffline() {
  * 2. nsIChannel::LOAD_BYPASS_URL_CLASSIFIER, channel's opener can use this
  *    flag to enforce bypassing the URL classifier check.
  */
-bool NS_ShouldClassifyChannel(nsIChannel* aChannel) {
+bool NS_ShouldClassifyChannel(nsIChannel* aChannel, ClassifyType aType) {
   nsLoadFlags loadFlags;
   Unused << aChannel->GetLoadFlags(&loadFlags);
   //  If our load flags dictate that we must let this channel through without
@@ -3399,6 +3399,14 @@ bool NS_ShouldClassifyChannel(nsIChannel* aChannel) {
 
   nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
   ExtContentPolicyType type = loadInfo->GetExternalContentPolicyType();
+
+  // Skip classifying channel for safe browsing unless it is a top-level.
+  if (aType == ClassifyType::SafeBrowsing &&
+      (StaticPrefs::browser_safebrowsing_only_top_level() &&
+       ExtContentPolicy::TYPE_DOCUMENT != type)) {
+    return false;
+  }
+
   // Skip classifying channel triggered by system unless it is a top-level
   // load.
   return !(loadInfo->TriggeringPrincipal()->IsSystemPrincipal() &&
@@ -3961,11 +3969,17 @@ bool IsFontMimeType(const nsAString& aType) {
 }
 
 static const nsAttrValue::EnumTable kAsAttributeTable[] = {
-    {"", DESTINATION_INVALID},      {"audio", DESTINATION_AUDIO},
-    {"font", DESTINATION_FONT},     {"image", DESTINATION_IMAGE},
-    {"script", DESTINATION_SCRIPT}, {"style", DESTINATION_STYLE},
-    {"track", DESTINATION_TRACK},   {"video", DESTINATION_VIDEO},
-    {"fetch", DESTINATION_FETCH},   {nullptr, 0}};
+    {"", DESTINATION_INVALID},
+    {"audio", DESTINATION_AUDIO},
+    {"font", DESTINATION_FONT},
+    {"image", DESTINATION_IMAGE},
+    {"script", DESTINATION_SCRIPT},
+    {"style", DESTINATION_STYLE},
+    {"track", DESTINATION_TRACK},
+    {"video", DESTINATION_VIDEO},
+    {"fetch", DESTINATION_FETCH},
+    {"json", DESTINATION_JSON},
+    {nullptr, 0}};
 
 void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult) {
   DebugOnly<bool> success =
@@ -3997,6 +4011,8 @@ nsContentPolicyType AsValueToContentPolicy(const nsAttrValue& aValue) {
       return nsIContentPolicy::TYPE_STYLESHEET;
     case DESTINATION_FETCH:
       return nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD;
+    case DESTINATION_JSON:
+      return nsIContentPolicy::TYPE_JSON;
   }
   return nsIContentPolicy::TYPE_INVALID;
 }
@@ -4016,7 +4032,7 @@ bool IsScriptLikeOrInvalid(const nsAString& aAs) {
       aAs.LowerCaseEqualsASCII("report") || aAs.LowerCaseEqualsASCII("style") ||
       aAs.LowerCaseEqualsASCII("track") || aAs.LowerCaseEqualsASCII("video") ||
       aAs.LowerCaseEqualsASCII("webidentity") ||
-      aAs.LowerCaseEqualsASCII("xslt"));
+      aAs.LowerCaseEqualsASCII("xslt") || aAs.LowerCaseEqualsASCII("json"));
 }
 
 bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
@@ -4072,6 +4088,9 @@ bool CheckPreloadAttrs(const nsAttrValue& aAs, const nsAString& aType,
   }
   if (policyType == nsIContentPolicy::TYPE_STYLESHEET) {
     return type.EqualsASCII("text/css");
+  }
+  if (policyType == nsIContentPolicy::TYPE_JSON) {
+    return nsContentUtils::IsJsonMimeType(type);
   }
   return false;
 }
@@ -4147,15 +4166,6 @@ void CheckForBrokenChromeURL(nsILoadInfo* aLoadInfo, nsIURI* aURI) {
   if (policy == ExtContentPolicy::TYPE_FETCH ||
       policy == ExtContentPolicy::TYPE_XMLHTTPREQUEST) {
     return;
-  }
-
-  if (aLoadInfo) {
-    bool shouldSkipCheckForBrokenURLOrZeroSized;
-    MOZ_ALWAYS_SUCCEEDS(aLoadInfo->GetShouldSkipCheckForBrokenURLOrZeroSized(
-        &shouldSkipCheckForBrokenURLOrZeroSized));
-    if (shouldSkipCheckForBrokenURLOrZeroSized) {
-      return;
-    }
   }
 
   nsCString spec;

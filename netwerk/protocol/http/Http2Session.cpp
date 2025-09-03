@@ -25,12 +25,14 @@
 #include "Http2Stream.h"
 #include "Http2StreamBase.h"
 #include "Http2StreamTunnel.h"
+#include "Http2WebTransportSession.h"
 #include "LoadContextInfo.h"
 #include "mozilla/EndianUtils.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "nsHttp.h"
 #include "nsHttpConnection.h"
@@ -167,10 +169,7 @@ Http2Session::Http2Session(nsISocketTransport* aSocketTransport,
       mCntActivated(0),
       mTlsHandshakeFinished(false),
       mPeerFailedHandshake(false),
-      mTrrStreams(0),
-      mEnableWebsockets(false),
-      mPeerAllowsWebsockets(false),
-      mProcessedWaitingWebsockets(false) {
+      mTrrStreams(0) {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
   static uint64_t sSerial;
@@ -244,12 +243,12 @@ Http2Session::~Http2Session() {
     mozilla::glean::networking::trr_request_count_per_conn.Get("h2"_ns).Add(
         static_cast<int32_t>(mTrrStreams));
   }
-  Telemetry::Accumulate(Telemetry::SPDY_PARALLEL_STREAMS, mConcurrentHighWater);
-  Telemetry::Accumulate(Telemetry::SPDY_REQUEST_PER_CONN_3, mCntActivated);
-  Telemetry::Accumulate(Telemetry::SPDY_SERVER_INITIATED_STREAMS,
-                        mServerPushedResources);
-  Telemetry::Accumulate(Telemetry::SPDY_GOAWAY_LOCAL, mClientGoAwayReason);
-  Telemetry::Accumulate(Telemetry::SPDY_GOAWAY_PEER, mPeerGoAwayReason);
+  glean::spdy::parallel_streams.AccumulateSingleSample(mConcurrentHighWater);
+  glean::spdy::request_per_conn.AccumulateSingleSample(mCntActivated);
+  glean::spdy::server_initiated_streams.AccumulateSingleSample(
+      mServerPushedResources);
+  glean::spdy::goaway_local.AccumulateSingleSample(mClientGoAwayReason);
+  glean::spdy::goaway_peer.AccumulateSingleSample(mPeerGoAwayReason);
   Telemetry::Accumulate(Telemetry::HTTP2_FAIL_BEFORE_SETTINGS,
                         mPeerFailedHandshake);
 }
@@ -614,13 +613,16 @@ void Http2Session::CreateStream(nsAHttpTransaction* aHttpTransaction,
 
 already_AddRefed<nsHttpConnection> Http2Session::CreateTunnelStream(
     nsAHttpTransaction* aHttpTransaction, nsIInterfaceRequestor* aCallbacks,
-    PRIntervalTime aRtt, bool aIsWebSocket) {
+    PRIntervalTime aRtt, bool aIsExtendedCONNECT) {
   RefPtr<Http2StreamTunnel> refStream = CreateTunnelStreamFromConnInfo(
       this, mCurrentBrowserId, aHttpTransaction->ConnectionInfo(),
-      aIsWebSocket);
+      aIsExtendedCONNECT ? aHttpTransaction->IsForWebTransport()
+                               ? ExtendedCONNECTType::WebTransport
+                               : ExtendedCONNECTType::WebSocket
+                         : ExtendedCONNECTType::Proxy);
 
   RefPtr<nsHttpConnection> newConn = refStream->CreateHttpConnection(
-      aHttpTransaction, aCallbacks, aRtt, aIsWebSocket);
+      aHttpTransaction, aCallbacks, aRtt, aIsExtendedCONNECT);
 
   mTunnelStreams.AppendElement(std::move(refStream));
   return newConn.forget();
@@ -1277,18 +1279,27 @@ bool Http2Session::VerifyStream(Http2StreamBase* aStream,
 // static
 Http2StreamTunnel* Http2Session::CreateTunnelStreamFromConnInfo(
     Http2Session* session, uint64_t bcId, nsHttpConnectionInfo* info,
-    bool isWebSocket) {
+    ExtendedCONNECTType aType) {
   MOZ_ASSERT(info);
   MOZ_ASSERT(session);
 
-  if (isWebSocket) {
+  if (aType == ExtendedCONNECTType::WebTransport) {
+    MOZ_ASSERT(session->GetExtendedCONNECTSupport() ==
+               ExtendedCONNECTSupport::SUPPORTED);
+    return new Http2WebTransportSession(
+        session, nsISupportsPriority::PRIORITY_NORMAL, bcId, info);
+  }
+
+  if (aType == ExtendedCONNECTType::WebSocket) {
     LOG(("Http2Session creating Http2StreamWebSocket"));
-    MOZ_ASSERT(session->GetWebSocketSupport() == WebSocketSupport::SUPPORTED);
+    MOZ_ASSERT(session->GetExtendedCONNECTSupport() ==
+               ExtendedCONNECTSupport::SUPPORTED);
     return new Http2StreamWebSocket(
         session, nsISupportsPriority::PRIORITY_NORMAL, bcId, info);
   }
 
   MOZ_ASSERT(info->UsingHttpProxy() && info->UsingConnect());
+  MOZ_ASSERT(aType == ExtendedCONNECTType::Proxy);
   LOG(("Http2Session creating Http2StreamTunnel"));
   return new Http2StreamTunnel(session, nsISupportsPriority::PRIORITY_NORMAL,
                                bcId, info);
@@ -1580,8 +1591,7 @@ nsresult Http2Session::RecvHeaders(Http2Session* self) {
   }
 
   if (isContinuation) {
-    Telemetry::Accumulate(Telemetry::SPDY_CONTINUED_HEADERS,
-                          self->mAggregatedHeaderSize);
+    glean::spdy::continued_headers.Accumulate(self->mAggregatedHeaderSize);
   }
 
   rv = self->ResponseHeadersComplete();
@@ -1793,12 +1803,12 @@ nsresult Http2Session::RecvSettings(Http2Session* self) {
 
       case SETTINGS_TYPE_MAX_CONCURRENT:
         self->mMaxConcurrent = value;
-        Telemetry::Accumulate(Telemetry::SPDY_SETTINGS_MAX_STREAMS, value);
+        glean::spdy::settings_max_streams.AccumulateSingleSample(value);
         self->ProcessPending();
         break;
 
       case SETTINGS_TYPE_INITIAL_WINDOW: {
-        Telemetry::Accumulate(Telemetry::SPDY_SETTINGS_IW, value >> 10);
+        glean::spdy::settings_iw.Accumulate(value >> 10);
         int32_t delta = value - self->mServerInitialStreamWindow;
         self->mServerInitialStreamWindow = value;
 
@@ -1820,16 +1830,16 @@ nsresult Http2Session::RecvSettings(Http2Session* self) {
       case SETTINGS_TYPE_ENABLE_CONNECT_PROTOCOL: {
         if (value == 1) {
           LOG3(("Enabling extended CONNECT"));
-          self->mPeerAllowsWebsockets = true;
+          self->mPeerAllowsExtendedCONNECT = true;
         } else if (value > 1) {
           LOG3(("Peer sent invalid value for ENABLE_CONNECT_PROTOCOL %d",
                 value));
           return self->SessionError(PROTOCOL_ERROR);
-        } else if (self->mPeerAllowsWebsockets) {
+        } else if (self->mPeerAllowsExtendedCONNECT) {
           LOG3(("Peer tried to re-disable extended CONNECT"));
           return self->SessionError(PROTOCOL_ERROR);
         }
-        self->mHasTransactionWaitingForWebsockets = true;
+        self->mHasTransactionWaitingForExtendedCONNECT = true;
       } break;
 
       default:
@@ -1846,17 +1856,13 @@ nsresult Http2Session::RecvSettings(Http2Session* self) {
     self->mGoAwayOnPush = true;
   }
 
-  if (!self->mProcessedWaitingWebsockets) {
-    self->mProcessedWaitingWebsockets = true;
-  }
-
-  if (self->mHasTransactionWaitingForWebsockets) {
+  if (self->mHasTransactionWaitingForExtendedCONNECT) {
     // trigger a queued websockets transaction -- enabled or not
-    LOG3(("Http2Sesssion::RecvSettings triggering queued websocket"));
+    LOG3(("Http2Sesssion::RecvSettings triggering queued transactions"));
     RefPtr<nsHttpConnectionInfo> ci;
     self->GetConnectionInfo(getter_AddRefs(ci));
     gHttpHandler->ConnMgr()->ProcessPendingQ(ci);
-    self->mHasTransactionWaitingForWebsockets = false;
+    self->mHasTransactionWaitingForExtendedCONNECT = false;
   }
 
   return NS_OK;
@@ -2038,8 +2044,7 @@ nsresult Http2Session::RecvPushPromise(Http2Session* self) {
   }
 
   if (self->mInputFrameType == FRAME_TYPE_CONTINUATION) {
-    Telemetry::Accumulate(Telemetry::SPDY_CONTINUED_HEADERS,
-                          self->mAggregatedHeaderSize);
+    glean::spdy::continued_headers.Accumulate(self->mAggregatedHeaderSize);
   }
 
   // Create the buffering transaction and push stream
@@ -2523,14 +2528,14 @@ class UpdateAltSvcEvent : public Runnable {
       AltServiceChild::ProcessHeader(
           mHeader, originScheme, originHost, originPort, mCI->GetUsername(),
           mCI->GetPrivate(), nullptr, mCI->ProxyInfo(), 0,
-          mCI->GetOriginAttributes());
+          mCI->GetOriginAttributes(), mCI);
       return NS_OK;
     }
 
     AltSvcMapping::ProcessHeader(mHeader, originScheme, originHost, originPort,
                                  mCI->GetUsername(), mCI->GetPrivate(), nullptr,
                                  mCI->ProxyInfo(), 0,
-                                 mCI->GetOriginAttributes());
+                                 mCI->GetOriginAttributes(), mCI);
     return NS_OK;
   }
 
@@ -3067,7 +3072,7 @@ nsresult Http2Session::ReadyToProcessDataFrame(
              newState == DISCARDING_DATA_FRAME_PADDING);
   ChangeDownstreamState(newState);
 
-  Telemetry::Accumulate(Telemetry::SPDY_CHUNK_RECVD, mInputFrameDataSize >> 10);
+  glean::spdy::chunk_recvd.Accumulate(mInputFrameDataSize >> 10);
   mLastDataReadEpoch = mLastReadEpoch;
 
   if (!mInputFrameID) {
@@ -3880,7 +3885,6 @@ void Http2Session::Close(nsresult aReason) {
   mStreamIDHash.Clear();
   mStreamTransactionHash.Clear();
   mTunnelStreams.Clear();
-  mProcessedWaitingWebsockets = true;
 
   uint32_t goAwayReason;
   if (mGoAwayReason != NO_HTTP_ERROR) {
@@ -4605,25 +4609,26 @@ void Http2Session::SetCleanShutdown(bool aCleanShutdown) {
   mCleanShutdown = aCleanShutdown;
 }
 
-WebSocketSupport Http2Session::GetWebSocketSupport() {
-  LOG3(("Http2Session::GetWebSocketSupport %p enable=%d allow=%d processed=%d",
-        this, mEnableWebsockets, mPeerAllowsWebsockets,
-        mProcessedWaitingWebsockets));
+ExtendedCONNECTSupport Http2Session::GetExtendedCONNECTSupport() {
+  LOG3(
+      ("Http2Session::GetExtendedCONNECTSupport %p enable=%d peer allow=%d "
+       "receved setting=%d",
+       this, mEnableWebsockets, mPeerAllowsExtendedCONNECT, mReceivedSettings));
 
-  if (!mEnableWebsockets) {
-    return WebSocketSupport::NO_SUPPORT;
+  if (!mEnableWebsockets || mClosed) {
+    return ExtendedCONNECTSupport::NO_SUPPORT;
   }
 
-  if (mPeerAllowsWebsockets) {
-    return WebSocketSupport::SUPPORTED;
+  if (mPeerAllowsExtendedCONNECT) {
+    return ExtendedCONNECTSupport::SUPPORTED;
   }
 
-  if (!mProcessedWaitingWebsockets) {
-    mHasTransactionWaitingForWebsockets = true;
-    return WebSocketSupport::UNSURE;
+  if (!mReceivedSettings) {
+    mHasTransactionWaitingForExtendedCONNECT = true;
+    return ExtendedCONNECTSupport::UNSURE;
   }
 
-  return WebSocketSupport::NO_SUPPORT;
+  return ExtendedCONNECTSupport::NO_SUPPORT;
 }
 
 PRIntervalTime Http2Session::LastWriteTime() {

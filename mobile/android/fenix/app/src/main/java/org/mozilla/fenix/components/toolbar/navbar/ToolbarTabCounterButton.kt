@@ -18,10 +18,10 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.ui.tabcounter.TabCounter
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
@@ -78,10 +78,6 @@ fun ToolbarTabCounterButton(
             .testTag(NavBarTestTags.tabCounterButton),
         update = { tabCounter ->
             tabCounter.setCount(tabCount)
-            tabCounter.contentDescription = tabCounter.context.getString(
-                R.string.mozac_tab_counter_open_tab_tray,
-                tabCount.toString(),
-            )
             tabCounter.layoutDirection = if (isRtl) {
                 View.TEXT_DIRECTION_RTL
             } else {

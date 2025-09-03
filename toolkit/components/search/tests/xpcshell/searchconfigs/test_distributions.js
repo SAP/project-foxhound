@@ -223,6 +223,19 @@ tests.push({
     hasTelemetryId(engines, "Google", "google-b-lm"),
 });
 
+// This distribution is used on mobile, but we can test it here as it only
+// needs the distribution id referencing.
+tests.push({
+  locale: "en-GB",
+  region: "GB",
+  distribution: "vivo-001",
+  test: engines =>
+    hasParams(engines, "Google", "client=firefox-b-vv") &&
+    hasDefault(engines, "Google") &&
+    hasEnginesFirst(engines, ["Google"]) &&
+    hasTelemetryId(engines, "Google", "google-b-vv"),
+});
+
 function hasURLs(engines, engineName, url, suggestURL) {
   let engine = engines.find(e => e.name === engineName);
   Assert.ok(engine, `Should be able to find ${engineName}`);
@@ -294,8 +307,6 @@ function hasEnginesFirst(engines, expectedEngines) {
   }
 }
 
-engineSelector = new SearchEngineSelector();
-
 add_setup(async function () {
   updateAppInfo({
     name: "firefox",
@@ -308,6 +319,8 @@ add_setup(async function () {
 });
 
 add_task(async function test_expected_distribution_engines() {
+  let engineSelector = new SearchEngineSelector();
+
   for (const { distribution, locale = "en-US", region = "US", test } of tests) {
     let config = await engineSelector.fetchEngineConfiguration({
       locale,

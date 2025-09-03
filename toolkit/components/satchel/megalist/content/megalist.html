@@ -2,7 +2,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this
    - file, You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
@@ -10,16 +10,6 @@
       name="viewport"
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
-    <!--
-      Bug 1918541: Explicitly importing panel-list because relying on lazy loading
-      panel-list/panel-item from a lit template seems to cause late upgrades.
-      Specifically, doing something like the following:
-        <panel-list>
-          <panel-item .disabled=${true}>I'm disabled</panel-item>
-        </panel-list>
-      doesn't seem to trigger the disabled setter on panel-item.
-    -->
-    <script src="chrome://global/content/elements/panel-list.js"></script>
     <script
       type="module"
       src="chrome://global/content/megalist/MegalistAlpha.mjs"
@@ -29,70 +19,19 @@
       rel="stylesheet"
       href="chrome://global/content/megalist/megalist.css"
     />
+    <!-- We should be using sidebar.css but input fields are regressed if we
+        swap out common.css for it. -->
+    <!-- <link
+      rel="stylesheet"
+      href="chrome://browser/skin/places/sidebar.css"
+    /> -->
     <link rel="localization" href="branding/brand.ftl" />
-    <link rel="localization" href="preview/megalist.ftl" />
+    <link rel="localization" href="preview/contextual-manager.ftl" />
     <link rel="localization" href="browser/aboutLogins.ftl" />
+    <link rel="localization" href="browser/sidebar.ftl" />
   </head>
 
   <body>
     <megalist-alpha></megalist-alpha>
-
-    <template id="lineElement">
-      <li class="line">
-        <div class="content"></div>
-        <div class="menuButton">
-          <button
-            data-l10n-id="menu-more-options-button"
-            aria-haspopup="true"
-            aria-expanded="false"
-          ></button>
-        </div>
-      </li>
-    </template>
-
-    <template id="collapsedSectionTemplate">
-      <div class="content section">
-        <img
-          class="icon collapsed"
-          draggable="false"
-          src="chrome://global/skin/icons/arrow-down.svg"
-        />
-        <h4 class="label"></h4>
-      </div>
-    </template>
-
-    <template id="expandedSectionTemplate">
-      <div class="content section">
-        <img
-          class="icon expanded"
-          draggable="false"
-          src="chrome://global/skin/icons/arrow-up.svg"
-        />
-        <h4 class="label"></h4>
-        <div class="value"></div>
-      </div>
-    </template>
-
-    <template id="lineTemplate">
-      <div class="content">
-        <div class="label"></div>
-        <div class="stickers"></div>
-        <div class="value">
-          <img class="icon" />
-          <span></span>
-        </div>
-      </div>
-    </template>
-
-    <template id="editingLineTemplate">
-      <div class="content">
-        <div class="label"></div>
-        <div class="value">
-          <img class="icon" />
-          <input type="text" />
-        </div>
-        <div class="stickers"></div>
-      </div>
-    </template>
   </body>
 </html>

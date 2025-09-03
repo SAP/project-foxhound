@@ -24,6 +24,8 @@ import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProv
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchTermSuggestionsProvider
 import mozilla.components.feature.awesomebar.provider.SessionSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.TopSitesSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.feature.syncedtabs.SyncedTabsStorageSuggestionProvider
 import mozilla.components.support.ktx.android.content.getColorFromAttr
@@ -62,6 +64,7 @@ class AwesomeBarViewTest {
         every { any<Activity>().components.core.store } returns mockk()
         every { any<Activity>().components.core.historyStorage } returns mockk()
         every { any<Activity>().components.core.bookmarksStorage } returns mockk()
+        every { any<Activity>().components.core.topSitesStorage } returns mockk()
         every { any<Activity>().components.core.client } returns mockk()
         every { any<Activity>().components.backgroundServices.syncedTabsStorage } returns mockk()
         every { any<Activity>().components.core.store.state.search } returns mockk(relaxed = true)
@@ -1445,6 +1448,34 @@ class AwesomeBarViewTest {
         assertFalse(filter.shouldIncludeUri(Uri.parse("http://subdomain.test.com")))
 
         assertFalse(filter.shouldIncludeUrl("http://mobile.test.com"))
+    }
+
+    @Test
+    fun `GIVEN should show trending searches WHEN configuring providers THEN add the trending search provider and top sites suggestion providers`() {
+        every { activity.settings() } returns mockk(relaxed = true) {
+            every { shouldShowTrendingSearchSuggestions(any(), any()) } returns true
+        }
+        val state = getSearchProviderState(
+            searchEngineSource = SearchEngineSource.Default(mockk(relaxed = true)),
+        )
+        val result = awesomeBarView.getProvidersToAdd(state)
+
+        assertEquals(1, result.filterIsInstance<TrendingSearchProvider>().size)
+        assertEquals(1, result.filterIsInstance<TopSitesSuggestionProvider>().size)
+    }
+
+    @Test
+    fun `GIVEN should not show trending searches WHEN configuring providers THEN don't add the trending search provider`() {
+        every { activity.settings() } returns mockk(relaxed = true) {
+            every { shouldShowTrendingSearchSuggestions(any(), any()) } returns false
+        }
+        val state = getSearchProviderState(
+            searchEngineSource = SearchEngineSource.Default(mockk(relaxed = true)),
+        )
+        val result = awesomeBarView.getProvidersToAdd(state)
+
+        assertEquals(0, result.filterIsInstance<TrendingSearchProvider>().size)
+        assertEquals(0, result.filterIsInstance<TopSitesSuggestionProvider>().size)
     }
 }
 

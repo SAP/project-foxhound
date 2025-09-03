@@ -225,7 +225,7 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   // to pass in the opener window here. The opener is set later, if needed, by
   // nsWindowWatcher.
   RefPtr<BrowsingContext> browsingContext =
-      BrowsingContext::CreateIndependent(BrowsingContext::Type::Chrome);
+      BrowsingContext::CreateIndependent(BrowsingContext::Type::Chrome, false);
 
   // Create web shell
   mDocShell = nsDocShell::Create(browsingContext);
@@ -386,7 +386,7 @@ static LayoutDeviceIntSize GetOuterToInnerSizeDifference(nsIWidget* aWindow) {
   if (!aWindow) {
     return LayoutDeviceIntSize();
   }
-  return aWindow->ClientToWindowSizeDifference();
+  return aWindow->NormalSizeModeClientToWindowSizeDifference();
 }
 
 static CSSIntSize GetOuterToInnerSizeDifferenceInCSSPixels(
@@ -397,17 +397,25 @@ static CSSIntSize GetOuterToInnerSizeDifferenceInCSSPixels(
 
 NS_IMETHODIMP
 AppWindow::GetOuterToInnerHeightDifferenceInCSSPixels(uint32_t* aResult) {
-  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
-                 mWindow, UnscaledDevicePixelsPerCSSPixel())
-                 .height;
+  if (mWindow && mWindow->PersistClientBounds()) {
+    *aResult = 0;
+  } else {
+    *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
+                   mWindow, UnscaledDevicePixelsPerCSSPixel())
+                   .height;
+  }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 AppWindow::GetOuterToInnerWidthDifferenceInCSSPixels(uint32_t* aResult) {
-  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
-                 mWindow, UnscaledDevicePixelsPerCSSPixel())
-                 .width;
+  if (mWindow && mWindow->PersistClientBounds()) {
+    *aResult = 0;
+  } else {
+    *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
+                   mWindow, UnscaledDevicePixelsPerCSSPixel())
+                   .width;
+  }
   return NS_OK;
 }
 
@@ -1504,7 +1512,7 @@ void AppWindow::SyncAttributesToWidget() {
 
   nsAutoString attr;
 
-  // Some attributes can change the client size (e.g. chromemargin on Windows
+  // Some attributes can change the client size (e.g. customtitlebar on Windows
   // and MacOS). But we might want to keep it.
   const LayoutDeviceIntSize oldClientSize = mWindow->GetClientSize();
   // We have to check now whether we want to restore the client size, as any
@@ -1512,21 +1520,26 @@ void AppWindow::SyncAttributesToWidget() {
   bool maintainClientSize = mDominantClientSize;
 
   // "hidechrome" attribute
-  if (windowElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::hidechrome,
-                                 nsGkAtoms::_true, eCaseMatters)) {
+  // FIXME(emilio): This should arguably be
+  // HideWindowChrome(windowElement->GetBoolAttr(...)), but that has
+  // side-effects in some platforms.
+  if (windowElement->GetBoolAttr(nsGkAtoms::hidechrome)) {
     mWindow->HideWindowChrome(true);
+  }
+  NS_ENSURE_TRUE_VOID(mWindow);
+
+  // "customtitlebar" attribute
+  // FIXME(emilio): This should arguably be
+  // SetCustomTitlebar(windowElement->GetBoolAttr(...)), but that breaks with
+  // the early blank window which sets the custom titlebar via
+  // nsIDOMWindowUtils...
+  if (windowElement->GetBoolAttr(nsGkAtoms::customtitlebar)) {
+    mWindow->SetCustomTitlebar(true);
   }
 
   NS_ENSURE_TRUE_VOID(mWindow);
 
-  // "chromemargin" attribute
-  nsIntMargin margins;
-  windowElement->GetAttribute(u"chromemargin"_ns, attr);
-  if (nsContentUtils::ParseIntMarginValue(attr, margins)) {
-    mWindow->SetNonClientMargins(
-        LayoutDeviceIntMargin::FromUnknownMargin(margins));
-  }
-
+  mWindow->SetMicaBackdrop(windowElement->GetBoolAttr(nsGkAtoms::windowsmica));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "windowtype", "windowclass", "windowname" attributes
@@ -1553,18 +1566,17 @@ void AppWindow::SyncAttributesToWidget() {
   }
 
   // "drawtitle" attribute
-  windowElement->GetAttribute(u"drawtitle"_ns, attr);
-  mWindow->SetDrawsTitle(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetDrawsTitle(windowElement->GetBoolAttr(nsGkAtoms::drawtitle));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "toggletoolbar" attribute
-  windowElement->GetAttribute(u"toggletoolbar"_ns, attr);
-  mWindow->SetShowsToolbarButton(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetShowsToolbarButton(
+      windowElement->HasAttribute(u"toggletoolbar"_ns));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macnativefullscreen" attribute
-  windowElement->GetAttribute(u"macnativefullscreen"_ns, attr);
-  mWindow->SetSupportsNativeFullscreen(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetSupportsNativeFullscreen(
+      windowElement->HasAttribute(u"macnativefullscreen"_ns));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macanimationtype" attribute
@@ -1911,6 +1923,8 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
     return;
   }
 
+  const bool isClient = mWindow->PersistClientBounds();
+
   // we use CSS pixels for size, but desktop pixels for position
   CSSToLayoutDeviceScale sizeScale = UnscaledDevicePixelsPerCSSPixel();
   DesktopToLayoutDeviceScale posScale = DevicePixelsPerDesktopPixel();
@@ -1946,8 +1960,8 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
   }
 
   if (aAttributes.contains(PersistentAttribute::Size)) {
-    LayoutDeviceIntRect innerRect =
-        rect - GetOuterToInnerSizeDifference(mWindow);
+    const LayoutDeviceIntRect innerRect =
+        isClient ? rect : rect - GetOuterToInnerSizeDifference(mWindow);
     if (aPersistString.Find(u"width") >= 0) {
       sizeString.Truncate();
       sizeString.AppendInt(NSToIntRound(innerRect.Width() / sizeScale.scale));
@@ -2349,7 +2363,7 @@ NS_IMETHODIMP
 AppWindow::BeforeStartLayout() {
   ApplyChromeFlags();
   // Ordering here is important, loading width/height values in
-  // LoadPersistentWindowState() depends on the chromemargin attribute (since
+  // LoadPersistentWindowState() depends on the customtitlebar attribute (since
   // we need to translate outer to inner sizes).
   SyncAttributesToWidget();
   LoadPersistentWindowState();
@@ -2522,7 +2536,7 @@ void AppWindow::SizeShell() {
 
   if (mChromeLoaded && mCenterAfterLoad && !positionSet &&
       mWindow->SizeMode() == nsSizeMode_Normal) {
-    Center(parentWindow, parentWindow ? false : true, false);
+    Center(parentWindow, !parentWindow, false);
   }
 }
 
@@ -2566,15 +2580,6 @@ void AppWindow::SizeShellToWithLimit(int32_t aDesiredWidth,
   // define the final size.
   SetSize(winWidth, winHeight, true);
   mDominantClientSize = true;
-}
-
-nsresult AppWindow::GetTabCount(uint32_t* aResult) {
-  if (mXULBrowserWindow) {
-    return mXULBrowserWindow->GetTabCount(aResult);
-  }
-
-  *aResult = 0;
-  return NS_OK;
 }
 
 nsresult AppWindow::GetInitialOpenWindowInfo(

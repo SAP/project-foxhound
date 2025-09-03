@@ -195,7 +195,7 @@ class nsWindow final : public nsBaseWidget {
   void Destroy() override;
   float GetDPI() override;
   double GetDefaultScaleInternal() override;
-  void DidChangeParent(nsIWidget* aOldParent) override;
+  void DidClearParent(nsIWidget* aOldParent) override;
   int32_t LogToPhys(double aValue);
   mozilla::DesktopToLayoutDeviceScale GetDesktopToDeviceScale() override {
     if (mozilla::widget::WinUtils::IsPerMonitorDPIAware()) {
@@ -229,6 +229,7 @@ class nsWindow final : public nsBaseWidget {
   [[nodiscard]] nsresult GetRestoredBounds(LayoutDeviceIntRect& aRect) override;
   LayoutDeviceIntRect GetClientBounds() override;
   LayoutDeviceIntPoint GetClientOffset() override;
+  LayoutDeviceIntSize GetSize() const;
   void SetCursor(const Cursor&) override;
   bool PrepareForFullscreenTransition(nsISupports** aData) override;
   void PerformFullscreenTransition(FullscreenTransitionStage aStage,
@@ -245,7 +246,7 @@ class nsWindow final : public nsBaseWidget {
   nsresult SetTitle(const nsAString& aTitle) override;
   void SetIcon(const nsAString& aIconSpec) override;
   LayoutDeviceIntPoint WidgetToScreenOffset() override;
-  LayoutDeviceIntMargin ClientToWindowMargin() override;
+  LayoutDeviceIntMargin NormalSizeModeClientToWindowMargin() override;
   nsresult DispatchEvent(mozilla::WidgetGUIEvent* aEvent,
                          nsEventStatus& aStatus) override;
   void EnableDragDrop(bool aEnable) override;
@@ -292,8 +293,8 @@ class nsWindow final : public nsBaseWidget {
   InputContext GetInputContext() override;
   TextEventDispatcherListener* GetNativeTextEventDispatcherListener() override;
   void SetTransparencyMode(TransparencyMode aMode) override;
-  TransparencyMode GetTransparencyMode() override;
-  nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
+  TransparencyMode GetTransparencyMode() override { return mTransparencyMode; }
+  void SetCustomTitlebar(bool) override;
   void SetResizeMargin(mozilla::LayoutDeviceIntCoord aResizeMargin) override;
   void UpdateWindowDraggingRegion(
       const LayoutDeviceIntRegion& aRegion) override;
@@ -304,11 +305,12 @@ class nsWindow final : public nsBaseWidget {
   /**
    * Event helpers
    */
+  enum class IsNonclient : bool { No = false, Yes = true };
   bool DispatchMouseEvent(mozilla::EventMessage aEventMessage, WPARAM wParam,
                           LPARAM lParam, bool aIsContextMenuKey,
                           int16_t aButton, uint16_t aInputSource,
                           WinPointerInfo* aPointerInfo = nullptr,
-                          bool aIgnoreAPZ = false);
+                          IsNonclient aIgnoreAPZ = IsNonclient::No);
   void DispatchPendingEvents();
   void DispatchCustomEvent(const nsString& eventName);
 
@@ -327,9 +329,6 @@ class nsWindow final : public nsBaseWidget {
   WindowHook& GetWindowHook() { return mWindowHook; }
   nsWindow* GetParentWindow(bool aIncludeOwner);
 
-  /**
-   * Misc.
-   */
   bool WidgetTypeSupportsAcceleration() override;
 
   void ForcePresent();
@@ -340,6 +339,8 @@ class nsWindow final : public nsBaseWidget {
   void SetBigIcon(HICON aIcon);
   void SetSmallIconNoData();
   void SetBigIconNoData();
+
+  void UpdateMicaBackdrop(bool aForce = false);
 
   static void SetIsRestoringSession(const bool aIsRestoringSession) {
     sIsRestoringSession = aIsRestoringSession;
@@ -552,7 +553,7 @@ class nsWindow final : public nsBaseWidget {
   bool UpdateNonClientMargins(bool aReflowWindow = true);
   void UpdateDarkModeToolbar();
   void ResetLayout();
-  nsAutoRegion ComputeNonClientHRGN();
+  LayoutDeviceIntRegion ComputeNonClientRegion();
   HWND GetOwnerWnd() const { return ::GetWindow(mWnd, GW_OWNER); }
   bool IsOwnerForegroundWindow() const {
     HWND owner = GetOwnerWnd();
@@ -583,7 +584,7 @@ class nsWindow final : public nsBaseWidget {
       nsWindow* aWindow,
       mozilla::Maybe<POINT> aEventPoint = mozilla::Nothing());
   static void PostSleepWakeNotification(const bool aIsSleepMode);
-  int32_t ClientMarginHitTestPoint(int32_t mx, int32_t my);
+  int32_t ClientMarginHitTestPoint(int32_t aX, int32_t aY);
   void SetWindowButtonRect(WindowButtonType aButtonType,
                            const LayoutDeviceIntRect& aClientRect) override {
     mWindowBtnRect[aButtonType] = aClientRect;
@@ -611,14 +612,16 @@ class nsWindow final : public nsBaseWidget {
   void OnSysColorChanged();
   void OnDPIChanged(int32_t x, int32_t y, int32_t width, int32_t height);
   bool OnPointerEvents(UINT msg, WPARAM wParam, LPARAM lParam);
+  bool OnPenPointerEvents(uint32_t aPointerId, UINT aMsg, WPARAM aWParam,
+                          LPARAM aLParam);
+  bool OnTouchPointerEvents(uint32_t aPointerId, UINT aMsg, WPARAM aWParam,
+                            LPARAM aLParam);
 
   /**
    * Function that registers when the user has been active (used for detecting
    * when the user is idle).
    */
   void UserActivity();
-
-  int32_t GetHeight(int32_t aProposedHeight);
 
   DWORD WindowStyle();
   DWORD WindowExStyle();
@@ -634,21 +637,21 @@ class nsWindow final : public nsBaseWidget {
       mozilla::Maybe<POINT> aEventPoint = mozilla::Nothing());
   static bool DealWithPopups(HWND inWnd, UINT inMsg, WPARAM inWParam,
                              LPARAM inLParam, LRESULT* outResult);
-
-  /**
-   * Window transparency helpers
-   */
-  void SetWindowTranslucencyInner(TransparencyMode aMode);
-  TransparencyMode GetWindowTranslucencyInner() const {
-    return mTransparencyMode;
-  }
   bool IsSimulatedClientArea(int32_t clientX, int32_t clientY);
   bool IsWindowButton(int32_t hitTestResult);
 
   void UpdateOpaqueRegion(const LayoutDeviceIntRegion&) override;
   void UpdateOpaqueRegionInternal();
+  LayoutDeviceIntRegion GetOpaqueRegionForTesting() const override {
+    return mOpaqueRegion;
+  }
+  // Gets the translucent region, relative to the whole window, including the
+  // NC area.
+  LayoutDeviceIntRegion GetTranslucentRegion();
+  void MaybeInvalidateTranslucentRegion();
 
   void SetColorScheme(const mozilla::Maybe<mozilla::ColorScheme>&) override;
+  void SetMicaBackdrop(bool) override;
 
   bool DispatchTouchEventFromWMPointer(UINT msg, LPARAM aLParam,
                                        const WinPointerInfo& aPointerInfo,
@@ -793,32 +796,41 @@ class nsWindow final : public nsBaseWidget {
   PlatformCompositorWidgetDelegate* mCompositorWidgetDelegate = nullptr;
 
   LayoutDeviceIntMargin NonClientSizeMargin() const {
-    return NonClientSizeMargin(mNonClientOffset);
+    return NonClientSizeMargin(mCustomNonClientMetrics.mOffset);
   }
   LayoutDeviceIntMargin NonClientSizeMargin(
       const LayoutDeviceIntMargin& aNonClientOffset) const;
   LayoutDeviceIntMargin NormalWindowNonClientOffset() const;
 
-  // Non-client margin settings
-  // Pre-calculated outward offset applied to default frames
-  LayoutDeviceIntMargin mNonClientOffset;
-  // Margins set by the owner
-  LayoutDeviceIntMargin mNonClientMargins{-1, -1, -1, -1};
-  // Margins we'd like to set once chrome is reshown:
-  LayoutDeviceIntMargin mFutureMarginsOnceChromeShows;
-  // Indicates we need to apply margins once toggling chrome into showing:
-  bool mFutureMarginsToUse = false;
+  struct CustomNonClientMetrics {
+    // Width of the left and right portions of the resize region
+    mozilla::LayoutDeviceIntCoord mHorResizeMargin;
+    // Height of the top and bottom portions of the resize region
+    mozilla::LayoutDeviceIntCoord mVertResizeMargin;
+    // Height of the caption plus border
+    mozilla::LayoutDeviceIntCoord mCaptionHeight;
+    // Pre-calculated outward offset applied to the default frame
+    LayoutDeviceIntMargin mOffset;
 
-  // Indicates custom frames are enabled
+    LayoutDeviceIntMargin ResizeMargins() const {
+      return {mVertResizeMargin, mHorResizeMargin, mVertResizeMargin,
+              mHorResizeMargin};
+    }
+
+    LayoutDeviceIntMargin DefaultMargins() const {
+      auto margins = ResizeMargins();
+      margins.top += mCaptionHeight;
+      return margins;
+    }
+  } mCustomNonClientMetrics;
+
+  // Indicates the custom titlebar is enabled.
   bool mCustomNonClient = false;
-  // Indicates custom resize margins are in effect
-  bool mUseResizeMarginOverrides = false;
-  // Width of the left and right portions of the resize region
-  mozilla::LayoutDeviceIntCoord mHorResizeMargin;
-  // Height of the top and bottom portions of the resize region
-  mozilla::LayoutDeviceIntCoord mVertResizeMargin;
-  // Height of the caption plus border
-  mozilla::LayoutDeviceIntCoord mCaptionHeight;
+  // Whether we want to draw to the titlebar once the chrome shows. (Always
+  // Nothing if mHideChrome is false.)
+  mozilla::Maybe<bool> mCustomTitlebarOnceChromeShows;
+  // Custom extra resize margin width.
+  mozilla::LayoutDeviceIntCoord mCustomResizeMargin{0};
 
   // not yet set, will be calculated on first use
   double mDefaultScale = -1.0;
@@ -830,11 +842,15 @@ class nsWindow final : public nsBaseWidget {
 
   // Draggable titlebar region maintained by UpdateWindowDraggingRegion
   LayoutDeviceIntRegion mDraggableRegion;
-  // Opaque region maintained by UpdateOpaqueRegion
+  // Opaque region maintained by UpdateOpaqueRegion (relative to the client
+  // area).
   LayoutDeviceIntRegion mOpaqueRegion;
 
   // Graphics
   LayoutDeviceIntRect mLastPaintBounds;
+  // The region of the window we know is cleared to transparent already
+  // (relative to the whole window).
+  LayoutDeviceIntRegion mClearedRegion;
 
   ResizeState mResizeState = NOT_RESIZING;
 
@@ -861,6 +877,12 @@ class nsWindow final : public nsBaseWidget {
 
   // Whether we were created as a child window (aka ChildWindow) or not.
   bool mIsChildWindow : 1;
+
+  // Whether we're a PIP window.
+  bool mPIPWindow : 1;
+
+  // Whether we are asked to render a mica backdrop.
+  bool mMicaBackdrop : 1;
 
   int32_t mCachedHitTestResult = 0;
 

@@ -357,12 +357,6 @@ export class NetworkErrorLogging {
       delete report_body.status_code;
       delete report_body.elapsed_time;
     }
-    if (phase == "dns") {
-      //TODO this is just to pass the test sends-report-on-subdomain-dns-failure.https.html
-      report_body.method = aChannel.requestMethod;
-      report_body.status_code = 0;
-      // TODO
-    }
 
     // 11. If policy is stale, then delete policy from the policy cache.
     let currentDate = new Date();
@@ -388,7 +382,7 @@ export class NetworkErrorLogging {
     // 4. Generate a network report given these parameters:
     let report = {
       type: "network-error",
-      url: aChannel.URI.specIgnoringRef, // uriMutator.finalize().spec, // XXX: sends-report-on-subdomain-dns-failure.https.html expects full URL
+      url: uriMutator.finalize().spec,
       user_agent: Cc["@mozilla.org/network/protocol;1?name=http"].getService(
         Ci.nsIHttpProtocolHandler
       ).userAgent,

@@ -65,7 +65,7 @@
 #include "mozilla/dom/WindowContext.h"
 #include "mozilla/extensions/ExtensionBrowser.h"  // extensions::Create{AndDispatchInitWorkerContext,WorkerLoaded,WorkerDestroyed}Runnable
 #include "mozilla/extensions/WebExtensionPolicy.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomUseCounterMetrics.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/PBackgroundChild.h"
 #include "mozilla/StorageAccess.h"
@@ -1544,6 +1544,16 @@ nsresult WorkerPrivate::SetCSPFromHeaderValues(
   return NS_OK;
 }
 
+bool WorkerPrivate::IsFrozenForWorkerThread() const {
+  auto data = mWorkerThreadAccessible.Access();
+  return data->mFrozen;
+}
+
+bool WorkerPrivate::IsFrozen() const {
+  AssertIsOnParentThread();
+  return mParentFrozen;
+}
+
 void WorkerPrivate::StoreCSPOnClient() {
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(data->mScope);
@@ -2397,6 +2407,81 @@ void WorkerPrivate::UpdateOverridenLoadGroup(nsILoadGroup* aBaseLoadGroup) {
   mLoadInfo.mInterfaceRequestor->MaybeAddBrowserChild(aBaseLoadGroup);
 }
 
+void WorkerPrivate::UpdateIsOnContentBlockingAllowList(
+    bool aOnContentBlockingAllowList) {
+  AssertIsOnWorkerThread();
+  MOZ_DIAGNOSTIC_ASSERT(IsServiceWorker());
+
+  RefPtr<StrongWorkerRef> strongRef = StrongWorkerRef::Create(
+      this, "WorkerPrivate::UpdateIsOnContentBlockingAllowList");
+  if (!strongRef) {
+    return;
+  }
+  RefPtr<ThreadSafeWorkerRef> ref = new ThreadSafeWorkerRef(strongRef);
+  DispatchToMainThread(NS_NewRunnableFunction(
+      "WorkerPrivate::UpdateIsOnContentBlockingAllowList",
+      [ref = std::move(ref), aOnContentBlockingAllowList] {
+        ref->Private()
+            ->mLoadInfo.mCookieJarSettingsArgs.isOnContentBlockingAllowList() =
+            aOnContentBlockingAllowList;
+
+        nsCOMPtr<nsICookieJarSettings> workerCookieJarSettings;
+        net::CookieJarSettings::Deserialize(
+            ref->Private()->mLoadInfo.mCookieJarSettingsArgs,
+            getter_AddRefs(workerCookieJarSettings));
+        bool shouldResistFingerprinting =
+            nsContentUtils::ShouldResistFingerprinting_dangerous(
+                ref->Private()->mLoadInfo.mPrincipal,
+                "Service Workers exist outside a Document or Channel; as a "
+                "property of the domain (and origin attributes). We don't have "
+                "a "
+                "CookieJarSettings to perform the *nested check*, but we can "
+                "rely "
+                "on the FPI/dFPI partition key check. The WorkerPrivate's "
+                "ShouldResistFingerprinting function for the ServiceWorker "
+                "depends "
+                "on this boolean and will also consider an explicit RFPTarget.",
+                RFPTarget::IsAlwaysEnabledForPrecompute) &&
+            !nsContentUtils::ETPSaysShouldNotResistFingerprinting(
+                workerCookieJarSettings, false);
+
+        ref->Private()
+            ->mLoadInfo.mCookieJarSettingsArgs.shouldResistFingerprinting() =
+            shouldResistFingerprinting;
+        ref->Private()->mLoadInfo.mShouldResistFingerprinting =
+            shouldResistFingerprinting;
+      }));
+
+  /* From:
+    https://searchfox.org/mozilla-central/rev/964b8aa226c68bbf83c9ffc38984804734bb0de2/js/public/RealmOptions.h#316-318
+    > RealmCreationOptions specify fundamental realm characteristics that must
+    be specified when the realm is created, that can't be changed after the
+    realm is created.
+  */
+  /*
+  nsCString locale;
+  if (aEnabled) {
+    locale = nsRFPService::GetSpoofedJSLocale();
+  }
+
+  MutexAutoLock lock(mMutex);
+  mJSSettings.chromeRealmOptions.creationOptions().setForceUTC(aEnabled);
+  mJSSettings.chromeRealmOptions.creationOptions().setAlwaysUseFdlibm(aEnabled);
+  if (aEnabled) {
+    mJSSettings.chromeRealmOptions.creationOptions().setLocaleCopyZ(
+        locale.get());
+  }
+
+  mJSSettings.contentRealmOptions.creationOptions().setForceUTC(aEnabled);
+  mJSSettings.contentRealmOptions.creationOptions().setAlwaysUseFdlibm(
+      aEnabled);
+  if (aEnabled) {
+    mJSSettings.contentRealmOptions.creationOptions().setLocaleCopyZ(
+        locale.get());
+  }
+  */
+}
+
 bool WorkerPrivate::IsOnParentThread() const {
   if (GetParent()) {
     return GetParent()->IsOnWorkerThread();
@@ -2629,11 +2714,13 @@ WorkerPrivate::WorkerPrivate(
 
     // Our parent can get suspended after it initiates the async creation
     // of a new worker thread.  In this case suspend the new worker as well.
-    if (mLoadInfo.mWindow && mLoadInfo.mWindow->IsSuspended()) {
+    if (mLoadInfo.mWindow &&
+        nsGlobalWindowInner::Cast(mLoadInfo.mWindow)->IsSuspended()) {
       ParentWindowPaused();
     }
 
-    if (mLoadInfo.mWindow && mLoadInfo.mWindow->IsFrozen()) {
+    if (mLoadInfo.mWindow &&
+        nsGlobalWindowInner::Cast(mLoadInfo.mWindow)->IsFrozen()) {
       Freeze(mLoadInfo.mWindow);
     }
 
@@ -3006,6 +3093,7 @@ nsresult WorkerPrivate::GetLoadInfo(
         aParent->GetOverriddenFingerprintingSettings();
     loadInfo.mParentController = aParent->GlobalScope()->GetController();
     loadInfo.mWatchedByDevTools = aParent->IsWatchedByDevTools();
+    loadInfo.mIsOn3PCBExceptionList = aParent->IsOn3PCBExceptionList();
   } else {
     AssertIsOnMainThread();
 
@@ -3153,6 +3241,7 @@ nsresult WorkerPrivate::GetLoadInfo(
               RFPTarget::IsAlwaysEnabledForPrecompute);
       loadInfo.mOverriddenFingerprintingSettings =
           document->GetOverriddenFingerprintingSettings();
+      loadInfo.mIsOn3PCBExceptionList = document->IsOn3PCBExceptionList();
 
       // This is an hack to deny the storage-access-permission for workers of
       // sub-iframes.
@@ -3225,6 +3314,7 @@ nsresult WorkerPrivate::GetLoadInfo(
 
       loadInfo.mOriginAttributes = OriginAttributes();
       loadInfo.mIsThirdPartyContext = false;
+      loadInfo.mIsOn3PCBExceptionList = false;
     }
 
     MOZ_ASSERT(loadInfo.mLoadingPrincipal);
@@ -4399,6 +4489,14 @@ bool WorkerPrivate::FreezeInternal() {
     data->mChildWorkers[index]->Freeze(nullptr);
   }
 
+  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
+    auto* timeoutManager =
+        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+    if (timeoutManager) {
+      timeoutManager->Suspend();
+    }
+  }
+
   return true;
 }
 
@@ -4415,6 +4513,14 @@ bool WorkerPrivate::ThawInternal() {
   // The worker can thaw even if it failed to run (and doesn't have a global).
   if (data->mScope) {
     data->mScope->MutableClientSourceRef().Thaw();
+  }
+
+  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
+    auto* timeoutManager =
+        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+    if (timeoutManager) {
+      timeoutManager->Resume();
+    }
   }
 
   return true;
@@ -4758,6 +4864,15 @@ bool WorkerPrivate::IsEligibleForCC() {
 
 void WorkerPrivate::CancelAllTimeouts() {
   auto data = mWorkerThreadAccessible.Access();
+
+  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
+    auto* timeoutManager =
+        data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+    if (timeoutManager) {
+      timeoutManager->ClearAllTimeouts();
+    }
+    return;
+  }
 
   LOG(TimeoutsLog(), ("Worker %p CancelAllTimeouts.\n", this));
 
@@ -5473,9 +5588,7 @@ int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
   auto data = mWorkerThreadAccessible.Access();
   MOZ_ASSERT(aHandler);
 
-  if (StaticPrefs::dom_workers_throttling_enabled() && XRE_IsContentProcess()) {
-    // todo(aiunusov): change the logic of setTimeout accordingly
-
+  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
     WorkerGlobalScope* globalScope = GlobalScope();
     auto* timeoutManager = globalScope->GetTimeoutManager();
     int32_t timerId = -1;
@@ -5567,7 +5680,7 @@ int32_t WorkerPrivate::SetTimeout(JSContext* aCx, TimeoutHandler* aHandler,
 void WorkerPrivate::ClearTimeout(int32_t aId, Timeout::Reason aReason) {
   MOZ_ASSERT(aReason == Timeout::Reason::eTimeoutOrInterval,
              "This timeout reason doesn't support cancellation.");
-  if (StaticPrefs::dom_workers_throttling_enabled() && XRE_IsContentProcess()) {
+  if (StaticPrefs::dom_workers_timeoutmanager_AtStartup()) {
     WorkerGlobalScope* globalScope = GlobalScope();
     auto* timeoutManager = globalScope->GetTimeoutManager();
     timeoutManager->ClearTimeout(aId, aReason);
@@ -5894,6 +6007,18 @@ void WorkerPrivate::SetLowMemoryStateInternal(JSContext* aCx, bool aState) {
 
 void WorkerPrivate::SetCCCollectedAnything(bool collectedAnything) {
   mWorkerThreadAccessible.Access()->mCCCollectedAnything = collectedAnything;
+}
+
+uint32_t WorkerPrivate::GetCurrentTimerNestingLevel() const {
+  auto data = mWorkerThreadAccessible.Access();
+
+  auto* timeoutManager =
+      data->mScope ? data->mScope->GetTimeoutManager() : nullptr;
+  if (timeoutManager) {
+    return timeoutManager->GetNestingLevel();
+  }
+
+  return data->mCurrentTimerNestingLevel;
 }
 
 bool WorkerPrivate::isLastCCCollectedAnything() {

@@ -143,6 +143,7 @@ JSRuntime::JSRuntime(JSRuntime* parentRuntime)
       liveSABs(0),
       beforeWaitCallback(nullptr),
       afterWaitCallback(nullptr),
+      offthreadBaselineCompilationEnabled_(false),
       offthreadIonCompilationEnabled_(true),
       parallelParsingEnabled_(true),
       autoWritableJitCodeActive_(false),
@@ -218,10 +219,6 @@ void JSRuntime::destroyRuntime() {
 
   watchtowerTestingLog.ref().reset();
 
-  // Caches might hold on ScriptData which are saved in the ScriptDataTable.
-  // Clear all stencils from caches to remove ScriptDataTable entries.
-  caches().purgeStencils();
-
   if (gc.wasInitialized()) {
     /*
      * Finish any in-progress GCs first.
@@ -235,12 +232,12 @@ void JSRuntime::destroyRuntime() {
     sourceHook = nullptr;
 
     /*
-     * Cancel any pending, in progress or completed Ion compilations and
-     * parse tasks. Waiting for wasm and compression tasks is done
+     * Cancel any pending, in progress or completed baseline/Ion compilations
+     * and parse tasks. Waiting for wasm and compression tasks is done
      * synchronously (on the main thread or during parse tasks), so no
      * explicit canceling is needed for these.
      */
-    CancelOffThreadIonCompile(this);
+    CancelOffThreadCompile(this);
     CancelOffThreadDelazify(this);
     CancelOffThreadCompressions(this);
 
@@ -408,8 +405,8 @@ static bool HandleInterrupt(JSContext* cx, bool invokeCallback) {
 
   cx->runtime()->gc.gcIfRequested();
 
-  // A worker thread may have requested an interrupt after finishing an Ion
-  // compilation.
+  // A worker thread may have requested an interrupt after finishing an
+  // offthread compilation.
   jit::AttachFinishedCompilations(cx);
 
   // Don't call the interrupt callback if we only interrupted for GC or Ion.
@@ -576,22 +573,16 @@ SharedScriptDataTableHolder& JSRuntime::scriptDataTableHolder() {
   return scriptDataTableHolder_;
 }
 
-GlobalObject* JSRuntime::getIncumbentGlobal(JSContext* cx) {
+bool JSRuntime::getHostDefinedData(JSContext* cx,
+                                   JS::MutableHandle<JSObject*> data) const {
   MOZ_ASSERT(cx->jobQueue);
 
-  JSObject* obj = cx->jobQueue->getIncumbentGlobal(cx);
-  if (!obj) {
-    return nullptr;
-  }
-
-  MOZ_ASSERT(obj->is<GlobalObject>(),
-             "getIncumbentGlobalCallback must return a global!");
-  return &obj->as<GlobalObject>();
+  return cx->jobQueue->getHostDefinedData(cx, data);
 }
 
 bool JSRuntime::enqueuePromiseJob(JSContext* cx, HandleFunction job,
                                   HandleObject promise,
-                                  Handle<GlobalObject*> incumbentGlobal) {
+                                  HandleObject hostDefinedData) {
   MOZ_ASSERT(cx->jobQueue,
              "Must select a JobQueue implementation using JS::JobQueue "
              "or js::UseInternalJobQueues before using Promises");
@@ -614,7 +605,7 @@ bool JSRuntime::enqueuePromiseJob(JSContext* cx, HandleFunction job,
     }
   }
   return cx->jobQueue->enqueuePromiseJob(cx, promise, job, allocationSite,
-                                         incumbentGlobal);
+                                         hostDefinedData);
 }
 
 void JSRuntime::addUnhandledRejectedPromise(JSContext* cx,

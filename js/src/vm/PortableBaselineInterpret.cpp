@@ -54,6 +54,7 @@
 #include "vm/PlainObject.h"
 #include "vm/Shape.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
+#include "vm/WrapperObject.h"
 
 #include "debugger/DebugAPI-inl.h"
 #include "jit/BaselineFrame-inl.h"
@@ -696,7 +697,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
     DECLARE_CACHEOP_CASE(LoadObjectTruthyResult);
     DECLARE_CACHEOP_CASE(LoadValueResult);
     DECLARE_CACHEOP_CASE(LoadOperandResult);
-    DECLARE_CACHEOP_CASE(CallStringConcatResult);
+    DECLARE_CACHEOP_CASE(ConcatStringsResult);
     DECLARE_CACHEOP_CASE(CompareStringResult);
     DECLARE_CACHEOP_CASE(CompareInt32Result);
     DECLARE_CACHEOP_CASE(CompareNullUndefinedResult);
@@ -3366,7 +3367,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
         DISPATCH_CACHEOP();
       }
 
-      CACHEOP_CASE(CallStringConcatResult) {
+      CACHEOP_CASE(ConcatStringsResult) {
         StringOperandId lhsId = cacheIRReader.stringOperandId();
         StringOperandId rhsId = cacheIRReader.stringOperandId();
         {
@@ -4664,8 +4665,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
         JSString* str = reinterpret_cast<JSString*>(READ_REG(strId.id()));
         {
           PUSH_IC_FRAME();
-          ReservedRooted<JSString*> str0(&ctx.state.str0, str);
-          auto* result = StringToLowerCase(cx, str0);
+          auto* result = StringToLowerCase(cx, str);
           if (!result) {
             ctx.error = PBIResult::Error;
             return IC_ERROR_SENTINEL();
@@ -4681,8 +4681,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
         JSString* str = reinterpret_cast<JSString*>(READ_REG(strId.id()));
         {
           PUSH_IC_FRAME();
-          ReservedRooted<JSString*> str0(&ctx.state.str0, str);
-          auto* result = StringToUpperCase(cx, str0);
+          auto* result = StringToUpperCase(cx, str);
           if (!result) {
             ctx.error = PBIResult::Error;
             return IC_ERROR_SENTINEL();
@@ -4929,7 +4928,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
         JSObject* obj = reinterpret_cast<JSObject*>(READ_REG(objId.id()));
         if (IsTypedArrayClass(obj->getClass())) {
           retValue = BooleanValue(true).asRawBits();
-        } else if (isPossiblyWrapped) {
+        } else if (isPossiblyWrapped && obj->is<WrapperObject>()) {
           PUSH_IC_FRAME();
           bool result;
           if (!IsPossiblyWrappedTypedArray(cx, obj, &result)) {
@@ -5169,7 +5168,7 @@ uint64_t ICInterpretOps(uint64_t arg0, uint64_t arg1, ICStub* stub,
         }
         {
           PUSH_IC_FRAME();
-          auto* result = Int32ToStringWithBase(cx, input, base, true);
+          auto* result = Int32ToStringWithBase<CanGC>(cx, input, base, true);
           if (!result) {
             ctx.error = PBIResult::Error;
             return IC_ERROR_SENTINEL();
@@ -5721,9 +5720,23 @@ DEFINE_IC(GetElemSuper, 3, {
   }
 });
 
+DEFINE_IC(GetImport, 0, {
+  PUSH_FALLBACK_IC_FRAME();
+  if (!DoGetImportFallback(cx, ctx.frame, fallback, &ctx.state.res)) {
+    goto error;
+  }
+});
+
 DEFINE_IC(NewArray, 0, {
   PUSH_FALLBACK_IC_FRAME();
   if (!DoNewArrayFallback(cx, ctx.frame, fallback, &ctx.state.res)) {
+    goto error;
+  }
+});
+
+DEFINE_IC(Lambda, 0, {
+  PUSH_FALLBACK_IC_FRAME();
+  if (!DoLambdaFallback(cx, ctx.frame, fallback, &ctx.state.res)) {
     goto error;
   }
 });
@@ -7668,22 +7681,29 @@ PBIResult PortableBaselineInterpret(
       }
 
       CASE(Lambda) {
-        {
-          ReservedRooted<JSFunction*> fun0(&state.fun0,
-                                           frame->script()->getFunction(pc));
-          ReservedRooted<JSObject*> obj0(&state.obj0,
-                                         frame->environmentChain());
-          JSObject* res;
+        if (HybridICs) {
+          JSObject* clone;
           {
             PUSH_EXIT_FRAME();
-            res = js::Lambda(cx, fun0, obj0);
-            if (!res) {
+            ReservedRooted<JSFunction*> fun0(&state.fun0,
+                                             frame->script()->getFunction(pc));
+            ReservedRooted<JSObject*> obj0(&state.obj0,
+                                           frame->environmentChain());
+            clone = Lambda(cx, fun0, obj0);
+            if (!clone) {
               GOTO_ERROR();
             }
           }
-          VIRTPUSH(StackVal(ObjectValue(*res)));
+          VIRTPUSH(StackVal(ObjectValue(*clone)));
+          NEXT_IC();
+          END_OP(Lambda);
+        } else {
+          IC_ZERO_ARG(0);
+          IC_ZERO_ARG(1);
+          IC_ZERO_ARG(2);
+          INVOKE_IC_AND_PUSH(Lambda, false);
+          END_OP(Lambda);
         }
-        END_OP(Lambda);
       }
 
       CASE(SetFunName) {
@@ -8707,19 +8727,10 @@ PBIResult PortableBaselineInterpret(
       }
 
       CASE(GetImport) {
-        {
-          ReservedRooted<JSObject*> obj0(&state.obj0,
-                                         frame->environmentChain());
-          ReservedRooted<Value> value0(&state.value0);
-          ReservedRooted<JSScript*> script0(&state.script0, frame->script());
-          {
-            PUSH_EXIT_FRAME();
-            if (!GetImportOperation(cx, obj0, script0, pc, &value0)) {
-              GOTO_ERROR();
-            }
-          }
-          VIRTPUSH(StackVal(value0));
-        }
+        IC_ZERO_ARG(0);
+        IC_ZERO_ARG(1);
+        IC_ZERO_ARG(2);
+        INVOKE_IC_AND_PUSH(GetImport, false);
         END_OP(GetImport);
       }
 

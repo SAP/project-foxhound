@@ -7,20 +7,14 @@
 #include "builtin/temporal/TemporalNow.h"
 
 #include "mozilla/Assertions.h"
-#include "mozilla/Result.h"
 
-#include <cstdlib>
 #include <stdint.h>
-#include <string_view>
-#include <utility>
 
 #include "jsdate.h"
 #include "jspubtd.h"
 #include "jstypes.h"
 #include "NamespaceImports.h"
 
-#include "builtin/intl/CommonFunctions.h"
-#include "builtin/intl/FormatBuffer.h"
 #include "builtin/temporal/Calendar.h"
 #include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
@@ -30,9 +24,6 @@
 #include "builtin/temporal/TemporalTypes.h"
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "gc/Barrier.h"
-#include "gc/GCEnum.h"
-#include "js/AllocPolicy.h"
 #include "js/CallArgs.h"
 #include "js/Class.h"
 #include "js/Date.h"
@@ -42,7 +33,6 @@
 #include "js/TypeDecls.h"
 #include "vm/DateTime.h"
 #include "vm/GlobalObject.h"
-#include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/Realm.h"
 #include "vm/StringType.h"
@@ -52,175 +42,46 @@
 using namespace js;
 using namespace js::temporal;
 
-static bool SystemTimeZoneOffset(JSContext* cx, int32_t* offset) {
-  auto rawOffset =
-      DateTimeInfo::getRawOffsetMs(DateTimeInfo::forceUTC(cx->realm()));
-  if (rawOffset.isErr()) {
-    intl::ReportInternalError(cx);
-    return false;
-  }
-
-  *offset = rawOffset.unwrap();
-  return true;
-}
-
-/**
- * 6.4.3 DefaultTimeZone ()
- *
- * Returns the IANA time zone name for the host environment's current time zone.
- *
- * ES2017 Intl draft rev 4a23f407336d382ed5e3471200c690c9b020b5f3
- */
-static JSLinearString* SystemTimeZoneIdentifier(JSContext* cx) {
-  intl::FormatBuffer<char16_t, intl::INITIAL_CHAR_BUFFER_SIZE> formatBuffer(cx);
-  auto result = DateTimeInfo::timeZoneId(DateTimeInfo::forceUTC(cx->realm()),
-                                         formatBuffer);
-  if (result.isErr()) {
-    intl::ReportInternalError(cx, result.unwrapErr());
-    return nullptr;
-  }
-
-  Rooted<JSLinearString*> timeZone(cx, formatBuffer.toString(cx));
-  if (!timeZone) {
-    return nullptr;
-  }
-
-  Rooted<JSAtom*> validTimeZone(cx);
-  if (!IsValidTimeZoneName(cx, timeZone, &validTimeZone)) {
-    return nullptr;
-  }
-  if (validTimeZone) {
-    return CanonicalizeTimeZoneName(cx, validTimeZone);
-  }
-
-  // See DateTimeFormat.js for the JS implementation.
-  // TODO: Move the JS implementation into C++.
-
-  // Before defaulting to "UTC", try to represent the system time zone using
-  // the Etc/GMT + offset format. This format only accepts full hour offsets.
-  int32_t offset;
-  if (!SystemTimeZoneOffset(cx, &offset)) {
-    return nullptr;
-  }
-
-  constexpr int32_t msPerHour = 60 * 60 * 1000;
-  int32_t offsetHours = std::abs(offset / msPerHour);
-  int32_t offsetHoursFraction = offset % msPerHour;
-  if (offsetHoursFraction == 0 && offsetHours < 24) {
-    // Etc/GMT + offset uses POSIX-style signs, i.e. a positive offset
-    // means a location west of GMT.
-    constexpr std::string_view etcGMT = "Etc/GMT";
-
-    char offsetString[etcGMT.length() + 3];
-
-    size_t n = etcGMT.copy(offsetString, etcGMT.length());
-    offsetString[n++] = offset < 0 ? '+' : '-';
-    if (offsetHours >= 10) {
-      offsetString[n++] = char('0' + (offsetHours / 10));
-    }
-    offsetString[n++] = char('0' + (offsetHours % 10));
-
-    MOZ_ASSERT(n == etcGMT.length() + 2 || n == etcGMT.length() + 3);
-
-    timeZone = NewStringCopyN<CanGC>(cx, offsetString, n);
-    if (!timeZone) {
-      return nullptr;
-    }
-
-    // Check if the fallback is valid.
-    if (!IsValidTimeZoneName(cx, timeZone, &validTimeZone)) {
-      return nullptr;
-    }
-    if (validTimeZone) {
-      return CanonicalizeTimeZoneName(cx, validTimeZone);
-    }
-  }
-
-  // Fallback to "UTC" if everything else fails.
-  return cx->names().UTC;
-}
-
-static BuiltinTimeZoneObject* SystemTimeZoneObject(JSContext* cx) {
-  Rooted<JSLinearString*> timeZoneIdentifier(cx, SystemTimeZoneIdentifier(cx));
-  if (!timeZoneIdentifier) {
-    return nullptr;
-  }
-
-  return CreateTemporalTimeZone(cx, timeZoneIdentifier);
-}
-
 /**
  * SystemUTCEpochNanoseconds ( )
  */
-static bool SystemUTCEpochNanoseconds(JSContext* cx, Instant* result) {
-  // Step 1.
+static bool SystemUTCEpochNanoseconds(JSContext* cx, EpochNanoseconds* result) {
+  // Steps 1-2.
   JS::ClippedTime nowMillis = DateNow(cx);
   MOZ_ASSERT(nowMillis.isValid());
-
-  // Step 2.
   MOZ_ASSERT(nowMillis.toDouble() >= js::StartOfTime);
   MOZ_ASSERT(nowMillis.toDouble() <= js::EndOfTime);
 
   // Step 3.
-  *result = Instant::fromMilliseconds(int64_t(nowMillis.toDouble()));
+  *result = EpochNanoseconds::fromMilliseconds(int64_t(nowMillis.toDouble()));
   return true;
 }
 
 /**
- * SystemInstant ( )
+ * SystemDateTime ( temporalTimeZoneLike )
  */
-static bool SystemInstant(JSContext* cx, Instant* result) {
-  // Steps 1-2.
-  return SystemUTCEpochNanoseconds(cx, result);
-}
-
-/**
- * SystemDateTime ( temporalTimeZoneLike, calendarLike )
- * SystemZonedDateTime ( temporalTimeZoneLike, calendarLike )
- */
-static bool ToTemporalTimeZoneOrSystemTimeZone(
-    JSContext* cx, Handle<Value> temporalTimeZoneLike,
-    MutableHandle<TimeZoneValue> timeZone) {
-  // Step 1.
-  if (temporalTimeZoneLike.isUndefined()) {
-    auto* timeZoneObj = SystemTimeZoneObject(cx);
-    if (!timeZoneObj) {
-      return false;
-    }
-    timeZone.set(TimeZoneValue(timeZoneObj));
-    return true;
-  }
-
-  // Step 2.
-  return ToTemporalTimeZone(cx, temporalTimeZoneLike, timeZone);
-}
-
-// FIXME: spec issue - `calendarLike` can be removed, because it's always
-// the calendar string "iso8601".
-//
-// Also applies to SystemZonedDateTime.
-
-/**
- * SystemDateTime ( temporalTimeZoneLike, calendarLike )
- */
-static bool SystemDateTime(JSContext* cx, Handle<Value> timeZoneLike,
-                           PlainDateTime* dateTime) {
+static bool SystemDateTime(JSContext* cx, Handle<Value> temporalTimeZoneLike,
+                           ISODateTime* dateTime) {
   // Steps 1-2.
   Rooted<TimeZoneValue> timeZone(cx);
-  if (!ToTemporalTimeZoneOrSystemTimeZone(cx, timeZoneLike, &timeZone)) {
-    return false;
+  if (temporalTimeZoneLike.isUndefined()) {
+    if (!SystemTimeZone(cx, &timeZone)) {
+      return false;
+    }
+  } else {
+    if (!ToTemporalTimeZone(cx, temporalTimeZoneLike, &timeZone)) {
+      return false;
+    }
   }
 
-  // Step 3. (Not applicable in our implementation.)
+  // Step 3.
+  EpochNanoseconds epochNs;
+  if (!SystemUTCEpochNanoseconds(cx, &epochNs)) {
+    return false;
+  }
 
   // Step 4.
-  Instant instant;
-  if (!SystemInstant(cx, &instant)) {
-    return false;
-  }
-
-  // Steps 5-6.
-  return GetPlainDateTimeFor(cx, timeZone, instant, dateTime);
+  return GetISODateTimeFor(cx, timeZone, epochNs, dateTime);
 }
 
 /**
@@ -246,12 +107,13 @@ static bool Temporal_Now_instant(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  Instant instant;
-  if (!SystemInstant(cx, &instant)) {
+  EpochNanoseconds epochNs;
+  if (!SystemUTCEpochNanoseconds(cx, &epochNs)) {
     return false;
   }
 
-  auto* result = CreateTemporalInstant(cx, instant);
+  // Step 2.
+  auto* result = CreateTemporalInstant(cx, epochNs);
   if (!result) {
     return false;
   }
@@ -268,11 +130,12 @@ static bool Temporal_Now_plainDateTimeISO(JSContext* cx, unsigned argc,
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  PlainDateTime dateTime;
+  ISODateTime dateTime;
   if (!SystemDateTime(cx, args.get(0), &dateTime)) {
     return false;
   }
 
+  // Step 2.
   Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
   auto* result = CreateTemporalDateTime(cx, dateTime, calendar);
   if (!result) {
@@ -290,25 +153,27 @@ static bool Temporal_Now_zonedDateTimeISO(JSContext* cx, unsigned argc,
                                           Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // Step 1. (Inlined call to SystemZonedDateTime)
-
-  // SystemZonedDateTime, steps 1-2.
+  // Steps 1-2.
   Rooted<TimeZoneValue> timeZone(cx);
-  if (!ToTemporalTimeZoneOrSystemTimeZone(cx, args.get(0), &timeZone)) {
+  if (!args.hasDefined(0)) {
+    if (!SystemTimeZone(cx, &timeZone)) {
+      return false;
+    }
+  } else {
+    if (!ToTemporalTimeZone(cx, args[0], &timeZone)) {
+      return false;
+    }
+  }
+
+  // Step 3.
+  EpochNanoseconds epochNs;
+  if (!SystemUTCEpochNanoseconds(cx, &epochNs)) {
     return false;
   }
 
-  // SystemZonedDateTime, step 3.
+  // Step 4.
   Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
-
-  // SystemZonedDateTime, step 4.
-  Instant instant;
-  if (!SystemUTCEpochNanoseconds(cx, &instant)) {
-    return false;
-  }
-
-  // SystemZonedDateTime, step 5.
-  auto* result = CreateTemporalZonedDateTime(cx, instant, timeZone, calendar);
+  auto* result = CreateTemporalZonedDateTime(cx, epochNs, timeZone, calendar);
   if (!result) {
     return false;
   }
@@ -324,7 +189,7 @@ static bool Temporal_Now_plainDateISO(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  PlainDateTime dateTime;
+  ISODateTime dateTime;
   if (!SystemDateTime(cx, args.get(0), &dateTime)) {
     return false;
   }
@@ -347,7 +212,7 @@ static bool Temporal_Now_plainTimeISO(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  PlainDateTime dateTime;
+  ISODateTime dateTime;
   if (!SystemDateTime(cx, args.get(0), &dateTime)) {
     return false;
   }

@@ -28,6 +28,8 @@ only-for-build-platforms:
     - linux64-asan-reporter-shippable/opt
     - linux64/opt
     - linux64-aarch64-shippable/opt
+    - linux64-aarch64-devedition/opt
+    - linux64-aarch64/opt
     - macosx64-shippable/opt
     - macosx64-devedition/opt
     - macosx64/opt
@@ -48,12 +50,12 @@ tasks:
         from-deps:
             group-by: single-with-filters
         upstream-mac-kind:
-            by-build-type:
-                debug: build-mac-signing
-                default:
-                    by-project:
-                        mozilla-(central|beta|release|esr.*): build-mac-notarization
-                        default: build-mac-signing
+            by-build-platform:
+                macosx64-(devedition|shippable):
+                    by-release-level:
+                        production: build-mac-notarization
+                        staging: build-mac-signing
+                default: build-mac-signing
         worker-type: b-linux-gcp
         worker:
             max-run-time:

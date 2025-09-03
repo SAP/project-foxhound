@@ -99,7 +99,7 @@ pub(crate) struct LocalBrowser {
     marionette_port: u16,
     prefs_backup: Option<PrefsBackup>,
     process: FirefoxProcess,
-    profile_path: Option<PathBuf>,
+    pub(crate) profile_path: Option<PathBuf>,
 }
 
 impl LocalBrowser {
@@ -107,8 +107,8 @@ impl LocalBrowser {
         options: FirefoxOptions,
         marionette_port: u16,
         jsdebugger: bool,
+        system_access: bool,
         profile_root: Option<&Path>,
-        enable_crash_reporter: bool,
     ) -> WebDriverResult<LocalBrowser> {
         let binary = options.binary.ok_or_else(|| {
             WebDriverError::new(
@@ -155,17 +155,18 @@ impl LocalBrowser {
         if jsdebugger {
             runner.arg("--jsdebugger");
         }
+        if system_access {
+            runner.arg("--remote-allow-system-access");
+        }
         if let Some(args) = options.args.as_ref() {
             runner.args(args);
         }
 
         // https://developer.mozilla.org/docs/Environment_variables_affecting_crash_reporting
-        if !enable_crash_reporter {
-            runner
-                .env("MOZ_CRASHREPORTER", "1")
-                .env("MOZ_CRASHREPORTER_NO_REPORT", "1")
-                .env("MOZ_CRASHREPORTER_SHUTDOWN", "1");
-        }
+        runner
+            .env("MOZ_CRASHREPORTER", "1")
+            .env("MOZ_CRASHREPORTER_NO_REPORT", "1")
+            .env("MOZ_CRASHREPORTER_SHUTDOWN", "1");
 
         let process = match runner.start() {
             Ok(process) => process,
@@ -267,7 +268,7 @@ fn read_marionette_port(profile_path: &Path) -> Option<u16> {
 #[derive(Debug)]
 /// A remote instance, running on a (target) Android device.
 pub(crate) struct RemoteBrowser {
-    handler: AndroidHandler,
+    pub(crate) handler: AndroidHandler,
     marionette_port: u16,
     prefs_backup: Option<PrefsBackup>,
 }
@@ -277,12 +278,12 @@ impl RemoteBrowser {
         options: FirefoxOptions,
         marionette_port: u16,
         websocket_port: Option<u16>,
+        system_access: bool,
         profile_root: Option<&Path>,
-        enable_crash_reporter: bool,
     ) -> WebDriverResult<RemoteBrowser> {
         let android_options = options.android.unwrap();
 
-        let handler = AndroidHandler::new(&android_options, marionette_port, websocket_port)?;
+        let handler = AndroidHandler::new(&android_options, marionette_port, system_access, websocket_port)?;
 
         // Profile management.
         let (mut profile, is_custom_profile) = match options.profile {
@@ -310,12 +311,7 @@ impl RemoteBrowser {
             )
         })?;
 
-        handler.prepare(
-            &profile,
-            options.args,
-            options.env.unwrap_or_default(),
-            enable_crash_reporter,
-        )?;
+        handler.prepare(&profile, options.args, options.env.unwrap_or_default())?;
 
         handler.launch()?;
 

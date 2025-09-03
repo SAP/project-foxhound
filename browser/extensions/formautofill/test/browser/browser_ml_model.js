@@ -43,12 +43,24 @@ async function setup() {
 add_setup(async function () {
   const { cleanup, remoteClients } = await setup();
 
+  const originalConfig = MLAutofill.readConfig();
+
+  sinon.stub(MLAutofill, "readConfig").callsFake(() => {
+    return { ...originalConfig, modelId: "test-echo" };
+  });
+
   sinon.stub(MLAutofill, "run").callsFake(request => {
     const context = request.args[0];
-    /* we need the input has id attribute and the value is the field name.
-     * For example, <input id="cc-name" autocomplete="cc-name">
-     */
-    const match = context.match(/id="([^"]*)"/);
+    /* The input has the following format:
+     * `
+     * {{ header_text }} {{ name }} {{ label_text }} {{ placeholder_text }} {{ class }} {{ id }} <SEP>
+     * {{ previous_name }} {{ previous_label_text }} {{ previous_placeholder_text }} {{ previous_class }} {{ previous_id }} <SEP>
+     * {{ next_name }} {{ next_label_text }} {{ next_placeholder_text }} {{ next_class }} {{ next_id }} <SEP>
+     * {{ button_text }} <SEP>
+     * `
+     * We extract the {{ id }} part because id is the same as field name in this test.
+     * */
+    const match = context.match(/\s+([^\s<]+)<SEP>/);
     return [
       {
         label: match[1],
@@ -61,6 +73,10 @@ add_setup(async function () {
     set: [
       ["extensions.formautofill.ml.experiment.enabled", true],
       ["extensions.formautofill.ml.experiment.runInAutomation", true],
+      [
+        "extensions.formautofill.creditCards.heuristics.fathom.testConfidence",
+        "1",
+      ],
     ],
   });
 
@@ -78,12 +94,13 @@ add_setup(async function () {
 });
 
 add_task(async function test_run_ml_experiment() {
-  function buildExpected(fieldName) {
+  function buildExpected(fieldName, fathom_label, fathom_score) {
     return {
       infer_field_name: fieldName,
       infer_reason: "autocomplete",
-      fathom_infer_label: "",
-      fathom_infer_score: "",
+      is_valid_section: "true",
+      fathom_infer_label: fathom_label ?? "",
+      fathom_infer_score: fathom_score ?? "",
       ml_revision: "",
       ml_infer_label: fieldName,
       ml_infer_score: "0.9999",
@@ -91,8 +108,8 @@ add_task(async function test_run_ml_experiment() {
   }
 
   const expected_events = [
-    buildExpected("cc-name"),
-    buildExpected("cc-number"),
+    buildExpected("cc-name", "cc-name", 1),
+    buildExpected("cc-number", "cc-number", 1),
     buildExpected("cc-exp-month"),
     buildExpected("cc-exp-year"),
     buildExpected("cc-csc"),

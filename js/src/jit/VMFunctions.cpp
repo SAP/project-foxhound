@@ -18,7 +18,6 @@
 #include "jit/CalleeToken.h"
 #include "jit/JitFrames.h"
 #include "jit/JitRuntime.h"
-#include "jit/mips32/Simulator-mips32.h"
 #include "jit/mips64/Simulator-mips64.h"
 #include "jit/Simulator.h"
 #include "js/experimental/JitInfo.h"
@@ -41,6 +40,7 @@
 #include "vm/TypedArrayObject.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #include "vm/Watchtower.h"
+#include "vm/WrapperObject.h"
 #include "wasm/WasmGcObject.h"
 
 #include "debugger/DebugAPI-inl.h"
@@ -187,6 +187,7 @@ struct TypeToRootType<Handle<T*>> {
       case TraceKind::RegExpShared:
       case TraceKind::GetterSetter:
       case TraceKind::PropMap:
+      case TraceKind::SmallBuffer:
         MOZ_CRASH("Unexpected trace kind");
     }
   }
@@ -819,7 +820,7 @@ int32_t StringTrimEndIndex(const JSString* str, int32_t start) {
 }
 
 JSString* CharCodeToLowerCase(JSContext* cx, int32_t code) {
-  RootedString str(cx, StringFromCharCode(cx, code));
+  JSString* str = StringFromCharCode(cx, code);
   if (!str) {
     return nullptr;
   }
@@ -827,7 +828,7 @@ JSString* CharCodeToLowerCase(JSContext* cx, int32_t code) {
 }
 
 JSString* CharCodeToUpperCase(JSContext* cx, int32_t code) {
-  RootedString str(cx, StringFromCharCode(cx, code));
+  JSString* str = StringFromCharCode(cx, code);
   if (!str) {
     return nullptr;
   }
@@ -1633,11 +1634,11 @@ bool EqualStringsHelperPure(JSString* str1, JSString* str2) {
   return EqualChars(&str1->asLinear(), str2Linear);
 }
 
-static bool MaybeTypedArrayIndexString(jsid id) {
-  MOZ_ASSERT(id.isAtom() || id.isSymbol());
+static bool MaybeTypedArrayIndexString(PropertyKey key) {
+  MOZ_ASSERT(key.isAtom() || key.isSymbol());
 
-  if (MOZ_LIKELY(id.isAtom())) {
-    JSAtom* str = id.toAtom();
+  if (MOZ_LIKELY(key.isAtom())) {
+    JSAtom* str = key.toAtom();
     if (str->length() > 0) {
       // Only check the first character because we want this function to be
       // fast.
@@ -1676,7 +1677,7 @@ static void VerifyCacheEntry(JSContext* cx, NativeObject* obj, PropertyKey key,
 
 template <AllowGC allowGC>
 static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
-    JSContext* cx, JSObject* obj, jsid id, MegamorphicCacheEntry* entry,
+    JSContext* cx, JSObject* obj, PropertyKey key, MegamorphicCacheEntry* entry,
     Value* vp) {
   MOZ_ASSERT(obj->is<NativeObject>());
   NativeObject* nobj = &obj->as<NativeObject>();
@@ -1690,11 +1691,11 @@ static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
     MOZ_ASSERT(!nobj->getOpsLookupProperty());
 
     uint32_t index;
-    if (PropMap* map = nobj->shape()->lookup(cx, id, &index)) {
+    if (PropMap* map = nobj->shape()->lookup(cx, key, &index)) {
       PropertyInfo prop = map->getPropertyInfo(index);
       if (prop.isDataProperty()) {
         TaggedSlotOffset offset = nobj->getTaggedSlotOffset(prop.slot());
-        cache.initEntryForDataProperty(entry, receiverShape, id, numHops,
+        cache.initEntryForDataProperty(entry, receiverShape, key, numHops,
                                        offset);
         *vp = nobj->getSlot(prop.slot());
         return true;
@@ -1708,7 +1709,7 @@ static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
 
         TaggedSlotOffset offset = nobj->getTaggedSlotOffset(prop.slot());
         MOZ_ASSERT(prop.isAccessorProperty());
-        cache.initEntryForAccessorProperty(entry, receiverShape, id, numHops,
+        cache.initEntryForAccessorProperty(entry, receiverShape, key, numHops,
                                            offset);
         vp->setUndefined();
 
@@ -1731,13 +1732,13 @@ static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
 
     // Property not found. Watch out for Class hooks and TypedArrays.
     if (MOZ_UNLIKELY(!nobj->is<PlainObject>())) {
-      if (ClassMayResolveId(cx->names(), nobj->getClass(), id, nobj)) {
+      if (ClassMayResolveId(cx->names(), nobj->getClass(), key, nobj)) {
         return false;
       }
 
-      // Don't skip past TypedArrayObjects if the id can be a TypedArray index.
+      // Don't skip past TypedArrayObjects if the key can be a TypedArray index.
       if (nobj->is<TypedArrayObject>()) {
-        if (MaybeTypedArrayIndexString(id)) {
+        if (MaybeTypedArrayIndexString(key)) {
           return false;
         }
       }
@@ -1745,7 +1746,7 @@ static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
 
     JSObject* proto = nobj->staticPrototype();
     if (!proto) {
-      cache.initEntryForMissingProperty(entry, receiverShape, id);
+      cache.initEntryForMissingProperty(entry, receiverShape, key);
       vp->setUndefined();
       return true;
     }
@@ -1759,7 +1760,7 @@ static MOZ_ALWAYS_INLINE bool MaybeGetNativePropertyAndWriteToCache(
 }
 
 bool GetNativeDataPropertyPureWithCacheLookup(JSContext* cx, JSObject* obj,
-                                              PropertyKey id,
+                                              PropertyKey key,
                                               MegamorphicCacheEntry* entry,
                                               Value* vp) {
   AutoUnsafeCallWithABI unsafe;
@@ -1769,9 +1770,9 @@ bool GetNativeDataPropertyPureWithCacheLookup(JSContext* cx, JSObject* obj,
   Shape* receiverShape = obj->shape();
   MegamorphicCache& cache = cx->caches().megamorphicCache;
 
-  if (cache.lookup(receiverShape, id, &entry)) {
+  if (cache.lookup(receiverShape, key, &entry)) {
     NativeObject* nobj = &obj->as<NativeObject>();
-    VerifyCacheEntry(cx, nobj, id, *entry);
+    VerifyCacheEntry(cx, nobj, key, *entry);
     if (entry->isDataProperty()) {
       for (size_t i = 0, numHops = entry->numHops(); i < numHops; i++) {
         nobj = &nobj->staticPrototype()->as<NativeObject>();
@@ -1796,7 +1797,7 @@ bool GetNativeDataPropertyPureWithCacheLookup(JSContext* cx, JSObject* obj,
     MOZ_ASSERT(entry->isMissingOwnProperty());
   }
 
-  return MaybeGetNativePropertyAndWriteToCache<NoGC>(cx, obj, id, entry, vp);
+  return MaybeGetNativePropertyAndWriteToCache<NoGC>(cx, obj, key, entry, vp);
 }
 
 bool CheckProxyGetByValueResult(JSContext* cx, HandleObject obj,
@@ -1825,20 +1826,46 @@ bool GetNativeDataPropertyPure(JSContext* cx, JSObject* obj, PropertyKey id,
   return MaybeGetNativePropertyAndWriteToCache<NoGC>(cx, obj, id, entry, vp);
 }
 
+// Non-inlined implementation of ValueToAtomOrSymbolPure for less common types.
+static bool ValueToAtomOrSymbolSlow(JSContext* cx, const Value& keyVal,
+                                    PropertyKey* key) {
+  MOZ_ASSERT(!keyVal.isString());
+  MOZ_ASSERT(!keyVal.isSymbol());
+
+  if (keyVal.isNull()) {
+    *key = NameToId(cx->names().null);
+    return true;
+  }
+  if (keyVal.isUndefined()) {
+    *key = NameToId(cx->names().undefined);
+    return true;
+  }
+  if (keyVal.isBoolean()) {
+    *key =
+        NameToId(keyVal.toBoolean() ? cx->names().true_ : cx->names().false_);
+    return true;
+  }
+  if (keyVal.isNumber() && !IsNumberIndex(keyVal)) {
+    JSAtom* atom = NumberToAtom(cx, keyVal.toNumber());
+    if (!atom) {
+      cx->recoverFromOutOfMemory();
+      return false;
+    }
+    *key = PropertyKey::NonIntAtom(atom);
+    return true;
+  }
+
+  return false;
+}
+
 static MOZ_ALWAYS_INLINE bool ValueToAtomOrSymbolPure(JSContext* cx,
-                                                      const Value& idVal,
-                                                      jsid* id) {
-  if (MOZ_LIKELY(idVal.isString())) {
-    JSString* s = idVal.toString();
-    JSAtom* atom;
-    if (s->isAtom()) {
-      atom = &s->asAtom();
-    } else {
-      atom = AtomizeString(cx, s);
-      if (!atom) {
-        cx->recoverFromOutOfMemory();
-        return false;
-      }
+                                                      const Value& keyVal,
+                                                      PropertyKey* key) {
+  if (MOZ_LIKELY(keyVal.isString())) {
+    JSAtom* atom = AtomizeString(cx, keyVal.toString());
+    if (!atom) {
+      cx->recoverFromOutOfMemory();
+      return false;
     }
 
     // Watch out for integer ids because they may be stored in dense elements.
@@ -1850,47 +1877,37 @@ static MOZ_ALWAYS_INLINE bool ValueToAtomOrSymbolPure(JSContext* cx,
       return false;
     }
 
-    *id = PropertyKey::NonIntAtom(atom);
+    *key = PropertyKey::NonIntAtom(atom);
     return true;
   }
 
-  if (idVal.isSymbol()) {
-    *id = PropertyKey::Symbol(idVal.toSymbol());
+  if (keyVal.isSymbol()) {
+    *key = PropertyKey::Symbol(keyVal.toSymbol());
     return true;
   }
 
-  if (idVal.isNull()) {
-    *id = NameToId(cx->names().null);
-    return true;
-  }
-
-  if (idVal.isUndefined()) {
-    *id = NameToId(cx->names().undefined);
-    return true;
-  }
-
-  return false;
+  return ValueToAtomOrSymbolSlow(cx, keyVal, key);
 }
 
 bool GetNativeDataPropertyByValuePure(JSContext* cx, JSObject* obj,
                                       MegamorphicCacheEntry* entry, Value* vp) {
   AutoUnsafeCallWithABI unsafe;
 
-  // vp[0] contains the id, result will be stored in vp[1].
-  Value idVal = vp[0];
-  jsid id;
-  if (!ValueToAtomOrSymbolPure(cx, idVal, &id)) {
+  // vp[0] contains the key, result will be stored in vp[1].
+  Value keyVal = vp[0];
+  PropertyKey key;
+  if (!ValueToAtomOrSymbolPure(cx, keyVal, &key)) {
     return false;
   }
 
   Shape* receiverShape = obj->shape();
   MegamorphicCache& cache = cx->caches().megamorphicCache;
   if (!entry) {
-    cache.lookup(receiverShape, id, &entry);
+    cache.lookup(receiverShape, key, &entry);
   }
 
   Value* res = vp + 1;
-  return MaybeGetNativePropertyAndWriteToCache<NoGC>(cx, obj, id, entry, res);
+  return MaybeGetNativePropertyAndWriteToCache<NoGC>(cx, obj, key, entry, res);
 }
 
 bool GetPropertyCached(JSContext* cx, HandleObject obj, HandleId id,
@@ -1970,25 +1987,25 @@ bool GetPropMaybeCached(JSContext* cx, HandleObject obj, HandleId id,
   return GetProperty(cx, obj, obj, id, result);
 }
 
-bool GetElemMaybeCached(JSContext* cx, HandleObject obj, HandleValue idVal,
+bool GetElemMaybeCached(JSContext* cx, HandleObject obj, HandleValue keyVal,
                         MegamorphicCacheEntry* entry,
                         MutableHandleValue result) {
-  jsid id;
+  PropertyKey key;
   if (obj->is<NativeObject>() &&
-      ValueToAtomOrSymbolPure(cx, idVal.get(), &id)) {
+      ValueToAtomOrSymbolPure(cx, keyVal.get(), &key)) {
     Shape* receiverShape = obj->shape();
     MegamorphicCache& cache = cx->caches().megamorphicCache;
     if (!entry) {
-      cache.lookup(receiverShape, id, &entry);
+      cache.lookup(receiverShape, key, &entry);
     }
 
-    if (cache.isValidForLookup(*entry, receiverShape, id) &&
+    if (cache.isValidForLookup(*entry, receiverShape, key) &&
         !entry->isMissingOwnProperty()) {
-      RootedId rid(cx, id);
-      return GetPropertyCached(cx, obj, rid, entry, result);
+      Rooted<PropertyKey> rkey(cx, key);
+      return GetPropertyCached(cx, obj, rkey, entry, result);
     }
 
-    if (MaybeGetNativePropertyAndWriteToCache<CanGC>(cx, obj.get(), id, entry,
+    if (MaybeGetNativePropertyAndWriteToCache<CanGC>(cx, obj.get(), key, entry,
                                                      &result.get())) {
       return true;
     }
@@ -2001,7 +2018,7 @@ bool GetElemMaybeCached(JSContext* cx, HandleObject obj, HandleValue idVal,
   }
 
   RootedValue objVal(cx, ObjectValue(*obj));
-  return GetObjectElementOperation(cx, JSOp::GetElem, obj, objVal, idVal,
+  return GetObjectElementOperation(cx, JSOp::GetElem, obj, objVal, keyVal,
                                    result);
 }
 
@@ -2056,18 +2073,18 @@ bool HasNativeDataPropertyPure(JSContext* cx, JSObject* obj,
                                MegamorphicCacheEntry* entry, Value* vp) {
   AutoUnsafeCallWithABI unsafe;
 
-  // vp[0] contains the id, result will be stored in vp[1].
-  Value idVal = vp[0];
-  jsid id;
-  if (!ValueToAtomOrSymbolPure(cx, idVal, &id)) {
+  // vp[0] contains the key, result will be stored in vp[1].
+  Value keyVal = vp[0];
+  PropertyKey key;
+  if (!ValueToAtomOrSymbolPure(cx, keyVal, &key)) {
     return false;
   }
 
   MegamorphicCache& cache = cx->caches().megamorphicCache;
   Shape* receiverShape = obj->shape();
   if (!entry) {
-    if (cache.lookup(receiverShape, id, &entry)) {
-      VerifyCacheEntry(cx, &obj->as<NativeObject>(), id, *entry);
+    if (cache.lookup(receiverShape, key, &entry)) {
+      VerifyCacheEntry(cx, &obj->as<NativeObject>(), key, *entry);
     }
   }
 
@@ -2081,11 +2098,11 @@ bool HasNativeDataPropertyPure(JSContext* cx, JSObject* obj,
 
     NativeObject* nobj = &obj->as<NativeObject>();
     uint32_t index;
-    if (PropMap* map = nobj->shape()->lookup(cx, id, &index)) {
+    if (PropMap* map = nobj->shape()->lookup(cx, key, &index)) {
       PropertyInfo prop = map->getPropertyInfo(index);
       if (prop.isDataProperty()) {
         TaggedSlotOffset offset = nobj->getTaggedSlotOffset(prop.slot());
-        cache.initEntryForDataProperty(entry, receiverShape, id, numHops,
+        cache.initEntryForDataProperty(entry, receiverShape, key, numHops,
                                        offset);
       }
       vp[1].setBoolean(true);
@@ -2095,15 +2112,15 @@ bool HasNativeDataPropertyPure(JSContext* cx, JSObject* obj,
     // Property not found. Watch out for Class hooks and TypedArrays.
     if (MOZ_UNLIKELY(!obj->is<PlainObject>())) {
       // Fail if there's a resolve hook, unless the mayResolve hook tells us
-      // the resolve hook won't define a property with this id.
-      if (ClassMayResolveId(cx->names(), obj->getClass(), id, obj)) {
+      // the resolve hook won't define a property with this key.
+      if (ClassMayResolveId(cx->names(), obj->getClass(), key, obj)) {
         return false;
       }
 
-      // Don't skip past TypedArrayObjects if the id can be a TypedArray
+      // Don't skip past TypedArrayObjects if the key can be a TypedArray
       // index.
       if (obj->is<TypedArrayObject>()) {
-        if (MaybeTypedArrayIndexString(id)) {
+        if (MaybeTypedArrayIndexString(key)) {
           return false;
         }
       }
@@ -2123,9 +2140,9 @@ bool HasNativeDataPropertyPure(JSContext* cx, JSObject* obj,
   // Missing property.
   if (entry) {
     if constexpr (HasOwn) {
-      cache.initEntryForMissingOwnProperty(entry, receiverShape, id);
+      cache.initEntryForMissingOwnProperty(entry, receiverShape, key);
     } else {
-      cache.initEntryForMissingProperty(entry, receiverShape, id);
+      cache.initEntryForMissingProperty(entry, receiverShape, key);
     }
   }
   vp[1].setBoolean(false);
@@ -2158,16 +2175,16 @@ bool HasNativeElementPure(JSContext* cx, NativeObject* obj, int32_t index,
     return true;
   }
 
-  jsid id = PropertyKey::Int(index);
+  PropertyKey key = PropertyKey::Int(index);
   uint32_t unused;
-  if (obj->shape()->lookup(cx, id, &unused)) {
+  if (obj->shape()->lookup(cx, key, &unused)) {
     vp[0].setBoolean(true);
     return true;
   }
 
   // Fail if there's a resolve hook, unless the mayResolve hook tells
-  // us the resolve hook won't define a property with this id.
-  if (MOZ_UNLIKELY(ClassMayResolveId(cx->names(), obj->getClass(), id, obj))) {
+  // us the resolve hook won't define a property with this key.
+  if (MOZ_UNLIKELY(ClassMayResolveId(cx->names(), obj->getClass(), key, obj))) {
     return false;
   }
   // TypedArrayObject are also native and contain indexed properties.
@@ -2224,15 +2241,23 @@ static bool TryAddOrSetPlainObjectProperty(JSContext* cx,
     if (!prop.isDataProperty() || !prop.writable()) {
       return true;
     }
-    obj->setSlot(prop.slot(), value);
-    if (!Watchtower::watchPropertyModification<AllowGC::NoGC>(cx, obj, key)) {
-      return false;
+    bool watchesPropValue = Watchtower::watchesPropertyValueChange(obj);
+    if (MOZ_UNLIKELY(watchesPropValue)) {
+      Watchtower::watchPropertyValueChange<AllowGC::NoGC>(cx, obj, key, value,
+                                                          prop);
     }
+    obj->setSlot(prop.slot(), value);
     *optimized = true;
 
     if constexpr (UseCache) {
-      TaggedSlotOffset offset = obj->getTaggedSlotOffset(prop.slot());
-      cache.set(receiverShape, nullptr, key, offset, 0);
+      // Don't add an entry to the MegamorphicSetPropCache if we need to invoke
+      // the Watchtower hook for property value changes. The cache is used
+      // directly from JIT code and we can't easily call into Watchtower from
+      // there.
+      if (!watchesPropValue) {
+        TaggedSlotOffset offset = obj->getTaggedSlotOffset(prop.slot());
+        cache.set(receiverShape, nullptr, key, offset, 0);
+      }
     }
     return true;
   }
@@ -2470,6 +2495,8 @@ bool DoConcatStringObject(JSContext* cx, HandleValue lhs, HandleValue rhs,
 }
 
 bool IsPossiblyWrappedTypedArray(JSContext* cx, JSObject* obj, bool* result) {
+  MOZ_ASSERT(obj->is<WrapperObject>(), "non-wrappers are handled in JIT code");
+
   JSObject* unwrapped = CheckedUnwrapDynamic(obj, cx);
   if (!unwrapped) {
     ReportAccessDenied(cx);
@@ -3172,12 +3199,13 @@ bool MapObjectSetFromIC(JSContext* cx, Handle<MapObject*> obj, HandleValue key,
 template <class T>
 static mozilla::HashNumber HashValue(JSContext* cx, T* obj,
                                      const Value* value) {
-  RootedValue rootedValue(cx, *value);
+  MOZ_ASSERT(obj->size() > 0);
+
   HashableValue hashable;
-  MOZ_ALWAYS_TRUE(hashable.setValue(cx, rootedValue));
+  MOZ_ALWAYS_TRUE(hashable.setValue(cx, *value));
 
   using Table = typename T::Table;
-  return Table(obj).hash(hashable);
+  return *Table(obj).hash(hashable);
 }
 #endif
 

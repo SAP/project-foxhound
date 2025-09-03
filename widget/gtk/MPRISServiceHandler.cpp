@@ -463,8 +463,7 @@ void MPRISServiceHandler::InitIdentity() {
   mIdentity.Append(' ');
   mIdentity.Append(mDesktopEntry);
 
-  // Compute the desktop entry name like nsAppRunner does for g_set_prgname
-  ToLowerCase(mDesktopEntry);
+  LOGMPRIS("InitIdentity() MPRIS desktop ID %s", mDesktopEntry.get());
 }
 
 const char* MPRISServiceHandler::Identity() const {
@@ -682,10 +681,13 @@ bool MPRISServiceHandler::RenewLocalImageFile(const char* aImageData,
 
   MOZ_ASSERT(mLocalImageFile);
   nsCOMPtr<nsIOutputStream> out;
-  NS_NewLocalFileOutputStream(getter_AddRefs(out), mLocalImageFile,
-                              PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE);
+  nsresult rv =
+      NS_NewLocalFileOutputStream(getter_AddRefs(out), mLocalImageFile,
+                                  PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE);
   uint32_t written;
-  nsresult rv = out->Write(aImageData, aDataSize, &written);
+  if (NS_SUCCEEDED(rv)) {
+    rv = out->Write(aImageData, aDataSize, &written);
+  }
   if (NS_FAILED(rv) || written != aDataSize) {
     LOGMPRIS("Failed to write an image file");
     RemoveAllLocalImages();

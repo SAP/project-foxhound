@@ -81,6 +81,7 @@ skip-if = [
   "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt", # Bug 1559315
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1713158
   "win11_2009", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1797751
 ]
 
 ["browser_rules_authored_override.js"]
@@ -210,7 +211,6 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_rules_edit-property-commit.js"]
 
 ["browser_rules_edit-property-computed.js"]
-skip-if = ["a11y_checks"] # Bugs 1849028 and 1858041 clicked span.ruleview-expander.theme-twisty is inconsistently not accessible
 
 ["browser_rules_edit-property-increments-wheel.js"]
 

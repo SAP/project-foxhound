@@ -9,10 +9,6 @@ const { CFRMessageProvider } = ChromeUtils.importESModule(
   "resource:///modules/asrouter/CFRMessageProvider.sys.mjs"
 );
 
-const { TelemetryFeed } = ChromeUtils.importESModule(
-  "resource://activity-stream/lib/TelemetryFeed.sys.mjs"
-);
-
 const createDummyRecommendation = ({
   action,
   category,
@@ -585,7 +581,7 @@ add_task(async function test_onLocationChange_cb() {
   let count = 0;
   const triggerHandler = () => ++count;
   const TEST_URL =
-    "https://example.com/browser/browser/components/newtab/test/browser/blue_page.html";
+    "https://example.com/browser/browser/extensions/newtab/test/browser/blue_page.html";
   const browser = gBrowser.selectedBrowser;
 
   await ASRouterTriggerListeners.get("openURL").init(triggerHandler, [

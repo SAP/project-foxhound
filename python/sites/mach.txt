@@ -1,3 +1,4 @@
+requires-python:>=3.8
 pth:build
 pth:config
 pth:config/mozunit
@@ -56,7 +57,7 @@ pth:xpcom/geckoprocesstypes_generator
 pth:xpcom/idl-parser
 vendored:third_party/python/Jinja2
 vendored:third_party/python/MarkupSafe/src
-vendored:third_party/python/PyYAML/lib/
+vendored-fallback:pyyaml:third_party/python/PyYAML/lib/:faster native loading is disabled
 vendored:third_party/python/ansicon
 vendored:third_party/python/appdirs
 vendored:third_party/python/attrs
@@ -70,6 +71,7 @@ vendored:third_party/python/click
 vendored:third_party/python/colorama
 vendored:third_party/python/diskcache
 vendored:third_party/python/distro
+vendored:third_party/python/filelock
 vendored:third_party/python/glean_parser
 vendored:third_party/python/idna
 vendored:third_party/python/importlib_metadata
@@ -102,7 +104,7 @@ vendored:third_party/python/wheel
 vendored:third_party/python/zipp
 # glean-sdk may not be installable if a wheel isn't available
 # and it has to be built from source.
-pypi-optional:glean-sdk==62.0.0:telemetry will not be collected
+pypi-optional:glean-sdk==63.1.0:telemetry will not be collected
 # Mach gracefully handles the case where `psutil` is unavailable.
 # We aren't (yet) able to pin packages in automation, so we have to
 # support down to the oldest locally-installed version (5.4.2).

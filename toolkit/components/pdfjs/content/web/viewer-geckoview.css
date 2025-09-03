@@ -13,6 +13,210 @@
  * limitations under the License.
  */
 
+.messageBar{
+  --closing-button-icon:url(images/messageBar_closingButton.svg);
+  --message-bar-close-button-color:var(--text-primary-color);
+  --message-bar-close-button-color-hover:var(--text-primary-color);
+  --message-bar-close-button-border-radius:4px;
+  --message-bar-close-button-border:none;
+  --message-bar-close-button-hover-bg-color:rgb(21 20 26 / 0.14);
+  --message-bar-close-button-active-bg-color:rgb(21 20 26 / 0.21);
+  --message-bar-close-button-focus-bg-color:rgb(21 20 26 / 0.07);
+
+  @media (prefers-color-scheme: dark){
+    --message-bar-close-button-hover-bg-color:rgb(251 251 254 / 0.14);
+    --message-bar-close-button-active-bg-color:rgb(251 251 254 / 0.21);
+    --message-bar-close-button-focus-bg-color:rgb(251 251 254 / 0.07);
+  }
+
+  @media screen and (forced-colors: active){
+    --message-bar-close-button-color:ButtonText;
+    --message-bar-close-button-border:1px solid ButtonText;
+    --message-bar-close-button-hover-bg-color:ButtonText;
+    --message-bar-close-button-active-bg-color:ButtonText;
+    --message-bar-close-button-focus-bg-color:ButtonText;
+    --message-bar-close-button-color-hover:HighlightText;
+  }
+
+  display:flex;
+  position:relative;
+  padding:8px 8px 8px 16px;
+  flex-direction:column;
+  justify-content:center;
+  align-items:center;
+  gap:8px;
+  user-select:none;
+
+  border-radius:4px;
+
+  border:1px solid var(--message-bar-border-color);
+  background:var(--message-bar-bg-color);
+  color:var(--message-bar-fg-color);
+
+  > div{
+    display:flex;
+    align-items:flex-start;
+    gap:8px;
+    align-self:stretch;
+
+    &::before{
+      content:"";
+      display:inline-block;
+      width:16px;
+      height:16px;
+      mask-image:var(--message-bar-icon);
+      mask-size:cover;
+      background-color:var(--message-bar-icon-color);
+      flex-shrink:0;
+    }
+  }
+
+  button{
+    cursor:pointer;
+
+    &:focus-visible{
+      outline:var(--focus-ring-outline);
+      outline-offset:2px;
+    }
+  }
+
+  .closeButton{
+    width:32px;
+    height:32px;
+    background:none;
+    border-radius:var(--message-bar-close-button-border-radius);
+    border:var(--message-bar-close-button-border);
+
+    display:flex;
+    align-items:center;
+    justify-content:center;
+
+    &::before{
+      content:"";
+      display:inline-block;
+      width:16px;
+      height:16px;
+      mask-image:var(--closing-button-icon);
+      mask-size:cover;
+      background-color:var(--message-bar-close-button-color);
+    }
+
+    &:is(:hover, :active, :focus)::before{
+      background-color:var(--message-bar-close-button-color-hover);
+    }
+
+    &:hover{
+      background-color:var(--message-bar-close-button-hover-bg-color);
+    }
+
+    &:active{
+      background-color:var(--message-bar-close-button-active-bg-color);
+    }
+
+    &:focus{
+      background-color:var(--message-bar-close-button-focus-bg-color);
+    }
+
+    > span{
+      display:inline-block;
+      width:0;
+      height:0;
+      overflow:hidden;
+    }
+  }
+}
+
+#editorUndoBar{
+  --text-primary-color:#15141a;
+
+  --message-bar-icon:url(images/secondaryToolbarButton-documentProperties.svg);
+  --message-bar-icon-color:#0060df;
+  --message-bar-bg-color:#deeafc;
+  --message-bar-fg-color:var(--text-primary-color);
+  --message-bar-border-color:rgb(0 0 0 / 0.08);
+
+  --undo-button-bg-color:rgb(21 20 26 / 0.07);
+  --undo-button-bg-color-hover:rgb(21 20 26 / 0.14);
+  --undo-button-bg-color-active:rgb(21 20 26 / 0.21);
+
+  --undo-button-fg-color:var(--message-bar-fg-color);
+  --undo-button-fg-color-hover:var(--undo-button-fg-color);
+  --undo-button-fg-color-active:var(--undo-button-fg-color);
+
+  @media (prefers-color-scheme: dark){
+    --text-primary-color:#fbfbfe;
+
+    --message-bar-icon-color:#73a7f3;
+    --message-bar-bg-color:#003070;
+    --message-bar-border-color:rgb(255 255 255 / 0.08);
+
+    --undo-button-bg-color:rgb(255 255 255 / 0.08);
+    --undo-button-bg-color-hover:rgb(255 255 255 / 0.14);
+    --undo-button-bg-color-active:rgb(255 255 255 / 0.21);
+  }
+
+  @media screen and (forced-colors: active){
+    --text-primary-color:CanvasText;
+
+    --message-bar-icon-color:CanvasText;
+    --message-bar-bg-color:Canvas;
+    --message-bar-border-color:CanvasText;
+
+    --undo-button-bg-color:ButtonText;
+    --undo-button-bg-color-hover:SelectedItem;
+    --undo-button-bg-color-active:SelectedItem;
+
+    --undo-button-fg-color:ButtonFace;
+    --undo-button-fg-color-hover:SelectedItemText;
+    --undo-button-fg-color-active:SelectedItemText;
+  }
+
+  position:fixed;
+  top:50px;
+  left:50%;
+  transform:translateX(-50%);
+  z-index:10;
+
+  padding-block:8px;
+  padding-inline:16px 8px;
+
+  font:menu;
+  font-size:15px;
+
+  cursor:default;
+
+  button{
+    cursor:pointer;
+  }
+
+  #editorUndoBarUndoButton{
+    border-radius:4px;
+    font-weight:590;
+    line-height:19.5px;
+    color:var(--undo-button-fg-color);
+    border:none;
+    padding:4px 16px;
+    margin-inline-start:8px;
+    height:32px;
+
+    background-color:var(--undo-button-bg-color);
+
+    &:hover{
+      background-color:var(--undo-button-bg-color-hover);
+      color:var(--undo-button-fg-color-hover);
+    }
+
+    &:active{
+      background-color:var(--undo-button-bg-color-active);
+      color:var(--undo-button-fg-color-active);
+    }
+  }
+
+  > div{
+    align-items:center;
+  }
+}
+
 .dialog{
   --dialog-bg-color:white;
   --dialog-border-color:white;
@@ -20,8 +224,6 @@
   --text-primary-color:#15141a;
   --text-secondary-color:#5b5b66;
   --hover-filter:brightness(0.9);
-  --focus-ring-color:#0060df;
-  --focus-ring-outline:2px solid var(--focus-ring-color);
   --link-fg-color:#0060df;
   --link-hover-fg-color:#0250bb;
   --separator-color:#f0f0f4;
@@ -35,19 +237,31 @@
   --radio-border-color:#8f8f9d;
   --radio-checked-border-color:#0060df;
 
-  --button-secondary-bg-color:#f0f0f4;
+  --button-secondary-bg-color:rgb(21 20 26 / 0.07);
   --button-secondary-fg-color:var(--text-primary-color);
   --button-secondary-border-color:var(--button-secondary-bg-color);
-  --button-secondary-hover-bg-color:var(--button-secondary-bg-color);
+  --button-secondary-active-bg-color:rgb(21 20 26 / 0.21);
+  --button-secondary-active-fg-color:var(--button-secondary-fg-color);
+  --button-secondary-active-border-color:var(--button-secondary-bg-color);
+  --button-secondary-hover-bg-color:rgb(21 20 26 / 0.14);
   --button-secondary-hover-fg-color:var(--button-secondary-fg-color);
   --button-secondary-hover-border-color:var(--button-secondary-hover-bg-color);
 
   --button-primary-bg-color:#0060df;
   --button-primary-fg-color:#fbfbfe;
   --button-primary-border-color:var(--button-primary-bg-color);
-  --button-primary-hover-bg-color:var(--button-primary-bg-color);
+  --button-primary-active-bg-color:#054096;
+  --button-primary-active-fg-color:var(--button-primary-fg-color);
+  --button-primary-active-border-color:var(--button-primary-active-bg-color);
+  --button-primary-hover-bg-color:#0250bb;
   --button-primary-hover-fg-color:var(--button-primary-fg-color);
   --button-primary-hover-border-color:var(--button-primary-hover-bg-color);
+
+  --button-disabled-bg-color:color-mix(in srgb, currentcolor, transparent 60%);
+  --button-disabled-fg-color:var(--button-disabled-bg-color);
+
+  --input-text-bg-color:white;
+  --input-text-fg-color:var(--text-primary-color);
 
   @media (prefers-color-scheme: dark){
     --dialog-bg-color:#1c1b22;
@@ -55,7 +269,6 @@
     --dialog-shadow:0 2px 14px 0 #15141a;
     --text-primary-color:#fbfbfe;
     --text-secondary-color:#cfcfd8;
-    --focus-ring-color:#0df;
     --hover-filter:brightness(1.4);
     --link-fg-color:#0df;
     --link-hover-fg-color:#80ebff;
@@ -67,9 +280,15 @@
     --radio-checked-bg-color:#15141a;
     --radio-checked-border-color:#0df;
 
-    --button-secondary-bg-color:#2b2a33;
+    --button-secondary-bg-color:rgb(251 251 254 / 0.07);
+    --button-secondary-active-bg-color:rgb(251 251 254 / 0.21);
+    --button-secondary-hover-bg-color:rgb(251 251 254 / 0.14);
     --button-primary-bg-color:#0df;
     --button-primary-fg-color:#15141a;
+    --button-primary-active-bg-color:#aaf2ff;
+    --button-primary-hover-bg-color:#80ebff;
+
+    --input-text-bg-color:#42414d;
   }
 
   @media screen and (forced-colors: active){
@@ -79,7 +298,6 @@
     --text-primary-color:CanvasText;
     --text-secondary-color:CanvasText;
     --hover-filter:none;
-    --focus-ring-color:ButtonBorder;
     --link-fg-color:LinkText;
     --link-hover-fg-color:LinkText;
     --separator-color:CanvasText;
@@ -93,16 +311,31 @@
     --radio-border-color:ButtonText;
     --radio-checked-border-color:ButtonText;
 
-    --button-secondary-bg-color:ButtonFace;
+    --button-secondary-bg-color:HighlightText;
     --button-secondary-fg-color:ButtonText;
     --button-secondary-border-color:ButtonText;
-    --button-secondary-hover-bg-color:AccentColor;
-    --button-secondary-hover-fg-color:AccentColorText;
+    --button-secondary-active-bg-color:HighlightText;
+    --button-secondary-active-fg-color:SelectedItem;
+    --button-secondary-active-border-color:ButtonText;
+    --button-secondary-hover-bg-color:HighlightText;
+    --button-secondary-hover-fg-color:SelectedItem;
+    --button-secondary-hover-border-color:SelectedItem;
 
     --button-primary-bg-color:ButtonText;
-    --button-primary-fg-color:ButtonFace;
-    --button-primary-hover-bg-color:AccentColor;
-    --button-primary-hover-fg-color:AccentColorText;
+    --button-primary-fg-color:HighlightText;
+    --button-primary-border-color:ButtonText;
+    --button-primary-active-bg-color:SelectedItem;
+    --button-primary-active-fg-color:HighlightText;
+    --button-primary-active-border-color:ButtonText;
+    --button-primary-hover-bg-color:SelectedItem;
+    --button-primary-hover-fg-color:HighlightText;
+    --button-primary-hover-border-color:SelectedItem;
+
+    --button-disabled-bg-color:GrayText;
+    --button-disabled-fg-color:ButtonFace;
+
+    --input-text-bg-color:HighlightText;
+    --input-text-fg-color:FieldText;
   }
 
   font:message-box;
@@ -199,11 +432,12 @@
       }
     }
 
-    button:not(:is(.toggle-button, .closeButton)){
+    button:not(:is(.toggle-button, .closeButton, .clearInputButton)){
       border-radius:4px;
       border:1px solid;
       font:menu;
-      font-weight:600;
+      font-weight:590;
+      font-size:13px;
       padding:4px 16px;
       width:auto;
       height:32px;
@@ -211,6 +445,11 @@
       &:hover{
         cursor:pointer;
         filter:var(--hover-filter);
+      }
+
+      > span{
+        color:inherit;
+        font:inherit;
       }
 
       &.secondaryButton{
@@ -222,6 +461,12 @@
           color:var(--button-secondary-hover-fg-color);
           background-color:var(--button-secondary-hover-bg-color);
           border-color:var(--button-secondary-hover-border-color);
+        }
+
+        &:active{
+          color:var(--button-secondary-active-fg-color);
+          background-color:var(--button-secondary-active-bg-color);
+          border-color:var(--button-secondary-active-border-color);
         }
       }
 
@@ -236,6 +481,19 @@
           background-color:var(--button-primary-hover-bg-color);
           border-color:var(--button-primary-hover-border-color);
         }
+
+        &:active{
+          color:var(--button-primary-active-fg-color);
+          background-color:var(--button-primary-active-bg-color);
+          border-color:var(--button-primary-active-border-color);
+        }
+      }
+
+      &:disabled{
+        color:var(--button-disabled-fg-color) !important;
+        background-color:var(--button-disabled-bg-color);
+        border-color:var(--button-disabled-bg-color);
+        pointer-events:none;
       }
     }
 
@@ -269,30 +527,23 @@
       }
     }
 
-    .messageBar{
-      --message-bar-warning-icon:url(images/messageBar_warning.svg);
-      --closing-button-icon:url(images/messageBar_closingButton.svg);
+    input[type="text"]{
+      background-color:var(--input-text-bg-color);
+      color:var(--input-text-fg-color);
+    }
 
+    .messageBar{
       --message-bar-bg-color:#ffebcd;
       --message-bar-fg-color:#15141a;
       --message-bar-border-color:rgb(0 0 0 / 0.08);
+      --message-bar-icon:url(images/messageBar_warning.svg);
       --message-bar-icon-color:#cd411e;
-      --message-bar-close-button-border-radius:4px;
-      --message-bar-close-button-border:none;
-      --message-bar-close-button-color:var(--text-primary-color);
-      --message-bar-close-button-hover-bg-color:rgb(21 20 26 / 0.14);
-      --message-bar-close-button-active-bg-color:rgb(21 20 26 / 0.21);
-      --message-bar-close-button-focus-bg-color:rgb(21 20 26 / 0.07);
-      --message-bar-close-button-color-hover:var(--text-primary-color);
 
       @media (prefers-color-scheme: dark){
         --message-bar-bg-color:#5a3100;
         --message-bar-fg-color:#fbfbfe;
         --message-bar-border-color:rgb(255 255 255 / 0.08);
         --message-bar-icon-color:#e49c49;
-        --message-bar-close-button-hover-bg-color:rgb(251 251 254 / 0.14);
-        --message-bar-close-button-active-bg-color:rgb(251 251 254 / 0.21);
-        --message-bar-close-button-focus-bg-color:rgb(251 251 254 / 0.07);
       }
 
       @media screen and (forced-colors: active){
@@ -300,43 +551,14 @@
         --message-bar-fg-color:CanvasText;
         --message-bar-border-color:CanvasText;
         --message-bar-icon-color:CanvasText;
-        --message-bar-close-button-color:ButtonText;
-        --message-bar-close-button-border:1px solid ButtonText;
-        --message-bar-close-button-hover-bg-color:ButtonText;
-        --message-bar-close-button-active-bg-color:ButtonText;
-        --message-bar-close-button-focus-bg-color:ButtonText;
-        --message-bar-close-button-color-hover:HighlightText;
       }
 
-      display:flex;
-      position:relative;
-      padding:12px 8px 12px 0;
-      flex-direction:column;
-      justify-content:center;
-      align-items:flex-start;
-      gap:8px;
       align-self:stretch;
 
-      border-radius:4px;
-      border:1px solid var(--message-bar-border-color);
-      background:var(--message-bar-bg-color);
-      color:var(--message-bar-fg-color);
-
       > div{
-        display:flex;
-        padding-inline-start:16px;
-        align-items:flex-start;
-        gap:8px;
-        align-self:stretch;
-
-        &::before{
-          content:"";
-          display:inline-block;
-          width:16px;
-          height:16px;
-          mask-image:var(--message-bar-warning-icon);
-          mask-size:cover;
-          background-color:var(--message-bar-icon-color);
+        &::before,
+        > div{
+          margin-block:4px;
         }
 
         > div{
@@ -354,50 +576,6 @@
           .description{
             font-size:13px;
           }
-        }
-      }
-
-      .closeButton{
-        position:absolute;
-        width:32px;
-        height:32px;
-        inset-inline-end:8px;
-        inset-block-start:8px;
-        background:none;
-        border-radius:var(--message-bar-close-button-border-radius);
-        border:var(--message-bar-close-button-border);
-
-        &::before{
-          content:"";
-          display:inline-block;
-          width:16px;
-          height:16px;
-          mask-image:var(--closing-button-icon);
-          mask-size:cover;
-          background-color:var(--message-bar-close-button-color);
-        }
-
-        &:is(:hover, :active, :focus)::before{
-          background-color:var(--message-bar-close-button-color-hover);
-        }
-
-        &:hover{
-          background-color:var(--message-bar-close-button-hover-bg-color);
-        }
-
-        &:active{
-          background-color:var(--message-bar-close-button-active-bg-color);
-        }
-
-        &:focus{
-          background-color:var(--message-bar-close-button-focus-bg-color);
-        }
-
-        > span{
-          display:inline-block;
-          width:0;
-          height:0;
-          overflow:hidden;
         }
       }
     }
@@ -548,7 +726,7 @@
     }
 
     .popupAnnotation .popup{
-      outline:calc(1.5px * var(--scale-factor)) solid CanvasText !important;
+      outline:calc(1.5px * var(--total-scale-factor)) solid CanvasText !important;
       background-color:ButtonFace !important;
       color:ButtonText !important;
     }
@@ -565,7 +743,7 @@
     }
 
     .popupAnnotation.focused .popup{
-      outline:calc(3px * var(--scale-factor)) solid Highlight !important;
+      outline:calc(3px * var(--total-scale-factor)) solid Highlight !important;
     }
   }
 
@@ -606,7 +784,6 @@
       white-space:nowrap;
       font:10px sans-serif;
       line-height:1.35;
-      user-select:none;
     }
   }
 
@@ -616,6 +793,7 @@
     pointer-events:auto;
     box-sizing:border-box;
     transform-origin:0 0;
+    user-select:none;
 
     &:has(div.annotationContent){
       canvas.annotationContent{
@@ -667,7 +845,7 @@
     background-image:var(--annotation-unfocused-field-background);
     border:2px solid var(--input-unfocused-border-color);
     box-sizing:border-box;
-    font:calc(9px * var(--scale-factor)) sans-serif;
+    font:calc(9px * var(--total-scale-factor)) sans-serif;
     height:100%;
     margin:0;
     vertical-align:top;
@@ -788,7 +966,7 @@
 
   .popupAnnotation{
     position:absolute;
-    font-size:calc(9px * var(--scale-factor));
+    font-size:calc(9px * var(--total-scale-factor));
     pointer-events:none;
     width:max-content;
     max-width:45%;
@@ -797,15 +975,16 @@
 
   .popup{
     background-color:rgb(255 255 153);
-    box-shadow:0 calc(2px * var(--scale-factor)) calc(5px * var(--scale-factor)) rgb(136 136 136);
-    border-radius:calc(2px * var(--scale-factor));
+    box-shadow:0 calc(2px * var(--total-scale-factor)) calc(5px * var(--total-scale-factor)) rgb(136 136 136);
+    border-radius:calc(2px * var(--total-scale-factor));
     outline:1.5px solid rgb(255 255 74);
-    padding:calc(6px * var(--scale-factor));
+    padding:calc(6px * var(--total-scale-factor));
     cursor:pointer;
     font:message-box;
     white-space:normal;
     word-wrap:break-word;
     pointer-events:auto;
+    user-select:text;
   }
 
   .popupAnnotation.focused .popup{
@@ -813,7 +992,7 @@
   }
 
   .popup *{
-    font-size:calc(9px * var(--scale-factor));
+    font-size:calc(9px * var(--total-scale-factor));
   }
 
   .popup > .header{
@@ -826,19 +1005,19 @@
 
   .popup > .header .popupDate{
     display:inline-block;
-    margin-left:calc(5px * var(--scale-factor));
+    margin-left:calc(5px * var(--total-scale-factor));
     width:fit-content;
   }
 
   .popupContent{
     border-top:1px solid rgb(51 51 51);
-    margin-top:calc(2px * var(--scale-factor));
-    padding-top:calc(2px * var(--scale-factor));
+    margin-top:calc(2px * var(--total-scale-factor));
+    padding-top:calc(2px * var(--total-scale-factor));
   }
 
   .richText > *{
     white-space:pre-wrap;
-    font-size:calc(9px * var(--scale-factor));
+    font-size:calc(9px * var(--total-scale-factor));
   }
 
   .popupTriggerArea{
@@ -1200,14 +1379,19 @@
   --page-border:9px solid transparent;
   --spreadHorizontalWrapped-margin-LR:-3.5px;
   --loading-icon-delay:400ms;
-}
+  --focus-ring-color:#0060df;
+  --focus-ring-outline:2px solid var(--focus-ring-color);
 
-@media screen and (forced-colors: active){
-  :root{
+  @media (prefers-color-scheme: dark){
+    --focus-ring-color:#0df;
+  }
+
+  @media screen and (forced-colors: active){
     --pdfViewer-padding-bottom:9px;
     --page-margin:8px auto -1px;
     --page-border:1px solid CanvasText;
     --spreadHorizontalWrapped-margin-LR:3.5px;
+    --focus-ring-color:CanvasText;
   }
 }
 
@@ -1254,19 +1438,14 @@
     height:100%;
 
     canvas{
+      position:absolute;
+      top:0;
+      left:0;
       margin:0;
       display:block;
       width:100%;
       height:100%;
-
-      &[hidden]{
-        display:none;
-      }
-
-      &[zooming]{
-        width:100%;
-        height:100%;
-      }
+      contain:content;
 
       .structTree{
         contain:strict;
@@ -1276,6 +1455,8 @@
 }
 
 .pdfViewer .page{
+  --user-unit:1;
+  --total-scale-factor:calc(var(--scale-factor) * var(--user-unit));
   --scale-round-x:1px;
   --scale-round-y:1px;
 

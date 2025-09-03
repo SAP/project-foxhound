@@ -9,7 +9,6 @@ avoid-blacklist-and-whitelist:
     # Based on codespell with idl and webidl added.
     extensions:
         - js
-        - jsm
         - mjs
         - jxs
         - idl
@@ -46,7 +45,6 @@ avoid-blacklist-and-whitelist:
         - browser/components/enterprisepolicies/Policies.sys.mjs
         - browser/components/migration/ChromeMigrationUtils.sys.mjs
         - browser/components/migration/ChromeProfileMigrator.sys.mjs
-        - browser/components/newtab/data/content/activity-stream.bundle.js
         - browser/components/preferences/privacy.inc.xhtml
         - browser/components/preferences/privacy.js
         - browser/components/resistfingerprinting/test/mochitest/test_bug1354633_media_error.html
@@ -61,6 +59,7 @@ avoid-blacklist-and-whitelist:
         - browser/components/urlbar/tests/unit/test_providerHeuristicFallback.js
         - browser/components/urlbar/tests/unit/test_search_suggestions.js
         - browser/components/urlbar/tests/unit/test_tokenizer.js
+        - browser/extensions/newtab/data/content/activity-stream.bundle.js
         - browser/extensions/screenshots/background/main.js
         - browser/extensions/webcompat/shims/nielsen.js
         - browser/modules/SitePermissions.sys.mjs
@@ -153,7 +152,6 @@ avoid-blacklist-and-whitelist:
         - layout/tools/reftest/reftestcommandline.py
         - layout/tools/reftest/runreftest.py
         - layout/tools/reftest/selftest/conftest.py
-        - mobile/android/android-components/components/feature/webcompat/src/main/assets/extensions/webcompat/shims/nielsen.js
         - mobile/android/android-components/docs/changelog.md
         - mobile/android/app/geckoview-prefs.js
         - mobile/android/fenix/app/src/main/java/org/mozilla/fenix/ext/Bitmap.kt

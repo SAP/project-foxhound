@@ -21,19 +21,21 @@
 #include "nsServiceManagerUtils.h"
 #include "nsDebug.h"
 #include "nsIPermissionManager.h"
+#include "nsIPushService.h"
 #include "nsXULAppAPI.h"
 
 #include "jsapi.h"
 
 #include "mozilla/AppShutdown.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomServiceworkersMetrics.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ClientHandle.h"
 #include "mozilla/dom/ClientManager.h"
@@ -485,6 +487,8 @@ void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
   LoadRegistrations(data);
 
   mTelemetryLastChange = TimeStamp::Now();
+
+  mETPPermissionObserver = new ETPPermissionObserver();
 }
 
 void ServiceWorkerManager::RecordTelemetry(uint32_t aNumber, uint32_t aFetch) {
@@ -506,20 +510,22 @@ void ServiceWorkerManager::RecordTelemetry(uint32_t aNumber, uint32_t aFetch) {
         // after a few months running. 1 month is about 500K repeats @ 5s
         // sampling
         uint32_t num_repeats = std::min(repeats, 1000000U);  // 4MB max
-        nsTArray<uint32_t> values;
+        nsTArray<uint64_t> values;
 
-        uint32_t* array = values.AppendElements(num_repeats);
+        uint64_t* array = values.AppendElements(num_repeats);
         for (uint32_t i = 0; i < num_repeats; i++) {
           array[i] = aNumber;
         }
-        Telemetry::Accumulate(Telemetry::SERVICE_WORKER_RUNNING, "All"_ns,
-                              values);
+        glean::service_worker::running
+            .EnumGet(glean::service_worker::RunningLabel::eAll)
+            .AccumulateSamples(values);
 
         for (uint32_t i = 0; i < num_repeats; i++) {
           array[i] = aFetch;
         }
-        Telemetry::Accumulate(Telemetry::SERVICE_WORKER_RUNNING, "Fetch"_ns,
-                              values);
+        glean::service_worker::running
+            .EnumGet(glean::service_worker::RunningLabel::eFetch)
+            .AccumulateSamples(values);
       });
   NS_DispatchBackgroundTask(runnable.forget(), nsIEventTarget::DISPATCH_NORMAL);
 }
@@ -690,6 +696,7 @@ void ServiceWorkerManager::MaybeFinishShutdown() {
   nsresult rv = NS_DispatchToMainThread(runnable);
   Unused << NS_WARN_IF(NS_FAILED(rv));
   mActor = nullptr;
+  mETPPermissionObserver = nullptr;
 
   // This also submits final telemetry
   ServiceWorkerPrivate::RunningShutdown();
@@ -823,7 +830,7 @@ ServiceWorkerManager::RegisterForTest(nsIPrincipal* aPrincipal,
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::Register(
     const ClientInfo& aClientInfo, const nsACString& aScopeURL,
     const nsACString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache) {
-  AUTO_PROFILER_MARKER_TEXT("SWM Register", DOM, {}, ""_ns);
+  AUTO_PROFILER_MARKER_UNTYPED("SWM Register", DOM, {});
 
   nsCOMPtr<nsIURI> scopeURI;
   nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScopeURL);
@@ -1107,7 +1114,8 @@ nsresult ServiceWorkerManager::SendPushEvent(
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendPushSubscriptionChangeEvent(
-    const nsACString& aOriginAttributes, const nsACString& aScope) {
+    const nsACString& aOriginAttributes, const nsACString& aScope,
+    nsIPushSubscription* aOldSubscription) {
   OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
     return NS_ERROR_INVALID_ARG;
@@ -1117,53 +1125,58 @@ ServiceWorkerManager::SendPushSubscriptionChangeEvent(
   if (!info) {
     return NS_ERROR_FAILURE;
   }
-  return info->WorkerPrivate()->SendPushSubscriptionChangeEvent();
+  return info->WorkerPrivate()->SendPushSubscriptionChangeEvent(
+      aOldSubscription);
 }
 
 nsresult ServiceWorkerManager::SendNotificationEvent(
     const nsAString& aEventName, const nsACString& aOriginSuffix,
-    const nsACString& aScope, const nsAString& aID, const nsAString& aTitle,
+    const nsAString& aScope, const nsAString& aID, const nsAString& aTitle,
     const nsAString& aDir, const nsAString& aLang, const nsAString& aBody,
-    const nsAString& aTag, const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aTag, const nsAString& aIcon, const nsAString& aData) {
   OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginSuffix)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  ServiceWorkerInfo* info = GetActiveWorkerInfoForScope(attrs, aScope);
+  ServiceWorkerInfo* info =
+      GetActiveWorkerInfoForScope(attrs, NS_ConvertUTF16toUTF8(aScope));
   if (!info) {
     return NS_ERROR_FAILURE;
   }
 
   ServiceWorkerPrivate* workerPrivate = info->WorkerPrivate();
-  return workerPrivate->SendNotificationEvent(
-      aEventName, aID, aTitle, aDir, aLang, aBody, aTag, aIcon, aData,
-      aBehavior, NS_ConvertUTF8toUTF16(aScope));
+
+  NotificationDirection dir = StringToEnum<NotificationDirection>(aDir).valueOr(
+      NotificationDirection::Auto);
+
+  // XXX(krosylight): Some notifications options are missing in SWM
+  IPCNotificationOptions options(
+      nsString(aTitle), dir, nsString(aLang), nsString(aBody), nsString(aTag),
+      nsString(aIcon), false, false, nsTArray<uint32_t>(), nsString(aData));
+  return workerPrivate->SendNotificationEvent(aEventName, aScope, aID, options);
 }
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendNotificationClickEvent(
-    const nsACString& aOriginSuffix, const nsACString& aScope,
+    const nsACString& aOriginSuffix, const nsAString& aScope,
     const nsAString& aID, const nsAString& aTitle, const nsAString& aDir,
     const nsAString& aLang, const nsAString& aBody, const nsAString& aTag,
-    const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aIcon, const nsAString& aData) {
   return SendNotificationEvent(nsLiteralString(NOTIFICATION_CLICK_EVENT_NAME),
                                aOriginSuffix, aScope, aID, aTitle, aDir, aLang,
-                               aBody, aTag, aIcon, aData, aBehavior);
+                               aBody, aTag, aIcon, aData);
 }
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendNotificationCloseEvent(
-    const nsACString& aOriginSuffix, const nsACString& aScope,
+    const nsACString& aOriginSuffix, const nsAString& aScope,
     const nsAString& aID, const nsAString& aTitle, const nsAString& aDir,
     const nsAString& aLang, const nsAString& aBody, const nsAString& aTag,
-    const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aIcon, const nsAString& aData) {
   return SendNotificationEvent(nsLiteralString(NOTIFICATION_CLOSE_EVENT_NAME),
                                aOriginSuffix, aScope, aID, aTitle, aDir, aLang,
-                               aBody, aTag, aIcon, aData, aBehavior);
+                               aBody, aTag, aIcon, aData);
 }
 
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::WhenReady(
@@ -3473,5 +3486,98 @@ void ServiceWorkerManager::ReportServiceWorkerShutdownProgress(
   MOZ_ASSERT(mShutdownBlocker);
   mShutdownBlocker->ReportShutdownProgress(aShutdownStateId, aProgress);
 }
+
+nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetRegistrations(nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(aPrincipal);
+
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>();
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(scopeKey, &data)) {
+    return nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>();
+  }
+
+  return data->mInfos.Clone();
+}
+
+// ETPPermissionObserver implementation
+ETPPermissionObserver::ETPPermissionObserver() { RegisterObserverEvents(); }
+ETPPermissionObserver::~ETPPermissionObserver() { UnregisterObserverEvents(); }
+
+NS_IMETHODIMP ETPPermissionObserver::Observe(nsISupports* aSubject,
+                                             const char* aTopic,
+                                             const char16_t* aSomeData) {
+  nsCOMPtr<nsIPermission> perm = nullptr;
+  perm = do_QueryInterface(aSubject);
+  if (!perm) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = nullptr;
+  perm->GetPrincipal(getter_AddRefs(principal));
+  if (!principal) {
+    return NS_OK;
+  }
+
+  bool isContentPrincipal = false;
+  principal->GetIsContentPrincipal(&isContentPrincipal);
+  if (!isContentPrincipal) {
+    return NS_OK;
+  }
+
+  nsAutoCString type;
+  perm->GetType(type);
+  if (!type.EqualsLiteral("trackingprotection") &&
+      !type.EqualsLiteral("trackingprotection-pb")) {
+    return NS_OK;
+  }
+
+  RefPtr<dom::ServiceWorkerManager> swm =
+      dom::ServiceWorkerManager::GetInstance();
+  auto registrations = swm->GetRegistrations(principal);
+
+  for (const auto& registrationInfo : registrations.Values()) {
+    RefPtr<dom::ServiceWorkerInfo> swInfo =
+        registrationInfo->NewestIncludingEvaluating();
+    if (!swInfo) {
+      continue;
+    }
+
+    bool isOnContentBlockingAllowList = ContentBlockingAllowList::Check(
+        principal, principal->GetIsInPrivateBrowsing());
+
+    swInfo->WorkerPrivate()->UpdateIsOnContentBlockingAllowList(
+        isOnContentBlockingAllowList);
+  }
+
+  return NS_OK;
+}
+
+void ETPPermissionObserver::RegisterObserverEvents() {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  MOZ_ASSERT(observerService);
+
+  if (observerService) {
+    observerService->AddObserver(this, "perm-changed", false);
+  }
+}
+
+void ETPPermissionObserver::UnregisterObserverEvents() {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  if (observerService) {
+    observerService->RemoveObserver(this, "perm-changed");
+  }
+}
+
+NS_IMPL_ISUPPORTS(ETPPermissionObserver, nsIObserver, nsISupports)
 
 }  // namespace mozilla::dom

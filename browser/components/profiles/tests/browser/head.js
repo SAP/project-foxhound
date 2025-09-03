@@ -7,6 +7,10 @@ const { Sqlite } = ChromeUtils.importESModule(
   "resource://gre/modules/Sqlite.sys.mjs"
 );
 
+const { TelemetryTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/TelemetryTestUtils.sys.mjs"
+);
+
 /**
  * A mock toolkit profile.
  */
@@ -49,7 +53,7 @@ class MockProfileService {
 
   async asyncFlush() {}
 
-  async asyncFlushCurrentProfile() {}
+  async asyncFlushGroupProfile() {}
 }
 
 const gProfileService = new MockProfileService();
@@ -104,3 +108,69 @@ add_setup(async () => {
 async function initGroupDatabase() {
   await SelectableProfileService.maybeSetupDataStore();
 }
+
+// Verifies Glean probes are recorded as expected. Expects method and object
+// to be passed in as snake_case, and converts to lowerCamelCase internally
+// as expected by Glean code.
+//
+// Example 1. Basic usage.
+//
+// To verify
+//   `Glean.profilesNew.avatar.record({value: "book"})`,
+// we would call
+//   `assertGlean("profiles", "new", "avatar", "book")`.
+//
+// Example 2. Dealing with snake_case `object`.
+//
+// To verify
+//   `Glean.profilesNew.learnMore.record()`,
+// pass in the snake-case version,
+//   `assertGlean("profiles", "new", "learn_more")`
+// and snake-case will be auto-converted to camelCase where needed.
+//
+// Example 3. Dealing with snake_case `method`.
+//
+// To verify
+//   `Glean.profilesSelectorWindow.launch.record()`,
+// pass in the snake-case version,
+//   `assertGlean("profiles", "selector_window", "launch")`
+// and snake-case will be auto-converted to camelCase where needed.
+const assertGlean = async (category, method, object, extra) => {
+  // Needed to convert 'learn_more' to 'learnMore'.
+  const snakeToCamel = str =>
+    str.replace(/_([a-z])/g, (_, nextChar) => nextChar.toUpperCase());
+
+  // Converts 'profiles' and 'new' to 'profilesNew'.
+  let camelMethod = snakeToCamel(method);
+  let gleanFn = category + camelMethod[0].toUpperCase() + camelMethod.substr(1);
+
+  await Services.fog.testFlushAllChildren();
+  let testEvents = Glean[gleanFn][snakeToCamel(object)].testGetValue();
+  Assert.equal(
+    testEvents.length,
+    1,
+    `Should have recorded the ${category} ${method} ${object} event exactly once`
+  );
+  Assert.equal(
+    testEvents[0].category,
+    `${category}.${method}`,
+    "Should have expected Glean event category"
+  );
+  Assert.equal(
+    testEvents[0].name,
+    object,
+    "Should have expected Glean event name"
+  );
+  if (extra) {
+    Assert.equal(
+      testEvents[0].extra.value,
+      extra,
+      "Should have expected Glean extra field"
+    );
+  }
+  TelemetryTestUtils.assertEvents([[category, method, object]], {
+    category,
+    method,
+    object,
+  });
+};

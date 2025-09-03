@@ -180,11 +180,11 @@ function getClipboardDataSnapshot(
             "nsIClipboardGetDataSnapshotCallback",
           ]),
           // nsIClipboardGetDataSnapshotCallback
-          onSuccess: SpecialPowers.wrapCallback(function (
-            aAsyncGetClipboardData
-          ) {
-            resolve(aAsyncGetClipboardData);
-          }),
+          onSuccess: SpecialPowers.wrapCallback(
+            function (aAsyncGetClipboardData) {
+              resolve(aAsyncGetClipboardData);
+            }
+          ),
           onError: SpecialPowers.wrapCallback(function (aResult) {
             reject(aResult);
           }),
@@ -234,18 +234,18 @@ function asyncClipboardRequestGetData(aRequest, aFlavor, aThrows = false) {
           aThrows ? "throw" : "success"
         }`
       );
-      reject(e);
+      reject(e.result);
     }
   });
 }
 
-function syncClipboardRequestGetData(aRequest, aFlavor, aThrows = false) {
+function syncClipboardRequestGetData(aRequest, aFlavor, aResult = Cr.NS_OK) {
   var trans = Cc["@mozilla.org/widget/transferable;1"].createInstance(
     Ci.nsITransferable
   );
   trans.init(null);
   trans.addDataFlavor(aFlavor);
-  let error = undefined;
+  let result = Cr.NS_OK;
   try {
     aRequest.getDataSync(trans);
     try {
@@ -258,12 +258,13 @@ function syncClipboardRequestGetData(aRequest, aFlavor, aThrows = false) {
       return "";
     }
   } catch (e) {
-    error = e;
-    return error;
+    result = e.result;
   } finally {
-    ok(
-      aThrows === (error !== undefined),
-      `nsIAsyncGetClipboardData.getData should ${aThrows ? "throw" : "success"}`
+    is(
+      result,
+      aResult,
+      `nsIAsyncGetClipboardData.getData should ${aResult == Cr.NS_OK ? "throw" : "success"}`
     );
   }
+  return "";
 }

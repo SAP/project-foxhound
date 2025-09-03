@@ -127,7 +127,7 @@
   "button/background/color/ghost": {
     "light": "#00000000",
     "dark": "#00000000",
-    "forcedColors": "ButtonFace"
+    "forcedColors": "#00000000"
   },
   "button/background/color/ghost/active": {
     "light": "color-mix(in srgb, currentColor 21%, transparent)",
@@ -137,7 +137,7 @@
   "button/background/color/ghost/disabled": {
     "light": "#00000000",
     "dark": "#00000000",
-    "forcedColors": "ButtonFace"
+    "forcedColors": "#00000000"
   },
   "button/background/color/ghost/hover": {
     "light": "color-mix(in srgb, currentColor 14%, transparent)",
@@ -260,9 +260,9 @@
     "forcedColors": "GrayText"
   },
   "button/text/color/ghost": {
-    "light": "#15141aff",
-    "dark": "#fbfbfeff",
-    "forcedColors": "ButtonText"
+    "light": "#00000000",
+    "dark": "#00000000",
+    "forcedColors": "inherit"
   },
   "button/text/color/ghost/active": {
     "light": "#15141aff",
@@ -270,9 +270,9 @@
     "forcedColors": "SelectedItem"
   },
   "button/text/color/ghost/disabled": {
-    "light": "#15141aff",
-    "dark": "#fbfbfeff",
-    "forcedColors": "GrayText"
+    "light": "#00000000",
+    "dark": "#00000000",
+    "forcedColors": "inherit"
   },
   "button/text/color/ghost/hover": {
     "light": "#15141aff",
@@ -408,6 +408,16 @@
     "light": "#d7264cff",
     "dark": "#ff9aa2ff",
     "forcedColors": "CanvasText"
+  },
+  "table/row/background/color": {
+    "light": "#ffffffff",
+    "dark": "#1c1b22ff",
+    "forcedColors": "Canvas"
+  },
+  "table/row/background/color/alternate": {
+    "light": "#f0f0f4ff",
+    "dark": "#23222bff",
+    "forcedColors": "Canvas"
   },
   "text/color": {
     "light": "#15141aff",

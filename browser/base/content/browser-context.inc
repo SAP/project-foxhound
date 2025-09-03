@@ -119,7 +119,7 @@
                 data-l10n-id="main-context-menu-copy-link-simple"
                 />
       <menuitem id="context-stripOnShareLink"
-                data-l10n-id="main-context-menu-strip-on-share-link"
+                data-l10n-id="main-context-menu-copy-clean-link"
                 hidden="true"
                 />
       <menu id="context-sendlinktodevice"
@@ -287,6 +287,16 @@
                 hidden="true"
                 />
       <menuseparator id="passwordmgr-items-separator"/>
+      <menuitem id="context-copy-link-to-highlight"
+                data-l10n-id="text-action-copy-link-to-highlight"
+                />
+      <menuitem id="context-copy-clean-link-to-highlight"
+                data-l10n-id="text-action-copy-clean-link-to-highlight"
+                />
+      <menuitem id="context-remove-all-highlights"
+                data-l10n-id="text-action-remove-all-highlights"
+                />
+      <menuseparator id="context-sep-highlights"/>
       <menuitem id="context-undo"
                 data-l10n-id="text-action-undo"
                 command="cmd_undo"/>

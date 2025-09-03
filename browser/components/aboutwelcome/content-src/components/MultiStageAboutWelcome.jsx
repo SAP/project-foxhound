@@ -249,22 +249,39 @@ export const MultiStageAboutWelcome = props => {
           const totalNumberOfScreens = screens.length;
           const isSingleScreen = totalNumberOfScreens === 1;
 
-          const setActiveMultiSelect = valueOrFn =>
-            setActiveMultiSelects(prevState => ({
-              ...prevState,
-              [currentScreen.id]:
-                typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[currentScreen.id])
-                  : valueOrFn,
-            }));
-          const setScreenMultiSelects = valueOrFn =>
-            setMultiSelects(prevState => ({
-              ...prevState,
-              [currentScreen.id]:
-                typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[currentScreen.id])
-                  : valueOrFn,
-            }));
+          const setActiveMultiSelect = (valueOrFn, multiSelectId) => {
+            setActiveMultiSelects(prevState => {
+              const currentScreenSelections = prevState[currentScreen.id] || {};
+
+              return {
+                ...prevState,
+                [currentScreen.id]: {
+                  ...currentScreenSelections,
+                  [multiSelectId]:
+                    typeof valueOrFn === "function"
+                      ? valueOrFn(currentScreenSelections[multiSelectId])
+                      : valueOrFn,
+                },
+              };
+            });
+          };
+
+          const setScreenMultiSelects = (valueOrFn, multiSelectId) => {
+            setMultiSelects(prevState => {
+              const currentMultiSelects = prevState[currentScreen.id] || {};
+
+              return {
+                ...prevState,
+                [currentScreen.id]: {
+                  ...currentMultiSelects,
+                  [multiSelectId]:
+                    typeof valueOrFn === "function"
+                      ? valueOrFn(currentMultiSelects[multiSelectId])
+                      : valueOrFn,
+                },
+              };
+            });
+          };
 
           const setActiveSingleSelect = valueOrFn =>
             setActiveSingleSelects(prevState => ({
@@ -340,11 +357,24 @@ export const SecondaryCTA = props => {
     className += " split-button-container";
   }
   const isDisabled = React.useCallback(
-    disabledValue =>
-      disabledValue === "hasActiveMultiSelect"
-        ? !(props.activeMultiSelect?.length > 0)
-        : disabledValue,
-    [props.activeMultiSelect?.length]
+    disabledValue => {
+      if (disabledValue === "hasActiveMultiSelect") {
+        if (!props.activeMultiSelect) {
+          return true;
+        }
+
+        for (const key in props.activeMultiSelect) {
+          if (props.activeMultiSelect[key]?.length > 0) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      return disabledValue;
+    },
+    [props.activeMultiSelect]
   );
 
   if (isTextLink) {
@@ -513,20 +543,7 @@ export class WelcomeScreen extends React.PureComponent {
           ? event.currentTarget.value
           : this.props.initialTheme || action.theme;
       this.props.setActiveTheme(themeToUse);
-      if (props.content.tiles?.category?.type === "wallpaper") {
-        const theme = themeToUse.split("-")?.[1];
-        let actionWallpaper = { ...props.content.tiles.category.action };
-        actionWallpaper.data.actions.forEach(async wpAction => {
-          if (wpAction.data.pref.name?.includes("dark")) {
-            wpAction.data.pref.value = `dark-${theme}`;
-          } else {
-            wpAction.data.pref.value = `light-${theme}`;
-          }
-          AboutWelcomeUtils.handleUserAction(actionWallpaper);
-        });
-      } else {
-        window.AWSelectTheme(themeToUse);
-      }
+      window.AWSelectTheme(themeToUse);
     }
 
     if (action.picker) {
@@ -595,27 +612,55 @@ export class WelcomeScreen extends React.PureComponent {
     // 2. checkbox action 2
     // 3. radio action
     // 4. CTA action (which perhaps depends on the radio action)
+    // Note, this order is only guaranteed if action.data has the
+    // `orderedExecution` flag set to true.
     let multiSelectActions = [];
-    for (const checkbox of props.content?.tiles?.data ?? []) {
-      let checkboxAction;
-      if (props.activeMultiSelect?.includes(checkbox.id)) {
-        checkboxAction = checkbox.checkedAction ?? checkbox.action;
-      } else {
-        checkboxAction = checkbox.uncheckedAction;
+
+    const processTile = (tile, tileIndex) => {
+      if (tile?.type !== "multiselect" || !Array.isArray(tile.data)) {
+        return;
       }
 
-      if (checkboxAction) {
-        multiSelectActions.push(checkboxAction);
+      const multiSelectId = `tile-${tileIndex}`;
+
+      const activeSelections = props.activeMultiSelect[multiSelectId] || [];
+
+      for (const checkbox of tile.data) {
+        let checkboxAction;
+        if (activeSelections.includes(checkbox.id)) {
+          checkboxAction = checkbox.checkedAction ?? checkbox.action;
+        } else {
+          checkboxAction = checkbox.uncheckedAction;
+        }
+
+        if (checkboxAction) {
+          multiSelectActions.push(checkboxAction);
+        }
+      }
+    };
+
+    // Process tiles (this may be a single tile object or an array consisting of
+    // tile objects)
+    if (props.content?.tiles) {
+      if (Array.isArray(props.content.tiles)) {
+        props.content.tiles.forEach(processTile);
+      } else {
+        // Handle case where tiles is a single tile object
+        processTile(props.content.tiles, 0);
       }
     }
+
+    // Prepend the collected multi-select actions to the CTA's actions array
     action.data.actions.unshift(...multiSelectActions);
 
-    // Send telemetry with selected checkbox ids
-    AboutWelcomeUtils.sendActionTelemetry(
-      props.messageId,
-      props.activeMultiSelect,
-      "SELECT_CHECKBOX"
-    );
+    for (const value of Object.values(props.activeMultiSelect)) {
+      // Send telemetry with selected checkbox ids
+      AboutWelcomeUtils.sendActionTelemetry(
+        props.messageId,
+        value.flat(),
+        "SELECT_CHECKBOX"
+      );
+    }
   }
 
   render() {

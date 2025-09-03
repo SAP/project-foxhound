@@ -15,12 +15,17 @@ name = "sql-support"
 version = "0.1.0"
 authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
 readme = false
 license = "MPL-2.0"
+
+[features]
+debug-tools = ["rusqlite/column_decltype"]
+default = []
 
 [lib]
 name = "sql_support"
@@ -36,10 +41,6 @@ thiserror = "1.0"
 [dependencies.interrupt-support]
 path = "../interrupt"
 
-[dependencies.prettytable-rs]
-version = "0.10"
-optional = true
-
 [dependencies.rusqlite]
 version = "0.31.0"
 features = [
@@ -52,13 +53,3 @@ features = [
 [dev-dependencies.env_logger]
 version = "0.10"
 default-features = false
-
-[build-dependencies.nss_build_common]
-path = "../rc_crypto/nss/nss_build_common"
-
-[features]
-debug-tools = [
-    "dep:prettytable-rs",
-    "rusqlite/column_decltype",
-]
-default = []

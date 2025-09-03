@@ -82,6 +82,7 @@ interface ShareController {
  * @param sendTabUseCases Instance of [SendTabUseCases] which allows sending tabs to account devices.
  * @param saveToPdfUseCase Instance of [SessionUseCases.SaveToPdfUseCase] to generate a PDF of a given tab.
  * @param printUseCase Instance of [SessionUseCases.PrintContentUseCase] to print content of a given tab.
+ * @param sentFromFirefoxManager Instance of [SentFromFirefoxManager] to facilitate "Sent from" nimbus experiment.
  * @param navController [NavController] used for navigation.
  * @param recentAppsStorage Instance of [RecentAppsStorage] for storing and retrieving the most recent apps.
  * @param viewLifecycleScope [CoroutineScope] used for retrieving the most recent apps in the background.
@@ -98,6 +99,7 @@ class DefaultShareController(
     private val sendTabUseCases: SendTabUseCases,
     private val saveToPdfUseCase: SessionUseCases.SaveToPdfUseCase,
     private val printUseCase: SessionUseCases.PrintContentUseCase,
+    private val sentFromFirefoxManager: SentFromFirefoxManager,
     private val navController: NavController,
     private val recentAppsStorage: RecentAppsStorage,
     private val viewLifecycleScope: CoroutineScope,
@@ -119,7 +121,12 @@ class DefaultShareController(
     }
 
     override fun handleShareToApp(app: AppShareOption) {
-        Events.shareToApp.record(getShareToAppSafeExtra(app.packageName))
+        Events.shareToApp.record(
+            getShareToAppSafeExtra(
+                appPackage = app.packageName,
+                sentFromFirefoxEnabled = sentFromFirefoxManager.featureEnabled,
+            ),
+        )
         if (app.packageName == ACTION_COPY_LINK_TO_CLIPBOARD) {
             copyClipboard()
             dismiss(ShareController.Result.SUCCESS)
@@ -132,7 +139,11 @@ class DefaultShareController(
         }
 
         val intent = Intent(ACTION_SEND).apply {
-            putExtra(EXTRA_TEXT, getShareText())
+            val sharedText = sentFromFirefoxManager.maybeAppendShareText(
+                packageName = app.packageName,
+                shareText = getShareText(),
+            )
+            putExtra(EXTRA_TEXT, sharedText)
             putExtra(EXTRA_SUBJECT, getShareSubject())
             type = "text/plain"
             flags = FLAG_ACTIVITY_NEW_DOCUMENT + FLAG_ACTIVITY_MULTIPLE_TASK

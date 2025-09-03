@@ -660,12 +660,6 @@ class MediaPipelineTransmit::PipelineListener
     mConverter = std::move(aConverter);
   }
 
-  void OnVideoFrameConverted(webrtc::VideoFrame aVideoFrame) {
-    MOZ_RELEASE_ASSERT(mConduit->type() == MediaSessionConduit::VIDEO);
-    static_cast<VideoSessionConduit*>(mConduit.get())
-        ->SendVideoFrame(std::move(aVideoFrame));
-  }
-
   // Implement MediaTrackListener
   void NotifyQueuedChanges(MediaTrackGraph* aGraph, TrackTime aOffset,
                            const MediaSegment& aQueuedMedia) override;
@@ -725,13 +719,14 @@ void MediaPipelineTransmit::RegisterListener() {
   if (!IsVideo()) {
     return;
   }
-  mConverter = VideoFrameConverter::Create(GetTimestampMaker());
+  RefPtr videoConduit = *mConduit->AsVideoSessionConduit();
+  mConverter = VideoFrameConverter::Create(
+      TaskQueue::Create(GetMediaThreadPool(MediaThreadType::WEBRTC_WORKER),
+                        "VideoFrameConverter")
+          .forget(),
+      GetTimestampMaker(), videoConduit->LockScaling());
   mConverter->SetIdleFrameDuplicationInterval(TimeDuration::FromSeconds(1));
-  mFrameListener = mConverter->VideoFrameConvertedEvent().Connect(
-      mConverter->mTaskQueue,
-      [listener = mListener](webrtc::VideoFrame aFrame) {
-        listener->OnVideoFrameConverted(std::move(aFrame));
-      });
+  videoConduit->SetTrackSource(mConverter);
   mListener->SetVideoFrameConverter(mConverter);
 }
 

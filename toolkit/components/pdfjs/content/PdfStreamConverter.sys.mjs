@@ -627,6 +627,19 @@ class ChromeActions {
       }
     }
   }
+
+  async handleSignature(data, sendResponse) {
+    const actor = getActor(this.domWindow);
+    if (!actor) {
+      sendResponse(null);
+      return;
+    }
+    const response = await actor.sendQuery(
+      "PDFJS:Parent:handleSignature",
+      data
+    );
+    sendResponse(response);
+  }
 }
 
 /**
@@ -1092,6 +1105,15 @@ PdfStreamConverter.prototype = {
       if (triggeringPrincipal?.schemeIs("file") && alwaysAskBeforeHandling) {
         return HTML;
       }
+    }
+
+    // If we're loading this PDF with an object/embed element, we always want to
+    // try to render it inline, as we can't fall back to an external handler.
+    if (
+      aChannel.loadInfo?.externalContentPolicyType ==
+      Ci.nsIContentPolicy.TYPE_OBJECT
+    ) {
+      return HTML;
     }
 
     throw new Components.Exception("Can't use PDF.js", Cr.NS_ERROR_FAILURE);

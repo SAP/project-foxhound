@@ -13,6 +13,7 @@ from abc import ABCMeta, abstractmethod
 from manifestparser import TestManifest
 from manifestparser.filters import chunk_by_runtime, tags
 from mozbuild.util import memoize
+from mozinfo.platforminfo import PlatformInfo
 from moztest.resolve import TEST_SUITES, TestManifestLoader, TestResolver
 from taskgraph.util.yaml import load_yaml
 
@@ -30,7 +31,6 @@ if os.path.exists(os.path.join(GECKO, "taskcluster", "kinds", "test", "variants.
 WPT_SUBSUITES = {
     "canvas": ["html/canvas"],
     "webgpu": ["_mozilla/webgpu"],
-    "privatebrowsing": ["/service-workers/cache-storage"],
     "webcodecs": ["webcodecs"],
     "eme": ["encrypted-media"],
 }
@@ -59,15 +59,15 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
     """
     setting = task["test-setting"]
     runtime_keys = setting["runtime"].keys()
-    arch = setting["platform"]["arch"]
-    p_os = setting["platform"]["os"]
+
+    platform_info = PlatformInfo(setting)
 
     info = {
+        "debug": platform_info.debug,
+        "bits": platform_info.bits,
         "asan": setting["build"].get("asan", False),
-        "bits": 32 if "32" in arch else 64,
-        "ccov": setting["build"].get("ccov", False),
-        "debug": setting["build"]["type"] in ("debug", "debug-isolated-process"),
         "tsan": setting["build"].get("tsan", False),
+        "ccov": setting["build"].get("ccov", False),
         "mingwclang": setting["build"].get("mingwclang", False),
         "nightly_build": "a1"
         in app_version,  # https://searchfox.org/mozilla-central/source/build/moz.configure/init.configure#1101
@@ -79,13 +79,7 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
     info["opt"] = (
         not info["debug"] and not info["asan"] and not info["tsan"] and not info["ccov"]
     )
-
-    for platform in ("android", "linux", "mac", "win"):
-        if p_os["name"].startswith(platform):
-            info["os"] = platform
-            break
-    else:
-        raise ValueError("{} is not a known platform!".format(p_os["name"]))
+    info["os"] = platform_info.os
 
     # crashreporter is disabled for asan / tsan builds
     if info["asan"] or info["tsan"]:
@@ -96,15 +90,7 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
     info["appname"] = "fennec" if info["os"] == "android" else "firefox"
     info["buildapp"] = "browser"
 
-    # guess processor
-    if arch == "aarch64":
-        info["processor"] = "aarch64"
-    elif info["os"] == "android" and "arm" in arch:
-        info["processor"] = "arm"
-    elif info["bits"] == 32:
-        info["processor"] = "x86"
-    else:
-        info["processor"] = "x86_64"
+    info["processor"] = platform_info.arch
 
     # guess toolkit
     if info["os"] == "android":
@@ -115,22 +101,9 @@ def guess_mozinfo_from_task(task, repo="", app_version="", test_tags=[]):
         info["toolkit"] = "cocoa"
     else:
         info["toolkit"] = "gtk"
-        info["display"] = setting["platform"].get("display", "x11")
+        info["display"] = platform_info.display or "x11"
 
-    # guess os_version
-    os_versions = {
-        ("linux", "1804"): "18.04",
-        ("macosx", "1015"): "10.15",
-        ("macosx", "1100"): "11.20",
-        ("macosx", "1400"): "14.40",
-        ("macosx", "1470"): "14.70",
-        ("windows", "10"): "10.2009",
-        ("windows", "11"): "11.2009",
-    }
-    for (name, old_ver), new_ver in os_versions.items():
-        if p_os["name"] == name and p_os["version"] == old_ver:
-            info["os_version"] = new_ver
-            break
+    info["os_version"] = platform_info.os_version
 
     for variant in TEST_VARIANTS:
         tag = TEST_VARIANTS[variant].get("mozinfo", "")
@@ -307,7 +280,22 @@ class DefaultLoader(BaseManifestLoader):
         manifests = {chunk_by_runtime.get_manifest(t) for t in tests}
 
         filters = []
-        if json.loads(mozinfo["tag"]):
+        # Exclude suites that don't support --tag to prevent manifests from
+        # being optimized out, which would result in no jobs being triggered.
+        # No need to check suites like gtest, as all suites in compiled.yml
+        # have test-manifest-loader set to null, meaning this function is never
+        # called.
+        # Note there's a similar list in desktop_unittest.py in
+        # DesktopUnittest's _query_abs_base_cmd method. The lists should be
+        # kept in sync.
+        assert suite not in ["gtest", "cppunittest", "jittest"]
+        if suite not in [
+            "crashtest",
+            "crashtest-qr",
+            "jsreftest",
+            "reftest",
+            "reftest-qr",
+        ] and json.loads(mozinfo["tag"]):
             filters.extend([tags([x]) for x in json.loads(mozinfo["tag"])])
 
         # Compute  the active tests.

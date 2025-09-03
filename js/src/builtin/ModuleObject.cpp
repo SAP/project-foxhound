@@ -1317,6 +1317,10 @@ bool ModuleObject::hasTopLevelCapability() const {
 }
 
 bool ModuleObject::hadEvaluationError() const {
+  if (hasSyntheticModuleFields()) {
+    return false;
+  }
+
   ModuleStatus fullStatus = cyclicModuleFields()->status;
   return fullStatus == ModuleStatus::Evaluated_Error;
 }
@@ -1485,7 +1489,7 @@ bool ModuleObject::createEnvironment(JSContext* cx,
 /*static*/
 bool ModuleObject::createSyntheticEnvironment(JSContext* cx,
                                               Handle<ModuleObject*> self,
-                                              Handle<GCVector<Value>> values) {
+                                              JS::HandleVector<Value> values) {
   Rooted<ModuleEnvironmentObject*> env(
       cx, ModuleEnvironmentObject::createSynthetic(cx, self));
   if (!env) {

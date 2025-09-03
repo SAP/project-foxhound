@@ -342,7 +342,23 @@ class Color extends PDFObject {
   }
 }
 
+;// ./src/scripting_api/app_utils.js
+const VIEWER_TYPE = "PDF.js";
+const VIEWER_VARIATION = "Full";
+const VIEWER_VERSION = 21.00720099;
+const FORMS_VERSION = 21.00720099;
+const USERACTIVATION_CALLBACKID = 0;
+const USERACTIVATION_MAXTIME_VALIDITY = 5000;
+function serializeError(error) {
+  const value = `${error.toString()}\n${error.stack}`;
+  return {
+    command: "error",
+    value
+  };
+}
+
 ;// ./src/scripting_api/field.js
+
 
 
 
@@ -804,13 +820,14 @@ class Field extends PDFObject {
       return false;
     }
     const actions = this._actions.get(eventName);
-    try {
-      for (const action of actions) {
+    for (const action of actions) {
+      try {
         this._globalEval(action);
+      } catch (error) {
+        const serializedError = serializeError(error);
+        serializedError.value = `Error when executing "${eventName}" for field "${this._id}"\n${serializedError.value}`;
+        this._send(serializedError);
       }
-    } catch (error) {
-      event.rc = false;
-      throw error;
     }
     return true;
   }
@@ -1250,19 +1267,19 @@ class AForm {
   AFSpecial_KeystrokeEx(cMask) {
     const event = globalThis.event;
     const simplifiedFormatStr = cMask.replaceAll(/[^9AOX]/g, "");
-    this.#AFSpecial_KeystrokeEx_helper(simplifiedFormatStr, false);
+    this.#AFSpecial_KeystrokeEx_helper(simplifiedFormatStr, null, false);
     if (event.rc) {
       return;
     }
     event.rc = true;
-    this.#AFSpecial_KeystrokeEx_helper(cMask, true);
+    this.#AFSpecial_KeystrokeEx_helper(cMask, null, true);
   }
-  #AFSpecial_KeystrokeEx_helper(cMask, warn) {
+  #AFSpecial_KeystrokeEx_helper(cMask, value, warn) {
     if (!cMask) {
       return;
     }
     const event = globalThis.event;
-    const value = this.AFMergeChange(event);
+    value ||= this.AFMergeChange(event);
     if (!value) {
       return;
     }
@@ -1321,7 +1338,8 @@ class AForm {
   AFSpecial_Keystroke(psf) {
     const event = globalThis.event;
     psf = this.AFMakeNumber(psf);
-    let formatStr;
+    let value = this.AFMergeChange(event);
+    let formatStr, secondFormatStr;
     switch (psf) {
       case 0:
         formatStr = "99999";
@@ -1330,8 +1348,8 @@ class AForm {
         formatStr = "99999-9999";
         break;
       case 2:
-        const value = this.AFMergeChange(event);
-        formatStr = value.startsWith("(") || value.length > 7 && /^\p{N}+$/.test(value) ? "(999) 999-9999" : "999-9999";
+        formatStr = "999-9999";
+        secondFormatStr = "(999) 999-9999";
         break;
       case 3:
         formatStr = "999-99-9999";
@@ -1339,7 +1357,24 @@ class AForm {
       default:
         throw new Error("Invalid psf in AFSpecial_Keystroke");
     }
-    this.AFSpecial_KeystrokeEx(formatStr);
+    const formats = secondFormatStr ? [formatStr, secondFormatStr] : [formatStr];
+    for (const format of formats) {
+      this.#AFSpecial_KeystrokeEx_helper(format, value, false);
+      if (event.rc) {
+        return;
+      }
+      event.rc = true;
+    }
+    const re = /([-()]|\s)+/g;
+    value = value.replaceAll(re, "");
+    for (const format of formats) {
+      this.#AFSpecial_KeystrokeEx_helper(format.replaceAll(re, ""), value, false);
+      if (event.rc) {
+        return;
+      }
+      event.rc = true;
+    }
+    this.AFSpecial_KeystrokeEx((secondFormatStr && value.match(/\d/g) || []).length > 7 ? secondFormatStr : formatStr);
   }
   AFTime_FormatEx(cFormat) {
     this.AFDate_FormatEx(cFormat);
@@ -1366,21 +1401,6 @@ class AForm {
     }
     return rePatterns.findIndex(re => str.match(re)?.[0] === str) + 1;
   }
-}
-
-;// ./src/scripting_api/app_utils.js
-const VIEWER_TYPE = "PDF.js";
-const VIEWER_VARIATION = "Full";
-const VIEWER_VERSION = 21.00720099;
-const FORMS_VERSION = 21.00720099;
-const USERACTIVATION_CALLBACKID = 0;
-const USERACTIVATION_MAXTIME_VALIDITY = 5000;
-function serializeError(error) {
-  const value = `${error.toString()}\n${error.stack}`;
-  return {
-    command: "error",
-    value
-  };
 }
 
 ;// ./src/scripting_api/event.js
@@ -1605,12 +1625,7 @@ class EventDispatcher {
     const first = this._calculationOrder[0];
     const source = this._objects[first];
     globalThis.event = new Event({});
-    try {
-      this.runCalculate(source, globalThis.event);
-    } catch (error) {
-      this._isCalculating = false;
-      throw error;
-    }
+    this.runCalculate(source, globalThis.event);
     this._isCalculating = false;
   }
   runCalculate(source, event) {
@@ -1627,15 +1642,7 @@ class EventDispatcher {
       event.value = null;
       const target = this._objects[targetId];
       let savedValue = target.obj._getValue();
-      try {
-        this.runActions(source, target, event, "Calculate");
-      } catch (error) {
-        const fieldId = target.obj._id;
-        const serializedError = serializeError(error);
-        serializedError.value = `Error when calculating value for field "${fieldId}"\n${serializedError.value}`;
-        this._externalCall("send", [serializedError]);
-        continue;
-      }
+      this.runActions(source, target, event, "Calculate");
       if (!event.rc) {
         continue;
       }
@@ -2100,6 +2107,9 @@ class App extends PDFObject {
       cMsg = cMsg.cMsg;
     }
     cMsg = (cMsg || "").toString();
+    if (!cMsg) {
+      return 0;
+    }
     nType = typeof nType !== "number" || isNaN(nType) || nType < 0 || nType > 3 ? 0 : nType;
     if (nType >= 2) {
       return this._externalCall("confirm", [cMsg]) ? 4 : 3;
@@ -2503,9 +2513,16 @@ class Doc extends PDFObject {
   }
   _runActions(name) {
     const actions = this._actions.get(name);
-    if (actions) {
-      for (const action of actions) {
+    if (!actions) {
+      return;
+    }
+    for (const action of actions) {
+      try {
         this._globalEval(action);
+      } catch (error) {
+        const serializedError = serializeError(error);
+        serializedError.value = `Error when executing "${name}" for document\n${serializedError.value}`;
+        this._send(serializedError);
       }
     }
   }
@@ -3588,53 +3605,53 @@ class Util extends PDFObject {
     if (!actions) {
       actions = [];
       this.#dateActionsCache.set(cFormat, actions);
-      cFormat.replaceAll(/(d+)|(m+)|(y+)|(H+)|(M+)|(s+)/g, function (match, d, m, y, H, M, s) {
+      cFormat.replaceAll(/(d+)|(m+)|(y+)|(H+)|(M+)|(s+)/g, function (_match, d, m, y, H, M, s) {
         if (d) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n >= 1 && n <= 31) {
-              date.setDate(n);
+              data.day = n;
               return true;
             }
             return false;
           });
         } else if (m) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n >= 1 && n <= 12) {
-              date.setMonth(n - 1);
+              data.month = n - 1;
               return true;
             }
             return false;
           });
         } else if (y) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n < 50) {
               n += 2000;
             } else if (n < 100) {
               n += 1900;
             }
-            date.setYear(n);
+            data.year = n;
             return true;
           });
         } else if (H) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n >= 0 && n <= 23) {
-              date.setHours(n);
+              data.hours = n;
               return true;
             }
             return false;
           });
         } else if (M) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n >= 0 && n <= 59) {
-              date.setMinutes(n);
+              data.minutes = n;
               return true;
             }
             return false;
           });
         } else if (s) {
-          actions.push((n, date) => {
+          actions.push((n, data) => {
             if (n >= 0 && n <= 59) {
-              date.setSeconds(n);
+              data.seconds = n;
               return true;
             }
             return false;
@@ -3646,10 +3663,17 @@ class Util extends PDFObject {
     const number = /\d+/g;
     let i = 0;
     let array;
-    const date = new Date(0);
+    const data = {
+      year: new Date().getFullYear(),
+      month: 0,
+      day: 1,
+      hours: 12,
+      minutes: 0,
+      seconds: 0
+    };
     while ((array = number.exec(cDate)) !== null) {
       if (i < actions.length) {
-        if (!actions[i++](parseInt(array[0]), date)) {
+        if (!actions[i++](parseInt(array[0]), data)) {
           return null;
         }
       } else {
@@ -3659,7 +3683,7 @@ class Util extends PDFObject {
     if (i === 0) {
       return null;
     }
-    return date;
+    return new Date(data.year, data.month, data.day, data.hours, data.minutes, data.seconds);
   }
   scand(cFormat, cDate) {
     return this._scand(cFormat, cDate);
@@ -3824,10 +3848,10 @@ class Util extends PDFObject {
       return strict ? null : this.#tryToGuessDate(cFormat, cDate);
     }
     const data = {
-      year: 2000,
+      year: new Date().getFullYear(),
       month: 0,
       day: 1,
-      hours: 0,
+      hours: 12,
       minutes: 0,
       seconds: 0,
       am: null
@@ -4019,8 +4043,8 @@ function initSandbox(params) {
 
 ;// ./src/pdf.scripting.js
 
-const pdfjsVersion = "4.9.14";
-const pdfjsBuild = "bff673896";
+const pdfjsVersion = "5.0.254";
+const pdfjsBuild = "3103747c8";
 globalThis.pdfjsScripting = {
   initSandbox: initSandbox
 };

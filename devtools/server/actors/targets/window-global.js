@@ -12,9 +12,9 @@
  * WindowGlobalTargetActor is an abstract class used by target actors that hold
  * documents, such as frames, chrome windows, etc.
  *
- * This class is extended by ParentProcessTargetActor, itself being extented by WebExtensionTargetActor.
+ * This class is extended by ParentProcessTargetActor.
  *
- * See devtools/docs/backend/actor-hierarchy.md for more details.
+ * See devtools/docs/contributor/backend/actor-hierarchy.md for more details about all the targets.
  *
  * For performance matters, this file should only be loaded in the targeted context's
  * process. For example, it shouldn't be evaluated in the parent process until we try to
@@ -32,9 +32,6 @@ var {
 var makeDebugger = require("resource://devtools/server/actors/utils/make-debugger.js");
 const Targets = require("resource://devtools/server/actors/targets/index.js");
 
-const EXTENSION_CONTENT_SYS_MJS =
-  "resource://gre/modules/ExtensionContent.sys.mjs";
-
 const lazy = {};
 // Modules loaded in the same module loader as this module.
 // (may spawn distinct module instances with other devtools and firefox frontend)
@@ -43,6 +40,8 @@ ChromeUtils.defineESModuleGetters(
   {
     PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
     WEBEXTENSION_FALLBACK_DOC_URL:
+      "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
+    getAddonIdForWindowGlobal:
       "resource://devtools/server/actors/watcher/browsing-context-helpers.sys.mjs",
   },
   { global: "contextual" }
@@ -55,11 +54,6 @@ ChromeUtils.defineESModuleGetters(
   {
     TargetActorRegistry:
       "resource://devtools/server/actors/targets/target-actor-registry.sys.mjs",
-    // ExtensionContent.sys.mjs is a singleton and must be loaded through the
-    // main loader. Note that the user of lazy.ExtensionContent elsewhere in
-    // this file (at webextensionsContentScriptGlobals) looks up the module
-    // via Cu.isESModuleLoaded, which also uses the main loader as desired.
-    ExtensionContent: EXTENSION_CONTENT_SYS_MJS,
   },
   { global: "shared" }
 );
@@ -79,7 +73,7 @@ const {
 
 loader.lazyRequireGetter(
   this,
-  ["ThreadActor", "unwrapDebuggerObjectGlobal"],
+  ["ThreadActor"],
   "resource://devtools/server/actors/thread.js",
   true
 );
@@ -95,7 +89,6 @@ loader.lazyRequireGetter(
   "resource://devtools/server/actors/utils/stylesheets-manager.js",
   true
 );
-
 loader.lazyRequireGetter(
   this,
   "TouchSimulator",
@@ -324,7 +317,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
             }
           }
         }
-        return result.concat(this.webextensionsContentScriptGlobals);
+        return result;
       },
       shouldAddNewGlobalAsDebuggee: this._shouldAddNewGlobalAsDebuggee,
     });
@@ -366,7 +359,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
    * Define the initial docshell.
    *
    * This is called from the constructor for WindowGlobalTargetActor,
-   * or from sub class constructors: WebExtensionTargetActor and ParentProcessTargetActor.
+   * or from sub class constructor of ParentProcessTargetActor.
    *
    * This is to circumvent the fact that sub classes need to call inner method
    * to compute the initial docshell and we can't call inner methods before calling
@@ -424,10 +417,6 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       "A docShell should be provided as constructor argument of WindowGlobalTargetActor, or redefined by the subclass"
     );
   }
-
-  // Optional console API listener options (e.g. used by the WebExtensionActor to
-  // filter console messages by addonID), set to an empty (no options) object by default.
-  consoleAPIListenerOptions = {};
 
   /*
    * Return a Debugger instance or create one if there is none yet
@@ -533,21 +522,6 @@ class WindowGlobalTargetActor extends BaseTargetActor {
   }
 
   /**
-   * Getter for the WebExtensions ContentScript globals related to the
-   * window global's current DOM window.
-   */
-  get webextensionsContentScriptGlobals() {
-    // Only retrieve the content scripts globals if the ExtensionContent JSM module
-    // has been already loaded (which is true if the WebExtensions internals have already
-    // been loaded in the same content process).
-    if (Cu.isESModuleLoaded(EXTENSION_CONTENT_SYS_MJS)) {
-      return lazy.ExtensionContent.getContentScriptGlobals(this.window);
-    }
-
-    return [];
-  }
-
-  /**
    * Getter for the list of all content DOM windows in the window global.
    * @return {Array}
    */
@@ -614,14 +588,8 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
   /**
    * Getter for the window global's title.
-   * For Web Extension it will ignore the document title and refer to the addon one.
    */
   get title() {
-    if (this.sessionContext.type == "webextension") {
-      const policy = WebExtensionPolicy.getByID(this.sessionContext.addonId);
-      // Note that the policy may be null if we query the title while the add-on is reloading
-      return policy?.name;
-    }
     return this.contentDocument.title;
   }
 
@@ -688,6 +656,14 @@ class WindowGlobalTargetActor extends BaseTargetActor {
       .devtoolsSpawnedBrowsingContextForWebExtension
       ? this.devtoolsSpawnedBrowsingContextForWebExtension
       : this.originalDocShell.browsingContext;
+
+    // When toggling the toolbox on/off many times in a row,
+    // we may try to destroy the actor while the related document is already destroyed.
+    // In such scenario, return the minimum viable form
+    if (!originalBrowsingContext.currentWindowContext) {
+      return { actor: this.actorID };
+    }
+
     const browsingContextID = originalBrowsingContext.id;
     const innerWindowId =
       originalBrowsingContext.currentWindowContext.innerWindowId;
@@ -703,6 +679,8 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
     const response = {
       actor: this.actorID,
+      targetType: this.targetType,
+
       browsingContextID,
       processID: Services.appinfo.processID,
       // True for targets created by JSWindowActors, see constructor JSDoc.
@@ -717,6 +695,7 @@ class WindowGlobalTargetActor extends BaseTargetActor {
 
       // Specific to Web Extension documents
       isFallbackExtensionDocument: this.#isFallbackExtensionDocument,
+      addonId: lazy.getAddonIdForWindowGlobal(this.window.windowGlobalChild),
 
       traits: {
         // @backward-compat { version 64 } Exposes a new trait to help identify
@@ -876,29 +855,9 @@ class WindowGlobalTargetActor extends BaseTargetActor {
   }
 
   /**
-   * Return true if the given global is associated with this window global and should
-   * be added as a debuggee, false otherwise.
+   * This is only used by WebExtensionTargetActor, which overrides this method.
    */
-  _shouldAddNewGlobalAsDebuggee(wrappedGlobal) {
-    // Otherwise, check if it is a WebExtension content script sandbox
-    const global = unwrapDebuggerObjectGlobal(wrappedGlobal);
-    if (!global) {
-      return false;
-    }
-
-    // Check if the global is a sdk page-mod sandbox.
-    let metadata = {};
-    let id = "";
-    try {
-      id = getInnerId(this.window);
-      metadata = Cu.getSandboxMetadata(global);
-    } catch (e) {
-      // ignore
-    }
-    if (metadata?.["inner-window-id"] && metadata["inner-window-id"] == id) {
-      return true;
-    }
-
+  _shouldAddNewGlobalAsDebuggee() {
     return false;
   }
 
@@ -2008,6 +1967,5 @@ class DebuggerProgressListener {
         this._targetActor._navigate(window);
       }
     }
-  },
-  "DebuggerProgressListener.prototype.onStateChange");
+  }, "DebuggerProgressListener.prototype.onStateChange");
 }

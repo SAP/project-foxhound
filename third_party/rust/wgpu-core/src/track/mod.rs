@@ -109,7 +109,9 @@ use crate::{
     snatch::SnatchGuard,
 };
 
-use std::{fmt, ops, sync::Arc};
+use alloc::{sync::Arc, vec::Vec};
+use core::{fmt, mem, ops};
+
 use thiserror::Error;
 
 pub(crate) use buffer::{
@@ -118,8 +120,8 @@ pub(crate) use buffer::{
 use metadata::{ResourceMetadata, ResourceMetadataProvider};
 pub(crate) use stateless::StatelessTracker;
 pub(crate) use texture::{
-    DeviceTextureTracker, TextureSelector, TextureTracker, TextureTrackerSetSingle,
-    TextureUsageScope, TextureViewBindGroupState,
+    DeviceTextureTracker, TextureTracker, TextureTrackerSetSingle, TextureUsageScope,
+    TextureViewBindGroupState,
 };
 use wgt::strict_assert_ne;
 
@@ -224,6 +226,8 @@ pub(crate) struct TrackerIndexAllocators {
     pub render_pipelines: Arc<SharedTrackerIndexAllocator>,
     pub bundles: Arc<SharedTrackerIndexAllocator>,
     pub query_sets: Arc<SharedTrackerIndexAllocator>,
+    pub blas_s: Arc<SharedTrackerIndexAllocator>,
+    pub tlas_s: Arc<SharedTrackerIndexAllocator>,
 }
 
 impl TrackerIndexAllocators {
@@ -238,6 +242,8 @@ impl TrackerIndexAllocators {
             render_pipelines: Arc::new(SharedTrackerIndexAllocator::new()),
             bundles: Arc::new(SharedTrackerIndexAllocator::new()),
             query_sets: Arc::new(SharedTrackerIndexAllocator::new()),
+            blas_s: Arc::new(SharedTrackerIndexAllocator::new()),
+            tlas_s: Arc::new(SharedTrackerIndexAllocator::new()),
         }
     }
 }
@@ -249,12 +255,12 @@ impl TrackerIndexAllocators {
 pub(crate) struct PendingTransition<S: ResourceUses> {
     pub id: u32,
     pub selector: S::Selector,
-    pub usage: ops::Range<S>,
+    pub usage: hal::StateTransition<S>,
 }
 
-pub(crate) type PendingTransitionList = Vec<PendingTransition<hal::TextureUses>>;
+pub(crate) type PendingTransitionList = Vec<PendingTransition<wgt::TextureUses>>;
 
-impl PendingTransition<hal::BufferUses> {
+impl PendingTransition<wgt::BufferUses> {
     /// Produce the hal barrier corresponding to the transition.
     pub fn into_hal<'a>(
         self,
@@ -269,15 +275,15 @@ impl PendingTransition<hal::BufferUses> {
     }
 }
 
-impl PendingTransition<hal::TextureUses> {
+impl PendingTransition<wgt::TextureUses> {
     /// Produce the hal barrier corresponding to the transition.
     pub fn into_hal(
         self,
         texture: &dyn hal::DynTexture,
     ) -> hal::TextureBarrier<'_, dyn hal::DynTexture> {
         // These showing up in a barrier is always a bug
-        strict_assert_ne!(self.usage.start, hal::TextureUses::UNKNOWN);
-        strict_assert_ne!(self.usage.end, hal::TextureUses::UNKNOWN);
+        strict_assert_ne!(self.usage.from, wgt::TextureUses::UNKNOWN);
+        strict_assert_ne!(self.usage.to, wgt::TextureUses::UNKNOWN);
 
         let mip_count = self.selector.mips.end - self.selector.mips.start;
         strict_assert_ne!(mip_count, 0);
@@ -337,7 +343,7 @@ pub enum ResourceUsageCompatibilityError {
     #[error("Attempted to use {res} with {invalid_use}.")]
     Buffer {
         res: ResourceErrorIdent,
-        invalid_use: InvalidUse<hal::BufferUses>,
+        invalid_use: InvalidUse<wgt::BufferUses>,
     },
     #[error(
         "Attempted to use {res} (mips {mip_levels:?} layers {array_layers:?}) with {invalid_use}."
@@ -346,15 +352,15 @@ pub enum ResourceUsageCompatibilityError {
         res: ResourceErrorIdent,
         mip_levels: ops::Range<u32>,
         array_layers: ops::Range<u32>,
-        invalid_use: InvalidUse<hal::TextureUses>,
+        invalid_use: InvalidUse<wgt::TextureUses>,
     },
 }
 
 impl ResourceUsageCompatibilityError {
     fn from_buffer(
         buffer: &resource::Buffer,
-        current_state: hal::BufferUses,
-        new_state: hal::BufferUses,
+        current_state: wgt::BufferUses,
+        new_state: wgt::BufferUses,
     ) -> Self {
         Self::Buffer {
             res: buffer.error_ident(),
@@ -367,9 +373,9 @@ impl ResourceUsageCompatibilityError {
 
     fn from_texture(
         texture: &resource::Texture,
-        selector: TextureSelector,
-        current_state: hal::TextureUses,
-        new_state: hal::TextureUses,
+        selector: wgt::TextureSelector,
+        current_state: wgt::TextureUses,
+        new_state: wgt::TextureUses,
     ) -> Self {
         Self::Texture {
             res: texture.error_ident(),
@@ -420,6 +426,7 @@ pub(crate) struct BindGroupStates {
     pub buffers: BufferBindGroupState,
     pub views: TextureViewBindGroupState,
     pub samplers: StatelessTracker<resource::Sampler>,
+    pub acceleration_structures: StatelessTracker<resource::Tlas>,
 }
 
 impl BindGroupStates {
@@ -428,6 +435,7 @@ impl BindGroupStates {
             buffers: BufferBindGroupState::new(),
             views: TextureViewBindGroupState::new(),
             samplers: StatelessTracker::new(),
+            acceleration_structures: StatelessTracker::new(),
         }
     }
 
@@ -440,7 +448,7 @@ impl BindGroupStates {
         // Views are stateless, however, `TextureViewBindGroupState`
         // is special as it will be merged with other texture trackers.
         self.views.optimize();
-        // Samplers are stateless and don't need to be optimized
+        // Samplers and Tlas's are stateless and don't need to be optimized
         // since the tracker is never merged with any other tracker.
     }
 }
@@ -507,10 +515,9 @@ impl<'a> Drop for UsageScope<'a> {
         // clear vecs and push into pool
         self.buffers.clear();
         self.textures.clear();
-        self.pool.lock().push((
-            std::mem::take(&mut self.buffers),
-            std::mem::take(&mut self.textures),
-        ));
+        self.pool
+            .lock()
+            .push((mem::take(&mut self.buffers), mem::take(&mut self.textures)));
     }
 }
 
@@ -594,6 +601,8 @@ impl DeviceTracker {
 pub(crate) struct Tracker {
     pub buffers: BufferTracker,
     pub textures: TextureTracker,
+    pub blas_s: StatelessTracker<resource::Blas>,
+    pub tlas_s: StatelessTracker<resource::Tlas>,
     pub views: StatelessTracker<resource::TextureView>,
     pub bind_groups: StatelessTracker<binding_model::BindGroup>,
     pub compute_pipelines: StatelessTracker<pipeline::ComputePipeline>,
@@ -607,6 +616,8 @@ impl Tracker {
         Self {
             buffers: BufferTracker::new(),
             textures: TextureTracker::new(),
+            blas_s: StatelessTracker::new(),
+            tlas_s: StatelessTracker::new(),
             views: StatelessTracker::new(),
             bind_groups: StatelessTracker::new(),
             compute_pipelines: StatelessTracker::new(),
@@ -631,7 +642,7 @@ impl Tracker {
     /// bind group as a source of which IDs to look at. The bind groups
     /// must have first been added to the usage scope.
     ///
-    /// Only stateful things are merged in herell other resources are owned
+    /// Only stateful things are merged in here, all other resources are owned
     /// indirectly by the bind group.
     ///
     /// # Safety

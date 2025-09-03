@@ -7,6 +7,7 @@
 package org.mozilla.fenix.ui.robots
 
 import android.util.Log
+import androidx.compose.ui.test.junit4.ComposeTestRule
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.swipeDown
@@ -169,7 +170,7 @@ class ThreeDotMenuMainRobot {
             historyButton(),
             downloadsButton(),
             passwordsButton(),
-            addOnsButton(),
+            extensionsButton(),
             syncAndSaveDataButton(),
             findInPageButton(),
             translateButton(),
@@ -203,9 +204,8 @@ class ThreeDotMenuMainRobot {
             historyButton(),
             downloadsButton(),
             passwordsButton(),
-            addOnsButton(),
-            // Disabled step due to https://github.com/mozilla-mobile/fenix/issues/26788
-            // syncAndSaveDataButton,
+            extensionsButton(),
+            syncAndSaveDataButton(),
             whatsNewButton(),
             helpButton(),
             customizeHomeButton(),
@@ -343,6 +343,19 @@ class ThreeDotMenuMainRobot {
             return BookmarksRobot.Transition()
         }
 
+        fun openBookmarksMenu(composeTestRule: ComposeTestRule, interact: BookmarksRobotCompose.() -> Unit): BookmarksRobotCompose.Transition {
+            Log.i(TAG, "openBookmarksMenu: Trying to perform swipe down action on the three dot menu")
+            threeDotMenuRecyclerView().perform(swipeDown())
+            Log.i(TAG, "openBookmarksMenu: Performed swipe down action on the three dot menu")
+            mDevice.waitNotNull(Until.findObject(By.text("Bookmarks")), waitingTime)
+            Log.i(TAG, "openBookmarksMenu: Trying to click the \"Bookmarks\" button")
+            bookmarksButton().click()
+            Log.i(TAG, "openBookmarksMenu: Clicked the \"Bookmarks\" button")
+
+            BookmarksRobotCompose(composeTestRule).interact()
+            return BookmarksRobotCompose.Transition(composeTestRule)
+        }
+
         fun clickNewTabButton(interact: SearchRobot.() -> Unit): SearchRobot.Transition {
             Log.i(TAG, "clickNewTabButton: Trying to click the \"New tab\" button")
             normalBrowsingNewTabButton().click()
@@ -383,6 +396,16 @@ class ThreeDotMenuMainRobot {
 
             BookmarksRobot().interact()
             return BookmarksRobot.Transition()
+        }
+
+        fun editBookmarkPage(composeTestRule: ComposeTestRule, interact: BookmarksRobotCompose.() -> Unit): BookmarksRobotCompose.Transition {
+            mDevice.waitNotNull(Until.findObject(By.text("Bookmarks")), waitingTime)
+            Log.i(TAG, "editBookmarkPage: Trying to click the \"Edit\" button")
+            editBookmarkButton().click()
+            Log.i(TAG, "editBookmarkPage: Clicked the \"Edit\" button")
+
+            BookmarksRobotCompose(composeTestRule).interact()
+            return BookmarksRobotCompose.Transition(composeTestRule)
         }
 
         fun openHelp(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
@@ -706,6 +729,15 @@ class ThreeDotMenuMainRobot {
             BrowserRobot().interact()
             return BrowserRobot.Transition()
         }
+
+        fun clickTranslateButton(composeTestRule: ComposeTestRule, interact: TranslationsRobot.() -> Unit): TranslationsRobot.Transition {
+            Log.i(TAG, "clickTranslateButton: Trying to click the \"Translate page\" button")
+            translateButton().click()
+            Log.i(TAG, "clickTranslateButton: Clicked the \"Translate page\" button")
+
+            TranslationsRobot(composeTestRule).interact()
+            return TranslationsRobot.Transition(composeTestRule)
+        }
     }
 }
 private fun threeDotMenuRecyclerView() =
@@ -743,7 +775,7 @@ private fun clickAddonsManagerButton() {
     onView(withId(R.id.mozac_browser_menu_menuView)).perform(swipeDown())
     Log.i(TAG, "clickAddonsManagerButton: Performed swipe down action on the three dot menu")
     Log.i(TAG, "clickAddonsManagerButton: Trying to click the \"Add-ons\" button")
-    addOnsButton().click()
+    extensionsButton().click()
     Log.i(TAG, "clickAddonsManagerButton: Clicked the \"Add-ons\" button")
 }
 
@@ -758,7 +790,7 @@ private fun downloadsButton() =
     itemContainingText(getStringResource(R.string.library_downloads))
 private fun passwordsButton() =
     itemContainingText(getStringResource(R.string.browser_menu_passwords))
-private fun addOnsButton() =
+private fun extensionsButton() =
     itemContainingText(getStringResource(R.string.browser_menu_extensions))
 private fun desktopSiteButton() =
     itemContainingText(getStringResource(R.string.browser_menu_desktop_site))

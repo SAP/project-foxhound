@@ -2039,6 +2039,38 @@ bool CacheIRCompiler::emitGuardNumberToIntPtrIndex(NumberOperandId inputId,
   return true;
 }
 
+static void TruncateDoubleModUint32(MacroAssembler& masm,
+                                    FloatRegister floatReg, Register result,
+                                    const LiveRegisterSet& liveVolatileRegs) {
+  Label truncateABICall;
+  masm.branchTruncateDoubleMaybeModUint32(floatReg, result, &truncateABICall);
+
+  if (truncateABICall.used()) {
+    Label done;
+    masm.jump(&done);
+
+    masm.bind(&truncateABICall);
+    LiveRegisterSet save = liveVolatileRegs;
+    save.takeUnchecked(floatReg);
+    // Bug 1451976
+    save.takeUnchecked(floatReg.asSingle());
+    masm.PushRegsInMask(save);
+
+    using Fn = int32_t (*)(double);
+    masm.setupUnalignedABICall(result);
+    masm.passABIArg(floatReg, ABIType::Float64);
+    masm.callWithABI<Fn, JS::ToInt32>(ABIType::General,
+                                      CheckUnsafeCallWithABI::DontCheckOther);
+    masm.storeCallInt32Result(result);
+
+    LiveRegisterSet ignore;
+    ignore.add(result);
+    masm.PopRegsInMaskIgnore(save, ignore);
+
+    masm.bind(&done);
+  }
+}
+
 bool CacheIRCompiler::emitGuardToInt32ModUint32(ValOperandId inputId,
                                                 Int32OperandId resultId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -2067,8 +2099,8 @@ bool CacheIRCompiler::emitGuardToInt32ModUint32(ValOperandId inputId,
       []() {
         // No-op if the value is already an int32.
       },
-      [&](FloatRegister floatReg, Label* fail) {
-        masm.branchTruncateDoubleMaybeModUint32(floatReg, output, fail);
+      [&](FloatRegister floatReg) {
+        TruncateDoubleModUint32(masm, floatReg, output, liveVolatileRegs());
       });
 
   return true;
@@ -2152,9 +2184,6 @@ bool CacheIRCompiler::emitGuardNonDoubleType(ValOperandId inputId,
     case ValueType::Magic:
     case ValueType::PrivateGCThing:
     case ValueType::Object:
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive:
-#endif
       MOZ_CRASH("unexpected type");
   }
 
@@ -4215,30 +4244,7 @@ bool CacheIRCompiler::emitTruncateDoubleToUInt32(NumberOperandId inputId,
 
   allocator.ensureDoubleRegister(masm, inputId, floatReg);
 
-  Label done, truncateABICall;
-
-  masm.branchTruncateDoubleMaybeModUint32(floatReg, res, &truncateABICall);
-  masm.jump(&done);
-
-  masm.bind(&truncateABICall);
-  LiveRegisterSet save = liveVolatileRegs();
-  save.takeUnchecked(floatReg);
-  // Bug 1451976
-  save.takeUnchecked(floatReg.get().asSingle());
-  masm.PushRegsInMask(save);
-
-  using Fn = int32_t (*)(double);
-  masm.setupUnalignedABICall(res);
-  masm.passABIArg(floatReg, ABIType::Float64);
-  masm.callWithABI<Fn, JS::ToInt32>(ABIType::General,
-                                    CheckUnsafeCallWithABI::DontCheckOther);
-  masm.storeCallInt32Result(res);
-
-  LiveRegisterSet ignore;
-  ignore.add(res);
-  masm.PopRegsInMaskIgnore(save, ignore);
-
-  masm.bind(&done);
+  TruncateDoubleModUint32(masm, floatReg, res, liveVolatileRegs());
   return true;
 }
 
@@ -4373,6 +4379,24 @@ bool CacheIRCompiler::emitLoadBoundFunctionTarget(ObjOperandId objId,
 
   masm.unboxObject(Address(obj, BoundFunctionObject::offsetOfTargetSlot()),
                    output);
+  return true;
+}
+
+bool CacheIRCompiler::emitLoadBoundFunctionArgument(ObjOperandId objId,
+                                                    uint32_t index,
+                                                    ValOperandId resultId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  Register obj = allocator.useRegister(masm, objId);
+  ValueOperand output = allocator.defineValueRegister(masm, resultId);
+  AutoScratchRegister scratch(allocator, masm);
+
+  constexpr size_t inlineArgsOffset =
+      BoundFunctionObject::offsetOfFirstInlineBoundArg();
+
+  masm.unboxObject(Address(obj, inlineArgsOffset), scratch);
+  masm.loadPtr(Address(scratch, NativeObject::offsetOfElements()), scratch);
+  masm.loadValue(Address(scratch, index * sizeof(Value)), output);
   return true;
 }
 
@@ -4698,6 +4722,42 @@ bool CacheIRCompiler::emitNewSetObjectResult(uint32_t templateObjectOffset) {
   return true;
 }
 
+bool CacheIRCompiler::emitNewMapObjectFromIterableResult(
+    uint32_t templateObjectOffset, ValOperandId iterableId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+  ValueOperand iterable = allocator.useValueRegister(masm, iterableId);
+
+  callvm.prepare();
+  masm.Push(ImmPtr(nullptr));  // allocatedFromJit
+  masm.Push(iterable);
+  masm.Push(ImmPtr(nullptr));  // proto
+
+  using Fn = MapObject* (*)(JSContext*, Handle<JSObject*>, Handle<Value>,
+                            Handle<MapObject*>);
+  callvm.call<Fn, MapObject::createFromIterable>();
+  return true;
+}
+
+bool CacheIRCompiler::emitNewSetObjectFromIterableResult(
+    uint32_t templateObjectOffset, ValOperandId iterableId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  AutoCallVM callvm(masm, this, allocator);
+  ValueOperand iterable = allocator.useValueRegister(masm, iterableId);
+
+  callvm.prepare();
+  masm.Push(ImmPtr(nullptr));  // allocatedFromJit
+  masm.Push(iterable);
+  masm.Push(ImmPtr(nullptr));  // proto
+
+  using Fn = SetObject* (*)(JSContext*, Handle<JSObject*>, Handle<Value>,
+                            Handle<SetObject*>);
+  callvm.call<Fn, SetObject::createFromIterable>();
+  return true;
+}
+
 bool CacheIRCompiler::emitNewStringObjectResult(uint32_t templateObjectOffset,
                                                 StringOperandId strId) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
@@ -4814,7 +4874,7 @@ bool CacheIRCompiler::emitStringToLowerCaseResult(StringOperandId strId) {
   callvm.prepare();
   masm.Push(str);
 
-  using Fn = JSString* (*)(JSContext*, HandleString);
+  using Fn = JSLinearString* (*)(JSContext*, JSString*);
   callvm.call<Fn, js::StringToLowerCase>();
   return true;
 }
@@ -4829,7 +4889,7 @@ bool CacheIRCompiler::emitStringToUpperCaseResult(StringOperandId strId) {
   callvm.prepare();
   masm.Push(str);
 
-  using Fn = JSString* (*)(JSContext*, HandleString);
+  using Fn = JSLinearString* (*)(JSContext*, JSString*);
   callvm.call<Fn, js::StringToUpperCase>();
   return true;
 }
@@ -5250,6 +5310,21 @@ bool CacheIRCompiler::emitGuardArgumentsObjectFlags(ObjOperandId objId,
 
   masm.branchTestArgumentsObjectFlags(obj, scratch, flags, Assembler::NonZero,
                                       failure->label());
+  return true;
+}
+
+bool CacheIRCompiler::emitGuardObjectHasSameRealm(ObjOperandId objId) {
+  JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
+  Register obj = allocator.useRegister(masm, objId);
+  AutoScratchRegister scratch(allocator, masm);
+
+  FailurePath* failure;
+  if (!addFailurePath(&failure)) {
+    return false;
+  }
+
+  masm.guardObjectHasSameRealm(obj, scratch, failure->label());
   return true;
 }
 
@@ -7130,7 +7205,7 @@ bool CacheIRCompiler::emitStoreTypedArrayElement(ObjOperandId objId,
 #endif
 
     masm.loadBigInt64(*valBigInt, temp);
-    masm.storeToTypedBigIntArray(elementType, temp, dest);
+    masm.storeToTypedBigIntArray(temp, dest);
 
 #ifndef JS_PUNBOX64
     masm.pop(obj);
@@ -7258,13 +7333,12 @@ bool CacheIRCompiler::emitLoadTypedArrayElementResult(
     Register64 temp(output.valueReg().typeReg(), obj);
 #endif
 
-    masm.loadFromTypedBigIntArray(elementType, source, *bigInt, temp);
+    masm.loadFromTypedBigIntArray(elementType, source, output.valueReg(),
+                                  *bigInt, temp);
 
 #ifndef JS_PUNBOX64
     masm.pop(obj);
 #endif
-
-    masm.tagValue(JSVAL_TYPE_BIGINT, *bigInt, output.valueReg());
   } else {
     MacroAssembler::Uint32Mode uint32Mode =
         forceDoubleForUint32 ? MacroAssembler::Uint32Mode::ForceDouble
@@ -8971,7 +9045,6 @@ bool CacheIRCompiler::emitCallObjectHasSparseElementResult(
 
   LiveRegisterSet volatileRegs = liveVolatileRegs();
   volatileRegs.takeUnchecked(scratch1);
-  volatileRegs.takeUnchecked(index);
   masm.PushRegsInMask(volatileRegs);
 
   using Fn =
@@ -9480,21 +9553,33 @@ bool CacheIRCompiler::emitCallInt32ToString(Int32OperandId inputId,
     return false;
   }
 
-  LiveRegisterSet volatileRegs = liveVolatileRegs();
-  volatileRegs.takeUnchecked(result);
-  masm.PushRegsInMask(volatileRegs);
+  Label done, callVM;
 
-  using Fn = JSLinearString* (*)(JSContext* cx, int32_t i);
-  masm.setupUnalignedABICall(result);
-  masm.loadJSContext(result);
-  masm.passABIArg(result);
-  masm.passABIArg(input);
-  masm.callWithABI<Fn, js::Int32ToStringPure>();
+  {
+    masm.lookupStaticIntString(input, result, cx_->staticStrings(), &callVM);
+    masm.jump(&done);
+  }
 
-  masm.storeCallPointerResult(result);
-  masm.PopRegsInMask(volatileRegs);
+  {
+    masm.bind(&callVM);
+    LiveRegisterSet volatileRegs = liveVolatileRegs();
+    volatileRegs.takeUnchecked(result);
+    masm.PushRegsInMask(volatileRegs);
 
-  masm.branchPtr(Assembler::Equal, result, ImmPtr(nullptr), failure->label());
+    using Fn = JSLinearString* (*)(JSContext* cx, int32_t i);
+    masm.setupUnalignedABICall(result);
+    masm.loadJSContext(result);
+    masm.passABIArg(result);
+    masm.passABIArg(input);
+    masm.callWithABI<Fn, js::Int32ToStringPure>();
+
+    masm.storeCallPointerResult(result);
+    masm.PopRegsInMask(volatileRegs);
+
+    masm.branchPtr(Assembler::Equal, result, ImmPtr(nullptr), failure->label());
+  }
+
+  masm.bind(&done);
   return true;
 }
 
@@ -9560,8 +9645,8 @@ bool CacheIRCompiler::emitInt32ToStringWithBaseResult(Int32OperandId inputId,
   masm.Push(base);
   masm.Push(input);
 
-  using Fn = JSString* (*)(JSContext*, int32_t, int32_t, bool);
-  callvm.call<Fn, js::Int32ToStringWithBase>();
+  using Fn = JSLinearString* (*)(JSContext*, int32_t, int32_t, bool);
+  callvm.call<Fn, js::Int32ToStringWithBase<CanGC>>();
   return true;
 }
 
@@ -9620,24 +9705,76 @@ bool CacheIRCompiler::emitObjectToStringResult(ObjOperandId objId) {
   return true;
 }
 
-bool CacheIRCompiler::emitCallStringConcatResult(StringOperandId lhsId,
-                                                 StringOperandId rhsId) {
+bool CacheIRCompiler::emitConcatStringsResult(StringOperandId lhsId,
+                                              StringOperandId rhsId,
+                                              uint32_t stubOffset) {
   JitSpew(JitSpew_Codegen, "%s", __FUNCTION__);
+
   AutoCallVM callvm(masm, this, allocator);
+  const AutoOutputRegister& output = callvm.output();
 
   Register lhs = allocator.useRegister(masm, lhsId);
   Register rhs = allocator.useRegister(masm, rhsId);
 
-  callvm.prepare();
+  // Discard the stack to ensure it's balanced when we skip the vm-call.
+  allocator.discardStack(masm);
 
-  masm.Push(static_cast<js::jit::Imm32>(int32_t(js::gc::Heap::Default)));
-  masm.Push(rhs);
-  masm.Push(lhs);
+  Label done;
+  {
+    // The StringConcat stub uses CallTemp registers 0 to 5.
+    LiveGeneralRegisterSet liveRegs;
+    liveRegs.add(CallTempReg0);
+    liveRegs.add(CallTempReg1);
+    liveRegs.add(CallTempReg2);
+    liveRegs.add(CallTempReg3);
+    liveRegs.add(CallTempReg4);
+    liveRegs.add(CallTempReg5);
+#ifdef JS_USE_LINK_REGISTER
+    liveRegs.add(ICTailCallReg);
+#endif
+    liveRegs.takeUnchecked(output.valueReg());
+    masm.PushRegsInMask(liveRegs);
 
-  using Fn =
-      JSString* (*)(JSContext*, HandleString, HandleString, js::gc::Heap);
-  callvm.call<Fn, ConcatStrings<CanGC>>();
+    // The stub expects lhs in CallTempReg0 and rhs in CallTempReg1.
+    masm.moveRegPair(lhs, rhs, CallTempReg0, CallTempReg1);
 
+    uint32_t framePushed = masm.framePushed();
+
+    // Call cx->zone()->jitZone()->stringConcatStub. See also the comment and
+    // code in CallRegExpStub.
+    Label vmCall;
+    Register temp = CallTempReg2;
+    masm.loadJSContext(temp);
+    masm.loadPtr(Address(temp, JSContext::offsetOfZone()), temp);
+    masm.loadPtr(Address(temp, Zone::offsetOfJitZone()), temp);
+    masm.loadPtr(Address(temp, JitZone::offsetOfStringConcatStub()), temp);
+    masm.branchTestPtr(Assembler::Zero, temp, temp, &vmCall);
+    masm.call(Address(temp, JitCode::offsetOfCode()));
+
+    // The result is returned in CallTempReg5 (nullptr on failure).
+    masm.branchTestPtr(Assembler::Zero, CallTempReg5, CallTempReg5, &vmCall);
+    masm.tagValue(JSVAL_TYPE_STRING, CallTempReg5, output.valueReg());
+    masm.PopRegsInMask(liveRegs);
+    masm.jump(&done);
+
+    masm.bind(&vmCall);
+    masm.setFramePushed(framePushed);
+    masm.PopRegsInMask(liveRegs);
+  }
+
+  {
+    callvm.prepare();
+
+    masm.Push(static_cast<js::jit::Imm32>(int32_t(js::gc::Heap::Default)));
+    masm.Push(rhs);
+    masm.Push(lhs);
+
+    using Fn =
+        JSString* (*)(JSContext*, HandleString, HandleString, js::gc::Heap);
+    callvm.call<Fn, ConcatStrings<CanGC>>();
+  }
+
+  masm.bind(&done);
   return true;
 }
 
@@ -11360,6 +11497,10 @@ struct ReturnTypeToJSValueType<int32_t*> {
 };
 template <>
 struct ReturnTypeToJSValueType<JSString*> {
+  static constexpr JSValueType result = JSVAL_TYPE_STRING;
+};
+template <>
+struct ReturnTypeToJSValueType<JSLinearString*> {
   static constexpr JSValueType result = JSVAL_TYPE_STRING;
 };
 template <>

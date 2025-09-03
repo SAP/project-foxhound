@@ -65,14 +65,19 @@ struct ProbeControllerConfig {
       estimate_lower_than_network_state_estimate_probing_interval;
   FieldTrialParameter<double> network_state_probe_scale;
   // Overrides min_probe_duration if network_state_estimate_probing_interval
-  // is set and a network state estimate is known.
+  // is set and a network state estimate is known and equal or higher than the
+  // probe target.
   FieldTrialParameter<TimeDelta> network_state_probe_duration;
+  // Overrides min_probe_delta if network_state_estimate_probing_interval
+  // is set and a network state estimate is known and equal or higher than the
+  // probe target.
+  FieldTrialParameter<TimeDelta> network_state_min_probe_delta;
 
   // Configures the probes emitted by changed to the allocated bitrate.
   FieldTrialParameter<bool> probe_on_max_allocated_bitrate_change;
   FieldTrialOptional<double> first_allocation_probe_scale;
   FieldTrialOptional<double> second_allocation_probe_scale;
-  FieldTrialOptional<double> allocation_probe_limit_by_current_scale;
+  FieldTrialParameter<double> allocation_probe_limit_by_current_scale;
 
   // The minimum number probing packets used.
   FieldTrialParameter<int> min_probe_packets_sent;
@@ -82,8 +87,11 @@ struct ProbeControllerConfig {
   FieldTrialParameter<TimeDelta> min_probe_delta;
   FieldTrialParameter<double> loss_limited_probe_scale;
   // Don't send a probe if min(estimate, network state estimate) is larger than
-  // this fraction of the set max bitrate.
+  // this fraction of the set max or max allocated bitrate.
   FieldTrialParameter<double> skip_if_estimate_larger_than_fraction_of_max;
+  // Scale factor of the max allocated bitrate. Used when deciding if a probe
+  // can be skiped due to that the estimate is already high enough.
+  FieldTrialParameter<double> skip_probe_max_allocated_scale;
 };
 
 // Reason that bandwidth estimate is limited. Bandwidth estimate can be limited

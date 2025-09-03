@@ -17,8 +17,10 @@
 #include "HTTPSRecordResolver.h"
 #include "NSSErrorsService.h"
 #include "base/basictypes.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Components.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Tokenizer.h"
@@ -309,10 +311,7 @@ nsresult nsHttpTransaction::Init(
 
   if (mHasRequestBody) {
     // wrap the headers and request body in a multiplexed input stream.
-    nsCOMPtr<nsIMultiplexInputStream> multi;
-    rv = nsMultiplexInputStreamConstructor(NS_GET_IID(nsIMultiplexInputStream),
-                                           getter_AddRefs(multi));
-    if (NS_FAILED(rv)) return rv;
+    RefPtr<nsMultiplexInputStream> multi = new nsMultiplexInputStream();
 
     rv = multi->AppendStream(headers);
     if (NS_FAILED(rv)) return rv;
@@ -323,9 +322,8 @@ nsresult nsHttpTransaction::Init(
     // wrap the multiplexed input stream with a buffered input stream, so
     // that we write data in the largest chunks possible.  this is actually
     // necessary to workaround some common server bugs (see bug 137155).
-    nsCOMPtr<nsIInputStream> stream(do_QueryInterface(multi));
     rv = NS_NewBufferedInputStream(getter_AddRefs(mRequestStream),
-                                   stream.forget(),
+                                   multi.forget(),
                                    nsIOService::gDefaultSegmentSize);
     if (NS_FAILED(rv)) return rv;
   } else {
@@ -1228,7 +1226,7 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
     return;
   }
 
-  Telemetry::HistogramID id = Telemetry::TRANSACTION_ECH_RETRY_OTHERS_COUNT;
+  TRANSACTION_ECH_RETRY_COUNT id = TRANSACTION_ECH_RETRY_OTHERS_COUNT;
   auto updateCount = MakeScopeExit([&] {
     auto entry = mEchRetryCounterMap.Lookup(id);
     MOZ_ASSERT(entry, "table not initialized");
@@ -1241,7 +1239,7 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
     LOG((" Got SSL_ERROR_ECH_RETRY_WITHOUT_ECH, use empty echConfig to retry"));
     failedConnInfo->SetEchConfig(EmptyCString());
     failedConnInfo.swap(mConnInfo);
-    id = Telemetry::TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT;
+    id = TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT;
     return;
   }
 
@@ -1263,7 +1261,7 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
       failedConnInfo->SetEchConfig(retryEchConfig);
       failedConnInfo.swap(mConnInfo);
     }
-    id = Telemetry::TRANSACTION_ECH_RETRY_WITH_ECH_COUNT;
+    id = TRANSACTION_ECH_RETRY_WITH_ECH_COUNT;
     return;
   }
 
@@ -1273,7 +1271,7 @@ void nsHttpTransaction::PrepareConnInfoForRetry(nsresult aReason) {
       NS_FAILED(aReason)) {
     LOG((" Got SSL_ERROR_ECH_FAILED, try other records"));
     if (aReason == psm::GetXPCOMFromNSSError(SSL_ERROR_ECH_FAILED)) {
-      id = Telemetry::TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT;
+      id = TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT;
     }
     if (mRecordsForRetry.IsEmpty()) {
       if (mHTTPSSVCRecord) {
@@ -1581,14 +1579,27 @@ void nsHttpTransaction::Close(nsresult reason) {
     }
   }
 
-  Telemetry::Accumulate(Telemetry::HTTP_TRANSACTION_RESTART_REASON,
-                        mRestartReason);
+  glean::http::transaction_restart_reason.AccumulateSingleSample(
+      mRestartReason);
 
   if (!mResponseIsComplete && NS_SUCCEEDED(reason) && isHttp2or3) {
     // Responses without content-length header field are still complete if
     // they are transfered over http2 or http3 and the stream is properly
     // closed.
     mResponseIsComplete = true;
+  }
+
+  if (reason == NS_ERROR_NET_RESET && mResponseIsComplete && isHttp2or3) {
+    // See bug 1940663. When using HTTP/2 or HTTP/3, receiving the
+    // NS_ERROR_NET_RESET error code indicates that the connection intends
+    // to restart this transaction. However, if the transaction has already
+    // completed and we've passed the point of restarting, we should avoid
+    // propagating the error code and overwrite it to NS_OK.
+    //
+    // TODO: Refactor the mechanism by which a connection instructs a
+    // transaction to restart. This will allow us to remove this hack.
+    LOG(("Transaction is already done, overriding error code to NS_OK"));
+    reason = NS_OK;
   }
 
   if ((mChunkedDecoder || (mContentLength >= int64_t(0))) &&
@@ -1683,39 +1694,83 @@ void nsHttpTransaction::Close(nsresult reason) {
     SetResponseEnd(TimeStamp::Now());
   }
 
-  // Accumulate download throughput telemetry
-  if ((mContentRead > TELEMETRY_REQUEST_SIZE_10M) &&
-      !timings.requestStart.IsNull() && !timings.responseEnd.IsNull()) {
+  if (!timings.requestStart.IsNull() && !timings.responseEnd.IsNull()) {
     TimeDuration elapsed = timings.responseEnd - timings.requestStart;
     double megabits = static_cast<double>(mContentRead) * 8.0 / 1000000.0;
-    uint32_t mpbs = static_cast<uint32_t>(megabits / elapsed.ToSeconds());
+    uint32_t mbps = static_cast<uint32_t>(megabits / elapsed.ToSeconds());
+    nsAutoCString serverKey;
 
     switch (mHttpVersion) {
       case HttpVersion::v1_0:
-      case HttpVersion::v1_1:
-        glean::networking::http_1_download_throughput.AccumulateSingleSample(
-            mpbs);
-        break;
-      case HttpVersion::v2_0:
-        glean::networking::http_2_download_throughput.AccumulateSingleSample(
-            mpbs);
-        break;
-      case HttpVersion::v3_0:
-        glean::networking::http_3_download_throughput.AccumulateSingleSample(
-            mpbs);
-        if (mContentRead <= TELEMETRY_REQUEST_SIZE_50M) {
-          glean::networking::http_3_download_throughput_10_50
-              .AccumulateSingleSample(mpbs);
-        } else if (mContentRead <= TELEMETRY_REQUEST_SIZE_100M) {
-          glean::networking::http_3_download_throughput_50_100
-              .AccumulateSingleSample(mpbs);
-        } else {
-          glean::networking::http_3_download_throughput_100
-              .AccumulateSingleSample(mpbs);
+      case HttpVersion::v1_1: {
+        if (NS_SUCCEEDED(reason)) {
+          serverKey.Assign(mServerHeader.EqualsLiteral("cloudflare")
+                               ? "h1_cloudflare"_ns
+                               : "h1_others"_ns);
+        }
+        if (mContentRead > TELEMETRY_REQUEST_SIZE_10M) {
+          glean::networking::http_1_download_throughput.AccumulateSingleSample(
+              mbps);
+          if (mContentRead <= TELEMETRY_REQUEST_SIZE_50M) {
+            glean::networking::http_1_download_throughput_10_50
+                .AccumulateSingleSample(mbps);
+          } else if (mContentRead <= TELEMETRY_REQUEST_SIZE_100M) {
+            glean::networking::http_1_download_throughput_50_100
+                .AccumulateSingleSample(mbps);
+          } else {
+            glean::networking::http_1_download_throughput_100
+                .AccumulateSingleSample(mbps);
+          }
         }
         break;
+      }
+      case HttpVersion::v2_0: {
+        if (NS_SUCCEEDED(reason)) {
+          serverKey.Assign(mServerHeader.EqualsLiteral("cloudflare")
+                               ? "h2_cloudflare"_ns
+                               : "h2_others"_ns);
+        }
+        if (mContentRead > TELEMETRY_REQUEST_SIZE_10M) {
+          if (mContentRead <= TELEMETRY_REQUEST_SIZE_50M) {
+            glean::networking::http_2_download_throughput_10_50
+                .AccumulateSingleSample(mbps);
+          } else if (mContentRead <= TELEMETRY_REQUEST_SIZE_100M) {
+            glean::networking::http_2_download_throughput_50_100
+                .AccumulateSingleSample(mbps);
+          } else {
+            glean::networking::http_2_download_throughput_100
+                .AccumulateSingleSample(mbps);
+          }
+        }
+        break;
+      }
+      case HttpVersion::v3_0: {
+        if (NS_SUCCEEDED(reason)) {
+          serverKey.Assign(mServerHeader.EqualsLiteral("cloudflare")
+                               ? "h3_cloudflare"_ns
+                               : "h3_others"_ns);
+        }
+        if (mContentRead > TELEMETRY_REQUEST_SIZE_10M) {
+          if (mContentRead <= TELEMETRY_REQUEST_SIZE_50M) {
+            glean::networking::http_3_download_throughput_10_50
+                .AccumulateSingleSample(mbps);
+          } else if (mContentRead <= TELEMETRY_REQUEST_SIZE_100M) {
+            glean::networking::http_3_download_throughput_50_100
+                .AccumulateSingleSample(mbps);
+          } else {
+            glean::networking::http_3_download_throughput_100
+                .AccumulateSingleSample(mbps);
+          }
+        }
+        break;
+      }
       default:
         break;
+    }
+
+    if (!serverKey.IsEmpty()) {
+      glean::network::http_fetch_duration.Get(serverKey).AccumulateRawDuration(
+          elapsed);
     }
   }
 
@@ -1758,8 +1813,24 @@ void nsHttpTransaction::Close(nsresult reason) {
   }
 
   for (const auto& entry : mEchRetryCounterMap) {
-    Telemetry::Accumulate(static_cast<Telemetry::HistogramID>(entry.GetKey()),
-                          entry.GetData());
+    switch (entry.GetKey()) {
+      case TRANSACTION_ECH_RETRY_OTHERS_COUNT:
+        glean::http::transaction_ech_retry_others_count.AccumulateSingleSample(
+            entry.GetData());
+        break;
+      case TRANSACTION_ECH_RETRY_WITH_ECH_COUNT:
+        glean::http::transaction_ech_retry_with_ech_count
+            .AccumulateSingleSample(entry.GetData());
+        break;
+      case TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT:
+        glean::http::transaction_ech_retry_without_ech_count
+            .AccumulateSingleSample(entry.GetData());
+        break;
+      case TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT:
+        glean::http::transaction_ech_retry_ech_failed_count
+            .AccumulateSingleSample(entry.GetData());
+        break;
+    }
   }
 
   // closing this pipe triggers the channel's OnStopRequest method.
@@ -2204,6 +2275,8 @@ bool nsHttpTransaction::HandleWebTransportResponse(uint16_t aStatus) {
     return false;
   }
 
+  // TODO: Add support for Http2WebTransportSession here.
+
   RefPtr<Http3WebTransportSession> wtSession =
       mConnection->GetWebTransportSession(this);
   if (!wtSession) {
@@ -2283,6 +2356,8 @@ nsresult nsHttpTransaction::HandleContentStart() {
       // wait to be called again...
       return NS_OK;
     }
+
+    Unused << mResponseHead->GetHeader(nsHttp::Server, mServerHeader);
 
     bool responseChecked = false;
     if (mIsForWebTransport) {
@@ -2366,8 +2441,8 @@ nsresult nsHttpTransaction::HandleContentStart() {
 
     // Report telemetry
     if (mSupportsHTTP3) {
-      Accumulate(Telemetry::TRANSACTION_WAIT_TIME_HTTP2_SUP_HTTP3,
-                 mPendingDurationTime.ToMilliseconds());
+      glean::http::transaction_wait_time_http2_sup_http3.AccumulateRawDuration(
+          mPendingDurationTime);
     }
 
     // If we're only connecting then we're going to be upgrading this
@@ -3369,14 +3444,12 @@ nsresult nsHttpTransaction::OnHTTPSRRAvailable(
 
   // echConfig is used, so initialize the retry counters to 0.
   if (!mConnInfo->GetEchConfig().IsEmpty()) {
-    mEchRetryCounterMap.InsertOrUpdate(
-        Telemetry::TRANSACTION_ECH_RETRY_WITH_ECH_COUNT, 0);
-    mEchRetryCounterMap.InsertOrUpdate(
-        Telemetry::TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT, 0);
-    mEchRetryCounterMap.InsertOrUpdate(
-        Telemetry::TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT, 0);
-    mEchRetryCounterMap.InsertOrUpdate(
-        Telemetry::TRANSACTION_ECH_RETRY_OTHERS_COUNT, 0);
+    mEchRetryCounterMap.InsertOrUpdate(TRANSACTION_ECH_RETRY_WITH_ECH_COUNT, 0);
+    mEchRetryCounterMap.InsertOrUpdate(TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT,
+                                       0);
+    mEchRetryCounterMap.InsertOrUpdate(TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT,
+                                       0);
+    mEchRetryCounterMap.InsertOrUpdate(TRANSACTION_ECH_RETRY_OTHERS_COUNT, 0);
   }
 
   return NS_OK;
@@ -3607,8 +3680,8 @@ void nsHttpTransaction::CollectTelemetryForUploads() {
   TimeDuration sendTime = mTimings.responseStart - mTimings.requestStart;
   double megabits = static_cast<double>(mRequestSize) * 8.0 / 1000000.0;
   uint32_t mpbs = static_cast<uint32_t>(megabits / sendTime.ToSeconds());
-  Telemetry::Accumulate(Telemetry::HTTP_UPLOAD_BANDWIDTH_MBPS, protocolVersion,
-                        mpbs);
+  glean::http::upload_bandwidth_mbps.Get(protocolVersion)
+      .AccumulateSingleSample(mpbs);
 
   switch (mHttpVersion) {
     case HttpVersion::v1_0:

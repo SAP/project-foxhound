@@ -78,15 +78,13 @@ export default class MozSelect extends MozBaseInputElement {
   }
 
   /**
-   * Dispatches an event from the host element so that outside
-   * listeners can react to these events
-   *
-   * @param {Event} event
-   * @memberof MozSelect
+   * @type {MozBaseInputElement['inputStylesTemplate']}
    */
-  redispatchEvent(event) {
-    let newEvent = new Event(event.type, event);
-    this.dispatchEvent(newEvent);
+  inputStylesTemplate() {
+    return html` <link
+      rel="stylesheet"
+      href="chrome://global/content/elements/moz-select.css"
+    />`;
   }
 
   inputTemplate() {

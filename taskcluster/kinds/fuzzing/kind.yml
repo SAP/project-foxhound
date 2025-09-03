@@ -44,7 +44,7 @@ tasks:
                 - target.jsshell.zip
                 - target.fuzztest.tests.tar.gz
         worker:
-            docker-image: {in-tree: debian12-amd64-build}
+            docker-image: {in-tree: ubuntu1804-test}
             env:
                 LD_LIBRARY_PATH: /builds/worker/fetches
                 JSSHELL: ./js
@@ -69,7 +69,7 @@ tasks:
             subsuite: fuzzing
         fetches:
             build:
-                - artifact: target.tar.bz2
+                - artifact: target.tar.xz
                 - artifact: target.gtest.tests.tar.gz
                 - artifact: target.mozinfo.json
 
@@ -88,7 +88,7 @@ tasks:
             subsuite: fuzzing
         fetches:
             build:
-                - artifact: target.tar.bz2
+                - artifact: target.tar.xz
                 - artifact: target.gtest.tests.tar.gz
                 - artifact: target.mozinfo.json
 
@@ -96,7 +96,7 @@ tasks:
         platform: linux64/asan
         worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: debian12-amd64-build}
+            docker-image: {in-tree: ubuntu1804-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -106,7 +106,7 @@ tasks:
             subsuite: fuzzing
         fetches:
             build:
-                - artifact: target.tar.bz2
+                - artifact: target.tar.xz
                 - artifact: target.gtest.tests.tar.gz
                 - artifact: target.mozinfo.json
 
@@ -114,7 +114,7 @@ tasks:
         platform: linux64/debug
         worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: debian12-amd64-build}
+            docker-image: {in-tree: ubuntu1804-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -124,7 +124,7 @@ tasks:
             subsuite: fuzzing
         fetches:
             build:
-                - artifact: target.tar.bz2
+                - artifact: target.tar.xz
                 - artifact: target.gtest.tests.tar.gz
                 - artifact: target.mozinfo.json
 
@@ -132,7 +132,7 @@ tasks:
         platform: linux64/tsan
         worker-type: b-linux-gcp
         worker:
-            docker-image: {in-tree: debian12-amd64-build}
+            docker-image: {in-tree: ubuntu1804-test}
             env:
                 GECKO_BINARY_PATH: "$MOZ_FETCHES_DIR/firefox/firefox"
         require-build:
@@ -142,7 +142,7 @@ tasks:
             subsuite: fuzzing
         fetches:
             build:
-                - artifact: target.tar.bz2
+                - artifact: target.tar.xz
                 - artifact: target.gtest.tests.tar.gz
                 - artifact: target.mozinfo.json
 

@@ -72,9 +72,8 @@ export class AddonSearchEngine extends SearchEngine {
    *   The saved settings for the user.
    */
   async init({ extension, settings } = {}) {
-    let { baseURI, manifest } = await this.#getExtensionDetailsForLocale(
-      extension
-    );
+    let { baseURI, manifest } =
+      await this.#getExtensionDetailsForLocale(extension);
 
     this.#initFromManifest(baseURI, manifest);
     this._loadSettings(settings);
@@ -89,9 +88,8 @@ export class AddonSearchEngine extends SearchEngine {
    *   The extension associated with this search engine, if known.
    */
   async update({ extension } = {}) {
-    let { baseURI, manifest } = await this.#getExtensionDetailsForLocale(
-      extension
-    );
+    let { baseURI, manifest } =
+      await this.#getExtensionDetailsForLocale(extension);
 
     let originalName = this.name;
     let name = manifest.chrome_settings_overrides.search_provider.name.trim();
@@ -170,7 +168,7 @@ export class AddonSearchEngine extends SearchEngine {
   /**
    * Initializes the engine based on the manifest and other values.
    *
-   * @param {string} extensionBaseURI
+   * @param {nsIURI} extensionBaseURI
    *   The Base URI of the WebExtension.
    * @param {object} manifest
    *   An object representing the WebExtensions' manifest.
@@ -192,7 +190,11 @@ export class AddonSearchEngine extends SearchEngine {
     // Record other icons that the WebExtension has.
     if (manifest.icons) {
       for (let [size, icon] of Object.entries(manifest.icons)) {
-        this._addIconToMap(parseInt(size), extensionBaseURI.resolve(icon));
+        this._addIconToMap(
+          extensionBaseURI.resolve(icon),
+          parseInt(size),
+          false
+        );
       }
     }
 
@@ -207,7 +209,7 @@ export class AddonSearchEngine extends SearchEngine {
    * Update this engine based on new manifest, used during
    * webextension upgrades.
    *
-   * @param {string} extensionBaseURI
+   * @param {nsIURI} extensionBaseURI
    *   The Base URI of the WebExtension.
    * @param {object} manifest
    *   An object representing the WebExtensions' manifest.
@@ -225,7 +227,7 @@ export class AddonSearchEngine extends SearchEngine {
    *
    * @param {object} [extension]
    *   The extension to get the manifest from.
-   * @returns {object}
+   * @returns {Promise<object>}
    *   The loaded manifest.
    */
   async #getExtensionDetailsForLocale(extension) {
@@ -262,7 +264,7 @@ export class AddonSearchEngine extends SearchEngine {
    *
    * @param {string} id
    *   The WebExtension id.
-   * @returns {WebExtensionPolicy}
+   * @returns {Promise<WebExtensionPolicy>}
    */
   static async getWebExtensionPolicy(id) {
     let policy = WebExtensionPolicy.getByID(id);

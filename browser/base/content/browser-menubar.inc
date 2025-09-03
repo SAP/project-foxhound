@@ -167,22 +167,24 @@
                 <menuseparator/>
 #ifdef XP_MACOSX
                 <menuitem id="enterFullScreenItem"
-                          key="key_enterFullScreen" data-l10n-id="menu-view-enter-full-screen">
-                  <observes element="View:FullScreen" attribute="oncommand"/>
+                          key="key_enterFullScreen"
+                          command="View:FullScreen"
+                          data-l10n-id="menu-view-enter-full-screen">
                 </menuitem>
                 <menuitem id="exitFullScreenItem"
                           key="key_exitFullScreen"
+                          command="View:FullScreen"
                           hidden="true" data-l10n-id="menu-view-exit-full-screen">
-                  <observes element="View:FullScreen" attribute="oncommand"/>
                 </menuitem>
 #else
                 <menuitem id="fullScreenItem"
                           key="key_enterFullScreen"
                           type="checkbox"
-                          observes="View:FullScreen" data-l10n-id="menu-view-full-screen"/>
+                          command="View:FullScreen"
+                          data-l10n-id="menu-view-full-screen"/>
 #endif
                 <menuitem id="menu_readerModeItem"
-                          observes="View:ReaderView"
+                          command="View:ReaderView"
                           key="key_toggleReaderMode"
                           data-l10n-id="menu-view-enter-readerview"
                           hidden="true"/>
@@ -244,9 +246,8 @@
 # If the menu is actually opened, we'll clear this out and replace
 # it with a "real" entry.
 # See bug 492320 for the nasty details.
-                    <menuitem key="key_undoCloseWindow"
-                              oncommand="undoCloseWindow(0)"
-                              />
+                    <menuitem id="hiddenUndoCloseWindow"
+                              key="key_undoCloseWindow"/>
 #endif
                   </menupopup>
                 </menu>
@@ -421,11 +422,7 @@
                 <menuitem id="menu_openHelp"
                           data-l10n-id="menu-get-help"
                           appmenu-data-l10n-id="appmenu-get-help"
-#ifdef XP_MACOSX
-                          key="key_openHelpMac"/>
-#else
                           />
-#endif
                 <menuitem id="help_reportBrokenSite"
                           command="cmd_reportBrokenSite"
                           data-l10n-id="menu-report-broken-site"

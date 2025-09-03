@@ -13,7 +13,7 @@
 
 #include "mozilla/Assertions.h"
 #include "mozilla/dom/FetchPriority.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomMetrics.h"
 #include "mozilla/dom/RequestBinding.h"
 
 #include "prsystem.h"
@@ -21,7 +21,7 @@
 #include "js/CompilationAndEvaluation.h"
 #include "js/CompileOptions.h"  // JS::CompileOptions, JS::OwningCompileOptions, JS::DecodeOptions, JS::OwningDecodeOptions, JS::DelazificationOption
 #include "js/ContextOptions.h"  // JS::ContextOptionsRef
-#include "js/experimental/JSStencil.h"  // JS::Stencil, JS::InstantiationStorage
+#include "js/experimental/JSStencil.h"  // JS::Stencil, JS::InstantiationStorage, JS::StartCollectingDelazifications, JS::FinishCollectingDelazifications, JS::AbortCollectingDelazifications, JS::IsStencilCacheable
 #include "js/experimental/CompileScript.h"  // JS::FrontendContext, JS::NewFrontendContext, JS::DestroyFrontendContext, JS::SetNativeStackQuota, JS::ThreadStackQuotaForSize, JS::CompilationStorage, JS::CompileGlobalScriptToStencil, JS::CompileModuleScriptToStencil, JS::DecodeStencil, JS::PrepareForInstantiate
 #include "js/loader/ScriptLoadRequest.h"
 #include "ScriptCompression.h"
@@ -437,19 +437,34 @@ static bool IsScriptEventHandler(ScriptKind kind, nsIContent* aScriptElement) {
 nsContentPolicyType ScriptLoadRequestToContentPolicyType(
     ScriptLoadRequest* aRequest) {
   if (aRequest->GetScriptLoadContext()->IsPreload()) {
-    return aRequest->IsModuleRequest()
-               ? nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD
-               : nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD;
+    if (aRequest->IsModuleRequest()) {
+      return aRequest->AsModuleRequest()->mModuleType ==
+                     JS::ModuleType::JavaScript
+                 ? nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD
+                 : nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD;
+    }
+
+    return nsIContentPolicy::TYPE_INTERNAL_SCRIPT_PRELOAD;
   }
 
-  return aRequest->IsModuleRequest() ? nsIContentPolicy::TYPE_INTERNAL_MODULE
-                                     : nsIContentPolicy::TYPE_INTERNAL_SCRIPT;
+  if (aRequest->IsModuleRequest()) {
+    return aRequest->AsModuleRequest()->mModuleType ==
+                   JS::ModuleType::JavaScript
+               ? nsIContentPolicy::TYPE_INTERNAL_MODULE
+               : nsIContentPolicy::TYPE_JSON;
+  }
+
+  return nsIContentPolicy::TYPE_INTERNAL_SCRIPT;
 }
 
 nsresult ScriptLoader::CheckContentPolicy(Document* aDocument,
                                           nsIScriptElement* aElement,
                                           const nsAString& aNonce,
                                           ScriptLoadRequest* aRequest) {
+  MOZ_ASSERT(aDocument);
+  MOZ_ASSERT(aElement);
+  MOZ_ASSERT(aRequest);
+
   nsContentPolicyType contentPolicyType =
       ScriptLoadRequestToContentPolicyType(aRequest);
 
@@ -874,10 +889,8 @@ nsresult ScriptLoader::PrepareHttpRequestAndInitiatorType(
   nsresult rv = NS_OK;
 
   if (httpChannel) {
-    // HTTP content negotation has little value in this context.
-    nsAutoCString acceptTypes("*/*");
-    rv = httpChannel->SetRequestHeader("Accept"_ns, acceptTypes, false);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
+    // The 'Accept' HTTP header should be set in
+    // nsHttpHandler::AddStandardRequestHeaders.
 
     nsCOMPtr<nsIReferrerInfo> referrerInfo =
         new ReferrerInfo(aRequest->mReferrer, aRequest->ReferrerPolicy());
@@ -918,12 +931,8 @@ nsresult ScriptLoader::PrepareIncrementalStreamLoader(
     ScriptLoadRequest* aRequest) {
   UniquePtr<mozilla::dom::SRICheckDataVerifier> sriDataVerifier;
   if (!aRequest->mIntegrity.IsEmpty()) {
-    nsAutoCString sourceUri;
-    if (mDocument->GetDocumentURI()) {
-      mDocument->GetDocumentURI()->GetAsciiSpec(sourceUri);
-    }
     sriDataVerifier = MakeUnique<SRICheckDataVerifier>(aRequest->mIntegrity,
-                                                       sourceUri, mReporter);
+                                                       aChannel, mReporter);
   }
 
   RefPtr<ScriptLoadHandler> handler =
@@ -1103,15 +1112,21 @@ already_AddRefed<ScriptLoadRequest> ScriptLoader::CreateLoadRequest(
     RefPtr<ScriptLoadRequest> aRequest =
         new ScriptLoadRequest(aKind, aURI, aReferrerPolicy, fetchOptions,
                               aIntegrity, referrer, context);
-    if (requestType == RequestType::External && mCache) {
+    if ((requestType == RequestType::External ||
+         requestType == RequestType::Preload) &&
+        mCache) {
       ScriptHashKey key(this, aRequest);
       auto cacheResult = mCache->Lookup(*this, key,
                                         /* aSyncLoad = */ true);
       if (cacheResult.mState == CachedSubResourceState::Complete) {
-        if (NS_FAILED(
-                CheckContentPolicy(mDocument, aElement, aNonce, aRequest))) {
-          aRequest->NoCacheEntryFound();
-          return aRequest.forget();
+        if (requestType == RequestType::External) {
+          // NOTE: The preload case checks the same after the
+          //       LookupPreloadRequest call.
+          if (NS_FAILED(
+                  CheckContentPolicy(mDocument, aElement, aNonce, aRequest))) {
+            aRequest->NoCacheEntryFound();
+            return aRequest.forget();
+          }
         }
 
         nsCOMPtr<nsINode> context;
@@ -1323,6 +1338,45 @@ bool ScriptLoader::ProcessExternalScript(nsIScriptElement* aElement,
           NS_DispatchToCurrentThread(runnable.forget());
         }
         return false;
+      }
+    } else {
+      // https://html.spec.whatwg.org/#prepare-the-script-element
+      //
+      // Step 33. If el's type is "classic" and el has a src attribute, or el's
+      //          type is "module":
+      // ...
+      // Step 33.2. If el has an async attribute or el's force async is true:
+      // Step 33.2.1. Let scripts be el's preparation-time document's set of
+      //              scripts that will execute as soon as possible.
+      // Step 33.2.2. Append el to scripts.
+      // ...
+      // Step 33.3. Otherwise, if el is not parser-inserted:
+      // Step 33.3.1. Let scripts be el's preparation-time document's list of
+      //              scripts that will execute in order as soon as possible.
+      // Step 33.3.2. Append el to scripts.
+      // ...
+      //
+      // https://html.spec.whatwg.org/#the-end
+      //
+      // Step 7. Spin the event loop until the set of scripts that will execute
+      //         as soon as possible and the list of scripts that will execute
+      //         in order as soon as possible are empty.
+      //
+      // For scripts that creates the actual necko channel, the request is
+      // associated with the document's load group, and the load group manages
+      // the script set and the script list above implicitly, and the above
+      // "spin the event loop" is handled by IsBusy() check inside
+      // nsDocLoader::DocLoaderIsEmpty.
+      //
+      // https://searchfox.org/mozilla-central/rev/e85232b4b28ecc970240d39203e417d1c320623c/uriloader/base/nsDocLoader.cpp#704
+      //
+      // For in-memory-cached scripts, no channel is created, and those scripts
+      // should explicitly block the step 7 above.
+      //
+      // NOTE: IsAsyncScript represents both "async" and "force async".
+      if (request->GetScriptLoadContext()->IsAsyncScript() ||
+          parserMetadata == ParserMetadata::NotParserInserted) {
+        request->GetScriptLoadContext()->BlockOnload(mDocument);
       }
     }
   }
@@ -2745,9 +2799,9 @@ static void Decode(JSContext* aCx, JS::CompileOptions& aCompileOptions,
 // Instantiate (on main-thread) a JS::Stencil generated by off-thread or
 // main-thread parsing or decoding.
 static void InstantiateStencil(
-    JSContext* aCx, JS::CompileOptions& aCompileOptions,
-    RefPtr<JS::Stencil>&& aStencil, JS::MutableHandle<JSScript*> aScript,
-    bool& incrementalEncodingAlreadyStarted,
+    JSContext* aCx, JS::CompileOptions& aCompileOptions, JS::Stencil* aStencil,
+    JS::MutableHandle<JSScript*> aScript,
+    bool& aCollectingDelazificationsAlreadyStarted,
     JS::Handle<JS::Value> aDebuggerPrivateValue,
     JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv,
     bool aEncodeBytecode = false,
@@ -2762,8 +2816,8 @@ static void InstantiateStencil(
   }
 
   if (aEncodeBytecode) {
-    if (!JS::StartIncrementalEncoding(aCx, std::move(aStencil),
-                                      incrementalEncodingAlreadyStarted)) {
+    if (!JS::StartCollectingDelazifications(
+            aCx, script, aStencil, aCollectingDelazificationsAlreadyStarted)) {
       aRv.NoteJSContextException(aCx);
       return;
     }
@@ -2783,7 +2837,7 @@ static void InstantiateStencil(
 void ScriptLoader::InstantiateClassicScriptFromMaybeEncodedSource(
     JSContext* aCx, JS::CompileOptions& aCompileOptions,
     ScriptLoadRequest* aRequest, JS::MutableHandle<JSScript*> aScript,
-    bool aKeepStencil, RefPtr<JS::Stencil>& aStencilDup,
+    RefPtr<JS::Stencil>& aStencilOut,
     JS::Handle<JS::Value> aDebuggerPrivateValue,
     JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv) {
   nsAutoCString profilerLabelString;
@@ -2802,18 +2856,12 @@ void ScriptLoader::InstantiateClassicScriptFromMaybeEncodedSource(
         aRv.NoteJSContextException(aCx);
         return;
       }
-      if (!aRv.Failed() && aKeepStencil) {
-        aStencilDup = JS::DuplicateStencil(aCx, stencil.get());
-        if (!aStencilDup) {
-          aRv.NoteJSContextException(aCx);
-          return;
-        }
-      }
+      aStencilOut = stencil.get();
 
       bool unused;
-      InstantiateStencil(aCx, aCompileOptions, std::move(stencil), aScript,
-                         unused, aDebuggerPrivateValue,
-                         aDebuggerIntroductionScript, aRv, false, &storage);
+      InstantiateStencil(aCx, aCompileOptions, stencil, aScript, unused,
+                         aDebuggerPrivateValue, aDebuggerIntroductionScript,
+                         aRv, false, &storage);
     } else {
       LOG(("ScriptLoadRequest (%p): Decode Bytecode and Execute", aRequest));
       AUTO_PROFILER_MARKER_TEXT("BytecodeDecodeMainThread", JS,
@@ -2822,19 +2870,13 @@ void ScriptLoader::InstantiateClassicScriptFromMaybeEncodedSource(
 
       RefPtr<JS::Stencil> stencil;
       Decode(aCx, aCompileOptions, aRequest->Bytecode(), stencil, aRv);
-      if (!aRv.Failed() && aKeepStencil) {
-        aStencilDup = JS::DuplicateStencil(aCx, stencil.get());
-        if (!aStencilDup) {
-          aRv.NoteJSContextException(aCx);
-          return;
-        }
-      }
+      aStencilOut = stencil.get();
 
       if (stencil) {
         bool unused;
-        InstantiateStencil(aCx, aCompileOptions, std::move(stencil), aScript,
-                           unused, aDebuggerPrivateValue,
-                           aDebuggerIntroductionScript, aRv);
+        InstantiateStencil(aCx, aCompileOptions, stencil, aScript, unused,
+                           aDebuggerPrivateValue, aDebuggerIntroductionScript,
+                           aRv);
       }
     }
 
@@ -2864,19 +2906,12 @@ void ScriptLoader::InstantiateClassicScriptFromMaybeEncodedSource(
       aRv.NoteJSContextException(aCx);
       return;
     }
-    if (!aRv.Failed() && aKeepStencil) {
-      aStencilDup = JS::DuplicateStencil(aCx, stencil.get());
-      if (!aStencilDup) {
-        aRv.NoteJSContextException(aCx);
-        return;
-      }
-    }
+    aStencilOut = stencil.get();
 
     bool unused;
-    InstantiateStencil(aCx, aCompileOptions, std::move(stencil), aScript,
-                       unused, aDebuggerPrivateValue,
-                       aDebuggerIntroductionScript, aRv, encodeBytecode,
-                       &storage);
+    InstantiateStencil(aCx, aCompileOptions, stencil, aScript, unused,
+                       aDebuggerPrivateValue, aDebuggerIntroductionScript, aRv,
+                       encodeBytecode, &storage);
   } else {
     // Main thread parsing (inline and small scripts)
     LOG(("ScriptLoadRequest (%p): Compile And Exec", aRequest));
@@ -2901,18 +2936,13 @@ void ScriptLoader::InstantiateClassicScriptFromMaybeEncodedSource(
       MOZ_ASSERT(!maybeSource.empty());
       TimeStamp startTime = TimeStamp::Now();
       maybeSource.mapNonEmpty(compile);
-      if (!erv.Failed() && aKeepStencil) {
-        aStencilDup = JS::DuplicateStencil(aCx, stencil.get());
-        if (!aStencilDup) {
-          erv.NoteJSContextException(aCx);
-        }
-      }
+      aStencilOut = stencil.get();
 
       if (stencil) {
         bool unused;
-        InstantiateStencil(aCx, aCompileOptions, std::move(stencil), aScript,
-                           unused, aDebuggerPrivateValue,
-                           aDebuggerIntroductionScript, erv, encodeBytecode);
+        InstantiateStencil(aCx, aCompileOptions, stencil, aScript, unused,
+                           aDebuggerPrivateValue, aDebuggerIntroductionScript,
+                           erv, encodeBytecode);
       }
 
       mMainThreadParseTime += TimeStamp::Now() - startTime;
@@ -2927,21 +2957,21 @@ void ScriptLoader::InstantiateClassicScriptFromCachedStencil(
     JS::MutableHandle<JSScript*> aScript,
     JS::Handle<JS::Value> aDebuggerPrivateValue,
     JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv) {
-  RefPtr<JS::Stencil> stencil = JS::DuplicateStencil(aCx, aStencil);
-  if (!stencil) {
-    aRv = NS_ERROR_FAILURE;
-    return;
-  }
-
-  bool incrementalEncodingAlreadyStarted = false;
-  InstantiateStencil(aCx, aCompileOptions, std::move(stencil), aScript,
-                     incrementalEncodingAlreadyStarted, aDebuggerPrivateValue,
-                     aDebuggerIntroductionScript, aRv,
+  bool collectingDelazificationsAlreadyStarted = false;
+  InstantiateStencil(aCx, aCompileOptions, aStencil, aScript,
+                     collectingDelazificationsAlreadyStarted,
+                     aDebuggerPrivateValue, aDebuggerIntroductionScript, aRv,
                      /* aEncodeBytecode */ true);
-  if (incrementalEncodingAlreadyStarted) {
+  if (collectingDelazificationsAlreadyStarted) {
     aRequest->MarkSkippedBytecodeEncoding();
   }
 }
+
+enum class CacheBehavior : uint8_t {
+  DoNothing,
+  Insert,
+  Evict,
+};
 
 void ScriptLoader::InstantiateClassicScriptFromAny(
     JSContext* aCx, JS::CompileOptions& aCompileOptions,
@@ -2956,30 +2986,55 @@ void ScriptLoader::InstantiateClassicScriptFromAny(
     return;
   }
 
-  bool createCache = false;
+  CacheBehavior cacheBehavior = CacheBehavior::DoNothing;
   if (mCache) {
-    createCache = aRequest->IsCacheable();
-
-    ScriptHashKey key(this, aRequest);
-    auto cacheResult = mCache->Lookup(*this, key,
-                                      /* aSyncLoad = */ true);
-    if (cacheResult.mState == CachedSubResourceState::Complete) {
-      // NOTE: Avoid creating cache regardless of CSP.
-      createCache = false;
+    // NOTE: A new response may arrive even if the exiting cache is still valid,
+    // for example when the request is performed with bypassing the cache.
+    //
+    // If the response is cacheable, it should overwrite the existing cache
+    // if any.  If the response is not cacheable, that should just evict the
+    // existing cache if any, so that the next request will also reach the
+    // server.
+    if (aRequest->IsCacheable()) {
+      if (ShouldBypassCache()) {
+        // If the request bypasses the cache, the response should always
+        // overwrite the cache, regardless of the content.
+        cacheBehavior = CacheBehavior::Insert;
+      } else {
+        ScriptHashKey key(this, aRequest);
+        auto cacheResult = mCache->Lookup(*this, key,
+                                          /* aSyncLoad = */ true);
+        if (cacheResult.mState != CachedSubResourceState::Complete) {
+          cacheBehavior = CacheBehavior::Insert;
+        }
+      }
+    } else {
+      cacheBehavior = CacheBehavior::Evict;
     }
   }
 
-  RefPtr<JS::Stencil> stencilDup;
+  RefPtr<JS::Stencil> stencil;
   InstantiateClassicScriptFromMaybeEncodedSource(
-      aCx, aCompileOptions, aRequest, aScript, createCache, stencilDup,
-      aDebuggerPrivateValue, aDebuggerIntroductionScript, aRv);
-  if (!aRv.Failed()) {
-    if (createCache) {
-      MOZ_ASSERT(mCache);
-      MOZ_ASSERT(stencilDup);
-      aRequest->SetStencil(stencilDup.forget());
+      aCx, aCompileOptions, aRequest, aScript, stencil, aDebuggerPrivateValue,
+      aDebuggerIntroductionScript, aRv);
+  if (!aRv.Failed() && cacheBehavior != CacheBehavior::DoNothing) {
+    MOZ_ASSERT(mCache);
+    MOZ_ASSERT(stencil);
+
+    if (!JS::IsStencilCacheable(stencil)) {
+      // If the stencil is not compatible with the cache (e.g. contains asm.js),
+      // this should also evict any the existing cache if any.
+      cacheBehavior = CacheBehavior::Evict;
+    }
+
+    aRequest->SetStencil(stencil.forget());
+    if (cacheBehavior == CacheBehavior::Insert) {
       auto loadData = MakeRefPtr<ScriptLoadData>(this, aRequest);
       mCache->Insert(*loadData);
+    } else {
+      MOZ_ASSERT(cacheBehavior == CacheBehavior::Evict);
+      ScriptHashKey key(this, aRequest);
+      mCache->Evict(key);
     }
   }
 }
@@ -3316,14 +3371,14 @@ void ScriptLoader::EncodeRequestBytecode(JSContext* aCx,
     aRequest->mScriptForBytecodeEncoding = nullptr;
     ModuleScript* moduleScript = aRequest->AsModuleRequest()->mModuleScript;
     JS::Rooted<JSObject*> module(aCx, moduleScript->ModuleRecord());
-    result =
-        JS::FinishIncrementalEncoding(aCx, module, aRequest->SRIAndBytecode());
+    result = JS::FinishCollectingDelazifications(aCx, module,
+                                                 aRequest->SRIAndBytecode());
   } else if (mCache) {
     RefPtr<JS::Stencil> stencil;
     JS::Rooted<JSScript*> script(aCx, aRequest->mScriptForBytecodeEncoding);
     aRequest->mScriptForBytecodeEncoding = nullptr;
-    result =
-        JS::FinishIncrementalEncoding(aCx, script, getter_AddRefs(stencil));
+    result = JS::FinishCollectingDelazifications(aCx, script,
+                                                 getter_AddRefs(stencil));
     if (result) {
       aRequest->SetStencil(stencil.forget());
       bytecodeFailed.release();
@@ -3332,8 +3387,8 @@ void ScriptLoader::EncodeRequestBytecode(JSContext* aCx,
     // TODO: Bytecode encoding for script, at different timing.
   } else {
     JS::Rooted<JSScript*> script(aCx, aRequest->mScriptForBytecodeEncoding);
-    result =
-        JS::FinishIncrementalEncoding(aCx, script, aRequest->SRIAndBytecode());
+    result = JS::FinishCollectingDelazifications(aCx, script,
+                                                 aRequest->SRIAndBytecode());
     aRequest->mScriptForBytecodeEncoding = nullptr;
   }
   if (!result) {
@@ -3430,12 +3485,12 @@ void ScriptLoader::GiveUpBytecodeEncoding() {
       if (request->IsModuleRequest()) {
         ModuleScript* moduleScript = request->AsModuleRequest()->mModuleScript;
         JS::Rooted<JSObject*> module(aes->cx(), moduleScript->ModuleRecord());
-        JS::AbortIncrementalEncoding(module);
+        JS::AbortCollectingDelazifications(module);
       } else {
         JS::Rooted<JSScript*> script(aes->cx(),
                                      request->mScriptForBytecodeEncoding);
         request->mScriptForBytecodeEncoding = nullptr;
-        JS::AbortIncrementalEncoding(script);
+        JS::AbortCollectingDelazifications(script);
       }
     }
 
@@ -3778,13 +3833,7 @@ nsresult ScriptLoader::VerifySRI(ScriptLoadRequest* aRequest,
   if (!aRequest->mIntegrity.IsEmpty() && NS_SUCCEEDED((rv = aSRIStatus))) {
     MOZ_ASSERT(aSRIDataVerifier);
     MOZ_ASSERT(mReporter);
-
-    nsAutoCString sourceUri;
-    if (mDocument && mDocument->GetDocumentURI()) {
-      mDocument->GetDocumentURI()->GetAsciiSpec(sourceUri);
-    }
-    rv = aSRIDataVerifier->Verify(aRequest->mIntegrity, channel, sourceUri,
-                                  mReporter);
+    rv = aSRIDataVerifier->Verify(aRequest->mIntegrity, channel, mReporter);
     if (channelRequest) {
       mReporter->FlushReportsToConsole(
           nsContentUtils::GetInnerWindowID(channelRequest));
@@ -4389,10 +4438,12 @@ void ScriptLoader::PreloadURI(
          request.get(), url.get()));
   }
 
-  nsAutoString charset(aCharset);
-  nsresult rv = StartLoad(request, Some(charset));
-  if (NS_FAILED(rv)) {
-    return;
+  if (!request->IsStencil()) {
+    nsAutoString charset(aCharset);
+    nsresult rv = StartLoad(request, Some(charset));
+    if (NS_FAILED(rv)) {
+      return;
+    }
   }
 
   PreloadInfo* pi = mPreloads.AppendElement();
@@ -4464,22 +4515,20 @@ bool ScriptLoader::MaybeRemovedDeferRequests() {
 DocGroup* ScriptLoader::GetDocGroup() const { return mDocument->GetDocGroup(); }
 
 void ScriptLoader::BeginDeferringScripts() {
-  mDeferEnabled = true;
-  if (mDeferCheckpointReached) {
-    // We already completed a parse and were just waiting for some async
-    // scripts to load (and were already blocking the load event waiting for
-    // that to happen), when document.open() happened and now we're doing a
-    // new parse.  We shouldn't block the load event again, but _should_ reset
-    // mDeferCheckpointReached to false.  It'll get set to true again when the
-    // DeferCheckpointReached call that corresponds to this
-    // BeginDeferringScripts call happens (on document.close()), since we just
-    // set mDeferEnabled to true.
+  if (mDeferEnabled || mDeferCheckpointReached) {
+    // We already started loading. Now, document.open() happened and we're doing
+    // a new parse.
+    // If mDeferEnabled, we haven't reached the defer checkpoint and if
+    // mDeferCheckpointReached, we did but still have pending scripts. Either
+    // way, the load event is still blocked, so we shouldn't block again.
+    // If set, reset mDeferCheckpointReached. It'll get set again when the
+    // DeferCheckpointReached call corresponding to this BeginDeferringScripts
+    // call happens (on document.close()), since we will set mDeferEnabled.
     mDeferCheckpointReached = false;
-  } else {
-    if (mDocument) {
-      mDocument->BlockOnload();
-    }
+  } else if (mDocument) {
+    mDocument->BlockOnload();
   }
+  mDeferEnabled = true;
 }
 
 nsAutoScriptLoaderDisabler::nsAutoScriptLoaderDisabler(Document* aDoc) {

@@ -120,7 +120,7 @@ class Module::CompleteTier2GeneratorTaskImpl
       // that's okay.
       UniqueChars error;
       UniqueCharsVector warnings;
-      bool success = CompileCompleteTier2(bytecode_->bytes, *module_, &error,
+      bool success = CompileCompleteTier2(bytecode_->vector, *module_, &error,
                                           &warnings, &cancelled_);
       if (!cancelled_) {
         // We could try to dispatch a runnable to the thread that started this
@@ -206,7 +206,16 @@ JSObject* Module::createObject(JSContext* cx) const {
     return nullptr;
   }
 
-  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr)) {
+  JS::RootedVector<JSString*> parameterStrings(cx);
+  JS::RootedVector<Value> parameterArgs(cx);
+  bool canCompileStrings = false;
+  if (!cx->isRuntimeCodeGenEnabled(JS::RuntimeCode::WASM, nullptr,
+                                   JS::CompilationType::Undefined,
+                                   parameterStrings, nullptr, parameterArgs,
+                                   NullHandleValue, &canCompileStrings)) {
+    return nullptr;
+  }
+  if (!canCompileStrings) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_CSP_BLOCKED_WASM, "WebAssembly.Module");
     return nullptr;
@@ -391,15 +400,11 @@ bool Module::instantiateFunctions(JSContext* cx,
     }
 
     JSFunction* f = &funcImports[i]->as<JSFunction>();
-    if (!IsWasmExportedFunction(f)) {
+    if (!f->isWasm() || codeMeta().funcImportsAreJS) {
       continue;
     }
 
-    uint32_t funcIndex = ExportedFunctionToFuncIndex(f);
-    Instance& instance = ExportedFunctionToInstance(f);
-
-    const TypeDef& exportFuncType =
-        instance.code().codeMeta().getFuncTypeDef(funcIndex);
+    const TypeDef& exportFuncType = *f->wasmTypeDef();
     const TypeDef& importFuncType = code().codeMeta().getFuncTypeDef(i);
 
     if (!TypeDef::isSubTypeOf(&exportFuncType, &importFuncType)) {
@@ -491,7 +496,7 @@ bool Module::instantiateMemories(
 
       if (memory->addressType() != desc.addressType()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                                 JSMSG_WASM_BAD_IMP_ADDRESS,
+                                 JSMSG_WASM_BAD_IMP_ADDRESS, "memory",
                                  ToString(memory->addressType()));
         return false;
       }
@@ -535,6 +540,7 @@ bool Module::instantiateMemories(
                            IsHugeMemoryEnabled(desc.addressType()));
 
     if (!memoryObjs.get().append(memory)) {
+      ReportOutOfMemory(cx);
       return false;
     }
   }
@@ -579,7 +585,7 @@ bool Module::instantiateImportedTable(JSContext* cx, const TableDesc& td,
   Table& table = tableObj->table();
   if (table.addressType() != td.addressType()) {
     JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
-                             JSMSG_WASM_BAD_IMP_ADDRESS,
+                             JSMSG_WASM_BAD_IMP_ADDRESS, "table",
                              ToString(tableObj->table().addressType()));
     return false;
   }
@@ -753,22 +759,6 @@ bool Module::instantiateGlobals(JSContext* cx,
   return true;
 }
 
-static bool GetFunctionExport(JSContext* cx,
-                              Handle<WasmInstanceObject*> instanceObj,
-                              const JSObjectVector& funcImports,
-                              uint32_t funcIndex, MutableHandleFunction func) {
-  if (funcIndex < funcImports.length() &&
-      funcImports[funcIndex]->is<JSFunction>()) {
-    JSFunction* f = &funcImports[funcIndex]->as<JSFunction>();
-    if (IsWasmExportedFunction(f)) {
-      func.set(f);
-      return true;
-    }
-  }
-
-  return instanceObj->getExportedFunction(cx, instanceObj, funcIndex, func);
-}
-
 static bool GetGlobalExport(JSContext* cx,
                             Handle<WasmInstanceObject*> instanceObj,
                             const JSObjectVector& funcImports,
@@ -809,15 +799,14 @@ static bool CreateExportObject(
     const WasmMemoryObjectVector& memoryObjs,
     const WasmTagObjectVector& tagObjs, const ValVector& globalImportValues,
     const WasmGlobalObjectVector& globalObjs, const ExportVector& exports) {
-  const Instance& instance = instanceObj->instance();
+  Instance& instance = instanceObj->instance();
   const CodeMetadata& codeMeta = instance.codeMeta();
   const GlobalDescVector& globals = codeMeta.globals;
 
   if (codeMeta.isAsmJS() && exports.length() == 1 &&
       exports[0].fieldName().isEmpty()) {
     RootedFunction func(cx);
-    if (!GetFunctionExport(cx, instanceObj, funcImports, exports[0].funcIndex(),
-                           &func)) {
+    if (!instance.getExportedFunction(cx, exports[0].funcIndex(), &func)) {
       return false;
     }
     instanceObj->initExportsObj(*func.get());
@@ -848,8 +837,7 @@ static bool CreateExportObject(
     switch (exp.kind()) {
       case DefinitionKind::Function: {
         RootedFunction func(cx);
-        if (!GetFunctionExport(cx, instanceObj, funcImports, exp.funcIndex(),
-                               &func)) {
+        if (!instance.getExportedFunction(cx, exp.funcIndex(), &func)) {
           return false;
         }
         val = ObjectValue(*func);

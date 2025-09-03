@@ -18,6 +18,7 @@
 #include "nsDOMString.h"
 #include "nsXULAppAPI.h"
 #include "mozilla/Unused.h"
+#include "mozilla/glean/DomStorageMetrics.h"
 #include "nsProxyRelease.h"
 #include "nsThreadUtils.h"
 
@@ -240,8 +241,11 @@ void LocalStorageCache::WaitForPreload() {
   // Telemetry of rates of pending preloads
   if (!mPreloadTelemetryRecorded) {
     mPreloadTelemetryRecorded = true;
-    Telemetry::Accumulate(
-        Telemetry::LOCALDOMSTORAGE_PRELOAD_PENDING_ON_FIRST_ACCESS, !loaded);
+    glean::localdomstorage::preload_pending_on_first_access
+        .EnumGet(static_cast<
+                 glean::localdomstorage::PreloadPendingOnFirstAccessLabel>(
+            !loaded))
+        .Add();
   }
 
   if (loaded) {

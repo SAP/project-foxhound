@@ -180,6 +180,7 @@ CanvasManagerParent::AllocPCanvasParent() {
 mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
     const uint32_t& aManagerId, const int32_t& aProtocolId,
     const Maybe<RemoteTextureOwnerId>& aOwnerId,
+    const Maybe<RawId>& aCommandEncoderId,
     webgl::FrontBufferSnapshotIpc* aResult) {
   if (!aManagerId) {
     return IPC_FAIL(this, "invalid id");
@@ -217,13 +218,18 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
       if (aOwnerId.isNothing()) {
         return IPC_FAIL(this, "invalid OwnerId");
       }
-      mozilla::ipc::IPCResult rv =
-          webgpu->GetFrontBufferSnapshot(this, *aOwnerId, buffer.shmem, size);
+      if (aCommandEncoderId.isNothing()) {
+        return IPC_FAIL(this, "invalid CommandEncoderId");
+      }
+      uint32_t stride = 0;
+      mozilla::ipc::IPCResult rv = webgpu->GetFrontBufferSnapshot(
+          this, *aOwnerId, *aCommandEncoderId, buffer.shmem, size, stride);
       if (!rv) {
         return rv;
       }
       buffer.surfSize.x = static_cast<uint32_t>(size.width);
       buffer.surfSize.y = static_cast<uint32_t>(size.height);
+      buffer.byteStride = stride;
     } break;
     default:
       return IPC_FAIL(this, "unsupported protocol");
@@ -231,6 +237,24 @@ mozilla::ipc::IPCResult CanvasManagerParent::RecvGetSnapshot(
 
   *aResult = std::move(buffer);
   return IPC_OK();
+}
+
+/* static */ already_AddRefed<DataSourceSurface>
+CanvasManagerParent::GetCanvasSurface(dom::ContentParentId aContentId,
+                                      uint32_t aManagerId,
+                                      uintptr_t aSurfaceId) {
+  for (CanvasManagerParent* manager : sManagers) {
+    if (manager->mContentId == aContentId && manager->mId == aManagerId) {
+      for (const auto& canvas : manager->ManagedPCanvasParent()) {
+        RefPtr<layers::CanvasTranslator> ct =
+            static_cast<layers::CanvasTranslator*>(canvas);
+        if (RefPtr<DataSourceSurface> surf = ct->WaitForSurface(aSurfaceId)) {
+          return surf.forget();
+        }
+      }
+    }
+  }
+  return nullptr;
 }
 
 }  // namespace mozilla::gfx

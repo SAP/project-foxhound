@@ -6,12 +6,17 @@ use crate::config::RemoteSettingsConfig;
 use crate::error::{Error, Result};
 #[cfg(feature = "jexl")]
 use crate::jexl_filter::JexlFilter;
+#[cfg(feature = "signatures")]
+use crate::signatures;
 use crate::storage::Storage;
 #[cfg(feature = "jexl")]
 use crate::RemoteSettingsContext;
-use crate::{RemoteSettingsServer, UniffiCustomTypeConverter};
+use crate::{
+    packaged_attachments, packaged_collections, RemoteSettingsServer, UniffiCustomTypeConverter,
+};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     borrow::Cow,
     time::{Duration, Instant},
@@ -19,9 +24,42 @@ use std::{
 use url::Url;
 use viaduct::{Request, Response};
 
+#[cfg(feature = "signatures")]
+#[cfg(not(test))]
+use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(feature = "signatures")]
+#[cfg(not(test))]
+fn epoch_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap() // Time won't go backwards.
+        .as_secs()
+}
+
+#[cfg(feature = "signatures")]
+#[cfg(test)]
+thread_local! {
+    static MOCK_TIME: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) }
+}
+
+#[cfg(feature = "signatures")]
+#[cfg(test)]
+fn epoch_seconds() -> u64 {
+    MOCK_TIME.with(|mock_time| mock_time.get().unwrap_or(0))
+}
+
 const HEADER_BACKOFF: &str = "Backoff";
 const HEADER_ETAG: &str = "ETag";
 const HEADER_RETRY_AFTER: &str = "Retry-After";
+
+/// Hard-coded SHA256 of our root certificates. This is used by rc_crypto/pkixc to verify that the
+/// certificates chains used in content signatures verification were produced from our root certificate.
+/// See https://bugzilla.mozilla.org/show_bug.cgi?id=1940903 to align with desktop implementation.
+#[cfg(feature = "signatures")]
+const ROOT_CERT_SHA256_HASH_PROD: &str = "C8:A8:0E:9A:FA:EF:4E:21:9B:6F:B5:D7:A7:1D:0F:10:12:23:BA:C5:00:1A:C2:8F:9B:0D:43:DC:59:A1:06:DB";
+#[cfg(feature = "signatures")]
+const ROOT_CERT_SHA256_HASH_NONPROD: &str = "3C:01:44:6A:BE:90:36:CE:A9:A0:9A:CA:A3:A5:20:AC:62:8F:20:A7:AE:32:CE:86:1C:B2:EF:B7:0F:A0:C7:45";
 
 #[derive(Debug, Clone, Deserialize)]
 struct CollectionData {
@@ -46,6 +84,32 @@ struct RemoteSettingsClientInner<C> {
     api_client: C,
 }
 
+// Add your local packaged data you want to work with here
+impl<C: ApiClient> RemoteSettingsClient<C> {
+    // One line per bucket + collection
+    packaged_collections! {
+        ("main", "search-telemetry-v2"),
+        ("main", "regions"),
+    }
+
+    // You have to specify
+    // - bucket + collection_name: ("main", "regions")
+    // - One line per file you want to add (e.g. "world")
+    //
+    // This will automatically also include the NAME.meta.json file
+    // for internal validation against hash and size
+    //
+    // The entries line up with the `Attachment::filename` field,
+    // and check for the folder + name in
+    // `remote_settings/dumps/{bucket}/attachments/{collection}/{filename}
+    packaged_attachments! {
+        ("main", "regions") => [
+            "world",
+            "world-buffered",
+        ],
+    }
+}
+
 impl<C: ApiClient> RemoteSettingsClient<C> {
     pub fn new_from_parts(
         collection_name: String,
@@ -68,22 +132,15 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
         &self.collection_name
     }
 
-    fn get_packaged_data(collection_name: &str) -> Option<&'static str> {
-        match collection_name {
-            // Add entries for each locally dumped collection in the `dumps/` folder.
-            // This is also the place where we want to think about a macro! and feature-gating
-            // different platforms.
-            "search-telemetry-v2" => Some(include_str!(concat!(
-                env!("CARGO_MANIFEST_DIR"),
-                "/dumps/main/search-telemetry-v2.json"
-            ))),
-            _ => None,
-        }
-    }
-
     fn load_packaged_data(&self) -> Option<CollectionData> {
+        // Using the macro generated `get_packaged_data` in macros.rs
         Self::get_packaged_data(&self.collection_name)
             .and_then(|data| serde_json::from_str(data).ok())
+    }
+
+    fn load_packaged_attachment(&self, filename: &str) -> Option<(&'static [u8], &'static str)> {
+        // Using the macro generated `get_packaged_attachment` in macros.rs
+        Self::get_packaged_attachment(&self.collection_name, filename)
     }
 
     /// Filters records based on the presence and evaluation of `filter_expression`.
@@ -112,7 +169,6 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
     pub fn get_records(&self, sync_if_empty: bool) -> Result<Option<Vec<RemoteSettingsRecord>>> {
         let mut inner = self.inner.lock();
         let collection_url = inner.api_client.collection_url();
-        let cached_records = inner.storage.get_records(&collection_url)?;
         let is_prod = inner.api_client.is_prod_server()?;
         let packaged_data = if is_prod {
             self.load_packaged_data()
@@ -120,67 +176,244 @@ impl<C: ApiClient> RemoteSettingsClient<C> {
             None
         };
 
-        // Case 1: We have no cached records
-        if cached_records.is_none() {
-            // Case 1a: Use packaged data if available (prod only)
-            if let Some(collection) = packaged_data {
-                inner
-                    .storage
-                    .set_records(&collection_url, &collection.data)?;
-                return Ok(Some(self.filter_records(collection.data)));
-            }
-            // Case 1b: No packaged data - fetch from remote if sync_if_empty
-            if sync_if_empty {
-                let records = inner.api_client.get_records(None)?;
-                inner.storage.set_records(&collection_url, &records)?;
-                return Ok(Some(self.filter_records(records)));
-            }
-            return Ok(None);
-        }
-
-        // Now we know we have cached records
-        let cached_records = cached_records.unwrap();
-        let cached_timestamp = inner.storage.get_last_modified_timestamp(&collection_url)?;
-
-        // Case 2: We have packaged data and are in prod
+        // Case 1: The packaged data is more recent than the cache
+        //
+        // This happens when there's no cached data or when we get new packaged data because of a
+        // product update
         if let Some(packaged_data) = packaged_data {
-            if packaged_data.timestamp > cached_timestamp.unwrap_or(0) {
-                // Packaged data is newer
-                inner
-                    .storage
-                    .set_records(&collection_url, &packaged_data.data)?;
+            let cached_timestamp = inner
+                .storage
+                .get_last_modified_timestamp(&collection_url)?
+                .unwrap_or(0);
+            if packaged_data.timestamp > cached_timestamp {
+                // Remove previously cached data (packaged data does not have tombstones like diff responses do).
+                inner.storage.empty()?;
+                // Insert new packaged data.
+                inner.storage.insert_collection_content(
+                    &collection_url,
+                    &packaged_data.data,
+                    packaged_data.timestamp,
+                    CollectionMetadata::default(),
+                )?;
                 return Ok(Some(self.filter_records(packaged_data.data)));
             }
         }
 
-        // Case 3: Return cached data if we have it and either:
-        // - it's not empty
-        // - or we're not allowed to sync
-        if !cached_records.is_empty() || !sync_if_empty {
-            return Ok(Some(self.filter_records(cached_records)));
-        }
+        let cached_records = inner.storage.get_records(&collection_url)?;
 
-        // Case 4: Cache is empty and we're allowed to sync
-        let records = inner.api_client.get_records(None)?;
-        inner.storage.set_records(&collection_url, &records)?;
-        Ok(Some(self.filter_records(records)))
+        Ok(match (cached_records, sync_if_empty) {
+            // Case 2: We have cached records
+            //
+            // Note: we should return these even if it's an empty list and `sync_if_empty=true`.
+            // The "if empty" part refers to the cache being empty, not the list.
+            (Some(cached_records), _) => Some(self.filter_records(cached_records)),
+            // Case 3: sync_if_empty=true
+            (None, true) => {
+                let changeset = inner.api_client.fetch_changeset(None)?;
+                inner.storage.insert_collection_content(
+                    &collection_url,
+                    &changeset.changes,
+                    changeset.timestamp,
+                    changeset.metadata,
+                )?;
+                Some(self.filter_records(changeset.changes))
+            }
+            // Case 4: Nothing to return
+            (None, false) => None,
+        })
+    }
+
+    /// Synchronizes the local collection with the remote server by performing the following steps:
+    /// 1. Fetches the last modified timestamp of the collection from local storage.
+    /// 2. Fetches the changeset from the remote server based on the last modified timestamp.
+    /// 3. Inserts the fetched changeset into local storage.
+    fn perform_sync_operation(&self) -> Result<()> {
+        let mut inner = self.inner.lock();
+        let collection_url = inner.api_client.collection_url();
+        let timestamp = inner.storage.get_last_modified_timestamp(&collection_url)?;
+        let changeset = inner.api_client.fetch_changeset(timestamp)?;
+        log::debug!(
+            "{0}: apply {1} change(s) locally.",
+            self.collection_name,
+            changeset.changes.len()
+        );
+        inner.storage.insert_collection_content(
+            &collection_url,
+            &changeset.changes,
+            changeset.timestamp,
+            changeset.metadata,
+        )
     }
 
     pub fn sync(&self) -> Result<()> {
+        // First attempt
+        self.perform_sync_operation()?;
+        // Verify that inserted data has valid signature
+        if self.verify_signature().is_err() {
+            log::debug!(
+                "{0}: signature verification failed. Reset and retry.",
+                self.collection_name
+            );
+            // Retry with packaged dataset as base
+            self.reset_storage()?;
+            self.perform_sync_operation()?;
+            // Verify signature again
+            self.verify_signature().inspect_err(|_| {
+                // And reset with packaged data if it fails again.
+                self.reset_storage()
+                    .expect("Failed to reset storage after verification failure");
+            })?;
+        }
+        log::trace!("{0}: sync done.", self.collection_name);
+        Ok(())
+    }
+
+    fn reset_storage(&self) -> Result<()> {
+        log::trace!("{0}: reset local storage.", self.collection_name);
         let mut inner = self.inner.lock();
         let collection_url = inner.api_client.collection_url();
-        let mtime = inner.storage.get_last_modified_timestamp(&collection_url)?;
-        let records = inner.api_client.get_records(mtime)?;
-        inner.storage.set_records(&collection_url, &records)
+        // Clear existing storage
+        inner.storage.empty()?;
+        // Load packaged data only for production
+        if inner.api_client.is_prod_server()? {
+            if let Some(packaged_data) = self.load_packaged_data() {
+                log::trace!("{0}: restore packaged dump.", self.collection_name);
+                inner.storage.insert_collection_content(
+                    &collection_url,
+                    &packaged_data.data,
+                    packaged_data.timestamp,
+                    CollectionMetadata::default(),
+                )?;
+            }
+        }
+        Ok(())
+    }
+
+    #[cfg(not(feature = "signatures"))]
+    fn verify_signature(&self) -> Result<()> {
+        log::debug!("{0}: signature verification skipped.", self.collection_name);
+        Ok(())
+    }
+
+    #[cfg(feature = "signatures")]
+    fn verify_signature(&self) -> Result<()> {
+        let mut inner = self.inner.lock();
+        let collection_url = inner.api_client.collection_url();
+        let timestamp = inner.storage.get_last_modified_timestamp(&collection_url)?;
+        let records = inner.storage.get_records(&collection_url)?;
+        let metadata = inner.storage.get_collection_metadata(&collection_url)?;
+        match (timestamp, &records, metadata) {
+            (Some(timestamp), Some(records), Some(metadata)) => {
+                let cert_chain_bytes = inner.api_client.fetch_cert(&metadata.signature.x5u)?;
+                // rc_crypto verifies that the provided certificates chain leads to our root certificate.
+                let expected_root_hash = if inner.api_client.is_prod_server()? {
+                    ROOT_CERT_SHA256_HASH_PROD
+                } else {
+                    ROOT_CERT_SHA256_HASH_NONPROD
+                };
+
+                // The signer name is hard-coded. This would have to be modified in the very (very)
+                // unlikely situation where we would add a new collection signer.
+                // And clients code would have to be modified to handle this new collection anyway.
+                // https://searchfox.org/mozilla-central/rev/df850fa290fe962c2c5ae8b63d0943ce768e3cc4/services/settings/remote-settings.sys.mjs#40-48
+                let expected_leaf_cname = format!(
+                    "{}.content-signature.mozilla.org",
+                    if metadata.bucket.contains("security-state") {
+                        "onecrl"
+                    } else {
+                        "remote-settings"
+                    }
+                );
+                signatures::verify_signature(
+                    timestamp,
+                    records,
+                    metadata.signature.signature.as_bytes(),
+                    &cert_chain_bytes,
+                    epoch_seconds(),
+                    expected_root_hash,
+                    &expected_leaf_cname,
+                )
+                .inspect_err(|err| {
+                    log::debug!(
+                        "{0}: bad signature ({1:?}) using certificate {2} and signer '{3}'",
+                        self.collection_name,
+                        err,
+                        &metadata.signature.x5u,
+                        expected_leaf_cname
+                    );
+                })?;
+                log::trace!("{0}: signature verification success.", self.collection_name);
+                Ok(())
+            }
+            _ => {
+                let missing_field = if timestamp.is_none() {
+                    "timestamp"
+                } else if records.is_none() {
+                    "records"
+                } else {
+                    "metadata"
+                };
+                Err(Error::IncompleteSignatureDataError(missing_field.into()))
+            }
+        }
     }
 
     /// Downloads an attachment from [attachment_location]. NOTE: there are no guarantees about a
     /// maximum size, so use care when fetching potentially large attachments.
-    pub fn get_attachment(&self, attachment_location: &str) -> Result<Vec<u8>> {
-        self.inner
-            .lock()
-            .api_client
-            .get_attachment(attachment_location)
+    pub fn get_attachment(&self, record: RemoteSettingsRecord) -> Result<Vec<u8>> {
+        let metadata = record
+            .attachment
+            .ok_or_else(|| Error::RecordAttachmentMismatchError("No attachment metadata".into()))?;
+
+        let mut inner = self.inner.lock();
+        let collection_url = inner.api_client.collection_url();
+
+        // First try storage - it will only return data that matches our metadata
+        if let Some(data) = inner
+            .storage
+            .get_attachment(&collection_url, metadata.clone())?
+        {
+            return Ok(data);
+        }
+
+        // Then try packaged data if we're in prod
+        if inner.api_client.is_prod_server()? {
+            if let Some((data, manifest)) = self.load_packaged_attachment(&metadata.location) {
+                if let Ok(manifest_data) = serde_json::from_str::<serde_json::Value>(manifest) {
+                    if metadata.hash == manifest_data["hash"].as_str().unwrap_or_default()
+                        && metadata.size == manifest_data["size"].as_u64().unwrap_or_default()
+                    {
+                        // Store valid packaged data in storage because it was either empty or outdated
+                        inner
+                            .storage
+                            .set_attachment(&collection_url, &metadata.location, data)?;
+                        return Ok(data.to_vec());
+                    }
+                }
+            }
+        }
+
+        // Try to download the attachment because neither the storage nor the local data had it
+        let attachment = inner.api_client.fetch_attachment(&metadata.location)?;
+
+        // Verify downloaded data
+        if attachment.len() as u64 != metadata.size {
+            return Err(Error::RecordAttachmentMismatchError(
+                "Downloaded attachment size mismatch".into(),
+            ));
+        }
+        let hash = format!("{:x}", Sha256::digest(&attachment));
+        if hash != metadata.hash {
+            return Err(Error::RecordAttachmentMismatchError(
+                "Downloaded attachment hash mismatch".into(),
+            ));
+        }
+
+        // Store verified download in storage
+        inner
+            .storage
+            .set_attachment(&collection_url, &metadata.location, &attachment)?;
+        Ok(attachment)
     }
 }
 
@@ -224,10 +457,13 @@ pub trait ApiClient {
     fn collection_url(&self) -> String;
 
     /// Fetch records from the server
-    fn get_records(&mut self, timestamp: Option<u64>) -> Result<Vec<RemoteSettingsRecord>>;
+    fn fetch_changeset(&mut self, timestamp: Option<u64>) -> Result<ChangesetResponse>;
 
     /// Fetch an attachment from the server
-    fn get_attachment(&mut self, attachment_location: &str) -> Result<Vec<u8>>;
+    fn fetch_attachment(&mut self, attachment_location: &str) -> Result<Vec<u8>>;
+
+    /// Fetch a server certificate
+    fn fetch_cert(&mut self, x5u: &str) -> Result<Vec<u8>>;
 
     /// Check if this client is pointing to the production server
     fn is_prod_server(&self) -> Result<bool>;
@@ -312,7 +548,7 @@ impl ApiClient for ViaductApiClient {
         self.endpoints.collection_url.to_string()
     }
 
-    fn get_records(&mut self, timestamp: Option<u64>) -> Result<Vec<RemoteSettingsRecord>> {
+    fn fetch_changeset(&mut self, timestamp: Option<u64>) -> Result<ChangesetResponse> {
         let mut url = self.endpoints.changeset_url.clone();
         // 0 is used as an arbitrary value for `_expected` because the current implementation does
         // not leverage push timestamps or polling from the monitor/changes endpoint. More
@@ -322,13 +558,13 @@ impl ApiClient for ViaductApiClient {
         url.query_pairs_mut().append_pair("_expected", "0");
         if let Some(timestamp) = timestamp {
             url.query_pairs_mut()
-                .append_pair("_since", &timestamp.to_string());
+                .append_pair("_since", &format!("\"{}\"", timestamp));
         }
 
         let resp = self.make_request(url)?;
 
         if resp.is_success() {
-            Ok(resp.json::<ChangesetResponse>()?.changes)
+            Ok(resp.json::<ChangesetResponse>()?)
         } else {
             Err(Error::ResponseError(format!(
                 "status code: {}",
@@ -337,7 +573,7 @@ impl ApiClient for ViaductApiClient {
         }
     }
 
-    fn get_attachment(&mut self, attachment_location: &str) -> Result<Vec<u8>> {
+    fn fetch_attachment(&mut self, attachment_location: &str) -> Result<Vec<u8>> {
         let attachments_base_url = match &self.remote_state.attachments_base_url {
             Some(attachments_base_url) => attachments_base_url.to_owned(),
             None => {
@@ -363,6 +599,11 @@ impl ApiClient for ViaductApiClient {
             .root_url
             .as_str()
             .starts_with(RemoteSettingsServer::Prod.get_url()?.as_str()))
+    }
+
+    fn fetch_cert(&mut self, x5u: &str) -> Result<Vec<u8>> {
+        let resp = self.make_request(Url::parse(x5u)?)?;
+        Ok(resp.body)
     }
 }
 
@@ -646,9 +887,24 @@ struct RecordsResponse {
     data: Vec<RemoteSettingsRecord>,
 }
 
-#[derive(Deserialize, Serialize)]
-struct ChangesetResponse {
+#[derive(Clone, Deserialize, Serialize)]
+pub struct ChangesetResponse {
     changes: Vec<RemoteSettingsRecord>,
+    timestamp: u64,
+    metadata: CollectionMetadata,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+pub struct CollectionMetadata {
+    pub bucket: String,
+    pub signature: CollectionSignature,
+}
+
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq)]
+pub struct CollectionSignature {
+    pub signature: String,
+    /// X.509 certificate chain Url (x5u)
+    pub x5u: String,
 }
 
 /// A parsed Remote Settings record. Records can contain arbitrary fields, so clients
@@ -657,6 +913,7 @@ struct ChangesetResponse {
 pub struct RemoteSettingsRecord {
     pub id: String,
     pub last_modified: u64,
+    /// Tombstone flag (see https://remote-settings.readthedocs.io/en/latest/client-specifications.html#local-state)
     #[serde(default)]
     pub deleted: bool,
     pub attachment: Option<Attachment>,
@@ -666,7 +923,7 @@ pub struct RemoteSettingsRecord {
 
 /// Attachment metadata that can be optionally attached to a [Record]. The [location] should
 /// included in calls to [Client::get_attachment].
-#[derive(Clone, Debug, Deserialize, Serialize, Eq, PartialEq, uniffi::Record)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, Eq, PartialEq, uniffi::Record)]
 pub struct Attachment {
     pub filename: String,
     pub mimetype: String,
@@ -1645,14 +1902,24 @@ mod test_new_client {
             attachment: None,
             fields: json!({"foo": "bar"}).as_object().unwrap().clone(),
         }];
+        let changeset = ChangesetResponse {
+            changes: records.clone(),
+            timestamp: 42,
+            metadata: CollectionMetadata {
+                bucket: "main".into(),
+                signature: CollectionSignature {
+                    signature: "b64sig".into(),
+                    x5u: "http://x5u.com".into(),
+                },
+            },
+        };
         api_client.expect_collection_url().returning(|| {
             "http://rs.example.com/v1/buckets/main/collections/test-collection".into()
         });
-        api_client.expect_get_records().returning({
-            let records = records.clone();
+        api_client.expect_fetch_changeset().returning({
             move |timestamp| {
                 assert_eq!(timestamp, None);
-                Ok(records.clone())
+                Ok(changeset.clone())
             }
         });
         api_client.expect_is_prod_server().returning(|| Ok(false));
@@ -1688,14 +1955,19 @@ mod jexl_tests {
             .unwrap()
             .clone(),
         }];
+        let changeset = ChangesetResponse {
+            changes: records.clone(),
+            timestamp: 42,
+            metadata: CollectionMetadata::default(),
+        };
         api_client.expect_collection_url().returning(|| {
             "http://rs.example.com/v1/buckets/main/collections/test-collection".into()
         });
-        api_client.expect_get_records().returning({
-            let records = records.clone();
+        api_client.expect_fetch_changeset().returning({
+            let changeset = changeset.clone();
             move |timestamp| {
                 assert_eq!(timestamp, None);
-                Ok(records.clone())
+                Ok(changeset.clone())
             }
         });
         api_client.expect_is_prod_server().returning(|| Ok(false));
@@ -1706,9 +1978,11 @@ mod jexl_tests {
         };
 
         let mut storage = Storage::new(":memory:".into()).expect("Error creating storage");
-        let _ = storage.set_records(
+        let _ = storage.insert_collection_content(
             "http://rs.example.com/v1/buckets/main/collections/test-collection",
             &records,
+            42,
+            CollectionMetadata::default(),
         );
 
         let rs_client = RemoteSettingsClient::new_from_parts(
@@ -1739,14 +2013,19 @@ mod jexl_tests {
             .unwrap()
             .clone(),
         }];
+        let changeset = ChangesetResponse {
+            changes: records.clone(),
+            timestamp: 42,
+            metadata: CollectionMetadata::default(),
+        };
         api_client.expect_collection_url().returning(|| {
             "http://rs.example.com/v1/buckets/main/collections/test-collection".into()
         });
-        api_client.expect_get_records().returning({
-            let records = records.clone();
+        api_client.expect_fetch_changeset().returning({
+            let changeset = changeset.clone();
             move |timestamp| {
                 assert_eq!(timestamp, None);
-                Ok(records.clone())
+                Ok(changeset.clone())
             }
         });
         api_client.expect_is_prod_server().returning(|| Ok(false));
@@ -1757,9 +2036,11 @@ mod jexl_tests {
         };
 
         let mut storage = Storage::new(":memory:".into()).expect("Error creating storage");
-        let _ = storage.set_records(
+        let _ = storage.insert_collection_content(
             "http://rs.example.com/v1/buckets/main/collections/test-collection",
             &records,
+            42,
+            CollectionMetadata::default(),
         );
 
         let rs_client = RemoteSettingsClient::new_from_parts(
@@ -1842,7 +2123,12 @@ mod cached_data_tests {
 
         let mut api_client = MockApiClient::new();
         let mut storage = Storage::new(":memory:".into())?;
-        storage.set_records(collection_url, &vec![old_record.clone()])?;
+        storage.insert_collection_content(
+            collection_url,
+            &vec![old_record.clone()],
+            42,
+            CollectionMetadata::default(),
+        )?;
 
         api_client
             .expect_collection_url()
@@ -1902,10 +2188,21 @@ mod cached_data_tests {
             attachment: None,
             fields: serde_json::Map::new(),
         }];
+        let changeset = ChangesetResponse {
+            changes: expected_records.clone(),
+            timestamp: 42,
+            metadata: CollectionMetadata {
+                bucket: "main".into(),
+                signature: CollectionSignature {
+                    signature: "b64sig".into(),
+                    x5u: "http://x5u.com".into(),
+                },
+            },
+        };
         api_client
-            .expect_get_records()
+            .expect_fetch_changeset()
             .withf(|timestamp| timestamp.is_none())
-            .returning(move |_| Ok(expected_records.clone()));
+            .returning(move |_| Ok(changeset.clone()));
 
         let rs_client =
             RemoteSettingsClient::new_from_parts(collection_name.to_string(), storage, api_client);
@@ -1952,7 +2249,7 @@ mod cached_data_tests {
         api_client.expect_is_prod_server().returning(|| Ok(true));
 
         // Since sync_if_empty is false, get_records should not be called
-        // No need to set expectation for api_client.get_records
+        // No need to set expectation for api_client.fetch_changeset
 
         let rs_client =
             RemoteSettingsClient::new_from_parts(collection_name.to_string(), storage, api_client);
@@ -1986,7 +2283,12 @@ mod cached_data_tests {
             attachment: None,
             fields: serde_json::Map::new(),
         }];
-        storage.set_records(&collection_url, &cached_records)?;
+        storage.insert_collection_content(
+            &collection_url,
+            &cached_records,
+            42,
+            CollectionMetadata::default(),
+        )?;
 
         api_client
             .expect_collection_url()
@@ -2022,7 +2324,12 @@ mod cached_data_tests {
 
         // Set up empty cached records
         let cached_records: Vec<RemoteSettingsRecord> = vec![];
-        storage.set_records(&collection_url, &cached_records)?;
+        storage.insert_collection_content(
+            &collection_url,
+            &cached_records,
+            42,
+            CollectionMetadata::default(),
+        )?;
 
         api_client
             .expect_collection_url()
@@ -2040,52 +2347,447 @@ mod cached_data_tests {
 
         Ok(())
     }
+}
+
+#[cfg(not(feature = "jexl"))]
+#[cfg(test)]
+mod test_packaged_metadata {
+    use super::*;
+    use std::path::PathBuf;
 
     #[test]
-    fn test_cached_data_empty_sync_if_empty_true() -> Result<()> {
-        let collection_name = "test-collection";
+    fn test_no_cached_data_use_packaged_attachment() -> Result<()> {
+        let collection_name = "regions";
+        let attachment_name = "world";
+
+        // Verify our packaged attachment exists with its manifest
+        let base_path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("dumps")
+            .join("main")
+            .join("attachments")
+            .join(collection_name);
+
+        let file_path = base_path.join(attachment_name);
+        let manifest_path = base_path.join(format!("{}.meta.json", attachment_name));
+
+        assert!(
+            file_path.exists(),
+            "Packaged attachment should exist for this test"
+        );
+        assert!(
+            manifest_path.exists(),
+            "Manifest file should exist for this test"
+        );
+
+        let manifest_content = std::fs::read_to_string(manifest_path)?;
+        let manifest: serde_json::Value = serde_json::from_str(&manifest_content)?;
+
         let mut api_client = MockApiClient::new();
-        let mut storage = Storage::new(":memory:".into())?;
+        let storage = Storage::new(":memory:".into())?;
 
         let collection_url = format!(
             "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/{}",
             collection_name
         );
 
-        // Mock get_records to return some data
-        let expected_records = vec![RemoteSettingsRecord {
-            id: "remote1".to_string(),
-            last_modified: 1000,
-            deleted: false,
-            attachment: None,
-            fields: serde_json::Map::new(),
-        }];
-        api_client
-            .expect_get_records()
-            .withf(|timestamp| timestamp.is_none())
-            .returning(move |_| Ok(expected_records.clone()));
-        api_client.expect_is_prod_server().returning(|| Ok(true));
-
-        // Set up empty cached records
-        let cached_records: Vec<RemoteSettingsRecord> = vec![];
-        storage.set_records(&collection_url, &cached_records)?;
-
         api_client
             .expect_collection_url()
             .returning(move || collection_url.clone());
+        api_client.expect_is_prod_server().returning(|| Ok(true));
 
         let rs_client =
             RemoteSettingsClient::new_from_parts(collection_name.to_string(), storage, api_client);
 
-        // Call get_records with sync_if_empty = true
-        let records = rs_client.get_records(true)?;
-        assert!(
-            records.is_some(),
-            "Records should be fetched from the remote server"
+        // Create record with metadata from manifest
+        let attachment_metadata = Attachment {
+            filename: attachment_name.to_string(),
+            mimetype: "application/octet-stream".to_string(),
+            location: attachment_name.to_string(),
+            size: manifest["size"].as_u64().unwrap(),
+            hash: manifest["hash"].as_str().unwrap().to_string(),
+        };
+
+        let record = RemoteSettingsRecord {
+            id: "test-record".to_string(),
+            last_modified: 12345,
+            deleted: false,
+            attachment: Some(attachment_metadata),
+            fields: serde_json::json!({}).as_object().unwrap().clone(),
+        };
+
+        let attachment_data = rs_client.get_attachment(record)?;
+
+        // Verify we got the expected data
+        let expected_data = std::fs::read(file_path)?;
+        assert_eq!(attachment_data, expected_data);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_packaged_attachment_outdated_fetch_from_api() -> Result<()> {
+        let collection_name = "regions";
+        let attachment_name = "world";
+
+        let mut api_client = MockApiClient::new();
+        let storage = Storage::new(":memory:".into())?;
+
+        let collection_url = format!(
+            "https://firefox.settings.services.mozilla.com/v1/buckets/main/collections/{}",
+            collection_name
         );
-        let records = records.unwrap();
-        assert_eq!(records.len(), 1);
-        assert_eq!(records[0].id, "remote1");
+
+        // Prepare mock data
+        let mock_api_data = vec![1, 2, 3, 4, 5];
+
+        // Create metadata that doesn't match our packaged data
+        let attachment_metadata = Attachment {
+            filename: attachment_name.to_string(),
+            mimetype: "application/octet-stream".to_string(),
+            location: attachment_name.to_string(),
+            size: mock_api_data.len() as u64,
+            hash: {
+                use sha2::{Digest, Sha256};
+                format!("{:x}", Sha256::digest(&mock_api_data))
+            },
+        };
+
+        api_client
+            .expect_collection_url()
+            .returning(move || collection_url.clone());
+        api_client.expect_is_prod_server().returning(|| Ok(true));
+        api_client
+            .expect_fetch_attachment()
+            .returning(move |_| Ok(mock_api_data.clone()));
+
+        let rs_client =
+            RemoteSettingsClient::new_from_parts(collection_name.to_string(), storage, api_client);
+
+        let record = RemoteSettingsRecord {
+            id: "test-record".to_string(),
+            last_modified: 12345,
+            deleted: false,
+            attachment: Some(attachment_metadata),
+            fields: serde_json::json!({}).as_object().unwrap().clone(),
+        };
+
+        let attachment_data = rs_client.get_attachment(record)?;
+
+        // Verify we got the mock API data, not the packaged data
+        assert_eq!(attachment_data, vec![1, 2, 3, 4, 5]);
+
+        Ok(())
+    }
+}
+
+#[cfg(feature = "signatures")]
+#[cfg(feature = "jexl")] // Assuming tests are run with `--all-features`
+#[cfg(test)]
+mod test_signatures {
+    use core::assert_eq;
+
+    use crate::RemoteSettingsContext;
+
+    use super::*;
+
+    const VALID_CERTIFICATE: &str = "\
+-----BEGIN CERTIFICATE-----
+MIIDBjCCAougAwIBAgIIFml6g0ldRGowCgYIKoZIzj0EAwMwgaMxCzAJBgNVBAYT
+AlVTMRwwGgYDVQQKExNNb3ppbGxhIENvcnBvcmF0aW9uMS8wLQYDVQQLEyZNb3pp
+bGxhIEFNTyBQcm9kdWN0aW9uIFNpZ25pbmcgU2VydmljZTFFMEMGA1UEAww8Q29u
+dGVudCBTaWduaW5nIEludGVybWVkaWF0ZS9lbWFpbEFkZHJlc3M9Zm94c2VjQG1v
+emlsbGEuY29tMB4XDTIxMDIwMzE1MDQwNVoXDTIxMDQyNDE1MDQwNVowgakxCzAJ
+BgNVBAYTAlVTMRMwEQYDVQQIEwpDYWxpZm9ybmlhMRYwFAYDVQQHEw1Nb3VudGFp
+biBWaWV3MRwwGgYDVQQKExNNb3ppbGxhIENvcnBvcmF0aW9uMRcwFQYDVQQLEw5D
+bG91ZCBTZXJ2aWNlczE2MDQGA1UEAxMtcmVtb3RlLXNldHRpbmdzLmNvbnRlbnQt
+c2lnbmF0dXJlLm1vemlsbGEub3JnMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAE8pKb
+HX4IiD0SCy+NO7gwKqRRZ8IhGd8PTaIHIBgM6RDLRyDeswXgV+2kGUoHyzkbNKZt
+zlrS3AhqeUCtl1g6ECqSmZBbRTjCpn/UCpCnMLL0T0goxtAB8Rmi3CdM0cBUo4GD
+MIGAMA4GA1UdDwEB/wQEAwIHgDATBgNVHSUEDDAKBggrBgEFBQcDAzAfBgNVHSME
+GDAWgBQlZawrqt0eUz/t6OdN45oKfmzy6DA4BgNVHREEMTAvgi1yZW1vdGUtc2V0
+dGluZ3MuY29udGVudC1zaWduYXR1cmUubW96aWxsYS5vcmcwCgYIKoZIzj0EAwMD
+aQAwZgIxAPh43Bxl4MxPT6Ra1XvboN5O2OvIn2r8rHvZPWR/jJ9vcTwH9X3F0aLJ
+9FiresnsLAIxAOoAcREYB24gFBeWxbiiXaG7TR/yM1/MXw4qxbN965FFUaoB+5Bc
+fS8//SQGTlCqKQ==
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIF2jCCA8KgAwIBAgIEAQAAADANBgkqhkiG9w0BAQsFADCBqTELMAkGA1UEBhMC
+VVMxCzAJBgNVBAgTAkNBMRYwFAYDVQQHEw1Nb3VudGFpbiBWaWV3MRwwGgYDVQQK
+ExNBZGRvbnMgVGVzdCBTaWduaW5nMSQwIgYDVQQDExt0ZXN0LmFkZG9ucy5zaWdu
+aW5nLnJvb3QuY2ExMTAvBgkqhkiG9w0BCQEWInNlY29wcytzdGFnZXJvb3RhZGRv
+bnNAbW96aWxsYS5jb20wHhcNMjEwMTExMDAwMDAwWhcNMjQxMTE0MjA0ODU5WjCB
+ozELMAkGA1UEBhMCVVMxHDAaBgNVBAoTE01vemlsbGEgQ29ycG9yYXRpb24xLzAt
+BgNVBAsTJk1vemlsbGEgQU1PIFByb2R1Y3Rpb24gU2lnbmluZyBTZXJ2aWNlMUUw
+QwYDVQQDDDxDb250ZW50IFNpZ25pbmcgSW50ZXJtZWRpYXRlL2VtYWlsQWRkcmVz
+cz1mb3hzZWNAbW96aWxsYS5jb20wdjAQBgcqhkjOPQIBBgUrgQQAIgNiAARw1dyE
+xV5aNiHJPa/fVHO6kxJn3oZLVotJ0DzFZA9r1sQf8i0+v78Pg0/c3nTAyZWfkULz
+vOpKYK/GEGBtisxCkDJ+F3NuLPpSIg3fX25pH0LE15fvASBVcr8tKLVHeOmjggG6
+MIIBtjAMBgNVHRMEBTADAQH/MA4GA1UdDwEB/wQEAwIBBjAWBgNVHSUBAf8EDDAK
+BggrBgEFBQcDAzAdBgNVHQ4EFgQUJWWsK6rdHlM/7ejnTeOaCn5s8ugwgdkGA1Ud
+IwSB0TCBzoAUhtg0HE5Y0RNcmV/YQpjtFA8Z8l2hga+kgawwgakxCzAJBgNVBAYT
+AlVTMQswCQYDVQQIEwJDQTEWMBQGA1UEBxMNTW91bnRhaW4gVmlldzEcMBoGA1UE
+ChMTQWRkb25zIFRlc3QgU2lnbmluZzEkMCIGA1UEAxMbdGVzdC5hZGRvbnMuc2ln
+bmluZy5yb290LmNhMTEwLwYJKoZIhvcNAQkBFiJzZWNvcHMrc3RhZ2Vyb290YWRk
+b25zQG1vemlsbGEuY29tggRgJZg7MDMGCWCGSAGG+EIBBAQmFiRodHRwOi8vYWRk
+b25zLmFsbGl6b20ub3JnL2NhL2NybC5wZW0wTgYDVR0eBEcwRaBDMCCCHi5jb250
+ZW50LXNpZ25hdHVyZS5tb3ppbGxhLm9yZzAfgh1jb250ZW50LXNpZ25hdHVyZS5t
+b3ppbGxhLm9yZzANBgkqhkiG9w0BAQsFAAOCAgEAtGTTzcPzpcdf07kIeRs9vPMx
+qiF8ylW5L/IQ2NzT3sFFAvPW1vW1wZC0xAHMsuVyo+BTGrv+4mlD0AUR9acRfiTZ
+9qyZ3sJbyhQwJAXLKU4YpnzuFOf58T/yOnOdwpH2ky/0FuHskMyfXaAz2Az4JXJH
+TCgggqfdZNvsZ5eOnQlKoC5NadMa8oTI5sd4SyR5ANUPAtYok931MvVSz3IMbwTr
+v4PPWXdl9SGXuOknSqdY6/bS1LGvC2KprsT+PBlvVtS6YgZOH0uCgTTLpnrco87O
+ErzC2PJBA1Ftn3Mbaou6xy7O+YX+reJ6soNUV+0JHOuKj0aTXv0c+lXEAh4Y8nea
+UGhW6+MRGYMOP2NuKv8s2+CtNH7asPq3KuTQpM5RerjdouHMIedX7wpNlNk0CYbg
+VMJLxZfAdwcingLWda/H3j7PxMoAm0N+eA24TGDQPC652ZakYk4MQL/45lm0A5f0
+xLGKEe6JMZcTBQyO7ANWcrpVjKMiwot6bY6S2xU17mf/h7J32JXZJ23OPOKpMS8d
+mljj4nkdoYDT35zFuS1z+5q6R5flLca35vRHzC3XA0H/XJvgOKUNLEW/IiJIqLNi
+ab3Ao0RubuX+CAdFML5HaJmkyuJvL3YtwIOwe93RGcGRZSKZsnMS+uY5QN8+qKQz
+LC4GzWQGSCGDyD+JCVw=
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIHbDCCBVSgAwIBAgIEYCWYOzANBgkqhkiG9w0BAQwFADCBqTELMAkGA1UEBhMC
+VVMxCzAJBgNVBAgTAkNBMRYwFAYDVQQHEw1Nb3VudGFpbiBWaWV3MRwwGgYDVQQK
+ExNBZGRvbnMgVGVzdCBTaWduaW5nMSQwIgYDVQQDExt0ZXN0LmFkZG9ucy5zaWdu
+aW5nLnJvb3QuY2ExMTAvBgkqhkiG9w0BCQEWInNlY29wcytzdGFnZXJvb3RhZGRv
+bnNAbW96aWxsYS5jb20wHhcNMjEwMjExMjA0ODU5WhcNMjQxMTE0MjA0ODU5WjCB
+qTELMAkGA1UEBhMCVVMxCzAJBgNVBAgTAkNBMRYwFAYDVQQHEw1Nb3VudGFpbiBW
+aWV3MRwwGgYDVQQKExNBZGRvbnMgVGVzdCBTaWduaW5nMSQwIgYDVQQDExt0ZXN0
+LmFkZG9ucy5zaWduaW5nLnJvb3QuY2ExMTAvBgkqhkiG9w0BCQEWInNlY29wcytz
+dGFnZXJvb3RhZGRvbnNAbW96aWxsYS5jb20wggIiMA0GCSqGSIb3DQEBAQUAA4IC
+DwAwggIKAoICAQDKRVty/FRsO4Ech6EYleyaKgAueaLYfMSsAIyPC/N8n/P8QcH8
+rjoiMJrKHRlqiJmMBSmjUZVzZAP0XJku0orLKWPKq7cATt+xhGY/RJtOzenMMsr5
+eN02V3GzUd1jOShUpERjzXdaO3pnfZqhdqNYqP9ocqQpyno7bZ3FZQ2vei+bF52k
+51uPioTZo+1zduoR/rT01twGtZm3QpcwU4mO74ysyxxgqEy3kpojq8Nt6haDwzrj
+khV9M6DGPLHZD71QaUiz5lOhD9CS8x0uqXhBhwMUBBkHsUDSxbN4ZhjDDWpCmwaD
+OtbJMUJxDGPCr9qj49QESccb367OeXLrfZ2Ntu/US2Bw9EDfhyNsXr9dg9NHj5yf
+4sDUqBHG0W8zaUvJx5T2Ivwtno1YZLyJwQW5pWeWn8bEmpQKD2KS/3y2UjlDg+YM
+NdNASjFe0fh6I5NCFYmFWA73DpDGlUx0BtQQU/eZQJ+oLOTLzp8d3dvenTBVnKF+
+uwEmoNfZwc4TTWJOhLgwxA4uK+Paaqo4Ap2RGS2ZmVkPxmroB3gL5n3k3QEXvULh
+7v8Psk4+MuNWnxudrPkN38MGJo7ju7gDOO8h1jLD4tdfuAqbtQLduLXzT4DJPA4y
+JBTFIRMIpMqP9CovaS8VPtMFLTrYlFh9UnEGpCeLPanJr+VEj7ae5sc8YwIDAQAB
+o4IBmDCCAZQwDAYDVR0TBAUwAwEB/zAOBgNVHQ8BAf8EBAMCAQYwFgYDVR0lAQH/
+BAwwCgYIKwYBBQUHAwMwLAYJYIZIAYb4QgENBB8WHU9wZW5TU0wgR2VuZXJhdGVk
+IENlcnRpZmljYXRlMDMGCWCGSAGG+EIBBAQmFiRodHRwOi8vYWRkb25zLm1vemls
+bGEub3JnL2NhL2NybC5wZW0wHQYDVR0OBBYEFIbYNBxOWNETXJlf2EKY7RQPGfJd
+MIHZBgNVHSMEgdEwgc6AFIbYNBxOWNETXJlf2EKY7RQPGfJdoYGvpIGsMIGpMQsw
+CQYDVQQGEwJVUzELMAkGA1UECBMCQ0ExFjAUBgNVBAcTDU1vdW50YWluIFZpZXcx
+HDAaBgNVBAoTE0FkZG9ucyBUZXN0IFNpZ25pbmcxJDAiBgNVBAMTG3Rlc3QuYWRk
+b25zLnNpZ25pbmcucm9vdC5jYTExMC8GCSqGSIb3DQEJARYic2Vjb3BzK3N0YWdl
+cm9vdGFkZG9uc0Btb3ppbGxhLmNvbYIEYCWYOzANBgkqhkiG9w0BAQwFAAOCAgEA
+nowyJv8UaIV7NA0B3wkWratq6FgA1s/PzetG/ZKZDIW5YtfUvvyy72HDAwgKbtap
+Eog6zGI4L86K0UGUAC32fBjE5lWYEgsxNM5VWlQjbgTG0dc3dYiufxfDFeMbAPmD
+DzpIgN3jHW2uRqa/MJ+egHhv7kGFL68uVLboqk/qHr+SOCc1LNeSMCuQqvHwwM0+
+AU1GxhzBWDkealTS34FpVxF4sT5sKLODdIS5HXJr2COHHfYkw2SW/Sfpt6fsOwaF
+2iiDaK4LPWHWhhIYa6yaynJ+6O6KPlpvKYCChaTOVdc+ikyeiSO6AakJykr5Gy7d
+PkkK7MDCxuY6psHj7iJQ59YK7ujQB8QYdzuXBuLLo5hc5gBcq3PJs0fLT2YFcQHA
+dj+olGaDn38T0WI8ycWaFhQfKwATeLWfiQepr8JfoNlC2vvSDzGUGfdAfZfsJJZ8
+5xZxahHoTFGS0mDRfXqzKH5uD578GgjOZp0fULmzkcjWsgzdpDhadGjExRZFKlAy
+iKv8cXTONrGY0fyBDKennuX0uAca3V0Qm6v2VRp+7wG/pywWwc5n+04qgxTQPxgO
+6pPB9UUsNbaLMDR5QPYAWrNhqJ7B07XqIYJZSwGP5xB9NqUZLF4z+AOMYgWtDpmg
+IKdcFKAt3fFrpyMhlfIKkLfmm0iDjmfmIXbDGBJw9SE=
+-----END CERTIFICATE-----";
+    const VALID_SIGNATURE: &str = r#"fJJcOpwdnkjEWFeHXfdOJN6GaGLuDTPGzQOxA2jn6ldIleIk6KqMhZcy2GZv2uYiGwl6DERWwpaoUfQFLyCAOcVjck1qlaaEFZGY1BQba9p99xEc9FNQ3YPPfvSSZqsw"#;
+    const VALID_CERT_EPOCH_SECONDS: u64 = 1615559719;
+
+    fn run_client_sync(
+        diff_records: &[RemoteSettingsRecord],
+        full_records: &[RemoteSettingsRecord],
+        certificate: &str,
+        signature: &str,
+        epoch_secs: u64,
+        bucket: &str,
+    ) -> Result<()> {
+        let collection_name = "pioneer-study-addons";
+
+        MOCK_TIME.with(|cell| cell.set(Some(epoch_secs)));
+
+        let some_metadata = CollectionMetadata {
+            bucket: bucket.into(),
+            signature: CollectionSignature {
+                signature: signature.to_string(),
+                x5u: "http://mocked".into(),
+            },
+        };
+        // Changeset for when client fetches diff.
+        let diff_changeset = ChangesetResponse {
+            changes: diff_records.to_vec(),
+            timestamp: 1603992731957,
+            metadata: some_metadata.clone(),
+        };
+        // Changeset for when client retries from scratch.
+        let full_changeset = ChangesetResponse {
+            changes: full_records.to_vec(),
+            timestamp: 1603992731957,
+            metadata: some_metadata.clone(),
+        };
+
+        let mut api_client = MockApiClient::new();
+        api_client
+            .expect_collection_url()
+            .returning(move || format!("http://server/{}", collection_name));
+        api_client.expect_is_prod_server().returning(|| Ok(false));
+        api_client.expect_fetch_changeset().returning(move |since| {
+            Ok(if since.is_some() {
+                diff_changeset.clone()
+            } else {
+                full_changeset.clone()
+            })
+        });
+
+        let certificate = certificate.to_string();
+        api_client
+            .expect_fetch_cert()
+            .returning(move |_| Ok(certificate.clone().into_bytes()));
+
+        let storage = Storage::new(":memory:".into())?;
+        let jexl_filter = JexlFilter::new(Some(RemoteSettingsContext::default()));
+        let rs_client = RemoteSettingsClient::new_from_parts(
+            collection_name.to_string(),
+            storage,
+            jexl_filter,
+            api_client,
+        );
+
+        rs_client.sync()
+    }
+
+    #[test]
+    fn test_valid_signature() -> Result<()> {
+        run_client_sync(
+            &[],
+            &[],
+            VALID_CERTIFICATE,
+            VALID_SIGNATURE,
+            VALID_CERT_EPOCH_SECONDS,
+            "main",
+        )
+        .expect("Valid signature");
+        Ok(())
+    }
+
+    #[test]
+    fn test_valid_signature_after_retry() -> Result<()> {
+        run_client_sync(
+            &vec![RemoteSettingsRecord {
+                id: "bad-record".to_string(),
+                last_modified: 9999,
+                deleted: true,
+                attachment: None,
+                fields: serde_json::Map::new(),
+            }],
+            &[],
+            VALID_CERTIFICATE,
+            VALID_SIGNATURE,
+            VALID_CERT_EPOCH_SECONDS,
+            "main",
+        )
+        .expect("Valid signature");
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_signature_value() -> Result<()> {
+        let err = run_client_sync(
+            &[],
+            &[],
+            VALID_CERTIFICATE,
+            "invalid signature",
+            VALID_CERT_EPOCH_SECONDS,
+            "main",
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::SignatureError(_)));
+        assert_eq!(format!("{}", err), "Signature could not be verified: Signature content error: Encoded text cannot have a 6-bit remainder.");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_certificate_value() -> Result<()> {
+        let err = run_client_sync(
+            &[],
+            &[],
+            "some bad PEM content",
+            VALID_SIGNATURE,
+            VALID_CERT_EPOCH_SECONDS,
+            "main",
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, Error::SignatureError(_)));
+        assert_eq!(
+            format!("{}", err),
+            "Signature could not be verified: PEM content format error: Missing PEM data"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_signature_expired_cert() -> Result<()> {
+        let december_20_2024 = 1734651582;
+
+        let err = run_client_sync(
+            &[],
+            &[],
+            VALID_CERTIFICATE,
+            VALID_SIGNATURE,
+            december_20_2024,
+            "main",
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, Error::SignatureError(_)));
+        assert_eq!(
+            format!("{}", err),
+            "Signature could not be verified: Certificate not yet valid or expired"
+        );
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_signature_invalid_data() -> Result<()> {
+        // The signature is valid for an empty list of records.
+        let records = vec![RemoteSettingsRecord {
+            id: "unexpected-data".to_string(),
+            last_modified: 42,
+            deleted: false,
+            attachment: None,
+            fields: serde_json::Map::new(),
+        }];
+        let err = run_client_sync(
+            &records,
+            &records,
+            VALID_CERTIFICATE,
+            VALID_SIGNATURE,
+            VALID_CERT_EPOCH_SECONDS,
+            "main",
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, Error::SignatureError(_)));
+        assert_eq!(format!("{}", err), "Signature could not be verified: Content signature mismatch error: NSS error: NSS error: -8182 ");
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_invalid_signature_invalid_signer_name() -> Result<()> {
+        let err = run_client_sync(
+            &[],
+            &[],
+            VALID_CERTIFICATE,
+            VALID_SIGNATURE,
+            VALID_CERT_EPOCH_SECONDS,
+            "security-state",
+        )
+        .unwrap_err();
+        assert!(matches!(err, Error::SignatureError(_)));
+        assert_eq!(
+            format!("{}", err),
+            "Signature could not be verified: Certificate subject mismatch"
+        );
 
         Ok(())
     }

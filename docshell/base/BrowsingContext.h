@@ -266,7 +266,7 @@ struct EmbedderColorSchemes {
   FIELD(ParentInitiatedNavigationEpoch, uint64_t)                             \
   /* This browsing context is for a synthetic image document wrapping an      \
    * image embedded in <object> or <embed>. */                                \
-  FIELD(SyntheticDocumentContainer, bool)                                     \
+  FIELD(IsSyntheticDocumentContainer, bool)                                   \
   /* If true, this document is embedded within a content document,  either    \
    * loaded in the parent (e.g. about:addons or the devtools toolbox), or in  \
    * a content process. */                                                    \
@@ -338,7 +338,8 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   //
   // The process which created this BrowsingContext is responsible for detaching
   // it.
-  static already_AddRefed<BrowsingContext> CreateIndependent(Type aType);
+  static already_AddRefed<BrowsingContext> CreateIndependent(Type aType,
+                                                             bool aWindowless);
 
   // Options which can be passed to CreateDetached.
   struct CreateDetachedOptions {
@@ -346,6 +347,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
     bool createdDynamically = false;
     bool topLevelCreatedByWebContent = false;
     bool isForPrinting = false;
+    bool windowless = false;
   };
 
   // Create a brand-new BrowsingContext object, but does not immediately attach
@@ -893,6 +895,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   std::tuple<nsCOMPtr<nsIPrincipal>, nsCOMPtr<nsIPrincipal>>
   GetTriggeringAndInheritPrincipalsForCurrentLoad();
 
+  MOZ_CAN_RUN_SCRIPT
   void HistoryGo(int32_t aOffset, uint64_t aHistoryEpoch,
                  bool aRequireUserInteraction, bool aUserActivation,
                  std::function<void(Maybe<int32_t>&&)>&& aResolver);
@@ -973,6 +976,9 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
 
   void LocationCreated(dom::Location* aLocation);
   void ClearCachedValuesOfLocations();
+
+  void GetContiguousHistoryEntries(SessionHistoryInfo& aActiveEntry,
+                                   Navigation* aNavigation);
 
  protected:
   virtual ~BrowsingContext();
@@ -1309,7 +1315,7 @@ class BrowsingContext : public nsILoadContext, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_IsInBFCache>, bool, ContentParent* aSource);
   void DidSet(FieldIndex<IDX_IsInBFCache>);
 
-  void DidSet(FieldIndex<IDX_SyntheticDocumentContainer>);
+  void DidSet(FieldIndex<IDX_IsSyntheticDocumentContainer>);
 
   void DidSet(FieldIndex<IDX_IsUnderHiddenEmbedderElement>, bool aOldValue);
 

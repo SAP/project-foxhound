@@ -272,12 +272,13 @@ formautofill:
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874829
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1902180
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1933866
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1874829#c4
     notification_emails:
       - autofill@lists.mozilla.org
       - passwords-dev@mozilla.org
-    expires: 136
+    expires: 142
 
   iframe_layout_detection:
     type: event
@@ -340,6 +341,69 @@ formautofill:
       - passwords-dev@mozilla.org
     expires: never
     telemetry_mirror: FORMAUTOFILL_AVAILABILITY
+
+  prompt_shown_os_reauth:
+    type: event
+    description: >
+      Captures the method of user interaction initiating the prompt and the result of the prompt.
+      Possible triggers include:
+        "autofill" when a user attempts to autofill a payment method.
+        "edit" when a user edits a login in about:preferences
+        "toggle_pref_os_auth" when a user toggles "Autofill / Require device sign in" in about:preferences
+      Possible results include:
+        "success" should be used when the user is shown the OS Auth prompt and successfully authenticates.
+        "fail_user_canceled" should be used when the user cancels the authentication prompt. The user may or may not have provided an incorrect password before cancelling.
+        "fail_error" should be used when an unexpected exception is encountered.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+    notification_emails:
+      - autofill@lists.mozilla.org
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      trigger:
+        description: >
+          Which user interaction triggered the event.
+        type: string
+      result:
+        description: >
+          The result of the OS Authentication.
+        type: string
+
+  require_os_reauth_toggle:
+    type: event
+    description: >
+      Toggle states include:
+        True means the OS Auth preference is enabled.
+        False means it is disabled.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+    notification_emails:
+      - autofill@lists.mozilla.org
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      toggle_state:
+        description: >
+          The toggle state after the event.
+        type: boolean
+
+  os_auth_enabled:
+      type: boolean
+      description: >
+          Check at startup whether OS Authentication has been enabled for credit cards.
+      bugs:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+      data_reviews:
+        - https://bugzilla.mozilla.org/show_bug.cgi?id=1915672
+      notification_emails:
+        - autofill@lists.mozilla.org
+        - passwords-dev@mozilla.org
+      expires: never
 
 address:
   show_capture_doorhanger:
@@ -1443,6 +1507,36 @@ creditcard:
     extra_keys: *creditcard_detected_extra
     telemetry_mirror: Creditcard_Cleared_CcFormV2
 
+  os_keystore_decrypt:
+    type: event
+    description: >
+      Captures the result of the OS Keystore decryption, which user interaction triggered the OS Keystore, and any error messages upon failure.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1831049
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1831049
+    notification_emails:
+      - autofill@lists.mozilla.org
+      - passwords-dev@mozilla.org
+    expires: never
+    extra_keys:
+      isDecryptSuccess:
+        description: >
+          Records if the decryption was a success or failure.
+        type: boolean
+      error_message:
+        description: >
+          Records the error message.
+          Likely errors include "Cr.NS_ERROR_FAILURE" and "Cr.NS_ERROR_ABORT".
+          If no error then "NO_ERROR".
+        type: string
+      trigger:
+        description: >
+          What triggered the OS Keystore Popup.
+          "edit" - when editing credit cards
+          "autofill" - when autofilling credit cards
+        type: string
+
 formautofill.ml:
   field_infer_result:
     type: event
@@ -1462,6 +1556,9 @@ formautofill.ml:
       infer_reason:
         description: The inference method. Possible values are `autocomplete`, `fathom`, `regex-heuristic`, or `update-heuristic`.
         type: string
+      is_valid_section:
+        description: Whether the inferred field is in a valid credit card or address section.
+        type: boolean
       fathom_infer_label:
         description: The inferred result by the Fathom model.
         type: string
@@ -1479,40 +1576,6 @@ formautofill.ml:
         type: string
 
 formautofill.addresses:
-  detected_sections_count:
-    type: counter
-    description: >
-      Count at detection time number of address form sections. A single
-      form can contain more than one address form section.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar formautofill.addresses.detected_sections_count.
-    bugs:
-      - https://bugzil.la/1801039
-    data_reviews:
-      - https://bugzil.la/1801039
-    notification_emails:
-      - autofill@lists.mozilla.org
-      - passwords-dev@mozilla.org
-    expires: never
-    telemetry_mirror: FORMAUTOFILL_ADDRESSES_DETECTED_SECTIONS_COUNT
-
-  submitted_sections_count:
-    type: counter
-    description: >
-      Count at submission time number of credit card form sections
-      submitted.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar formautofill.addresses.submitted_sections_count.
-    bugs:
-      - https://bugzil.la/1656344
-    data_reviews:
-      - https://bugzil.la/1656344
-    notification_emails:
-      - autofill@lists.mozilla.org
-      - passwords-dev@mozilla.org
-    expires: never
-    telemetry_mirror: FORMAUTOFILL_ADDRESSES_SUBMITTED_SECTIONS_COUNT
-
   autofill_profiles_count:
     type: quantity
     description: >
@@ -1529,39 +1592,3 @@ formautofill.addresses:
     expires: never
     unit: address autofill profiles
     telemetry_mirror: FORMAUTOFILL_ADDRESSES_AUTOFILL_PROFILES_COUNT
-
-formautofill.credit_cards:
-  detected_sections_count:
-    type: counter
-    description: >
-      Count at detection time number of credit card form sections. A
-      single form can contain more than one credit card form section.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar formautofill.creditCards.detected_sections_count.
-    bugs:
-      - https://bugzil.la/1656344
-    data_reviews:
-      - https://bugzil.la/1656344
-    notification_emails:
-      - autofill@lists.mozilla.org
-      - passwords-dev@mozilla.org
-    expires: never
-    telemetry_mirror: FORMAUTOFILL_CREDITCARDS_DETECTED_SECTIONS_COUNT
-
-  submitted_sections_count:
-    type: counter
-    description: >
-      Count at submission time number of credit card form sections
-      submitted.
-      This metric was generated to correspond to the Legacy Telemetry
-      scalar formautofill.creditCards.submitted_sections_count.
-    bugs:
-      - https://bugzil.la/1656344
-    data_reviews:
-      - https://bugzil.la/1656344
-    notification_emails:
-      - autofill@lists.mozilla.org
-      - jmathies@mozilla.com
-      - chsiang@mozilla.com
-    expires: never
-    telemetry_mirror: FORMAUTOFILL_CREDITCARDS_SUBMITTED_SECTIONS_COUNT

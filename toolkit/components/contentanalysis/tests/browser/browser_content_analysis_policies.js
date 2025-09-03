@@ -16,23 +16,35 @@ const { EnterprisePolicyTesting, PoliciesPrefTracker } =
     "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
   );
 
-const kEnabledPref = "enabled";
-const kPipeNamePref = "pipe_path_name";
-const kTimeoutPref = "agent_timeout";
-const kAllowUrlPref = "allow_url_regex_list";
-const kDenyUrlPref = "deny_url_regex_list";
-const kAgentNamePref = "agent_name";
-const kClientSignaturePref = "client_signature";
-const kPerUserPref = "is_per_user";
-const kShowBlockedPref = "show_blocked_result";
-const kDefaultResultPref = "default_result";
-const kBypassForSameTabOperationsPref = "bypass_for_same_tab_operations";
+const kIndividualPrefs = new Map([
+  ["Enabled", "enabled"],
+  ["PipeName", "pipe_path_name"],
+  ["Timeout", "agent_timeout"],
+  ["AllowUrl", "allow_url_regex_list"],
+  ["DenyUrl", "deny_url_regex_list"],
+  ["AgentName", "agent_name"],
+  ["ClientSignature", "client_signature"],
+  ["PerUser", "is_per_user"],
+  ["ShowBlocked", "show_blocked_result"],
+  ["DefaultResult", "default_result"],
+  ["TimeoutResult", "timeout_result"],
+  ["BypassForSameTab", "bypass_for_same_tab_operations"],
+]);
+function getIndividualPrefName(name) {
+  is(
+    kIndividualPrefs.has(name),
+    true,
+    `"${name}" passed to getIndividualPrefName() is valid`
+  );
+  return `browser.contentanalysis.${kIndividualPrefs.get(name)}`;
+}
 const kInterceptionPoints = [
   "clipboard",
   "drag_and_drop",
   "file_upload",
   "print",
 ];
+const kInterceptionPointsPlainTextOnly = ["clipboard", "drag_and_drop"];
 
 const ca = Cc["@mozilla.org/contentanalysis;1"].getService(
   Ci.nsIContentAnalysis
@@ -43,7 +55,7 @@ add_task(async function test_ca_active() {
   ok(!ca.isActive, "CA is inactive when pref and cmd line arg are missing");
 
   // Set the pref without enterprise policy.  CA should not be active.
-  Services.prefs.setBoolPref("browser.contentanalysis." + kEnabledPref, true);
+  Services.prefs.setBoolPref(getIndividualPrefName("Enabled"), true);
   ok(
     !ca.isActive,
     "CA is inactive when pref is set but cmd line arg is missing"
@@ -82,8 +94,56 @@ add_task(async function test_ca_active() {
       `${interceptionPoint} enabled by default`
     );
   }
+  for (let interceptionPoint of kInterceptionPointsPlainTextOnly) {
+    is(
+      Services.prefs.getBoolPref(
+        `browser.contentanalysis.interception_point.${interceptionPoint}.plain_text_only`
+      ),
+      true,
+      `${interceptionPoint} plain_text_only on by default`
+    );
+  }
 
-  Services.prefs.setBoolPref("browser.contentanalysis." + kEnabledPref, false);
+  Services.prefs.setBoolPref(getIndividualPrefName("Enabled"), false);
+  PoliciesPrefTracker.stop();
+});
+
+add_task(async function test_ca_enterprise_config() {
+  PoliciesPrefTracker.start();
+  await EnterprisePolicyTesting.setupPolicyEngineWithJson({
+    policies: {
+      ContentAnalysis: {
+        Enabled: true,
+      },
+    },
+  });
+
+  for (let individualPref of kIndividualPrefs.values()) {
+    is(
+      Services.prefs.prefIsLocked("browser.contentanalysis." + individualPref),
+      true,
+      `${individualPref} should be locked`
+    );
+  }
+
+  for (let interceptionPoint of kInterceptionPoints) {
+    is(
+      Services.prefs.prefIsLocked(
+        `browser.contentanalysis.interception_point.${interceptionPoint}.enabled`
+      ),
+      true,
+      `${interceptionPoint} enabled should be locked`
+    );
+  }
+  for (let interceptionPointPlainText of kInterceptionPointsPlainTextOnly) {
+    is(
+      Services.prefs.prefIsLocked(
+        `browser.contentanalysis.interception_point.${interceptionPointPlainText}.plain_text_only`
+      ),
+      true,
+      `${interceptionPointPlainText} plain_text_only should be locked`
+    );
+  }
   PoliciesPrefTracker.stop();
 });
 
@@ -106,13 +166,16 @@ add_task(async function test_ca_enterprise_config() {
         IsPerUser: true,
         ShowBlockedResult: false,
         DefaultResult: 1,
+        TimeoutResult: 2,
         BypassForSameTabOperations: true,
         InterceptionPoints: {
           Clipboard: {
             Enabled: false,
+            PlainTextOnly: false,
           },
           DragAndDrop: {
             Enabled: false,
+            PlainTextOnly: false,
           },
           FileUpload: {
             Enabled: false,
@@ -126,56 +189,57 @@ add_task(async function test_ca_enterprise_config() {
   });
 
   is(
-    Services.prefs.getStringPref("browser.contentanalysis." + kPipeNamePref),
+    Services.prefs.getStringPref(getIndividualPrefName("PipeName")),
     "abc",
     "pipe name match"
   );
   is(
-    Services.prefs.getIntPref("browser.contentanalysis." + kTimeoutPref),
+    Services.prefs.getIntPref(getIndividualPrefName("Timeout")),
     99,
     "timeout match"
   );
   is(
-    Services.prefs.getStringPref("browser.contentanalysis." + kAllowUrlPref),
+    Services.prefs.getStringPref(getIndividualPrefName("AllowUrl")),
     string1,
     "allow urls match"
   );
   is(
-    Services.prefs.getStringPref("browser.contentanalysis." + kDenyUrlPref),
+    Services.prefs.getStringPref(getIndividualPrefName("DenyUrl")),
     string2,
     "deny urls match"
   );
   is(
-    Services.prefs.getStringPref("browser.contentanalysis." + kAgentNamePref),
+    Services.prefs.getStringPref(getIndividualPrefName("AgentName")),
     string3,
     "agent names match"
   );
   is(
-    Services.prefs.getStringPref(
-      "browser.contentanalysis." + kClientSignaturePref
-    ),
+    Services.prefs.getStringPref(getIndividualPrefName("ClientSignature")),
     string4,
     "client signatures match"
   );
   is(
-    Services.prefs.getBoolPref("browser.contentanalysis." + kPerUserPref),
+    Services.prefs.getBoolPref(getIndividualPrefName("PerUser")),
     true,
     "per user match"
   );
   is(
-    Services.prefs.getBoolPref("browser.contentanalysis." + kShowBlockedPref),
+    Services.prefs.getBoolPref(getIndividualPrefName("ShowBlocked")),
     false,
     "show blocked match"
   );
   is(
-    Services.prefs.getIntPref("browser.contentanalysis." + kDefaultResultPref),
+    Services.prefs.getIntPref(getIndividualPrefName("DefaultResult")),
     1,
     "default result match"
   );
   is(
-    Services.prefs.getBoolPref(
-      "browser.contentanalysis." + kBypassForSameTabOperationsPref
-    ),
+    Services.prefs.getIntPref(getIndividualPrefName("TimeoutResult")),
+    2,
+    "timeout result match"
+  );
+  is(
+    Services.prefs.getBoolPref(getIndividualPrefName("BypassForSameTab")),
     true,
     "bypass for same tab operations match"
   );
@@ -186,6 +250,15 @@ add_task(async function test_ca_enterprise_config() {
       ),
       false,
       `${interceptionPoint} interception point match`
+    );
+  }
+  for (let interceptionPoint of kInterceptionPointsPlainTextOnly) {
+    is(
+      Services.prefs.getBoolPref(
+        `browser.contentanalysis.interception_point.${interceptionPoint}.plain_text_only`
+      ),
+      false,
+      `${interceptionPoint} interception point plain_text_only match`
     );
   }
 
@@ -201,11 +274,16 @@ add_task(async function test_cleanup() {
   // the policy and do not get cleared if there is no ContentAnalysis
   // element - reset them manually here.
   ca.isSetByEnterprisePolicy = false;
-  Services.prefs.setBoolPref("browser.contentanalysis." + kEnabledPref, false);
+  Services.prefs.unlockPref(getIndividualPrefName("Enabled"));
+  Services.prefs.clearUserPref(getIndividualPrefName("Enabled"));
   for (let interceptionPoint of kInterceptionPoints) {
-    Services.prefs.setBoolPref(
-      `browser.contentanalysis.interception_point.${interceptionPoint}.enabled`,
-      true
-    );
+    const prefName = `browser.contentanalysis.interception_point.${interceptionPoint}.enabled`;
+    Services.prefs.unlockPref(prefName);
+    Services.prefs.clearUserPref(prefName);
+  }
+  for (let interceptionPoint of kInterceptionPointsPlainTextOnly) {
+    const prefName = `browser.contentanalysis.interception_point.${interceptionPoint}.plain_text_only`;
+    Services.prefs.unlockPref(prefName);
+    Services.prefs.clearUserPref(prefName);
   }
 });

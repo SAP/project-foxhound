@@ -7,11 +7,7 @@ Samples a depth texture and compares the sampled depth values against a referenc
 
 import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import { kCompareFunctions } from '../../../../../capability_info.js';
-import {
-  isDepthTextureFormat,
-  isEncodableTextureFormat,
-  kDepthStencilFormats,
-} from '../../../../../format_info.js';
+import { isDepthTextureFormat, kDepthStencilFormats } from '../../../../../format_info.js';
 
 import {
   checkCallResults,
@@ -58,8 +54,6 @@ Parameters:
       .combine('format', kDepthStencilFormats)
       // filter out stencil only formats
       .filter(t => isDepthTextureFormat(t.format))
-      // MAINTENANCE_TODO: Remove when support for depth24plus, depth24plus-stencil8, and depth32float-stencil8 is added.
-      .filter(t => isEncodableTextureFormat(t.format))
       .combine('filt', ['nearest', 'linear'] as const)
       .combine('modeU', kShortAddressModes)
       .combine('modeV', kShortAddressModes)
@@ -68,6 +62,7 @@ Parameters:
       .combine('samplePoints', kSamplePointMethods)
       .combine('compare', kCompareFunctions)
   )
+  .beforeAllSubcases(t => t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format))
   .fn(async t => {
     const { format, samplePoints, modeU, modeV, filt: minFilter, compare, offset } = t.params;
 
@@ -152,14 +147,13 @@ Parameters:
       .combine('format', kDepthStencilFormats)
       // filter out stencil only formats
       .filter(t => isDepthTextureFormat(t.format))
-      // MAINTENANCE_TODO: Remove when support for depth24plus, depth24plus-stencil8, and depth32float-stencil8 is added.
-      .filter(t => isEncodableTextureFormat(t.format))
       .combine('filt', ['nearest', 'linear'] as const)
       .combine('mode', kShortAddressModes)
       .beginSubcases()
       .combine('samplePoints', kCubeSamplePointMethods)
       .combine('compare', kCompareFunctions)
   )
+  .beforeAllSubcases(t => t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format))
   .fn(async t => {
     const { format, samplePoints, mode, filt: minFilter, compare } = t.params;
 
@@ -258,8 +252,6 @@ Parameters:
       .combine('format', kDepthStencilFormats)
       // filter out stencil only formats
       .filter(t => isDepthTextureFormat(t.format))
-      // MAINTENANCE_TODO: Remove when support for depth24plus, depth24plus-stencil8, and depth32float-stencil8 is added.
-      .filter(t => isEncodableTextureFormat(t.format))
       .combine('filt', ['nearest', 'linear'] as const)
       .combine('modeU', kShortAddressModes)
       .combine('modeV', kShortAddressModes)
@@ -268,21 +260,34 @@ Parameters:
       .combine('samplePoints', kSamplePointMethods)
       .combine('A', ['i32', 'u32'] as const)
       .combine('compare', kCompareFunctions)
+      .combine('depthOrArrayLayers', [1, 8] as const)
   )
   .beforeAllSubcases(t => {
     t.skipIfTextureFormatNotSupported(t.params.format);
+    t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
   })
   .fn(async t => {
-    const { format, samplePoints, A, modeU, modeV, filt: minFilter, compare, offset } = t.params;
+    const {
+      format,
+      samplePoints,
+      A,
+      modeU,
+      modeV,
+      filt: minFilter,
+      compare,
+      offset,
+      depthOrArrayLayers,
+    } = t.params;
 
-    const viewDimension = '2d-array';
-    const size = chooseTextureSize({ minSize: 16, minBlocks: 4, format, viewDimension });
+    const [width, height] = chooseTextureSize({ minSize: 16, minBlocks: 4, format });
+    const size = { width, height, depthOrArrayLayers };
 
     const descriptor: GPUTextureDescriptor = {
       format,
       size,
       usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
       mipLevelCount: 3,
+      ...(t.isCompatibility && { textureBindingViewDimension: '2d-array' }),
     };
     const { texels, texture } = await createTextureWithRandomDataAndGetTexels(t, descriptor, {
       generator: makeRandomDepthComparisonTexelGenerator(descriptor, compare),
@@ -319,7 +324,7 @@ Parameters:
       };
     });
     const textureType = 'texture_depth_2d_array';
-    const viewDescriptor = {};
+    const viewDescriptor: GPUTextureViewDescriptor = { dimension: '2d-array' };
     const results = await doTextureCalls(
       t,
       texture,
@@ -363,8 +368,6 @@ Parameters:
       .combine('format', kDepthStencilFormats)
       // filter out stencil only formats
       .filter(t => isDepthTextureFormat(t.format))
-      // MAINTENANCE_TODO: Remove when support for depth24plus, depth24plus-stencil8, and depth32float-stencil8 is added.
-      .filter(t => isEncodableTextureFormat(t.format))
       .combine('filt', ['nearest', 'linear'] as const)
       .combine('mode', kShortAddressModes)
       .beginSubcases()
@@ -374,6 +377,7 @@ Parameters:
   )
   .beforeAllSubcases(t => {
     t.skipIfTextureViewDimensionNotSupported('cube-array');
+    t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
   })
   .fn(async t => {
     const { format, A, samplePoints, mode, filt: minFilter, compare } = t.params;

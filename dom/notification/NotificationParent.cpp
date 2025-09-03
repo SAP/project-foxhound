@@ -32,8 +32,6 @@ NotificationParent::Observe(nsISupports* aSubject, const char* aTopic,
     return FireClickEvent();
   }
   if (!strcmp("alertshow", aTopic)) {
-    (void)NS_WARN_IF(NS_FAILED(
-        AdjustPushQuota(mPrincipal, NotificationStatusChange::Shown)));
     if (!mResolver) {
 #ifdef ANDROID
       // XXX: This can happen as we resolve showNotification() immediately on
@@ -44,15 +42,18 @@ NotificationParent::Observe(nsISupports* aSubject, const char* aTopic,
       return NS_ERROR_FAILURE;
 #endif
     }
+
+    (void)NS_WARN_IF(NS_FAILED(
+        AdjustPushQuota(mPrincipal, NotificationStatusChange::Shown)));
+    // XXX(krosylight): Non-persistent notifications probably don't need this
+    nsresult rv = PersistNotification(mPrincipal, mId, mOptions, mScope);
+    if (NS_FAILED(rv)) {
+      NS_WARNING("Could not persist Notification");
+    }
     mResolver.take().value()(CopyableErrorResult());
     return NS_OK;
   }
   if (!strcmp("alertfinished", aTopic)) {
-    // XXX: QM_TRY?
-    (void)NS_WARN_IF(NS_FAILED(
-        AdjustPushQuota(mPrincipal, NotificationStatusChange::Closed)));
-    (void)NS_WARN_IF(NS_FAILED(UnpersistNotification(mPrincipal, mId)));
-
     if (mResolver) {
       // alertshow happens first before alertfinished, and it should have
       // nullified mResolver. If not it means it failed to show and is bailing
@@ -61,6 +62,10 @@ NotificationParent::Observe(nsISupports* aSubject, const char* aTopic,
       // alertshow at all.
       mResolver.take().value()(CopyableErrorResult(NS_ERROR_FAILURE));
     } else {
+      // XXX: QM_TRY?
+      (void)NS_WARN_IF(NS_FAILED(
+          AdjustPushQuota(mPrincipal, NotificationStatusChange::Closed)));
+      (void)NS_WARN_IF(NS_FAILED(UnpersistNotification(mPrincipal, mId)));
       (void)NS_WARN_IF(NS_FAILED(FireCloseEvent()));
     }
 
@@ -91,15 +96,11 @@ nsresult NotificationParent::FireClickEvent() {
           mozilla::components::ServiceWorkerManager::Service()) {
     nsAutoCString originSuffix;
     MOZ_TRY(mPrincipal->GetOriginSuffix(originSuffix));
-    nsAutoString behavior;
-    if (!mOptions.behavior().ToJSON(behavior)) {
-      return NS_ERROR_FAILURE;
-    }
     MOZ_TRY(swm->SendNotificationClickEvent(
-        originSuffix, NS_ConvertUTF16toUTF8(mScope), mId, mOptions.title(),
+        originSuffix, mScope, mId, mOptions.title(),
         NS_ConvertASCIItoUTF16(GetEnumString(mOptions.dir())), mOptions.lang(),
         mOptions.body(), mOptions.tag(), mOptions.icon(),
-        mOptions.dataSerialized(), behavior));
+        mOptions.dataSerialized()));
 
     return NS_OK;
   }
@@ -115,15 +116,11 @@ nsresult NotificationParent::FireCloseEvent() {
           mozilla::components::ServiceWorkerManager::Service()) {
     nsAutoCString originSuffix;
     MOZ_TRY(mPrincipal->GetOriginSuffix(originSuffix));
-    nsAutoString behavior;
-    if (!mOptions.behavior().ToJSON(behavior)) {
-      return NS_ERROR_FAILURE;
-    }
     MOZ_TRY(swm->SendNotificationCloseEvent(
-        originSuffix, NS_ConvertUTF16toUTF8(mScope), mId, mOptions.title(),
+        originSuffix, mScope, mId, mOptions.title(),
         NS_ConvertASCIItoUTF16(GetEnumString(mOptions.dir())), mOptions.lang(),
         mOptions.body(), mOptions.tag(), mOptions.icon(),
-        mOptions.dataSerialized(), behavior));
+        mOptions.dataSerialized()));
     return NS_OK;
   }
   return NS_ERROR_FAILURE;
@@ -132,6 +129,8 @@ nsresult NotificationParent::FireCloseEvent() {
 // Step 4 of
 // https://notifications.spec.whatwg.org/#dom-notification-notification
 mozilla::ipc::IPCResult NotificationParent::RecvShow(ShowResolver&& aResolver) {
+  MOZ_ASSERT(mId.IsEmpty(), "ID should not be given for a new notification");
+
   mResolver.emplace(std::move(aResolver));
 
   // Step 4.1: If the result of getting the notifications permission state is
@@ -169,15 +168,6 @@ nsresult NotificationParent::Show() {
   // observer (for show and close events) right and ultimately call the alerts
   // service function.
 
-  // XXX(krosylight): Non-persistent notifications probably don't need this
-  nsAutoString alertName;
-  GetAlertName(alertName);
-  nsresult rv =
-      PersistNotification(mPrincipal, mId, alertName, mOptions, mScope);
-  if (NS_FAILED(rv)) {
-    NS_WARNING("Could not persist Notification");
-  }
-
   // In the case of IPC, the parent process uses the cookie to map to
   // nsIObserver. Thus the cookie must be unique to differentiate observers.
   // XXX(krosylight): This is about ContentChild::mAlertObserver which is not
@@ -195,23 +185,24 @@ nsresult NotificationParent::Show() {
   if (!alert) {
     return NS_ERROR_NOT_AVAILABLE;
   }
-  MOZ_TRY(alert->Init(alertName, mOptions.icon(), mOptions.title(),
+  MOZ_TRY(alert->Init(mOptions.tag(), mOptions.icon(), mOptions.title(),
                       mOptions.body(), true, obsoleteCookie,
                       NS_ConvertASCIItoUTF16(GetEnumString(mOptions.dir())),
                       mOptions.lang(), mOptions.dataSerialized(), mPrincipal,
                       mPrincipal->GetIsInPrivateBrowsing(), requireInteraction,
                       mOptions.silent(), mOptions.vibrate()));
 
+  MOZ_TRY(alert->GetId(mId));
+
   nsCOMPtr<nsIAlertsService> alertService = components::Alerts::Service();
   MOZ_TRY(alertService->ShowAlert(alert, this));
 
 #ifdef ANDROID
   // XXX: the Android nsIAlertsService is broken and doesn't send alertshow
-  // properly, which means we cannot depend on it to resolve the promise. For
-  // now we resolve the promise here.
+  // properly, so we call it here manually.
   // (This now fires onshow event regardless of the actual result, but it should
   // be better than the previous behavior that did not do anything at all)
-  mResolver.take().value()(CopyableErrorResult());
+  Observe(nullptr, "alertshow", nullptr);
 #endif
 
   return NS_OK;
@@ -230,10 +221,7 @@ void NotificationParent::Unregister(CloseMode aCloseMode) {
   }
 
   mDangling = true;
-
-  nsAutoString alertName;
-  GetAlertName(alertName);
-  UnregisterNotification(mPrincipal, mId, alertName, aCloseMode);
+  UnregisterNotification(mPrincipal, mId, aCloseMode);
 }
 
 nsresult NotificationParent::BindToMainThread(
@@ -256,14 +244,6 @@ nsresult NotificationParent::BindToMainThread(
 
 void NotificationParent::ActorDestroy(ActorDestroyReason aWhy) {
   Unregister(CloseMode::InactiveGlobal);
-}
-
-void NotificationParent::MaybeInitAlertName() {
-  if (!mAlertName.IsEmpty()) {
-    return;
-  }
-
-  ComputeAlertName(mPrincipal, mOptions.tag(), mId, mAlertName);
 }
 
 }  // namespace mozilla::dom::notification

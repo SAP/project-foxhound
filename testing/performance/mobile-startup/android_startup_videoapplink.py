@@ -3,6 +3,7 @@
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -23,18 +24,20 @@ BACKGROUND_TABS = [
     "https://www.amazon.ca/gp/aw/gb?ref_=navm_cs_gb&discounts-widget",
     "https://www.espn.com/nfl/game/_/gameId/401671793/chiefs-falcons",
 ]
-ITERATIONS = 1
+ITERATIONS = 5
 
 
 class ImageAnalzer:
-    def __init__(self, browser):
+    def __init__(self, browser, test):
         self.video = None
         self.browser = browser
+        self.test = test
         self.width = 0
         self.height = 0
         self.video_name = ""
         self.package_name = os.environ["BROWSER_BINARY"]
         self.device = ADBDevice()
+        self.cpu_data = {"total": {"time": []}}
         if self.browser == PROD_FENIX:
             self.intent = "org.mozilla.fenix/org.mozilla.fenix.IntentReceiverActivity"
         elif self.browser == PROD_CHRM:
@@ -46,6 +49,9 @@ class ImageAnalzer:
         self.nav_start_command = (
             f"am start-activity -W -n {self.intent} -a "
             f"android.intent.action.VIEW -d "
+        )
+        self.view_intent_command = (
+            f"am start-activity -W -n {self.intent} -a " f"android.intent.action.VIEW"
         )
 
         self.device.shell("mkdir -p /sdcard/Download")
@@ -66,9 +72,9 @@ class ImageAnalzer:
     def skip_onboarding(self):
         # Skip onboarding for chrome and fenix
         if self.browser == PROD_CHRM:
-            self.device.shell(
-                '\'echo "chrome --no-default-browser-check --no-first-run --disable-fre" '
-                "> /data/local/tmp/chrome-command-line'"
+            self.device.shell_output(
+                'echo "chrome --no-default-browser-check --no-first-run '
+                '--disable-fre" > /data/local/tmp/chrome-command-line '
             )
             self.device.shell("am set-debug-app --persistent com.android.chrome")
         elif self.browser == PROD_FENIX:
@@ -84,6 +90,8 @@ class ImageAnalzer:
         for website in BACKGROUND_TABS:
             self.device.shell(self.nav_start_command + website)
             time.sleep(3)
+        if self.test == "mobile_restore":
+            self.load_page_to_test_startup()
 
     def get_video(self, run):
         self.video_name = f"vid{run}_{self.browser}.mp4"
@@ -101,9 +109,11 @@ class ImageAnalzer:
             ]
         )
 
-        # Navigate to a page
-        self.device.shell(self.nav_start_command + APP_LINK_STARTUP_WEBSITE)
-        time.sleep(5)
+        if self.test == "cold_view_nav_end":
+            self.load_page_to_test_startup()
+        elif self.test == "mobile_restore":
+            self.open_browser_with_view_intent()
+        self.process_cpu_info(run)
         recording.kill()
         time.sleep(5)
         self.device.command_output(
@@ -135,7 +145,7 @@ class ImageAnalzer:
         mse = err / (float(h * w))
         return mse
 
-    def get_cold_view_nav_end_frame(self):
+    def get_page_loaded_time(self):
         """
         Returns the index of the frame where the main image on the shopify demo page is displayed
         for the first time.
@@ -163,22 +173,78 @@ class ImageAnalzer:
         self.video.read()
         return self.video.get(cv2.CAP_PROP_POS_MSEC)
 
+    def load_page_to_test_startup(self):
+        # Navigate to the page we want to use for testing startup
+        self.device.shell(self.nav_start_command + APP_LINK_STARTUP_WEBSITE)
+        time.sleep(5)
+
+    def open_browser_with_view_intent(self):
+        self.device.shell(self.view_intent_command)
+        time.sleep(5)
+
+    def process_cpu_info(self, run):
+        cpu_info = self.device.shell_output(
+            f"ps -A -o name=,cpu=,time+=,%cpu= | grep {self.package_name}"
+        ).split("\n")
+        total_time_seconds = tab_processes_time = 0
+        for process in cpu_info:
+            process_name = re.search(r"([\w\d_.:]+)\s", process).group(1)
+            time = re.search(r"\s(\d+):(\d+).(\d+)\s", process)
+            time_seconds = (
+                10 * int(time.group(3))
+                + 1000 * int(time.group(2))
+                + 60 * 1000 * int(time.group(1))
+            )
+            total_time_seconds += time_seconds
+            if "org.mozilla.fenix:tab" in process_name:
+                process_name = "org.mozilla.fenix:tab"
+
+            if process_name not in self.cpu_data.keys():
+                self.cpu_data[process_name] = {}
+                self.cpu_data[process_name]["time"] = []
+
+            if "org.mozilla.fenix:tab" == process_name:
+                tab_processes_time += time_seconds
+                continue
+            self.cpu_data[process_name]["time"] += [time_seconds]
+
+        if tab_processes_time:
+            self.cpu_data["org.mozilla.fenix:tab"]["time"] += [tab_processes_time]
+        self.cpu_data["total"]["time"] += [total_time_seconds]
+
+    def perfmetrics_cpu_data_ingesting(self):
+        for process in self.cpu_data.keys():
+            print(
+                'perfMetrics: {"values": '
+                + str(self.cpu_data[process]["time"])
+                + ', "name": "'
+                + process
+                + '-cpu-time", "shouldAlert": true }'
+            )
+
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2:
-        raise Exception("Didn't pass the arg properly :(")
-    browser = sys.argv[1]
+    if len(sys.argv) != 3:
+        raise Exception("Didn't pass the args properly :(")
     start_video_timestamp = []
+    browser = sys.argv[1]
+    test = sys.argv[2]
+    perfherder_names = {
+        "cold_view_nav_end": "applink_startup",
+        "mobile_restore": "tab_restore",
+    }
 
-    ImageObject = ImageAnalzer(browser)
+    ImageObject = ImageAnalzer(browser, test)
     for iteration in range(ITERATIONS):
         ImageObject.app_setup()
         ImageObject.get_video(iteration)
-        nav_done_frame = ImageObject.get_cold_view_nav_end_frame()
+        nav_done_frame = ImageObject.get_page_loaded_time()
         start_video_timestamp += [ImageObject.get_time_from_frame_num(nav_done_frame)]
     print(
-        'perfMetrics: {"values": ',
-        start_video_timestamp,
-        ', "name": "applink_startup", "shouldAlert": true',
-        "}",
+        'perfMetrics: {"values": '
+        + str(start_video_timestamp)
+        + ', "name": "'
+        + perfherder_names[test]
+        + '", "shouldAlert": true}'
     )
+    ImageObject.perfmetrics_cpu_data_ingesting()

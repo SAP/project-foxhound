@@ -47,18 +47,23 @@ web-platform-tests:
                     android-em-7.0-x86_64-qr/debug-isolated-process: 3
                     default: default
     chunks:
-        by-test-platform:
-            android.*/debug: 32
-            android.*: 24
-            linux.*64-tsan-qr/opt: 32
-            linux.*64-asan(-qr)?/opt: 22
-            linux.*64-ccov.*/opt: 20
-            linux.*/debug: 16
-            macosx.*/debug: 18
-            windows.*32.*/opt: 12
-            windows.*/debug: 16
-            windows.*-ccov.*/opt: 14
-            default: 10
+        by-variant:
+            privatebrowsing: dynamic
+            inc-origin-init: dynamic
+            privatebrowsing-inc-origin-init: dynamic
+            default:
+                by-test-platform:
+                    android.*/debug: 32
+                    android.*: 24
+                    linux.*64-tsan-qr/opt: 32
+                    linux.*64-asan(-qr)?/opt: 22
+                    linux.*64-ccov.*/opt: 20
+                    linux.*/debug: 16
+                    macosx.*/debug: 18
+                    windows.*32.*/opt: 12
+                    windows.*/debug: 16
+                    windows.*-ccov.*/opt: 14
+                    default: 10
     max-run-time:
         by-test-platform:
             .*-ccov.*/.*: 10800
@@ -71,6 +76,9 @@ web-platform-tests:
         - no-fission
         - geckoview-no-fission-ship
         - async-event-dispatching
+        - privatebrowsing
+        - inc-origin-init
+        - privatebrowsing-inc-origin-init
     run-on-projects:
         by-variant:
             geckoview-no-fission-ship:
@@ -88,6 +96,23 @@ web-platform-tests:
             async-event-dispatching:
                 by-test-platform:
                     .*/debug: []
+                    default: []
+            privatebrowsing:
+                by-test-platform:
+                    android.*: []
+                    .*-(wayland).*/.*: []
+                    default: built-projects
+            inc-origin-init:
+                by-test-platform:
+                    linux.*64(-shippable)?(-qr)?/.*: built-projects
+                    macosx.*64(-shippable)?/.*: built-projects
+                    windows11.*64.*(-shippable)?/.*: built-projects
+                    default: []
+            privatebrowsing-inc-origin-init:
+                by-test-platform:
+                    linux.*64(-shippable)?(-qr)?/.*: built-projects
+                    macosx.*64(-shippable)?/.*: built-projects
+                    windows11.*64.*(-shippable)?/.*: built-projects
                     default: []
             default:
                 by-test-platform:
@@ -147,30 +172,6 @@ web-platform-tests-backlog:
             - --exclude-tag=webcodecs
             - --exclude-tag=eme
 
-web-platform-tests-privatebrowsing:
-    description: "Web platform privatebrowsing test run"
-    suite: web-platform-tests
-    treeherder-symbol: W(pb)
-    virtualization: virtual
-    tier: default
-    chunks: 1
-    max-run-time: 1800
-    variants: []  # We don't need sw or nofis testing.
-    run-on-projects:
-        by-test-platform:
-            android.*: []
-            macos.*: []
-            .*-(wayland).*/.*: []
-            default: built-projects
-    mozharness:
-        chunked: true
-        extra-options:
-            - --test-type=testharness
-            - --default-exclude
-            - --setpref=browser.privatebrowsing.autostart=true
-            - --setpref=dom.cache.privateBrowsing.enabled=true
-            - --tag=privatebrowsing
-
 web-platform-tests-webcodecs:
     description: "Web platform webcodecs test run"
     suite: web-platform-tests
@@ -222,16 +223,16 @@ web-platform-tests-reftest:
     treeherder-symbol: W(Wr)
     virtualization:
         by-test-platform:
-            windows.*-64.*-qr/.*: virtual-with-gpu
+            windows.*-64.*/.*: virtual-with-gpu
             default: virtual
     chunks:
         by-test-platform:
             .*-ccov.*/.*: 8
             linux.*64-tsan-qr/opt: 16
             linux1804-64(-asan)?-qr/.*: 6
-            macosx10.*-64/debug: 6
-            macosx10.*-64/opt: 3
-            windows.*-(32|64)(-qr)?/debug: 5
+            macosx.*-64/debug: 6
+            macosx.*-64/opt: 3
+            windows.*-(32|64).*/debug: 5
             android.*: 6
             default: 4
     variants:
@@ -244,7 +245,7 @@ web-platform-tests-reftest:
                 by-test-platform:
                     .*-32.*/.*: []
                     linux.*64-qr/debug: built-projects
-                    windows.*-qr/debug: built-projects
+                    windows.*/debug: built-projects
                     default: []
             webrender-sw+no-fission:
                 by-test-platform:
@@ -523,6 +524,7 @@ web-platform-tests-wdspec:
         by-test-platform:
             .*-ccov.*/.*: 6
             .*-tsan.*/.*: 8
+            .*/debug: 6
             default: 5
     mozharness:
         extra-options:
@@ -557,7 +559,7 @@ web-platform-tests-wdspec:
             async-event-dispatching:
                 by-test-platform:
                     .*-32.*/.*: []
-                    .*/debug: built-projects
+                    .*/debug: []
                     default: []
             default: built-projects
     tier:
@@ -622,8 +624,9 @@ web-platform-tests-crashtest:
                     android-em-7.0-x86_64-qr/debug: built-projects
                     .*-32.*/.*: []
                     linux.*64-qr/debug: built-projects
-                    macosx101.*64-qr/debug: built-projects
-                    windows.*-qr/debug: built-projects
+                    macosx1015.*64-qr/debug: built-projects
+                    macosx1470.*64/debug: built-projects
+                    windows.*/debug: built-projects
                     default: []
             webrender-sw+no-fission:
                 by-test-platform:
@@ -683,7 +686,7 @@ web-platform-tests-print-reftest:
                     android.*: []
                     .*-32.*/.*: []
                     linux.*64-qr/debug: built-projects
-                    windows.*-qr/debug: built-projects
+                    windows.*/debug: built-projects
                     default: []
             webrender-sw+no-fission:
                 by-test-platform:
@@ -727,6 +730,33 @@ test-verify-wpt:
     mozharness:
         extra-options:
             - --verify
+    fetches:
+        toolchain:
+            by-test-platform:
+                linux.*64.*:
+                    - linux64-geckodriver
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                linux.*32.*:
+                    - linux32-geckodriver
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                macosx.*:
+                    - macosx64-geckodriver
+                    - macosx64-minidump-stackwalk
+                    - macosx64-fix-stacks
+                win.*-32.*:
+                    - win32-geckodriver
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                win.*-64.*:
+                    - win64-geckodriver
+                    - win32-minidump-stackwalk
+                    - win32-fix-stacks
+                default:
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux64-geckodriver
 
 test-coverage-wpt:
     description: "Per web-platform test coverage"

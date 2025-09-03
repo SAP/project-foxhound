@@ -159,6 +159,10 @@ async function openAboutWelcome() {
     "about:welcome",
     true
   );
+  await ContentTask.spawn(gBrowser.selectedBrowser, {}, async function () {
+    // Mark the first entry as having been interacted with.
+    content.document.notifyUserGestureActivation();
+  });
   registerCleanupFunction(() => {
     BrowserTestUtils.removeTab(tab);
   });
@@ -293,7 +297,7 @@ add_task(async function test_multistage_aboutwelcome_default() {
  * Test navigating back/forward between screens
  */
 add_task(async function test_Multistage_About_Welcome_navigation() {
-  let browser = await openAboutWelcome();
+  let browser = await openAboutWelcome(TEST_DEFAULT_JSON);
 
   await onButtonClick(browser, "button.primary");
   await TestUtils.waitForCondition(() => browser.canGoBack);

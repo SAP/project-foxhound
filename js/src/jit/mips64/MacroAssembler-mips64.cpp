@@ -765,7 +765,7 @@ void MacroAssemblerMIPS64::ma_push(Register r) {
     r = ScratchRegister;
   }
 
-  as_daddiu(StackPointer, StackPointer, (int32_t) - sizeof(intptr_t));
+  as_daddiu(StackPointer, StackPointer, (int32_t)-sizeof(intptr_t));
   as_sd(r, StackPointer, 0);
 }
 
@@ -1082,7 +1082,7 @@ void MacroAssemblerMIPS64::ma_pop(FloatRegister f) {
 }
 
 void MacroAssemblerMIPS64::ma_push(FloatRegister f) {
-  as_daddiu(StackPointer, StackPointer, (int32_t) - sizeof(double));
+  as_daddiu(StackPointer, StackPointer, (int32_t)-sizeof(double));
   as_sdc1(f, StackPointer, 0);
 }
 
@@ -2187,30 +2187,6 @@ void MacroAssembler::callWithABINoProfiler(const Address& fun, ABIType result) {
 // ===============================================================
 // Move
 
-void MacroAssembler::moveValue(const TypedOrValueRegister& src,
-                               const ValueOperand& dest) {
-  if (src.hasValue()) {
-    moveValue(src.valueReg(), dest);
-    return;
-  }
-
-  MIRType type = src.type();
-  AnyRegister reg = src.typedReg();
-
-  if (!IsFloatingPointType(type)) {
-    boxNonDouble(ValueTypeFromMIRType(type), reg.gpr(), dest);
-    return;
-  }
-
-  FloatRegister scratch = ScratchDoubleReg;
-  FloatRegister freg = reg.fpu();
-  if (type == MIRType::Float32) {
-    convertFloat32ToDouble(freg, scratch);
-    freg = scratch;
-  }
-  boxDouble(freg, dest, scratch);
-}
-
 void MacroAssembler::moveValue(const ValueOperand& src,
                                const ValueOperand& dest) {
   if (src == dest) {
@@ -2266,10 +2242,33 @@ void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
 void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
                                      const Value& rhs, Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
   ScratchRegisterScope scratch(*this);
   MOZ_ASSERT(lhs.valueReg() != scratch);
   moveValue(rhs, ValueOperand(scratch));
   ma_b(lhs.valueReg(), scratch, label, cond);
+}
+
+void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
+                                        Register temp, Label* label) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  ScratchRegisterScope scratch(asMasm());
+  MOZ_ASSERT(val.valueReg() != scratch);
+
+  // When testing for NaN, we want to ignore the sign bit.
+  if (hasR2()) {
+    // Clear the sign bit by extracting the lower 63 bits.
+    ma_dext(temp, val.valueReg(), Imm32(0), Imm32(63));
+  } else {
+    // Clear the sign bit by shifting left and then right.
+    ma_dsll(temp, val.valueReg(), Imm32(1));
+    ma_dsrl(temp, temp, Imm32(1));
+  }
+
+  // Compare against a NaN with sign bit 0.
+  static_assert(JS::detail::CanonicalizedNaNSignBit == 0);
+  moveValue(DoubleValue(JS::GenericNaN()), ValueOperand(scratch));
+  ma_b(temp, scratch, label, cond);
 }
 
 // ========================================================================
@@ -2522,12 +2521,12 @@ void MacroAssemblerMIPS64Compat::wasmLoadI64Impl(
   }
 
   asMasm().memoryBarrierBefore(access.sync());
+  FaultingCodeOffset fco = asMasm().ma_load(
+      output.reg, address, static_cast<LoadStoreSize>(8 * byteSize),
+      isSigned ? SignExtend : ZeroExtend);
   asMasm().append(access,
                   wasm::TrapMachineInsnForLoad(Scalar::byteSize(access.type())),
-                  FaultingCodeOffset(currentOffset()));
-  asMasm().ma_load(output.reg, address,
-                   static_cast<LoadStoreSize>(8 * byteSize),
-                   isSigned ? SignExtend : ZeroExtend);
+                  fco);
   asMasm().memoryBarrierAfter(access.sync());
 }
 
@@ -2558,12 +2557,12 @@ void MacroAssemblerMIPS64Compat::wasmStoreI64Impl(
   }
 
   asMasm().memoryBarrierBefore(access.sync());
+  FaultingCodeOffset fco = asMasm().ma_store(
+      value.reg, address, static_cast<LoadStoreSize>(8 * byteSize),
+      isSigned ? SignExtend : ZeroExtend);
   asMasm().append(
       access, wasm::TrapMachineInsnForStore(Scalar::byteSize(access.type())),
-      FaultingCodeOffset(currentOffset()));
-  asMasm().ma_store(value.reg, address,
-                    static_cast<LoadStoreSize>(8 * byteSize),
-                    isSigned ? SignExtend : ZeroExtend);
+      fco);
   asMasm().memoryBarrierAfter(access.sync());
 }
 

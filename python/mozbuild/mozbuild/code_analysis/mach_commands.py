@@ -581,7 +581,9 @@ def _get_clang_tidy_command(
             compilation_commands_path,
         ]
         + common_args
-        + sources
+        # run-clang-tidy expects regexps, not paths, so we need to escape
+        # backslashes.
+        + [os.path.normpath(s).replace("\\", "\\\\") for s in sources]
     )
 
 
@@ -1098,7 +1100,7 @@ def prettier_format(command_context, path, assume_filename):
 
     binary, _ = find_node_executable()
     prettier = os.path.join(
-        command_context.topsrcdir, "node_modules", "prettier", "bin-prettier.js"
+        command_context.topsrcdir, "node_modules", "prettier", "bin", "prettier.cjs"
     )
     path = os.path.join(command_context.topsrcdir, path[0])
 

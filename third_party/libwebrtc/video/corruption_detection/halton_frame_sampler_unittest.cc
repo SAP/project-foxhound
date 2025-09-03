@@ -35,7 +35,7 @@ using Coordinates = HaltonFrameSampler::Coordinates;
 // Defaults for sampling tests.
 const int kDefaultScaledWidth = 4;
 const int kDefaultScaledHeight = 4;
-const double kDefaultStddevGaussianBlur = 0.02;
+const double kDefaultStdDevGaussianBlur = 0.02;
 
 #if GTEST_HAS_DEATH_TEST
 // Defaults for blurring tests.
@@ -46,7 +46,7 @@ const uint8_t kDefaultData[kDefaultWidth * kDefaultHeight] = {
     20, 196, 250, 115, 139, 39, 99, 197, 21, 166, 254, 28, 227, 54, 64, 46};
 const int kDefaultRow = 3;
 const int kDefaultColumn = 2;
-const double kDefaultStddev = 1.12;
+const double kDefaultStdDev = 1.12;
 #endif  // GTEST_HAS_DEATH_TEST
 
 scoped_refptr<I420Buffer> MakeDefaultI420FrameBuffer() {
@@ -81,10 +81,10 @@ TEST(GaussianFilteringTest, ShouldReturnFilteredValueWhenInputIsValid) {
                                            21, 166, 254, 28,  227, 54, 64, 46};
   const int kRow = 3;
   const int kColumn = 2;
-  const double kStddev = 1.12;
+  const double kStdDev = 1.12;
 
   EXPECT_THAT(GetFilteredElement(kWidth, kHeight, kStride, kData, kRow, kColumn,
-                                 kStddev),
+                                 kStdDev),
               DoubleEq(103.9558797428683));
 }
 
@@ -97,10 +97,10 @@ TEST(GaussianFilteringTest,
                                            21, 166, 254, 28,  227, 54, 64, 46};
   const int kRow = 3;
   const int kColumn = 2;
-  const double kStddev = 0.0;
+  const double kStdDev = 0.0;
 
   EXPECT_THAT(GetFilteredElement(kWidth, kHeight, kStride, kData, kRow, kColumn,
-                                 kStddev),
+                                 kStdDev),
               DoubleEq(64.0));
 }
 
@@ -108,37 +108,37 @@ TEST(GaussianFilteringTest,
 TEST(GaussianFilteringTest, ShouldCrashWhenRowIsNegative) {
   EXPECT_DEATH(
       GetFilteredElement(kDefaultWidth, kDefaultHeight, kDefaultStride,
-                         kDefaultData, -1, kDefaultColumn, kDefaultStddev),
+                         kDefaultData, -1, kDefaultColumn, kDefaultStdDev),
       _);
 }
 
 TEST(GaussianFilteringTest, ShouldCrashWhenRowIsOutOfRange) {
   EXPECT_DEATH(
       GetFilteredElement(kDefaultWidth, 4, kDefaultStride, kDefaultData, 4,
-                         kDefaultColumn, kDefaultStddev),
+                         kDefaultColumn, kDefaultStdDev),
       _);
 }
 
 TEST(GaussianFilteringTest, ShouldCrashWhenColumnIsNegative) {
   EXPECT_DEATH(
       GetFilteredElement(kDefaultWidth, kDefaultHeight, kDefaultStride,
-                         kDefaultData, kDefaultRow, -1, kDefaultStddev),
+                         kDefaultData, kDefaultRow, -1, kDefaultStdDev),
       _);
 }
 
 TEST(GaussianFilteringTest, ShouldCrashWhenColumnIsOutOfRange) {
   EXPECT_DEATH(GetFilteredElement(4, kDefaultHeight, kDefaultStride,
-                                  kDefaultData, kDefaultRow, 4, kDefaultStddev),
+                                  kDefaultData, kDefaultRow, 4, kDefaultStdDev),
                _);
 }
 
 TEST(GaussianFilteringTest, ShouldCrashWhenStrideIsSmallerThanWidth) {
   EXPECT_DEATH(GetFilteredElement(4, kDefaultHeight, 3, kDefaultData,
-                                  kDefaultRow, kDefaultColumn, kDefaultStddev),
+                                  kDefaultRow, kDefaultColumn, kDefaultStdDev),
                _);
 }
 
-TEST(GaussianFilteringTest, ShouldCrashWhenStddevIsNegative) {
+TEST(GaussianFilteringTest, ShouldCrashWhenStdDevIsNegative) {
   EXPECT_DEATH(
       GetFilteredElement(kDefaultWidth, kDefaultHeight, kDefaultStride,
                          kDefaultData, kDefaultRow, kDefaultColumn, -1.0),
@@ -157,6 +157,7 @@ TEST(HaltonFrameSamplerTest, FrameIsNotSampledWhenTimestampsAreEqual) {
           /*is_key_frame=*/false, /*rtp_timestamp=*/0, /*num_samples=*/1),
       _);
 }
+
 #endif  // GTEST_HAS_DEATH_TEST
 
 TEST(HaltonFrameSamplerGaussianFilteringTest,
@@ -166,7 +167,7 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(GetSampleValuesForFrame(nullptr, kDefaultSampleCoordinates,
                                       kDefaultScaledWidth, kDefaultScaledHeight,
-                                      kDefaultStddevGaussianBlur),
+                                      kDefaultStdDevGaussianBlur),
               IsEmpty());
 }
 
@@ -177,7 +178,7 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kDefaultI420Buffer, {}, kDefaultScaledWidth,
-                              kDefaultScaledHeight, kDefaultStddevGaussianBlur),
+                              kDefaultScaledHeight, kDefaultStdDevGaussianBlur),
       IsEmpty());
 }
 
@@ -193,7 +194,7 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(GetSampleValuesForFrame(kDefaultI420Buffer, kSampleCoordinates,
                                       kDefaultScaledWidth, kDefaultScaledHeight,
-                                      kDefaultStddevGaussianBlur),
+                                      kDefaultStdDevGaussianBlur),
               IsEmpty());
 }
 
@@ -206,7 +207,7 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kDefaultI420Buffer, kDefaultSampleCoordinates, 0,
-                              kDefaultScaledHeight, kDefaultStddevGaussianBlur),
+                              kDefaultScaledHeight, kDefaultStdDevGaussianBlur),
       IsEmpty());
 }
 
@@ -219,12 +220,12 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(GetSampleValuesForFrame(
                   kDefaultI420Buffer, kDefaultSampleCoordinates,
-                  kDefaultScaledWidth, 0, kDefaultStddevGaussianBlur),
+                  kDefaultScaledWidth, 0, kDefaultStdDevGaussianBlur),
               IsEmpty());
 }
 
 TEST(HaltonFrameSamplerGaussianFilteringTest,
-     ShouldReturnEmptyListGivenInvalidInputStddevZero) {
+     ShouldReturnEmptyListGivenInvalidInputStdDevNegative) {
   const scoped_refptr<I420Buffer> kDefaultI420Buffer =
       MakeDefaultI420FrameBuffer();
   const std::vector<Coordinates> kDefaultSampleCoordinates =
@@ -232,8 +233,58 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kDefaultI420Buffer, kDefaultSampleCoordinates,
-                              kDefaultScaledWidth, kDefaultScaledHeight, 0.0),
+                              kDefaultScaledWidth, kDefaultScaledHeight, -1.0),
       IsEmpty());
+}
+
+TEST(HaltonFrameSamplerGaussianFilteringTest,
+     ShouldReturnEmptyListWhenUpscaling) {
+  const scoped_refptr<I420Buffer> kDefaultI420Buffer =
+      MakeDefaultI420FrameBuffer();
+
+  EXPECT_THAT(GetSampleValuesForFrame(kDefaultI420Buffer,
+                                      MakeDefaultSampleCoordinates(),
+                                      /*scaled_width=*/8, /*scaled_height=*/8,
+                                      kDefaultStdDevGaussianBlur),
+              IsEmpty());
+}
+
+TEST(HaltonFrameSamplerGaussianFilteringTest,
+     ShouldReturnGivenValueWhenStdDevZero) {
+  // 4x4 i420 frame data.
+  const int kLumaWidth = 4;
+  const int kLumaHeight = 4;
+  const int kChromaWidth = 2;
+  const uint8_t kYContent[16] = {20, 196, 250, 115, 139, 39, 99, 197,
+                                 21, 166, 254, 28,  227, 54, 64, 46};
+  const uint8_t kUContent[4] = {156, 203, 36, 128};
+  const uint8_t kVContent[4] = {112, 2, 0, 24};
+  const scoped_refptr<I420Buffer> kI420Buffer =
+      I420Buffer::Copy(kLumaWidth, kLumaHeight, kYContent, kLumaWidth,
+                       kUContent, kChromaWidth, kVContent, kChromaWidth);
+
+  // Coordinates in all planes.
+  const std::vector<Coordinates> kSampleCoordinates = {
+      {.row = 0.2, .column = 0.7},
+      {.row = 0.5, .column = 0.9},
+      {.row = 0.3, .column = 0.7},
+      {.row = 0.8, .column = 0.4}};
+
+  // No scaling.
+  const int kScaledWidth = kLumaWidth;
+  const int kScaledHeight = kLumaHeight;
+
+  EXPECT_THAT(
+      GetSampleValuesForFrame(kI420Buffer, kSampleCoordinates, kScaledWidth,
+                              kScaledHeight, 0.0),
+      ElementsAre(AllOf(Field(&FilteredSample::value, DoubleEq(156.0)),
+                        Field(&FilteredSample::plane, ImagePlane::kChroma)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(2.0)),
+                        Field(&FilteredSample::plane, ImagePlane::kChroma)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(36.0)),
+                        Field(&FilteredSample::plane, ImagePlane::kChroma)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(64.0)),
+                        Field(&FilteredSample::plane, ImagePlane::kLuma))));
 }
 
 TEST(HaltonFrameSamplerGaussianFilteringTest,
@@ -262,11 +313,11 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
   const int kScaledHeight = kLumaHeight;
 
   // No filtering.
-  const double kStddevGaussianBlur = 0.02;
+  const double kStdDevGaussianBlur = 0.02;
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kI420Buffer, kSampleCoordinates, kScaledWidth,
-                              kScaledHeight, kStddevGaussianBlur),
+                              kScaledHeight, kStdDevGaussianBlur),
       ElementsAre(AllOf(Field(&FilteredSample::value, DoubleEq(156.0)),
                         Field(&FilteredSample::plane, ImagePlane::kChroma)),
                   AllOf(Field(&FilteredSample::value, DoubleEq(2.0)),
@@ -299,22 +350,22 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
       {.row = 0.8, .column = 0.4}};
 
   // With scaling.
-  const int kScaledWidth = 10;
-  const int kScaledHeight = 10;
+  const int kScaledWidth = 2;
+  const int kScaledHeight = 2;
 
   // No filtering.
-  const double kStddevGaussianBlur = 0.02;
+  const double kStdDevGaussianBlur = 0.02;
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kI420Buffer, kSampleCoordinates, kScaledWidth,
-                              kScaledHeight, kStddevGaussianBlur),
-      ElementsAre(AllOf(Field(&FilteredSample::value, DoubleEq(96.0)),
+                              kScaledHeight, kStdDevGaussianBlur),
+      ElementsAre(AllOf(Field(&FilteredSample::value, DoubleEq(131.0)),
                         Field(&FilteredSample::plane, ImagePlane::kChroma)),
-                  AllOf(Field(&FilteredSample::value, DoubleEq(30.0)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(35.0)),
                         Field(&FilteredSample::plane, ImagePlane::kChroma)),
-                  AllOf(Field(&FilteredSample::value, DoubleEq(66.0)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(131.0)),
                         Field(&FilteredSample::plane, ImagePlane::kChroma)),
-                  AllOf(Field(&FilteredSample::value, DoubleNear(127.0, 1.0)),
+                  AllOf(Field(&FilteredSample::value, DoubleEq(98.0)),
                         Field(&FilteredSample::plane, ImagePlane::kLuma))));
 }
 
@@ -344,11 +395,11 @@ TEST(HaltonFrameSamplerGaussianFilteringTest,
   const int kScaledHeight = kLumaHeight;
 
   // With filtering (kernel size 2x2).
-  const double kStddevGaussianBlur = 1.12;
+  const double kStdDevGaussianBlur = 1.12;
 
   EXPECT_THAT(
       GetSampleValuesForFrame(kI420Buffer, kSampleCoordinates, kScaledWidth,
-                              kScaledHeight, kStddevGaussianBlur),
+                              kScaledHeight, kStdDevGaussianBlur),
       ElementsAre(
           AllOf(Field(&FilteredSample::value, DoubleEq(133.93909141543787)),
                 Field(&FilteredSample::plane, ImagePlane::kChroma)),

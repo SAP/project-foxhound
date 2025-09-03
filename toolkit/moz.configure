@@ -34,6 +34,12 @@ project_flag(
 )
 
 project_flag(
+    "MOZ_APP_PROFILE",
+    nargs=1,
+    help='Used for application.ini\'s "Profile" field, which controls profile location',
+)
+
+project_flag(
     env="MOZ_DEVTOOLS",
     default="server",
     choices=("all", "server"),
@@ -124,7 +130,7 @@ def all_configure_options():
         # defaults.
         if (
             value is not None
-            and value.origin not in ("default", "implied")
+            and value.origin not in ("default", "implied", "confvars")
             and value != option.default
         ):
             result.append(
@@ -219,7 +225,6 @@ def gecko_profiler_parse_elf(value, target):
 
 
 set_config("MOZ_GECKO_PROFILER_PARSE_ELF", gecko_profiler_parse_elf)
-set_define("MOZ_GECKO_PROFILER_PARSE_ELF", gecko_profiler_parse_elf)
 
 # enable this by default if the profiler is enabled
 # Note: also requires jemalloc
@@ -847,15 +852,21 @@ def av1(value):
         return True
 
 
-@depends(target, when=av1 & compile_environment)
-def dav1d_asm(target):
-    if target.cpu in ("arm", "aarch64", "x86", "x86_64"):
+option("--with-system-av1", help="Use system av1 (located with pkg-config)")
+
+pkg_check_modules("MOZ_SYSTEM_LIBAOM", "aom >= 3.0.0", when="--with-system-av1")
+pkg_check_modules("MOZ_SYSTEM_LIBDAV1D", "dav1d >= 1.2.1", when="--with-system-av1")
+
+
+@depends(target, "--with-system-av1", when=av1 & compile_environment)
+def dav1d_asm(target, system_av1):
+    if not system_av1 and target.cpu in ("arm", "aarch64", "x86", "x86_64"):
         return True
 
 
-@depends(target, when=av1 & compile_environment)
-def dav1d_nasm(target):
-    if target.cpu in ("x86", "x86_64"):
+@depends(target, "--with-system-av1", when=av1 & compile_environment)
+def dav1d_nasm(target, system_av1):
+    if not system_av1 and target.cpu in ("x86", "x86_64"):
         return namespace(version="2.14", what="AV1")
 
 
@@ -863,6 +874,7 @@ set_config("MOZ_DAV1D_ASM", dav1d_asm)
 set_define("MOZ_DAV1D_ASM", dav1d_asm)
 set_config("MOZ_AV1", av1)
 set_define("MOZ_AV1", av1)
+set_config("MOZ_SYSTEM_AV1", True, when="--with-system-av1")
 
 # JXL Image Codec Support
 # ==============================================================
@@ -881,7 +893,6 @@ set_define("MOZ_JXL", jxl)
 set_config("MOZ_SAMPLE_TYPE_FLOAT32", True)
 set_define("MOZ_SAMPLE_TYPE_FLOAT32", True)
 
-set_define("MOZ_VORBIS", True)
 set_config("MOZ_VORBIS", True)
 
 option(
@@ -1187,7 +1198,6 @@ def app_system_headers(value):
 
 
 set_config("MOZ_APP_SYSTEM_HEADERS", app_system_headers)
-set_define("MOZ_APP_SYSTEM_HEADERS", app_system_headers)
 
 
 # Printing
@@ -1307,7 +1317,6 @@ def tree_freetype(target, skia_pdf):
 set_define("MOZ_TREE_FREETYPE", tree_freetype)
 set_config("MOZ_TREE_FREETYPE", tree_freetype)
 
-set_define("HAVE_FT_BITMAP_SIZE_Y_PPEM", tree_freetype)
 set_define("HAVE_FT_GLYPHSLOT_EMBOLDEN", tree_freetype)
 set_define("HAVE_FT_LOAD_SFNT_TABLE", tree_freetype)
 
@@ -1456,6 +1465,7 @@ def webrtc_default(target):
         "aarch64",
         "x86",
         "ia64",
+        "loongarch64",
         "mips32",
         "mips64",
         "ppc",
@@ -1482,11 +1492,8 @@ def webrtc(enabled):
 set_config("MOZ_WEBRTC", webrtc)
 set_define("MOZ_WEBRTC", webrtc)
 set_config("MOZ_SCTP", webrtc)
-set_define("MOZ_SCTP", webrtc)
 set_config("MOZ_SRTP", webrtc)
-set_define("MOZ_SRTP", webrtc)
 set_config("MOZ_WEBRTC_SIGNALING", webrtc)
-set_define("MOZ_WEBRTC_SIGNALING", webrtc)
 set_config("MOZ_PEERCONNECTION", webrtc)
 set_define("MOZ_PEERCONNECTION", webrtc)
 # MOZ_WEBRTC_ASSERT_ALWAYS turns on a number of safety asserts in
@@ -2508,7 +2515,7 @@ with only_when(compile_environment):
                 "--with-system-png and set any necessary pkg-config environment variable."
             )
 
-    png = pkg_check_modules("MOZ_PNG", "libpng >= 1.6.35", when="--with-system-png")
+    png = pkg_check_modules("MOZ_PNG", "libpng >= 1.6.45", when="--with-system-png")
 
     check_symbol(
         "png_get_acTL",
@@ -2678,6 +2685,58 @@ set_config("NASM_ASFLAGS", nasm_asflags)
 
 with only_when(compile_environment & target_is_windows):
     set_config("MOZ_ANGLE_RENDERER", True)
+
+with only_when(target_is_windows):
+    option(
+        "--enable-dxcompiler",
+        default=milestone.is_nightly,
+        help="{Enable|Disable} DXC for WebGPU on Windows",
+    )
+
+    @depends("--enable-dxcompiler", target, artifact_builds, valid_windows_sdk_dir)
+    @checking("for dxcompiler.dll and dxil.dll")
+    @imports("os.path")
+    def dxcompiler(enable_dxc, target, artifact, windows_sdk_dir):
+        if not windows_sdk_dir and not artifact:
+            return namespace(enabled=False)
+        if not enable_dxc:
+            return namespace(enabled=False)
+        arch = {
+            "x86_64": "x64",
+            "aarch64": "arm64",
+        }.get(target.cpu, target.cpu)
+
+        dxc_name = "dxcompiler.dll"
+        dxil_name = "dxil.dll"
+        dxc_path = ""
+        dxil_path = ""
+        if not artifact:
+            sdk_d3d_path = os.path.join(windows_sdk_dir.path, "Redist", "D3D", arch)
+            dxc_path = os.path.join(sdk_d3d_path, dxc_name)
+            dxil_path = os.path.join(sdk_d3d_path, dxil_name)
+            if not os.path.exists(dxc_path):
+                die("Could not find dxcompiler.dll at {}", dxc_path)
+            if not os.path.exists(dxil_path):
+                die("Could not find dxil.dll at {}", dxil_path)
+
+        return namespace(
+            enabled=True,
+            from_sdk=not artifact,
+            dxc_name=dxc_name,
+            dxc_path=dxc_path,
+            dxil_name=dxil_name,
+            dxil_path=dxil_path,
+        )
+
+    with only_when(dxcompiler.enabled):
+        set_config("MOZ_DXCOMPILER", True)
+        set_define("MOZ_DXCOMPILER", 1)
+        set_define("MOZ_DXC_DLL_NAME", dxcompiler.dxc_name)
+        set_define("MOZ_DXIL_DLL_NAME", dxcompiler.dxil_name)
+        with only_when(dxcompiler.from_sdk):
+            set_config("MOZ_DXC_DLL_PATH", dxcompiler.dxc_path)
+            set_config("MOZ_DXIL_DLL_PATH", dxcompiler.dxil_path)
+
 
 # Remoting protocol support
 # ==============================================================
@@ -3068,9 +3127,6 @@ option(
 )
 
 set_define("MOZ_GFX_OPTIMIZE_MOBILE", True, when="--enable-mobile-optimize")
-# We ignore "paint will resample" on mobile for performance.
-# We may want to revisit this later.
-set_define("MOZ_IGNORE_PAINT_WILL_RESAMPLE", True, when="--enable-mobile-optimize")
 
 # Pref extensions
 # ==============================================================
@@ -3095,6 +3151,84 @@ set_define(
 
 # Branding
 # ==============================================================
+
+option(
+    "--enable-official-branding",
+    help="Enable Official mozilla.org Branding. "
+    "Do not distribute builds with --enable-official-branding unless "
+    "you have permission to use trademarks per "
+    "http://www.mozilla.org/foundation/trademarks/",
+)
+
+with only_when("--enable-official-branding"):
+    set_config("MOZ_OFFICIAL_BRANDING", True)
+    set_define("MOZ_OFFICIAL_BRANDING", True)
+
+    add_old_configure_assignment("MOZ_OFFICIAL_BRANDING", True)
+
+
+confvar(
+    "MOZ_BRANDING_DIRECTORY",
+    nargs=1,
+    set_as_config=False,
+    help="Path to the directory used for branding resources",
+)
+
+confvar(
+    "MOZ_OFFICIAL_BRANDING_DIRECTORY",
+    set_as_config=False,
+    allow_implied=True,
+    nargs=1,
+    help="Path to the directory used for official branding resources",
+)
+
+
+option(
+    "--with-branding", metavar="DIR", nargs=1, help="Use branding from directory DIR"
+)
+
+
+@depends("MOZ_OFFICIAL_BRANDING_DIRECTORY", when="--enable-official-branding")
+def check_official_branding_directory(moz_official_branding_directory):
+    if not moz_official_branding_directory:
+        die(
+            "MOZ_OFFICIAL_BRANDING_DIRECTORY must be set in a confvars.sh to use --enable-official-branding."
+        )
+
+
+@depends(
+    "--with-branding",
+    "--enable-official-branding",
+    "MOZ_OFFICIAL_BRANDING_DIRECTORY",
+    "MOZ_BRANDING_DIRECTORY",
+)
+def moz_branding_directory(
+    with_branding_dir,
+    moz_official_branding,
+    moz_official_branding_directory,
+    moz_branding_directory,
+):
+    if moz_official_branding:
+        return moz_official_branding_directory[0]
+    if with_branding_dir:
+        return with_branding_dir[0]
+    if moz_branding_directory:
+        return moz_branding_directory[0]
+
+
+set_config("MOZ_BRANDING_DIRECTORY", moz_branding_directory)
+add_old_configure_assignment("MOZ_BRANDING_DIRECTORY", moz_branding_directory)
+
+
+@depends(moz_branding_directory, build_project)
+def real_branding_directory(moz_branding_directory, build_project):
+    if moz_branding_directory:
+        return moz_branding_directory
+    return f"{build_project}/branding/nightly"
+
+
+add_old_configure_assignment("REAL_BRANDING_DIRECTORY", real_branding_directory)
+
 option(
     env="MOZ_APP_REMOTINGNAME",
     nargs=1,
@@ -3185,12 +3319,6 @@ wine = check_prog(
     when=want_wine,
     bootstrap="wine/bin",
 )
-
-# DOM Streams
-# ==============================================================
-# Set this to true so the JS engine knows we're doing a browser build.
-set_config("MOZ_DOM_STREAMS", True)
-set_define("MOZ_DOM_STREAMS", True)
 
 # libevent
 # ==============================================================
@@ -3365,7 +3493,6 @@ with only_when(toolkit_gtk):
         pkg_check_modules("MOZ_LIBPROXY", "libproxy-1.0")
 
         set_config("MOZ_ENABLE_LIBPROXY", True)
-        set_define("MOZ_ENABLE_LIBPROXY", True)
 
 
 # Enable runtime logging
@@ -3631,17 +3758,6 @@ with only_when(target_has_linux_kernel & compile_environment):
             check_msg="for 32-bits ethtool_cmd.speed",
         ),
     )
-
-# Gamepad support
-# ==============================================================
-check_header(
-    "linux/joystick.h",
-    onerror=lambda: die(
-        "Can't find header linux/joystick.h, needed for gamepad support."
-        " Please install Linux kernel headers."
-    ),
-    when=target_has_linux_kernel & compile_environment,
-)
 
 
 # Smart card support

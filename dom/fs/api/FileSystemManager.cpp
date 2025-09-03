@@ -99,8 +99,24 @@ void FileSystemManager::BeginRequest(
 
   MOZ_ASSERT(mGlobal);
 
-  // Check if we're allowed to use storage
-  if (mGlobal->GetStorageAccess() <= StorageAccess::ePrivateBrowsing) {
+  nsICookieJarSettings* cookieJarSettings = mGlobal->GetCookieJarSettings();
+  nsIPrincipal* unpartitionedPrincipal = mGlobal->PrincipalOrNull();
+  if (NS_WARN_IF(!cookieJarSettings) || NS_WARN_IF(!unpartitionedPrincipal) ||
+      NS_WARN_IF(unpartitionedPrincipal->GetIsInPrivateBrowsing())) {
+    // ePartition values can be returned for Private Browsing Mode
+    // for third-party iframes, so we also need to check the private browsing
+    // in that case which means we need to check the principal.
+    aFailure(NS_ERROR_DOM_SECURITY_ERR);
+    return;
+  }
+
+  // Check if we're allowed to use storage.
+  StorageAccess access = mGlobal->GetStorageAccess();
+
+  // Use allow list to decide the permission.
+  const bool allowed = access == StorageAccess::eAllow ||
+                       StoragePartitioningEnabled(access, cookieJarSettings);
+  if (NS_WARN_IF(!allowed)) {
     aFailure(NS_ERROR_DOM_SECURITY_ERR);
     return;
   }
@@ -110,12 +126,12 @@ void FileSystemManager::BeginRequest(
     return;
   }
 
-  QM_TRY_INSPECT(const auto& principalInfo, mGlobal->GetStorageKey(), QM_VOID,
-                 [&aFailure](nsresult rv) { aFailure(rv); });
-
   auto holder =
       MakeRefPtr<PromiseRequestHolder<FileSystemManagerChild::ActorPromise>>(
           this);
+
+  QM_TRY_INSPECT(const auto& principalInfo, mGlobal->GetStorageKey(), QM_VOID,
+                 [&aFailure](nsresult rv) { aFailure(rv); });
 
   mBackgroundRequestHandler->CreateFileSystemManagerChild(principalInfo)
       ->Then(

@@ -90,12 +90,12 @@ already_AddRefed<CrossShadowBoundaryRange> CrossShadowBoundaryRange::Create(
     const RangeBoundaryBase<EPT, ERT>& aEndBoundary, nsRange* aOwner) {
   RefPtr<CrossShadowBoundaryRange> range;
   if (!sCachedRanges || sCachedRanges->IsEmpty()) {
-    range = new CrossShadowBoundaryRange(aStartBoundary.Container(), aOwner);
+    range = new CrossShadowBoundaryRange(aStartBoundary.GetContainer(), aOwner);
   } else {
     range = sCachedRanges->PopLastElement().forget();
   }
 
-  range->Init(aStartBoundary.Container());
+  range->Init(aStartBoundary.GetContainer());
   range->DoSetRange(aStartBoundary, aEndBoundary, nullptr, aOwner);
   return range.forget();
 }
@@ -109,8 +109,8 @@ void CrossShadowBoundaryRange::DoSetRange(
   // and aEndBoundary could have different roots.
   StaticRange::DoSetRange(aStartBoundary, aEndBoundary, nullptr);
 
-  nsINode* startRoot = RangeUtils::ComputeRootNode(mStart.Container());
-  nsINode* endRoot = RangeUtils::ComputeRootNode(mEnd.Container());
+  nsINode* startRoot = RangeUtils::ComputeRootNode(mStart.GetContainer());
+  nsINode* endRoot = RangeUtils::ComputeRootNode(mEnd.GetContainer());
 
   nsINode* previousCommonAncestor = mCommonAncestor;
   if (startRoot == endRoot) {
@@ -122,7 +122,7 @@ void CrossShadowBoundaryRange::DoSetRange(
   } else {
     mCommonAncestor =
         nsContentUtils::GetClosestCommonShadowIncludingInclusiveAncestor(
-            mStart.Container(), mEnd.Container());
+            mStart.GetContainer(), mEnd.GetContainer());
     MOZ_ASSERT_IF(mOwner, mOwner == aOwner);
     if (!mOwner) {
       mOwner = aOwner;
@@ -138,8 +138,8 @@ void CrossShadowBoundaryRange::DoSetRange(
     }
   }
 }
-void CrossShadowBoundaryRange::ContentRemoved(nsIContent* aChild,
-                                              nsIContent* aPreviousSibling) {
+void CrossShadowBoundaryRange::ContentWillBeRemoved(nsIContent* aChild,
+                                                    const BatchRemovalState*) {
   // It's unclear from the spec about what should the selection be after
   // DOM mutation. See https://github.com/w3c/selection-api/issues/168
   //
@@ -150,8 +150,8 @@ void CrossShadowBoundaryRange::ContentRemoved(nsIContent* aChild,
 
   RefPtr<CrossShadowBoundaryRange> kungFuDeathGrip(this);
 
-  const nsINode* startContainer = mStart.Container();
-  const nsINode* endContainer = mEnd.Container();
+  const nsINode* startContainer = mStart.GetContainer();
+  const nsINode* endContainer = mEnd.GetContainer();
 
   if (startContainer == aChild || endContainer == aChild) {
     mOwner->ResetCrossShadowBoundaryRange();
@@ -165,8 +165,8 @@ void CrossShadowBoundaryRange::ContentRemoved(nsIContent* aChild,
     }
   }
 
-  if (mStart.Container()->IsShadowIncludingInclusiveDescendantOf(aChild) ||
-      mEnd.Container()->IsShadowIncludingInclusiveDescendantOf(aChild)) {
+  if (mStart.GetContainer()->IsShadowIncludingInclusiveDescendantOf(aChild) ||
+      mEnd.GetContainer()->IsShadowIncludingInclusiveDescendantOf(aChild)) {
     mOwner->ResetCrossShadowBoundaryRange();
     return;
   }
@@ -174,14 +174,15 @@ void CrossShadowBoundaryRange::ContentRemoved(nsIContent* aChild,
   nsINode* container = aChild->GetParentNode();
 
   auto MaybeCreateNewBoundary =
-      [container, aChild, aPreviousSibling](
+      [container, aChild](
           const nsINode* aContainer,
           const RangeBoundary& aBoundary) -> Maybe<RawRangeBoundary> {
     if (container == aContainer) {
       // We're only interested if our boundary reference was removed, otherwise
       // we can just invalidate the offset.
       if (aChild == aBoundary.Ref()) {
-        return Some<RawRangeBoundary>({container, aPreviousSibling});
+        return Some<RawRangeBoundary>(
+            {container, aChild->GetPreviousSibling()});
       }
       RawRangeBoundary newBoundary;
       newBoundary.CopyFrom(aBoundary, RangeBoundaryIsMutationObserved::Yes);
@@ -220,7 +221,7 @@ void CrossShadowBoundaryRange::CharacterDataChanged(
        &aInfo](const RangeBoundary& aBoundary) -> Maybe<RawRangeBoundary> {
     // If the changed node contains our start boundary and the change starts
     // before the boundary we'll need to adjust the offset.
-    if (aContent == aBoundary.Container() &&
+    if (aContent == aBoundary.GetContainer() &&
         // aInfo.mChangeStart is the offset where the change starts, if it's
         // smaller than the offset of aBoundary, it means the characters
         // before the selected content is changed (i.e, removed), so the

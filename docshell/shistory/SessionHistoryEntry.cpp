@@ -97,7 +97,10 @@ SessionHistoryInfo::SessionHistoryInfo(
     nsIChannel* aChannel, uint32_t aLoadType,
     nsIPrincipal* aPartitionedPrincipalToInherit,
     nsIContentSecurityPolicy* aCsp) {
-  aChannel->GetURI(getter_AddRefs(mURI));
+  if (NS_FAILED(NS_GetFinalChannelURI(aChannel, getter_AddRefs(mURI)))) {
+    NS_WARNING("NS_GetFinalChannelURI somehow failed in SessionHistoryInfo?");
+    aChannel->GetURI(getter_AddRefs(mURI));
+  }
   mLoadType = aLoadType;
 
   nsCOMPtr<nsILoadInfo> loadInfo;
@@ -237,6 +240,10 @@ void SessionHistoryInfo::SetCacheKey(uint32_t aCacheKey) {
 
 bool SessionHistoryInfo::IsSubFrame() const {
   return mSharedState.Get()->mIsFrameNavigation;
+}
+
+nsStructuredCloneContainer* SessionHistoryInfo::GetNavigationState() const {
+  return mSharedState.Get()->mNavigationState.get();
 }
 
 void SessionHistoryInfo::SetSaveLayoutStateFlag(bool aSaveLayoutStateFlag) {
@@ -1493,11 +1500,9 @@ void SessionHistoryEntry::SetFrameLoader(nsFrameLoader* aFrameLoader) {
   SharedInfo()->SetFrameLoader(aFrameLoader);
   if (aFrameLoader) {
     if (BrowsingContext* bc = aFrameLoader->GetMaybePendingBrowsingContext()) {
-      bc->PreOrderWalk([&](BrowsingContext* aContext) {
-        if (BrowserParent* bp = aContext->Canonical()->GetBrowserParent()) {
-          bp->Deactivated();
-        }
-      });
+      if (BrowserParent* bp = bc->Canonical()->GetBrowserParent()) {
+        bp->VisitAll([&](BrowserParent* aBp) { aBp->Deactivated(); });
+      }
     }
 
     // When a new frameloader is stored, try to evict some older
@@ -1556,6 +1561,8 @@ void IPDLParamTraits<dom::SessionHistoryInfo>::Write(
   WriteIPDLParam(aWriter, aActor, stateData);
   WriteIPDLParam(aWriter, aActor, aParam.mSrcdocData);
   WriteIPDLParam(aWriter, aActor, aParam.mBaseURI);
+  WriteIPDLParam(aWriter, aActor, aParam.mNavigationKey);
+  WriteIPDLParam(aWriter, aActor, aParam.mNavigationId);
   WriteIPDLParam(aWriter, aActor, aParam.mLoadReplace);
   WriteIPDLParam(aWriter, aActor, aParam.mURIWasModified);
   WriteIPDLParam(aWriter, aActor, aParam.mScrollRestorationIsManual);
@@ -1598,6 +1605,8 @@ bool IPDLParamTraits<dom::SessionHistoryInfo>::Read(
       !ReadIPDLParam(aReader, aActor, &stateData) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mSrcdocData) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mBaseURI) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mNavigationKey) ||
+      !ReadIPDLParam(aReader, aActor, &aResult->mNavigationId) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mLoadReplace) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mURIWasModified) ||
       !ReadIPDLParam(aReader, aActor, &aResult->mScrollRestorationIsManual) ||

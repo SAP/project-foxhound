@@ -11,13 +11,14 @@
 #ifndef PC_TRANSPORT_STATS_H_
 #define PC_TRANSPORT_STATS_H_
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "absl/strings/string_view.h"
 #include "api/dtls_transport_interface.h"
-#include "p2p/base/dtls_transport_internal.h"
 #include "p2p/base/ice_transport_internal.h"
-#include "p2p/base/port.h"
 #include "rtc_base/ssl_stream_adapter.h"
 
 namespace cricket {
@@ -31,6 +32,7 @@ struct TransportChannelStats {
   int ssl_version_bytes = 0;
   int srtp_crypto_suite = rtc::kSrtpInvalidCryptoSuite;
   int ssl_cipher_suite = rtc::kTlsNullWithNullNull;
+  std::optional<absl::string_view> tls_cipher_suite_name;
   std::optional<rtc::SSLRole> dtls_role;
   webrtc::DtlsTransportState dtls_state = webrtc::DtlsTransportState::kNew;
   IceTransportStats ice_transport_stats;

@@ -57,8 +57,8 @@ class FakeRecordingDeviceIdentity final : public FakeRecordingDeviceWorker {
   explicit FakeRecordingDeviceIdentity(const int initial_mic_level)
       : FakeRecordingDeviceWorker(initial_mic_level) {}
   ~FakeRecordingDeviceIdentity() override = default;
-  void ModifyBufferInt16(rtc::ArrayView<int16_t> buffer) override {}
-  void ModifyBufferFloat(ChannelBuffer<float>* buffer) override {}
+  void ModifyBufferInt16(rtc::ArrayView<int16_t> /* buffer */) override {}
+  void ModifyBufferFloat(ChannelBuffer<float>* /* buffer */) override {}
 };
 
 // Linear fake recording device. The gain curve is a linear function mapping the
@@ -169,9 +169,6 @@ void FakeRecordingDevice::SetMicLevel(const int level) {
 
 void FakeRecordingDevice::SetUndoMicLevel(const int level) {
   RTC_DCHECK(worker_);
-  // TODO(alessiob): The behavior with undo level equal to zero is not clear yet
-  // and will be defined in future CLs once more FakeRecordingDeviceWorker
-  // implementations need to be added.
   RTC_CHECK(level > 0) << "Zero undo mic level is unsupported";
   worker_->set_undo_mic_level(level);
 }

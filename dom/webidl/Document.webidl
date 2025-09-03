@@ -39,35 +39,7 @@ dictionary ElementCreationOptions {
 };
 
 /* https://dom.spec.whatwg.org/#interface-document */
-[Exposed=Window,
- InstrumentedProps=(caretRangeFromPoint,
-                    exitPictureInPicture,
-                    featurePolicy,
-                    onbeforecopy,
-                    onbeforecut,
-                    onbeforepaste,
-                    oncancel,
-                    onfreeze,
-                    onmousewheel,
-                    onresume,
-                    onsearch,
-                    onwebkitfullscreenchange,
-                    onwebkitfullscreenerror,
-                    pictureInPictureElement,
-                    pictureInPictureEnabled,
-                    registerElement,
-                    wasDiscarded,
-                    webkitCancelFullScreen,
-                    webkitCurrentFullScreenElement,
-                    webkitExitFullscreen,
-                    webkitFullscreenElement,
-                    webkitFullscreenEnabled,
-                    webkitHidden,
-                    webkitIsFullScreen,
-                    webkitVisibilityState,
-                    xmlEncoding,
-                    xmlStandalone,
-                    xmlVersion)]
+[Exposed=Window]
 interface Document : Node {
   [Throws]
   constructor();
@@ -150,8 +122,8 @@ interface Document : Node {
 
 // https://html.spec.whatwg.org/multipage/dom.html#the-document-object
 partial interface Document {
-  [Pref="dom.webcomponents.shadowdom.declarative.enabled"]
-  static Document parseHTMLUnsafe(DOMString html);
+  [Pref="dom.webcomponents.shadowdom.declarative.enabled", Throws]
+  static Document parseHTMLUnsafe((TrustedHTML or DOMString) html);
 
   [PutForwards=href, LegacyUnforgeable] readonly attribute Location? location;
   [SetterThrows]                           attribute DOMString domain;
@@ -184,13 +156,13 @@ partial interface Document {
   [CEReactions, Throws]
   Document open(optional DOMString unused1, optional DOMString unused2); // both arguments are ignored
   [CEReactions, Throws]
-  WindowProxy? open(USVString url, DOMString name, DOMString features);
+  WindowProxy? open(UTF8String url, DOMString name, DOMString features);
   [CEReactions, Throws]
   undefined close();
   [CEReactions, Throws]
-  undefined write(DOMString... text);
+  undefined write((TrustedHTML or DOMString)... text);
   [CEReactions, Throws]
-  undefined writeln(DOMString... text);
+  undefined writeln((TrustedHTML or DOMString)... text);
 
   // user interaction
   [Pure]
@@ -201,7 +173,7 @@ partial interface Document {
            attribute DOMString designMode;
   [CEReactions, Throws, NeedsSubjectPrincipal]
   boolean execCommand(DOMString commandId, optional boolean showUI = false,
-                      optional DOMString value = "");
+                      optional (TrustedHTML or DOMString) value = "");
   [Throws, NeedsSubjectPrincipal]
   boolean queryCommandEnabled(DOMString commandId);
   [Throws]
@@ -216,10 +188,6 @@ partial interface Document {
 
   // special event handler IDL attributes that only apply to Document objects
   [LegacyLenientThis] attribute EventHandler onreadystatechange;
-
-  // Gecko extensions?
-                attribute EventHandler onbeforescriptexecute;
-                attribute EventHandler onafterscriptexecute;
 
   /**
    * True if this document is synthetic : stand alone image, video, audio file,
@@ -404,6 +372,10 @@ partial interface Document {
 
 //  Mozilla extensions of various sorts
 partial interface Document {
+  // @deprecated We are going to remove these (bug 1584269).
+  attribute EventHandler onbeforescriptexecute;
+  attribute EventHandler onafterscriptexecute;
+
   // Creates a new XUL element regardless of the document's default type.
   [ChromeOnly, CEReactions, NewObject, Throws]
   Element createXULElement(DOMString localName, optional (ElementCreationOptions or DOMString) options = {});

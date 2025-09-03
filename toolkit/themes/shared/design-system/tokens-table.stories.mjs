@@ -51,6 +51,8 @@ const THEMED_TABLES = [
   "color",
   "outline",
   "icon-color",
+  "icon-fill",
+  "icon-stroke",
   "link",
 ];
 
@@ -211,7 +213,9 @@ class TokensTable extends LitElement {
     "font-size": this.fontTemplate,
     "font-weight": this.fontTemplate,
     "icon-color": this.iconTemplate,
+    "icon-fill": this.iconTemplate,
     "icon-size": this.iconTemplate,
+    "icon-stroke": this.iconTemplate,
     link: this.linkTemplate,
     margin: this.spaceAndSizeTemplate,
     "min-height": this.spaceAndSizeTemplate,
@@ -333,7 +337,8 @@ class TokensTable extends LitElement {
   }
 
   iconTemplate(_, value, tokenName) {
-    let property = tokenName.includes("color") ? "background-color" : "height";
+    const pattern = /color|fill|stroke/;
+    let property = pattern.test(tokenName) ? "background-color" : "height";
     return html`
       <div
         class="icon-preview"

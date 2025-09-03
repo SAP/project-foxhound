@@ -14,8 +14,42 @@ ChromeUtils.defineESModuleGetters(lazy, {
 export class AboutTranslationsParent extends JSWindowActorParent {
   #isDestroyed = false;
 
+  /**
+   * A dedicated handle to this.#observe.bind(this), which we need to register non-static
+   * per-instance observers when the actor is created as well as remove when it is destroyed.
+   *
+   * @type {Function | null}
+   *
+   * @see {AboutTranslationsParent.actorCreated}
+   * @see {AboutTranslationsParent.didDestroy}
+   */
+  #boundObserve = null;
+
+  actorCreated() {
+    this.#boundObserve = this.#observe.bind(this);
+    Services.obs.addObserver(
+      this.#boundObserve,
+      "translations:model-records-changed"
+    );
+  }
+
   didDestroy() {
+    if (this.#boundObserve) {
+      Services.obs.removeObserver(
+        this.#boundObserve,
+        "translations:model-records-changed"
+      );
+      this.#boundObserve = null;
+    }
     this.#isDestroyed = true;
+  }
+
+  #observe(subject, topic) {
+    switch (topic) {
+      case "translations:model-records-changed": {
+        this.sendAsyncMessage("AboutTranslations:RebuildTranslator");
+      }
+    }
   }
 
   async receiveMessage({ name, data }) {
@@ -25,12 +59,10 @@ export class AboutTranslationsParent extends JSWindowActorParent {
           return undefined;
         }
 
-        const { fromLanguage, toLanguage } = data;
+        const { languagePair } = data;
         try {
-          const port = await lazy.TranslationsParent.requestTranslationsPort(
-            fromLanguage,
-            toLanguage
-          );
+          const port =
+            await lazy.TranslationsParent.requestTranslationsPort(languagePair);
 
           // At the time of writing, you can't return a port via the `sendQuery` API,
           // so results can't just be returned. The `sendAsyncMessage` method must be
@@ -39,8 +71,7 @@ export class AboutTranslationsParent extends JSWindowActorParent {
           this.sendAsyncMessage(
             "AboutTranslations:SendTranslationsPort",
             {
-              fromLanguage,
-              toLanguage,
+              languagePair,
               port,
             },
             [port] // Mark the port as transferable.

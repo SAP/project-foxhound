@@ -65,7 +65,7 @@
 #include "nsContentUtils.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 #include "nsNSSComponent.h"
 #include "IPv4Parser.h"
 #include "ssl.h"
@@ -242,6 +242,7 @@ static const char* gCallbackPrefsForSocketProcess[] = {
     "network.connectivity-service.",
     "network.captive-portal-service.testMode",
     "network.socket.ip_addr_any.disabled",
+    "network.socket.attach_mock_network_layer",
     nullptr,
 };
 
@@ -990,6 +991,29 @@ nsIOService::HostnameIsLocalIPAddress(nsIURI* aURI, bool* aResult) {
 }
 
 NS_IMETHODIMP
+nsIOService::HostnameIsIPAddressAny(nsIURI* aURI, bool* aResult) {
+  NS_ENSURE_ARG_POINTER(aURI);
+
+  nsCOMPtr<nsIURI> innerURI = NS_GetInnermostURI(aURI);
+  NS_ENSURE_ARG_POINTER(innerURI);
+
+  nsAutoCString host;
+  nsresult rv = innerURI->GetAsciiHost(host);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
+
+  *aResult = false;
+
+  NetAddr addr;
+  if (NS_SUCCEEDED(addr.InitFromString(host)) && addr.IsIPAddrAny()) {
+    *aResult = true;
+  }
+
+  return NS_OK;
+}
+
+NS_IMETHODIMP
 nsIOService::HostnameIsSharedIPAddress(nsIURI* aURI, bool* aResult) {
   NS_ENSURE_ARG_POINTER(aURI);
 
@@ -1132,14 +1156,13 @@ nsresult nsIOService::NewChannelFromURIWithClientAndController(
     const Maybe<ClientInfo>& aLoadingClientInfo,
     const Maybe<ServiceWorkerDescriptor>& aController, uint32_t aSecurityFlags,
     nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags,
-    bool aSkipCheckForBrokenURLOrZeroSized, nsIChannel** aResult) {
+    nsIChannel** aResult) {
   return NewChannelFromURIWithProxyFlagsInternal(
       aURI,
       nullptr,  // aProxyURI
       0,        // aProxyFlags
       aLoadingNode, aLoadingPrincipal, aTriggeringPrincipal, aLoadingClientInfo,
-      aController, aSecurityFlags, aContentPolicyType, aSandboxFlags,
-      aSkipCheckForBrokenURLOrZeroSized, aResult);
+      aController, aSecurityFlags, aContentPolicyType, aSandboxFlags, aResult);
 }
 
 NS_IMETHODIMP
@@ -1158,11 +1181,10 @@ nsresult nsIOService::NewChannelFromURIWithProxyFlagsInternal(
     const Maybe<ClientInfo>& aLoadingClientInfo,
     const Maybe<ServiceWorkerDescriptor>& aController, uint32_t aSecurityFlags,
     nsContentPolicyType aContentPolicyType, uint32_t aSandboxFlags,
-    bool aSkipCheckForBrokenURLOrZeroSized, nsIChannel** result) {
+    nsIChannel** result) {
   nsCOMPtr<nsILoadInfo> loadInfo = new LoadInfo(
       aLoadingPrincipal, aTriggeringPrincipal, aLoadingNode, aSecurityFlags,
-      aContentPolicyType, aLoadingClientInfo, aController, aSandboxFlags,
-      aSkipCheckForBrokenURLOrZeroSized);
+      aContentPolicyType, aLoadingClientInfo, aController, aSandboxFlags);
   return NewChannelFromURIWithProxyFlagsInternal(aURI, aProxyURI, aProxyFlags,
                                                  loadInfo, result);
 }
@@ -1244,7 +1266,7 @@ nsIOService::NewChannelFromURIWithProxyFlags(
       aURI, aProxyURI, aProxyFlags, aLoadingNode, aLoadingPrincipal,
       aTriggeringPrincipal, Maybe<ClientInfo>(),
       Maybe<ServiceWorkerDescriptor>(), aSecurityFlags, aContentPolicyType, 0,
-      /* aSkipCheckForBrokenURLOrZeroSized = */ false, result);
+      result);
 }
 
 NS_IMETHODIMP
@@ -2320,6 +2342,31 @@ NS_IMETHODIMP
 nsIOService::GetSimpleURIUnknownRemoteSchemes(nsTArray<nsCString>& _retval) {
   mSimpleURIUnknownSchemes.GetRemoteSchemes(_retval);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsIOService::AddEssentialDomainMapping(const nsACString& aFrom,
+                                       const nsACString& aTo) {
+  MOZ_ASSERT(NS_IsMainThread());
+  mEssentialDomainMapping.InsertOrUpdate(aFrom, aTo);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+nsIOService::ClearEssentialDomainMapping() {
+  MOZ_ASSERT(NS_IsMainThread());
+  mEssentialDomainMapping.Clear();
+  return NS_OK;
+}
+
+bool nsIOService::GetFallbackDomain(const nsACString& aDomain,
+                                    nsACString& aFallbackDomain) {
+  MOZ_ASSERT(NS_IsMainThread());
+  if (auto entry = mEssentialDomainMapping.Lookup(aDomain)) {
+    aFallbackDomain = entry.Data();
+    return true;
+  }
+  return false;
 }
 
 }  // namespace net

@@ -1224,6 +1224,14 @@ class FinalTargetPreprocessedFiles(ContextDerived):
         ContextDerived.__init__(self, sandbox)
         self.files = files
 
+    @staticmethod
+    def get_obj_basename(f):
+        # This matches what PP_TARGETS do in config/rules.
+        basename = f.target_basename
+        if basename.endswith(".in"):
+            basename = basename[:-3]
+        return basename
+
 
 class LocalizedFiles(FinalTargetFiles):
     """Sandbox container object for LOCALIZED_FILES, which is a
@@ -1369,6 +1377,9 @@ class GeneratedFile(ContextDerived):
             ]
         else:
             self.required_during_compile = required_during_compile
+        if self.required_during_compile and self.required_before_compile:
+            self.required_before_compile += self.required_during_compile
+            self.required_during_compile = []
 
 
 class ChromeManifestEntry(ContextDerived):

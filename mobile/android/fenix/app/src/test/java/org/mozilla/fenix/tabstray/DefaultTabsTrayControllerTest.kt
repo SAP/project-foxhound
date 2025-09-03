@@ -44,7 +44,6 @@ import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotEquals
@@ -72,6 +71,7 @@ import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.ext.maxActiveTime
 import org.mozilla.fenix.ext.potentialInactiveTabs
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.utils.Settings
@@ -113,7 +113,7 @@ class DefaultTabsTrayControllerTest {
     private val coroutinesTestRule: MainCoroutineRule = MainCoroutineRule()
     private val testDispatcher = coroutinesTestRule.testDispatcher
 
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(gleanTestRule).around(coroutinesTestRule)
@@ -165,6 +165,7 @@ class DefaultTabsTrayControllerTest {
         verifyOrder {
             profiler.getProfilerTime()
             tabsUseCases.addTab.invoke(
+                url = "about:home",
                 startLoading = false,
                 private = true,
             )
@@ -213,6 +214,7 @@ class DefaultTabsTrayControllerTest {
         verifyOrder {
             profiler.getProfilerTime()
             tabsUseCases.addTab.invoke(
+                url = "about:home",
                 startLoading = false,
                 private = false,
             )
@@ -313,24 +315,6 @@ class DefaultTabsTrayControllerTest {
         } finally {
             unmockkStatic("mozilla.components.browser.state.selector.SelectorsKt")
         }
-    }
-
-    @Test
-    fun `WHEN handleTrayScrollingToPosition is called with smoothScroll=true THEN it scrolls to that position with smoothScroll`() {
-        val pagePosition = 3
-
-        every { trayStore.state.selectedPage } returns Page.positionToPage(pagePosition)
-
-        var selectTabPositionInvoked = false
-        createController(
-            selectTabPosition = { position, smoothScroll ->
-                assertEquals(3, position)
-                assertTrue(smoothScroll)
-                selectTabPositionInvoked = true
-            },
-        ).handleTrayScrollingToPosition(position = pagePosition, smoothScroll = true)
-
-        assertTrue(selectTabPositionInvoked)
     }
 
     @Test
@@ -772,7 +756,7 @@ class DefaultTabsTrayControllerTest {
         trayStore.dispatch(TabsTrayAction.AddSelectTab(normalTab))
         trayStore.waitUntilIdle()
 
-        controller.handleTabSelected(inactiveTab, TrayPagerAdapter.INACTIVE_TABS_FEATURE_NAME)
+        controller.handleTabSelected(inactiveTab, INACTIVE_TABS_FEATURE_NAME)
 
         middleware.assertLastAction(TabsTrayAction.AddSelectTab::class) {
             assertEquals(normalTab, it.tab)
@@ -915,7 +899,7 @@ class DefaultTabsTrayControllerTest {
 
         assertNotNull(TabsTray.openInactiveTab.testGetValue())
 
-        verify { controller.handleTabSelected(tab, TrayPagerAdapter.INACTIVE_TABS_FEATURE_NAME) }
+        verify { controller.handleTabSelected(tab, INACTIVE_TABS_FEATURE_NAME) }
     }
 
     @Test
@@ -936,7 +920,7 @@ class DefaultTabsTrayControllerTest {
 
         assertNotNull(TabsTray.closeInactiveTab.testGetValue())
 
-        verify { controller.handleTabDeletion(tab.id, TrayPagerAdapter.INACTIVE_TABS_FEATURE_NAME) }
+        verify { controller.handleTabDeletion(tab.id, INACTIVE_TABS_FEATURE_NAME) }
     }
 
     @Test
@@ -979,7 +963,7 @@ class DefaultTabsTrayControllerTest {
                 url = "www.mozilla.com",
             ),
         )
-        val source = TrayPagerAdapter.INACTIVE_TABS_FEATURE_NAME
+        val source = INACTIVE_TABS_FEATURE_NAME
 
         every { controller.handleNavigateToBrowser() } just runs
 
@@ -1341,7 +1325,6 @@ class DefaultTabsTrayControllerTest {
 
     private fun createController(
         navigateToHomeAndDeleteSession: (String) -> Unit = { },
-        selectTabPosition: (Int, Boolean) -> Unit = { _, _ -> },
         dismissTray: () -> Unit = { },
         showUndoSnackbarForTab: (Boolean) -> Unit = { _ -> },
         showUndoSnackbarForInactiveTab: (Int) -> Unit = { _ -> },
@@ -1366,7 +1349,6 @@ class DefaultTabsTrayControllerTest {
             closeSyncedTabsUseCases = closeSyncedTabsUseCases,
             collectionStorage = collectionStorage,
             ioDispatcher = testDispatcher,
-            selectTabPosition = selectTabPosition,
             dismissTray = dismissTray,
             showUndoSnackbarForTab = showUndoSnackbarForTab,
             showUndoSnackbarForInactiveTab = showUndoSnackbarForInactiveTab,

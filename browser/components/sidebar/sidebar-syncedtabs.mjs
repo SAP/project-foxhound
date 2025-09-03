@@ -40,6 +40,7 @@ class SyncedTabsInSidebar extends SidebarPage {
       Glean.syncedTabs.sidebarToggle.record({
         opened: true,
         synced_tabs_loaded: this.controller.isSyncedTabsLoaded,
+        version: "new",
       })
     );
     this.addContextMenuListeners();
@@ -52,6 +53,7 @@ class SyncedTabsInSidebar extends SidebarPage {
     Glean.syncedTabs.sidebarToggle.record({
       opened: false,
       synced_tabs_loaded: this.controller.isSyncedTabsLoaded,
+      version: "new",
     });
     this.removeContextMenuListeners();
     this.removeSidebarFocusedListeners();
@@ -144,15 +146,15 @@ class SyncedTabsInSidebar extends SidebarPage {
         .descriptionLink=${ifDefined(descriptionLink)}
         class="empty-state synced-tabs error"
         isSelectedTab
-        mainImageUrl="${ifDefined(mainImageUrl)}"
+        mainImageUrl=${ifDefined(mainImageUrl)}
         id="empty-container"
       >
         <moz-button
           type="primary"
           slot="primary-action"
           ?hidden=${!buttonLabel}
-          data-l10n-id="${ifDefined(buttonLabel)}"
-          data-action="${action}"
+          data-l10n-id=${ifDefined(buttonLabel)}
+          data-action=${action}
           @click=${e => this.controller.handleEvent(e)}
         ></moz-button>
       </fxview-empty-state>

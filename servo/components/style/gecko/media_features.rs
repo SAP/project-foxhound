@@ -11,10 +11,8 @@ use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatur
 use crate::queries::values::Orientation;
 use crate::values::computed::{CSSPixelLength, Context, Ratio, Resolution};
 use crate::values::specified::color::ForcedColors;
-use crate::values::AtomString;
 use app_units::Au;
 use euclid::default::Size2D;
-use selectors::kleene_value::KleeneValue;
 
 fn device_size(device: &Device) -> Size2D<Au> {
     let mut width = 0;
@@ -617,13 +615,6 @@ fn eval_moz_overlay_scrollbars(context: &Context) -> bool {
     unsafe { bindings::Gecko_MediaFeatures_UseOverlayScrollbars(context.device().document()) }
 }
 
-fn eval_moz_bool_pref(_: &Context, pref: Option<&AtomString>) -> KleeneValue {
-    let Some(pref) = pref else {
-        return KleeneValue::False;
-    };
-    KleeneValue::from(unsafe { bindings::Gecko_ComputeBoolPrefMediaQuery(pref.as_ptr()) })
-}
-
 fn get_lnf_int(int_id: i32) -> i32 {
     unsafe { bindings::Gecko_GetLookAndFeelInt(int_id) }
 }
@@ -936,12 +927,6 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 61] = [
         Evaluator::BoolInteger(eval_moz_overlay_scrollbars),
         FeatureFlags::CHROME_AND_UA_ONLY,
     ),
-    feature!(
-        atom!("-moz-bool-pref"),
-        AllowsRanges::No,
-        Evaluator::String(eval_moz_bool_pref),
-        FeatureFlags::CHROME_AND_UA_ONLY,
-    ),
     lnf_int_feature!(
         atom!("-moz-scrollbar-start-backward"),
         ScrollArrowStyle,
@@ -970,6 +955,7 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 61] = [
         WindowsAccentColorInTitlebar
     ),
     lnf_int_feature!(atom!("-moz-windows-mica"), WindowsMica),
+    lnf_int_feature!(atom!("-moz-windows-mica-popups"), WindowsMicaPopups),
     lnf_int_feature!(atom!("-moz-swipe-animation-enabled"), SwipeAnimationEnabled),
     lnf_int_feature!(atom!("-moz-gtk-csd-available"), GTKCSDAvailable),
     lnf_int_feature!(atom!("-moz-gtk-csd-transparency-available"), GTKCSDTransparencyAvailable),

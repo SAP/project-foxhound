@@ -8,6 +8,7 @@
 #define ETWTools_h
 
 #include "mozilla/BaseProfilerMarkers.h"
+#include "mozilla/Flow.h"
 #include "mozilla/TimeStamp.h"
 #include "nsString.h"
 
@@ -30,6 +31,10 @@ TRACELOGGING_DECLARE_PROVIDER(kFirefoxTraceLoggingProvider);
 
 void Init();
 void Shutdown();
+static inline bool IsProfilingGroup(
+    mozilla::MarkerSchema::ETWMarkerGroup aGroup) {
+  return gETWCollectionMask & uint64_t(aGroup);
+}
 
 template <typename T, typename = void>
 struct MarkerHasPayload : std::false_type {};
@@ -203,6 +208,13 @@ static inline void CreateDataDescForPayloadNonPOD(
     const mozilla::detail::nsTStringRepr<T>& aPayload) {
   EventDataDescCreate(&aDescriptor, aPayload.BeginReading(),
                       (aPayload.Length() + 1) * sizeof(T));
+}
+
+static inline void CreateDataDescForPayloadNonPOD(
+    PayloadBuffer& aBuffer, EVENT_DATA_DESCRIPTOR& aDescriptor,
+    const Flow& aFlow) {
+  // TODO: we could use a custom schema à la TraceLoggingCustom
+  CreateDataDescForPayloadPOD(aBuffer, aDescriptor, aFlow.Id());
 }
 
 static inline void CreateDataDescForPayloadNonPOD(
@@ -402,6 +414,9 @@ void OutputMarkerSchema(void* aContext, MarkerType aMarkerType,
 namespace ETW {
 static inline void Init() {}
 static inline void Shutdown() {}
+static inline bool IsProfilingGroup(mozilla::MarkerSchema::ETWMarkerGroup) {
+  return false;
+}
 template <typename MarkerType, typename... PayloadArguments>
 static inline void EmitETWMarker(const mozilla::ProfilerString8View& aName,
                                  const mozilla::MarkerCategory& aCategory,

@@ -50,6 +50,7 @@ class AutoCallGCCallbacks;
 class AutoGCSession;
 class AutoHeapSession;
 class AutoTraceSession;
+class BufferAllocator;
 struct FinalizePhase;
 class MarkingValidator;
 struct MovingTracer;
@@ -476,8 +477,8 @@ class GCRuntime {
   void removeFinalizeCallback(JSFinalizeCallback callback);
   void setHostCleanupFinalizationRegistryCallback(
       JSHostCleanupFinalizationRegistryCallback callback, void* data);
-  void callHostCleanupFinalizationRegistryCallback(
-      JSFunction* doCleanup, GlobalObject* incumbentGlobal);
+  void callHostCleanupFinalizationRegistryCallback(JSFunction* doCleanup,
+                                                   JSObject* hostDefinedData);
   [[nodiscard]] bool addWeakPointerZonesCallback(
       JSWeakPointerZonesCallback callback, void* data);
   void removeWeakPointerZonesCallback(JSWeakPointerZonesCallback callback);
@@ -603,6 +604,8 @@ class GCRuntime {
   // the given kind. (TraceKind::Null means to ignore the kind.)
   bool isPointerWithinTenuredCell(
       void* ptr, JS::TraceKind traceKind = JS::TraceKind::Null);
+  // Crawl the heap to check whether an arbitary pointer is within a buffer.
+  bool isPointerWithinBufferAlloc(void* ptr);
 
 #ifdef DEBUG
   bool hasZone(Zone* target);
@@ -612,7 +615,8 @@ class GCRuntime {
   void queueUnusedLifoBlocksForFree(LifoAlloc* lifo);
   void queueAllLifoBlocksForFreeAfterMinorGC(LifoAlloc* lifo);
   void queueBuffersForFreeAfterMinorGC(
-      Nursery::BufferSet& buffers, Nursery::StringBufferVector& stringBuffers);
+      Nursery::BufferSet& buffers, Nursery::StringBufferVector& stringBuffers,
+      Nursery::LargeAllocList& largeAllocs);
 
   // Public here for ReleaseArenaLists and FinalizeTypedArenas.
   void releaseArena(Arena* arena, const AutoLockGC& lock);
@@ -679,12 +683,13 @@ class GCRuntime {
 #endif
 
  private:
-  enum IncrementalResult { ResetIncremental = 0, Ok };
+  enum class IncrementalResult { Reset = 0, Abort, Ok };
 
   bool hasBuffersForBackgroundFree() const {
     return !lifoBlocksToFree.ref().isEmpty() ||
            !buffersToFreeAfterMinorGC.ref().empty() ||
-           !stringBuffersToReleaseAfterMinorGC.ref().empty();
+           !stringBuffersToReleaseAfterMinorGC.ref().empty() ||
+           !largeBuffersToFreeAfterMinorGC.ref().isEmpty();
   }
 
   // Returns false on failure without raising an exception.
@@ -797,7 +802,7 @@ class GCRuntime {
                              const mozilla::TimeStamp& currentTime,
                              JS::GCReason reason, bool canAllocateMoreCode,
                              bool isActiveCompartment);
-  void discardJITCodeForGC();
+  void maybeDiscardJitCodeForGC();
   void startBackgroundFreeAfterMinorGC();
   void relazifyFunctionsForShrinkingGC();
   void purgePropMapTablesForShrinkingGC();
@@ -1114,9 +1119,6 @@ class GCRuntime {
 
   mozilla::Atomic<size_t, mozilla::ReleaseAcquire> numActiveZoneIters;
 
-  /* During shutdown, the GC needs to clean up every possible object. */
-  MainThreadData<bool> cleanUpEverything;
-
   /*
    * The gray bits can become invalid if UnmarkGray overflows the stack. A
    * full GC will reset this bit, since it fills in all the gray bits.
@@ -1193,10 +1195,6 @@ class GCRuntime {
   // thread.
   MainThreadData<bool> useBackgroundThreads;
 
-  // Whether we have already discarded JIT code for all collected zones in this
-  // slice.
-  MainThreadData<bool> haveDiscardedJITCodeThisSlice;
-
 #ifdef DEBUG
   /* Shutdown has started. Further collections must be shutdown collections. */
   MainThreadData<bool> hadShutdownGC;
@@ -1223,6 +1221,11 @@ class GCRuntime {
   HelperThreadLockData<Nursery::BufferSet> buffersToFreeAfterMinorGC;
   HelperThreadLockData<Nursery::StringBufferVector>
       stringBuffersToReleaseAfterMinorGC;
+  HelperThreadLockData<SlimLinkedList<LargeBuffer>>
+      largeBuffersToFreeAfterMinorGC;
+
+  /* The number of the minor GC peformed at the start of major GC. */
+  MainThreadData<uint64_t> initialMinorGCNumber;
 
   /* Index of current sweep group (for stats). */
   MainThreadData<unsigned> sweepGroupIndex;
@@ -1419,6 +1422,14 @@ class GCRuntime {
 
   /* Lock used to synchronise access to delayed marking state. */
   Mutex delayedMarkingLock MOZ_UNANNOTATED;
+
+  /*
+   * Lock used by buffer allocators to synchronise data passed back to the main
+   * thread by background sweeping.
+   */
+  Mutex bufferAllocatorLock MOZ_UNANNOTATED;
+  friend class BufferAllocator;
+  friend class AutoLock;
 
   friend class BackgroundSweepTask;
   friend class BackgroundFreeTask;

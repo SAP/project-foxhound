@@ -560,7 +560,7 @@ ContentPrefService2.prototype = {
     // Only execute if we have statements to run. stmts is empty for clearing
     // only private browsing data.
     let queryPromise = Promise.resolve([
-      Ci.nsIContentPrefService2.COMPLETE_OK,
+      Ci.nsIContentPrefCallback2.COMPLETE_OK,
       false,
     ]);
 
@@ -721,7 +721,7 @@ ContentPrefService2.prototype = {
     // Only execute if we have statements to run. stmts is empty for clearing
     // only private browsing data.
     let queryPromise = Promise.resolve([
-      Ci.nsIContentPrefService2.COMPLETE_OK,
+      Ci.nsIContentPrefCallback2.COMPLETE_OK,
       false,
     ]);
     if (stmts.length) {
@@ -829,7 +829,7 @@ ContentPrefService2.prototype = {
     // Only execute if we have statements to run. stmts is empty for clearing
     // only private browsing data.
     let queryPromise = Promise.resolve([
-      Ci.nsIContentPrefService2.COMPLETE_OK,
+      Ci.nsIContentPrefCallback2.COMPLETE_OK,
       false,
     ]);
 
@@ -962,7 +962,7 @@ ContentPrefService2.prototype = {
     // Only execute if we have statements to run. stmts is empty for clearing
     // only private browsing data.
     let queryPromise = Promise.resolve([
-      Ci.nsIContentPrefService2.COMPLETE_OK,
+      Ci.nsIContentPrefCallback2.COMPLETE_OK,
       false,
     ]);
 
@@ -1091,6 +1091,13 @@ ContentPrefService2.prototype = {
     }
   },
 
+  _groupForDataURI(groupStr) {
+    // Do not process a massive string.
+    groupStr = groupStr.substring(0, 256);
+    // Leave only the mimetype, and use text/plain if no mimetype is provided.
+    return groupStr.match(/^data:[^;,]*/i)[0].replace(/:$/, ":text/plain");
+  },
+
   /**
    * Parses the domain (the "group", to use the database's term) from the given
    * string.
@@ -1105,8 +1112,18 @@ ContentPrefService2.prototype = {
     if (!groupStr) {
       return null;
     }
+    // Check for 'data:' without URI parsing because parsing large data URIs
+    // is expensive.
+    if (groupStr.startsWith("data:")) {
+      return this._groupForDataURI(groupStr);
+    }
     try {
       var groupURI = Services.io.newURI(groupStr);
+      // Check for 'data' again because URLs with leading whitespace or
+      // similar will have skipped the previous check.
+      if (groupURI.schemeIs("data")) {
+        return this._groupForDataURI(groupURI.spec);
+      }
       groupStr = HostnameGrouper_group(groupURI);
     } catch (err) {}
     return groupStr.substring(

@@ -11,6 +11,8 @@
 #include "VideoUtils.h"
 #include "js/experimental/TypedData.h"
 #include "mozilla/Assertions.h"
+#include "mozilla/StaticPrefs_dom.h"
+#include "mozilla/StaticPrefs_media.h"
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "mozilla/dom/VideoColorSpaceBinding.h"
 #include "mozilla/dom/VideoFrameBinding.h"
@@ -55,6 +57,10 @@ nsTArray<nsCString> GuessContainers(const nsAString& aCodec) {
 
   if (IsH264CodecString(aCodec)) {
     return {"mp4"_ns, "3gpp"_ns, "3gpp2"_ns, "3gp2"_ns};
+  }
+
+  if (IsH265CodecString(aCodec)) {
+    return {"mp4"_ns};
   }
 
   if (IsAACCodecString(aCodec)) {
@@ -602,6 +608,10 @@ Maybe<CodecType> CodecStringToCodecType(const nsAString& aCodecString) {
       StringBeginsWith(aCodecString, u"avc3"_ns)) {
     return Some(CodecType::H264);
   }
+  if (StringBeginsWith(aCodecString, u"hev1"_ns) ||
+      StringBeginsWith(aCodecString, u"hvc1"_ns)) {
+    return Some(CodecType::H265);
+  }
   return Nothing();
 }
 
@@ -618,6 +628,11 @@ bool IsSupportedVideoCodec(const nsAString& aCodec) {
   // The only codec string accepted for vp8 is "vp8"
   if (!IsVP9CodecString(aCodec) && !IsH264CodecString(aCodec) &&
       !IsAV1CodecString(aCodec) && !aCodec.EqualsLiteral("vp8")) {
+    if (IsH265CodecString(aCodec)) {
+      // H265 is supported only on MacOS in Nightly for now.
+      return StaticPrefs::dom_media_webcodecs_h265_enabled() &&
+             StaticPrefs::media_hevc_enabled() && IsOnMacOS();
+    }
     return false;
   }
 

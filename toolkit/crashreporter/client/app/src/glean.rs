@@ -4,7 +4,7 @@
 
 //! Glean telemetry integration.
 
-use crate::config::Config;
+use crate::config::{buildid, Config};
 use glean::{ClientInfoMetrics, Configuration, ConfigurationBuilder};
 
 const APP_ID: &str = if cfg!(mock) {
@@ -12,6 +12,7 @@ const APP_ID: &str = if cfg!(mock) {
 } else {
     "firefox.crashreporter"
 };
+const APP_DISPLAY_VERSION: &str = env!("CARGO_PKG_VERSION");
 const TELEMETRY_SERVER: &str = if cfg!(mock) {
     "https://incoming.glean.example.com"
 } else {
@@ -23,6 +24,12 @@ const TELEMETRY_SERVER: &str = if cfg!(mock) {
 /// When mocking, this should be called on a thread where the mock data is present.
 #[cfg_attr(test, allow(dead_code))]
 pub fn init(cfg: &Config) {
+    // Since Glean v63.0.0, custom pings are required to be instantiated prior to Glean init
+    // in order to ensure they are enabled and able to collect data. This is due to the data
+    // collection state being determined at the ping level now instead of just by the global
+    // Glean collection enabled flag. See Bug 1934931 for more information.
+    _ = &*crash;
+
     glean::initialize(config(cfg), client_info_metrics(cfg));
 }
 
@@ -48,8 +55,8 @@ fn glean_data_dir(_cfg: &Config) -> ::std::path::PathBuf {
 
 fn client_info_metrics(cfg: &Config) -> ClientInfoMetrics {
     glean::ClientInfoMetrics {
-        app_build: mozbuild::config::MOZ_BUILDID.into(),
-        app_display_version: env!("CARGO_PKG_VERSION").into(),
+        app_build: buildid().unwrap_or(APP_DISPLAY_VERSION).into(),
+        app_display_version: APP_DISPLAY_VERSION.into(),
         channel: None,
         locale: cfg.strings.as_ref().map(|s| s.locale()),
     }
@@ -123,6 +130,13 @@ mod test {
             static GLOBAL_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
             let lock = GLOBAL_LOCK.lock().unwrap();
+
+            // Since Glean v63.0.0, custom pings are required to be instantiated prior to Glean init
+            // in order to ensure they are enabled and able to collect data. This is due to the data
+            // collection state being determined at the ping level now instead of just by the global
+            // Glean collection enabled flag. See Bug 1934931 for more information.
+            _ = &*crash;
+
             glean::test_reset_glean(config(cfg), client_info_metrics(cfg), true);
             GleanTest { _guard: lock }
         }

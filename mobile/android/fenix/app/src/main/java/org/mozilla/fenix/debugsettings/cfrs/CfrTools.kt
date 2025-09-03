@@ -18,32 +18,40 @@ import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.lib.state.ext.observeAsState
-import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.compose.SwitchWithLabel
-import org.mozilla.fenix.compose.annotation.FlexibleWindowLightDarkPreview
 import org.mozilla.fenix.compose.button.SecondaryButton
+import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
  * CFR Tools UI that allows for the CFR states to be reset.
  *
  * @param cfrToolsStore [CfrToolsStore] used to access [CfrToolsState].
+ * @param isNavigationBarShown Whether the navigation bar is shown or not navigation bar
+ * CFR toggles will be shown or not.
  */
 @Composable
 fun CfrTools(
     cfrToolsStore: CfrToolsStore,
+    isNavigationBarShown: Boolean = LocalContext.current.shouldAddNavigationBar(),
 ) {
     Column(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(vertical = FirefoxTheme.space.small),
-        verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.small),
+            .padding(vertical = FirefoxTheme.layout.space.dynamic400),
+        verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic400),
     ) {
-        ResetCfrTool(cfrToolsStore = cfrToolsStore)
+        ResetCfrTool(
+            cfrToolsStore = cfrToolsStore,
+            shouldAddNavigationBar = isNavigationBarShown,
+        )
     }
 }
 
@@ -51,6 +59,7 @@ fun CfrTools(
 @Composable
 private fun ResetCfrTool(
     cfrToolsStore: CfrToolsStore,
+    shouldAddNavigationBar: Boolean,
 ) {
     val cfrPreferences by cfrToolsStore.observeAsState(initialValue = cfrToolsStore.state) { state ->
         state
@@ -59,12 +68,12 @@ private fun ResetCfrTool(
     Column(
         modifier = Modifier
             .fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.small),
+        verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic400),
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = FirefoxTheme.space.small),
+                .padding(horizontal = FirefoxTheme.layout.space.dynamic400),
         ) {
             Text(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_title),
@@ -72,7 +81,7 @@ private fun ResetCfrTool(
                 style = FirefoxTheme.typography.headline5,
             )
 
-            Spacer(modifier = Modifier.height(height = FirefoxTheme.space.xxSmall))
+            Spacer(modifier = Modifier.height(height = FirefoxTheme.layout.space.dynamic100))
 
             Text(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_description),
@@ -80,7 +89,7 @@ private fun ResetCfrTool(
                 style = FirefoxTheme.typography.caption,
             )
 
-            Spacer(modifier = Modifier.height(height = FirefoxTheme.space.xSmall))
+            Spacer(modifier = Modifier.height(height = FirefoxTheme.layout.space.dynamic150))
 
             SecondaryButton(
                 text = stringResource(R.string.debug_drawer_cfr_tools_reset_cfr_timestamp),
@@ -91,23 +100,13 @@ private fun ResetCfrTool(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.xSmall),
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic150),
         ) {
             CfrSectionTitle(
                 text = stringResource(R.string.debug_drawer_cfr_tools_homepage_cfr_title),
             )
 
-            CfrToggle(
-                title = stringResource(R.string.debug_drawer_cfr_tools_private_mode_title),
-                description = stringResource(R.string.debug_drawer_cfr_tools_private_mode_description),
-                checked = cfrPreferences.addPrivateTabToHomeShown,
-                enabled = false,
-                onCfrToggle = {
-                    cfrToolsStore.dispatch(CfrToolsAction.AddPrivateTabToHomeShownToggled)
-                },
-            )
-
-            if (FeatureFlags.navigationToolbarEnabled) {
+            if (shouldAddNavigationBar) {
                 CfrToggle(
                     title = stringResource(R.string.debug_drawer_cfr_tools_homepage_nav_toolbar_title),
                     description = stringResource(R.string.debug_drawer_cfr_tools_homepage_nav_toolbar_description),
@@ -117,6 +116,16 @@ private fun ResetCfrTool(
                     },
                 )
             }
+
+            CfrToggle(
+                title = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_title),
+                description = stringResource(R.string.debug_drawer_cfr_tools_homepage_searchbar_description),
+                checked = cfrPreferences.homepageSearchBarShown,
+                enabled = FxNimbus.features.encourageSearchCfr.value().enabled,
+                onCfrToggle = {
+                    cfrToolsStore.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
+                },
+            )
 
             CfrToggle(
                 title = stringResource(R.string.debug_drawer_cfr_tools_homepage_sync_title),
@@ -130,7 +139,7 @@ private fun ResetCfrTool(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.xSmall),
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic150),
         ) {
             CfrSectionTitle(
                 text = stringResource(R.string.debug_drawer_cfr_tools_tabs_tray_cfr_title),
@@ -157,13 +166,13 @@ private fun ResetCfrTool(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.xSmall),
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic150),
         ) {
             CfrSectionTitle(
                 text = stringResource(R.string.debug_drawer_cfr_tools_toolbar_cfr_title),
             )
 
-            if (FeatureFlags.navigationToolbarEnabled) {
+            if (shouldAddNavigationBar) {
                 CfrToggle(
                     title = stringResource(R.string.debug_drawer_cfr_tools_navigation_buttons_title),
                     description = stringResource(R.string.debug_drawer_cfr_tools_navigation_buttons_description),
@@ -178,7 +187,7 @@ private fun ResetCfrTool(
 
         Column(
             modifier = Modifier.fillMaxWidth(),
-            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.space.xSmall),
+            verticalArrangement = Arrangement.spacedBy(FirefoxTheme.layout.space.dynamic150),
         ) {
             CfrSectionTitle(
                 text = stringResource(R.string.debug_drawer_cfr_tools_other_cfr_title),
@@ -194,7 +203,7 @@ private fun ResetCfrTool(
             )
         }
 
-        Spacer(modifier = Modifier.height(FirefoxTheme.space.large))
+        Spacer(modifier = Modifier.height(FirefoxTheme.layout.space.dynamic400))
     }
 }
 
@@ -218,7 +227,7 @@ private fun CfrToggle(
     SwitchWithLabel(
         label = title,
         checked = checked,
-        modifier = Modifier.padding(horizontal = FirefoxTheme.space.small),
+        modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic400),
         description = description,
         enabled = enabled,
     ) {
@@ -237,7 +246,7 @@ private fun CfrSectionTitle(
 ) {
     Text(
         text = text,
-        modifier = Modifier.padding(horizontal = FirefoxTheme.space.small),
+        modifier = Modifier.padding(horizontal = FirefoxTheme.layout.space.dynamic400),
         color = FirefoxTheme.colors.textAccent,
         style = FirefoxTheme.typography.headline6,
     )
@@ -254,6 +263,7 @@ private fun CfrToolsPreview() {
         ) {
             CfrTools(
                 cfrToolsStore = CfrToolsStore(),
+                isNavigationBarShown = true,
             )
         }
     }

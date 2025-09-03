@@ -757,6 +757,11 @@ impl BatchBuilder {
         prim_header_index: PrimitiveHeaderIndex,
         resource_address: i32,
     ) {
+        assert!(
+            !(brush_flags.contains(BrushFlags::NORMALIZED_UVS)
+                && features.contains(BatchFeatures::REPETITION)),
+            "Normalized UVs are not supported with repetition."
+        );
         let instance = BrushInstance {
             segment_index,
             edge_flags,
@@ -1423,6 +1428,12 @@ impl BatchBuilder {
             }
             PrimitiveInstanceKind::Picture { pic_index, .. } => {
                 let picture = &ctx.prim_store.pictures[pic_index.0];
+                if let Some(snapshot) = picture.snapshot {
+                    if snapshot.detached {
+                        return;
+                    }
+                }
+
                 let blend_mode = BlendMode::PremultipliedAlpha;
                 let prim_cache_address = gpu_cache.get_address(&ctx.globals.default_image_handle);
 

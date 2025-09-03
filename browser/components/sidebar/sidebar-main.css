@@ -3,7 +3,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "sidebar.verticalTabs") {
+@media -moz-pref("sidebar.verticalTabs") {
   :host {
     --button-size-icon: var(--tab-min-height);
     --button-min-height: var(--button-size-icon);
@@ -11,20 +11,29 @@
   }
 }
 
+:host {
+  width: 100%;
+}
+
 .wrapper {
   display: grid;
   grid-template-rows: auto min-content min-content;
   box-sizing: border-box;
   height: 100%;
+  max-width: 100%;
   padding-inline: 0;
 
   /* stylelint-disable-next-line media-query-no-invalid */
-  @media (-moz-bool-pref: "sidebar.verticalTabs") {
+  @media -moz-pref("sidebar.verticalTabs") {
     :host([expanded]) & {
       /* TODO: Should this be some other pixel value between 5/6? Need to be careful of Linux where font size is larger */
       --tab-pinned-horizontal-count: 5;
       /* TODO: These --space-* tokens should use semantic names shared with tabs.css */
-      min-width: calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-pinned-container-margin-inline-expanded) + 1px);
+      width: calc(var(--tab-pinned-horizontal-count) * var(--tab-pinned-min-width-expanded) + 2 * var(--tab-pinned-container-margin-inline-expanded) + 1px);
+    }
+
+    :host([customWidth]) & {
+      width: 100%;
     }
   }
 }
@@ -32,8 +41,9 @@
 .actions-list {
   display: flex;
   flex-direction: column;
-  justify-content: center;
   align-items: start;
+  max-width: 100%;
+  overflow-x: hidden;
 
   > moz-button {
     --button-icon-fill: var(--toolbarbutton-icon-fill);
@@ -42,10 +52,6 @@
   > moz-button:not(.tools-overflow) {
     --button-outer-padding-inline: var(--space-medium);
     --button-outer-padding-block: var(--space-xxsmall);
-
-    &::part(button) {
-      height: var(--tab-min-height);
-    }
 
     &:first-of-type {
       --button-outer-padding-block-start: var(--space-small);
@@ -65,25 +71,16 @@
 
 .tools-and-extensions[orientation="horizontal"] {
   :host([expanded]) & {
-    /* button width + extra inline padding to extend to the edge of sidebar + inline padding between adjacent buttons */
-    --first-last-button-width: calc(var(--button-size-icon) + var(--space-medium) + var(--space-xxsmall));
-    display: grid;
-    grid-template-columns: var(--first-last-button-width) repeat(4, calc(var(--button-size-icon) + var(--space-xsmall))) var(--first-last-button-width);
-  }
+    display: flex;
+    flex-wrap: wrap-reverse;
+    flex-direction: row;
+    justify-content: flex-start;
+    gap: var(--space-xxsmall);
+    padding-inline: var(--space-medium);
+    padding-block-end: var(--space-small);
 
-  > moz-button.tools-overflow {
-    width: min-content;
-    --button-outer-padding-inline: var(--space-xxsmall);
-    --button-outer-padding-block: var(--space-xxsmall);
-
-    /* First button in every row */
-    &:nth-of-type(6n + 1) {
-      --button-outer-padding-inline-start: var(--space-medium);
-    }
-
-    /* Last button in every row */
-    &:nth-of-type(6n) {
-      --button-outer-padding-inline-end: var(--space-medium);
+    .tools-overflow {
+      width: unset;
     }
   }
 }
@@ -92,15 +89,8 @@
   --button-outer-padding-block-end: var(--space-medium);
 }
 
-/* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "sidebar.verticalTabs") {
-  .tools-and-extensions > moz-button:last-of-type {
-    --button-outer-padding-block-end: var(--space-medium);
-  }
-}
-
 @media (prefers-reduced-motion: no-preference) {
-  moz-button::part(label) {
+  moz-button::part(moz-button-label) {
     opacity: 0;
     transition: opacity 300ms ease-in-out;
   }
@@ -116,8 +106,11 @@
     padding-inline: calc((var(--button-size-icon) - var(--icon-size-default)) / 2 - var(--border-width));
   }
 
-  &::part(label) {
+  &::part(moz-button-label) {
     opacity: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 }
 

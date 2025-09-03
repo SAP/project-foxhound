@@ -3,28 +3,24 @@
 
 "use strict";
 
-const { TopSites, DEFAULT_TOP_SITES } = ChromeUtils.importESModule(
-  "resource:///modules/TopSites.sys.mjs"
-);
+const { TopSites, insertPinned, DEFAULT_TOP_SITES } =
+  ChromeUtils.importESModule("resource:///modules/topsites/TopSites.sys.mjs");
 
 const { actionTypes: at } = ChromeUtils.importESModule(
-  "resource://activity-stream/common/Actions.mjs"
+  "resource://newtab/common/Actions.mjs"
 );
 
 ChromeUtils.defineESModuleGetters(this, {
-  FilterAdult: "resource://activity-stream/lib/FilterAdult.sys.mjs",
+  FilterAdult: "resource:///modules/FilterAdult.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  shortURL: "resource://activity-stream/lib/ShortURL.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
   PlacesUtils: "resource://gre/modules/PlacesUtils.sys.mjs",
-  Screenshots: "resource://activity-stream/lib/Screenshots.sys.mjs",
   SearchService: "resource://gre/modules/SearchService.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
-  TOP_SITES_DEFAULT_ROWS: "resource://activity-stream/common/Reducers.sys.mjs",
-  TOP_SITES_MAX_SITES_PER_ROW:
-    "resource://activity-stream/common/Reducers.sys.mjs",
+  TOP_SITES_DEFAULT_ROWS: "resource:///modules/topsites/constants.mjs",
+  TOP_SITES_MAX_SITES_PER_ROW: "resource:///modules/topsites/constants.mjs",
 });
 
 const FAKE_FAVICON = "data987";
@@ -36,7 +32,6 @@ const FAKE_LINKS = new Array(2 * TOP_SITES_MAX_SITES_PER_ROW)
     frecency: FAKE_FRECENCY,
     url: `http://www.site${i}.com`,
   }));
-const FAKE_SCREENSHOT = "data123";
 
 function FakeTippyTopProvider() {}
 FakeTippyTopProvider.prototype = {
@@ -134,10 +129,6 @@ add_setup(async () => {
       );
     });
 
-  sandbox.stub(Screenshots, "getScreenshotForURL").resolves(FAKE_SCREENSHOT);
-  sandbox.spy(Screenshots, "maybeCacheScreenshot");
-  sandbox.stub(Screenshots, "_shouldGetScreenshots").returns(true);
-
   registerCleanupFunction(() => {
     sandbox.restore();
   });
@@ -212,7 +203,7 @@ add_task(async function test_refreshDefaults() {
   let [site] = DEFAULT_TOP_SITES;
   Assert.equal(
     site.hostname,
-    shortURL(site),
+    NewTabUtils.shortURL(site),
     "Lone top site should have the right hostname."
   );
 
@@ -282,7 +273,7 @@ add_task(async function test_getLinksWithDefaults() {
 
   const reference = FAKE_LINKS.map(site =>
     Object.assign({}, site, {
-      hostname: shortURL(site),
+      hostname: NewTabUtils.shortURL(site),
       typedBonus: true,
     })
   );
@@ -327,7 +318,7 @@ add_task(async function test_getLinksWithDefaults_caching() {
   const url = "www.myonlytopsite.com";
   const topsite = {
     frecency: FAKE_FRECENCY,
-    hostname: shortURL({ url }),
+    hostname: NewTabUtils.shortURL({ url }),
     typedBonus: true,
     url,
   };
@@ -398,7 +389,7 @@ add_task(async function test_getLinksWithDefaults_adds_defaults() {
 
   let reference = [...TEST_LINKS, ...DEFAULT_TOP_SITES].map(s =>
     Object.assign({}, s, {
-      hostname: shortURL(s),
+      hostname: NewTabUtils.shortURL(s),
       typedBonus: true,
     })
   );
@@ -431,7 +422,7 @@ add_task(
 
     let reference = [...testLinks, DEFAULT_TOP_SITES[0]].map(s =>
       Object.assign({}, s, {
-        hostname: shortURL(s),
+        hostname: NewTabUtils.shortURL(s),
         typedBonus: true,
       })
     );
@@ -1163,7 +1154,7 @@ add_task(async function test_refresh_dispatch() {
   await TopSites.refresh();
   let reference = FAKE_LINKS.map(site =>
     Object.assign({}, site, {
-      hostname: shortURL(site),
+      hostname: NewTabUtils.shortURL(site),
       typedBonus: true,
     })
   );
@@ -1205,7 +1196,7 @@ add_task(async function test_refresh_empty_slots() {
 
   let reference = FAKE_LINKS.map(site =>
     Object.assign({}, site, {
-      hostname: shortURL(site),
+      hostname: NewTabUtils.shortURL(site),
       typedBonus: true,
     })
   );
@@ -2503,4 +2494,100 @@ add_task(async function test_updatePinnedSearchShortcuts() {
   }
 
   sandbox.restore();
+});
+
+add_task(async function test_insertPinned() {
+  info("#insertPinned");
+
+  function createLinks(count) {
+    return new Array(count).fill(null).map((v, i) => ({ url: `site${i}.com` }));
+  }
+
+  info("should place pinned links where they belong");
+  {
+    let links = createLinks(12);
+    const pinned = [
+      { url: "http://github.com/mozilla/activity-stream", title: "moz/a-s" },
+      { url: "http://example.com", title: "example" },
+    ];
+
+    const result = insertPinned(links, pinned);
+    for (let index of [0, 1]) {
+      Assert.equal(result[index].url, pinned[index].url, "Pinned URL matches");
+      Assert.ok(result[index].isPinned, "Link is marked as pinned");
+      Assert.equal(result[index].pinIndex, index, "Pin index is correct");
+    }
+    Assert.deepEqual(result.slice(2), links, "Remaining links are unchanged");
+  }
+
+  info("should handle empty slots in the pinned list");
+  {
+    let links = createLinks(12);
+    const pinned = [
+      null,
+      { url: "http://github.com/mozilla/activity-stream", title: "moz/a-s" },
+      null,
+      null,
+      { url: "http://example.com", title: "example" },
+    ];
+
+    const result = insertPinned(links, pinned);
+    for (let index of [1, 4]) {
+      Assert.equal(result[index].url, pinned[index].url, "Pinned URL matches");
+      Assert.ok(result[index].isPinned, "Link is marked as pinned");
+      Assert.equal(result[index].pinIndex, index, "Pin index is correct");
+    }
+    result.splice(4, 1);
+    result.splice(1, 1);
+    Assert.deepEqual(result, links, "Remaining links are unchanged");
+  }
+
+  info("should handle a pinned site past the end of the list of links");
+  {
+    const pinned = [];
+    pinned[11] = {
+      url: "http://github.com/mozilla/activity-stream",
+      title: "moz/a-s",
+    };
+
+    const result = insertPinned([], pinned);
+    Assert.equal(result[11].url, pinned[11].url, "Pinned URL matches");
+    Assert.ok(result[11].isPinned, "Link is marked as pinned");
+    Assert.equal(result[11].pinIndex, 11, "Pin index is correct");
+  }
+
+  info("should unpin previously pinned links no longer in the pinned list");
+  {
+    let links = createLinks(12);
+    const pinned = [];
+    links[2].isPinned = true;
+    links[2].pinIndex = 2;
+
+    const result = insertPinned(links, pinned);
+    Assert.ok(!result[2].isPinned, "isPinned property removed");
+    Assert.ok(!result[2].pinIndex, "pinIndex property removed");
+  }
+
+  info("should handle a link present in both the links and pinned list");
+  {
+    let links = createLinks(12);
+    const pinned = [links[7]];
+
+    const result = insertPinned(links, pinned);
+    Assert.equal(links.length, result.length, "Length of links is unchanged");
+  }
+
+  info("should not modify the original data");
+  {
+    let links = createLinks(12);
+    const pinned = [{ url: "http://example.com" }];
+
+    insertPinned(links, pinned);
+
+    Assert.equal(
+      typeof pinned[0].isPinned,
+      "undefined",
+      "Pinned data is not mutated"
+    );
+  }
 });

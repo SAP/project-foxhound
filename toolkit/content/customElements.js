@@ -818,6 +818,10 @@
         // used before DOMContentLoaded it will be imported and upgraded when
         // registering the customElements.setElementCreationCallback().
         for (let [tag, script] of [
+          [
+            "moz-box-button",
+            "chrome://global/content/elements/moz-box-button.mjs",
+          ],
           ["moz-button", "chrome://global/content/elements/moz-button.mjs"],
           [
             "moz-button-group",
@@ -829,6 +833,14 @@
           [
             "moz-five-star",
             "chrome://global/content/elements/moz-five-star.mjs",
+          ],
+          [
+            "moz-input-search",
+            "chrome://global/content/elements/moz-input-search.mjs",
+          ],
+          [
+            "moz-input-text",
+            "chrome://global/content/elements/moz-input-text.mjs",
           ],
           ["moz-label", "chrome://global/content/elements/moz-label.mjs"],
           [

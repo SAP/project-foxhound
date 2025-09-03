@@ -1,4 +1,3 @@
-
 /*
  *  Copyright (c) 2016 The WebRTC project authors. All Rights Reserved.
  *
@@ -14,10 +13,12 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <tuple>
 #include <utility>
 
 #include "absl/memory/memory.h"
+#include "absl/types/variant.h"
 #include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
 #include "api/field_trials_view.h"
@@ -31,6 +32,7 @@
 #include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
+#include "api/video/encoded_image.h"
 #include "api/video/i420_buffer.h"
 #include "api/video/nv12_buffer.h"
 #include "api/video/resolution.h"
@@ -44,6 +46,7 @@
 #include "api/video_codecs/vp8_temporal_layers_factory.h"
 #include "call/adaptation/test/fake_adaptation_constraint.h"
 #include "call/adaptation/test/fake_resource.h"
+#include "common_video/frame_instrumentation_data.h"
 #include "common_video/h264/h264_common.h"
 #include "common_video/include/video_frame_buffer.h"
 #include "media/base/video_adapter.h"
@@ -54,6 +57,7 @@
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
 #include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/codecs/vp9/svc_config.h"
+#include "modules/video_coding/include/video_codec_interface.h"
 #include "modules/video_coding/utility/quality_scaler.h"
 #include "modules/video_coding/utility/simulcast_rate_allocator.h"
 #include "modules/video_coding/utility/vp8_constants.h"
@@ -63,6 +67,7 @@
 #include "rtc_base/logging.h"
 #include "rtc_base/ref_counted_object.h"
 #include "rtc_base/synchronization/mutex.h"
+#include "rtc_base/thread_annotations.h"
 #include "system_wrappers/include/metrics.h"
 #include "test/encoder_settings.h"
 #include "test/fake_encoder.h"
@@ -1513,6 +1518,18 @@ class VideoStreamEncoderTest : public ::testing::Test {
       return number_of_layers_allocations_;
     }
 
+    std::optional<
+        absl::variant<FrameInstrumentationSyncData, FrameInstrumentationData>>
+    GetLastFrameInstrumentationData() const {
+      MutexLock lock(&mutex_);
+      return last_frame_instrumentation_data_;
+    }
+
+    void ResetLastFrameInstrumentationData() {
+      MutexLock lock(&mutex_);
+      last_frame_instrumentation_data_.reset();
+    }
+
    private:
     Result OnEncodedImage(
         const EncodedImage& encoded_image,
@@ -1537,6 +1554,11 @@ class VideoStreamEncoderTest : public ::testing::Test {
       last_rotation_ = encoded_image.rotation_;
       if (num_received_layers_ == num_expected_layers_) {
         encoded_frame_event_.Set();
+      }
+      if (codec_specific_info &&
+          codec_specific_info->frame_instrumentation_data.has_value()) {
+        last_frame_instrumentation_data_ =
+            codec_specific_info->frame_instrumentation_data;
       }
 
       return Result(Result::OK, last_timestamp_);
@@ -1597,6 +1619,9 @@ class VideoStreamEncoderTest : public ::testing::Test {
     int number_of_bitrate_allocations_ RTC_GUARDED_BY(&mutex_) = 0;
     VideoLayersAllocation last_layers_allocation_ RTC_GUARDED_BY(&mutex_);
     int number_of_layers_allocations_ RTC_GUARDED_BY(&mutex_) = 0;
+    std::optional<
+        absl::variant<FrameInstrumentationSyncData, FrameInstrumentationData>>
+        last_frame_instrumentation_data_ RTC_GUARDED_BY(&mutex_);
   };
 
   class VideoBitrateAllocatorProxyFactory
@@ -1661,6 +1686,137 @@ TEST_F(VideoStreamEncoderTest, EncodeOneFrame) {
   video_source_.IncomingCapturedFrame(CreateFrame(1, &frame_destroyed_event));
   WaitForEncodedFrame(1);
   EXPECT_TRUE(frame_destroyed_event.Wait(kDefaultTimeout));
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest, PopulatesFrameInstrumentationDataWhenSetTo) {
+  video_send_config_.encoder_settings.enable_frame_instrumentation_generator =
+      true;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  // We need a QP for the encoded frame.
+  fake_encoder_.SetEncodedImageData(EncodedImageBuffer::Create(
+      kCodedFrameVp8Qp25, sizeof(kCodedFrameVp8Qp25)));
+  video_source_.IncomingCapturedFrame(
+      CreateFrame(1, codec_width_, codec_height_));
+  WaitForEncodedFrame(1);
+
+  EXPECT_TRUE(sink_.GetLastFrameInstrumentationData().has_value());
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       FrameInstrumentationGeneratorDoesNotStashDroppedFrames) {
+  // Set low rate but high resolution. Make sure input frame is dropped and
+  // instance is released, even with corruption detection enabled.
+  const DataRate kLowRate = DataRate::KilobitsPerSec(300);
+  codec_width_ = 1280;
+  codec_height_ = 720;
+
+  video_send_config_.encoder_settings.enable_frame_instrumentation_generator =
+      true;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kLowRate, kLowRate, kLowRate, 0, 0, 0);
+
+  rtc::Event frame_destroyed_event;
+  // Insert two frames, so that the first one isn't stored in the encoder queue.
+  video_source_.IncomingCapturedFrame(CreateFrame(1, &frame_destroyed_event));
+  video_source_.IncomingCapturedFrame(CreateFrame(34, /*event=*/nullptr));
+  EXPECT_TRUE(frame_destroyed_event.Wait(kDefaultTimeout));
+
+  EXPECT_FALSE(sink_.GetLastFrameInstrumentationData().has_value());
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       FrameInstrumentationGeneratorHandlesQueuedFrames) {
+  video_send_config_.encoder_settings.enable_frame_instrumentation_generator =
+      true;
+  ConfigureEncoder(video_encoder_config_.Copy());
+
+  // Mark stream as suspended.
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      DataRate::Zero(), DataRate::Zero(), DataRate::Zero(), 0, 0, 0);
+  video_stream_encoder_->WaitUntilTaskQueueIsIdle();
+
+  // We need a QP for the encoded frame.
+  fake_encoder_.SetEncodedImageData(EncodedImageBuffer::Create(
+      kCodedFrameVp8Qp25, sizeof(kCodedFrameVp8Qp25)));
+
+  // Insert a frame, that should be treated as dropped due to suspended state.
+  video_source_.IncomingCapturedFrame(
+      CreateFrame(1, codec_width_, codec_height_));
+
+  ExpectDroppedFrame();
+
+  // Resume and increase bitrate budget, process stashed frames.
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  WaitForEncodedFrame(1);
+  EXPECT_TRUE(sink_.GetLastFrameInstrumentationData().has_value());
+
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       DoesNotPopulateFrameInstrumentationDataWhenSetNotTo) {
+  video_send_config_.encoder_settings.enable_frame_instrumentation_generator =
+      false;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  // We need a QP for the encoded frame.
+  fake_encoder_.SetEncodedImageData(EncodedImageBuffer::Create(
+      kCodedFrameVp8Qp25, sizeof(kCodedFrameVp8Qp25)));
+  video_source_.IncomingCapturedFrame(
+      CreateFrame(1, codec_width_, codec_height_));
+  WaitForEncodedFrame(1);
+
+  EXPECT_FALSE(sink_.GetLastFrameInstrumentationData().has_value());
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest,
+       FrameInstrumentationGeneratorNotResetOnConfigurationUnlessEncoderIsToo) {
+  // Enable frame instrumentation generator and produce the first keyframe.
+  video_send_config_.encoder_settings.enable_frame_instrumentation_generator =
+      true;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  // We need a QP for the encoded frame.
+  fake_encoder_.SetEncodedImageData(EncodedImageBuffer::Create(
+      kCodedFrameVp8Qp25, sizeof(kCodedFrameVp8Qp25)));
+  video_source_.IncomingCapturedFrame(
+      CreateFrame(1, codec_width_, codec_height_));
+  WaitForEncodedFrame(1);
+
+  EXPECT_TRUE(sink_.GetLastFrameInstrumentationData().has_value());
+  sink_.ResetLastFrameInstrumentationData();
+
+  // Apply the same configuration again. Encoder should not be reinitilized.
+  video_stream_encoder_->ConfigureEncoder(video_encoder_config_.Copy(),
+                                          kMaxPayloadLength, nullptr);
+
+  // Insert delta frames until a frame instrumentation should definitely have
+  // been sent.
+  for (int i = 1; i < 40; ++i) {
+    int timestamp = 1 + (33 * i);
+    fake_encoder_.SetEncodedImageData(EncodedImageBuffer::Create(
+        kCodedFrameVp8Qp25, sizeof(kCodedFrameVp8Qp25)));
+    video_source_.IncomingCapturedFrame(
+        CreateFrame(timestamp, codec_width_, codec_height_));
+    WaitForEncodedFrame(timestamp);
+  }
+
+  EXPECT_TRUE(sink_.GetLastFrameInstrumentationData().has_value());
+
   video_stream_encoder_->Stop();
 }
 
@@ -2530,23 +2686,62 @@ TEST_F(VideoStreamEncoderTest, FrameRateLimitCanBeReset) {
   video_stream_encoder_->Stop();
 }
 
-TEST_F(VideoStreamEncoderTest,
-       ResolutionLimitPropagatedToSinkWantsBeforeFirstFrame) {
+TEST_F(VideoStreamEncoderTest, RequestInSinkWantsBeforeFirstFrame) {
+  // Use a real video stream factory or else `scale_resolution_down_to` is not
+  // applied correctly.
+  video_encoder_config_.video_stream_factory = nullptr;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
   ASSERT_THAT(video_encoder_config_.simulcast_layers, SizeIs(1));
-  video_encoder_config_.simulcast_layers[0].requested_resolution.emplace(
+  video_encoder_config_.simulcast_layers[0].scale_resolution_down_to.emplace(
       Resolution({.width = 320, .height = 160}));
 
   video_stream_encoder_->ConfigureEncoder(video_encoder_config_.Copy(),
                                           kMaxPayloadLength);
+
   EXPECT_EQ(video_source_.sink_wants().requested_resolution,
             rtc::VideoSinkWants::FrameSize(320, 160));
 
-  video_encoder_config_.simulcast_layers[0].requested_resolution->height = 320;
-  video_encoder_config_.simulcast_layers[0].requested_resolution->width = 640;
+  video_encoder_config_.simulcast_layers[0].scale_resolution_down_to->height =
+      320;
+  video_encoder_config_.simulcast_layers[0].scale_resolution_down_to->width =
+      640;
   video_stream_encoder_->ConfigureEncoder(video_encoder_config_.Copy(),
                                           kMaxPayloadLength);
+
   EXPECT_EQ(video_source_.sink_wants().requested_resolution,
             rtc::VideoSinkWants::FrameSize(640, 320));
+
+  video_stream_encoder_->Stop();
+}
+
+TEST_F(VideoStreamEncoderTest, RequestInWrongAspectRatioWithAdapter) {
+  // Use a real video stream factory or else `scale_resolution_down_to` is not
+  // applied correctly.
+  video_encoder_config_.video_stream_factory = nullptr;
+  ConfigureEncoder(video_encoder_config_.Copy());
+  video_stream_encoder_->OnBitrateUpdatedAndWaitForManagedResources(
+      kTargetBitrate, kTargetBitrate, kTargetBitrate, 0, 0, 0);
+
+  // Use a source that adapts resolution based on OnSinkWants.
+  AdaptingFrameForwarder source(&time_controller_);
+  source.set_adaptation_enabled(true);
+  video_stream_encoder_->SetSource(
+      &source, webrtc::DegradationPreference::MAINTAIN_FRAMERATE);
+
+  ASSERT_THAT(video_encoder_config_.simulcast_layers, SizeIs(1));
+  video_encoder_config_.simulcast_layers[0].scale_resolution_down_to = {
+      .width = 30, .height = 30};
+  video_stream_encoder_->ConfigureEncoder(video_encoder_config_.Copy(),
+                                          kMaxPayloadLength);
+
+  // Capture a 60x30 frame.
+  source.IncomingCapturedFrame(CreateFrame(1, 60, 30));
+  // The 60x30 frame does not fit inside the 30x30 restrictions.
+  // Expect 30x15, maintaining aspect ratio.
+  WaitForEncodedFrame(30, 15);
 
   video_stream_encoder_->Stop();
 }
@@ -6220,8 +6415,8 @@ TEST_F(VideoStreamEncoderTest,
 
 enum class FrameResolutionChangeMethod {
   MODIFY_SOURCE,
-  MODIFY_REQUESTED_RESOLUTION,
-  MODIFY_SCALE_RESOLUTION_BY,
+  MODIFY_SCALE_RESOLUTION_DOWN_TO,
+  MODIFY_SCALE_RESOLUTION_DOWN_BY,
 };
 class VideoStreamEncoderInitialFrameDropperTest
     : public VideoStreamEncoderTest,
@@ -6235,12 +6430,12 @@ class VideoStreamEncoderInitialFrameDropperTest
     switch (frame_resolution_change_method_) {
       case FrameResolutionChangeMethod::MODIFY_SOURCE:
         break;
-      case FrameResolutionChangeMethod::MODIFY_REQUESTED_RESOLUTION:
+      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_TO:
         video_encoder_config_.video_stream_factory = nullptr;
         captureWidth = kWidth;
         captureHeight = kHeight;
         break;
-      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_BY:
+      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_BY:
         captureWidth = kWidth;
         captureHeight = kHeight;
         break;
@@ -6253,14 +6448,15 @@ class VideoStreamEncoderInitialFrameDropperTest
         captureWidth = width;
         captureHeight = height;
         break;
-      case FrameResolutionChangeMethod::MODIFY_REQUESTED_RESOLUTION:
+      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_TO:
         ASSERT_THAT(video_encoder_config_.simulcast_layers, SizeIs(1));
-        video_encoder_config_.simulcast_layers[0].requested_resolution.emplace(
-            Resolution({.width = width, .height = height}));
+        video_encoder_config_.simulcast_layers[0]
+            .scale_resolution_down_to.emplace(
+                Resolution({.width = width, .height = height}));
         video_stream_encoder_->ConfigureEncoder(video_encoder_config_.Copy(),
                                                 kMaxPayloadLength);
         break;
-      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_BY:
+      case FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_BY:
         ASSERT_THAT(video_encoder_config_.simulcast_layers, SizeIs(1));
         double scale_height =
             static_cast<double>(kHeight) / static_cast<double>(height);
@@ -6287,9 +6483,10 @@ class VideoStreamEncoderInitialFrameDropperTest
 INSTANTIATE_TEST_SUITE_P(
     VideoStreamEncoderInitialFrameDropperTest,
     VideoStreamEncoderInitialFrameDropperTest,
-    ::testing::Values(FrameResolutionChangeMethod::MODIFY_SOURCE,
-                      FrameResolutionChangeMethod::MODIFY_REQUESTED_RESOLUTION,
-                      FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_BY));
+    ::testing::Values(
+        FrameResolutionChangeMethod::MODIFY_SOURCE,
+        FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_TO,
+        FrameResolutionChangeMethod::MODIFY_SCALE_RESOLUTION_DOWN_BY));
 
 TEST_P(VideoStreamEncoderInitialFrameDropperTest,
        InitialFrameDropActivatesWhenResolutionIncreases) {
@@ -6337,7 +6534,7 @@ TEST_P(VideoStreamEncoderInitialFrameDropperTest,
 
   int timestamp = 1;
 
-  // By using the `requested_resolution` API, ReconfigureEncoder() gets
+  // By using the `scale_resolution_down_to` API, ReconfigureEncoder() gets
   // triggered from VideoStreamEncoder::OnVideoSourceRestrictionsUpdated().
   SetEncoderFrameSize(kWidth, kHeight);
 
@@ -9207,10 +9404,10 @@ INSTANTIATE_TEST_SUITE_P(
     TestParametersVideoCodecAndAllowI420ConversionToString);
 #endif
 
-class ReconfigureEncoderTest : public VideoStreamEncoderTest {
+class ReconfigureSimulcastEncoderTest : public VideoStreamEncoderTest {
  protected:
-  void RunTest(const std::vector<VideoStream>& configs,
-               const int expected_num_init_encode) {
+  void RunSimulcastTest(const std::vector<std::vector<VideoStream>>& configs,
+                        const int expected_num_init_encode) {
     ConfigureEncoder(configs[0]);
     OnBitrateUpdated(kTargetBitrate);
     InsertFrameAndWaitForEncoded();
@@ -9231,11 +9428,17 @@ class ReconfigureEncoderTest : public VideoStreamEncoderTest {
     video_stream_encoder_->Stop();
   }
 
-  void ConfigureEncoder(const VideoStream& stream) {
+  void ConfigureEncoder(const std::vector<VideoStream>& streams) {
     VideoEncoderConfig config;
-    test::FillEncoderConfiguration(kVideoCodecVP8, /*num_streams=*/1, &config);
-    config.max_bitrate_bps = stream.max_bitrate_bps;
-    config.simulcast_layers[0] = stream;
+    test::FillEncoderConfiguration(kVideoCodecVP8,
+                                   /*num_streams=*/streams.size(), &config);
+    auto highest_bitrate_stream =
+        absl::c_max_element(streams, [](const auto& a, const auto& b) {
+          return a.max_bitrate_bps < b.max_bitrate_bps;
+        });
+    config.max_bitrate_bps = highest_bitrate_stream->max_bitrate_bps;
+    config.simulcast_layers = streams;
+    config.number_of_streams = streams.size();
     config.video_stream_factory = nullptr;
     video_stream_encoder_->ConfigureEncoder(std::move(config),
                                             kMaxPayloadLength);
@@ -9254,20 +9457,23 @@ class ReconfigureEncoderTest : public VideoStreamEncoderTest {
   }
 
   void ExpectEqual(const VideoCodec& actual,
-                   const VideoStream& expected) const {
-    EXPECT_EQ(actual.numberOfSimulcastStreams, 1);
-    EXPECT_EQ(actual.simulcastStream[0].maxFramerate, expected.max_framerate);
-    EXPECT_EQ(actual.simulcastStream[0].minBitrate * 1000,
-              static_cast<unsigned int>(expected.min_bitrate_bps));
-    EXPECT_EQ(actual.simulcastStream[0].maxBitrate * 1000,
-              static_cast<unsigned int>(expected.max_bitrate_bps));
-    EXPECT_EQ(actual.simulcastStream[0].width,
-              kWidth / expected.scale_resolution_down_by);
-    EXPECT_EQ(actual.simulcastStream[0].height,
-              kHeight / expected.scale_resolution_down_by);
-    EXPECT_EQ(actual.simulcastStream[0].numberOfTemporalLayers,
-              expected.num_temporal_layers);
-    EXPECT_EQ(actual.GetScalabilityMode(), expected.scalability_mode);
+                   const std::vector<VideoStream>& expected) const {
+    EXPECT_EQ(actual.numberOfSimulcastStreams, expected.size());
+    for (size_t i = 0; i < actual.numberOfSimulcastStreams; ++i) {
+      EXPECT_EQ(actual.simulcastStream[i].maxFramerate,
+                expected[i].max_framerate);
+      EXPECT_EQ(actual.simulcastStream[i].minBitrate * 1000,
+                static_cast<unsigned int>(expected[i].min_bitrate_bps));
+      EXPECT_EQ(actual.simulcastStream[i].maxBitrate * 1000,
+                static_cast<unsigned int>(expected[i].max_bitrate_bps));
+      EXPECT_EQ(actual.simulcastStream[i].width,
+                kWidth / expected[i].scale_resolution_down_by);
+      EXPECT_EQ(actual.simulcastStream[i].height,
+                kHeight / expected[i].scale_resolution_down_by);
+      EXPECT_EQ(actual.simulcastStream[i].numberOfTemporalLayers,
+                expected[i].num_temporal_layers);
+      EXPECT_EQ(actual.GetScalabilityMode(), expected[i].scalability_mode);
+    }
   }
 
   VideoStream DefaultConfig() const {
@@ -9285,6 +9491,33 @@ class ReconfigureEncoderTest : public VideoStreamEncoderTest {
   const int kWidth = 640;
   const int kHeight = 360;
   int64_t timestamp_ms_ = 0;
+};
+
+TEST_F(ReconfigureSimulcastEncoderTest, ReconfiguredIfMaxFramerateChanges) {
+  VideoStream config_before_high = DefaultConfig();
+  config_before_high.scale_resolution_down_by = 1;
+  config_before_high.max_framerate = 30;
+  VideoStream config_before_low = config_before_high;
+  config_before_low.scale_resolution_down_by = 2;
+  config_before_low.max_framerate = 20;
+
+  // Keep the highest layer's max_framerate so as to not cause a change in
+  // VideoCodec::maxFramerate that may influence this test.
+  VideoStream config_after_high = config_before_high;
+  VideoStream config_after_low = config_before_low;
+  config_after_low.max_framerate = 10;
+
+  RunSimulcastTest({{config_before_high, config_before_low},
+                    {config_after_high, config_after_low}},
+                   /*expected_num_init_encode=*/2);
+}
+
+class ReconfigureEncoderTest : public ReconfigureSimulcastEncoderTest {
+ public:
+  void RunTest(const std::vector<VideoStream>& configs,
+               const int expected_num_init_encode) {
+    RunSimulcastTest({{configs[0]}, {configs[1]}}, expected_num_init_encode);
+  }
 };
 
 TEST_F(ReconfigureEncoderTest, NotReconfiguredIfMaxFramerateChanges) {

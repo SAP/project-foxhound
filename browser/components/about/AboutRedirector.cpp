@@ -8,12 +8,16 @@
 #include "AboutRedirector.h"
 #include "nsNetUtil.h"
 #include "nsIAboutNewTabService.h"
+#include "nsIAppStartup.h"
 #include "nsIChannel.h"
 #include "nsIURI.h"
 #include "nsIProtocolHandler.h"
 #include "nsServiceManagerUtils.h"
+#include "mozilla/Components.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/dom/ContentChild.h"
+
+#define PROFILES_ENABLED_PREF "browser.profiles.enabled"
 
 namespace mozilla {
 namespace browser {
@@ -86,9 +90,9 @@ static const RedirEntry kRedirMap[] = {
     {"profiling",
      "chrome://devtools/content/performance-new/aboutprofiling/index.xhtml",
      nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
-    {"rights", "chrome://global/content/aboutRights.xhtml",
+    {"rights", "https://www.mozilla.org/about/legal/terms/firefox/",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
-         nsIAboutModule::ALLOW_SCRIPT | nsIAboutModule::IS_SECURE_CHROME_UI},
+         nsIAboutModule::URI_MUST_LOAD_IN_CHILD},
     {"robots", "chrome://browser/content/aboutRobots.xhtml",
      nsIAboutModule::URI_SAFE_FOR_UNTRUSTED_CONTENT |
          nsIAboutModule::ALLOW_SCRIPT},
@@ -222,6 +226,22 @@ AboutRedirector::NewChannel(nsIURI* aURI, nsILoadInfo* aLoadInfo,
       NS_ENSURE_SUCCESS(rv, rv);
 
       return aboutNewTabService->AboutHomeChannel(aURI, aLoadInfo, result);
+    }
+  }
+
+  if ((path.EqualsASCII("editprofile") || path.EqualsASCII("deleteprofile") ||
+       path.EqualsASCII("newprofile")) &&
+      !mozilla::Preferences::GetBool(PROFILES_ENABLED_PREF, false)) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  if (path.EqualsASCII("profilemanager") &&
+      !mozilla::Preferences::GetBool(PROFILES_ENABLED_PREF, false)) {
+    bool startingUp;
+    nsCOMPtr<nsIAppStartup> appStartup(
+        mozilla::components::AppStartup::Service());
+    if (NS_FAILED(appStartup->GetStartingUp(&startingUp)) || !startingUp) {
+      return NS_ERROR_NOT_AVAILABLE;
     }
   }
 

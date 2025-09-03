@@ -12,8 +12,6 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
-  Region: "resource://gre/modules/Region.sys.mjs",
-  TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
 });
@@ -213,6 +211,12 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // mode or the QuickActions search mode.
   ["quickactions.enabled", true],
 
+  // The number of times we should show the actions onboarding label.
+  ["quickactions.timesToShowOnboardingLabel", 0],
+
+  // The number of times we have shown the actions onboarding label.
+  ["quickactions.timesShownOnboardingLabel", 0],
+
   // Whether we will match QuickActions within a phrase and not only a prefix.
   ["quickactions.matchInPhrase", true],
 
@@ -224,10 +228,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether we show the Actions section in about:preferences.
   ["quickactions.showPrefs", false],
 
-  // Whether quick suggest results can be shown in position specified in the
-  // suggestions.
-  ["quicksuggest.allowPositionInSuggestions", true],
-
   // When non-zero, this is the character-count threshold (inclusive) for
   // showing AMP suggestions as top picks. If an AMP suggestion is triggered by
   // a keyword at least this many characters long, it will be shown as a top
@@ -238,21 +238,39 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // JSON'ed array of blocked quick suggest URL digests.
   ["quicksuggest.blockedDigests", ""],
 
-  // Whether the Firefox Suggest data collection opt-in result is enabled. If
-  // true, this implicitly disables shouldShowOnboardingDialog.
+  // Whether the Firefox Suggest data collection opt-in result is enabled.
   ["quicksuggest.contextualOptIn", false],
 
-  // The last time (as ISO string) the user dismissed the Firefox Suggest
-  // contextual opt-in result.
-  ["quicksuggest.contextualOptIn.lastDismissed", ""],
+  // The last time (as seconds) the user dismissed the Firefox Suggest contextual
+  // opt-in result.
+  ["quicksuggest.contextualOptIn.lastDismissedTime", 0],
 
-  // Controls which variant of the copy is used for the Firefox Suggest
-  // contextual opt-in result.
-  ["quicksuggest.contextualOptIn.sayHello", false],
+  // Number that the user dismissed the Firefox Suggest contextual opt-in result.
+  ["quicksuggest.contextualOptIn.dismissedCount", 0],
 
-  // Controls whether the Firefox Suggest contextual opt-in result appears at
-  // the top of results or at the bottom, after one-off buttons.
-  ["quicksuggest.contextualOptIn.topPosition", true],
+  // Period until reshow the Firefox Suggest contextual opt-in result when first dismissed.
+  ["quicksuggest.contextualOptIn.firstReshowAfterPeriodDays", 7],
+
+  // Period until reshow the Firefox Suggest contextual opt-in result when second dismissed.
+  ["quicksuggest.contextualOptIn.secondReshowAfterPeriodDays", 14],
+
+  // Period until reshow the Firefox Suggest contextual opt-in result when third dismissed.
+  ["quicksuggest.contextualOptIn.thirdReshowAfterPeriodDays", 60],
+
+  // Number of impression for the Firefox Suggest contextual opt-in result.
+  ["quicksuggest.contextualOptIn.impressionCount", 0],
+
+  // Limit for impression to dismiss the Firefox Suggest contextual opt-in
+  // result.
+  ["quicksuggest.contextualOptIn.impressionLimit", 20],
+
+  // The first impression time (seconds) for the Firefox Suggest contextual
+  // opt-in result.
+  ["quicksuggest.contextualOptIn.firstImpressionTime", 0],
+
+  // Days until dismiss the Firefox Suggest contextual opt-in result after first
+  // impression.
+  ["quicksuggest.contextualOptIn.impressionDaysLimit", 5],
 
   // Whether the user has opted in to data collection for quick suggest.
   ["quicksuggest.dataCollection.enabled", false],
@@ -263,9 +281,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
 
   // Comma-separated list of Suggest exposure suggestion types to enable.
   ["quicksuggest.exposureSuggestionTypes", ""],
-
-  // Whether Suggest should be hidden in the settings UI even when enabled.
-  ["quicksuggest.hideSettingsUI", false],
 
   // Whether non-sponsored quick suggest results are subject to impression
   // frequency caps. This pref is a fallback for the Nimbus variable
@@ -303,12 +318,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Whether Suggest will use the ML backend in addition to Rust.
   ["quicksuggest.mlEnabled", false],
 
-  // The user's response to the Firefox Suggest online opt-in dialog.
-  ["quicksuggest.onboardingDialogChoice", ""],
-
-  // The version of dialog user saw.
-  ["quicksuggest.onboardingDialogVersion", ""],
-
   // Whether Firefox Suggest will use the new Rust backend instead of the
   // original JS backend.
   ["quicksuggest.rustEnabled", true],
@@ -318,21 +327,6 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // will persist across app restarts. The default value is 24 hours, same as
   // the interval used by the desktop remote settings client.
   ["quicksuggest.rustIngestIntervalSeconds", 60 * 60 * 24],
-
-  // The Firefox Suggest scenario in which the user is enrolled. This is set
-  // when the scenario is updated (see `updateFirefoxSuggestScenario`) and is
-  // not a pref the user should set. Once initialized, its value is one of:
-  // "history", "offline", "online"
-  ["quicksuggest.scenario", ""],
-
-  // Count the restarts before showing the onboarding dialog.
-  ["quicksuggest.seenRestarts", 0],
-
-  // Whether to show the quick suggest onboarding dialog.
-  ["quicksuggest.shouldShowOnboardingDialog", false],
-
-  // Whether the user has seen the onboarding dialog.
-  ["quicksuggest.showedOnboardingDialog", false],
 
   // We only show recent searches within the past 3 days by default.
   // Stored as a string as some code handle timestamp sized int's.
@@ -392,7 +386,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
   ["shortcuts.bookmarks", true],
   ["shortcuts.tabs", true],
   ["shortcuts.history", true],
-  ["shortcuts.actions", false],
+  ["shortcuts.actions", true],
 
   // Boolean to determine if the providers defined in `exposureResults`
   // should be displayed in search results. This can be set by a
@@ -492,7 +486,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
   ["deduplication.enabled", false],
 
   // How old history results have to be to be deduplicated.
-  ["deduplication.thresholdDays", 7],
+  ["deduplication.thresholdDays", 0],
 
   // When using switch to tabs, if set to true this will move the tab into the
   // active window.
@@ -501,6 +495,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Controls whether searching for open tabs returns tabs from any container
   // or only from the current container.
   ["switchTabs.searchAllContainers", true],
+
+  // The minimum number of characters needed to match a tab group name.
+  ["tabGroups.minSearchLength", 1],
 
   // The number of remaining times the user can interact with tab-to-search
   // onboarding results before we stop showing them.
@@ -527,7 +524,7 @@ const PREF_URLBAR_DEFAULTS = new Map([
   ["trending.requireSearchMode", false],
 
   // Remove 'https://' from url when urlbar is focused.
-  ["trimHttps", true],
+  ["trimHttps", false],
 
   // Remove redundant portions from URLs.
   ["trimURLs", true],
@@ -541,6 +538,9 @@ const PREF_URLBAR_DEFAULTS = new Map([
   // Untrim url, when urlbar is focused.
   // Note: This pref will be removed once the feature is stable.
   ["untrimOnUserInteraction.featureGate", false],
+
+  // Whether or not Unified Search Button is shown always.
+  ["unifiedSearchButton.always", false],
 
   // Feature gate pref for weather suggestions in the urlbar.
   ["weather.featureGate", false],
@@ -580,7 +580,7 @@ const PREF_OTHER_DEFAULTS = new Map([
   ["browser.search.suggest.enabled", true],
   ["browser.search.suggest.enabled.private", false],
   ["keyword.enabled", true],
-  ["security.insecure_connection_text.enabled", false],
+  ["security.insecure_connection_text.enabled", true],
   ["ui.popup.disable_autohide", false],
 ]);
 
@@ -589,16 +589,12 @@ const PREF_OTHER_DEFAULTS = new Map([
 // defaults are the values of their fallbacks.
 const NIMBUS_DEFAULTS = {
   addonsShowLessFrequentlyCap: 0,
-  experimentType: "",
   fakespotMinKeywordLength: null,
   pocketShowLessFrequentlyCap: 0,
   pocketSuggestIndex: null,
-  quickSuggestRemoteSettingsDataType: "data",
   quickSuggestScoreMap: null,
-  recordNavigationalSuggestionTelemetry: false,
   weatherKeywordsMinimumLength: null,
   weatherShowLessFrequentlyCap: null,
-  weatherSimpleUI: true,
   yelpMinKeywordLength: null,
   yelpSuggestNonPriorityIndex: null,
 };
@@ -795,16 +791,6 @@ class Preferences {
       "suggest.searches",
     ];
 
-    // This is resolved when the first update to the Firefox Suggest scenario
-    // (on startup) finishes.
-    this._firefoxSuggestScenarioStartupPromise = new Promise(
-      resolve => (this._resolveFirefoxSuggestScenarioStartupPromise = resolve)
-    );
-
-    // This is set to true when we update the Firefox Suggest scenario to
-    // prevent re-entry due to pref observers.
-    this._updatingFirefoxSuggestScenario = false;
-
     lazy.NimbusFeatures.urlbar.onUpdate(() => this._onNimbusUpdate());
   }
 
@@ -888,531 +874,6 @@ class Preferences {
       });
     }
     return this.#resultGroups;
-  }
-
-  /**
-   * Sets the appropriate Firefox Suggest scenario based on the current Nimbus
-   * rollout (if any) and "hardcoded" rollouts (if any). The possible scenarios
-   * are:
-   *
-   * history
-   *   This is the scenario when the user is not in any rollouts. Firefox
-   *   Suggest suggestions are disabled.
-   * offline
-   *   This is the scenario for the "offline" rollout. Firefox Suggest
-   *   suggestions are enabled by default. Data collection is not enabled by
-   *   default, but the user can opt in in about:preferences. The onboarding
-   *   dialog is not shown.
-   * online
-   *   This is the scenario for the "online" rollout. Firefox Suggest
-   *   suggestions are enabled by default. Data collection is not enabled by
-   *   default, and the user will be shown an onboarding dialog that prompts
-   *   them to opt in to it. The user can also opt in in about:preferences.
-   *
-   * @param {string} [testOverrides]
-   *   This is intended for tests only. Pass to force the following:
-   *   `{ scenario, migrationVersion, defaultPrefs, isStartup }`
-   */
-  async updateFirefoxSuggestScenario(testOverrides = null) {
-    // Make sure we don't re-enter this method while updating prefs. Updates to
-    // prefs that are fallbacks for Nimbus variables trigger the pref observer
-    // in Nimbus, which triggers our Nimbus `onUpdate` callback, which calls
-    // this method again.
-    if (this._updatingFirefoxSuggestScenario) {
-      return;
-    }
-
-    let isStartup =
-      !this._updateFirefoxSuggestScenarioCalled || !!testOverrides?.isStartup;
-    this._updateFirefoxSuggestScenarioCalled = true;
-
-    try {
-      this._updatingFirefoxSuggestScenario = true;
-
-      // This is called early in startup by BrowserGlue, so make sure the user's
-      // region and our Nimbus variables are initialized since the scenario may
-      // depend on them. Also note that pref migrations may depend on the
-      // scenario, and since each migration is performed only once, at startup,
-      // prefs can end up wrong if their migrations use the wrong scenario.
-      await lazy.Region.init();
-      await lazy.NimbusFeatures.urlbar.ready();
-      this._clearNimbusCache();
-
-      // This also races TelemetryEnvironment's initialization, so wait for it
-      // to finish. TelemetryEnvironment is important because it records the
-      // values of a number of Suggest preferences. If we didn't wait, we could
-      // end up updating prefs after TelemetryEnvironment does its initial pref
-      // cache but before it adds its observer to be notified of pref changes.
-      // It would end up recording the wrong values on startup in that case.
-      if (!this._testSkipTelemetryEnvironmentInit) {
-        await lazy.TelemetryEnvironment.onInitialized();
-      }
-
-      this._updateFirefoxSuggestScenarioHelper(isStartup, testOverrides);
-    } finally {
-      this._updatingFirefoxSuggestScenario = false;
-    }
-
-    // Null check `_resolveFirefoxSuggestScenarioStartupPromise` since some
-    // tests force `isStartup` after actual startup and it's been set to null.
-    if (isStartup && this._resolveFirefoxSuggestScenarioStartupPromise) {
-      this._resolveFirefoxSuggestScenarioStartupPromise();
-      this._resolveFirefoxSuggestScenarioStartupPromise = null;
-    }
-  }
-
-  _updateFirefoxSuggestScenarioHelper(isStartup, testOverrides) {
-    // Updating the scenario is tricky and it's important to preserve the user's
-    // choices, so we describe the process in detail below. tl;dr:
-    //
-    // * Prefs exposed in the UI should be sticky.
-    // * Prefs that are both exposed in the UI and configurable via Nimbus
-    //   should be added to `uiPrefNamesByVariable` below.
-    // * Prefs that are both exposed in the UI and configurable via Nimbus don't
-    //   need to be specified as a `fallbackPref` in the feature manifest.
-    //   Access these prefs directly instead of through their Nimbus variables.
-    // * If you are modifying this method, keep in mind that setting a pref
-    //   that's a `fallbackPref` for a Nimbus variable will trigger the pref
-    //   observer inside Nimbus and call all `NimbusFeatures.urlbar.onUpdate`
-    //   callbacks. Inside this class we guard against that by using
-    //   `updatingFirefoxSuggestScenario`.
-    //
-    // The scenario-update process is described next.
-    //
-    // 1. Pick a scenario. If the user is in a Nimbus rollout, then Nimbus will
-    //    define it. Otherwise the user may be in a "hardcoded" rollout
-    //    depending on their region and locale. If the user is not in any
-    //    rollouts, then the scenario is "history", which means no Firefox
-    //    Suggest suggestions should appear.
-    //
-    // 2. Set prefs on the default branch appropriate for the scenario. We use
-    //    the default branch and not the user branch because conceptually each
-    //    scenario has a default behavior, which we want to distinguish from the
-    //    user's choices.
-    //
-    //    In particular it's important to consider prefs that are exposed in the
-    //    UI, like whether sponsored suggestions are enabled. Once the user
-    //    makes a choice to change a default, we want to preserve that choice
-    //    indefinitely regardless of the scenario the user is currently enrolled
-    //    in or future scenarios they might be enrolled in. User choices are of
-    //    course recorded on the user branch, so if we set scenario defaults on
-    //    the user branch too, we wouldn't be able to distinguish user choices
-    //    from default values. This is also why prefs that are exposed in the UI
-    //    should be sticky. Unlike non-sticky prefs, sticky prefs retain their
-    //    user-branch values even when those values are the same as the ones on
-    //    the default branch.
-    //
-    //    It's important to note that the defaults we set here do not persist
-    //    across app restarts. (This is a feature of the pref service; prefs set
-    //    programmatically on the default branch are not stored anywhere
-    //    permanent like firefox.js or user.js.) That's why BrowserGlue calls
-    //    `updateFirefoxSuggestScenario` on every startup.
-    //
-    // 3. Some prefs are both exposed in the UI and configurable via Nimbus,
-    //    like whether data collection is enabled. We absolutely want to
-    //    preserve the user's past choices for these prefs. But if the user
-    //    hasn't yet made a choice for a particular pref, then it should be
-    //    configurable.
-    //
-    //    For any such prefs that have values defined in Nimbus, we set their
-    //    default-branch values to their Nimbus values. (These defaults
-    //    therefore override any set in the previous step.) If a pref has a user
-    //    value, accessing the pref will return the user value; if it does not
-    //    have a user value, accessing it will return the value that was
-    //    specified in Nimbus.
-    //
-    //    This isn't strictly necessary. Since prefs exposed in the UI are
-    //    sticky, they will always preserve their user-branch values regardless
-    //    of their default-branch values, and as long as a pref is listed as a
-    //    `fallbackPref` for its corresponding Nimbus variable, Nimbus will use
-    //    the user-branch value. So we could instead specify fallback prefs in
-    //    Nimbus and always access values through Nimbus instead of through
-    //    prefs. But that would make preferences UI code a little harder to
-    //    write since the checked state of a checkbox would depend on something
-    //    other than its pref. Since we're already setting default-branch values
-    //    here as part of the previous step, it's not much more work to set
-    //    defaults for these prefs too, and it makes the UI code a little nicer.
-    //
-    // 4. Migrate prefs as necessary. This refers to any pref changes that are
-    //    neccesary across app versions: introducing and initializing new prefs,
-    //    removing prefs, or changing the meaning of existing prefs.
-
-    // 1. Pick a scenario
-    let scenario =
-      testOverrides?.scenario || this._getIntendedFirefoxSuggestScenario();
-
-    // 2. Set default-branch values for the scenario
-    let defaultPrefs =
-      testOverrides?.defaultPrefs || this.FIREFOX_SUGGEST_DEFAULT_PREFS;
-    let prefs = { ...defaultPrefs[scenario] };
-
-    // 3. Set default-branch values for prefs that are both exposed in the UI
-    // and configurable via Nimbus
-    for (let [variable, prefName] of Object.entries(
-      this.FIREFOX_SUGGEST_UI_PREFS_BY_VARIABLE
-    )) {
-      if (this._nimbus.hasOwnProperty(variable)) {
-        prefs[prefName] = this._nimbus[variable];
-      }
-    }
-
-    let defaults = Services.prefs.getDefaultBranch("browser.urlbar.");
-    for (let [name, value] of Object.entries(prefs)) {
-      // We assume all prefs are boolean right now.
-      defaults.setBoolPref(name, value);
-    }
-
-    // 4. Migrate prefs across app versions
-    if (isStartup) {
-      this._ensureFirefoxSuggestPrefsMigrated(scenario, testOverrides);
-    }
-
-    // Set the scenario pref only after migrating so that migrations can tell
-    // what the last-seen scenario was. Set it on the user branch so that its
-    // value persists across app restarts.
-    this.set("quicksuggest.scenario", scenario);
-  }
-
-  /**
-   * Returns the Firefox Suggest scenario the user should be enrolled in. This
-   * does *not* return the scenario they are currently enrolled in.
-   *
-   * @returns {string}
-   *   The scenario the user should be enrolled in.
-   */
-  _getIntendedFirefoxSuggestScenario() {
-    // If the user is in a Nimbus rollout, then Nimbus will define the scenario.
-    // Otherwise the user may be in a "hardcoded" rollout depending on their
-    // region and locale. If the user is not in any rollouts, then the scenario
-    // is "history", which means no Firefox Suggest suggestions will appear.
-    let scenario = this._nimbus.quickSuggestScenario;
-    if (!scenario) {
-      if (
-        lazy.Region.home == "US" &&
-        Services.locale.appLocaleAsBCP47.substring(0, 2) == "en"
-      ) {
-        // offline rollout for en locales in the US region
-        scenario = "offline";
-      } else {
-        // no rollout
-        scenario = "history";
-      }
-    }
-    if (!this.FIREFOX_SUGGEST_DEFAULT_PREFS.hasOwnProperty(scenario)) {
-      scenario = "history";
-      console.error(`Unrecognized Firefox Suggest scenario "${scenario}"`);
-    }
-    return scenario;
-  }
-
-  /**
-   * Prefs that are exposed in the UI and whose default-branch values are
-   * configurable via Nimbus variables. This getter returns an object that maps
-   * from variable names to pref names relative to `browser.urlbar`. See point 3
-   * in the comment inside `_updateFirefoxSuggestScenarioHelper()` for more.
-   *
-   * @returns {{ quickSuggestNonSponsoredEnabled: string; quickSuggestSponsoredEnabled: string; quickSuggestDataCollectionEnabled: string; }}
-   */
-  get FIREFOX_SUGGEST_UI_PREFS_BY_VARIABLE() {
-    return {
-      quickSuggestNonSponsoredEnabled: "suggest.quicksuggest.nonsponsored",
-      quickSuggestSponsoredEnabled: "suggest.quicksuggest.sponsored",
-      quickSuggestDataCollectionEnabled: "quicksuggest.dataCollection.enabled",
-    };
-  }
-
-  /**
-   * Default prefs relative to `browser.urlbar` per Firefox Suggest scenario.
-   *
-   * @returns {Record<Record<string, boolean>>}
-   */
-  get FIREFOX_SUGGEST_DEFAULT_PREFS() {
-    // Important notes when modifying this:
-    //
-    // If you add a pref to one scenario, you typically need to add it to all
-    // scenarios even if the pref is in firefox.js. That's because we need to
-    // allow for switching from one scenario to another at any time after
-    // startup. If we set a pref for one scenario on the default branch, we
-    // switch to a new scenario, and we don't set the pref for the new scenario,
-    // it will keep its default-branch value from the old scenario. The only
-    // possible exception is for prefs that make others unnecessary, like how
-    // when `quicksuggest.enabled` is false, none of the other prefs matter.
-    //
-    // Prefs not listed here for any scenario keep their values set in
-    // firefox.js.
-    return {
-      history: {
-        "quicksuggest.enabled": false,
-        "quicksuggest.dataCollection.enabled": false,
-        "quicksuggest.shouldShowOnboardingDialog": false,
-        "suggest.quicksuggest.nonsponsored": false,
-        "suggest.quicksuggest.sponsored": false,
-      },
-      offline: {
-        "quicksuggest.enabled": true,
-        "quicksuggest.dataCollection.enabled": false,
-        "quicksuggest.shouldShowOnboardingDialog": false,
-        "suggest.quicksuggest.nonsponsored": true,
-        "suggest.quicksuggest.sponsored": true,
-      },
-      online: {
-        "quicksuggest.enabled": true,
-        "quicksuggest.dataCollection.enabled": false,
-        "quicksuggest.shouldShowOnboardingDialog": true,
-        "suggest.quicksuggest.nonsponsored": true,
-        "suggest.quicksuggest.sponsored": true,
-      },
-    };
-  }
-
-  /**
-   * The current version of the Firefox Suggest prefs.
-   *
-   * @returns {number}
-   */
-  get FIREFOX_SUGGEST_MIGRATION_VERSION() {
-    return 2;
-  }
-
-  /**
-   * Migrates Firefox Suggest prefs to the current version if they haven't been
-   * migrated already.
-   *
-   * @param {string} scenario
-   *   The current Firefox Suggest scenario.
-   * @param {string} testOverrides
-   *   This is intended for tests only. Pass to force a migration version:
-   *   `{ migrationVersion }`
-   */
-  _ensureFirefoxSuggestPrefsMigrated(scenario, testOverrides) {
-    let currentVersion =
-      testOverrides?.migrationVersion !== undefined
-        ? testOverrides.migrationVersion
-        : this.FIREFOX_SUGGEST_MIGRATION_VERSION;
-    let lastSeenVersion = Math.max(
-      0,
-      this.get("quicksuggest.migrationVersion")
-    );
-    if (currentVersion <= lastSeenVersion) {
-      // Migration up to date.
-      return;
-    }
-
-    let version = lastSeenVersion;
-
-    // When the current scenario is online and the last-seen prefs version is
-    // unversioned, specially handle migration up to version 2.
-    if (!version && scenario == "online" && 2 <= currentVersion) {
-      this._migrateFirefoxSuggestPrefsUnversionedTo2Online();
-      version = 2;
-    }
-
-    // Migrate from the last-seen version up to the current version.
-    for (; version < currentVersion; version++) {
-      let nextVersion = version + 1;
-      let methodName = "_migrateFirefoxSuggestPrefsTo_" + nextVersion;
-      try {
-        this[methodName](scenario);
-      } catch (error) {
-        console.error(
-          `Error migrating Firefox Suggest prefs to version ${nextVersion}:`,
-          error
-        );
-        break;
-      }
-    }
-
-    // Record the new last-seen migration version.
-    this.set("quicksuggest.migrationVersion", version);
-  }
-
-  /**
-   * Migrates unversioned Firefox Suggest prefs to version 2 but only when the
-   * user's current scenario is online. This case requires special handling that
-   * isn't covered by the usual migration path from unversioned to 2.
-   */
-  _migrateFirefoxSuggestPrefsUnversionedTo2Online() {
-    // Copy `suggest.quicksuggest` to `suggest.quicksuggest.nonsponsored` and
-    // clear the first.
-    let mainPref = "browser.urlbar.suggest.quicksuggest";
-    let mainPrefHasUserValue = Services.prefs.prefHasUserValue(mainPref);
-    if (mainPrefHasUserValue) {
-      this.set(
-        "suggest.quicksuggest.nonsponsored",
-        Services.prefs.getBoolPref(mainPref)
-      );
-      Services.prefs.clearUserPref(mainPref);
-    }
-
-    if (!this.get("quicksuggest.showedOnboardingDialog")) {
-      // The user was enrolled in history or offline, or they were enrolled in
-      // online and weren't shown the modal yet.
-      //
-      // If they were in history, they should now see suggestions by default,
-      // and we don't need to worry about any current pref values since Firefox
-      // Suggest is new to them.
-      //
-      // If they were in offline, they saw suggestions by default, but if they
-      // disabled the main suggestions pref, then both non-sponsored and
-      // sponsored suggestions were disabled and we need to carry that forward.
-      //
-      // If they were in online and weren't shown the modal yet, suggestions
-      // were disabled by default. The modal is shown only on startup, so it's
-      // possible they used Firefox for quite a while after being enrolled in
-      // online with suggestions disabled the whole time. If they looked at the
-      // prefs UI, they would have seen both suggestion checkboxes unchecked.
-      // For these users, ideally we wouldn't suddenly enable suggestions, but
-      // unfortunately there's no simple way to distinguish them from history
-      // and offline users at this point based on the unversioned prefs. We
-      // could check whether the user is or was enrolled in the initial online
-      // experiment; if they were, then disable suggestions. However, that's a
-      // little risky because it assumes future online rollouts will be
-      // delivered by new experiments and not by increasing the original
-      // experiment's population. If that assumption does not hold, we would end
-      // up disabling suggestions for all users who are newly enrolled in online
-      // even if they were previously in history or offline. Further, based on
-      // telemetry data at the time of writing, only a small number of users in
-      // online have not yet seen the modal. Therefore we will enable
-      // suggestions for these users too.
-      //
-      // Note that if the user is in online and hasn't been shown the modal yet,
-      // we'll show it at some point during startup right after this. However,
-      // starting with the version-2 prefs, the modal now opts the user in to
-      // only data collection, not suggestions as it previously did.
-
-      if (
-        mainPrefHasUserValue &&
-        !this.get("suggest.quicksuggest.nonsponsored")
-      ) {
-        // The user was in offline and disabled the main suggestions pref, so
-        // sponsored suggestions were automatically disabled too. We know they
-        // disabled the main pref since it has a false user-branch value.
-        this.set("suggest.quicksuggest.sponsored", false);
-      }
-      return;
-    }
-
-    // At this point, the user was in online, they were shown the modal, and the
-    // current scenario is online. In the unversioned prefs for online, the
-    // suggestion prefs were false on the default branch, but in the version-2
-    // prefs, they're true on the default branch.
-
-    if (mainPrefHasUserValue && this.get("suggest.quicksuggest.nonsponsored")) {
-      // The main pref is true on the user branch. The user opted in either via
-      // the modal or by checking the checkbox in the prefs UI. In the latter
-      // case, they were shown some informational text about data collection
-      // under the checkbox. Either way, they've opted in to data collection.
-      this.set("quicksuggest.dataCollection.enabled", true);
-      if (
-        !Services.prefs.prefHasUserValue(
-          "browser.urlbar.suggest.quicksuggest.sponsored"
-        )
-      ) {
-        // The sponsored pref does not have a user value, so the default-branch
-        // false value was the effective value and the user did not see
-        // sponsored suggestions. We need to override the version-2 default-
-        // branch true value by setting the pref to false.
-        this.set("suggest.quicksuggest.sponsored", false);
-      }
-    } else {
-      // The main pref is not true on the user branch, so the user either did
-      // not opt in or they later disabled suggestions in the prefs UI. Set the
-      // suggestion prefs to false on the user branch to override the version-2
-      // default-branch true values. The data collection pref is false on the
-      // default branch, but since the user was shown the modal, set it on the
-      // user branch too, where it's sticky, to record the user's choice not to
-      // opt in.
-      this.set("suggest.quicksuggest.nonsponsored", false);
-      this.set("suggest.quicksuggest.sponsored", false);
-      this.set("quicksuggest.dataCollection.enabled", false);
-    }
-  }
-
-  _migrateFirefoxSuggestPrefsTo_1(scenario) {
-    // Copy `suggest.quicksuggest` to `suggest.quicksuggest.nonsponsored` and
-    // clear the first.
-    let suggestQuicksuggest = "browser.urlbar.suggest.quicksuggest";
-    if (Services.prefs.prefHasUserValue(suggestQuicksuggest)) {
-      this.set(
-        "suggest.quicksuggest.nonsponsored",
-        Services.prefs.getBoolPref(suggestQuicksuggest)
-      );
-      Services.prefs.clearUserPref(suggestQuicksuggest);
-    }
-
-    // In the unversioned prefs, sponsored suggestions were shown only if the
-    // main suggestions pref `suggest.quicksuggest` was true, but now there are
-    // two independent prefs, so disable sponsored if the main pref was false.
-    if (!this.get("suggest.quicksuggest.nonsponsored")) {
-      switch (scenario) {
-        case "offline":
-          // Set the pref on the user branch. Suggestions are enabled by default
-          // for offline; we want to preserve the user's choice of opting out,
-          // and we want to preserve the default-branch true value.
-          this.set("suggest.quicksuggest.sponsored", false);
-          break;
-        case "online":
-          // If the user-branch value is true, clear it so the default-branch
-          // false value becomes the effective value.
-          if (this.get("suggest.quicksuggest.sponsored")) {
-            this.clear("suggest.quicksuggest.sponsored");
-          }
-          break;
-      }
-    }
-
-    // The data collection pref is new in this version. Enable it iff the
-    // scenario is online and the user opted in to suggestions. In offline, it
-    // should always start off false.
-    if (scenario == "online" && this.get("suggest.quicksuggest.nonsponsored")) {
-      this.set("quicksuggest.dataCollection.enabled", true);
-    }
-  }
-
-  _migrateFirefoxSuggestPrefsTo_2() {
-    // In previous versions of the prefs for online, suggestions were disabled
-    // by default; in version 2, they're enabled by default. For users who were
-    // already in online and did not enable suggestions (because they did not
-    // opt in, they did opt in but later disabled suggestions, or they were not
-    // shown the modal) we don't want to suddenly enable them, so if the prefs
-    // do not have user-branch values, set them to false.
-    if (this.get("quicksuggest.scenario") == "online") {
-      if (
-        !Services.prefs.prefHasUserValue(
-          "browser.urlbar.suggest.quicksuggest.nonsponsored"
-        )
-      ) {
-        this.set("suggest.quicksuggest.nonsponsored", false);
-      }
-      if (
-        !Services.prefs.prefHasUserValue(
-          "browser.urlbar.suggest.quicksuggest.sponsored"
-        )
-      ) {
-        this.set("suggest.quicksuggest.sponsored", false);
-      }
-    }
-  }
-
-  /**
-   * @returns {Promise}
-   *   This can be used to wait until the initial Firefox Suggest scenario has
-   *   been set on startup. It's resolved when the first call to
-   *   `updateFirefoxSuggestScenario()` finishes.
-   */
-  get firefoxSuggestScenarioStartupPromise() {
-    return this._firefoxSuggestScenarioStartupPromise;
-  }
-
-  /**
-   * @returns {boolean}
-   *   Whether the Firefox Suggest scenario is being updated. While true,
-   *   changes to related prefs should be ignored, depending on the observer.
-   *   Telemetry intended to capture user changes to the prefs should not be
-   *   recorded, for example.
-   */
-  get updatingFirefoxSuggestScenario() {
-    return this._updatingFirefoxSuggestScenario;
   }
 
   /**
@@ -1502,36 +963,16 @@ class Preferences {
     let newNimbus = this._nimbus;
 
     // Callback to observers having onNimbusChanged.
-    for (let name in newNimbus) {
-      if (oldNimbus[name] != newNimbus[name]) {
+    let variableNames = new Set(Object.keys(oldNimbus));
+    for (let name of Object.keys(newNimbus)) {
+      variableNames.add(name);
+    }
+    for (let name of variableNames) {
+      if (
+        oldNimbus.hasOwnProperty(name) != newNimbus.hasOwnProperty(name) ||
+        oldNimbus[name] !== newNimbus[name]
+      ) {
         this.#notifyObservers("onNimbusChanged", name);
-      }
-    }
-
-    // If a change occurred to the Firefox Suggest scenario variable or any
-    // variables that correspond to prefs exposed in the UI, we need to update
-    // the scenario.
-    let variables = [
-      "quickSuggestScenario",
-      ...Object.keys(this.FIREFOX_SUGGEST_UI_PREFS_BY_VARIABLE),
-    ];
-    for (let name of variables) {
-      if (oldNimbus[name] != newNimbus[name]) {
-        this.updateFirefoxSuggestScenario();
-        return;
-      }
-    }
-
-    // If the current default-branch value of any pref is incorrect for the
-    // intended scenario, we need to update the scenario.
-    let scenario = this._getIntendedFirefoxSuggestScenario();
-    let intendedDefaultPrefs = this.FIREFOX_SUGGEST_DEFAULT_PREFS[scenario];
-    let defaults = Services.prefs.getDefaultBranch("browser.urlbar.");
-    for (let [name, value] of Object.entries(intendedDefaultPrefs)) {
-      // We assume all prefs are boolean right now.
-      if (defaults.getBoolPref(name) != value) {
-        this.updateFirefoxSuggestScenario();
-        return;
       }
     }
   }
@@ -1592,7 +1033,7 @@ class Preferences {
   _getPrefValue(pref) {
     switch (pref) {
       case "shortcuts.actions": {
-        return this.get("scotchBonnet.enableOverride") || this._readPref(pref);
+        return this.get("scotchBonnet.enableOverride") && this._readPref(pref);
       }
       case "defaultBehavior": {
         let val = 0;
@@ -1746,7 +1187,7 @@ class Preferences {
    */
   isPersistedSearchTermsEnabled() {
     return (
-      this.get("showSearchTermsFeatureGate") &&
+      this.getScotchBonnetPref("showSearchTerms.featureGate") &&
       this.get("showSearchTerms.enabled") &&
       !lazy.CustomizableUI.getPlacementOfWidget("search-container")
     );

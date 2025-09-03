@@ -88,6 +88,7 @@ open class BaseSessionTest(
         const val IFRAME_REDIRECT_LOCAL = "/assets/www/iframe_redirect_local.html"
         const val IFRAME_REDIRECT_AUTOMATION = "/assets/www/iframe_redirect_automation.html"
         const val AUTOPLAY_PATH = "/assets/www/autoplay.html"
+        const val SIMPLE_SCROLL_TEST_PATH = "/assets/www/simple-scroll.html"
         const val SCROLL_TEST_PATH = "/assets/www/scroll.html"
         const val COLORS_HTML_PATH = "/assets/www/colors.html"
         const val FIXED_BOTTOM = "/assets/www/fixedbottom.html"
@@ -151,6 +152,7 @@ open class BaseSessionTest(
         const val POSITION_STICKY_HTML_PATH = "/assets/www/position-sticky.html"
         const val POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH = "/assets/www/position-sticky-on-main-thread.html"
         const val INTERACTIVE_WIDGET_HTML_PATH = "/assets/www/interactive-widget.html"
+        const val INTERACTIVE_WIDGET_OVERLAYS_CONTENT_HTML_PATH = "/assets/www/interactive-widget-overlays-content.html"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
         const val TEST_HOST = GeckoSessionTestRule.TEST_HOST

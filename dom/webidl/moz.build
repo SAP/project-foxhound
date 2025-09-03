@@ -142,6 +142,9 @@ with Files("Glean*.webidl"):
 with Files("Grid.webidl"):
     BUG_COMPONENT = ("Core", "CSS Parsing and Computation")
 
+with Files("GPUUncapturedErrorEvent.webidl"):
+    BUG_COMPONENT = ("Core", "Graphics: WebGPU")
+
 with Files("HTML*"):
     BUG_COMPONENT = ("Core", "DOM: Core & HTML")
 
@@ -423,7 +426,6 @@ WEBIDL_FILES = [
     "AnimationTimeline.webidl",
     "AnonymousContent.webidl",
     "AppInfo.webidl",
-    "AppNotificationServiceOptions.webidl",
     "APZTestData.webidl",
     "ARIAMixin.webidl",
     "Attr.webidl",
@@ -766,6 +768,7 @@ WEBIDL_FILES = [
     "MIDIPort.webidl",
     "MimeType.webidl",
     "MimeTypeArray.webidl",
+    "MLS.webidl",
     "MouseEvent.webidl",
     "MouseScrollEvent.webidl",
     "MozFrameLoaderOwner.webidl",
@@ -901,6 +904,7 @@ WEBIDL_FILES = [
     "SVGComponentTransferFunctionElement.webidl",
     "SVGDefsElement.webidl",
     "SVGDescElement.webidl",
+    "SVGDiscardElement.webidl",
     "SVGElement.webidl",
     "SVGEllipseElement.webidl",
     "SVGFEBlendElement.webidl",
@@ -1101,7 +1105,6 @@ if CONFIG["MOZ_WEBRTC"]:
         "RTCSessionDescription.webidl",
         "RTCStatsReport.webidl",
         "RTCTransformEvent.webidl",
-        "WebrtcGlobalInformation.webidl",
     ]
 
 if CONFIG["MOZ_WEBSPEECH"]:
@@ -1166,6 +1169,11 @@ if CONFIG["FUZZING"]:
         "FuzzingFunctions.webidl",
     ]
 
+if CONFIG["FUZZING_SNAPSHOT"]:
+    WEBIDL_FILES += [
+        "Nyx.webidl",
+    ]
+
 GENERATED_EVENTS_WEBIDL_FILES = [
     "AddonEvent.webidl",
     "AnimationPlaybackEvent.webidl",
@@ -1199,6 +1207,7 @@ GENERATED_EVENTS_WEBIDL_FILES = [
     "PositionStateEvent.webidl",
     "ProgressEvent.webidl",
     "PromiseRejectionEvent.webidl",
+    "PushSubscriptionChangeEvent.webidl",
     "ScrollViewChangeEvent.webidl",
     "SecurityPolicyViolationEvent.webidl",
     "SubmitEvent.webidl",

@@ -26,6 +26,7 @@
 #include "mozilla/Unused.h"
 #include "nsPrintfCString.h"
 #include "nsReadableUtils.h"
+#include "prtime.h"
 
 #if defined(MOZ_SANDBOX) && defined(XP_WIN)
 #  include "mozilla/sandboxTarget.h"
@@ -914,8 +915,9 @@ void IPDLAsyncReturnsCallbacks::AddCallback(int32_t aSeqno, msgid_t aType,
   mMap.InsertElementSorted(std::move(entry));
 }
 
-auto IPDLAsyncReturnsCallbacks::GotReply(
-    IProtocol* aActor, const IPC::Message& aMessage) -> Result {
+auto IPDLAsyncReturnsCallbacks::GotReply(IProtocol* aActor,
+                                         const IPC::Message& aMessage)
+    -> Result {
   // Check if we have an entry for the given seqno and message type.
   EntryKey key{aMessage.seqno(), aMessage.type()};
   size_t index = mMap.BinaryIndexOf(key);

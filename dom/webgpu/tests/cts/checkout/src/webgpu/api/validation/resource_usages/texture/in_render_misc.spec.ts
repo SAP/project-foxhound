@@ -5,12 +5,28 @@ Texture Usages Validation Tests on All Kinds of WebGPU Subresource Usage Scopes.
 import { makeTestGroup } from '../../../../../common/framework/test_group.js';
 import { unreachable } from '../../../../../common/util/util.js';
 import { kTextureUsages } from '../../../../capability_info.js';
+import { MaxLimitsTestMixin } from '../../../../gpu_test.js';
 import { ValidationTest } from '../../validation_test.js';
 import {
   TextureBindingType,
   kTextureBindingTypes,
   IsReadOnlyTextureBindingType,
 } from '../texture/in_render_common.spec.js';
+
+function skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(
+  t: ValidationTest,
+  usage: (typeof kTextureBindingTypes)[number] | 'copy-src' | 'copy-dst' | 'color-attachment',
+  numRequired: number
+) {
+  t.skipIf(
+    t.isCompatibility &&
+      (usage === 'writeonly-storage-texture' ||
+        usage === 'readonly-storage-texture' ||
+        usage === 'readwrite-storage-texture') &&
+      !(t.device.limits.maxStorageTexturesInFragmentStage! > numRequired),
+    `maxStorageTexturesInFragmentStage${t.device.limits.maxStorageTexturesInFragmentStage} < ${numRequired}`
+  );
+}
 
 class F extends ValidationTest {
   createBindGroupLayoutForTest(
@@ -70,7 +86,7 @@ class F extends ValidationTest {
   }
 }
 
-export const g = makeTestGroup(F);
+export const g = makeTestGroup(MaxLimitsTestMixin(F));
 
 const kTextureSize = 16;
 const kTextureLayers = 3;
@@ -89,6 +105,12 @@ g.test('subresources,set_bind_group_on_same_index_color_texture')
       .combine('view1Binding', kTextureBindingTypes)
       .combine('view2Binding', kTextureBindingTypes)
   )
+  .beforeAllSubcases(t => {
+    t.skipIf(
+      t.isCompatibility,
+      'texture views used in bindgroups must consist of the entire array in compatibility mode. textureView0 does not fit.'
+    );
+  })
   .fn(t => {
     const { useDifferentTextureAsTexture2, baseLayer2, view1Binding, view2Binding } = t.params;
 
@@ -232,6 +254,12 @@ g.test('subresources,set_unused_bind_group')
       .combine('textureUsage0', kTextureBindingTypes)
       .combine('textureUsage1', kTextureBindingTypes)
   )
+  .beforeAllSubcases(t => {
+    t.skipIf(
+      t.isCompatibility,
+      'texture views used in bindgroups must consist of the entire array in compatibility mode. textureView0 does not fit.'
+    );
+  })
   .fn(t => {
     const { inRenderPass, textureUsage0, textureUsage1 } = t.params;
 
@@ -495,6 +523,9 @@ g.test('subresources,texture_usages_in_copy_and_render_pass')
   .fn(t => {
     const { usage0, usage1 } = t.params;
 
+    skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(t, usage0, 1);
+    skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(t, usage1, 1);
+
     const texture = t.createTextureTracked({
       format: 'r32float',
       usage:
@@ -587,6 +618,8 @@ g.test('subresources,texture_view_usages')
   .fn(t => {
     const { bindingType, viewUsage } = t.params;
 
+    skipIfStorageTexturesUsedAndNotAvailableInFragmentStage(t, bindingType, 1);
+
     const texture = t.createTextureTracked({
       format: 'r32float',
       usage:
@@ -594,7 +627,7 @@ g.test('subresources,texture_view_usages')
         GPUTextureUsage.COPY_DST |
         GPUTextureUsage.TEXTURE_BINDING |
         GPUTextureUsage.STORAGE_BINDING |
-        GPUTextureUsage.RENDER_ATTACHMENT,
+        (bindingType === 'color-attachment' ? GPUTextureUsage.RENDER_ATTACHMENT : 0),
       size: [kTextureSize, kTextureSize, 1],
       ...(t.isCompatibility && {
         textureBindingViewDimension: '2d-array',

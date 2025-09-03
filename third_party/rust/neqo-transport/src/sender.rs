@@ -93,9 +93,8 @@ impl PacketSender {
         let current_mtu = self.pmtud().plpmtu();
         if current_mtu != self.pacer.mtu() {
             qdebug!(
-                "PLPMTU changed from {} to {}, updating pacer",
-                self.pacer.mtu(),
-                current_mtu
+                "PLPMTU changed from {} to {current_mtu}, updating pacer",
+                self.pacer.mtu()
             );
             self.pacer.set_mtu(current_mtu);
         }
@@ -109,7 +108,7 @@ impl PacketSender {
         stats: &mut Stats,
     ) {
         self.cc.on_packets_acked(acked_pkts, rtt_est, now);
-        self.pmtud_mut().on_packets_acked(acked_pkts, stats);
+        self.pmtud_mut().on_packets_acked(acked_pkts, now, stats);
         self.maybe_update_pacer_mtu();
     }
 
@@ -128,6 +127,7 @@ impl PacketSender {
             prev_largest_acked_sent,
             pto,
             lost_packets,
+            now,
         );
         // Call below may change the size of MTU probes, so it needs to happen after the CC
         // reaction above, which needs to ignore probes based on their size.
@@ -137,34 +137,30 @@ impl PacketSender {
     }
 
     /// Called when ECN CE mark received.  Returns true if the congestion window was reduced.
-    pub fn on_ecn_ce_received(&mut self, largest_acked_pkt: &SentPacket) -> bool {
-        self.cc.on_ecn_ce_received(largest_acked_pkt)
+    pub fn on_ecn_ce_received(&mut self, largest_acked_pkt: &SentPacket, now: Instant) -> bool {
+        self.cc.on_ecn_ce_received(largest_acked_pkt, now)
     }
 
-    pub fn discard(&mut self, pkt: &SentPacket) {
-        self.cc.discard(pkt);
+    pub fn discard(&mut self, pkt: &SentPacket, now: Instant) {
+        self.cc.discard(pkt, now);
     }
 
     /// When we migrate, the congestion controller for the previously active path drops
     /// all bytes in flight.
-    pub fn discard_in_flight(&mut self) {
-        self.cc.discard_in_flight();
+    pub fn discard_in_flight(&mut self, now: Instant) {
+        self.cc.discard_in_flight(now);
     }
 
-    pub fn on_packet_sent(&mut self, pkt: &SentPacket, rtt: Duration) {
+    pub fn on_packet_sent(&mut self, pkt: &SentPacket, rtt: Duration, now: Instant) {
         self.pacer
             .spend(pkt.time_sent(), rtt, self.cc.cwnd(), pkt.len());
-        self.cc.on_packet_sent(pkt);
+        self.cc.on_packet_sent(pkt, now);
     }
 
     #[must_use]
     pub fn next_paced(&self, rtt: Duration) -> Option<Instant> {
         // Only pace if there are bytes in flight.
-        if self.cc.bytes_in_flight() > 0 {
-            Some(self.pacer.next(rtt, self.cc.cwnd()))
-        } else {
-            None
-        }
+        (self.cc.bytes_in_flight() > 0).then(|| self.pacer.next(rtt, self.cc.cwnd()))
     }
 
     #[must_use]

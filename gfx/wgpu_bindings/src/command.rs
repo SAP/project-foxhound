@@ -89,7 +89,7 @@ impl RecordedComputePass {
                 dynamic_offsets: Vec::new(),
                 string_data: Vec::new(),
             },
-            timestamp_writes: desc.timestamp_writes.cloned(),
+            timestamp_writes: desc.timestamp_writes.clone(),
         }
     }
 }
@@ -721,7 +721,7 @@ pub fn replay_render_pass(
     src_pass: &RecordedRenderPass,
     mut error_buf: crate::error::ErrorBuffer,
 ) {
-    let (mut dst_pass, err) = global.command_encoder_create_render_pass(
+    let (mut dst_pass, err) = global.command_encoder_begin_render_pass(
         id,
         &wgc::command::RenderPassDescriptor {
             label: src_pass.base.label.as_ref().map(|s| s.as_str().into()),
@@ -925,11 +925,11 @@ pub fn replay_compute_pass(
     src_pass: &RecordedComputePass,
     mut error_buf: crate::error::ErrorBuffer,
 ) {
-    let (mut dst_pass, err) = global.command_encoder_create_compute_pass(
+    let (mut dst_pass, err) = global.command_encoder_begin_compute_pass(
         id,
         &wgc::command::ComputePassDescriptor {
             label: src_pass.base.label.as_ref().map(|s| s.as_str().into()),
-            timestamp_writes: src_pass.timestamp_writes.as_ref(),
+            timestamp_writes: src_pass.timestamp_writes.clone(),
         },
     );
     if let Some(err) = err {

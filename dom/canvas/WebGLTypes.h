@@ -20,12 +20,14 @@
 #include "mozilla/Casting.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/EnumTypeTraits.h"
+#include "mozilla/IsEnumCase.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/Range.h"
 #include "mozilla/RefCounted.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/Span.h"
+#include "mozilla/TiedFields.h"
 #include "mozilla/TypedEnumBits.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/BuildConstants.h"
@@ -40,7 +42,6 @@
 #include "nsString.h"
 #include "mozilla/dom/WebGLRenderingContextBinding.h"
 #include "mozilla/ipc/SharedMemory.h"
-#include "TiedFields.h"
 
 // Manual reflection of WebIDL typedefs that are different from their
 // OpenGL counterparts.
@@ -131,19 +132,6 @@ class VRefCounted : public RefCounted<VRefCounted> {
   virtual size_t typeSize() const = 0;
 #endif
 };
-
-// -
-
-template <class T>
-bool IsEnumCase(T);
-
-template <class E>
-inline constexpr std::optional<E> AsEnumCase(
-    const std::underlying_type_t<E> raw) {
-  const auto ret = static_cast<E>(raw);
-  if (!IsEnumCase(ret)) return {};
-  return ret;
-}
 
 // -
 
@@ -267,7 +255,7 @@ enum class WebGLExtensionID : uint8_t {
 };
 
 class UniqueBuffer final {
-  // Like UniquePtr<>, but for void* and malloc/calloc/free.
+  // Like unique_ptr<>, but for void* and malloc/calloc/free.
   void* mBuffer = nullptr;
 
  public:
@@ -490,16 +478,7 @@ struct avec2 {
 #undef _
 
   avec2 Clamp(const avec2& min, const avec2& max) const {
-    return {mozilla::Clamp(x, min.x, max.x), mozilla::Clamp(y, min.y, max.y)};
-  }
-
-  // mozilla::Clamp doesn't work on floats, so be clear that this is a min+max
-  // helper.
-  avec2 ClampMinMax(const avec2& min, const avec2& max) const {
-    const auto ClampScalar = [](const T v, const T min, const T max) {
-      return std::max(min, std::min(v, max));
-    };
-    return {ClampScalar(x, min.x, max.x), ClampScalar(y, min.y, max.y)};
+    return {std::clamp(x, min.x, max.x), std::clamp(y, min.y, max.y)};
   }
 
   template <typename U>
@@ -915,6 +894,7 @@ struct GetUniformData final {
 
 struct FrontBufferSnapshotIpc final {
   uvec2 surfSize = {};
+  size_t byteStride = 0;
   Maybe<mozilla::ipc::Shmem> shmem = {};
 };
 
@@ -1157,7 +1137,7 @@ struct TexUnpackBlobDesc final {
   Maybe<uvec2> structuredSrcSize;
   RefPtr<layers::Image> image;
   Maybe<layers::SurfaceDescriptor> sd;
-  RefPtr<gfx::DataSourceSurface> dataSurf;
+  RefPtr<gfx::SourceSurface> sourceSurf;
 
   webgl::PixelUnpackStateWebgl unpacking;
   bool applyUnpackTransforms = true;

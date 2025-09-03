@@ -9,6 +9,7 @@
 
 #include "vm/JSObject.h"
 
+#include "gc/Allocator.h"
 #include "gc/Zone.h"
 #include "js/Object.h"  // JS::GetBuiltinClass
 #include "vm/ArrayObject.h"
@@ -18,22 +19,12 @@
 #include "vm/Probes.h"
 #include "vm/PropertyResult.h"
 #include "vm/TypedArrayObject.h"
-
-#ifdef ENABLE_RECORD_TUPLE
-#  include "vm/TupleType.h"
-#endif
-
+#include "gc/BufferAllocator-inl.h"
 #include "gc/GCContext-inl.h"
 #include "gc/ObjectKind-inl.h"
 #include "vm/ObjectOperations-inl.h"  // js::MaybeHasInterestingSymbolProperty
 
 namespace js {
-
-#ifdef ENABLE_RECORD_TUPLE
-// Defined in vm/RecordTupleShared.{h,cpp}. We cannot include that file
-// because it causes circular dependencies.
-extern bool IsExtendedPrimitiveWrapper(const JSObject& obj);
-#endif
 
 // Get the GC kind to use for scripted 'new', empty object literals ({}), and
 // the |Object| constructor.
@@ -65,11 +56,15 @@ MOZ_ALWAYS_INLINE uint32_t js::NativeObject::calculateDynamicSlots() const {
   // the dynamic slots need to get increased again. ArrayObjects ignore
   // this because slots are uncommon in that case.
   if (clasp != &ArrayObject::class_ && ndynamic <= SLOT_CAPACITY_MIN) {
+#ifdef DEBUG
+    size_t count = SLOT_CAPACITY_MIN + ObjectSlots::VALUES_PER_HEADER;
+    MOZ_ASSERT(count == gc::GetGoodPower2ElementCount(count, sizeof(Value)));
+#endif
     return SLOT_CAPACITY_MIN;
   }
 
-  uint32_t count =
-      mozilla::RoundUpPow2(ndynamic + ObjectSlots::VALUES_PER_HEADER);
+  uint32_t count = gc::GetGoodPower2ElementCount(
+      ndynamic + ObjectSlots::VALUES_PER_HEADER, sizeof(Value));
 
   uint32_t slots = count - ObjectSlots::VALUES_PER_HEADER;
   MOZ_ASSERT(slots >= ndynamic);
@@ -98,24 +93,6 @@ inline void JSObject::finalize(JS::GCContext* gcx) {
   const JSClass* clasp = objShape->getObjectClass();
   if (clasp->hasFinalize()) {
     clasp->doFinalize(gcx, this);
-  }
-
-  if (!objShape->isNative()) {
-    return;
-  }
-
-  js::NativeObject* nobj = &as<js::NativeObject>();
-  if (nobj->hasDynamicSlots()) {
-    js::ObjectSlots* slotsHeader = nobj->getSlotsHeader();
-    size_t size = js::ObjectSlots::allocSize(slotsHeader->capacity());
-    gcx->free_(this, slotsHeader, size, js::MemoryUse::ObjectSlots);
-  }
-
-  if (nobj->hasDynamicElements()) {
-    js::ObjectElements* elements = nobj->getElementsHeader();
-    size_t size = elements->numAllocatedElements() * sizeof(js::HeapSlot);
-    gcx->free_(this, nobj->getUnshiftedElementsHeader(), size,
-               js::MemoryUse::ObjectElements);
   }
 }
 
@@ -147,7 +124,7 @@ inline bool JSObject::setQualifiedVarObj(
 }
 
 inline bool JSObject::canHaveFixedElements() const {
-  return (is<js::ArrayObject>() || IF_RECORD_TUPLE(is<js::TupleType>(), false));
+  return is<js::ArrayObject>();
 }
 
 namespace js {
@@ -226,11 +203,6 @@ inline js::GlobalObject& JSObject::nonCCWGlobal() const {
 inline bool JSObject::nonProxyIsExtensible() const {
   MOZ_ASSERT(!uninlinedIsProxyObject());
 
-#ifdef ENABLE_RECORD_TUPLE
-  if (js::IsExtendedPrimitiveWrapper(*this)) {
-    return false;
-  }
-#endif
   // [[Extensible]] for ordinary non-proxy objects is an object flag.
   return !hasFlag(js::ObjectFlag::NotExtensible);
 }

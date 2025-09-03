@@ -62,10 +62,9 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
       MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
   void lowerForMulInt64(LMulI64* ins, MMul* mir, MDefinition* lhs,
                         MDefinition* rhs);
-  template <size_t Temps>
-  void lowerForShiftInt64(
-      LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, Temps>* ins,
-      MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
+  template <class LInstr>
+  void lowerForShiftInt64(LInstr* ins, MDefinition* mir, MDefinition* lhs,
+                          MDefinition* rhs);
 
   void lowerForFPU(LInstructionHelper<1, 1, 0>* ins, MDefinition* mir,
                    MDefinition* input);
@@ -113,10 +112,9 @@ class LIRGeneratorARM64 : public LIRGeneratorShared {
   bool canEmitWasmReduceSimd128AtUses(MWasmReduceSimd128* ins);
 #endif
 
-  LTableSwitchV* newLTableSwitchV(MTableSwitch* ins);
+  LTableSwitchV* newLTableSwitchV(const LBoxAllocation& in);
   LTableSwitch* newLTableSwitch(const LAllocation& in,
-                                const LDefinition& inputCopy,
-                                MTableSwitch* ins);
+                                const LDefinition& inputCopy);
 
   void lowerPhi(MPhi* phi);
 };

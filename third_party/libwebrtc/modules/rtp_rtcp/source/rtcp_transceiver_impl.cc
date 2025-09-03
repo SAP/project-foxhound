@@ -23,6 +23,7 @@
 #include "modules/rtp_rtcp/source/rtcp_packet.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/bye.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/common_header.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/congestion_control_feedback.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/extended_reports.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/fir.h"
 #include "modules/rtp_rtcp/source/rtcp_packet/nack.h"
@@ -56,7 +57,8 @@ std::function<void(rtc::ArrayView<const uint8_t>)> GetRtcpTransport(
 
   bool first = true;
   std::string log_prefix = config.debug_id;
-  return [first, log_prefix](rtc::ArrayView<const uint8_t> packet) mutable {
+  return [first,
+          log_prefix](rtc::ArrayView<const uint8_t> /* packet */) mutable {
     if (first) {
       RTC_LOG(LS_ERROR) << log_prefix << "Sending RTCP packets is disabled.";
       first = false;
@@ -362,8 +364,7 @@ void RtcpTransceiverImpl::HandleReportBlocks(
   }
   NtpTime now_ntp = config_.clock->ConvertTimestampToNtpTime(now);
   uint32_t receive_time_ntp = CompactNtp(now_ntp);
-  Timestamp now_utc =
-      Timestamp::Millis(now_ntp.ToMs() - rtc::kNtpJan1970Millisecs);
+  Timestamp now_utc = Clock::NtpToUtc(now_ntp);
 
   for (const rtcp::ReportBlock& block : rtcp_report_blocks) {
     std::optional<TimeDelta> rtt;
@@ -375,7 +376,7 @@ void RtcpTransceiverImpl::HandleReportBlocks(
     auto sender_it = local_senders_by_ssrc_.find(block.source_ssrc());
     if (sender_it != local_senders_by_ssrc_.end()) {
       LocalSenderState& state = *sender_it->second;
-      state.report_block.SetReportBlock(sender_ssrc, block, now_utc);
+      state.report_block.SetReportBlock(sender_ssrc, block, now_utc, now);
       if (rtt.has_value()) {
         state.report_block.AddRoundTripTimeSample(*rtt);
       }
@@ -385,7 +386,7 @@ void RtcpTransceiverImpl::HandleReportBlocks(
       // No registered sender for this report block, still report it to the
       // network link.
       ReportBlockData report_block;
-      report_block.SetReportBlock(sender_ssrc, block, now_utc);
+      report_block.SetReportBlock(sender_ssrc, block, now_utc, now);
       if (rtt.has_value()) {
         report_block.AddRoundTripTimeSample(*rtt);
       }
@@ -464,6 +465,9 @@ void RtcpTransceiverImpl::HandleRtpFeedback(
     case rtcp::TransportFeedback::kFeedbackMessageType:
       HandleTransportFeedback(rtcp_packet_header, now);
       break;
+    case rtcp::CongestionControlFeedback::kFeedbackMessageType:
+      HandleCongestionControlFeedback(rtcp_packet_header, now);
+      break;
   }
 }
 
@@ -490,6 +494,20 @@ void RtcpTransceiverImpl::HandleTransportFeedback(
   rtcp::TransportFeedback feedback;
   if (feedback.Parse(rtcp_packet_header)) {
     config_.network_link_observer->OnTransportFeedback(now, feedback);
+  }
+}
+
+void RtcpTransceiverImpl::HandleCongestionControlFeedback(
+    const rtcp::CommonHeader& rtcp_packet_header,
+    Timestamp now) {
+  RTC_DCHECK_EQ(rtcp_packet_header.fmt(),
+                rtcp::CongestionControlFeedback::kFeedbackMessageType);
+  if (config_.network_link_observer == nullptr) {
+    return;
+  }
+  rtcp::CongestionControlFeedback feedback;
+  if (feedback.Parse(rtcp_packet_header)) {
+    config_.network_link_observer->OnCongestionControlFeedback(now, feedback);
   }
 }
 

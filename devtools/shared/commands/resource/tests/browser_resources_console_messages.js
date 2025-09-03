@@ -25,9 +25,8 @@ add_task(async function () {
 async function testTabConsoleMessagesResources(executeInIframe) {
   const tab = await addTab(FISSION_TEST_URL);
 
-  const { client, resourceCommand, targetCommand } = await initResourceCommand(
-    tab
-  );
+  const { client, resourceCommand, targetCommand } =
+    await initResourceCommand(tab);
 
   info(
     "Log some messages *before* calling ResourceCommand.watchResources in order to " +
@@ -103,9 +102,8 @@ async function testTabConsoleMessagesResourcesWithIgnoreExistingResources(
   info("Test ignoreExistingResources option for console messages");
   const tab = await addTab(FISSION_TEST_URL);
 
-  const { client, resourceCommand, targetCommand } = await initResourceCommand(
-    tab
-  );
+  const { client, resourceCommand, targetCommand } =
+    await initResourceCommand(tab);
 
   info(
     "Check whether onAvailable will not be called with existing console messages"
@@ -294,6 +292,37 @@ function getExpectedRuntimeConsoleCalls(documentFilename) {
       ...defaultProperties,
       level: "log",
       arguments: ["Float from number: 1.300000"],
+    },
+    {
+      ...defaultProperties,
+      level: "log",
+      arguments: ["Float from number with precision: 1.00"],
+    },
+    {
+      ...defaultProperties,
+      level: "log",
+      arguments: [
+        // Even if a precision of 200 was requested, it's capped at 15
+        `Float from number with high precision: 2.${"0".repeat(15)}`,
+      ],
+    },
+    {
+      ...defaultProperties,
+      level: "log",
+      arguments: ["Integer from number: 3"],
+    },
+    {
+      ...defaultProperties,
+      level: "log",
+      arguments: ["Integer from number with precision: 04"],
+    },
+    {
+      ...defaultProperties,
+      level: "log",
+      arguments: [
+        // The precision is not capped for integers
+        `Integer from number with high precision: ${"5".padStart(200, "0")}`,
+      ],
     },
     {
       ...defaultProperties,
@@ -554,6 +583,11 @@ async function logRuntimeMessages(browser, executeInIframe) {
     console.log("Float from not a number: %f", "foo");
     console.log("Float from string: %f", "1.2");
     console.log("Float from number: %f", 1.3);
+    console.log("Float from number with precision: %.2f", 1);
+    console.log("Float from number with high precision: %.200f", 2);
+    console.log("Integer from number: %i", 3.14);
+    console.log("Integer from number with precision: %.2i", 4);
+    console.log("Integer from number with high precision: %.200i", 5);
     console.log("BigInt %d and %i", 123n, 456n);
     console.log(
       "%cmessage with %cstyle",

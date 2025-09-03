@@ -66,6 +66,7 @@ SECStatus InitializeNSS(const nsACString& dir, NSSDBConfig nssDbConfig,
 
 void DisableMD5();
 
+#ifdef MOZ_SYSTEM_NSS
 /**
  * Loads root certificates from a module.
  *
@@ -75,17 +76,23 @@ void DisableMD5();
  *        If empty, the (library) path will be searched.
  * @return true if the roots were successfully loaded, false otherwise.
  */
+
 bool LoadLoadableRoots(const nsCString& dir);
+#endif  // MOZ_SYSTEM_NSS
+
+/**
+ * Loads root certificates from libxul.
+ *
+ * @return true if the roots were successfully loaded, false otherwise.
+ */
+bool LoadLoadableRootsFromXul();
 
 /**
  * Loads the OS client certs module.
  *
- * @param dir
- *        The path to the directory containing the module. This should be the
- *        same as where all of the other gecko libraries live.
  * @return true if the module was successfully loaded, false otherwise.
  */
-bool LoadOSClientCertsModule(const nsCString& dir);
+bool LoadOSClientCertsModule();
 
 /**
  * Loads the IPC client certs module.
@@ -95,7 +102,7 @@ bool LoadOSClientCertsModule(const nsCString& dir);
  *        same as where all of the other gecko libraries live.
  * @return true if the module was successfully loaded, false otherwise.
  */
-bool LoadIPCClientCertsModule(const nsCString& dir);
+bool LoadIPCClientCertsModule();
 
 /**
  * Unloads the loadable roots module and os client certs module, if loaded.
@@ -251,11 +258,7 @@ class NSSCertDBTrustDomain : public mozilla::pkix::TrustDomain {
   IssuerSources GetIssuerSources() { return mIssuerSources; }
 
  private:
-  Result CheckCRLiteStash(
-      const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
-      const nsTArray<uint8_t>& serialNumberBytes);
   Result CheckCRLite(
-      const nsTArray<uint8_t>& issuerBytes,
       const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
       const nsTArray<uint8_t>& serialNumberBytes,
       const nsTArray<RefPtr<nsICRLiteTimestamp>>& crliteTimestamps,

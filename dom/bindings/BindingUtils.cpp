@@ -1263,6 +1263,18 @@ static bool NativeInterface2JSObjectAndThrowIfFailed(
   return true;
 }
 
+/* static */
+size_t binding_detail::NeedsQIToWrapperCache::ObjectMoved(JSObject* aObj,
+                                                          JSObject* aOld) {
+  JS::AutoAssertGCCallback inCallback;
+  nsWrapperCache* cache = GetWrapperCache(aObj);
+  if (cache) {
+    cache->UpdateWrapper(aObj, aOld);
+  }
+
+  return 0;
+}
+
 bool TryPreserveWrapper(JS::Handle<JSObject*> obj) {
   MOZ_ASSERT(IsDOMObject(obj));
 
@@ -2503,7 +2515,7 @@ nsISupports* GlobalObject::GetAsSupports() const {
 
   // Remove everything below here once all our global objects are using new
   // bindings.  If that ever happens; it would need to include Sandbox and
-  // BackstagePass.
+  // SystemGlobal.
 
   // See whether mGlobalJSObject is an XPCWrappedNative.  This will redo the
   // IsWrapper bit above and the UnwrapDOMObjectToISupports in the case when
@@ -2829,7 +2841,7 @@ bool IsGlobalInExposureSet(JSContext* aCx, JSObject* aGlobal,
   const char* name = JS::GetClass(aGlobal)->name;
 
   if ((aGlobalSet & GlobalNames::Window) &&
-      (!strcmp(name, "Window") || !strcmp(name, "BackstagePass"))) {
+      (!strcmp(name, "Window") || !strcmp(name, "SystemGlobal"))) {
     return true;
   }
 

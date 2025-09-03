@@ -32,6 +32,9 @@
     <string name="pref_key_leakcanary" translatable="false"><xliff:g id="preference_key">pref_key_leakcanary</xliff:g></string>
 
     <string name="pref_key_telemetry" translatable="false"><xliff:g id="preference_key">pref_telemetry</xliff:g></string>
+    <string name="pref_key_glean_usage_profile_id" translatable="false"><xliff:g id="preference_key">pref_key_glean_usage_profile_id</xliff:g></string>
+    <string name="pref_key_daily_usage_ping" translatable="false"><xliff:g id="preference_key">pref_key_daily_usage_ping</xliff:g></string>
+    <string name="pref_key_learn_about_daily_usage_ping" translatable="false"><xliff:g id="preference_key">pref_key_learn_about_daily_usage_ping</xliff:g></string>
 
     <string name="pref_key_secure" translatable="false"><xliff:g id="preference_key">pref_secure</xliff:g></string>
 
@@ -46,6 +49,7 @@
     <string name="pref_key_privacy_notice" translatable="false"><xliff:g id="preference_key">pref_privacy_notice</xliff:g></string>
     <string name="pref_key_licensing_info" translatable="false"><xliff:g id="preference_key">pref_licensing_info</xliff:g></string>
     <string name="pref_key_libraries_we_use" translatable="false"><xliff:g id="preference_key">pref_libraries_we_use</xliff:g></string>
+    <string name="pref_key_crash_reports" translatable="false"><xliff:g id="preference_key">pref_key_crash_reports</xliff:g></string>
 
     <string name="pref_key_locale" translatable="false"><xliff:g id="preference_key">pref_locale</xliff:g></string>
     <string name="pref_in_app_review_openings" translatable="false"><xliff:g id="preference_key">pref_in_app_review_openings</xliff:g></string>

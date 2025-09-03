@@ -30,6 +30,7 @@
 #define NOTIFICATION_CLOSE_EVENT_NAME u"notificationclose"
 
 class nsIInterceptedChannel;
+class nsIPushSubscription;
 class nsIWorkerDebugger;
 
 namespace mozilla {
@@ -107,15 +108,12 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
                          const Maybe<nsTArray<uint8_t>>& aData,
                          RefPtr<ServiceWorkerRegistrationInfo> aRegistration);
 
-  nsresult SendPushSubscriptionChangeEvent();
+  nsresult SendPushSubscriptionChangeEvent(
+      const RefPtr<nsIPushSubscription>& aOldSubscription);
 
   nsresult SendNotificationEvent(const nsAString& aEventName,
-                                 const nsAString& aID, const nsAString& aTitle,
-                                 const nsAString& aDir, const nsAString& aLang,
-                                 const nsAString& aBody, const nsAString& aTag,
-                                 const nsAString& aIcon, const nsAString& aData,
-                                 const nsAString& aBehavior,
-                                 const nsAString& aScope);
+                                 const nsAString& aScope, const nsAString& aId,
+                                 const IPCNotificationOptions& aOptions);
 
   nsresult SendFetchEvent(nsCOMPtr<nsIInterceptedChannel> aChannel,
                           nsILoadGroup* aLoadGroup, const nsAString& aClientId,
@@ -140,6 +138,8 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   void NoteStoppedControllingDocuments();
 
   void UpdateState(ServiceWorkerState aState);
+
+  void UpdateIsOnContentBlockingAllowList(bool aOnContentBlockingAllowList);
 
   nsresult GetDebugger(nsIWorkerDebugger** aResult);
 

@@ -67,8 +67,13 @@ PeerConnectionDependencies::~PeerConnectionDependencies() = default;
 PeerConnectionFactoryDependencies::PeerConnectionFactoryDependencies() =
     default;
 
+// TODO: bugs.webrtc.org/369904700 - remove pragma once `audio_processing`
+// is removed from PeerConnectionFactoryDependencies.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
 PeerConnectionFactoryDependencies::PeerConnectionFactoryDependencies(
     PeerConnectionFactoryDependencies&&) = default;
+#pragma clang diagnostic pop
 
 PeerConnectionFactoryDependencies::~PeerConnectionFactoryDependencies() =
     default;
@@ -104,19 +109,9 @@ PeerConnectionFactoryInterface::CreatePeerConnection(
 
 RTCErrorOr<rtc::scoped_refptr<PeerConnectionInterface>>
 PeerConnectionFactoryInterface::CreatePeerConnectionOrError(
-    const PeerConnectionInterface::RTCConfiguration& configuration,
-    PeerConnectionDependencies dependencies) {
+    const PeerConnectionInterface::RTCConfiguration& /* configuration */,
+    PeerConnectionDependencies /* dependencies */) {
   return RTCError(RTCErrorType::INTERNAL_ERROR);
-}
-
-RtpCapabilities PeerConnectionFactoryInterface::GetRtpSenderCapabilities(
-    cricket::MediaType kind) const {
-  return {};
-}
-
-RtpCapabilities PeerConnectionFactoryInterface::GetRtpReceiverCapabilities(
-    cricket::MediaType kind) const {
-  return {};
 }
 
 }  // namespace webrtc

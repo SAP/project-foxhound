@@ -19,20 +19,20 @@ object Versions {
     const val serialization = "1.6.3"
     const val python_envs_plugin = "0.0.31"
 
-    const val mozilla_glean = "62.0.0"
+    const val mozilla_glean = "63.1.0"
 
     const val maven_ant_tasks = "2.1.3"
     const val jacoco = "0.8.12"
     const val okhttp = "4.12.0"
-    const val okio = "3.9.0"
+    const val okio = "3.10.1"
     const val androidsvg = "1.4"
 
-    const val android_gradle_plugin = "8.7.2"
+    const val android_gradle_plugin = "8.8.2"
 
     // This has to be synced to the gradlew plugin version. See
     // http://googlesamples.github.io/android-custom-lint-rules/api-guide/example.md.html#example:samplelintcheckgithubproject/lintversion?
-    const val lint = "31.7.2"
-    const val detekt = "1.23.7"
+    const val lint = "31.8.1"
+    const val detekt = "1.23.8"
     const val ktlint = "0.49.1"
 
     const val zxing = "3.5.3"
@@ -48,7 +48,7 @@ object Versions {
     const val compose_compiler = "1.5.14"
 
     object AndroidX {
-        const val activity = "1.9.3"
+        const val activity = "1.10.1"
         const val annotation = "1.9.1"
         const val appcompat = "1.7.0"
         const val arch = "2.2.0"
@@ -58,25 +58,25 @@ object Versions {
         const val browser = "1.8.0"
         const val cardview = "1.0.0"
         const val collection = "1.4.5"
-        const val compose_bom = "2024.10.01"
+        const val compose_bom = "2025.02.00"
         const val concurrent = "1.2.0"
-        const val constraintlayout = "2.2.0"
-        const val constraintlayout_compose = "1.1.0"
-        const val coordinatorlayout = "1.2.0"
+        const val constraintlayout = "2.2.1"
+        const val constraintlayout_compose = "1.1.1"
+        const val coordinatorlayout = "1.3.0"
         const val core = "1.15.0"
         const val core_splashscreen = "1.0.1"
-        const val datastore="1.1.1"
+        const val datastore="1.1.3"
         const val drawerlayout = "1.2.0"
-        const val fragment = "1.8.5"
+        const val fragment = "1.8.6"
         const val lifecycle = "2.8.7"
         const val localbroadcastmanager = "1.0.0"
         const val media = "1.7.0"
-        const val navigation = "2.8.4"
-        const val paging = "3.3.4"
+        const val navigation = "2.8.8"
+        const val paging = "3.3.6"
         const val palette = "1.0.0"
         const val preferences = "1.2.1"
         const val profileinstaller = "1.4.0"
-        const val recyclerview = "1.3.2"
+        const val recyclerview = "1.4.0"
         const val room = "2.6.1"
         const val savedstate = "1.2.1"
         const val swiperefreshlayout = "1.1.0"
@@ -88,15 +88,15 @@ object Versions {
     // Gradle can't deal with this being nested below.
     const val protobuf_plugin = "0.9.4"
     object Google {
-        const val accompanist = "0.36.0"
+        const val accompanist = "0.37.0"
         const val firebase_messaging = "24.1.0"
         const val material = "1.12.0"
         const val osslicenses_plugin = "0.10.6"
-        const val play_review = "2.0.1"
-        const val play_services_ads_id = "16.0.0"
+        const val play_review = "2.0.2"
+        const val play_services_ads_id = "18.1.0"
         const val play_services_base = "18.5.0"
         const val play_services_fido = "21.1.0"
-        const val protobuf = "4.28.2" // Keep Protobuf in sync with the version used by AppServices.
+        const val protobuf = "4.29.0" // Keep Protobuf in sync with the version used by AppServices.
     }
 
     object Testing {
@@ -109,14 +109,14 @@ object Versions {
         const val androidx_test_uiautomator = "2.3.0"
         const val falcon = "2.2.0"
         const val fastlane = "2.1.1"
-        const val junit = "5.11.3"
-        const val mockito = "5.14.2"
-        const val mockk = "1.13.13"
+        const val junit = "5.11.4"
+        const val mockito = "5.15.2"
+        const val mockk = "1.13.16"
         const val robolectric = "4.14.1"
     }
 
     object ThirdParty {
-        const val sentry = "7.18.0"
+        const val sentry = "8.3.0"
     }
 }
 
@@ -255,7 +255,7 @@ object ComponentsDependencies {
     val mozilla_appservices_suggest = "${ApplicationServicesConfig.groupId}:suggest:${ApplicationServicesConfig.version}"
     val mozilla_appservices_httpconfig = "${ApplicationServicesConfig.groupId}:httpconfig:${ApplicationServicesConfig.version}"
     val mozilla_appservices_full_megazord = "${ApplicationServicesConfig.groupId}:full-megazord:${ApplicationServicesConfig.version}"
-    val mozilla_appservices_full_megazord_forUnitTests = "${ApplicationServicesConfig.groupId}:full-megazord-forUnitTests:${ApplicationServicesConfig.version}"
+    val mozilla_appservices_full_megazord_libsForTests = "${ApplicationServicesConfig.groupId}:full-megazord-libsForTests:${ApplicationServicesConfig.version}"
 
     val mozilla_appservices_errorsupport = "${ApplicationServicesConfig.groupId}:errorsupport:${ApplicationServicesConfig.version}"
     val mozilla_appservices_rust_log_forwarder = "${ApplicationServicesConfig.groupId}:rust-log-forwarder:${ApplicationServicesConfig.version}"

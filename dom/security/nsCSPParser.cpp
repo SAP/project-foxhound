@@ -814,9 +814,10 @@ void nsCSPParser::reportGroup(nsCSPDirective* aDir) {
   while (!atEnd()) {
     if (isGroupDelim(*mCurChar) ||
         nsContentUtils::IsHTMLWhitespace(*mCurChar)) {
-      AutoTArray<nsString, 1> params = {mCurToken};
+      nsString badChar(mozilla::Span(mCurChar, 1));
+      AutoTArray<nsString, 2> params = {mCurToken, badChar};
       logWarningErrorToConsole(nsIScriptError::warningFlag,
-                               "invalidGroupSyntax", params);
+                               "ignoringInvalidGroupSyntax", params);
       delete aDir;
       return;
     }
@@ -1432,7 +1433,9 @@ nsCSPPolicy* nsCSPParser::parseContentSecurityPolicy(
   if (aReportOnly) {
     policy->setReportOnlyFlag(true);
     if (!policy->hasDirective(nsIContentSecurityPolicy::REPORT_TO_DIRECTIVE) &&
-        !policy->hasDirective(nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE)) {
+        !policy->hasDirective(nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE) &&
+        !aSelfURI->GetSpecOrDefault().EqualsLiteral(
+            "chrome://browser/content/browser.xhtml")) {
       nsAutoCString prePath;
       nsresult rv = aSelfURI->GetPrePath(prePath);
       NS_ENSURE_SUCCESS(rv, policy);

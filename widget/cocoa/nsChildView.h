@@ -105,7 +105,8 @@ class WidgetRenderingContext;
                            NSTextInputClient,
                            NSDraggingSource,
                            NSDraggingDestination,
-                           NSPasteboardItemDataProvider> {
+                           NSPasteboardItemDataProvider,
+                           NSStandardKeyBindingResponding> {
  @private
   // the nsChildView that created the view. It retains this NSView, so
   // the link back to it must be weak.
@@ -229,6 +230,8 @@ class WidgetRenderingContext;
 
 - (void)viewWillStartLiveResize;
 - (void)viewDidEndLiveResize;
+
+- (void)showContextMenuForSelection:(id)sender;
 
 /*
  * Gestures support
@@ -469,7 +472,7 @@ class nsChildView final : public nsBaseWidget {
 
   nsCocoaWindow* GetAppWindowWidget() const;
 
-  void DidChangeParent(nsIWidget*) override;
+  void DidClearParent(nsIWidget*) override;
 
   mozilla::widget::TextInputHandler* GetTextInputHandler() {
     return mTextInputHandler;

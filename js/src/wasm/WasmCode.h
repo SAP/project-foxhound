@@ -29,6 +29,7 @@
 #include "mozilla/PodOperations.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/Span.h"
 #include "mozilla/UniquePtr.h"
 
 #include <stddef.h>
@@ -578,8 +579,8 @@ class CodeBlock {
   //
   FuncToCodeRangeMap funcToCodeRange;
   CodeRangeVector codeRanges;
-  CallSiteVector callSites;
-  TrapSiteVectorArray trapSites;
+  CallSites callSites;
+  TrapSites trapSites;
   FuncExportVector funcExports;
   StackMaps stackMaps;
   TryNoteVector tryNotes;
@@ -613,6 +614,10 @@ class CodeBlock {
   }
 
   bool initialize(const Code& code, size_t codeBlockIndex);
+  void sendToProfiler(const CodeMetadata& codeMeta,
+                      const CodeMetadataForAsmJS* codeMetaForAsmJS,
+                      FuncIonPerfSpewerSpan ionSpewers,
+                      FuncBaselinePerfSpewerSpan baselineSpewers) const;
 
   // Gets the tier for this code block. Only valid for non-lazy stub code.
   Tier tier() const {
@@ -641,15 +646,18 @@ class CodeBlock {
     return pc >= base() && pc < (base() + length());
   }
 
+  const CodeRange& codeRange(uint32_t funcIndex) const {
+    return codeRanges[funcToCodeRange[funcIndex]];
+  }
   const CodeRange& codeRange(const FuncExport& funcExport) const {
     return codeRanges[funcToCodeRange[funcExport.funcIndex()]];
   }
 
   const CodeRange* lookupRange(const void* pc) const;
-  const CallSite* lookupCallSite(void* pc) const;
+  bool lookupCallSite(void* pc, CallSite* callSite) const;
   const StackMap* lookupStackMap(uint8_t* pc) const;
   const TryNote* lookupTryNote(const void* pc) const;
-  bool lookupTrap(void* pc, Trap* trapOut, BytecodeOffset* bytecode) const;
+  bool lookupTrap(void* pc, Trap* kindOut, TrapSiteDesc* trapOut) const;
   const CodeRangeUnwindInfo* lookupUnwindInfo(void* pc) const;
   FuncExport& lookupFuncExport(uint32_t funcIndex,
                                size_t* funcExportIndex = nullptr);
@@ -892,7 +900,7 @@ class JumpTables {
     // Make sure that write is atomic; see comment in wasm::Module::finishTier2
     // to that effect.
     MOZ_ASSERT(i < numFuncs_);
-    jit_.get()[i] = target;
+    __atomic_store_n(&jit_.get()[i], target, __ATOMIC_RELAXED);
   }
   void setJitEntryIfNull(size_t i, void* target) const {
     // Make sure that compare-and-write is atomic; see comment in
@@ -900,18 +908,21 @@ class JumpTables {
     MOZ_ASSERT(i < numFuncs_);
     void* expected = nullptr;
     (void)__atomic_compare_exchange_n(&jit_.get()[i], &expected, target,
-                                      /*weak=*/false, __ATOMIC_RELAXED,
-                                      __ATOMIC_RELAXED);
+                                      /*weak=*/false,
+                                      /*success_memorder=*/__ATOMIC_RELAXED,
+                                      /*failure_memorder=*/__ATOMIC_RELAXED);
   }
   void** getAddressOfJitEntry(size_t i) const {
     MOZ_ASSERT(i < numFuncs_);
     MOZ_ASSERT(jit_.get()[i]);
     return &jit_.get()[i];
   }
-  size_t funcIndexFromJitEntry(void** target) const {
+  uint32_t funcIndexFromJitEntry(void** target) const {
     MOZ_ASSERT(target >= &jit_.get()[0]);
     MOZ_ASSERT(target <= &(jit_.get()[numFuncs_ - 1]));
-    return (intptr_t*)target - (intptr_t*)&jit_.get()[0];
+    size_t index = (intptr_t*)target - (intptr_t*)&jit_.get()[0];
+    MOZ_ASSERT(index < wasm::MaxFuncs);
+    return (uint32_t)index;
   }
 
   void setTieringEntry(size_t i, void* target) const {
@@ -1090,7 +1101,9 @@ class Code : public ShareableBase<Code> {
   void** getAddressOfJitEntry(size_t i) const {
     return jumpTables_.getAddressOfJitEntry(i);
   }
-  uint32_t getFuncIndex(JSFunction* fun) const;
+  uint32_t funcIndexFromJitEntry(void** jitEntry) const {
+    return jumpTables_.funcIndexFromJitEntry(jitEntry);
+  }
 
   uint8_t* trapCode() const { return trapCode_; }
 
@@ -1144,22 +1157,32 @@ class Code : public ShareableBase<Code> {
     return completeTierCodeBlock(bestCompleteTier());
   }
   bool funcHasTier(uint32_t funcIndex, Tier tier) const {
+    if (funcIndex < funcImports_.length()) {
+      return false;
+    }
     return funcCodeBlock(funcIndex).tier() == tier;
   }
   Tier funcTier(uint32_t funcIndex) const {
+    MOZ_ASSERT(funcIndex >= funcImports_.length());
     return funcCodeBlock(funcIndex).tier();
+  }
+  void funcCodeRange(uint32_t funcIndex, const wasm::CodeRange** range,
+                     uint8_t** codeBase) const {
+    const CodeBlock& codeBlock = funcCodeBlock(funcIndex);
+    *range = &codeBlock.codeRanges[codeBlock.funcToCodeRange[funcIndex]];
+    *codeBase = codeBlock.segment->base();
   }
 
   const LinkData* codeBlockLinkData(const CodeBlock& block) const;
   void clearLinkData() const;
 
   // Code metadata lookup:
-  const CallSite* lookupCallSite(void* pc) const {
+  bool lookupCallSite(void* pc, CallSite* callSite) const {
     const CodeBlock* block = blockMap_.lookup(pc);
     if (!block) {
-      return nullptr;
+      return false;
     }
-    return block->lookupCallSite(pc);
+    return block->lookupCallSite(pc, callSite);
   }
   const CodeRange* lookupFuncRange(void* pc) const {
     const CodeBlock* block = blockMap_.lookup(pc);
@@ -1186,12 +1209,12 @@ class Code : public ShareableBase<Code> {
     }
     return (*block)->lookupTryNote(pc);
   }
-  bool lookupTrap(void* pc, Trap* trapOut, BytecodeOffset* bytecode) const {
+  bool lookupTrap(void* pc, Trap* kindOut, TrapSiteDesc* trapOut) const {
     const CodeBlock* block = blockMap_.lookup(pc);
     if (!block) {
       return false;
     }
-    return block->lookupTrap(pc, trapOut, bytecode);
+    return block->lookupTrap(pc, kindOut, trapOut);
   }
   const CodeRangeUnwindInfo* lookupUnwindInfo(void* pc) const {
     const CodeBlock* block = blockMap_.lookup(pc);
@@ -1200,9 +1223,6 @@ class Code : public ShareableBase<Code> {
     }
     return block->lookupUnwindInfo(pc);
   }
-  // Search through this code to find which tier a code range is from. Returns
-  // false if this code range was not found.
-  bool lookupFunctionTier(const CodeRange* codeRange, Tier* tier) const;
 
   // To save memory, profilingLabels_ are generated lazily when profiling mode
   // is enabled.

@@ -62,7 +62,6 @@
 #include "rtc_base/rtc_certificate_generator.h"
 #include "rtc_base/thread.h"
 #include "test/gtest.h"
-#include "test/scoped_key_value_config.h"
 #ifdef WEBRTC_ANDROID
 #include "pc/test/android_test_initializer.h"
 #endif
@@ -176,7 +175,6 @@ class PeerConnectionMediaBaseTest : public ::testing::Test {
     EnableFakeMedia(factory_dependencies, std::move(media_engine));
     factory_dependencies.event_log_factory =
         std::make_unique<RtcEventLogFactory>();
-    factory_dependencies.trials = std::move(field_trials_);
     auto pc_factory =
         CreateModularPeerConnectionFactory(std::move(factory_dependencies));
 
@@ -253,7 +251,6 @@ class PeerConnectionMediaBaseTest : public ::testing::Test {
     return sdp_semantics_ == SdpSemantics::kUnifiedPlan;
   }
 
-  std::unique_ptr<test::ScopedKeyValueConfig> field_trials_;
   std::unique_ptr<rtc::VirtualSocketServer> vss_;
   rtc::AutoSocketServerThread main_;
   const SdpSemantics sdp_semantics_;
@@ -277,29 +274,6 @@ class PeerConnectionMediaTestPlanB : public PeerConnectionMediaBaseTest {
   PeerConnectionMediaTestPlanB()
       : PeerConnectionMediaBaseTest(SdpSemantics::kPlanB_DEPRECATED) {}
 };
-
-TEST_P(PeerConnectionMediaTest,
-       FailToSetRemoteDescriptionIfCreateMediaChannelFails) {
-  auto caller = CreatePeerConnectionWithAudioVideo();
-  auto callee = CreatePeerConnectionWithAudioVideo();
-  callee->media_engine()->set_fail_create_channel(true);
-
-  std::string error;
-  ASSERT_FALSE(callee->SetRemoteDescription(caller->CreateOffer(), &error));
-  EXPECT_THAT(error,
-              HasSubstr("Failed to set remote offer sdp: Failed to create"));
-}
-
-TEST_P(PeerConnectionMediaTest,
-       FailToSetLocalDescriptionIfCreateMediaChannelFails) {
-  auto caller = CreatePeerConnectionWithAudioVideo();
-  caller->media_engine()->set_fail_create_channel(true);
-
-  std::string error;
-  ASSERT_FALSE(caller->SetLocalDescription(caller->CreateOffer(), &error));
-  EXPECT_THAT(error,
-              HasSubstr("Failed to set local offer sdp: Failed to create"));
-}
 
 std::vector<std::string> GetIds(
     const std::vector<cricket::StreamParams>& streams) {
@@ -1641,25 +1615,6 @@ TEST_F(PeerConnectionMediaTestUnifiedPlan,
 }
 
 TEST_F(PeerConnectionMediaTestUnifiedPlan,
-       SetCodecPreferencesAudioSendOnlyKillswitch) {
-  field_trials_ = std::make_unique<test::ScopedKeyValueConfig>(
-      "WebRTC-SetCodecPreferences-ReceiveOnlyFilterInsteadOfThrow/Disabled/");
-  auto fake_engine = std::make_unique<FakeMediaEngine>();
-  auto send_codecs = fake_engine->voice().send_codecs();
-  send_codecs.push_back(cricket::CreateAudioCodec(send_codecs.back().id + 1,
-                                                  "send_only_codec", 0, 1));
-  fake_engine->SetAudioSendCodecs(send_codecs);
-
-  auto caller = CreatePeerConnectionWithAudio(std::move(fake_engine));
-
-  auto transceiver = caller->pc()->GetTransceivers().front();
-  auto send_capabilities = caller->pc_factory()->GetRtpSenderCapabilities(
-      cricket::MediaType::MEDIA_TYPE_AUDIO);
-
-  EXPECT_TRUE(transceiver->SetCodecPreferences(send_capabilities.codecs).ok());
-}
-
-TEST_F(PeerConnectionMediaTestUnifiedPlan,
        SetCodecPreferencesVideoRejectsAudioCodec) {
   auto caller = CreatePeerConnectionWithVideo();
 
@@ -1751,25 +1706,6 @@ TEST_F(PeerConnectionMediaTestUnifiedPlan,
                     .media_description()
                     ->codecs();
   EXPECT_TRUE(CompareCodecs(sender_video_codecs, codecs));
-}
-
-TEST_F(PeerConnectionMediaTestUnifiedPlan,
-       SetCodecPreferencesVideoSendOnlyKillswitch) {
-  field_trials_ = std::make_unique<test::ScopedKeyValueConfig>(
-      "WebRTC-SetCodecPreferences-ReceiveOnlyFilterInsteadOfThrow/Disabled/");
-  auto fake_engine = std::make_unique<FakeMediaEngine>();
-  auto send_codecs = fake_engine->voice().send_codecs();
-  send_codecs.push_back(
-      cricket::CreateVideoCodec(send_codecs.back().id + 1, "send_only_codec"));
-  fake_engine->SetAudioSendCodecs(send_codecs);
-
-  auto caller = CreatePeerConnectionWithAudio(std::move(fake_engine));
-
-  auto transceiver = caller->pc()->GetTransceivers().front();
-  auto send_capabilities = caller->pc_factory()->GetRtpSenderCapabilities(
-      cricket::MediaType::MEDIA_TYPE_AUDIO);
-
-  EXPECT_TRUE(transceiver->SetCodecPreferences(send_capabilities.codecs).ok());
 }
 
 TEST_F(PeerConnectionMediaTestUnifiedPlan,

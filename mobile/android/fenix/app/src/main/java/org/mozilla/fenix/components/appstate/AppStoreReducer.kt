@@ -6,7 +6,6 @@ package org.mozilla.fenix.components.appstate
 
 import androidx.annotation.VisibleForTesting
 import mozilla.components.lib.crash.store.crashReducer
-import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.readerview.ReaderViewStateReducer
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsReducer
@@ -14,6 +13,7 @@ import org.mozilla.fenix.components.appstate.reducer.FindInPageStateReducer
 import org.mozilla.fenix.components.appstate.shopping.ShoppingStateReducer
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarStateReducer
+import org.mozilla.fenix.components.appstate.webcompat.WebCompatReducer
 import org.mozilla.fenix.ext.filterOutTab
 import org.mozilla.fenix.home.recentsyncedtabs.RecentSyncedTabState
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
@@ -104,10 +104,6 @@ internal object AppStoreReducer {
                 else -> state.recentSyncedTabState
             },
         )
-        is AppAction.SelectedTabChanged -> state.copy(
-            selectedTabId = action.tab.id,
-            mode = BrowsingMode.fromBoolean(action.tab.content.private),
-        )
         is AppAction.DisbandSearchGroupAction -> state.copy(
             recentHistory = state.recentHistory.filterNot {
                 it is RecentHistoryGroup && it.title.equals(action.searchTerm, true)
@@ -176,6 +172,10 @@ internal object AppStoreReducer {
             state.copy(snackbarState = SnackbarState.DeletingBrowserDataInProgress)
         }
 
+        is AppAction.SiteDataCleared -> state.copy(
+            snackbarState = SnackbarState.SiteDataCleared,
+        )
+
         is AppAction.OpenInFirefoxStarted -> {
             state.copy(openInFirefoxRequested = true)
         }
@@ -206,6 +206,8 @@ internal object AppStoreReducer {
             state = state,
             action = action,
         )
+
+        is AppAction.WebCompatAction -> WebCompatReducer.reduce(state = state, action = action)
     }
 }
 

@@ -14,7 +14,7 @@ extern crate authrs_bridge;
 extern crate bitsdownload;
 #[cfg(feature = "moz_places")]
 extern crate bookmark_sync;
-extern crate buildid_reader;
+extern crate buildid_reader_ffi;
 extern crate cascade_bloom_filter;
 extern crate cert_storage;
 extern crate chardetng_c;
@@ -56,7 +56,7 @@ extern crate xpcom;
 extern crate audio_thread_priority;
 
 #[cfg(not(target_os = "android"))]
-extern crate webext_storage_bridge;
+extern crate webext_storage;
 
 #[cfg(feature = "webrtc")]
 extern crate mdns_service;
@@ -84,6 +84,16 @@ extern crate rure;
 extern crate fluent_fallback;
 extern crate l10nregistry_ffi;
 extern crate localization_ffi;
+
+extern crate ipcclientcerts;
+extern crate trust_anchors;
+
+#[cfg(any(
+    target_os = "macos",
+    target_os = "ios",
+    all(target_os = "windows", not(target_arch = "aarch64"))
+))]
+extern crate osclientcerts;
 
 #[cfg(not(target_os = "android"))]
 extern crate gkrust_uniffi_components;
@@ -117,6 +127,7 @@ extern crate dap_ffi;
 extern crate data_encoding_ffi;
 
 extern crate binary_http;
+extern crate mls_gk;
 extern crate oblivious_http;
 
 extern crate mime_guess_ffi;

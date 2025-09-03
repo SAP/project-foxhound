@@ -35,7 +35,8 @@ async function testReload({ src, clearCache, cacheable, desc }) {
      `body color before reload with ${desc} should be red`);
 
   if (clearCache) {
-    gWindowUtils.clearSharedStyleSheetCache();
+    gWindowUtils.clearStyleSheetCache();
+    gWindowUtils.clearScriptCache();
   }
 
   // Reload the iframe and wait for reload.
@@ -70,7 +71,8 @@ async function reset() {
   });
 
   // Clear cache.
-  gWindowUtils.clearSharedStyleSheetCache();
+  gWindowUtils.clearStyleSheetCache();
+  gWindowUtils.clearScriptCache();
 }
 
 async function doTest() {

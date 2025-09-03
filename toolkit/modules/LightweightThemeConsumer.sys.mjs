@@ -161,6 +161,18 @@ const toolkitVariableMap = [
       lwtProperty: "toolbar_field_highlight_text",
     },
   ],
+  [
+    "--toolbarbutton-icon-fill",
+    {
+      lwtProperty: "icon_color",
+    },
+  ],
+  [
+    "--toolbarbutton-icon-fill-attention",
+    {
+      lwtProperty: "icon_attention_color",
+    },
+  ],
   // The following 3 are given to the new tab page by contentTheme.js. They are
   // also exposed here, in the browser chrome, so popups anchored on top of the
   // new tab page can use them to avoid clashing with the new tab page content.
@@ -616,6 +628,12 @@ function _setDarkModeAttributes(doc, root, colors, hasTheme) {
   );
   setAttribute("lwt-popup", "popup_text", "popup");
   setAttribute("lwt-sidebar", "sidebar_text", "sidebar");
+  // NOTE: icon_attention_text prop does never really exist.
+  setAttribute(
+    "lwt-icon-fill-attention",
+    /* textPropertyName = */ null,
+    "icon_attention_color"
+  );
 }
 
 /**
@@ -625,9 +643,9 @@ function _setDarkModeAttributes(doc, root, colors, hasTheme) {
  * still contrast well enough with a dark background
  * @param {Document} doc
  * @param {object} colors
- * @param {string} foregroundElementId
+ * @param {string?} textPropertyName
  *   The key for the foreground element in `colors`.
- * @param {string} backgroundElementId
+ * @param {string?} backgroundPropertyName
  *   The key for the background element in `colors`.
  * @returns {boolean | null} True if the element should be considered dark, false
  *   if light, null for preferred scheme.
@@ -638,17 +656,20 @@ function _determineIfColorPairIsDark(
   textPropertyName,
   backgroundPropertyName
 ) {
-  if (!colors[backgroundPropertyName] && !colors[textPropertyName]) {
+  let backgroundColor =
+    backgroundPropertyName && colors[backgroundPropertyName];
+  let textColor = textPropertyName && colors[textPropertyName];
+  if (!backgroundColor && !textColor) {
     // Handles the system theme.
     return null;
   }
 
-  let color = _cssColorToRGBA(doc, colors[backgroundPropertyName]);
+  let color = _cssColorToRGBA(doc, backgroundColor);
   if (color && color.a == 1) {
     return _isColorDark(color.r, color.g, color.b);
   }
 
-  color = _cssColorToRGBA(doc, colors[textPropertyName]);
+  color = _cssColorToRGBA(doc, textColor);
   if (!color) {
     // Handles the case where a theme only provides a background color and it is
     // semi-transparent.

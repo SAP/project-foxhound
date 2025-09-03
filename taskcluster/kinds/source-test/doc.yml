@@ -4,6 +4,11 @@
 ---
 generate:
     description: Generate the Sphinx documentation
+    index:
+        # Searchfox needs a fixed URL for the artifacts to download the latest
+        # trees.json file.
+        product: source
+        job-name: doc-generate
     use-python: "3.11"
     platform: doc/opt
     treeherder:
@@ -55,7 +60,7 @@ upload:
     worker-type: b-linux-medium-gcp
     worker:
         docker-image: {in-tree: "lint"}
-        max-run-time: 1800
+        max-run-time: 2400
         env:
             LC_ALL: C
             MOZ_SOURCE_DOCS_USE_GOOGLE: "1"

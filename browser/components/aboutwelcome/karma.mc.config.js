@@ -4,7 +4,7 @@
 
 const path = require("path");
 const webpack = require("webpack");
-const { ResourceUriPlugin } = require("../newtab/tools/resourceUriPlugin");
+const { ResourceUriPlugin } = require("../../tools/resourceUriPlugin");
 
 const PATHS = {
   // Where is the entry point for the unit tests?
@@ -15,7 +15,6 @@ const PATHS = {
 
   // The base directory of all source files (used for path resolution in webpack importing)
   moduleResolveDirectory: __dirname,
-  newtabResolveDirectory: "../newtab",
 
   // a RegEx matching all Cu.import statements of local files
   resourcePathRegEx: /^resource:\/\/activity-stream\//,
@@ -120,6 +119,15 @@ module.exports = function (config) {
               functions: 0,
               branches: 0,
             },
+            "content-src/components/EmbeddedBrowser.jsx": {
+              // Enzyme can't test this file because it relies on XUL elements
+              // which Enzyme can't simulate. Browser tests are in
+              // browser_aboutwelcome_embedded_browser.js
+              statements: 0,
+              lines: 0,
+              functions: 0,
+              branches: 0,
+            },
             "content-src/components/MSLocalized.jsx": {
               statements: 77.42,
               lines: 77.42,
@@ -173,13 +181,8 @@ module.exports = function (config) {
       // This resolve config allows us to import with paths relative to the root directory
       resolve: {
         extensions: [".js", ".jsx"],
-        modules: [
-          PATHS.moduleResolveDirectory,
-          "node_modules",
-          PATHS.newtabResolveDirectory,
-        ],
+        modules: [PATHS.moduleResolveDirectory, "node_modules"],
         alias: {
-          newtab: path.join(__dirname, "../newtab"),
           asrouter: path.join(__dirname, "../asrouter"),
         },
       },
@@ -188,10 +191,6 @@ module.exports = function (config) {
         // statements in .mjs files to paths on the filesystem.
         new ResourceUriPlugin({
           resourcePathRegExes: [
-            [
-              new RegExp("^resource://activity-stream/"),
-              path.join(__dirname, "../newtab/"),
-            ],
             [
               new RegExp("^resource:///modules/asrouter/"),
               path.join(__dirname, "../asrouter/modules/"),

@@ -28,6 +28,10 @@
 #include <dlfcn.h>
 #include <glib.h>
 
+#ifdef MOZ_WAYLAND
+#  include "nsWaylandDisplay.h"
+#endif  // MOZ_WAYLAND
+
 #ifdef MOZ_X11
 #  include <X11/Xlib.h>
 #  include <X11/Xatom.h>
@@ -214,6 +218,8 @@ bool ShouldUsePortal(PortalKind aPortalKind) {
         // Mime portal breaks default browser handling, see bug 1516290.
         autoBehavior = IsRunningUnderFlatpakOrSnap();
         return StaticPrefs::widget_use_xdg_desktop_portal_mime_handler();
+      case PortalKind::NativeMessaging:
+        return StaticPrefs::widget_use_xdg_desktop_portal_native_messaging();
       case PortalKind::Settings:
         autoBehavior = true;
         return StaticPrefs::widget_use_xdg_desktop_portal_settings();
@@ -439,7 +445,6 @@ static nsCString GetWindowManagerName() {
 // https://wiki.archlinux.org/title/Environment_variables#Examples
 // https://wiki.archlinux.org/title/Xdg-utils#Environment_variables
 const nsCString& GetDesktopEnvironmentIdentifier() {
-  MOZ_ASSERT(NS_IsMainThread());
   static const nsDependentCString sIdentifier = [] {
     nsCString ident = [] {
       auto Env = [](const char* aKey) -> const char* {

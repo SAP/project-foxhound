@@ -11,7 +11,7 @@ use std::{
     fmt::{self, Display},
     fs::{create_dir_all, File, OpenOptions},
     io::{self, BufWriter},
-    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, ToSocketAddrs as _},
     path::PathBuf,
     pin::Pin,
     process::exit,
@@ -21,7 +21,7 @@ use std::{
 use clap::Parser;
 use futures::{
     future::{select, Either},
-    FutureExt, TryFutureExt,
+    FutureExt as _, TryFutureExt as _,
 };
 use neqo_common::{qdebug, qerror, qinfo, qlog::NeqoQlog, qwarn, Datagram, Role};
 use neqo_crypto::{
@@ -30,6 +30,7 @@ use neqo_crypto::{
 };
 use neqo_http3::Output;
 use neqo_transport::{AppError, CloseReason, ConnectionId, Version};
+use neqo_udp::RecvBuf;
 use tokio::time::Sleep;
 use url::{Host, Origin, Url};
 
@@ -47,7 +48,7 @@ pub enum Error {
     IoError(io::Error),
     QlogError(qlog::Error),
     TransportError(neqo_transport::Error),
-    ApplicationError(neqo_transport::AppError),
+    ApplicationError(AppError),
     CryptoError(neqo_crypto::Error),
 }
 
@@ -81,8 +82,8 @@ impl From<neqo_transport::Error> for Error {
     }
 }
 
-impl From<neqo_transport::CloseReason> for Error {
-    fn from(err: neqo_transport::CloseReason) -> Self {
+impl From<CloseReason> for Error {
+    fn from(err: CloseReason) -> Self {
         match err {
             CloseReason::Transport(e) => Self::TransportError(e),
             CloseReason::Application(e) => Self::ApplicationError(e),
@@ -169,21 +170,26 @@ pub struct Args {
     /// Print connection stats after close.
     #[arg(name = "stats", long)]
     stats: bool,
+
+    /// The length of the local connection ID.
+    #[arg(name = "cid-length", short = 'l', long, default_value = "0",
+          value_parser = clap::value_parser!(u8).range(..=20))]
+    cid_len: u8,
 }
 
 impl Args {
     #[must_use]
     #[cfg(any(test, feature = "bench"))]
     #[allow(clippy::missing_panics_doc)]
-    pub fn new(requests: &[u64]) -> Self {
-        use std::str::FromStr;
+    pub fn new(requests: &[usize], upload: bool) -> Self {
+        use std::str::FromStr as _;
         Self {
-            shared: crate::SharedArgs::default(),
+            shared: SharedArgs::default(),
             urls: requests
                 .iter()
                 .map(|r| Url::from_str(&format!("http://[::1]:12345/{r}")).unwrap())
                 .collect(),
-            method: "GET".into(),
+            method: if upload { "POST".into() } else { "GET".into() },
             header: vec![],
             max_concurrent_push_streams: 10,
             download_in_series: false,
@@ -196,8 +202,9 @@ impl Args {
             ipv4_only: false,
             ipv6_only: false,
             test: None,
-            upload_size: 100,
+            upload_size: if upload { requests[0] } else { 100 },
             stats: false,
+            cid_len: 0,
         }
     }
 
@@ -232,10 +239,14 @@ impl Args {
         // Only use v1 for most QNS tests.
         self.shared.quic_parameters.quic_version = vec![Version::Version1];
         // This is the default for all tests except http3.
-        self.shared.use_old_http = true;
+        self.shared.alpn = String::from("hq-interop");
+        // Wireshark can't reassemble sliced CRYPTO frames, which causes tests to fail.
+        // So let's turn that off by default, and only enable for some known-good QNS tests.
+        self.shared.quic_parameters.no_sni_slicing = true;
         match testcase.as_str() {
             "http3" => {
-                self.shared.use_old_http = false;
+                self.shared.quic_parameters.no_sni_slicing = false;
+                self.shared.alpn = String::from("h3");
                 if let Some(testcase) = &self.test {
                     if testcase.as_str() != "upload" {
                         qerror!("Unsupported test case: {testcase}");
@@ -245,13 +256,7 @@ impl Args {
                     self.method = String::from("POST");
                 }
             }
-            "handshake"
-            | "transfer"
-            | "retry"
-            | "ecn"
-            | "rebind-port"
-            | "rebind-addr"
-            | "connectionmigration" => {}
+            "handshake" | "transfer" | "retry" | "ecn" => {}
             "resumption" => {
                 if self.urls.len() < 2 {
                     qerror!("Warning: resumption test won't work without >1 URL");
@@ -264,6 +269,7 @@ impl Args {
                     qerror!("Warning: zerortt test won't work without >1 URL");
                     exit(127);
                 }
+                self.shared.quic_parameters.no_sni_slicing = false;
                 self.resume = true;
                 // PMTUD probes inflate what we sent in 1-RTT, causing QNS to fail the test.
                 self.shared.quic_parameters.no_pmtud = true;
@@ -284,6 +290,7 @@ impl Args {
                 self.key_update = true;
             }
             "v2" => {
+                self.shared.quic_parameters.no_sni_slicing = false;
                 // Use default version set for this test (which allows compatible vneg.)
                 self.shared.quic_parameters.quic_version.clear();
             }
@@ -394,7 +401,7 @@ struct Runner<'a, H: Handler> {
     handler: H,
     timeout: Option<Pin<Box<Sleep>>>,
     args: &'a Args,
-    recv_buf: Vec<u8>,
+    recv_buf: RecvBuf,
 }
 
 impl<'a, H: Handler> Runner<'a, H> {
@@ -412,7 +419,7 @@ impl<'a, H: Handler> Runner<'a, H> {
             handler,
             args,
             timeout: None,
-            recv_buf: vec![0; neqo_udp::RECV_BUF_SIZE],
+            recv_buf: RecvBuf::new(),
         }
     }
 
@@ -462,7 +469,7 @@ impl<'a, H: Handler> Runner<'a, H> {
                     self.socket.send(&dgram)?;
                 }
                 Output::Callback(new_timeout) => {
-                    qdebug!("Setting timeout of {:?}", new_timeout);
+                    qdebug!("Setting timeout of {new_timeout:?}");
                     self.timeout = Some(Box::pin(tokio::time::sleep(new_timeout)));
                     break;
                 }
@@ -481,9 +488,6 @@ impl<'a, H: Handler> Runner<'a, H> {
             let Some(dgrams) = self.socket.recv(self.local_addr, &mut self.recv_buf)? else {
                 break;
             };
-            if dgrams.len() == 0 {
-                break;
-            }
             self.client.process_multiple_input(dgrams, Instant::now());
             self.process_output().await?;
         }
@@ -508,9 +512,9 @@ fn qlog_new(args: &Args, hostname: &str, cid: &ConnectionId) -> Res<NeqoQlog> {
     NeqoQlog::enabled_with_file(
         qlog_dir,
         Role::Client,
-        Some("Example qlog".to_string()),
-        Some("Example qlog description".to_string()),
-        format!("{hostname}-{cid}"),
+        Some("Neqo client qlog".to_string()),
+        Some("Neqo client qlog".to_string()),
+        format!("client-{hostname}-{cid}"),
     )
     .map_err(Error::QlogError)
 }
@@ -553,17 +557,16 @@ pub async fn client(mut args: Args) -> Res<()> {
 
     for ((host, port), mut urls) in urls_by_origin(&args.urls) {
         if args.resume && urls.len() < 2 {
-            qerror!("Resumption to {host} cannot work without at least 2 URLs.");
+            qerror!("Resumption to {host} cannot work without at least 2 URLs");
             exit(127);
         }
 
-        let mut remote_addrs = format!("{host}:{port}").to_socket_addrs()?.filter(|addr| {
+        let remote_addr = format!("{host}:{port}").to_socket_addrs()?.find(|addr| {
             !matches!(
                 (addr, args.ipv4_only, args.ipv6_only),
                 (SocketAddr::V4(..), false, true) | (SocketAddr::V6(..), true, false)
             )
         });
-        let remote_addr = remote_addrs.next();
         let Some(remote_addr) = remote_addr else {
             qerror!("No compatible address found for: {host}");
             exit(1);
@@ -571,23 +574,9 @@ pub async fn client(mut args: Args) -> Res<()> {
         let mut socket = crate::udp::Socket::bind(local_addr_for(&remote_addr, 0))?;
         let real_local = socket.local_addr().unwrap();
         qinfo!(
-            "{} Client connecting: {:?} -> {:?}",
-            if args.shared.use_old_http { "H9" } else { "H3" },
-            real_local,
-            remote_addr,
+            "{} Client connecting: {real_local:?} -> {remote_addr:?}",
+            args.shared.alpn
         );
-
-        let migration = if args.shared.qns_test.as_deref() == Some("connectionmigration") {
-            #[allow(clippy::option_if_let_else)]
-            if let Some(addr) = remote_addrs.next() {
-                Some((real_local.port(), addr))
-            } else {
-                qerror!("Cannot migrate from {host} when there is no address that follows");
-                exit(127);
-            }
-        } else {
-            None
-        };
 
         let hostname = format!("{host}");
         let mut token: Option<ResumptionToken> = None;
@@ -601,21 +590,21 @@ pub async fn client(mut args: Args) -> Res<()> {
 
             first = false;
 
-            token = if args.shared.use_old_http {
-                let client =
-                    http09::create_client(&args, real_local, remote_addr, &hostname, token)
-                        .expect("failed to create client");
+            token = if args.shared.alpn == "h3" {
+                let client = http3::create_client(&args, real_local, remote_addr, &hostname, token)
+                    .expect("failed to create client");
 
-                let handler = http09::Handler::new(to_request, &args, migration.as_ref());
+                let handler = http3::Handler::new(to_request, &args);
 
                 Runner::new(real_local, &mut socket, client, handler, &args)
                     .run()
                     .await?
             } else {
-                let client = http3::create_client(&args, real_local, remote_addr, &hostname, token)
-                    .expect("failed to create client");
+                let client =
+                    http09::create_client(&args, real_local, remote_addr, &hostname, token)
+                        .expect("failed to create client");
 
-                let handler = http3::Handler::new(to_request, &args);
+                let handler = http09::Handler::new(to_request, &args);
 
                 Runner::new(real_local, &mut socket, client, handler, &args)
                     .run()

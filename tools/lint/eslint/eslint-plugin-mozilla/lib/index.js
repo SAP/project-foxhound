@@ -43,7 +43,6 @@ const plugin = {
     "import-globals": require("./rules/import-globals"),
     "import-headjs-globals": require("./rules/import-headjs-globals"),
     "lazy-getter-object-name": require("./rules/lazy-getter-object-name"),
-    "mark-exported-symbols-as-used": require("./rules/mark-exported-symbols-as-used"),
     "mark-test-function-used": require("./rules/mark-test-function-used"),
     "no-aArgs": require("./rules/no-aArgs"),
     "no-addtask-setup": require("./rules/no-addtask-setup"),
@@ -62,10 +61,7 @@ const plugin = {
     "prefer-boolean-length-check": require("./rules/prefer-boolean-length-check"),
     "prefer-formatValues": require("./rules/prefer-formatValues"),
     "reject-addtask-only": require("./rules/reject-addtask-only"),
-    "reject-chromeutils-import": require("./rules/reject-chromeutils-import"),
-    "reject-chromeutils-import-params": require("./rules/reject-chromeutils-import-params"),
     "reject-eager-module-in-lazy-getter": require("./rules/reject-eager-module-in-lazy-getter"),
-    "reject-global-this": require("./rules/reject-global-this"),
     "reject-globalThis-modification": require("./rules/reject-globalThis-modification"),
     "reject-import-system-module-from-non-system": require("./rules/reject-import-system-module-from-non-system"),
     "reject-importGlobalProperties": require("./rules/reject-importGlobalProperties"),
@@ -79,9 +75,7 @@ const plugin = {
     "reject-top-level-await": require("./rules/reject-top-level-await"),
     "rejects-requires-await": require("./rules/rejects-requires-await"),
     "use-cc-etc": require("./rules/use-cc-etc"),
-    "use-chromeutils-definelazygetter": require("./rules/use-chromeutils-definelazygetter"),
     "use-chromeutils-generateqi": require("./rules/use-chromeutils-generateqi"),
-    "use-chromeutils-import": require("./rules/use-chromeutils-import"),
     "use-console-createInstance": require("./rules/use-console-createInstance"),
     "use-default-preference-values": require("./rules/use-default-preference-values"),
     "use-ownerGlobal": require("./rules/use-ownerGlobal"),
@@ -155,6 +149,7 @@ function cloneFlatSection(section) {
     mozilla: plugin,
     "no-unsanitized": require("eslint-plugin-no-unsanitized"),
     "@microsoft/sdl": require("@microsoft/eslint-plugin-sdl"),
+    promise: require("eslint-plugin-promise"),
   };
   if (!config.languageOptions) {
     config.languageOptions = {};

@@ -27,7 +27,6 @@ add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RECORDS,
     prefs: [
-      ["quicksuggest.rustEnabled", true],
       ["suggest.quicksuggest.sponsored", true],
       ["suggest.yelp", true],
       ["yelp.featureGate", true],
@@ -286,7 +285,7 @@ add_task(async function resultMenu_not_relevant() {
     menu: "not_relevant",
     assert: resuilt => {
       Assert.ok(
-        QuickSuggest.blockedSuggestions.has(resuilt.payload.url),
+        QuickSuggest.blockedSuggestions.isResultBlocked(resuilt),
         "The URL should be register as blocked"
       );
     },

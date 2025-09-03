@@ -60,6 +60,8 @@ import "chrome://global/content/elements/moz-button-group.mjs";
 import "chrome://browser/content/profiles/avatar.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/profiles/profiles-theme-card.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/profiles/profiles-group.mjs";
 
 const SAVE_NAME_TIMEOUT = 2000;
 const SAVED_MESSAGE_TIMEOUT = 5000;
@@ -79,13 +81,24 @@ export class EditProfileCard extends MozLitElement {
     nameInput: "#profile-name",
     errorMessage: "#error-message",
     savedMessage: "#saved-message",
-    avatars: { all: "profiles-avatar" },
+    deleteButton: "#delete-button",
+    doneButton: "#done-button",
+    moreThemesLink: "#more-themes",
     headerAvatar: "#header-avatar",
-    themeCards: { all: "profiles-theme-card" },
+    avatarsPicker: "#avatars",
+    themesPicker: "#themes",
   };
 
   updateNameDebouncer = null;
   clearSavedMessageTimer = null;
+
+  get avatars() {
+    return this.avatarsPicker.radioButtons;
+  }
+
+  get themeCards() {
+    return this.themesPicker.radioButtons;
+  }
 
   constructor() {
     super();
@@ -105,8 +118,9 @@ export class EditProfileCard extends MozLitElement {
     super.connectedCallback();
 
     window.addEventListener("beforeunload", this);
+    window.addEventListener("pagehide", this);
 
-    this.init();
+    this.init().then(() => (this.initialized = true));
   }
 
   async init() {
@@ -126,13 +140,50 @@ export class EditProfileCard extends MozLitElement {
     this.themes = themes;
 
     this.setFavicon();
+    this.focusInput();
+  }
 
-    this.initialized = true;
+  async getUpdateComplete() {
+    const result = await super.getUpdateComplete();
+
+    await Promise.all(
+      Array.from(this.themeCards).map(card => card.updateComplete)
+    );
+
+    await this.mozCard.updateComplete;
+
+    return result;
+  }
+
+  async focusInput() {
+    await this.getUpdateComplete();
+    this.nameInput.focus();
+    this.nameInput.value = "";
+    this.nameInput.value = this.profile.name;
   }
 
   setFavicon() {
     let favicon = document.getElementById("favicon");
     favicon.href = `chrome://browser/content/profiles/assets/16_${this.profile.avatar}.svg`;
+  }
+
+  getAvatarL10nId(value) {
+    switch (value) {
+      case "book":
+        return "book-avatar";
+      case "briefcase":
+        return "briefcase-avatar";
+      case "flower":
+        return "flower-avatar";
+      case "heart":
+        return "heart-avatar";
+      case "shopping":
+        return "shopping-avatar";
+      case "star":
+        return "star-avatar";
+    }
+
+    return "";
   }
 
   handleEvent(event) {
@@ -146,6 +197,9 @@ export class EditProfileCard extends MozLitElement {
           this.updateNameDebouncer.finalize();
         }
         break;
+      }
+      case "pagehide": {
+        RPMSendAsyncMessage("Profiles:PageHide");
       }
     }
   }
@@ -222,10 +276,12 @@ export class EditProfileCard extends MozLitElement {
     this.updateNameDebouncer.disarm();
     document.l10n.setAttributes(this.errorMessage, l10nId);
     this.errorMessage.parentElement.hidden = false;
+    this.nameInput.setCustomValidity("invalid");
   }
 
   hideErrorMessage() {
     this.errorMessage.parentElement.hidden = true;
+    this.nameInput.setCustomValidity("");
   }
 
   showSavedMessage() {
@@ -239,7 +295,7 @@ export class EditProfileCard extends MozLitElement {
   }
 
   headerTemplate() {
-    return html`<h1 data-l10n-id="edit-profile-page-header"></h1>`;
+    return html`<h2 data-l10n-id="edit-profile-page-header"></h2>`;
   }
 
   nameInputTemplate() {
@@ -289,52 +345,56 @@ export class EditProfileCard extends MozLitElement {
       return null;
     }
 
-    return this.themes.map(
-      t =>
-        html`<profiles-theme-card
-          @click=${this.handleThemeClick}
-          .theme=${t}
-          ?selected=${t.isActive}
-        ></profiles-theme-card>`
-    );
+    return html`<profiles-group
+      id="themes"
+      value=${this.profile.themeId}
+      data-l10n-id="edit-profile-page-theme-header-2"
+      name="theme"
+      id="themes"
+      @click=${this.handleThemeClick}
+    >
+      ${this.themes.map(
+        t =>
+          html`<profiles-group-item l10nId=${t.dataL10nId} value=${t.id}>
+            <profiles-theme-card
+              .theme=${t}
+              value=${t.id}
+            ></profiles-theme-card>
+          </profiles-group-item>`
+      )}
+    </profiles-group>`;
   }
 
-  handleThemeClick(event) {
-    for (let t of this.themeCards) {
-      t.selected = false;
-    }
-
-    let selectedTheme = event.target;
-    selectedTheme.selected = true;
-
-    this.updateTheme(selectedTheme.theme.id);
+  handleThemeClick() {
+    this.updateTheme(this.themesPicker.value);
   }
 
   avatarsTemplate() {
     let avatars = ["book", "briefcase", "flower", "heart", "shopping", "star"];
 
-    return avatars.map(
-      avatar =>
-        html`<profiles-avatar
-          @click=${this.handleAvatarClick}
-          value=${avatar}
-          ?selected=${avatar === this.profile.avatar}
-        ></profiles-avatar>`
-    );
+    return html`<profiles-group
+      value=${this.profile.avatar}
+      data-l10n-id="edit-profile-page-avatar-header-2"
+      name="avatar"
+      id="avatars"
+      @click=${this.handleAvatarClick}
+      >${avatars.map(
+        avatar =>
+          html`<profiles-group-item
+            l10nId=${this.getAvatarL10nId(avatar)}
+            value=${avatar}
+            ><profiles-avatar value=${avatar}></profiles-avatar
+          ></profiles-group-item>`
+      )}</profiles-group
+    >`;
   }
 
-  handleAvatarClick(event) {
-    for (let a of this.avatars) {
-      a.selected = false;
-    }
-
-    let selectedAvatar = event.target;
-    selectedAvatar.selected = true;
-
-    this.updateAvatar(selectedAvatar.value);
+  handleAvatarClick() {
+    this.updateAvatar(this.avatarsPicker.value);
   }
 
   onDeleteClick() {
+    window.removeEventListener("beforeunload", this);
     RPMSendAsyncMessage("Profiles:OpenDeletePage");
   }
 
@@ -346,16 +406,29 @@ export class EditProfileCard extends MozLitElement {
       this.showErrorMessage("edit-profile-page-duplicate-name");
     } else {
       this.updateNameDebouncer.finalize();
+      // Remove the pagehide listener early to prevent double-counting the
+      // profiles.existing.closed Glean event.
+      window.removeEventListener("pagehide", this);
       RPMSendAsyncMessage("Profiles:CloseProfileTab");
     }
   }
 
+  onMoreThemesClick() {
+    // Include the starting URI because the page will navigate before the
+    // event is asynchronously handled by Glean code in the parent actor.
+    RPMSendAsyncMessage("Profiles:MoreThemes", {
+      source: window.location.href,
+    });
+  }
+
   buttonsTemplate() {
     return html`<moz-button
+        id="delete-button"
         data-l10n-id="edit-profile-page-delete-button"
         @click=${this.onDeleteClick}
       ></moz-button>
       <moz-button
+        id="done-button"
         data-l10n-id="new-profile-page-done-button"
         @click=${this.onDoneClick}
         type="primary"
@@ -379,22 +452,23 @@ export class EditProfileCard extends MozLitElement {
         ><div id="edit-profile-card">
           <img
             id="header-avatar"
+            data-l10n-id=${this.profile.avatarL10nId}
             src="chrome://browser/content/profiles/assets/80_${this.profile
               .avatar}.svg"
           />
           <div id="profile-content">
             ${this.headerTemplate()}${this.profilesNameTemplate()}
+            ${this.themesTemplate()}
 
-            <h3 data-l10n-id="edit-profile-page-theme-header"></h3>
-            <div id="themes">${this.themesTemplate()}</div>
             <a
+              id="more-themes"
               href="https://addons.mozilla.org/firefox/themes/"
               target="_blank"
+              @click=${this.onMoreThemesClick}
               data-l10n-id="edit-profile-page-explore-themes"
             ></a>
 
-            <h3 data-l10n-id="edit-profile-page-avatar-header"></h3>
-            <div id="avatars">${this.avatarsTemplate()}</div>
+            ${this.avatarsTemplate()}
 
             <moz-button-group>${this.buttonsTemplate()}</moz-button-group>
           </div>

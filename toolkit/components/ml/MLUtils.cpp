@@ -6,9 +6,12 @@
 
 #include "MLUtils.h"
 
+#include <algorithm>
+#include <cmath>
 #include "prsystem.h"
 #include "mozilla/Casting.h"
 #include <sys/types.h>
+#include "nsSystemInfo.h"
 
 #if defined(XP_WIN)
 #  include <sysinfoapi.h>
@@ -83,9 +86,7 @@ NS_IMETHODIMP MLUtils::HasEnoughMemoryToInfer(uint64_t aModelSizeInMemory,
 #endif
 
 #if defined(XP_LINUX)
-  struct sysinfo memInfo {
-    0
-  };
+  struct sysinfo memInfo{0};
   if (sysinfo(&memInfo) != 0) {
     *_retval = false;
     return NS_ERROR_FAILURE;
@@ -96,6 +97,31 @@ NS_IMETHODIMP MLUtils::HasEnoughMemoryToInfer(uint64_t aModelSizeInMemory,
   // Check if the modelSize fits within memory using the threshold
   *_retval = AssertedCast<double>(aModelSizeInMemory) <=
              AssertedCast<double>(availableResidentMemory) * threshold;
+  return NS_OK;
+}
+
+NS_IMETHODIMP MLUtils::GetOptimalCPUConcurrency(uint8_t* _retval) {
+  ProcessInfo processInfo = {};
+  if (!NS_SUCCEEDED(CollectProcessInfo(processInfo))) {
+    return NS_ERROR_FAILURE;
+  }
+
+#if defined(ANDROID)
+  // On android, "big" and "medium" cpus can be used.
+  uint8_t cpuCount = processInfo.cpuPCount + processInfo.cpuMCount;
+#else
+#  ifdef __aarch64__
+  // On aarch64 (like macBooks) we want to avoid efficient cores and stick with
+  // "big" cpus.
+  uint8_t cpuCount = processInfo.cpuPCount;
+#  else
+  // on x86_64 we're always using the number of physical cores.
+  uint8_t cpuCount = processInfo.cpuCores;
+#  endif
+#endif
+
+  *_retval = cpuCount;
+
   return NS_OK;
 }
 

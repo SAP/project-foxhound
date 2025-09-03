@@ -28,4 +28,15 @@ interface nsIMLUtils : nsISupports {
       in unsigned long aThresholdPercentage,
       in unsigned long long aMinMemoryRequirement
   );
+
+  /**
+   * Computes the optimal concurrency level for ML workloads on the CPU.
+   *
+   * See the implementation for details.
+   *
+   * Returns:
+   * - An integer representing the recommended concurrency level.
+   */
+  octet getOptimalCPUConcurrency();
+
 };

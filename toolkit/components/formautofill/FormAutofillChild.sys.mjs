@@ -2,7 +2,6 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
@@ -26,20 +25,10 @@ ChromeUtils.defineESModuleGetters(lazy, {
   FORM_SUBMISSION_REASON: "resource://gre/actors/FormHandlerChild.sys.mjs",
 });
 
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "DELEGATE_AUTOCOMPLETE",
-  "toolkit.autocomplete.delegate",
-  false
-);
-
 /**
  * Handles content's interactions for the frame.
  */
 export class FormAutofillChild extends JSWindowActorChild {
-  // Flag to indicate whethere there is an ongoing autofilling process.
-  #autofillInProgress = false;
-
   /**
    * Keep track of autofill handlers that are waiting for the parent process
    * to send back the identified result.
@@ -183,8 +172,10 @@ export class FormAutofillChild extends JSWindowActorChild {
         handler.getFieldDetailByElement(element)?.fieldName ?? "";
       this.showPopupIfEmpty(element, fieldName);
     } else {
-      const detectedFields = lazy.FormAutofillHandler.collectFormFields(
-        handler.form
+      const includeIframe = this.browsingContext == this.browsingContext.top;
+      let detectedFields = lazy.FormAutofillHandler.collectFormFieldDetails(
+        handler.form,
+        includeIframe
       );
 
       // If none of the detected fields are credit card or address fields,
@@ -244,10 +235,12 @@ export class FormAutofillChild extends JSWindowActorChild {
     const handler = this._fieldDetailsManager.getOrCreateFormHandler(element);
 
     // We don't have to call 'updateFormIfNeeded' like we do in
-    // 'identifyFieldsWhenFocused' because 'collectFormFields' doesn't use cached
+    // 'identifyFieldsWhenFocused' because 'collectFormFieldDetails' doesn't use cached
     // result.
-    const detectedFields = lazy.FormAutofillHandler.collectFormFields(
-      handler.form
+    const includeIframe = isTop;
+    const detectedFields = lazy.FormAutofillHandler.collectFormFieldDetails(
+      handler.form,
+      includeIframe
     );
 
     if (detectedFields.length) {
@@ -341,6 +334,13 @@ export class FormAutofillChild extends JSWindowActorChild {
       return true;
     }
 
+    if (
+      !lazy.FormAutofill.isAutofillCreditCardsAvailable &&
+      !lazy.FormAutofill.isAutofillAddressesAvailable
+    ) {
+      return true;
+    }
+
     const nodePrincipal = event.target.nodePrincipal;
     return nodePrincipal.isSystemPrincipal || nodePrincipal.schemeIs("about");
   }
@@ -378,12 +378,13 @@ export class FormAutofillChild extends JSWindowActorChild {
   }
 
   onFocusIn(element) {
-    // When autofilling, we focus on the element before setting the autofill value
-    // (See FormAutofillHandler.fillFieldValue). We ignore the focus event for this
-    // case to avoid showing popup while autofilling.
+    const handler = this._fieldDetailsManager.getFormHandler(element);
+    // When autofilling and clearing a field, we focus on the element before modifying the value.
+    // (See FormAutofillHandler.fillFieldValue and FormAutofillHandler.clearFilledFields).
+    // We ignore the focus event for those case to avoid showing popup while autofilling or clearing.
     if (
       !lazy.FormAutofillUtils.isCreditCardOrAddressFieldType(element) ||
-      this.#autofillInProgress
+      handler?.isAutofillInProgress
     ) {
       return;
     }
@@ -404,7 +405,7 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
 
     if (
-      lazy.DELEGATE_AUTOCOMPLETE ||
+      AppConstants.MOZ_GECKOVIEW ||
       !lazy.FormAutofillContent.savedFieldNames
     ) {
       this.debug("onFocusIn: savedFieldNames are not known yet");
@@ -452,9 +453,8 @@ export class FormAutofillChild extends JSWindowActorChild {
         return result;
       }
       case "FormAutofill:ClearFilledFields": {
-        const { ids } = message.data;
-        const handler = this.#getHandlerByElementId(ids[0]);
-        handler?.clearFilledFields(ids);
+        const { focusedId, ids } = message.data;
+        this.clearFields(focusedId, ids);
         break;
       }
       case "FormAutofill:PreviewFields": {
@@ -583,8 +583,20 @@ export class FormAutofillChild extends JSWindowActorChild {
     }
   }
 
+  clearFields(focusedId, elementIds) {
+    const handler = this.#getHandlerByElementId(elementIds[0]);
+    handler?.clearFilledFields(focusedId, elementIds);
+
+    // Explicitly calling showPopupIfEmpty here, because FormAutofillChild is ignoring
+    // all focus events during the autofilling/clearing process.
+    const focusedElement =
+      lazy.FormAutofillUtils.getElementByIdentifier(focusedId);
+    const fieldName =
+      handler.getFieldDetailByElement(focusedElement)?.fieldName ?? "";
+    this.showPopupIfEmpty(focusedElement, fieldName);
+  }
+
   async fillFields(focusedId, elementIds, profile) {
-    this.#autofillInProgress = true;
     let result = new Map();
     try {
       Services.obs.notifyObservers(null, "autofill-fill-starting");
@@ -598,21 +610,24 @@ export class FormAutofillChild extends JSWindowActorChild {
       Services.obs.notifyObservers(null, "autofill-fill-complete");
     } catch {}
 
-    this.#autofillInProgress = false;
     return result;
   }
 
   /**
    * Returns all the identified fields for this document.
-   * This function is only used by about:autofill extension.
+   * This function is only used by the autofill developer tool extension.
    */
   inspectFields() {
-    const elements = Array.from(
-      this.document.querySelectorAll("input, select")
-    );
+    const isTop = this.browsingContext == this.browsingContext.top;
+    const elements = isTop
+      ? Array.from(this.document.querySelectorAll("input, select, iframe"))
+      : Array.from(this.document.querySelectorAll("input, select"));
 
+    // Unlike the case when users click on a field and we only run our heuristic
+    // on fields within the same form as the focused field, for inspection,
+    // we want to inspect all the forms in this page.
     const roots = new Set();
-    const fieldDetails = [];
+    let fieldDetails = [];
     for (const element of elements) {
       const formLike = lazy.FormLikeFactory.createFromField(element);
       if (roots.has(formLike.rootElement)) {
@@ -622,14 +637,30 @@ export class FormAutofillChild extends JSWindowActorChild {
       const handler = new lazy.FormAutofillHandler(formLike);
 
       // Fields that cannot be recognized will still be reported with this API.
-      const fields = lazy.FormAutofillHandler.collectFormFields(handler.form);
+      const includeIframe = isTop;
+      const fields = lazy.FormAutofillHandler.collectFormFieldDetails(
+        handler.form,
+        includeIframe,
+        false
+      );
       fieldDetails.push(...fields);
     }
 
-    // For inspection, we want to return the field according to their order
-    return elements
+    // The 'fieldDetails' array are grouped by form so might not follow their
+    // order in the DOM tree. We rebuild the array based on their order in
+    // the document.
+    fieldDetails = elements
       .map(element => fieldDetails.find(field => field.element == element))
-      .filter(field => !!field);
+      .filter(field => !!field && field.element);
+
+    // Add a data attribute with a unique identifier to allow the inspector
+    // to link the element with its associated 'FieldDetail' information.
+    for (const fd of fieldDetails) {
+      const INSPECT_ATTRIBUTE = "data-moz-autofill-inspect-id";
+      fd.inspectId = fd.element.getAttribute(INSPECT_ATTRIBUTE);
+    }
+
+    return fieldDetails;
   }
 
   #markAsAutofillField(fieldDetail) {
@@ -763,8 +794,8 @@ export class FormAutofillChild extends JSWindowActorChild {
         entry =>
           new lazy.GenericAutocompleteItem(
             entry.image,
-            entry.title,
-            entry.subtitle,
+            entry.label,
+            entry.secondary,
             entry.fillMessageName,
             entry.fillMessageData
           )

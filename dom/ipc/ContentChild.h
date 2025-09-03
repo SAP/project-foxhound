@@ -245,12 +245,12 @@ class ContentChild final : public PContentChild,
       const ChromeRegistryItem& item);
 
   mozilla::ipc::IPCResult RecvClearStyleSheetCache(
-      const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
+      const Maybe<bool>& aChrome, const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
       const Maybe<nsCString>& aSchemelessSite,
       const Maybe<OriginAttributesPattern>& aPattern);
 
   mozilla::ipc::IPCResult RecvClearScriptCache(
-      const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
+      const Maybe<bool>& aChrome, const Maybe<RefPtr<nsIPrincipal>>& aPrincipal,
       const Maybe<nsCString>& aSchemelessSite,
       const Maybe<OriginAttributesPattern>& aPattern);
 
@@ -260,7 +260,7 @@ class ContentChild final : public PContentChild,
       const nsCString& aSchemelessSite,
       const OriginAttributesPattern& aPattern);
   mozilla::ipc::IPCResult RecvClearImageCache(const bool& privateLoader,
-                                              const bool& chrome);
+                                              const Maybe<bool>& chrome);
 
   PRemoteSpellcheckEngineChild* AllocPRemoteSpellcheckEngineChild();
 
@@ -312,8 +312,8 @@ class ContentChild final : public PContentChild,
       SharedMemoryHandle&& aMapHandle, const uint32_t& aMapSize,
       nsTArray<IPCBlob>&& aBlobs, nsTArray<nsCString>&& aChangedKeys);
 
-  mozilla::ipc::IPCResult RecvFontListChanged();
-  mozilla::ipc::IPCResult RecvForceGlobalReflow(bool aNeedsReframe);
+  mozilla::ipc::IPCResult RecvForceGlobalReflow(
+      const gfxPlatform::GlobalReflowFlags& aFlags);
 
   mozilla::ipc::IPCResult RecvGeolocationUpdate(nsIDOMGeoPosition* aPosition);
 
@@ -422,9 +422,6 @@ class ContentChild final : public PContentChild,
                                            const nsString& aMessageId,
                                            nsTArray<uint8_t>&& aData);
 
-  mozilla::ipc::IPCResult RecvPushSubscriptionChange(const nsCString& aScope,
-                                                     nsIPrincipal* aPrincipal);
-
   mozilla::ipc::IPCResult RecvPushError(const nsCString& aScope,
                                         nsIPrincipal* aPrincipal,
                                         const nsString& aMessage,
@@ -476,7 +473,7 @@ class ContentChild final : public PContentChild,
 
   // GetFiles for WebKit/Blink FileSystem API and Directory API must run on the
   // parent process.
-  void CreateGetFilesRequest(const nsAString& aDirectoryPath,
+  void CreateGetFilesRequest(nsTArray<nsString>&& aDirectoryPath,
                              bool aRecursiveFlag, nsID& aUUID,
                              GetFilesHelperChild* aChild);
 
@@ -489,7 +486,8 @@ class ContentChild final : public PContentChild,
       const nsCString& aURI, const IPCBlob& aBlob, nsIPrincipal* aPrincipal,
       const nsCString& aPartitionKey);
 
-  mozilla::ipc::IPCResult RecvBlobURLUnregistration(const nsCString& aURI);
+  mozilla::ipc::IPCResult RecvBlobURLUnregistration(
+      const nsTArray<nsCString>& aURIs);
 
   mozilla::ipc::IPCResult RecvRequestMemoryReport(
       const uint32_t& generation, const bool& anonymize,
@@ -550,6 +548,13 @@ class ContentChild final : public PContentChild,
   PURLClassifierLocalChild* AllocPURLClassifierLocalChild(
       nsIURI* aUri, Span<const IPCURLClassifierFeature> aFeatures);
   bool DeallocPURLClassifierLocalChild(PURLClassifierLocalChild* aActor);
+
+  // PURLClassifierLocalByNameByNameParentChild
+  PURLClassifierLocalByNameChild* AllocPURLClassifierLocalByNameChild(
+      nsIURI* aUri, Span<const nsCString> aFeatures,
+      const nsIUrlClassifierFeature::listType& aListType);
+  bool DeallocPURLClassifierLocalByNameChild(
+      PURLClassifierLocalByNameChild* aActor);
 
   PSessionStorageObserverChild* AllocPSessionStorageObserverChild();
 
@@ -730,17 +735,21 @@ class ContentChild final : public PContentChild,
   mozilla::ipc::IPCResult RecvDisplayLoadError(
       const MaybeDiscarded<BrowsingContext>& aContext, const nsAString& aURI);
 
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvGoBack(
       const MaybeDiscarded<BrowsingContext>& aContext,
       const Maybe<int32_t>& aCancelContentJSEpoch, bool aRequireUserInteraction,
       bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvGoForward(
       const MaybeDiscarded<BrowsingContext>& aContext,
       const Maybe<int32_t>& aCancelContentJSEpoch, bool aRequireUserInteraction,
       bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvGoToIndex(
       const MaybeDiscarded<BrowsingContext>& aContext, const int32_t& aIndex,
       const Maybe<int32_t>& aCancelContentJSEpoch, bool aUserActivation);
+  MOZ_CAN_RUN_SCRIPT_BOUNDARY
   mozilla::ipc::IPCResult RecvReload(
       const MaybeDiscarded<BrowsingContext>& aContext,
       const uint32_t aReloadFlags);

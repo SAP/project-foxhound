@@ -1221,41 +1221,11 @@ static void TraceIonICCallFrame(JSTracer* trc, const JSJitFrameIter& frame) {
   }
 }
 
-#if defined(JS_CODEGEN_ARM64) || defined(JS_CODEGEN_MIPS32)
+#if defined(JS_CODEGEN_ARM64)
 uint8_t* alignDoubleSpill(uint8_t* pointer) {
   uintptr_t address = reinterpret_cast<uintptr_t>(pointer);
   address &= ~(uintptr_t(ABIStackAlignment) - 1);
   return reinterpret_cast<uint8_t*>(address);
-}
-#endif
-
-#ifdef JS_CODEGEN_MIPS32
-static void TraceJitExitFrameCopiedArguments(JSTracer* trc,
-                                             const VMFunctionData* f,
-                                             ExitFooterFrame* footer) {
-  uint8_t* doubleArgs = footer->alignedForABI();
-  if (f->outParam == Type_Handle) {
-    doubleArgs -= sizeof(Value);
-  }
-  doubleArgs -= f->doubleByRefArgs() * sizeof(double);
-
-  for (uint32_t explicitArg = 0; explicitArg < f->explicitArgs; explicitArg++) {
-    if (f->argProperties(explicitArg) == VMFunctionData::DoubleByRef) {
-      // Arguments with double size can only have RootValue type.
-      if (f->argRootType(explicitArg) == VMFunctionData::RootValue) {
-        TraceRoot(trc, reinterpret_cast<Value*>(doubleArgs), "ion-vm-args");
-      } else {
-        MOZ_ASSERT(f->argRootType(explicitArg) == VMFunctionData::RootNone);
-      }
-      doubleArgs += sizeof(double);
-    }
-  }
-}
-#else
-static void TraceJitExitFrameCopiedArguments(JSTracer* trc,
-                                             const VMFunctionData* f,
-                                             ExitFooterFrame* footer) {
-  // This is NO-OP on other platforms.
 }
 #endif
 
@@ -1408,8 +1378,6 @@ static void TraceJitExitFrame(JSTracer* trc, const JSJitFrameIter& frame) {
         break;
     }
   }
-
-  TraceJitExitFrameCopiedArguments(trc, &f, footer);
 }
 
 static void TraceBaselineInterpreterEntryFrame(JSTracer* trc,
@@ -1511,7 +1479,7 @@ static void TraceJitActivation(JSTracer* trc, JitActivation* activation) {
       MOZ_ASSERT(nextPC != 0);
       wasm::WasmFrameIter& wasmFrameIter = frames.asWasm();
 #ifdef ENABLE_WASM_JSPI
-      if (wasmFrameIter.stackSwitched()) {
+      if (wasmFrameIter.currentFrameStackSwitched()) {
         highestByteVisitedInPrevWasmFrame = 0;
       }
 #endif
@@ -1761,6 +1729,7 @@ bool SnapshotIterator::allocationReadable(const RValueAllocation& alloc,
     case RValueAllocation::INTPTR_REG:
       return hasRegister(alloc.reg());
     case RValueAllocation::INTPTR_STACK:
+    case RValueAllocation::INTPTR_INT32_STACK:
       return hasStack(alloc.stackOffset());
 
 #if defined(JS_NUNBOX32)
@@ -1799,10 +1768,10 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
     case RValueAllocation::DOUBLE_REG:
       return DoubleValue(fromRegister<double>(alloc.fpuReg()));
 
-    case RValueAllocation::ANY_FLOAT_REG:
+    case RValueAllocation::FLOAT32_REG:
       return Float32Value(fromRegister<float>(alloc.fpuReg()));
 
-    case RValueAllocation::ANY_FLOAT_STACK:
+    case RValueAllocation::FLOAT32_STACK:
       return Float32Value(ReadFrameFloat32Slot(fp_, alloc.stackOffset()));
 
     case RValueAllocation::TYPED_REG:
@@ -1874,6 +1843,7 @@ Value SnapshotIterator::allocationValue(const RValueAllocation& alloc,
     case RValueAllocation::INTPTR_CST:
     case RValueAllocation::INTPTR_REG:
     case RValueAllocation::INTPTR_STACK:
+    case RValueAllocation::INTPTR_INT32_STACK:
       MOZ_CRASH("Can't read IntPtr as Value");
 
     case RValueAllocation::INT64_CST:
@@ -1952,7 +1922,8 @@ bool SnapshotIterator::readMaybeUnpackedBigInt(JSContext* cx,
     }
     case RValueAllocation::INTPTR_CST:
     case RValueAllocation::INTPTR_REG:
-    case RValueAllocation::INTPTR_STACK: {
+    case RValueAllocation::INTPTR_STACK:
+    case RValueAllocation::INTPTR_INT32_STACK: {
       auto* bigInt = JS::BigInt::createFromIntPtr(cx, allocationIntPtr(alloc));
       if (!bigInt) {
         return false;
@@ -2031,6 +2002,9 @@ intptr_t SnapshotIterator::allocationIntPtr(const RValueAllocation& alloc) {
       return static_cast<intptr_t>(fromRegister(alloc.reg()));
     case RValueAllocation::INTPTR_STACK:
       return static_cast<intptr_t>(fromStack(alloc.stackOffset()));
+    case RValueAllocation::INTPTR_INT32_STACK:
+      return static_cast<intptr_t>(
+          ReadFrameInt32Slot(fp_, alloc.stackOffset()));
     default:
       break;
   }
@@ -2043,6 +2017,7 @@ JS::BigInt* SnapshotIterator::readBigInt(JSContext* cx) {
     case RValueAllocation::INTPTR_CST:
     case RValueAllocation::INTPTR_REG:
     case RValueAllocation::INTPTR_STACK:
+    case RValueAllocation::INTPTR_INT32_STACK:
       return JS::BigInt::createFromIntPtr(cx, allocationIntPtr(alloc));
     default:
       return allocationValue(alloc).toBigInt();
@@ -2061,11 +2036,12 @@ void SnapshotIterator::writeAllocationValuePayload(
     case RValueAllocation::CST_UNDEFINED:
     case RValueAllocation::CST_NULL:
     case RValueAllocation::DOUBLE_REG:
-    case RValueAllocation::ANY_FLOAT_REG:
-    case RValueAllocation::ANY_FLOAT_STACK:
+    case RValueAllocation::FLOAT32_REG:
+    case RValueAllocation::FLOAT32_STACK:
     case RValueAllocation::INTPTR_CST:
     case RValueAllocation::INTPTR_REG:
     case RValueAllocation::INTPTR_STACK:
+    case RValueAllocation::INTPTR_INT32_STACK:
     case RValueAllocation::INT64_CST:
 #if defined(JS_NUNBOX32)
     case RValueAllocation::INT64_REG_REG:

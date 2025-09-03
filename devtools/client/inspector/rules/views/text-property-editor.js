@@ -44,6 +44,9 @@ loader.lazyRequireGetter(
 loader.lazyGetter(this, "PROPERTY_NAME_INPUT_LABEL", function () {
   return l10n("rule.propertyName.label");
 });
+loader.lazyGetter(this, "SHORTHAND_EXPANDER_TOOLTIP", function () {
+  return l10n("rule.shorthandExpander.tooltip");
+});
 
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -87,21 +90,6 @@ const DRAGGING_DEADZONE_DISTANCE = 5;
 
 const DRAGGABLE_VALUE_CLASSNAME = "ruleview-propertyvalue-draggable";
 const IS_DRAGGING_CLASSNAME = "ruleview-propertyvalue-dragging";
-
-// In order to highlight the used fonts in font-family properties, we
-// retrieve the list of used fonts from the server. That always
-// returns the actually used font family name(s). If the property's
-// authored value is sans-serif for instance, the used font might be
-// arial instead.  So we need the list of all generic font family
-// names to underline those when we find them.
-const GENERIC_FONT_FAMILIES = [
-  "serif",
-  "sans-serif",
-  "cursive",
-  "fantasy",
-  "monospace",
-  "system-ui",
-];
 
 /**
  * TextPropertyEditor is responsible for the following:
@@ -232,8 +220,10 @@ TextPropertyEditor.prototype = {
     appendText(this.nameContainer, ": ");
 
     // Click to expand the computed properties of the text property.
-    this.expander = createChild(this.container, "span", {
+    this.expander = createChild(this.container, "button", {
+      "aria-expanded": "false",
       class: "ruleview-expander theme-twisty",
+      title: SHORTHAND_EXPANDER_TOOLTIP,
     });
     this.expander.addEventListener("click", this._onExpandClicked, true);
 
@@ -665,28 +655,14 @@ TextPropertyEditor.prototype = {
       this.rule.elementStyle
         .getUsedFontFamilies()
         .then(families => {
-          const usedFontFamilies = families.map(font => font.toLowerCase());
-          let foundMatchingFamily = false;
-          let firstGenericSpan = null;
-
           for (const span of fontFamilySpans) {
             const authoredFont = span.textContent.toLowerCase();
-
-            if (
-              !firstGenericSpan &&
-              GENERIC_FONT_FAMILIES.includes(authoredFont)
-            ) {
-              firstGenericSpan = span;
-            }
-
-            if (usedFontFamilies.includes(authoredFont)) {
+            if (families.has(authoredFont)) {
               span.classList.add("used-font");
-              foundMatchingFamily = true;
+              // In case a font-family appears multiple time in the value, we only want
+              // to highlight the first occurence.
+              families.delete(authoredFont);
             }
-          }
-
-          if (!foundMatchingFamily && firstGenericSpan) {
-            firstGenericSpan.classList.add("used-font");
           }
 
           this.ruleView.emit("font-highlighted", this.valueSpan);
@@ -973,7 +949,7 @@ TextPropertyEditor.prototype = {
         : "none";
 
     this._populatedComputed = false;
-    if (this.expander.hasAttribute("open")) {
+    if (this.expander.getAttribute("aria-expanded" === "true")) {
       this._populateComputed();
     }
   },
@@ -1126,17 +1102,17 @@ TextPropertyEditor.prototype = {
    * expanded by manually by the user.
    */
   _onExpandClicked(event) {
-    if (
+    const isOpened =
       this.computed.hasAttribute("filter-open") ||
-      this.computed.hasAttribute("user-open")
-    ) {
-      this.expander.removeAttribute("open");
+      this.computed.hasAttribute("user-open");
+
+    this.expander.setAttribute("aria-expanded", !isOpened);
+    if (isOpened) {
       this.computed.removeAttribute("filter-open");
       this.computed.removeAttribute("user-open");
       this.shorthandOverridden.hidden = false;
       this._populateShorthandOverridden();
     } else {
-      this.expander.setAttribute("open", "true");
       this.computed.setAttribute("user-open", "");
       this.shorthandOverridden.hidden = true;
       this._populateComputed();
@@ -1152,7 +1128,7 @@ TextPropertyEditor.prototype = {
    */
   expandForFilter() {
     if (!this.computed.hasAttribute("user-open")) {
-      this.expander.setAttribute("open", "true");
+      this.expander.setAttribute("aria-expanded", "true");
       this.computed.setAttribute("filter-open", "");
       this._populateComputed();
     }
@@ -1165,7 +1141,7 @@ TextPropertyEditor.prototype = {
     this.computed.removeAttribute("filter-open");
 
     if (!this.computed.hasAttribute("user-open")) {
-      this.expander.removeAttribute("open");
+      this.expander.setAttribute("aria-expanded", "false");
     }
   },
 

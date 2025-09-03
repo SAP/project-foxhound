@@ -60,10 +60,6 @@ button:disabled {
   margin-top: 2em;
 }
 
-#openInNewWindowContainer {
-  margin-bottom: 0;
-}
-
 #advancedPanelButtonContainer {
   background-color: rgba(128, 128, 147, 0.1);
   display: flex;
@@ -82,13 +78,6 @@ button:disabled {
 
 #openPortalLoginPageButton {
   margin-inline-start: 0;
-}
-
-#blockingErrorReporting {
-  padding-bottom: 10px;
-  /* Pull a bit closer to the top than the other .advanced-panel containers
-   * as this is just a checkbox. */
-  margin-top: 1.2em;
 }
 
 .advanced-panel-container {
@@ -167,7 +156,7 @@ button:disabled {
 
 /* Felt Privacy v1 LARGER SCREEN! */
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "security.certerrors.felt-privacy-v1") {
+@media -moz-pref("security.certerrors.felt-privacy-v1") {
   .felt-privacy-body {
     justify-content: start;
   }

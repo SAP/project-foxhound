@@ -107,12 +107,19 @@ class SearchProviders {
         if (p.shoppingTab?.inspectRegexpInSERP) {
           p.shoppingTab.regexp = new RegExp(p.shoppingTab.regexp);
         }
+        let subframes =
+          p.subframes
+            ?.filter(obj => obj.inspectRegexpInSERP)
+            .map(obj => {
+              return { ...obj, regexp: new RegExp(obj.regexp) };
+            }) ?? [];
         return {
           ...p,
           searchPageRegexp: new RegExp(p.searchPageRegexp),
           extraAdServersRegexps: p.extraAdServersRegexps.map(
             r => new RegExp(r)
           ),
+          subframes,
         };
       });
 
@@ -1227,10 +1234,8 @@ class DomainExtractor {
 
       let href = element.getAttribute("href");
 
-      let url;
-      try {
-        url = new URL(href, origin);
-      } catch (ex) {
+      let url = URL.parse(href, origin);
+      if (!url) {
         continue;
       }
 
@@ -1242,9 +1247,8 @@ class DomainExtractor {
       if (queryParam) {
         let paramValue = url.searchParams.get(queryParam);
         if (queryParamValueIsHref) {
-          try {
-            paramValue = new URL(paramValue).hostname;
-          } catch (e) {
+          paramValue = URL.parse(paramValue)?.hostname;
+          if (!paramValue) {
             continue;
           }
           paramValue = this.#processDomain(paramValue, providerName);
@@ -1339,9 +1343,8 @@ class DomainExtractor {
           textContent = "https://" + textContent;
         }
 
-        try {
-          domain = new URL(textContent).hostname;
-        } catch (e) {
+        domain = URL.parse(textContent)?.hostname;
+        if (!domain) {
           domain = fixup(textContent);
         }
       } else {
@@ -1491,6 +1494,11 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       }
     }
 
+    // If there are no ads in hrefs, they could be present in a subframe.
+    if (!hasAds) {
+      hasAds = this.#checkForSponsoredSubframes(this.document, providerInfo);
+    }
+
     if (hasAds) {
       this.sendAsyncMessage("SearchTelemetry:PageInfo", {
         hasAds,
@@ -1600,6 +1608,30 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         shoppingTabDisplayed,
       });
     }
+  }
+
+  #checkForSponsoredSubframes(document, providerInfo) {
+    if (!providerInfo.subframes?.length) {
+      return false;
+    }
+
+    let subframes = document.querySelectorAll("iframe");
+    for (let subframe of subframes) {
+      let foundMatch = providerInfo.subframes.some(obj =>
+        obj.regexp?.test(subframe.src)
+      );
+      if (
+        foundMatch &&
+        subframe.checkVisibility({
+          visibilityProperty: true,
+          contentVisibilityAuto: true,
+        })
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   #removeEventListeners() {

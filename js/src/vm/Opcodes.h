@@ -855,10 +855,10 @@
      *
      *   Category: Objects
      *   Type: Creating objects
-     *   Operands:
+     *   Operands: uint8_t propertyCount
      *   Stack: => obj
      */ \
-    MACRO(NewInit, new_init, NULL, 1, 0, 1, JOF_BYTE|JOF_IC) \
+    MACRO(NewInit, new_init, NULL, 2, 0, 1, JOF_UINT8|JOF_IC) \
     /*
      * Create and push a new object of a predetermined shape.
      *
@@ -1594,94 +1594,6 @@
      */ \
     MACRO(RegExp, reg_exp, NULL, 5, 0, 1, JOF_REGEXP) \
     /*
-     * Initialize a new record, preallocating `length` memory slots. `length` can still grow
-     * if needed, for example when using the spread operator.
-     *
-     * Implements: [RecordLiteral Evaluation][1] step 1.
-     *
-     * [1]: https://tc39.es/proposal-record-tuple/#sec-record-initializer-runtime-semantics-evaluation
-     *
-     *   Category: Compound primitives
-     *   Type: Record literals
-     *   Operands: uint32_t length
-     *   Stack: => rval
-     */ \
-    IF_RECORD_TUPLE(MACRO(InitRecord, init_record, NULL, 5, 0, 1, JOF_UINT32)) \
-    /*
-     * Add the last element in the stack to the preceding tuple.
-     *
-     * Implements: [AddPropertyIntoRecordEntriesList][1].
-     *
-     * [1]: https://tc39.es/proposal-record-tuple/#sec-addpropertyintorecordentrieslist
-     *
-     *   Category: Compound primitives
-     *   Type: Record literals
-     *   Operands:
-     *   Stack: record, key, value => record
-     */ \
-    IF_RECORD_TUPLE(MACRO(AddRecordProperty, add_record_property, NULL, 1, 3, 1, JOF_BYTE)) \
-    /*
-     * Add the last element in the stack to the preceding tuple.
-     *
-     * Implements: [RecordPropertyDefinitionEvaluation][1] for
-     *   RecordPropertyDefinition : ... AssignmentExpression
-     *
-     * [1]: https://tc39.es/proposal-record-tuple/#sec-addpropertyintorecordentrieslist
-     *
-     *   Category: Compound primitives
-     *   Type: Record literals
-     *   Operands:
-     *   Stack: record, value => record
-     */ \
-    IF_RECORD_TUPLE(MACRO(AddRecordSpread, add_record_spread, NULL, 1, 2, 1, JOF_BYTE)) \
-    /*
-     * Mark a record as "initialized", going from "write-only" mode to
-     * "read-only" mode.
-     *
-     *   Category: Compound primitives
-     *   Type: Record literals
-     *   Operands:
-     *   Stack: record => record
-     */ \
-    IF_RECORD_TUPLE(MACRO(FinishRecord, finish_record, NULL, 1, 1, 1, JOF_BYTE)) \
-    /*
-     * Initialize a new tuple, preallocating `length` memory slots. `length` can still grow
-     * if needed, for example when using the spread operator.
-     *
-     * Implements: [TupleLiteral Evaluation][1] step 1.
-     *
-     * [1]: https://tc39.es/proposal-record-tuple/#sec-tuple-initializer-runtime-semantics-evaluation
-     *
-     *   Category: Compound primitives
-     *   Type: Tuple literals
-     *   Operands: uint32_t length
-     *   Stack: => rval
-     */ \
-    IF_RECORD_TUPLE(MACRO(InitTuple, init_tuple, NULL, 5, 0, 1, JOF_UINT32)) \
-    /*
-     * Add the last element in the stack to the preceding tuple.
-     *
-     * Implements: [AddValueToTupleSequenceList][1].
-     *
-     * [1]: https://tc39.es/proposal-record-tuple/#sec-addvaluetotuplesequencelist
-     *
-     *   Category: Compound primitives
-     *   Type: Tuple literals
-     *   Operands:
-     *   Stack: tuple, element => tuple
-     */ \
-    IF_RECORD_TUPLE(MACRO(AddTupleElement, add_tuple_element, NULL, 1, 2, 1, JOF_BYTE)) \
-    /*
-     * Mark a tuple as "initialized", going from "write-only" mode to
-     * "read-only" mode.
-     *
-     *   Category: Compound primitives
-     *   Type: Tuple literals
-     *   Operands:
-     *   Stack: tuple => tuple
-     */ \
-    IF_RECORD_TUPLE(MACRO(FinishTuple, finish_tuple, NULL, 1, 1, 1, JOF_BYTE)) \
-    /*
      * Push a new function object.
      *
      * The new function inherits the current environment chain.
@@ -1700,7 +1612,7 @@
      *   Operands: uint32_t funcIndex
      *   Stack: => fn
      */ \
-    MACRO(Lambda, lambda, NULL, 5, 0, 1, JOF_OBJECT|JOF_USES_ENV) \
+    MACRO(Lambda, lambda, NULL, 5, 0, 1, JOF_OBJECT|JOF_USES_ENV|JOF_IC) \
     /*
      * Set the name of a function.
      *
@@ -3034,7 +2946,7 @@
      *   Operands: uint32_t nameIndex
      *   Stack: => val
      */ \
-    MACRO(GetImport, get_import, NULL, 5, 0, 1, JOF_ATOM) \
+    MACRO(GetImport, get_import, NULL, 5, 0, 1, JOF_ATOM|JOF_IC) \
     /*
      * Get the value of a binding from the environment `env`. If the name is
      * not bound in `env`, throw a ReferenceError.
@@ -3702,13 +3614,13 @@
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-    IF_RECORD_TUPLE(/* empty */, MACRO(240))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(241))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(242))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(243))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(244))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(245))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(246))     \
+    MACRO(240)                                   \
+    MACRO(241)                                   \
+    MACRO(242)                                   \
+    MACRO(243)                                   \
+    MACRO(244)                                   \
+    MACRO(245)                                   \
+    MACRO(246)                                   \
     MACRO(247)                                   \
     MACRO(248)                                   \
     MACRO(249)                                   \
@@ -3720,13 +3632,13 @@
     MACRO(255)
 #else
 #  define FOR_EACH_TRAILING_UNUSED_OPCODE(MACRO) \
-    IF_RECORD_TUPLE(/* empty */, MACRO(237))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(238))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(239))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(240))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(241))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(242))     \
-    IF_RECORD_TUPLE(/* empty */, MACRO(243))     \
+    MACRO(237)                                   \
+    MACRO(238)                                   \
+    MACRO(239)                                   \
+    MACRO(240)                                   \
+    MACRO(241)                                   \
+    MACRO(242)                                   \
+    MACRO(243)                                   \
     MACRO(244)                                   \
     MACRO(245)                                   \
     MACRO(246)                                   \

@@ -201,11 +201,6 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(gfxContext* aRenderingContext,
                         nsPresContext::CSSPixelsToAppUnits(4));
     internalPadding = RoundToMultiple(internalPadding, AppUnitsPerCSSPixel());
     intrinsicSize.ISize(aWM) += internalPadding;
-  } else if (PresContext()->CompatibilityMode() ==
-             eCompatibility_FullStandards) {
-    // This is to account for the anonymous <br> having a 1 twip width
-    // in Full Standards mode, see BRFrame::Reflow and bug 228752.
-    intrinsicSize.ISize(aWM) += 1;
   }
 
   // Increment width with cols * letter-spacing.
@@ -973,11 +968,11 @@ nsresult nsTextControlFrame::AttributeChanged(int32_t aNameSpaceID,
 
 void nsTextControlFrame::HandleReadonlyOrDisabledChange() {
   RefPtr<TextControlElement> el = ControlElement();
-  RefPtr<TextEditor> editor = el->GetTextEditorWithoutCreation();
+  const RefPtr<TextEditor> editor = el->GetExtantTextEditor();
   if (!editor) {
     return;
   }
-  nsISelectionController* selCon = el->GetSelectionController();
+  nsISelectionController* const selCon = el->GetSelectionController();
   if (!selCon) {
     return;
   }
@@ -1180,8 +1175,8 @@ nsTextControlFrame::EditorInitializer::Run() {
       if (NS_SUCCEEDED(
               dragSession->GetSourceNode(getter_AddRefs(sourceNode))) &&
           mFrame->GetContent() == sourceNode) {
-        if (TextEditor* textEditor =
-                mFrame->ControlElement()->GetTextEditorWithoutCreation()) {
+        if (const TextEditor* const textEditor =
+                mFrame->ControlElement()->GetExtantTextEditor()) {
           if (Element* anonymousDivElement = textEditor->GetRoot()) {
             if (anonymousDivElement && anonymousDivElement->GetFirstChild()) {
               MOZ_ASSERT(anonymousDivElement->GetFirstChild()->IsText());
@@ -1198,8 +1193,8 @@ nsTextControlFrame::EditorInitializer::Run() {
     TextControlElement* textControlElement = mFrame->ControlElement();
     if (nsPresContext* presContext =
             textControlElement->GetPresContext(Element::eForComposedDoc)) {
-      if (TextEditor* textEditor =
-              textControlElement->GetTextEditorWithoutCreation()) {
+      if (const TextEditor* const textEditor =
+              textControlElement->GetExtantTextEditor()) {
         if (Element* anonymousDivElement = textEditor->GetRoot()) {
           presContext->EventStateManager()->TextControlRootAdded(
               *anonymousDivElement, *textControlElement);
@@ -1229,8 +1224,8 @@ void nsTextControlFrame::nsAnonDivObserver::ContentInserted(
   mFrame.ClearCachedValue();
 }
 
-void nsTextControlFrame::nsAnonDivObserver::ContentRemoved(
-    nsIContent* aChild, nsIContent* aPreviousSibling) {
+void nsTextControlFrame::nsAnonDivObserver::ContentWillBeRemoved(
+    nsIContent* aChild, const BatchRemovalState*) {
   mFrame.ClearCachedValue();
 }
 

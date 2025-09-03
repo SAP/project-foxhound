@@ -90,7 +90,7 @@
     <menuitem id="context_undoCloseTab"
               data-lazy-l10n-id="tab-context-reopen-closed-tabs"
               data-l10n-args='{"tabCount": 1}'
-              observes="History:UndoCloseTab"/>
+              command="History:UndoCloseTab"/>
     <menuseparator contexttype="fullscreen"/>
     <menuitem id="context_fullscreenAutohide"
               class="fullscreen-context-autohide"
@@ -100,6 +100,18 @@
     <menuitem id="context_fullscreenExit"
               contexttype="fullscreen"
               data-lazy-l10n-id="full-screen-exit"/>
+  </menupopup>
+
+  <menupopup id="open-tab-group-context-menu">
+    <menuitem id="open-tab-group-context-menu_moveToThisWindow" data-l10n-id="tab-group-context-move-to-this-window"/>
+    <menuitem id="open-tab-group-context-menu_moveToNewWindow" data-l10n-id="tab-group-context-move-to-new-window"/>
+    <menuitem id="open-tab-group-context-menu_delete" data-l10n-id="tab-group-context-delete"/>
+  </menupopup>
+
+  <menupopup id="saved-tab-group-context-menu">
+    <menuitem id="saved-tab-group-context-menu_openInThisWindow" data-l10n-id="tab-group-context-open-saved-group-in-this-window"/>
+    <menuitem id="saved-tab-group-context-menu_openInNewWindow" data-l10n-id="tab-group-context-open-saved-group-in-new-window"/>
+    <menuitem id="saved-tab-group-context-menu_delete" data-l10n-id="tab-group-context-delete"/>
   </menupopup>
 
   <!-- This node can be cloned by SetClickAndHoldHandlers. -->
@@ -132,28 +144,36 @@
          noautofocus="true"
          hidden="true" />
 
-  <panel id="searchmode-switcher-popup"
-         class="panel-no-padding toolbar-menupopup"
-         orient="vertical"
-         role="menu"
-         consumeoutsideclicks="false"
-         aria-labelledby="searchmode-switcher-popup-description">
-    <label data-l10n-id="urlbar-searchmode-popup-description" id="searchmode-switcher-popup-description" />
-    <toolbarseparator />
-    <vbox class="panel-subview-body"></vbox>
-    <toolbarseparator />
-    <toolbarbutton class="subviewbutton subviewbutton-iconic panel-subview-footer-button"
-                   data-action="openpreferences"
-                   id="searchmode-switcher-popup-search-settings-button"
-                   role="button"
-                   tabindex="0">
-      <image id="searchmode-switcher-popup-search-settings-icon" />
-      <label data-l10n-id="urlbar-searchmode-popup-search-settings" />
-    </toolbarbutton>
+  <menupopup id="searchmode-switcher-popup"
+             class="toolbar-menupopup"
+             consumeoutsideclicks="false">
+    <label id="searchmode-switcher-popup-description"
+           data-l10n-id="urlbar-searchmode-popup-description"
+           role="heading" />
+    <menuseparator/>
+    <menuseparator id="searchmode-switcher-popup-footer-separator"/>
+    <menuitem id="searchmode-switcher-popup-search-settings-button"
+              class="menuitem-iconic"
+              data-action="openpreferences"
+              image="chrome://global/skin/icons/settings.svg"
+              data-l10n-id="urlbar-searchmode-popup-search-settings-menuitem"/>
+  </menupopup>
+
+  <!-- Starting point for selection actions -->
+  <panel class="panel-no-padding"
+         id="selection-shortcut-action-panel"
+         noautofocus="true"
+         consumeoutsideclicks="never"
+         type="arrow">
+    <hbox class="panel-subview-body">
+      <html:moz-button id="ai-action-button"/>
+    </hbox>
   </panel>
 
+
+  <!-- Shortcut options for Gen AI action -->
   <panel class="panel-no-padding"
-         id="ask-chat-shortcuts"
+         id="chat-shortcuts-options-panel"
          noautofocus="true"
          type="arrow">
     <vbox class="panel-subview-body"/>
@@ -290,6 +310,12 @@
     <menuitem data-l10n-id="sidebar-context-menu-report-extension"
               id="sidebar-context-menu-report-extension"
               contexttype="extension-action"/>
+    <menuitem id="sidebar-context-menu-hide-sidebar"
+              data-l10n-id="sidebar-context-menu-hide-sidebar"/>
+    <menuitem id="sidebar-context-menu-customize-sidebar"
+              data-l10n-id="sidebar-context-menu-customize-sidebar"/>
+    <menuitem id="sidebar-context-menu-enable-vertical-tabs"
+              data-l10n-id="sidebar-context-menu-enable-vertical-tabs"/>
   </menupopup>
 
   <menupopup id="sidebar-history-menu">
@@ -348,28 +374,6 @@
               contexttype="toolbaritem"
               class="customize-context-reportExtension"/>
     <menuseparator/>
-    <menuitem id="toolbar-context-move-to-panel"
-              data-lazy-l10n-id="toolbar-context-menu-pin-to-overflow-menu"
-              contexttype="toolbaritem"
-              class="customize-context-moveToPanel"/>
-    <menuitem id="toolbar-context-autohide-downloads-button"
-              type="checkbox"
-              data-lazy-l10n-id="toolbar-context-menu-auto-hide-downloads-button-2"
-              contexttype="toolbaritem"/>
-    <menuitem id="toolbar-context-remove-from-toolbar"
-              data-lazy-l10n-id="toolbar-context-menu-remove-from-toolbar"
-              contexttype="toolbaritem"
-              class="customize-context-removeFromToolbar"/>
-    <menuitem id="toolbar-context-pin-to-toolbar"
-              data-lazy-l10n-id="toolbar-context-menu-pin-to-toolbar"
-              type="checkbox"
-              contexttype="toolbaritem"
-              class="customize-context-pinToToolbar"/>
-    <menuseparator id="toolbarDownloadsAnchorMenuSeparator"/>
-    <menuitem id="toolbar-context-always-open-downloads-panel"
-              type="checkbox"
-              data-lazy-l10n-id="toolbar-context-menu-always-open-downloads-panel"
-              contexttype="toolbaritem"/>
     <menuitem id="toolbar-context-openANewTab"
               contexttype="tabbar"
               command="cmd_newNavigatorTab"
@@ -393,8 +397,37 @@
     <menuitem id="toolbar-context-undoCloseTab"
               contexttype="tabbar"
               data-lazy-l10n-id="toolbar-context-menu-reopen-closed-tabs"
-              observes="History:UndoCloseTab"/>
-    <menuseparator id="toolbarItemsMenuSeparator"/>
+              data-l10n-args='{"tabCount": 1}'
+              command="History:UndoCloseTab"/>
+    <menuseparator id="tabbarItemsMenuSeparator"/>
+    <menuitem id="toolbar-context-customize-sidebar"
+              data-l10n-id="toolbar-context-customize-sidebar"/>
+    <menuitem id="toolbar-context-toggle-vertical-tabs"
+              data-l10n-id="toolbar-context-turn-on-vertical-tabs"/>
+    <menuseparator id="sidebarRevampSeparator"/>
+    <menuitem id="toolbar-context-move-to-panel"
+              data-lazy-l10n-id="toolbar-context-menu-pin-to-overflow-menu"
+              contexttype="toolbaritem"
+              class="customize-context-moveToPanel"/>
+    <menuitem id="toolbar-context-autohide-downloads-button"
+              type="checkbox"
+              data-lazy-l10n-id="toolbar-context-menu-auto-hide-downloads-button-2"
+              contexttype="toolbaritem"/>
+    <menuitem id="toolbar-context-remove-from-toolbar"
+              data-lazy-l10n-id="toolbar-context-menu-remove-from-toolbar"
+              contexttype="toolbaritem"
+              class="customize-context-removeFromToolbar"/>
+    <menuitem id="toolbar-context-pin-to-toolbar"
+              data-lazy-l10n-id="toolbar-context-menu-pin-to-toolbar"
+              type="checkbox"
+              contexttype="toolbaritem"
+              class="customize-context-pinToToolbar"/>
+    <menuseparator id="toolbarDownloadsAnchorMenuSeparator"/>
+    <menuitem id="toolbar-context-always-open-downloads-panel"
+              type="checkbox"
+              data-lazy-l10n-id="toolbar-context-menu-always-open-downloads-panel"
+              contexttype="toolbaritem"/>
+    <menuseparator id="customizationMenuSeparator"/>
     <menuseparator id="viewToolbarsMenuSeparator"/>
     <menuitem id="toolbar-context-customize"
               observes="cmd_CustomizeToolbars"
@@ -532,7 +565,7 @@
     <description class="tooltip-label" data-l10n-id="navbar-tooltip-instruction"/>
   </tooltip>
 
-#include popup-notifications.inc
+#include popup-notifications.inc.xhtml
 
 #include ../../components/customizableui/content/panelUI.inc.xhtml
 #include ../../components/controlcenter/content/identityPanel.inc.xhtml
@@ -626,7 +659,7 @@
                        data-l10n-id="sharing-warning-screen"/>
           </label>
           <hbox align="center">
-            <button id="sharing-warning-proceed-to-tab" oncommand="gSharedTabWarning.allowSharedTabSwitch();" flex="1" data-l10n-id="sharing-warning-proceed-to-tab"/>
+            <button id="sharing-warning-proceed-to-tab" flex="1" data-l10n-id="sharing-warning-proceed-to-tab"/>
           </hbox>
           <hbox pack="start">
             <checkbox id="sharing-warning-disable-for-session" data-l10n-id="sharing-warning-disable-for-session"/>

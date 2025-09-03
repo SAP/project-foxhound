@@ -1322,6 +1322,7 @@ BuildTextRunsScanner::FindBoundaryResult BuildTextRunsScanner::FindBoundaries(
     uint32_t start = textFrame->GetContentOffset();
     uint32_t length = textFrame->GetContentLength();
     const void* text;
+    const nsAtom* language = textFrame->StyleFont()->mLanguage;
     if (frag->Is2b()) {
       // It is possible that we may end up removing all whitespace in
       // a piece of text because of The White Space Processing Rules,
@@ -1336,7 +1337,7 @@ BuildTextRunsScanner::FindBoundaryResult BuildTextRunsScanner::FindBoundaries(
       char16_t* bufStart = aState->mBuffer.Elements();
       char16_t* bufEnd = nsTextFrameUtils::TransformText(
           frag->Get2b() + start, length, bufStart, compression, &incomingFlags,
-          &skipChars, &analysisFlags);
+          &skipChars, &analysisFlags, language);
       text = bufStart;
       length = bufEnd - bufStart;
     } else {
@@ -1732,6 +1733,30 @@ void BuildTextRunsScanner::AccumulateRunInfo(nsTextFrame* aFrame) {
     mLineBreakBeforeFrames.AppendElement(aFrame);
     mStartOfLine = false;
   }
+
+  // Default limits used by `hyphenate-limit-chars` for `auto` components, as
+  // suggested by the CSS Text spec.
+  // TODO: consider making these sensitive to the context, e.g. increasing the
+  // values for long line lengths to reduce the tendency to hyphenate too much.
+  const uint32_t kDefaultHyphenateTotalWordLength = 5;
+  const uint32_t kDefaultHyphenatePreBreakLength = 2;
+  const uint32_t kDefaultHyphenatePostBreakLength = 2;
+
+  const auto& hyphenateLimitChars = aFrame->StyleText()->mHyphenateLimitChars;
+  uint32_t pre =
+      hyphenateLimitChars.pre_hyphen_length.IsAuto()
+          ? kDefaultHyphenatePreBreakLength
+          : std::max(0, hyphenateLimitChars.pre_hyphen_length.AsNumber());
+  uint32_t post =
+      hyphenateLimitChars.post_hyphen_length.IsAuto()
+          ? kDefaultHyphenatePostBreakLength
+          : std::max(0, hyphenateLimitChars.post_hyphen_length.AsNumber());
+  uint32_t total =
+      hyphenateLimitChars.total_word_length.IsAuto()
+          ? kDefaultHyphenateTotalWordLength
+          : std::max(0, hyphenateLimitChars.total_word_length.AsNumber());
+  total = std::max(total, pre + post);
+  mLineBreaker.SetHyphenateLimitChars(total, pre, post);
 }
 
 static bool HasTerminalNewline(const nsTextFrame* aFrame) {
@@ -2318,6 +2343,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
     int32_t contentStart = mappedFlow->mStartFrame->GetContentOffset();
     int32_t contentEnd = mappedFlow->GetContentEnd();
     int32_t contentLength = contentEnd - contentStart;
+    const nsAtom* language = f->StyleFont()->mLanguage;
 
     TextRunMappedFlow* newFlow = &userMappedFlows[i];
     newFlow->mStartFrame = mappedFlow->mStartFrame;
@@ -2339,7 +2365,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
       char16_t* bufStart = static_cast<char16_t*>(aTextBuffer);
       char16_t* bufEnd = nsTextFrameUtils::TransformText(
           frag->Get2b() + contentStart, contentLength, bufStart, compression,
-          &mNextRunContextInfo, &skipChars, &analysisFlags);
+          &mNextRunContextInfo, &skipChars, &analysisFlags, language);
       aTextBuffer = bufEnd;
       currentTransformedTextOffset =
           bufEnd - static_cast<const char16_t*>(textPtr);
@@ -2356,7 +2382,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
         uint8_t* end = nsTextFrameUtils::TransformText(
             reinterpret_cast<const uint8_t*>(frag->Get1b()) + contentStart,
             contentLength, bufStart, compression, &mNextRunContextInfo,
-            &skipChars, &analysisFlags);
+            &skipChars, &analysisFlags, language);
         aTextBuffer =
             ExpandBuffer(static_cast<char16_t*>(aTextBuffer),
                          tempBuf.Elements(), end - tempBuf.Elements());
@@ -2367,7 +2393,7 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
         uint8_t* end = nsTextFrameUtils::TransformText(
             reinterpret_cast<const uint8_t*>(frag->Get1b()) + contentStart,
             contentLength, bufStart, compression, &mNextRunContextInfo,
-            &skipChars, &analysisFlags);
+            &skipChars, &analysisFlags, language);
         aTextBuffer = end;
         currentTransformedTextOffset =
             end - static_cast<const uint8_t*>(textPtr);
@@ -2461,8 +2487,8 @@ already_AddRefed<gfxTextRun> BuildTextRunsScanner::BuildTextRunForFrames(
     uint32_t unmaskStart = 0, unmaskEnd = UINT32_MAX;
     if (needsToMaskPassword) {
       unmaskStart = unmaskEnd = UINT32_MAX;
-      TextEditor* passwordEditor =
-          nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(
+      const TextEditor* const passwordEditor =
+          nsContentUtils::GetExtantTextEditorFromAnonymousNode(
               firstFrame->GetContent());
       if (passwordEditor && !passwordEditor->IsAllMasked()) {
         unmaskStart = passwordEditor->UnmaskedStart();
@@ -2618,6 +2644,7 @@ bool BuildTextRunsScanner::SetupLineBreakerContext(gfxTextRun* aTextRun) {
   }
 
   gfxSkipChars skipChars;
+  const nsAtom* language = mMappedFlows[0].mStartFrame->StyleFont()->mLanguage;
 
   for (uint32_t i = 0; i < mMappedFlows.Length(); ++i) {
     MappedFlow* mappedFlow = &mMappedFlows[i];
@@ -2639,7 +2666,7 @@ bool BuildTextRunsScanner::SetupLineBreakerContext(gfxTextRun* aTextRun) {
       char16_t* bufStart = static_cast<char16_t*>(textPtr);
       char16_t* bufEnd = nsTextFrameUtils::TransformText(
           frag->Get2b() + contentStart, contentLength, bufStart, compression,
-          &mNextRunContextInfo, &skipChars, &analysisFlags);
+          &mNextRunContextInfo, &skipChars, &analysisFlags, language);
       textPtr = bufEnd;
     } else {
       if (mDoubleByteText) {
@@ -2653,7 +2680,7 @@ bool BuildTextRunsScanner::SetupLineBreakerContext(gfxTextRun* aTextRun) {
         uint8_t* end = nsTextFrameUtils::TransformText(
             reinterpret_cast<const uint8_t*>(frag->Get1b()) + contentStart,
             contentLength, bufStart, compression, &mNextRunContextInfo,
-            &skipChars, &analysisFlags);
+            &skipChars, &analysisFlags, language);
         textPtr = ExpandBuffer(static_cast<char16_t*>(textPtr),
                                tempBuf.Elements(), end - tempBuf.Elements());
       } else {
@@ -2661,7 +2688,7 @@ bool BuildTextRunsScanner::SetupLineBreakerContext(gfxTextRun* aTextRun) {
         uint8_t* end = nsTextFrameUtils::TransformText(
             reinterpret_cast<const uint8_t*>(frag->Get1b()) + contentStart,
             contentLength, bufStart, compression, &mNextRunContextInfo,
-            &skipChars, &analysisFlags);
+            &skipChars, &analysisFlags, language);
         textPtr = end;
       }
     }
@@ -4885,8 +4912,29 @@ void nsTextFrame::GetTextDecorations(
     }
 
     const nsStyleTextReset* const styleTextReset = context->StyleTextReset();
-    const StyleTextDecorationLine textDecorations =
+    StyleTextDecorationLine textDecorations =
         styleTextReset->mTextDecorationLine;
+    bool ignoreSubproperties = false;
+
+    auto lineStyle = styleTextReset->mTextDecorationStyle;
+    if (textDecorations == StyleTextDecorationLine::SPELLING_ERROR ||
+        textDecorations == StyleTextDecorationLine::GRAMMAR_ERROR) {
+      nscolor lineColor;
+      float relativeSize;
+      useOverride = nsTextPaintStyle::GetSelectionUnderline(
+          this, nsTextPaintStyle::SelectionStyleIndex::SpellChecker, &lineColor,
+          &relativeSize, &lineStyle);
+      if (useOverride) {
+        // We don't currently have a SelectionStyleIndex::GrammarChecker; for
+        // now just use SpellChecker and change its color to green.
+        overrideColor =
+            textDecorations == StyleTextDecorationLine::SPELLING_ERROR
+                ? lineColor
+                : NS_RGBA(0, 128, 0, 255);
+        textDecorations = StyleTextDecorationLine::UNDERLINE;
+        ignoreSubproperties = true;
+      }
+    }
 
     if (!useOverride &&
         (StyleTextDecorationLine::COLOR_OVERRIDE & textDecorations)) {
@@ -4934,7 +4982,6 @@ void nsTextFrame::GetTextDecorations(
     physicalBlockStartOffset +=
         vertical ? f->GetNormalPosition().x : f->GetNormalPosition().y;
 
-    const auto style = styleTextReset->mTextDecorationStyle;
     if (textDecorations) {
       nscolor color;
       if (useOverride) {
@@ -4965,23 +5012,29 @@ void nsTextFrame::GetTextDecorations(
                                  : StyleTextDecorationLine::OVERLINE;
 
       const nsStyleText* const styleText = context->StyleText();
+      const auto position = ignoreSubproperties
+                                ? StyleTextUnderlinePosition::AUTO
+                                : styleText->mTextUnderlinePosition;
+      const auto offset = ignoreSubproperties ? LengthPercentageOrAuto::Auto()
+                                              : styleText->mTextUnderlineOffset;
+      const auto thickness = ignoreSubproperties
+                                 ? StyleTextDecorationLength::Auto()
+                                 : styleTextReset->mTextDecorationThickness;
+
       if (textDecorations & kUnderline) {
         aDecorations.mUnderlines.AppendElement(nsTextFrame::LineDecoration(
-            f, baselineOffset, styleText->mTextUnderlinePosition,
-            styleText->mTextUnderlineOffset,
-            styleTextReset->mTextDecorationThickness, color, style));
+            f, baselineOffset, position, offset, thickness, color, lineStyle,
+            !ignoreSubproperties));
       }
       if (textDecorations & kOverline) {
         aDecorations.mOverlines.AppendElement(nsTextFrame::LineDecoration(
-            f, baselineOffset, styleText->mTextUnderlinePosition,
-            styleText->mTextUnderlineOffset,
-            styleTextReset->mTextDecorationThickness, color, style));
+            f, baselineOffset, position, offset, thickness, color, lineStyle,
+            !ignoreSubproperties));
       }
       if (textDecorations & StyleTextDecorationLine::LINE_THROUGH) {
         aDecorations.mStrikes.AppendElement(nsTextFrame::LineDecoration(
-            f, baselineOffset, styleText->mTextUnderlinePosition,
-            styleText->mTextUnderlineOffset,
-            styleTextReset->mTextDecorationThickness, color, style));
+            f, baselineOffset, position, offset, thickness, color, lineStyle,
+            !ignoreSubproperties));
       }
     }
 
@@ -5371,7 +5424,7 @@ void nsTextFrame::UnionAdditionalOverflow(nsPresContext* aPresContext,
       nscoord topOrLeft(nscoord_MAX), bottomOrRight(nscoord_MIN);
       typedef gfxFont::Metrics Metrics;
       auto accumulateDecorationRect =
-          [&](const LineDecoration& dec, gfxFloat Metrics::*lineSize,
+          [&](const LineDecoration& dec, gfxFloat Metrics::* lineSize,
               mozilla::StyleTextDecorationLine lineType) {
             params.style = dec.mStyle;
             // If the style is solid, let's include decoration line rect of
@@ -5541,6 +5594,7 @@ struct nsTextFrame::PaintDecorationLineParams
   DecorationType decorationType = DecorationType::Normal;
   DrawPathCallbacks* callbacks = nullptr;
   bool paintingShadows = false;
+  bool allowInkSkipping = true;
 };
 
 void nsTextFrame::PaintDecorationLine(
@@ -5552,6 +5606,7 @@ void nsTextFrame::PaintDecorationLine(
   params.color = aParams.overrideColor ? *aParams.overrideColor : aParams.color;
   params.icoordInFrame = Float(aParams.icoordInFrame);
   params.baselineOffset = Float(aParams.baselineOffset);
+  params.allowInkSkipping = aParams.allowInkSkipping;
   if (aParams.callbacks) {
     Rect path = nsCSSRendering::DecorationLineToPath(params);
     if (aParams.decorationType == DecorationType::Normal) {
@@ -7119,7 +7174,7 @@ void nsTextFrame::DrawTextRunAndDecorations(
 
   typedef gfxFont::Metrics Metrics;
   auto paintDecorationLine = [&](const LineDecoration& dec,
-                                 gfxFloat Metrics::*lineSize,
+                                 gfxFloat Metrics::* lineSize,
                                  StyleTextDecorationLine lineType) {
     if (dec.mStyle == StyleTextDecorationStyle::None) {
       return;
@@ -7145,6 +7200,7 @@ void nsTextFrame::DrawTextRunAndDecorations(
         app, dec.mFrame, wm.IsCentralBaseline(), swapUnderline);
 
     params.style = dec.mStyle;
+    params.allowInkSkipping = dec.mAllowInkSkipping;
     PaintDecorationLine(params);
   };
 
@@ -8410,6 +8466,19 @@ static bool FindFirstLetterRange(const nsTextFragment* aFrag,
   i = FindEndOfPunctuationRun(
       aFrag, aTextRun, &iter, aOffset,
       GetTrimmableWhitespaceCount(aFrag, aOffset, length, 1), endOffset);
+  if (i == length) {
+    return false;
+  }
+
+  // skip space/no-break-space after punctuation
+  while (i < length) {
+    char16_t ch = aFrag->CharAt(AssertedCast<uint32_t>(aOffset + i));
+    if (ch == ' ' || ch == CH_NBSP) {
+      ++i;
+    } else {
+      break;
+    }
+  }
   if (i == length) {
     return false;
   }
@@ -10619,7 +10688,9 @@ void nsTextFrame::List(FILE* out, const char* aPrefix, ListFlags aFlags) const {
   nsCString str;
   ListGeneric(str, aPrefix, aFlags);
 
-  str += nsPrintfCString(" [run=%p]", static_cast<void*>(mTextRun));
+  if (!aFlags.contains(ListFlag::OnlyListDeterministicInfo)) {
+    str += nsPrintfCString(" [run=%p]", static_cast<void*>(mTextRun));
+  }
 
   // Output the first/last content offset and prev/next in flow info
   bool isComplete = uint32_t(GetContentEnd()) == GetContent()->TextLength();

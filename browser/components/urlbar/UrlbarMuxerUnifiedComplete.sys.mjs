@@ -912,7 +912,10 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
     // previously added suggestions.
     if (
       result.source == UrlbarUtils.RESULT_SOURCE.HISTORY &&
-      result.type == UrlbarUtils.RESULT_TYPE.URL
+      result.type == UrlbarUtils.RESULT_TYPE.URL &&
+      // If there's no suggestions, we're not going to have anything to match
+      // against, so avoid processing the url.
+      state.suggestions.size
     ) {
       let submission = Services.search.parseSubmissionURL(result.payload.url);
       if (submission) {
@@ -962,7 +965,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
       state.quickSuggestResult &&
       !result.heuristic &&
       result.type == UrlbarUtils.RESULT_TYPE.URL &&
-      lazy.QuickSuggest.isURLEquivalentToResultURL(
+      lazy.QuickSuggest.isUrlEquivalentToResultUrl(
         result.payload.url,
         state.quickSuggestResult
       )
@@ -982,10 +985,7 @@ class MuxerUnifiedComplete extends UrlbarMuxer {
       );
       if (param) {
         let [key, value] = param.split("=");
-        let searchParams;
-        try {
-          ({ searchParams } = new URL(result.payload.url));
-        } catch (error) {}
+        let searchParams = URL.parse(result.payload.url)?.searchParams;
         if (
           (value === undefined && searchParams?.has(key)) ||
           (value !== undefined && searchParams?.getAll(key).includes(value))

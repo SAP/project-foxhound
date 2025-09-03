@@ -131,7 +131,7 @@ aboutprivatebrowsing:
       This is recorded when a user clicks a link on the private browsing newtab.
     bug_numbers: [1709344, 1754635, 1781973, 1811146, 1841925, 1871197, 1922596]
     notification_emails:
-      - "pbz@mozilla.com"
+      - "emz@mozilla.com"
       - "tihuang@mozilla.com"
     expiry_version: "139"
     products:
@@ -196,7 +196,7 @@ addonsManager:
         "about:debugging", "about:preferences", "amo", "browser-import", "disco", "distribution",
         "extension", "enterprise-policy", "file-url", "geckoview-app", "gmp-plugin",
         "internal", "plugin", "rtamo", "siteperm-addon-provider" "sync", "system-addon",
-        "temporary-addon", "unknown".
+        "temporary-addon", "unknown", "about:editprofile", "about:newprofile".
         For events with method set to "sideload", the source value is derived from the XPIProvider
         location name (e.g. possible values are "app-builtin", "app-global", "app-profile",
         "app-system-addons", "app-system-defaults", "app-system-local", "app-system-profile",
@@ -1354,6 +1354,7 @@ fxa_avatar_menu:
         The current state of the user. Possible states are "not_configured", "unverified",
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
+      fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired
 
 fxa_app_menu:
   click:
@@ -1389,6 +1390,7 @@ fxa_app_menu:
         The current state of the user. Possible states are "not_configured", "unverified",
         "signedin" and "login_failed".
       fxa_avatar: Boolean for whether or not account has set an avatar
+      fxa_sync_on: Boolean for whether or not sync was configured at the time the event fired.
 
 messaging_experiments:
   reach:
@@ -1409,7 +1411,11 @@ messaging_experiments:
       "fxms_message_8",
       "fxms_message_9",
       "fxms_message_10",
-      "fxms_message_11"
+      "fxms_message_11",
+      "fxms_message_12",
+      "fxms_message_13",
+      "fxms_message_14",
+      "fxms_message_15"
     ]
     methods: ["reach"]
     release_channel_collection: opt-out
@@ -2248,7 +2254,7 @@ security.ui.protections:
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
-      - pbz@mozilla.com
+      - emz@mozilla.com
       - seceng-telemetry@mozilla.com
     products:
       - firefox
@@ -2272,7 +2278,7 @@ security.ui.protections:
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
-      - pbz@mozilla.com
+      - emz@mozilla.com
       - seceng-telemetry@mozilla.com
     products:
       - firefox
@@ -2313,7 +2319,7 @@ security.ui.protections:
     record_in_processes: ["content"]
     release_channel_collection: opt-out
     notification_emails:
-      - pbz@mozilla.com
+      - emz@mozilla.com
       - seceng-telemetry@mozilla.com
     products:
       - firefox
@@ -2321,29 +2327,6 @@ security.ui.protections:
       category: The category of protections the user is in, standard, strict or custom.
 
 security.ui.protectionspopup:
-  open:
-    objects: ["protections_popup", "protectionspopup_cfr",]
-    extra_keys:
-      message: >
-        For protectionspopup_cfr, the message ID.
-    bug_numbers:
-      - 1560327
-      - 1607488
-      - 1643428
-      - 1678201
-      - 1739287
-      - 1787249
-    description: >
-      How many times the protections panel was opened.
-    expiry_version: never
-    notification_emails:
-      - pbz@mozilla.com
-      - seceng-telemetry@mozilla.com
-    release_channel_collection: opt-out
-    record_in_processes:
-      - main
-    products:
-      - firefox
   click:
     objects: [
       "etp_toggle_on",
@@ -2377,7 +2360,7 @@ security.ui.protectionspopup:
       User interaction by click events in the protections panel.
     expiry_version: never
     notification_emails:
-      - pbz@mozilla.com
+      - emz@mozilla.com
       - tihuang@mozilla.com
       - seceng-telemetry@mozilla.com
     release_channel_collection: opt-out
@@ -3051,23 +3034,6 @@ security.doh.settings:
       - necko@mozilla.com
     products:
       - firefox
-  warn_checkbox:
-    objects: ["checkbox"]
-    bug_numbers:
-      - 1829905
-    description: >
-      User clicked the Warn if a third party actively prevents secure DNS
-      checkbox in about:preferences#privacy.
-      Value is true or false, reflecting if box is checked or unchecked.
-    expiry_version: never
-    record_in_processes:
-      - main
-    release_channel_collection: opt-out
-    notification_emails:
-      - vgosu@mozilla.com
-      - necko@mozilla.com
-    products:
-      - firefox
   provider_choice:
     objects: ["value"]
     bug_numbers:
@@ -3290,6 +3256,7 @@ zero_byte_load:
       file_name: The name of the file being loaded.
       status: The channel status code.
       cancelled: Whether this load has been cancelled.
+      cancel_reason: Reason why this load was cancelled.
 
 avif:
   dav1d_get_picture:
@@ -3990,3 +3957,105 @@ browser.backup:
       backup_step: >
         The string representation of the step that backup creation was in
         when the error occurred.
+
+profiles:
+  default:
+    objects: ["updated"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    description: >
+      Recorded when a new profile from a profile group becomes the default
+      startup profile for the group. This may happen when a profile other
+      than the current default is launched from the profile selector window,
+      or when the user has multiple profiles running at the same time and
+      switches app focus to a profile other than the current default. An
+      event is not recorded if the current default profile is launched or
+      gains app focus.
+    notification_emails:
+      - "cmkm@mozilla.com"
+      - "dtownsend@mozilla.com"
+      - "jhirsch@mozilla.com"
+      - "nbaumgardner@mozilla.com"
+    bug_numbers:
+      - 1918813
+    expiry_version: never
+    products:
+      - "firefox"
+  delete:
+    objects: ["cancel", "confirm", "displayed"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    description: >
+      Recorded when the user loads and interacts with the
+      "about:deleteprofile" profile delete confirmation page. See Glean
+      probe definitions for details. The value varies depending on the
+      object.
+    notification_emails:
+      - "cmkm@mozilla.com"
+      - "dtownsend@mozilla.com"
+      - "jhirsch@mozilla.com"
+      - "nbaumgardner@mozilla.com"
+    bug_numbers:
+      - 1927608
+    expiry_version: never
+    products:
+      - "firefox"
+  existing:
+    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "theme"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    description: >
+      Recorded when the user loads, interacts with, and closes the
+      "about:editprofile" existing profile edit page. See Glean probe
+      definitions for details. The value varies depending on the object.
+    notification_emails:
+      - "cmkm@mozilla.com"
+      - "dtownsend@mozilla.com"
+      - "jhirsch@mozilla.com"
+      - "nbaumgardner@mozilla.com"
+    bug_numbers:
+      - 1927607
+    expiry_version: never
+    products:
+      - "firefox"
+  new:
+    objects: ["alert", "avatar", "closed", "deleted", "displayed", "learn_more", "name", "theme"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    description: >
+      Recorded when the user loads, interacts with, and closes the
+      "about:newprofile" existing profile edit page. See Glean probe
+      definitions for details. The value varies depending on the object.
+    notification_emails:
+      - "cmkm@mozilla.com"
+      - "dtownsend@mozilla.com"
+      - "jhirsch@mozilla.com"
+      - "nbaumgardner@mozilla.com"
+    bug_numbers:
+      - 1941698
+    expiry_version: never
+    products:
+      - "firefox"
+  selector_window:
+    objects: ["launch", "show_at_startup"]
+    release_channel_collection: opt-out
+    record_in_processes:
+      - main
+    description: >
+      Recorded when the user launches a profile or toggles the "show at
+      startup" checkbox in the profile selector dialog. See Glean probe
+      definitions for details. The value varies depending on the object.
+    notification_emails:
+      - "cmkm@mozilla.com"
+      - "dtownsend@mozilla.com"
+      - "jhirsch@mozilla.com"
+      - "nbaumgardner@mozilla.com"
+    bug_numbers:
+      - 1927605
+    expiry_version: never
+    products:
+      - "firefox"

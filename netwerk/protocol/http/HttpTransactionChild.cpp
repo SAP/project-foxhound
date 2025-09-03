@@ -482,13 +482,18 @@ HttpTransactionChild::OnStartRequest(nsIRequest* aRequest) {
     }
   }
 
+  RefPtr<nsHttpConnectionInfo> connInfo = mTransaction->GetConnInfo();
+  HttpConnectionInfoCloneArgs infoArgs;
+  nsHttpConnectionInfo::SerializeHttpConnectionInfo(connInfo, infoArgs);
+
   Unused << SendOnStartRequest(
-      status, optionalHead, securityInfo, mTransaction->ProxyConnectFailed(),
+      status, std::move(optionalHead), securityInfo,
+      mTransaction->ProxyConnectFailed(),
       ToTimingStructArgs(mTransaction->Timings()), proxyConnectResponseCode,
       dataForSniffer, optionalAltSvcUsed, !!mDataBridgeParent,
       mTransaction->TakeRestartedState(), mTransaction->HTTPSSVCReceivedStage(),
       mTransaction->GetSupportsHTTP3(), mode, reason, mTransaction->Caps(),
-      TimeStamp::Now());
+      TimeStamp::Now(), infoArgs);
   return NS_OK;
 }
 
@@ -563,14 +568,11 @@ HttpTransactionChild::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     mDataBridgeParent = nullptr;
   }
 
-  RefPtr<nsHttpConnectionInfo> connInfo = mTransaction->GetConnInfo();
-  HttpConnectionInfoCloneArgs infoArgs;
-  nsHttpConnectionInfo::SerializeHttpConnectionInfo(connInfo, infoArgs);
   Unused << SendOnStopRequest(aStatus, mTransaction->ResponseIsComplete(),
                               mTransaction->GetTransferSize(),
                               ToTimingStructArgs(mTransaction->Timings()),
                               responseTrailers, mTransactionObserverResult,
-                              lastActTabOpt, infoArgs, TimeStamp::Now());
+                              lastActTabOpt, TimeStamp::Now());
 
   return NS_OK;
 }

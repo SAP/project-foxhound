@@ -292,6 +292,30 @@ CompositorBridgeChild* nsDOMWindowUtils::GetCompositorBridge() {
   return nullptr;
 }
 
+nsresult nsDOMWindowUtils::GetWidgetOpaqueRegion(
+    nsTArray<RefPtr<DOMRect>>& aRects) {
+  nsIWidget* widget = GetWidget();
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+  auto AddRect = [&](const LayoutDeviceIntRect& aRect) {
+    RefPtr rect = new DOMRect(mWindow);
+    CSSRect cssRect = aRect / widget->GetDefaultScale();
+    rect->SetRect(cssRect.x, cssRect.y, cssRect.width, cssRect.height);
+    aRects.AppendElement(std::move(rect));
+  };
+  if (widget->GetTransparencyMode() == TransparencyMode::Opaque) {
+    AddRect(
+        LayoutDeviceIntRect(LayoutDeviceIntPoint(), widget->GetClientSize()));
+    return NS_OK;
+  }
+  auto region = widget->GetOpaqueRegionForTesting();
+  for (auto iter = region.RectIter(); !iter.Done(); iter.Next()) {
+    AddRect(iter.Get());
+  }
+  return NS_OK;
+}
+
 NS_IMETHODIMP
 nsDOMWindowUtils::GetLastOverWindowPointerLocationInCSSPixels(float* aX,
                                                               float* aY) {
@@ -729,17 +753,22 @@ nsDOMWindowUtils::SendMouseEventCommon(
     bool aToWindow, bool* aPreventDefault, bool aIsDOMEventSynthesized,
     bool aIsWidgetEventSynthesized, int32_t aButtons) {
   RefPtr<PresShell> presShell = GetPresShell();
-  PreventDefaultResult preventDefaultResult;
-  nsresult rv = nsContentUtils::SendMouseEvent(
-      presShell, aType, aX, aY, aButton, aButtons, aClickCount, aModifiers,
-      aIgnoreRootScrollFrame, aPressure, aInputSourceArg, aPointerId, aToWindow,
-      &preventDefaultResult, aIsDOMEventSynthesized, aIsWidgetEventSynthesized);
-
-  if (aPreventDefault) {
-    *aPreventDefault = preventDefaultResult != PreventDefaultResult::No;
+  if (!presShell) {
+    return NS_ERROR_FAILURE;
   }
 
-  return rv;
+  nsPoint offset;
+  nsCOMPtr<nsIWidget> widget = GetWidget(&offset);
+  if (!widget) {
+    return NS_ERROR_FAILURE;
+  }
+  LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
+      CSSPoint(aX, aY), offset, presShell->GetPresContext());
+  return nsContentUtils::SendMouseEvent(
+      presShell, widget, aType, refPoint, aButton, aButtons, aClickCount,
+      aModifiers, aIgnoreRootScrollFrame, aPressure, aInputSourceArg,
+      aPointerId, aToWindow, aPreventDefault, aIsDOMEventSynthesized,
+      aIsWidgetEventSynthesized);
 }
 
 NS_IMETHODIMP
@@ -1148,12 +1177,13 @@ nsDOMWindowUtils::SendNativeTouchPoint(uint32_t aPointerId,
                                        uint32_t aTouchState, int32_t aScreenX,
                                        int32_t aScreenY, double aPressure,
                                        uint32_t aOrientation,
-                                       nsIObserver* aObserver) {
+                                       nsIObserver* aObserver,
+                                       Element* aElement) {
   // FYI: This was designed for automated tests, but currently, this is used by
   //      DevTools to emulate touch events from mouse events in the responsive
   //      design mode.
 
-  nsCOMPtr<nsIWidget> widget = GetWidget();
+  nsCOMPtr<nsIWidget> widget = GetWidgetForElement(aElement);
   if (!widget) {
     return NS_ERROR_FAILURE;
   }
@@ -1213,8 +1243,9 @@ nsDOMWindowUtils::SendNativePenInput(uint32_t aPointerId,
                                      int32_t aScreenY, double aPressure,
                                      uint32_t aRotation, int32_t aTiltX,
                                      int32_t aTiltY, int32_t aButton,
-                                     nsIObserver* aObserver) {
-  nsCOMPtr<nsIWidget> widget = GetWidget();
+                                     nsIObserver* aObserver,
+                                     Element* aElement) {
+  nsCOMPtr<nsIWidget> widget = GetWidgetForElement(aElement);
   if (!widget) {
     return NS_ERROR_FAILURE;
   }
@@ -1286,13 +1317,13 @@ nsDOMWindowUtils::SuppressAnimation(bool aSuppress) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::ClearSharedStyleSheetCache() {
+nsDOMWindowUtils::ClearStyleSheetCache() {
   SharedStyleSheetCache::Clear();
   return NS_OK;
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::ClearSharedScriptCache() {
+nsDOMWindowUtils::ClearScriptCache() {
   SharedScriptCache::Clear();
   return NS_OK;
 }
@@ -1363,9 +1394,10 @@ nsIWidget* nsDOMWindowUtils::GetWidget(nsPoint* aOffset) {
   return nullptr;
 }
 
-nsIWidget* nsDOMWindowUtils::GetWidgetForElement(Element* aElement) {
+nsIWidget* nsDOMWindowUtils::GetWidgetForElement(Element* aElement,
+                                                 nsPoint* aOffset) {
   if (!aElement) {
-    return GetWidget();
+    return GetWidget(aOffset);
   }
   if (Document* doc = aElement->GetUncomposedDoc()) {
     if (PresShell* presShell = doc->GetPresShell()) {
@@ -1374,7 +1406,12 @@ nsIWidget* nsDOMWindowUtils::GetWidgetForElement(Element* aElement) {
         frame = presShell->GetRootFrame();
       }
       if (frame) {
-        return frame->GetNearestWidget();
+        nsPoint offset;
+        nsIWidget* widget = frame->GetNearestWidget(offset);
+        if (aOffset) {
+          *aOffset = offset;
+        }
+        return widget;
       }
     }
   }
@@ -3042,8 +3079,8 @@ nsDOMWindowUtils::SetAsyncZoom(Element* aRootElement, float aValue) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::FlushApzRepaints(bool* aOutResult) {
-  nsIWidget* widget = GetWidget();
+nsDOMWindowUtils::FlushApzRepaints(Element* aElement, bool* aOutResult) {
+  nsIWidget* widget = GetWidgetForElement(aElement);
   if (!widget) {
     *aOutResult = false;
     return NS_OK;
@@ -3101,6 +3138,43 @@ static nsTArray<ScrollContainerFrame*> CollectScrollableAncestors(
   return result;
 }
 
+static std::pair<nsIContent*, CSSRect> GetCaretContentAndBounds(
+    const ScrollContainerFrame* aRootScrollContainerFrame, Element* aElement) {
+  nsIContent* content = aElement;
+  CSSRect bounds;
+
+  if (!aRootScrollContainerFrame) {
+    return {content, bounds};
+  }
+
+  if (aElement->IsHTMLElement(nsGkAtoms::input)) {
+    bounds = nsLayoutUtils::GetBoundingContentRect(aElement,
+                                                   aRootScrollContainerFrame);
+  } else {
+    // When focused elment is content editable or <textarea> element,
+    // focused element will have multi-line content.
+    nsIFrame* frame = aElement->GetPrimaryFrame();
+    if (frame) {
+      RefPtr<nsCaret> caret = frame->PresShell()->GetCaret();
+      if (caret && caret->IsVisible()) {
+        nsRect rect;
+        if (nsIFrame* frame = caret->GetGeometry(&rect)) {
+          bounds = nsLayoutUtils::GetBoundingFrameRect(
+              frame, aRootScrollContainerFrame);
+          content = frame->GetContent();
+        }
+      }
+    }
+    if (bounds.IsEmpty()) {
+      // Fallback if no caret frame.
+      bounds = nsLayoutUtils::GetBoundingContentRect(aElement,
+                                                     aRootScrollContainerFrame);
+    }
+  }
+
+  return {content, bounds};
+}
+
 NS_IMETHODIMP
 nsDOMWindowUtils::ZoomToFocusedInput() {
   if (!Preferences::GetBool("apz.zoom-to-focused-input.enabled")) {
@@ -3131,13 +3205,20 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     return NS_OK;
   }
 
+  ScrollContainerFrame* rootScrollContainerFrame =
+      presShell->GetRootScrollContainerFrame();
+  auto [targetContent, bounds] =
+      GetCaretContentAndBounds(rootScrollContainerFrame, element);
+
+  // Hold a strong reference of the target content.
+  RefPtr<nsIContent> refContent = targetContent;
   // The content may be inside a scrollable subframe inside a non-scrollable
   // root content document. In this scenario, we want to ensure that the
   // main-thread side knows to scroll the content into view before we get
-  // the bounding content rect and ask APZ to adjust the visual viewport.
+  // the bounding content rect and ask APZ to zoom in to the target content.
   presShell->ScrollContentIntoView(
-      element, ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
-      ScrollAxis(WhereToScroll::Nearest, WhenToScroll::IfNotVisible),
+      refContent, ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
+      ScrollAxis(WhereToScroll::Center, WhenToScroll::IfNotVisible),
       ScrollFlags::ScrollOverflowHidden);
 
   RefPtr<Document> document = presShell->GetDocument();
@@ -3166,37 +3247,6 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
     flags |= layers::ONLY_ZOOM_TO_DEFAULT_SCALE;
   }
 
-  ScrollContainerFrame* rootScrollContainerFrame =
-      presShell->GetRootScrollContainerFrame();
-  if (!rootScrollContainerFrame) {
-    return NS_OK;
-  }
-
-  CSSRect bounds;
-  if (element->IsHTMLElement(nsGkAtoms::input)) {
-    bounds = nsLayoutUtils::GetBoundingContentRect(element,
-                                                   rootScrollContainerFrame);
-  } else {
-    // When focused elment is content editable or <textarea> element,
-    // focused element will have multi-line content.
-    nsIFrame* frame = element->GetPrimaryFrame();
-    if (frame) {
-      RefPtr<nsCaret> caret = frame->PresShell()->GetCaret();
-      if (caret && caret->IsVisible()) {
-        nsRect rect;
-        if (nsIFrame* frame = caret->GetGeometry(&rect)) {
-          bounds = nsLayoutUtils::GetBoundingFrameRect(
-              frame, rootScrollContainerFrame);
-        }
-      }
-    }
-    if (bounds.IsEmpty()) {
-      // Fallback if no caret frame.
-      bounds = nsLayoutUtils::GetBoundingContentRect(element,
-                                                     rootScrollContainerFrame);
-    }
-  }
-
   if (bounds.IsEmpty()) {
     // Do not zoom on empty bounds. Bail out.
     return NS_OK;
@@ -3220,7 +3270,7 @@ nsDOMWindowUtils::ZoomToFocusedInput() {
       presContext->RegisterManagedPostRefreshObserver(
           new ManagedPostRefreshObserver(
               presContext, [widget = RefPtr<nsIWidget>(widget), presShellId,
-                            viewId, bounds, flags](bool aWasCanceled) {
+                            viewId, bounds = bounds, flags](bool aWasCanceled) {
                 if (!aWasCanceled) {
                   widget->ZoomToRect(presShellId, viewId, bounds, flags);
                 }
@@ -3306,14 +3356,13 @@ nsDOMWindowUtils::GetUnanimatedComputedStyle(Element* aElement,
     return NS_ERROR_FAILURE;
   }
 
-  Maybe<PseudoStyleType> pseudo =
-      nsCSSPseudoElements::GetPseudoType(aPseudoElement);
+  Maybe<PseudoStyleRequest> pseudo =
+      nsCSSPseudoElements::ParsePseudoElement(aPseudoElement);
   if (!pseudo) {
     return NS_ERROR_FAILURE;
   }
   RefPtr<const ComputedStyle> computedStyle =
-      nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(
-          aElement, PseudoStyleRequest(*pseudo));
+      nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(aElement, *pseudo);
   if (!computedStyle) {
     return NS_ERROR_FAILURE;
   }
@@ -3836,14 +3885,7 @@ nsDOMWindowUtils::AddSheet(nsIPreloadedStyleSheet* aSheet,
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
 
   StyleSheet* sheet = nullptr;
-  auto* preloadedSheet = static_cast<PreloadedStyleSheet*>(aSheet);
-  nsresult rv = preloadedSheet->GetSheet(&sheet);
-  NS_ENSURE_SUCCESS(rv, rv);
-  NS_ENSURE_TRUE(sheet, NS_ERROR_FAILURE);
-
-  if (sheet->GetAssociatedDocumentOrShadowRoot()) {
-    return NS_ERROR_INVALID_ARG;
-  }
+  MOZ_TRY_VAR(sheet, static_cast<PreloadedStyleSheet*>(aSheet)->GetSheet());
 
   Document::additionalSheetType type = convertSheetType(aSheetType);
   return doc->AddAdditionalStyleSheet(type, sheet);
@@ -4127,8 +4169,9 @@ nsDOMWindowUtils::IsKeyboardEventUserActivity(Event* aEvent, bool* aResult) {
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetContentAPZTestData(
-    JSContext* aContext, JS::MutableHandle<JS::Value> aOutContentTestData) {
-  if (nsIWidget* widget = GetWidget()) {
+    Element* aElement, JSContext* aContext,
+    JS::MutableHandle<JS::Value> aOutContentTestData) {
+  if (nsIWidget* widget = GetWidgetForElement(aElement)) {
     WindowRenderer* renderer = widget->GetWindowRenderer();
     if (!renderer) {
       return NS_OK;
@@ -4145,8 +4188,9 @@ nsDOMWindowUtils::GetContentAPZTestData(
 
 NS_IMETHODIMP
 nsDOMWindowUtils::GetCompositorAPZTestData(
-    JSContext* aContext, JS::MutableHandle<JS::Value> aOutCompositorTestData) {
-  if (nsIWidget* widget = GetWidget()) {
+    Element* aElement, JSContext* aContext,
+    JS::MutableHandle<JS::Value> aOutCompositorTestData) {
+  if (nsIWidget* widget = GetWidgetForElement(aElement)) {
     WindowRenderer* renderer = widget->GetWindowRenderer();
     if (!renderer) {
       return NS_OK;
@@ -4180,32 +4224,27 @@ nsDOMWindowUtils::PostRestyleSelfEvent(Element* aElement) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::SetChromeMargin(int32_t aTop, int32_t aRight, int32_t aBottom,
-                                  int32_t aLeft) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  if (window) {
-    nsCOMPtr<nsIBaseWindow> baseWindow =
-        do_QueryInterface(window->GetDocShell());
-    if (baseWindow) {
+nsDOMWindowUtils::SetCustomTitlebar(bool aCustomTitlebar) {
+  // TODO(emilio): Can't we use nsDOMWindowUtils::GetWidget()?
+  if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
+    if (nsCOMPtr<nsIBaseWindow> baseWindow =
+            do_QueryInterface(window->GetDocShell())) {
       nsCOMPtr<nsIWidget> widget;
       baseWindow->GetMainWidget(getter_AddRefs(widget));
       if (widget) {
-        LayoutDeviceIntMargin margins(aTop, aRight, aBottom, aLeft);
-        return widget->SetNonClientMargins(margins);
+        widget->SetCustomTitlebar(aCustomTitlebar);
       }
     }
   }
-
   return NS_OK;
 }
 
 NS_IMETHODIMP
 nsDOMWindowUtils::SetResizeMargin(int32_t aResizeMargin) {
-  nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow);
-  if (window) {
-    nsCOMPtr<nsIBaseWindow> baseWindow =
-        do_QueryInterface(window->GetDocShell());
-    if (baseWindow) {
+  // TODO(emilio): Can't we use nsDOMWindowUtils::GetWidget()?
+  if (nsCOMPtr<nsPIDOMWindowOuter> window = do_QueryReferent(mWindow)) {
+    if (nsCOMPtr<nsIBaseWindow> baseWindow =
+            do_QueryInterface(window->GetDocShell())) {
       nsCOMPtr<nsIWidget> widget;
       baseWindow->GetMainWidget(getter_AddRefs(widget));
       if (widget) {
@@ -4790,16 +4829,12 @@ nsDOMWindowUtils::IsCoepCredentialless(bool* aResult) {
 }
 
 NS_IMETHODIMP
-nsDOMWindowUtils::GetLayersId(uint64_t* aOutLayersId) {
-  nsIWidget* widget = GetWidget();
+nsDOMWindowUtils::GetLayersId(Element* aElement, uint64_t* aOutLayersId) {
+  nsIWidget* widget = GetWidgetForElement(aElement);
   if (!widget) {
     return NS_ERROR_FAILURE;
   }
-  BrowserChild* child = widget->GetOwningBrowserChild();
-  if (!child) {
-    return NS_ERROR_FAILURE;
-  }
-  *aOutLayersId = (uint64_t)child->GetLayersId();
+  *aOutLayersId = (uint64_t)widget->GetLayersId();
   return NS_OK;
 }
 
@@ -4935,4 +4970,22 @@ nsDOMWindowUtils::GetDragSession(nsIDragSession** aSession) {
   RefPtr<nsIDragSession> session = nsContentUtils::GetDragSession(GetWidget());
   session.forget(aSession);
   return NS_OK;
+}
+
+NS_IMETHODIMP
+nsDOMWindowUtils::SendMozMouseHitTestEvent(float aX, float aY,
+                                           Element* aElement) {
+  RefPtr<PresShell> presShell = GetPresShell();
+  nsPoint offset;
+  RefPtr<nsIWidget> widget = GetWidgetForElement(aElement, &offset);
+  LayoutDeviceIntPoint refPoint = nsContentUtils::ToWidgetPoint(
+      CSSPoint(aX, aY), offset, presShell->GetPresContext());
+
+  return nsContentUtils::SendMouseEvent(
+      presShell, widget, u"MozMouseHittest"_ns, refPoint, 0 /* aButton */,
+      MOUSE_BUTTONS_NOT_SPECIFIED /* aButtons */, 0 /* aClickCount */,
+      0 /* aModifiers */, true /* aIgnoreRootScrollFrame */, 0 /* aPressure */,
+      0 /* aInputSourceArg */, DEFAULT_MOUSE_POINTER_ID /* aIdentifier */,
+      false /* aToWindow */, nullptr /* aPreventDefault */,
+      true /* aIsDOMEventSynthesized */, true /* aIsWidgetEventSynthesized */);
 }

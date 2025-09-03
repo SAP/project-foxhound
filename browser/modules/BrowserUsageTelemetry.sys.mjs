@@ -220,6 +220,7 @@ function telemetryId(widgetId, obscureAddons = true) {
 function getOpenTabsAndWinsCounts() {
   let loadedTabCount = 0;
   let tabCount = 0;
+  let tabsInGroupsCount = 0;
   let winCount = 0;
 
   for (let win of Services.wm.getEnumerator("navigator:browser")) {
@@ -229,10 +230,22 @@ function getOpenTabsAndWinsCounts() {
       if (tab.getAttribute("pending") !== "true") {
         loadedTabCount += 1;
       }
+
+      if (tab.getAttribute("group")) {
+        tabsInGroupsCount += 1;
+      }
     }
   }
 
-  return { loadedTabCount, tabCount, winCount };
+  let tabsNotInGroupsCount = tabCount - tabsInGroupsCount;
+
+  return {
+    loadedTabCount,
+    tabCount,
+    winCount,
+    tabsInGroupsCount,
+    tabsNotInGroupsCount,
+  };
 }
 
 function getPinnedTabsCount() {
@@ -469,6 +482,16 @@ export let BrowserUsageTelemetry = {
       () => this._onTabsOpened(),
       0
     );
+
+    this._onTabGroupChangeTask = new lazy.DeferredTask(
+      () => this._doOnTabGroupChange(),
+      0
+    );
+
+    this._onTabGroupExpandOrCollapseTask = new lazy.DeferredTask(
+      () => this._doOnTabGroupExpandOrCollapse(),
+      0
+    );
   },
 
   maxWindowCount: 0,
@@ -560,6 +583,17 @@ export let BrowserUsageTelemetry = {
         break;
       case "TabPinned":
         this._onTabPinned();
+        break;
+      case "TabGroupCreate":
+        this._onTabGroupCreate(event);
+        break;
+      case "TabGrouped":
+      case "TabUngrouped":
+        this._onTabGroupChange();
+        break;
+      case "TabGroupCollapse":
+      case "TabGroupExpand":
+        this._onTabGroupExpandOrCollapse();
         break;
       case "unload":
         this._unregisterWindow(event.target);
@@ -1107,6 +1141,12 @@ export let BrowserUsageTelemetry = {
     win.addEventListener("unload", this);
     win.addEventListener("TabOpen", this, true);
     win.addEventListener("TabPinned", this, true);
+    win.addEventListener("TabGroupCreate", this);
+    win.addEventListener("TabGroupRemoved", this);
+    win.addEventListener("TabGrouped", this);
+    win.addEventListener("TabUngrouped", this);
+    win.addEventListener("TabGroupCollapse", this);
+    win.addEventListener("TabGroupExpand", this);
 
     win.gBrowser.tabContainer.addEventListener(TAB_RESTORING_TOPIC, this);
     win.gBrowser.addTabsProgressListener(URICountListener);
@@ -1119,6 +1159,12 @@ export let BrowserUsageTelemetry = {
     win.removeEventListener("unload", this);
     win.removeEventListener("TabOpen", this, true);
     win.removeEventListener("TabPinned", this, true);
+    win.removeEventListener("TabGroupCreate", this);
+    win.removeEventListener("TabGroupRemoved", this);
+    win.removeEventListener("TabGrouped", this);
+    win.removeEventListener("TabUngrouped", this);
+    win.removeEventListener("TabGroupCollapse", this);
+    win.removeEventListener("TabGroupExpand", this);
 
     win.defaultView.gBrowser.tabContainer.removeEventListener(
       TAB_RESTORING_TOPIC,
@@ -1167,6 +1213,91 @@ export let BrowserUsageTelemetry = {
       Glean.browserEngagement.tabPinnedEventCount.add(1);
     }
     this.updateMaxTabPinnedCount(pinnedTabs);
+  },
+
+  _onTabGroupCreate(event) {
+    if (event.detail.isUserCreated) {
+      Glean.tabgroup.createGroup.record({
+        id: event.target.id,
+        layout: lazy.sidebarVerticalTabs ? "vertical" : "horizontal",
+        source: event.detail.telemetryUserCreateSource,
+        tabs: event.target.tabs.length,
+      });
+    }
+
+    this._onTabGroupChangeTask.disarm();
+    this._onTabGroupChangeTask.arm();
+  },
+
+  _onTabGroupChange() {
+    this._onTabGroupChangeTask.disarm();
+    this._onTabGroupChangeTask.arm();
+  },
+
+  _doOnTabGroupChange() {
+    let totalTabs = 0;
+    let totalTabsInGroups = 0;
+    let max = 0;
+    let min = 0;
+    let average = 0;
+    let median = 0;
+
+    // Used for calculation of average and median
+    let tabGroupLengths = [];
+
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      totalTabs += win.gBrowser.tabs.length;
+      for (let group of win.gBrowser.tabGroups) {
+        totalTabsInGroups += group.tabs.length;
+        tabGroupLengths.push(group.tabs.length);
+      }
+    }
+
+    const tabGroupCount = tabGroupLengths.length;
+    if (tabGroupCount) {
+      tabGroupLengths.sort((a, b) => a - b);
+      const middleIndex = Math.floor(tabGroupCount / 2);
+
+      max = Math.max(...tabGroupLengths);
+      min = Math.min(...tabGroupLengths);
+      median =
+        tabGroupCount % 2 == 0
+          ? (tabGroupLengths[middleIndex - 1] + tabGroupLengths[middleIndex]) /
+            2
+          : tabGroupLengths[middleIndex];
+      average = tabGroupLengths.reduce((a, b) => a + b, 0) / tabGroupCount;
+    }
+
+    Glean.tabgroup.tabCountInGroups.inside.set(totalTabsInGroups);
+    Glean.tabgroup.tabCountInGroups.outside.set(totalTabs - totalTabsInGroups);
+
+    Glean.tabgroup.tabsPerActiveGroup.median.set(median);
+    Glean.tabgroup.tabsPerActiveGroup.average.set(average);
+    Glean.tabgroup.tabsPerActiveGroup.max.set(max);
+    Glean.tabgroup.tabsPerActiveGroup.min.set(min);
+  },
+
+  _onTabGroupExpandOrCollapse() {
+    this._onTabGroupExpandOrCollapseTask.disarm();
+    this._onTabGroupExpandOrCollapseTask.arm();
+  },
+
+  _doOnTabGroupExpandOrCollapse() {
+    let expanded = 0,
+      collapsed = 0;
+
+    for (let win of Services.wm.getEnumerator("navigator:browser")) {
+      for (let group of win.gBrowser.tabGroups) {
+        if (group.collapsed) {
+          collapsed += 1;
+        } else {
+          expanded += 1;
+        }
+      }
+    }
+
+    Glean.tabgroup.activeGroups.collapsed.set(collapsed);
+    Glean.tabgroup.activeGroups.expanded.set(expanded);
   },
 
   /**

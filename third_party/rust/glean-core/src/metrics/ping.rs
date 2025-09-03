@@ -3,6 +3,7 @@
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
 use std::fmt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use crate::ping::PingMaker;
@@ -30,11 +31,15 @@ struct InnerPing {
     /// Whether to include the {client|ping}_info sections on assembly.
     pub include_info_sections: bool,
     /// Whether this ping is enabled.
-    pub enabled: bool,
+    pub enabled: AtomicBool,
     /// Other pings that should be scheduled when this ping is sent.
     pub schedules_pings: Vec<String>,
     /// The "reason" codes that this ping can send
     pub reason_codes: Vec<String>,
+
+    /// True when it follows the `collection_enabled` flag (aka `upload_enabled`) flag.
+    /// Otherwise it needs to be enabled through `enabled_pings`.
+    follows_collection_enabled: AtomicBool,
 }
 
 impl fmt::Debug for PingType {
@@ -45,9 +50,13 @@ impl fmt::Debug for PingType {
             .field("send_if_empty", &self.0.send_if_empty)
             .field("precise_timestamps", &self.0.precise_timestamps)
             .field("include_info_sections", &self.0.include_info_sections)
-            .field("enabled", &self.0.enabled)
+            .field("enabled", &self.0.enabled.load(Ordering::Relaxed))
             .field("schedules_pings", &self.0.schedules_pings)
             .field("reason_codes", &self.0.reason_codes)
+            .field(
+                "follows_collection_enabled",
+                &self.0.follows_collection_enabled.load(Ordering::Relaxed),
+            )
             .finish()
     }
 }
@@ -80,6 +89,7 @@ impl PingType {
         enabled: bool,
         schedules_pings: Vec<String>,
         reason_codes: Vec<String>,
+        follows_collection_enabled: bool,
     ) -> Self {
         Self::new_internal(
             name,
@@ -90,6 +100,7 @@ impl PingType {
             enabled,
             schedules_pings,
             reason_codes,
+            follows_collection_enabled,
         )
     }
 
@@ -103,6 +114,7 @@ impl PingType {
         enabled: bool,
         schedules_pings: Vec<String>,
         reason_codes: Vec<String>,
+        follows_collection_enabled: bool,
     ) -> Self {
         let this = Self(Arc::new(InnerPing {
             name: name.into(),
@@ -110,9 +122,10 @@ impl PingType {
             send_if_empty,
             precise_timestamps,
             include_info_sections,
-            enabled,
+            enabled: AtomicBool::new(enabled),
             schedules_pings,
             reason_codes,
+            follows_collection_enabled: AtomicBool::new(follows_collection_enabled),
         }));
 
         // Register this ping.
@@ -122,40 +135,91 @@ impl PingType {
         this
     }
 
-    pub(crate) fn name(&self) -> &str {
+    /// Get the name of this Ping
+    pub fn name(&self) -> &str {
         &self.0.name
     }
 
-    pub(crate) fn include_client_id(&self) -> bool {
+    /// Whether the client ID will be included in the assembled ping when submitting.
+    pub fn include_client_id(&self) -> bool {
         self.0.include_client_id
     }
 
-    pub(crate) fn send_if_empty(&self) -> bool {
+    /// Whether the ping should be sent if empty.
+    pub fn send_if_empty(&self) -> bool {
         self.0.send_if_empty
     }
 
-    pub(crate) fn precise_timestamps(&self) -> bool {
+    /// Whether the ping will include precise timestamps for the start/end time.
+    pub fn precise_timestamps(&self) -> bool {
         self.0.precise_timestamps
     }
 
-    pub(crate) fn include_info_sections(&self) -> bool {
+    /// Whether client/ping_info sections will be included in this ping.
+    pub fn include_info_sections(&self) -> bool {
         self.0.include_info_sections
     }
 
-    pub(crate) fn enabled(&self, glean: &Glean) -> bool {
-        let remote_settings_config = &glean.remote_settings_config.lock().unwrap();
+    /// Enable or disable a ping.
+    ///
+    /// Disabling a ping causes all data for that ping to be removed from storage
+    /// and all pending pings of that type to be deleted.
+    pub fn set_enabled(&self, enabled: bool) {
+        crate::set_ping_enabled(self, enabled)
+    }
 
-        if !remote_settings_config.pings_enabled.is_empty() {
-            if let Some(remote_enabled) = remote_settings_config.pings_enabled.get(self.name()) {
-                return *remote_enabled;
+    /// Store whether this ping is enabled or not.
+    ///
+    /// **Note**: For internal use only. Only stores the flag. Does not touch any stored data.
+    /// Use the public API `PingType::set_enabled` instead.
+    pub(crate) fn store_enabled(&self, enabled: bool) {
+        self.0.enabled.store(enabled, Ordering::Release);
+    }
+
+    pub(crate) fn enabled(&self, glean: &Glean) -> bool {
+        if self.0.follows_collection_enabled.load(Ordering::Relaxed) {
+            // if this follows collection_enabled:
+            // 1. check that first. if disabled, we're done
+            // 2. if enabled, check server-knobs
+            // 3. If that is not set, fall-through checking the ping
+            if !glean.is_upload_enabled() {
+                return false;
+            }
+
+            let remote_settings_config = &glean.remote_settings_config.lock().unwrap();
+
+            if !remote_settings_config.pings_enabled.is_empty() {
+                if let Some(remote_enabled) = remote_settings_config.pings_enabled.get(self.name())
+                {
+                    return *remote_enabled;
+                }
             }
         }
 
-        self.0.enabled
+        self.0.enabled.load(Ordering::Relaxed)
     }
 
-    pub(crate) fn schedules_pings(&self) -> &[String] {
+    /// Whether the `enabled` field of this ping is set. Note that there are
+    /// multiple other reasons why a ping may or may not be enabled. See
+    /// `PingType::new` and `PingType::enabled` for more details.
+    pub fn naively_enabled(&self) -> bool {
+        self.0.enabled.load(Ordering::Relaxed)
+    }
+
+    /// Whether this ping follows the `collection_enabled` flag
+    /// See InnerPing member documentation for further details.
+    pub fn follows_collection_enabled(&self) -> bool {
+        self.0.follows_collection_enabled.load(Ordering::Relaxed)
+    }
+
+    /// Other pings that should be scheduled when this ping is sent.
+    pub fn schedules_pings(&self) -> &[String] {
         &self.0.schedules_pings
+    }
+
+    /// Reason codes that this ping can send.
+    pub fn reason_codes(&self) -> &[String] {
+        &self.0.reason_codes
     }
 
     /// Submits the ping for eventual uploading.
@@ -194,8 +258,12 @@ impl PingType {
     /// Whether the ping was succesfully assembled and queued.
     #[doc(hidden)]
     pub fn submit_sync(&self, glean: &Glean, reason: Option<&str>) -> bool {
-        if !glean.is_upload_enabled() {
-            log::info!("Glean disabled: not submitting any pings.");
+        if !self.enabled(glean) {
+            log::info!(
+                "The ping '{}' is disabled and will be discarded and not submitted",
+                self.0.name
+            );
+
             return false;
         }
 
@@ -240,15 +308,20 @@ impl PingType {
                     return false;
                 }
 
+                const BUILTIN_PINGS: [&str; 4] =
+                    ["baseline", "metrics", "events", "deletion-request"];
+
                 // This metric is recorded *after* the ping is collected (since
                 // that is the only way to know *if* it will be submitted). The
                 // implication of this is that the count for a metrics ping will
                 // be included in the *next* metrics ping.
-                glean
-                    .additional_metrics
-                    .pings_submitted
-                    .get(ping.name)
-                    .add_sync(glean, 1);
+                if BUILTIN_PINGS.contains(&ping.name) {
+                    glean
+                        .additional_metrics
+                        .pings_submitted
+                        .get(ping.name)
+                        .add_sync(glean, 1);
+                }
 
                 if let Err(e) = ping_maker.store_ping(glean.get_data_path(), &ping) {
                     log::warn!(

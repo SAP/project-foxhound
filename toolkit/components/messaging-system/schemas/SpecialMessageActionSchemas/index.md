@@ -391,10 +391,23 @@ Sets the visibility of the bookmarks toolbar.
 }
 ```
 
+
+### `DATAREPORTING_NOTIFY_DATA_POLICY_INTERACTED`
+
+Notify Firefox that the notification policy was interacted with.
+
+- args: (none)
+
 ### `CREATE_NEW_SELECTABLE_PROFILE`
 
 Creates a new user profile and launches it in a separate instance.
 
 Any message that uses this action should have `canCreateSelectableProfiles` as part of the targeting, to ensure we don't accidentally show a message where the action will not work.
+
+- args: (none)
+
+### `SUBMIT_ONBOARDING_OPT_OUT_PING`
+
+Submits a Glean `onboarding-opt-out` ping.  Should only be used during preonboarding (but this is not enforced).
 
 - args: (none)

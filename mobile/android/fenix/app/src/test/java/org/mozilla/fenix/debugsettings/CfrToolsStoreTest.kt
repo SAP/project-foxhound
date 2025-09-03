@@ -80,6 +80,32 @@ class CfrToolsStoreTest {
     }
 
     @Test
+    fun `GIVEN the homepage searchbar CFR has been shown WHEN the homepage searchbar CFR is toggled THEN its preference is set to false`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = true,
+            ),
+        )
+
+        assertTrue(store.state.homepageSearchBarShown)
+        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
+        assertFalse(store.state.homepageSearchBarShown)
+    }
+
+    @Test
+    fun `GIVEN the homepage searchbar CFR has not been shown WHEN the homepage searchbar CFR is toggled THEN its preference is set to true`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = false,
+            ),
+        )
+
+        assertFalse(store.state.homepageSearchBarShown)
+        store.dispatch(CfrToolsAction.HomepageSearchBarShownToggled)
+        assertTrue(store.state.homepageSearchBarShown)
+    }
+
+    @Test
     fun `GIVEN the nav buttons CFR has been shown WHEN the nav buttons CFR is toggled THEN its preference is set to false`() {
         val store = CfrToolsStore(
             initialState = CfrToolsState(
@@ -103,32 +129,6 @@ class CfrToolsStoreTest {
         assertFalse(store.state.navButtonsShown)
         store.dispatch(CfrToolsAction.NavButtonsShownToggled)
         assertTrue(store.state.navButtonsShown)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR has been shown WHEN the add private tab to home CFR is toggled THEN its preference is set to false`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = true,
-            ),
-        )
-
-        assertTrue(store.state.addPrivateTabToHomeShown)
-        store.dispatch(CfrToolsAction.AddPrivateTabToHomeShownToggled)
-        assertFalse(store.state.addPrivateTabToHomeShown)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR has not been shown WHEN the add private tab to home CFR is toggled THEN its preference is set to true`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = false,
-            ),
-        )
-
-        assertFalse(store.state.addPrivateTabToHomeShown)
-        store.dispatch(CfrToolsAction.AddPrivateTabToHomeShownToggled)
-        assertTrue(store.state.addPrivateTabToHomeShown)
     }
 
     @Test
@@ -297,6 +297,32 @@ class CfrToolsStoreTest {
     }
 
     @Test
+    fun `GIVEN the homepage searchbar CFR has not been shown WHEN the corresponding CfrPreferenceUpdate is dispatched THEN update its state to true`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = false,
+            ),
+        )
+
+        assertFalse(store.state.homepageSearchBarShown)
+        store.dispatch(CfrToolsAction.HomepageSearchbarCfrUpdated(true))
+        assertTrue(store.state.homepageSearchBarShown)
+    }
+
+    @Test
+    fun `GIVEN the homepage searchbar CFR has been shown WHEN the corresponding CfrPreferenceUpdate is dispatched THEN update its state to false`() {
+        val store = CfrToolsStore(
+            initialState = CfrToolsState(
+                homepageSearchBarShown = true,
+            ),
+        )
+
+        assertTrue(store.state.homepageSearchBarShown)
+        store.dispatch(CfrToolsAction.HomepageSearchbarCfrUpdated(false))
+        assertFalse(store.state.homepageSearchBarShown)
+    }
+
+    @Test
     fun `GIVEN the nav buttons CFR has not been shown WHEN the corresponding CfrPreferenceUpdate is dispatched THEN update its state to true`() {
         val store = CfrToolsStore(
             initialState = CfrToolsState(
@@ -320,32 +346,6 @@ class CfrToolsStoreTest {
         assertTrue(store.state.navButtonsShown)
         store.dispatch(CfrToolsAction.NavButtonsCfrUpdated(false))
         assertFalse(store.state.navButtonsShown)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR has not been shown WHEN the corresponding CfrPreferenceUpdate is dispatched THEN update its state to true`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = false,
-            ),
-        )
-
-        assertFalse(store.state.addPrivateTabToHomeShown)
-        store.dispatch(CfrToolsAction.AddPrivateTabToHomeCfrUpdated(true))
-        assertTrue(store.state.addPrivateTabToHomeShown)
-    }
-
-    @Test
-    fun `GIVEN the add private tab to home CFR has been shown WHEN the corresponding CfrPreferenceUpdate is dispatched THEN update its state to false`() {
-        val store = CfrToolsStore(
-            initialState = CfrToolsState(
-                addPrivateTabToHomeShown = true,
-            ),
-        )
-
-        assertTrue(store.state.addPrivateTabToHomeShown)
-        store.dispatch(CfrToolsAction.AddPrivateTabToHomeCfrUpdated(false))
-        assertFalse(store.state.addPrivateTabToHomeShown)
     }
 
     @Test

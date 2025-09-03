@@ -54,6 +54,57 @@ class MenuStoreTest {
     }
 
     @Test
+    fun `WHEN the selected tab is an internet URL THEN the WebCompat reporter should be enabled`() {
+        val selectedTab = TabSessionState(
+            id = "tabId1",
+            content = ContentState(
+                url = "www.mozilla.com",
+            ),
+        )
+        val state = MenuState(
+            browserMenuState = BrowserMenuState(
+                selectedTab = selectedTab,
+            ),
+        )
+
+        assertTrue(state.isWebCompatEnabled)
+    }
+
+    @Test
+    fun `WHEN the selected tab is a content URL THEN the WebCompat reporter should be disabled`() {
+        val selectedTab = TabSessionState(
+            id = "tabId1",
+            content = ContentState(
+                url = "content://pdf.pdf",
+            ),
+        )
+        val state = MenuState(
+            browserMenuState = BrowserMenuState(
+                selectedTab = selectedTab,
+            ),
+        )
+
+        assertFalse(state.isWebCompatEnabled)
+    }
+
+    @Test
+    fun `WHEN the selected tab is an about URL THEN the WebCompat reporter should be disabled`() {
+        val selectedTab = TabSessionState(
+            id = "tabId1",
+            content = ContentState(
+                url = "about:about",
+            ),
+        )
+        val state = MenuState(
+            browserMenuState = BrowserMenuState(
+                selectedTab = selectedTab,
+            ),
+        )
+
+        assertFalse(state.isWebCompatEnabled)
+    }
+
+    @Test
     fun `GIVEN a browser menu state update WHEN copying the browser menu state THEN return the updated browser menu state`() {
         val selectedTab = TabSessionState(
             id = "tabId1",
@@ -330,7 +381,7 @@ class MenuStoreTest {
             val initialState = MenuState()
             val store = MenuStore(initialState = initialState)
             val webExtensionMenuItemList = listOf(
-                WebExtensionMenuItem.WebExtensionBrowserMenuItem(
+                WebExtensionMenuItem(
                     label = "label",
                     enabled = true,
                     icon = null,
@@ -345,31 +396,6 @@ class MenuStoreTest {
 
             assertEquals(
                 store.state.extensionMenuState.browserWebExtensionMenuItem,
-                webExtensionMenuItemList,
-            )
-        }
-
-    @Test
-    fun `WHEN update page web extension menu items is dispatched THEN extension state is updated`() =
-        runTest {
-            val initialState = MenuState()
-            val store = MenuStore(initialState = initialState)
-            val webExtensionMenuItemList = listOf(
-                WebExtensionMenuItem.WebExtensionPageMenuItem(
-                    label = "label",
-                    enabled = true,
-                    icon = null,
-                    badgeText = "1",
-                    badgeTextColor = Color.White.toArgb(),
-                    badgeBackgroundColor = Color.Gray.toArgb(),
-                    onClick = {
-                    },
-                ),
-            )
-            store.dispatch(MenuAction.UpdateWebExtensionPageMenuItems(webExtensionMenuItemList)).join()
-
-            assertEquals(
-                store.state.toolsMenuState.pageWebExtensionMenuItem,
                 webExtensionMenuItemList,
             )
         }

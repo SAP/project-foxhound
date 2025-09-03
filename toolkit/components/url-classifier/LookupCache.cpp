@@ -9,7 +9,7 @@
 #include "nsIFileStreams.h"
 #include "nsISeekableStream.h"
 #include "mozilla/ArrayUtils.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/UrlClassifierMetrics.h"
 #include "mozilla/Logging.h"
 #include "nsNetUtil.h"
 #include "nsCheckSummedOutputStream.h"
@@ -440,7 +440,7 @@ bool LookupCache::IsCanonicalizedIP(const nsACString& aHost) {
 // third.party.domain. This is to make sure we can find a match when a
 // exceptionlisted domain is eTLD.
 /* static */
-nsresult LookupCache::GetLookupEntitylistFragments(
+void LookupCache::GetLookupEntitylistFragments(
     const nsACString& aSpec, nsTArray<nsCString>* aFragments) {
   aFragments->Clear();
 
@@ -455,7 +455,8 @@ nsresult LookupCache::GetLookupEntitylistFragments(
   // "/?resoruce=" because this means the URL is not generated in
   // CreatePairwiseEntityListURI()
   if (!FindInReadable("/?resource="_ns, iter, iter_end)) {
-    return GetLookupFragments(aSpec, aFragments);
+    GetLookupFragments(aSpec, aFragments);
+    return;
   }
 
   const nsACString& topLevelURL = Substring(begin, iter++);
@@ -519,13 +520,11 @@ nsresult LookupCache::GetLookupEntitylistFragments(
       aFragments->AppendElement(key);
     }
   }
-
-  return NS_OK;
 }
 
 /* static */
-nsresult LookupCache::GetLookupFragments(const nsACString& aSpec,
-                                         nsTArray<nsCString>* aFragments)
+void LookupCache::GetLookupFragments(const nsACString& aSpec,
+                                     nsTArray<nsCString>* aFragments)
 
 {
   aFragments->Clear();
@@ -536,7 +535,7 @@ nsresult LookupCache::GetLookupFragments(const nsACString& aSpec,
 
   iter = begin;
   if (!FindCharInReadable('/', iter, end)) {
-    return NS_OK;
+    return;
   }
 
   const nsACString& host = Substring(begin, iter++);
@@ -624,8 +623,6 @@ nsresult LookupCache::GetLookupFragments(const nsACString& aSpec,
       aFragments->AppendElement(key);
     }
   }
-
-  return NS_OK;
 }
 
 nsresult LookupCache::LoadPrefixSet() {
@@ -718,7 +715,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
   // Preallocate the file storage
   {
     nsCOMPtr<nsIFileOutputStream> fos(do_QueryInterface(localOutFile));
-    Telemetry::AutoTimer<Telemetry::URLCLASSIFIER_VLPS_FALLOCATE_TIME> timer;
+    auto timer = glean::urlclassifier::vlps_fallocate_time.Measure();
 
     Unused << fos->Preallocate(fileSize);
   }
@@ -763,7 +760,7 @@ nsresult LookupCache::StoreToFile(nsCOMPtr<nsIFile>& aFile) {
 nsresult LookupCache::LoadFromFile(nsCOMPtr<nsIFile>& aFile) {
   NS_ENSURE_ARG_POINTER(aFile);
 
-  Telemetry::AutoTimer<Telemetry::URLCLASSIFIER_VLPS_FILELOAD_TIME> timer;
+  auto timer = glean::urlclassifier::vlps_fileload_time.Measure();
 
   nsCOMPtr<nsIInputStream> localInFile;
   nsresult rv = NS_NewLocalFileInputStream(getter_AddRefs(localInFile), aFile,

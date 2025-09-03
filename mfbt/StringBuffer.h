@@ -153,7 +153,9 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
    *
    * @see IsReadonly
    */
-  static StringBuffer* Realloc(StringBuffer* aHdr, size_t aSize) {
+  static StringBuffer* Realloc(
+      StringBuffer* aHdr, size_t aSize,
+      mozilla::Maybe<arena_id_t> aArena = mozilla::Nothing()) {
     MOZ_ASSERT(aSize != 0, "zero capacity allocation not allowed");
     MOZ_ASSERT(sizeof(StringBuffer) + aSize <= size_t(uint32_t(-1)) &&
                    sizeof(StringBuffer) + aSize > aSize,
@@ -171,7 +173,9 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
       aHdr->finalize(); // Free tainting-related resources
     }
 
-    aHdr = (StringBuffer*)realloc(aHdr, sizeof(StringBuffer) + aSize);
+    size_t bytes = sizeof(StringBuffer) + aSize;
+    aHdr = aArena ? (StringBuffer*)moz_arena_realloc(*aArena, aHdr, bytes)
+                  : (StringBuffer*)realloc(aHdr, bytes);
     if (aHdr) {
       detail::RefCountLogger::logAddRef(aHdr, 1);
       aHdr->mStorageSize = aSize;

@@ -57,6 +57,14 @@ class CfrToolsPreferencesMiddleware(
                     ),
                 )
             }
+            is CfrToolsAction.HomepageSearchBarShownToggled -> {
+                cfrPreferencesRepository.updateCfrPreference(
+                    CfrPreferencesRepository.CfrPreferenceUpdate(
+                        preferenceType = CfrPreferencesRepository.CfrPreference.HomepageSearchBar,
+                        value = context.state.homepageSearchBarShown,
+                    ),
+                )
+            }
             is CfrToolsAction.NavButtonsShownToggled -> {
                 cfrPreferencesRepository.updateCfrPreference(
                     CfrPreferencesRepository.CfrPreferenceUpdate(
@@ -64,10 +72,6 @@ class CfrToolsPreferencesMiddleware(
                         value = context.state.navButtonsShown,
                     ),
                 )
-            }
-            is CfrToolsAction.AddPrivateTabToHomeShownToggled -> {
-                // This will be implemented at a later date due to its complex nature.
-                // See https://bugzilla.mozilla.org/show_bug.cgi?id=1916830 for more details.
             }
             is CfrToolsAction.TabAutoCloseBannerShownToggled -> {
                 cfrPreferencesRepository.updateCfrPreference(
@@ -113,12 +117,10 @@ class CfrToolsPreferencesMiddleware(
                 CfrToolsAction.HomepageSyncCfrUpdated(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.HomepageNavToolbar ->
                 CfrToolsAction.HomepageNavToolbarCfrUpdated(newValue = !cfrPreferenceUpdate.value)
+            CfrPreferencesRepository.CfrPreference.HomepageSearchBar ->
+                CfrToolsAction.HomepageSearchbarCfrUpdated(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.NavButtons ->
                 CfrToolsAction.NavButtonsCfrUpdated(newValue = !cfrPreferenceUpdate.value)
-            CfrPreferencesRepository.CfrPreference.AddPrivateTabToHome ->
-                // Note that the new value is not inverted in this CFR because of the different
-                // logic for the pref key
-                CfrToolsAction.AddPrivateTabToHomeCfrUpdated(newValue = cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.TabAutoCloseBanner ->
                 CfrToolsAction.TabAutoCloseBannerCfrUpdated(newValue = !cfrPreferenceUpdate.value)
             CfrPreferencesRepository.CfrPreference.InactiveTabs ->

@@ -1,9 +1,13 @@
 use std::{
+    borrow::ToOwned as _,
+    boxed::Box,
     ffi::{c_void, CStr, CString},
     slice,
     str::FromStr,
+    string::{String, ToString as _},
     sync::Arc,
     thread,
+    vec::Vec,
 };
 
 use arrayvec::ArrayVec;
@@ -60,6 +64,14 @@ unsafe extern "system" fn debug_utils_messenger_callback(
     if cd.message_id_number == VUID_VKRENDERPASSBEGININFO_FRAMEBUFFER_04627
         && user_data.has_obs_layer
     {
+        return vk::FALSE;
+    }
+
+    // Silence Vulkan Validation error "VUID-vkCmdCopyImageToBuffer-pRegions-00184".
+    // While we aren't sure yet, we suspect this is probably a VVL issue.
+    // https://github.com/KhronosGroup/Vulkan-ValidationLayers/issues/9276
+    const VUID_VKCMDCOPYIMAGETOBUFFER_PREGIONS_00184: i32 = 0x45ef177c;
+    if cd.message_id_number == VUID_VKCMDCOPYIMAGETOBUFFER_PREGIONS_00184 {
         return vk::FALSE;
     }
 
@@ -344,11 +356,11 @@ impl super::Instance {
                     callback_data: debug_utils_create_info.callback_data,
                 })
             } else {
-                log::info!("Debug utils not enabled: extension not listed");
+                log::debug!("Debug utils not enabled: extension not listed");
                 None
             }
         } else {
-            log::info!(
+            log::debug!(
                 "Debug utils not enabled: \
                         debug_utils_user_data not passed to Instance::from_raw"
             );
@@ -881,7 +893,7 @@ impl crate::Instance for super::Instance {
             {
                 self.create_surface_from_view(handle.ns_view)
             }
-            #[cfg(all(target_os = "ios", feature = "metal"))]
+            #[cfg(all(any(target_os = "ios", target_os = "visionos"), feature = "metal"))]
             (Rwh::UiKit(handle), _)
                 if self.shared.extensions.contains(&ext::metal_surface::NAME) =>
             {

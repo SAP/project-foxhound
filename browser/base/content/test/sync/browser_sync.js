@@ -3,6 +3,15 @@
 
 "use strict";
 
+Services.scriptloader.loadSubScript(
+  "chrome://mochitests/content/browser/browser/components/profiles/tests/browser/head.js",
+  this
+);
+
+const { FX_RELAY_OAUTH_CLIENT_ID } = ChromeUtils.importESModule(
+  "resource://gre/modules/FxAccountsCommon.sys.mjs"
+);
+
 ChromeUtils.defineESModuleGetters(this, {
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.sys.mjs",
@@ -154,6 +163,14 @@ add_task(async function setupForPanelTests() {
 add_task(async function test_ui_state_signedin() {
   await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
 
+  // Setup profiles db
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.profiles.enabled", true]],
+  });
+  await initGroupDatabase();
+  let profile = SelectableProfileService.currentProfile;
+  Assert.ok(profile, "Should have a profile now");
+
   const relativeDateAnchor = new Date();
   let state = {
     status: UIState.STATUS_SIGNED_IN,
@@ -199,6 +216,12 @@ add_task(async function test_ui_state_signedin() {
     disabledItems: [],
     hiddenItems: ["PanelUI-fxa-menu-setup-sync-button"],
   });
+
+  await checkProfilesButtons(
+    document.getElementById("fxa-manage-account-button"),
+    true
+  );
+
   checkFxAAvatar("signedin");
   gSync.relativeTimeFormat = origRelativeTimeFormat;
   await closeFxaPanel();
@@ -326,6 +349,14 @@ add_task(async function test_ui_state_panel_open_after_syncing() {
 add_task(async function test_ui_state_unconfigured() {
   await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
 
+  // Setup profiles db
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.profiles.enabled", true]],
+  });
+  await initGroupDatabase();
+  let profile = SelectableProfileService.currentProfile;
+  Assert.ok(profile, "Should have a profile now");
+
   let state = {
     status: UIState.STATUS_NOT_CONFIGURED,
   };
@@ -348,6 +379,15 @@ add_task(async function test_ui_state_unconfigured() {
     hideFxAText: false,
   });
   await closeTabAndMainPanel();
+
+  await openFxaPanel();
+
+  await checkProfilesButtons(
+    document.getElementById("PanelUI-signedin-panel"),
+    false
+  );
+
+  await closeFxaPanel();
 });
 
 add_task(async function test_ui_state_signed_in() {
@@ -727,9 +767,9 @@ add_task(async function test_new_sync_setup_ui_exp_enabled() {
   // Enroll in the experiment with the feature enabled
   await ExperimentAPI.ready();
   let doCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-    featureId: NimbusFeatures.syncDecouplingUpdates.featureId,
+    featureId: NimbusFeatures.syncSetupFlow.featureId,
     value: {
-      syncSetup: true,
+      enabled: true,
     },
   });
 
@@ -780,9 +820,9 @@ add_task(async function test_new_sync_setup_ui_no_exp() {
   // Enroll in the experiment with the feature disabled
   await ExperimentAPI.ready();
   let doCleanup = await ExperimentFakes.enrollWithFeatureConfig({
-    featureId: NimbusFeatures.syncDecouplingUpdates.featureId,
+    featureId: NimbusFeatures.syncSetupFlow.featureId,
     value: {
-      syncSetup: false,
+      enabled: false,
     },
   });
 
@@ -820,6 +860,88 @@ add_task(async function test_new_sync_setup_ui_no_exp() {
 
   await doCleanup();
   await closeFxaPanel();
+});
+
+// Ensure we can see the new "My services" section if the user has enabled relay on their account
+add_task(async function test_ui_my_services_signedin() {
+  await BrowserTestUtils.openNewForegroundTab(gBrowser, "https://example.com/");
+
+  const relativeDateAnchor = new Date();
+  let state = {
+    status: UIState.STATUS_SIGNED_IN,
+    syncEnabled: true,
+    email: "foo@bar.com",
+    displayName: "Foo Bar",
+    avatarURL: "https://foo.bar",
+    lastSync: new Date(),
+    syncing: false,
+  };
+
+  const origRelativeTimeFormat = gSync.relativeTimeFormat;
+  gSync.relativeTimeFormat = {
+    formatBestUnit(date) {
+      return origRelativeTimeFormat.formatBestUnit(date, {
+        now: relativeDateAnchor,
+      });
+    },
+  };
+
+  gSync.updateAllUI(state);
+
+  // pretend that the user has relay enabled
+  gSync._attachedClients = [
+    {
+      id: FX_RELAY_OAUTH_CLIENT_ID,
+    },
+  ];
+
+  await openFxaPanel();
+
+  checkMenuBarItem("sync-syncnowitem");
+  checkPanelHeader();
+  ok(
+    BrowserTestUtils.isVisible(
+      document.getElementById("fxa-menu-header-title")
+    ),
+    "expected toolbar to be visible after opening"
+  );
+  checkFxaToolbarButtonPanel({
+    headerTitle: "Manage account",
+    headerDescription: state.displayName,
+    enabledItems: [
+      "PanelUI-fxa-menu-sendtab-button",
+      "PanelUI-fxa-menu-connect-device-button",
+      "PanelUI-fxa-menu-syncnow-button",
+      "PanelUI-fxa-menu-sync-prefs-button",
+      "PanelUI-fxa-menu-account-signout-button",
+      "PanelUI-fxa-cta-menu",
+      "PanelUI-fxa-menu-monitor-button",
+      "PanelUI-fxa-menu-vpn-button",
+    ],
+    disabledItems: [],
+    hiddenItems: [
+      "PanelUI-fxa-menu-setup-sync-button",
+      "PanelUI-fxa-menu-relay-button", // the relay button in the "other protections" side should be hidden
+    ],
+  });
+  checkFxAAvatar("signedin");
+  gSync.relativeTimeFormat = origRelativeTimeFormat;
+  await closeFxaPanel();
+
+  await openMainPanel();
+
+  checkPanelUIStatusBar({
+    description: "Foo Bar",
+    titleHidden: true,
+    hideFxAText: true,
+  });
+
+  // Revert the pref at the end of the test
+  Services.prefs.setBoolPref(
+    "identity.fxaccounts.toolbar.pxiToolbarEnabled",
+    false
+  );
+  await closeTabAndMainPanel();
 });
 
 function checkPanelUIStatusBar({
@@ -939,6 +1061,40 @@ async function checkFxaToolbarButtonPanel({
     const el = document.getElementById(id);
     is(el.getAttribute("hidden"), "true", id + " is hidden");
   }
+}
+
+async function checkProfilesButtons(
+  previousElementSibling,
+  separatorVisible = false
+) {
+  const profilesButton = document.getElementById(
+    "PanelUI-fxa-menu-profiles-button"
+  );
+  const emptyProfilesButton = document.getElementById(
+    "PanelUI-fxa-menu-empty-profiles-button"
+  );
+  const profilesSeparator = document.getElementById(
+    "PanelUI-fxa-menu-profiles-separator"
+  );
+
+  ok(
+    (profilesButton.hidden || emptyProfilesButton.hidden) &&
+      !(profilesButton.hidden && emptyProfilesButton.hidden),
+    "Only one of the profiles button is visible"
+  );
+
+  is(
+    !profilesSeparator.hidden,
+    separatorVisible,
+    "The profile separator is visible"
+  );
+
+  is(
+    previousElementSibling,
+    emptyProfilesButton.previousElementSibling,
+    "The profiles button is displayed after " +
+      emptyProfilesButton.previousElementSibling.id
+  );
 }
 
 async function checkFxABadged() {

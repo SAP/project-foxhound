@@ -102,6 +102,17 @@ webrtc_fuzzer_test("vp9_depacketizer_fuzzer") {
   ]
 }
 
+webrtc_fuzzer_test("dtls_utils_fuzzer") {
+  sources = [ "dtls_utils_fuzzer.cc" ]
+  deps = [
+    "../../api:array_view",
+    "../../p2p:dtls_utils",
+  ]
+
+  # Seed from boringssl DTLS corpus.
+  seed_corpus = "//third_party/boringssl/src/fuzz/dtls_client_corpus"
+}
+
 webrtc_fuzzer_test("vp8_qp_parser_fuzzer") {
   sources = [ "vp8_qp_parser_fuzzer.cc" ]
   deps = [
@@ -320,14 +331,6 @@ webrtc_fuzzer_test("audio_decoder_g722_fuzzer") {
   ]
 }
 
-webrtc_fuzzer_test("audio_decoder_ilbc_fuzzer") {
-  sources = [ "audio_decoder_ilbc_fuzzer.cc" ]
-  deps = [
-    ":audio_decoder_fuzzer",
-    "../../modules/audio_coding:ilbc",
-  ]
-}
-
 webrtc_fuzzer_test("audio_decoder_opus_fuzzer") {
   sources = [ "audio_decoder_opus_fuzzer.cc" ]
   deps = [
@@ -470,20 +473,14 @@ if (!build_with_chromium) {
 
 webrtc_fuzzer_test("stun_parser_fuzzer") {
   sources = [ "stun_parser_fuzzer.cc" ]
-  deps = [
-    "../../api/transport:stun_types",
-    "../../p2p:rtc_p2p",
-  ]
+  deps = [ "../../api/transport:stun_types" ]
   seed_corpus = "corpora/stun-corpus"
   dict = "corpora/stun.tokens"
 }
 
 webrtc_fuzzer_test("stun_validator_fuzzer") {
   sources = [ "stun_validator_fuzzer.cc" ]
-  deps = [
-    "../../api/transport:stun_types",
-    "../../p2p:rtc_p2p",
-  ]
+  deps = [ "../../api/transport:stun_types" ]
   seed_corpus = "corpora/stun-corpus"
   dict = "corpora/stun.tokens"
 }
@@ -492,7 +489,6 @@ webrtc_fuzzer_test("pseudotcp_parser_fuzzer") {
   sources = [ "pseudotcp_parser_fuzzer.cc" ]
   deps = [
     "../../p2p:pseudo_tcp",
-    "../../p2p:rtc_p2p",
     "../../rtc_base:threading",
   ]
 }
@@ -520,7 +516,10 @@ webrtc_fuzzer_test("audio_processing_fuzzer") {
     "../../api:scoped_refptr",
     "../../api/audio:aec3_factory",
     "../../api/audio:audio_processing",
+    "../../api/audio:builtin_audio_processing_builder",
     "../../api/audio:echo_detector_creator",
+    "../../api/environment",
+    "../../api/environment:environment_factory",
     "../../api/task_queue",
     "../../api/task_queue:default_task_queue_factory",
     "../../modules/audio_processing",
@@ -544,6 +543,8 @@ webrtc_fuzzer_test("audio_processing_sample_rate_fuzzer") {
     "../../api:scoped_refptr",
     "../../api/audio:audio_frame_api",
     "../../api/audio:audio_processing",
+    "../../api/audio:builtin_audio_processing_builder",
+    "../../api/environment:environment_factory",
     "../../modules/audio_processing",
     "../../modules/audio_processing:audio_frame_proxies",
     "../../modules/audio_processing:audioproc_test_utils",
@@ -719,16 +720,24 @@ if (rtc_build_libvpx) {
       "../../api:array_view",
       "../../api:field_trials_view",
       "../../api/environment:environment_factory",
+      "../../api/video:encoded_image",
+      "../../api/video:video_bitrate_allocation",
       "../../api/video:video_frame",
+      "../../api/video:video_frame_type",
       "../../api/video_codecs:video_codecs_api",
+      "../../common_video/generic_frame_descriptor",
       "../../media:media_constants",
+      "../../modules/video_coding:codec_globals_headers",
       "../../modules/video_coding:frame_dependencies_calculator",
+      "../../modules/video_coding:video_codec_interface",
       "../../modules/video_coding:webrtc_libvpx_interface",
       "../../modules/video_coding:webrtc_vp9",
+      "../../rtc_base:checks",
       "../../rtc_base:safe_compare",
       "//third_party/abseil-cpp/absl/algorithm:container",
       "//third_party/abseil-cpp/absl/base:core_headers",
       "//third_party/abseil-cpp/absl/container:inlined_vector",
+      "//third_party/abseil-cpp/absl/strings:string_view",
       rtc_libvpx_dir,
     ]
     seed_corpus = "corpora/vp9-encoder-references-corpus"
@@ -750,7 +759,6 @@ group("fuzzers") {
     ":agc_fuzzer",
     ":audio_decoder_fuzzer",
     ":audio_decoder_g722_fuzzer",
-    ":audio_decoder_ilbc_fuzzer",
     ":audio_decoder_multiopus_fuzzer",
     ":audio_decoder_opus_fuzzer",
     ":audio_decoder_opus_redundant_fuzzer",

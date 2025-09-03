@@ -21,6 +21,8 @@ class ErrorResult;
 
 namespace dom {
 
+class TrustedHTMLOrString;
+
 class DOMParser final : public nsISupports, public nsWrapperCache {
   typedef mozilla::dom::GlobalObject GlobalObject;
 
@@ -34,11 +36,14 @@ class DOMParser final : public nsISupports, public nsWrapperCache {
   static already_AddRefed<DOMParser> Constructor(const GlobalObject& aOwner,
                                                  mozilla::ErrorResult& rv);
 
-  already_AddRefed<Document> ParseFromString(const nsAString& aStr,
-                                             SupportedType aType,
-                                             ErrorResult& aRv);
+  already_AddRefed<Document> ParseFromStringInternal(const nsAString& aStr,
+                                                     SupportedType aType,
+                                                     ErrorResult& aRv);
 
-  // ChromeOnly API
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<Document> ParseFromString(
+      const TrustedHTMLOrString& aStr, SupportedType aType, ErrorResult& aRv);
+
+  // Chrome and UI Widgets API
   already_AddRefed<Document> ParseFromSafeString(const nsAString& aStr,
                                                  SupportedType aType,
                                                  ErrorResult& aRv);

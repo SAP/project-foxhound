@@ -52,15 +52,14 @@ let ACTIVITY_STREAM_URL;
 let ACTIVITY_STREAM_DEBUG_URL;
 
 function setExpectedUrlsWithScripts() {
-  ACTIVITY_STREAM_URL =
-    "resource://activity-stream/prerendered/activity-stream.html";
+  ACTIVITY_STREAM_URL = "resource://newtab/prerendered/activity-stream.html";
   ACTIVITY_STREAM_DEBUG_URL =
-    "resource://activity-stream/prerendered/activity-stream-debug.html";
+    "resource://newtab/prerendered/activity-stream-debug.html";
 }
 
 function setExpectedUrlsWithoutScripts() {
   ACTIVITY_STREAM_URL =
-    "resource://activity-stream/prerendered/activity-stream-noscripts.html";
+    "resource://newtab/prerendered/activity-stream-noscripts.html";
 
   // Debug urls are the same as non-debug because debug scripts load dynamically
   ACTIVITY_STREAM_DEBUG_URL = ACTIVITY_STREAM_URL;
@@ -290,28 +289,9 @@ addTestsWithPrivilegedContentProcessPref(async function test_welcome_url() {
   Services.prefs.setBoolPref(SIMPLIFIED_WELCOME_ENABLED_PREF, false);
   Assert.equal(
     aboutNewTabService.welcomeURL,
-    ACTIVITY_STREAM_URL,
-    "Newtab welcomeURL set to un-prerendered AS when debug disabled."
+    "about:home",
+    "Newtab welcomeURL set to about:home when debug disabled."
   );
-  Assert.equal(
-    aboutNewTabService.welcomeURL,
-    aboutNewTabService.defaultURL,
-    "Newtab welcomeURL is equal to defaultURL when prerendering disabled and debug disabled."
-  );
-
-  // Only debug variants aren't available on release/beta
-  if (!IS_RELEASE_OR_BETA) {
-    await setBoolPrefAndWaitForChange(
-      ACTIVITY_STREAM_DEBUG_PREF,
-      true,
-      "A notification occurs after changing the debug pref to true."
-    );
-    Assert.equal(
-      aboutNewTabService.welcomeURL,
-      ACTIVITY_STREAM_DEBUG_URL,
-      "Newtab welcomeURL set to un-prerendered debug AS when debug enabled"
-    );
-  }
 
   cleanup();
 });

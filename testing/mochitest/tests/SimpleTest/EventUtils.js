@@ -148,6 +148,10 @@ function _EU_getPlatform() {
   return "unknown";
 }
 
+function _EU_roundDevicePixels(aMaybeFractionalPixels) {
+  return Math.floor(aMaybeFractionalPixels + 0.5);
+}
+
 /**
  * promiseElementReadyForUserInput() dispatches mousemove events to aElement
  * and waits one of them for a while.  Then, returns "resolved" state when it's
@@ -278,8 +282,8 @@ function sendMouseEvent(aEvent, aTarget, aWindow) {
       aEvent.type == "mouseup"
         ? 1
         : aEvent.type == "dblclick"
-        ? 2
-        : 0),
+          ? 2
+          : 0),
     screenX: aEvent.screenX || 0,
     screenY: aEvent.screenY || 0,
     clientX: aEvent.clientX || 0,
@@ -778,6 +782,8 @@ function synthesizeMouseAtPoint(left, top, aEvent, aWindow = window) {
         : utils.DEFAULT_MOUSE_POINTER_ID;
     }
 
+    // FYI: nsIDOMWindowUtils.sendMouseEvent takes floats for the coordinates.
+    // Therefore, don't round/truncate the fractional values.
     var isDOMEventSynthesized =
       "isSynthesized" in aEvent ? aEvent.isSynthesized : true;
     var isWidgetEventSynthesized =
@@ -888,8 +894,8 @@ function synthesizeTouchAtPoint(aLeft, aTop, aEvent = {}, aWindow = window) {
   const arrayLength = Array.isArray(aLeft)
     ? aLeft.length
     : Array.isArray(aTop)
-    ? aTop.length
-    : 1;
+      ? aTop.length
+      : 1;
 
   function throwExceptionIfDifferentLengthArray(aArray, aName) {
     if (Array.isArray(aArray) && arrayLength !== aArray.length) {
@@ -898,16 +904,22 @@ function synthesizeTouchAtPoint(aLeft, aTop, aEvent = {}, aWindow = window) {
   }
   const leftArray = (() => {
     if (Array.isArray(aLeft)) {
+      for (let i = 0; i < aLeft.length; i++) {
+        aLeft[i] = _EU_roundDevicePixels(aLeft[i]);
+      }
       return aLeft;
     }
-    return new Array(arrayLength).fill(aLeft);
+    return new Array(arrayLength).fill(_EU_roundDevicePixels(aLeft));
   })();
   const topArray = (() => {
     if (Array.isArray(aTop)) {
       throwExceptionIfDifferentLengthArray(aTop, "aTop");
+      for (let i = 0; i < aTop.length; i++) {
+        aTop[i] = _EU_roundDevicePixels(aTop[i]);
+      }
       return aTop;
     }
-    return new Array(arrayLength).fill(aTop);
+    return new Array(arrayLength).fill(_EU_roundDevicePixels(aTop));
   })();
   const idArray = (() => {
     if ("id" in aEvent && Array.isArray(aEvent.id)) {
@@ -1061,15 +1073,17 @@ function synthesizeWheelAtPoint(aLeft, aTop, aEvent, aWindow = window) {
     aEvent.lineOrPageDeltaX != null
       ? aEvent.lineOrPageDeltaX
       : aEvent.deltaX > 0
-      ? Math.floor(aEvent.deltaX)
-      : Math.ceil(aEvent.deltaX);
+        ? Math.floor(aEvent.deltaX)
+        : Math.ceil(aEvent.deltaX);
   var lineOrPageDeltaY =
     // eslint-disable-next-line no-nested-ternary
     aEvent.lineOrPageDeltaY != null
       ? aEvent.lineOrPageDeltaY
       : aEvent.deltaY > 0
-      ? Math.floor(aEvent.deltaY)
-      : Math.ceil(aEvent.deltaY);
+        ? Math.floor(aEvent.deltaY)
+        : Math.ceil(aEvent.deltaY);
+  // FYI: nsIDOMWindowUtils.sendWheelEvent takes floats for the coordinates.
+  // Therefore, don't round/truncate the values.
   utils.sendWheelEvent(
     aLeft,
     aTop,
@@ -1180,7 +1194,7 @@ function _sendWheelAndPaint(
         waitForPaints,
         "apz-repaints-flushed"
       );
-      if (!utils.flushApzRepaints(aWindow)) {
+      if (!utils.flushApzRepaints()) {
         waitForPaints();
       }
     }, 0);
@@ -1285,8 +1299,12 @@ function synthesizeNativeTap(
 
   let scale = aWindow.devicePixelRatio;
   let rect = aTarget.getBoundingClientRect();
-  let x = (aWindow.mozInnerScreenX + rect.left + aOffsetX) * scale;
-  let y = (aWindow.mozInnerScreenY + rect.top + aOffsetY) * scale;
+  let x = _EU_roundDevicePixels(
+    (aWindow.mozInnerScreenX + rect.left + aOffsetX) * scale
+  );
+  let y = _EU_roundDevicePixels(
+    (aWindow.mozInnerScreenY + rect.top + aOffsetY) * scale
+  );
 
   let observer = {
     observe: (subject, topic, data) => {
@@ -1408,44 +1426,48 @@ function synthesizeNativeMouseEvent(aParams, aCallback = null) {
   //     so use window.top's mozInnerScreen. But this won't work fission+xorigin
   //     with mobile viewport until mozInnerScreen returns valid value with
   //     scale.
-  const x = (() => {
-    if (screenX != undefined) {
-      return screenX * scaleValue;
-    }
-    let winInnerOffsetX = win.mozInnerScreenX;
-    try {
-      winInnerOffsetX =
-        win.top.mozInnerScreenX +
-        (win.mozInnerScreenX - win.top.mozInnerScreenX) * resolution;
-    } catch (e) {
-      // XXX fission+xorigin test throws permission denied since win.top is
-      //     cross-origin.
-    }
-    return (
-      (((atCenter ? rect.width / 2 : offsetX) + rect.left) * resolution +
-        winInnerOffsetX) *
-      scaleValue
-    );
-  })();
-  const y = (() => {
-    if (screenY != undefined) {
-      return screenY * scaleValue;
-    }
-    let winInnerOffsetY = win.mozInnerScreenY;
-    try {
-      winInnerOffsetY =
-        win.top.mozInnerScreenY +
-        (win.mozInnerScreenY - win.top.mozInnerScreenY) * resolution;
-    } catch (e) {
-      // XXX fission+xorigin test throws permission denied since win.top is
-      //     cross-origin.
-    }
-    return (
-      (((atCenter ? rect.height / 2 : offsetY) + rect.top) * resolution +
-        winInnerOffsetY) *
-      scaleValue
-    );
-  })();
+  const x = _EU_roundDevicePixels(
+    (() => {
+      if (screenX != undefined) {
+        return screenX * scaleValue;
+      }
+      let winInnerOffsetX = win.mozInnerScreenX;
+      try {
+        winInnerOffsetX =
+          win.top.mozInnerScreenX +
+          (win.mozInnerScreenX - win.top.mozInnerScreenX) * resolution;
+      } catch (e) {
+        // XXX fission+xorigin test throws permission denied since win.top is
+        //     cross-origin.
+      }
+      return (
+        (((atCenter ? rect.width / 2 : offsetX) + rect.left) * resolution +
+          winInnerOffsetX) *
+        scaleValue
+      );
+    })()
+  );
+  const y = _EU_roundDevicePixels(
+    (() => {
+      if (screenY != undefined) {
+        return screenY * scaleValue;
+      }
+      let winInnerOffsetY = win.mozInnerScreenY;
+      try {
+        winInnerOffsetY =
+          win.top.mozInnerScreenY +
+          (win.mozInnerScreenY - win.top.mozInnerScreenY) * resolution;
+      } catch (e) {
+        // XXX fission+xorigin test throws permission denied since win.top is
+        //     cross-origin.
+      }
+      return (
+        (((atCenter ? rect.height / 2 : offsetY) + rect.top) * resolution +
+          winInnerOffsetY) *
+        scaleValue
+      );
+    })()
+  );
   const modifierFlags = _parseNativeModifiers(modifiers);
 
   const observer = {
@@ -2625,8 +2647,8 @@ function synthesizeComposition(aEvent, aWindow = window, aCallback) {
       aEvent.key.type === "keydown"
         ? "keydown"
         : aEvent.key.type === "keyup"
-        ? "keyup"
-        : "",
+          ? "keyup"
+          : "",
       keyEventDict.dictionary
     );
   } else if (aEvent.key === undefined) {
@@ -2775,8 +2797,8 @@ function synthesizeCompositionChange(aEvent, aWindow = window, aCallback) {
         aEvent.key.type === "keydown"
           ? "keydown"
           : aEvent.key.type === "keyup"
-          ? "keyup"
-          : "",
+            ? "keyup"
+            : "",
         keyEventDict.dictionary
       );
     } else if (aEvent.key === undefined) {

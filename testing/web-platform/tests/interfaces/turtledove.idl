@@ -41,6 +41,7 @@ dictionary GenerateBidInterestGroup {
   sequence<USVString> trustedBiddingSignalsKeys;
   DOMString trustedBiddingSignalsSlotSizeMode = "none";
   long maxTrustedBiddingSignalsURLLength;
+  USVString trustedBiddingSignalsCoordinator;
   any userBiddingSignals;
   sequence<AuctionAd> ads;
   sequence<AuctionAd> adComponents;
@@ -104,6 +105,7 @@ dictionary AuctionAdConfig {
 
   USVString trustedScoringSignalsURL;
   long maxTrustedScoringSignalsURLLength;
+  USVString trustedScoringSignalsCoordinator;
   sequence<USVString> interestGroupBuyers;
   Promise<any> auctionSignals;
   Promise<any> sellerSignals;
@@ -149,17 +151,31 @@ partial interface Navigator {
 
 [SecureContext]
 partial interface Navigator {
-  Promise<AdAuctionData> getInterestGroupAdAuctionData(AdAuctionDataConfig config);
+  Promise<AdAuctionData> getInterestGroupAdAuctionData(optional AdAuctionDataConfig config = {});
+};
+
+dictionary AdAuctionPerSellerData {
+  required USVString seller;
+  Uint8Array request;
+  DOMString error;
 };
 
 dictionary AdAuctionData {
-  required Uint8Array request;
   required USVString requestId;
+  Uint8Array request;
+  sequence<AdAuctionPerSellerData> requests;
+};
+
+dictionary AdAuctionOneSeller {
+  required USVString seller;
+  USVString coordinatorOrigin;
 };
 
 dictionary AdAuctionDataConfig {
-  required USVString seller;
-  required USVString coordinatorOrigin;
+  USVString seller;
+  USVString coordinatorOrigin;
+  sequence<AdAuctionOneSeller> sellers;
+
   unsigned long requestSize;
   record<USVString, AdAuctionDataBuyerConfig> perBuyerConfig;
 };

@@ -43,6 +43,9 @@ skip-if = ["os == 'android'"] # Bug 1545439
 ["test_ext_background_api_injection.js"]
 
 ["test_ext_background_early_shutdown.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && ccov", # Bug 1933914
+]
 
 ["test_ext_background_generated_load_events.js"]
 
@@ -222,6 +225,9 @@ skip-if = [
 ["test_ext_dnr_across_redirects.js"]
 
 ["test_ext_dnr_allowAllRequests.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && ccov", # Bug 1933914
+]
 
 ["test_ext_dnr_api.js"]
 
@@ -237,6 +243,11 @@ skip-if = ["os == 'android'"] # Android: downloads.download goes through the emb
 ["test_ext_dnr_modifyHeaders.js"]
 
 ["test_ext_dnr_private_browsing.js"]
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && ccov", # Bug 1933914
+]
+
+["test_ext_dnr_redirect_main_frame.js"]
 
 ["test_ext_dnr_redirect_transform.js"]
 
@@ -301,6 +312,9 @@ skip-if = [
 skip-if = ["os == 'android'"]
 
 ["test_ext_downloads_private.js"]
+skip-if = ["os == 'android'"]
+
+["test_ext_downloads_resume.js"]
 skip-if = ["os == 'android'"]
 
 ["test_ext_downloads_search.js"]
@@ -425,6 +439,8 @@ skip-if = ["appname == 'thunderbird'"]
 
 ["test_ext_proxy_authorization_via_proxyinfo.js"]
 skip-if = ["true"] # Bug 1622433 needs h2 proxy implementation
+
+["test_ext_proxy_bypass_localhost.js"]
 
 ["test_ext_proxy_config.js"]
 skip-if = ["appname == 'thunderbird'"]
@@ -691,6 +707,9 @@ skip-if = ["os == 'android'"] # bug 1683159
 skip-if = ["os == 'android'"] # bug 1848398 - style cache miss on Android.
 
 ["test_ext_webRequest_suspend.js"]
+
+["test_ext_webRequest_type_json.js"]
+prefs = ["javascript.options.experimental.import_attributes=true"]
 
 ["test_ext_webRequest_userContextId.js"]
 

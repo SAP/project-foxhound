@@ -10,12 +10,15 @@
 #include "mozilla/Assertions.h"
 #include "BasePrincipal.h"
 #include "Document.h"
+#include "TextDirectiveCreator.h"
 #include "TextDirectiveFinder.h"
 #include "TextDirectiveUtil.h"
+#include "mozilla/ResultVariant.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/FragmentDirectiveBinding.h"
 #include "mozilla/dom/FragmentOrElement.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/Selection.h"
 #include "mozilla/PresShell.h"
 #include "nsContentUtils.h"
@@ -67,37 +70,36 @@ bool FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragmentString(
   auto uri = TextDirectiveUtil::ShouldLog() && aURI ? aURI->GetSpecOrDefault()
                                                     : nsCString();
   if (aFragment.IsEmpty()) {
-    TEXT_FRAGMENT_LOG("URL '%s' has no fragment.", uri.Data());
+    TEXT_FRAGMENT_LOG("URL '{}' has no fragment.", uri);
     return false;
   }
   TEXT_FRAGMENT_LOG(
-      "Trying to extract a fragment directive from fragment '%s' of URL '%s'.",
-      aFragment.Data(), uri.Data());
+      "Trying to extract a fragment directive from fragment '{}' of URL '{}'.",
+      aFragment, uri);
   ParsedFragmentDirectiveResult fragmentDirective;
   const bool hasRemovedFragmentDirective =
       StaticPrefs::dom_text_fragments_enabled() &&
       parse_fragment_directive(&aFragment, &fragmentDirective);
   if (hasRemovedFragmentDirective) {
     TEXT_FRAGMENT_LOG(
-        "Found a fragment directive '%s', which was removed from the fragment. "
-        "New fragment is '%s'.",
-        fragmentDirective.fragment_directive.Data(),
-        fragmentDirective.hash_without_fragment_directive.Data());
+        "Found a fragment directive '{}', which was removed from the fragment. "
+        "New fragment is '{}'.",
+        fragmentDirective.fragment_directive,
+        fragmentDirective.hash_without_fragment_directive);
     if (TextDirectiveUtil::ShouldLog()) {
       if (fragmentDirective.text_directives.IsEmpty()) {
         TEXT_FRAGMENT_LOG(
-            "Found no valid text directives in fragment directive '%s'.",
-            fragmentDirective.fragment_directive.Data());
+            "Found no valid text directives in fragment directive '{}'.",
+            fragmentDirective.fragment_directive);
       } else {
         TEXT_FRAGMENT_LOG(
-            "Found %zu valid text directives in fragment directive '%s':",
+            "Found {} valid text directives in fragment directive '{}':",
             fragmentDirective.text_directives.Length(),
-            fragmentDirective.fragment_directive.Data());
+            fragmentDirective.fragment_directive);
         for (size_t index = 0;
              index < fragmentDirective.text_directives.Length(); ++index) {
           const auto& textDirective = fragmentDirective.text_directives[index];
-          TEXT_FRAGMENT_LOG(" [%zu]: %s", index,
-                            ToString(textDirective).c_str());
+          TEXT_FRAGMENT_LOG(" [{}]: {}", index, ToString(textDirective));
         }
       }
     }
@@ -107,8 +109,8 @@ bool FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragmentString(
     }
   } else {
     TEXT_FRAGMENT_LOG(
-        "Fragment '%s' of URL '%s' did not contain a fragment directive.",
-        aFragment.Data(), uri.Data());
+        "Fragment '{}' of URL '{}' did not contain a fragment directive.",
+        aFragment, uri);
   }
   return hasRemovedFragmentDirective;
 }
@@ -124,8 +126,8 @@ void FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragment(
   nsAutoCString hash;
   aURI->GetRef(hash);
   if (!hasRef || hash.IsEmpty()) {
-    TEXT_FRAGMENT_LOG("URL '%s' has no fragment. Exiting.",
-                      aURI->GetSpecOrDefault().Data());
+    TEXT_FRAGMENT_LOG("URL '{}' has no fragment. Exiting.",
+                      aURI->GetSpecOrDefault());
   }
 
   const bool hasRemovedFragmentDirective =
@@ -135,8 +137,8 @@ void FragmentDirective::ParseAndRemoveFragmentDirectiveFromFragment(
     return;
   }
   Unused << NS_MutateURI(aURI).SetRef(hash).Finalize(aURI);
-  TEXT_FRAGMENT_LOG("Updated hash of the URL. New URL: %s",
-                    aURI->GetSpecOrDefault().Data());
+  TEXT_FRAGMENT_LOG("Updated hash of the URL. New URL: {}",
+                    aURI->GetSpecOrDefault());
 }
 
 nsTArray<RefPtr<nsRange>> FragmentDirective::FindTextFragmentsInDocument() {
@@ -145,8 +147,8 @@ nsTArray<RefPtr<nsRange>> FragmentDirective::FindTextFragmentsInDocument() {
     auto uri = TextDirectiveUtil::ShouldLog() && mDocument->GetDocumentURI()
                    ? mDocument->GetDocumentURI()->GetSpecOrDefault()
                    : nsCString();
-    TEXT_FRAGMENT_LOG("No uninvoked text directives in document '%s'. Exiting.",
-                      uri.Data());
+    TEXT_FRAGMENT_LOG("No uninvoked text directives in document '{}'. Exiting.",
+                      uri);
     return {};
   }
   auto textDirectives = mFinder->FindTextDirectivesInDocument();
@@ -198,9 +200,9 @@ bool FragmentDirective::IsTextDirectiveAllowedToBeScrolledTo() {
                  ? mDocument->GetDocumentURI()->GetSpecOrDefault()
                  : nsCString();
   TEXT_FRAGMENT_LOG(
-      "Trying to find out if the load of URL '%s' is allowed to scroll to the "
+      "Trying to find out if the load of URL '{}' is allowed to scroll to the "
       "text fragment",
-      uri.Data());
+      uri);
   // It seems the spec does not cover same-document navigation in particular,
   // or Gecko needs to deal with this in a different way due to the
   // implementation not following the spec step-by-step.
@@ -212,7 +214,7 @@ bool FragmentDirective::IsTextDirectiveAllowedToBeScrolledTo() {
   const bool isSameDocumentNavigation =
       loadInfo && loadInfo->GetIsSameDocumentNavigation();
 
-  TEXT_FRAGMENT_LOG("Current load is%s a same-document navigation.",
+  TEXT_FRAGMENT_LOG("Current load is{} a same-document navigation.",
                     isSameDocumentNavigation ? "" : " not");
 
   // 1. If document's pending text directives field is null or empty, return
@@ -233,7 +235,7 @@ bool FragmentDirective::IsTextDirectiveAllowedToBeScrolledTo() {
   const bool textDirectiveUserActivation =
       mDocument->ConsumeTextDirectiveUserActivation();
   TEXT_FRAGMENT_LOG(
-      "Consumed Document's TextDirectiveUserActivation flag (value=%s)",
+      "Consumed Document's TextDirectiveUserActivation flag (value={})",
       textDirectiveUserActivation ? "true" : "false");
 
   // 4. If document's content type is not a text directive allowing MIME type,
@@ -241,8 +243,8 @@ bool FragmentDirective::IsTextDirectiveAllowedToBeScrolledTo() {
   const bool isAllowedMIMEType = [doc = this->mDocument, func = __FUNCTION__] {
     nsAutoString contentType;
     doc->GetContentType(contentType);
-    TEXT_FRAGMENT_LOG_FN("Got document MIME type: %s", func,
-                         NS_ConvertUTF16toUTF8(contentType).Data());
+    TEXT_FRAGMENT_LOG_FN("Got document MIME type: {}", func,
+                         NS_ConvertUTF16toUTF8(contentType));
     return contentType == u"text/html" || contentType == u"text/plain";
   }();
 
@@ -356,14 +358,14 @@ void FragmentDirective::HighlightTextDirectives(
                  : nsCString();
   if (aTextDirectiveRanges.IsEmpty()) {
     TEXT_FRAGMENT_LOG(
-        "No text directive ranges to highlight for document '%s'. Exiting.",
-        uri.Data());
+        "No text directive ranges to highlight for document '{}'. Exiting.",
+        uri);
     return;
   }
 
   TEXT_FRAGMENT_LOG(
-      "Highlighting text directives for document '%s' (%zu ranges).",
-      uri.Data(), aTextDirectiveRanges.Length());
+      "Highlighting text directives for document '{}' ({} ranges).", uri,
+      aTextDirectiveRanges.Length());
 
   const RefPtr<Selection> targetTextSelection =
       [doc = this->mDocument]() -> Selection* {
@@ -420,6 +422,41 @@ void FragmentDirective::RemoveAllTextDirectives(ErrorResult& aRv) {
     return;
   }
   targetTextSelection->RemoveAllRanges(aRv);
+}
+already_AddRefed<Promise> FragmentDirective::CreateTextDirective(
+    nsRange& aRange) {
+  RefPtr<Promise> resultPromise =
+      Promise::Create(mDocument->GetOwnerGlobal(), IgnoreErrors());
+  if (!resultPromise) {
+    return nullptr;
+  }
+  if (!StaticPrefs::dom_text_fragments_create_text_fragment_enabled() ||
+      !StaticPrefs::dom_text_fragments_enabled()) {
+    TEXT_FRAGMENT_LOG("Creating text fragments is disabled.");
+    resultPromise->MaybeResolve(JS::NullHandleValue);
+    return resultPromise.forget();
+  }
+  if (aRange.Collapsed()) {
+    TEXT_FRAGMENT_LOG("Collapsed range. Nothing to do here...");
+    resultPromise->MaybeResolve(JS::NullHandleValue);
+    return resultPromise.forget();
+  }
+
+  Result<nsCString, ErrorResult> textDirective =
+      TextDirectiveCreator::CreateTextDirectiveFromRange(*mDocument, &aRange);
+  if (textDirective.isOk()) {
+    nsCString textDirectiveString = textDirective.unwrap();
+    if (textDirectiveString.IsEmpty()) {
+      resultPromise->MaybeResolve(JS::NullHandleValue);
+    } else {
+      resultPromise->MaybeResolve(std::move(textDirectiveString));
+    }
+  } else {
+    ErrorResult rv = textDirective.unwrapErr();
+    resultPromise->MaybeReject(std::move(rv));
+  }
+
+  return resultPromise.forget();
 }
 
 }  // namespace mozilla::dom

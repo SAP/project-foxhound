@@ -27,13 +27,13 @@
 #include <utility>   // std::move
 
 #include "ds/Fifo.h"                      // Fifo
-#include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
+#include "frontend/CompilationStencil.h"  // frontend::InitialStencilAndDelazifications
 #include "gc/GCRuntime.h"                 // gc::GCRuntime
 #include "js/AllocPolicy.h"               // SystemAllocPolicy
 #include "js/CompileOptions.h"            // JS::ReadOnlyCompileOptions
-#include "js/experimental/JSStencil.h"    // JS::InstantiationStorage
-#include "js/HelperThreadAPI.h"           // JS::HelperThreadTaskCallback
-#include "js/MemoryMetrics.h"             // JS::GlobalStats
+#include "js/experimental/JSStencil.h"  // JS::InstantiationStorage
+#include "js/HelperThreadAPI.h"         // JS::HelperThreadTaskCallback
+#include "js/MemoryMetrics.h"           // JS::GlobalStats
 #include "js/ProfilingStack.h"  // JS::RegisterThreadCallback, JS::UnregisterThreadCallback
 #include "js/RootingAPI.h"                // JS::Handle
 #include "js/UniquePtr.h"                 // UniquePtr
@@ -59,6 +59,7 @@ struct PromiseHelperTask;
 class PromiseObject;
 
 namespace jit {
+class BaselineCompileTask;
 class IonCompileTask;
 class IonFreeTask;
 }  // namespace jit
@@ -115,6 +116,8 @@ class GlobalHelperThreadState {
 
   bool terminating_ = false;
 
+  using BaselineCompileTaskVector =
+      Vector<jit::BaselineCompileTask*, 1, SystemAllocPolicy>;
   using IonCompileTaskVector =
       Vector<jit::IonCompileTask*, 0, SystemAllocPolicy>;
   using IonFreeTaskVector =
@@ -143,6 +146,9 @@ class GlobalHelperThreadState {
 
  private:
   // The lists below are all protected by |lock|.
+
+  // Baseline compilation worklist and finished jobs.
+  BaselineCompileTaskVector baselineWorklist_, baselineFinishedList_;
 
   // Ion compilation worklist and finished jobs.
   IonCompileTaskVector ionWorklist_, ionFinishedList_;
@@ -217,6 +223,7 @@ class GlobalHelperThreadState {
   void addSizeOfIncludingThis(JS::GlobalStats* stats,
                               const AutoLockHelperThreadState& lock) const;
 
+  size_t maxBaselineCompilationThreads() const;
   size_t maxIonCompilationThreads() const;
   size_t maxIonFreeThreads() const;
   size_t maxWasmCompilationThreads() const;
@@ -279,6 +286,14 @@ class GlobalHelperThreadState {
     vector.popBack();
   }
 
+  BaselineCompileTaskVector& baselineWorklist(
+      const AutoLockHelperThreadState&) {
+    return baselineWorklist_;
+  }
+  BaselineCompileTaskVector& baselineFinishedList(
+      const AutoLockHelperThreadState&) {
+    return baselineFinishedList_;
+  }
   IonCompileTaskVector& ionWorklist(const AutoLockHelperThreadState&) {
     return ionWorklist_;
   }
@@ -370,6 +385,7 @@ class GlobalHelperThreadState {
   bool canStartWasmPartialTier2CompileTask(
       const AutoLockHelperThreadState& lock);
   bool canStartPromiseHelperTask(const AutoLockHelperThreadState& lock);
+  bool canStartBaselineCompileTask(const AutoLockHelperThreadState& lock);
   bool canStartIonCompileTask(const AutoLockHelperThreadState& lock);
   bool canStartIonFreeTask(const AutoLockHelperThreadState& lock);
   bool canStartFreeDelazifyTask(const AutoLockHelperThreadState& lock);
@@ -389,6 +405,8 @@ class GlobalHelperThreadState {
   HelperThreadTask* maybeGetWasmPartialTier2CompileTask(
       const AutoLockHelperThreadState& lock);
   HelperThreadTask* maybeGetPromiseHelperTask(
+      const AutoLockHelperThreadState& lock);
+  HelperThreadTask* maybeGetBaselineCompileTask(
       const AutoLockHelperThreadState& lock);
   HelperThreadTask* maybeGetIonCompileTask(
       const AutoLockHelperThreadState& lock);
@@ -437,6 +455,7 @@ class GlobalHelperThreadState {
   bool hasOffThreadIonCompile(Zone* zone, AutoLockHelperThreadState& lock);
 #endif
 
+  void cancelOffThreadBaselineCompile(const CompilationSelector& selector);
   void cancelOffThreadIonCompile(const CompilationSelector& selector);
   void cancelOffThreadWasmCompleteTier2Generator(
       AutoLockHelperThreadState& lock);
@@ -457,6 +476,8 @@ class GlobalHelperThreadState {
   bool submitTask(wasm::UniqueCompleteTier2GeneratorTask task);
   bool submitTask(wasm::UniquePartialTier2CompileTask task);
   bool submitTask(wasm::CompileTask* task, wasm::CompileState state);
+  bool submitTask(jit::BaselineCompileTask* task,
+                  const AutoLockHelperThreadState& locked);
   bool submitTask(UniquePtr<jit::IonFreeTask>&& task,
                   const AutoLockHelperThreadState& lock);
   bool submitTask(jit::IonCompileTask* task,
@@ -522,14 +543,14 @@ struct DelazifyTask : public mozilla::LinkedListElement<DelazifyTask>,
   // optimization in place.
   static UniquePtr<DelazifyTask> Create(
       JSRuntime* maybeRuntime, const JS::ReadOnlyCompileOptions& options,
-      const frontend::CompilationStencil& stencil);
+      frontend::InitialStencilAndDelazifications* stencils);
 
   DelazifyTask(JSRuntime* maybeRuntime,
                const JS::PrefableCompileOptions& initialPrefableOptions);
   ~DelazifyTask();
 
   [[nodiscard]] bool init(const JS::ReadOnlyCompileOptions& options,
-                          const frontend::CompilationStencil& stencil);
+                          frontend::InitialStencilAndDelazifications* stencils);
 
   bool runtimeMatchesOrNoRuntime(JSRuntime* rt) {
     return !maybeRuntime || maybeRuntime == rt;

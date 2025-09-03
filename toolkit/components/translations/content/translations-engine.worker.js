@@ -6,6 +6,7 @@
 
 /**
  * @typedef {import("../translations").Bergamot} Bergamot
+ * @typedef {import("../translations").TranslationModelPayload} TranslationModelPayload
  * @typedef {import("../translations").LanguageTranslationModelFiles} LanguageTranslationModelFiles
  */
 
@@ -44,6 +45,81 @@ const MODEL_FILE_ALIGNMENTS = {
 };
 
 /**
+ * This regex matches the whitespace before and after a text, so that it is preserved.
+ */
+const WHITESPACE_REGEX = /^(\s*)(.*?)(\s*)$/s;
+//                                         /s  Include newlines in .*
+//                         (^^^)     (^^^)     Match the whitespace at the beginning and end.
+//                              (^^^)          Non-greedily match the text (including newlines).
+
+/**
+ * At the time of writing, the Intl.Segmenter has a less-than-ideal segmentation pattern when
+ * a Left Double Quotation Mark (U+201C) is preceded by a full-width punctuation mark, in which
+ * it fails to segment the quotation mark with the sentence it logically belongs to.
+ *
+ * Example Source Text:
+ *   - 这是第一句话。“这是第二句话。”
+ *
+ * Expected Segmentation:
+ *   - Object { index: 0, segment: 这是第一句话。 }
+ *   - Object { index: 7, segment: “这是第二句话。” }
+ *
+ * Actual Segmentation:
+ *   - Object { index: 0, segment: 这是第一句话。“ }
+ *   - Object { index: 8, segment: 这是第二句话。” }
+ *
+ * By inserting a space between the full-width punctuation and the Left Double Quotation Mark,
+ * we can trick the segmenter into breaking the sentence at the correct location.
+ *
+ * This code may be able to be removed with further upstream improvements to Intl.Segmenter.
+ * https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Intl/Segmenter
+ */
+const FULL_WIDTH_PUNCTUATION_REGEX = /([。！？])“/g;
+
+/**
+ * A list of languages that utilize full-width punctuation as described by the regex above.
+ * https://www.unicode.org/charts/PDF/U3000.pdf
+ *
+ * @see {FULL_WIDTH_PUNCTUATION_REGEX}
+ */
+const FULL_WIDTH_PUNCTUATION_LANGUAGE_TAGS = ["ja", "ko", "zh"];
+
+/**
+ * Do any cleaning steps for the text that are required before sending it into
+ * the translation engine.
+ *
+ * @param {string} sourceLanguage - The BCP-47 language tag for the source language.
+ * @param {string} sourceText - The source text to be cleaned.
+ * @returns {{ whitespaceBefore: string, whitespaceAfter: string, cleanedSourceText: string }}
+ */
+function cleanText(sourceLanguage, sourceText) {
+  // Whitespace at the beginning or end can confuse translations, but can affect the
+  // presentation of the final result.
+  const result = WHITESPACE_REGEX.exec(sourceText);
+  if (!result) {
+    throw new Error("The whitespace regex should always return a result.");
+  }
+  const whitespaceBefore = result[1];
+  const whitespaceAfter = result[3];
+  let cleanedSourceText = result[2];
+
+  // Remove any soft hyphens, as they will break tokenization.
+  cleanedSourceText = cleanedSourceText.replaceAll("\u00AD", "");
+
+  if (FULL_WIDTH_PUNCTUATION_LANGUAGE_TAGS.includes(sourceLanguage)) {
+    // Add a space to full-width punctuation when it precedes a Left Double Quotation Mark
+    // (U+201C) to trick the Intl.Segmenter algorithm into breaking a sentence there.
+    /** @see {FULL_WIDTH_PUNCTUATION_REGEX} for a detailed description. */
+    cleanedSourceText = cleanedSourceText.replaceAll(
+      FULL_WIDTH_PUNCTUATION_REGEX,
+      "$1 “"
+    );
+  }
+
+  return { whitespaceBefore, whitespaceAfter, cleanedSourceText };
+}
+
+/**
  * Initialize the engine, and get it ready to handle translation requests.
  * The "initialize" message must be received before any other message handling
  * requests will be processed.
@@ -60,14 +136,19 @@ async function handleInitializationMessage({ data }) {
   }
 
   try {
-    const { fromLanguage, toLanguage, enginePayload, logLevel, innerWindowId } =
-      data;
+    const {
+      sourceLanguage,
+      targetLanguage,
+      enginePayload,
+      logLevel,
+      innerWindowId,
+    } = data;
 
-    if (!fromLanguage) {
-      throw new Error('Worker initialization missing "fromLanguage"');
+    if (!sourceLanguage) {
+      throw new Error('Worker initialization missing "sourceLanguage"');
     }
-    if (!toLanguage) {
-      throw new Error('Worker initialization missing "toLanguage"');
+    if (!targetLanguage) {
+      throw new Error('Worker initialization missing "targetLanguage"');
     }
 
     if (logLevel) {
@@ -78,17 +159,18 @@ async function handleInitializationMessage({ data }) {
     let engine;
     if (enginePayload.isMocked) {
       // The engine is testing mode, and no Bergamot wasm is available.
-      engine = new MockedEngine(fromLanguage, toLanguage);
+      engine = new MockedEngine(sourceLanguage, targetLanguage);
     } else {
-      const { bergamotWasmArrayBuffer, languageModelFiles } = enginePayload;
+      const { bergamotWasmArrayBuffer, translationModelPayloads } =
+        enginePayload;
       const bergamot = await BergamotUtils.initializeWasm(
         bergamotWasmArrayBuffer
       );
       engine = new Engine(
-        fromLanguage,
-        toLanguage,
+        sourceLanguage,
+        targetLanguage,
         bergamot,
-        languageModelFiles
+        translationModelPayloads
       );
     }
 
@@ -143,13 +225,13 @@ function handleMessages(engine) {
           }
           try {
             const { whitespaceBefore, whitespaceAfter, cleanedSourceText } =
-              cleanText(sourceText);
+              cleanText(engine.sourceLanguage, sourceText);
 
             // Add a translation to the work queue, and when it returns, post the message
             // back. The translation may never return if the translations are discarded
             // before it have time to be run. In this case this await is just never
             // resolved, and the postMessage is never run.
-            let targetText = await engine.translate(
+            let { targetText, inferenceMilliseconds } = await engine.translate(
               cleanedSourceText,
               isHTML,
               innerWindowId,
@@ -172,6 +254,7 @@ function handleMessages(engine) {
             postMessage({
               type: "translation-response",
               targetText,
+              inferenceMilliseconds,
               translationId,
               messageId,
             });
@@ -241,27 +324,30 @@ function handleMessages(engine) {
  */
 class Engine {
   /**
-   * @param {string} fromLanguage
-   * @param {string} toLanguage
+   * @param {string} sourceLanguage
+   * @param {string} targetLanguage
    * @param {Bergamot} bergamot
-   * @param {Array<LanguageTranslationModelFiles>} languageTranslationModelFiles
+   * @param {Array<TranslationModelPayload>} translationModelPayloads
    */
   constructor(
-    fromLanguage,
-    toLanguage,
+    sourceLanguage,
+    targetLanguage,
     bergamot,
-    languageTranslationModelFiles
+    translationModelPayloads
   ) {
     /** @type {string} */
-    this.fromLanguage = fromLanguage;
+    this.sourceLanguage = sourceLanguage;
     /** @type {string} */
-    this.toLanguage = toLanguage;
+    this.targetLanguage = targetLanguage;
     /** @type {Bergamot} */
     this.bergamot = bergamot;
     /** @type {Bergamot["TranslationModel"][]} */
-    this.languageTranslationModels = languageTranslationModelFiles.map(
-      modelFiles =>
-        BergamotUtils.constructSingleTranslationModel(bergamot, modelFiles)
+    this.languageTranslationModels = translationModelPayloads.map(
+      translationModelPayload =>
+        BergamotUtils.constructSingleTranslationModel(
+          bergamot,
+          translationModelPayload
+        )
     );
 
     /** @type {Bergamot["BlockingService"]} */
@@ -283,7 +369,8 @@ class Engine {
    * @param {number} innerWindowId - This is required
    * @param {number} translationId
    *
-   * @returns {Promise<string>}sourceText
+   * @returns {Promise<{ targetText: string, inferenceMilliseconds: number }>}
+   *   Resolves with an object containing the translated text and the inference time in ms.
    */
   translate(sourceText, isHTML, innerWindowId, translationId) {
     return this.#getWorkQueue(innerWindowId).runTask(translationId, () =>
@@ -349,7 +436,8 @@ class Engine {
    * @param {string} sourceText
    * @param {boolean} isHTML
    * @param {number} innerWindowId
-   * @returns {string}
+   * @returns {{ targetText: string, inferenceMilliseconds: number }}
+   *   An object containing the translated text and the inference time (in ms).
    */
   #syncTranslate(sourceText, isHTML, innerWindowId) {
     const startTime = performance.now();
@@ -393,8 +481,9 @@ class Engine {
         `Translated ${sourceText.length} code units.`
       );
 
+      const endTime = performance.now();
       const targetText = responses.get(0).getTranslatedText();
-      return targetText;
+      return { targetText, inferenceMilliseconds: endTime - startTime };
     } finally {
       // Free up any memory that was allocated. This will always run.
       messages?.delete();
@@ -412,27 +501,26 @@ class BergamotUtils {
    * Construct a single translation model.
    *
    * @param {Bergamot} bergamot
-   * @param {LanguageTranslationModelFiles} languageTranslationModelFiles
+   * @param {TranslationModelPayload} translationModelPayload
    * @returns {Bergamot["TranslationModel"]}
    */
-  static constructSingleTranslationModel(
-    bergamot,
-    languageTranslationModelFiles
-  ) {
+  static constructSingleTranslationModel(bergamot, translationModelPayload) {
     log(`Constructing translation model.`);
+    const { sourceLanguage, targetLanguage, languageModelFiles } =
+      translationModelPayload;
 
     const { model, lex, vocab, qualityModel, srcvocab, trgvocab } =
-      BergamotUtils.allocateModelMemory(
-        bergamot,
-        languageTranslationModelFiles
-      );
+      BergamotUtils.allocateModelMemory(bergamot, languageModelFiles);
 
     // Transform the bytes to mb, like "10.2mb"
     const getMemory = memory => `${Math.floor(memory.size() / 100_000) / 10}mb`;
 
     let memoryLog = `Model memory sizes in wasm heap:`;
     memoryLog += `\n  Model: ${getMemory(model)}`;
-    memoryLog += `\n  Shortlist: ${getMemory(lex)}`;
+
+    if (lex) {
+      memoryLog += `\n  Shortlist: ${getMemory(lex)}`;
+    }
 
     // Set up the vocab list, which could either be a single "vocab" model, or a
     // "srcvocab" and "trgvocab" pair.
@@ -466,10 +554,11 @@ class BergamotUtils {
       "cpu-threads": "0",
       quiet: "true",
       "quiet-translation": "true",
-      "gemm-precision":
-        languageTranslationModelFiles.model.record.name.endsWith("intgemm8.bin")
-          ? "int8shiftAll"
-          : "int8shiftAlphaAll",
+      "gemm-precision": languageModelFiles.model.record.name.endsWith(
+        "intgemm8.bin"
+      )
+        ? "int8shiftAll"
+        : "int8shiftAlphaAll",
       alignment: "soft",
     });
 
@@ -477,9 +566,11 @@ class BergamotUtils {
     log(memoryLog);
 
     return new bergamot.TranslationModel(
+      sourceLanguage,
+      targetLanguage,
       config,
       model,
-      lex,
+      lex ?? null,
       vocabList,
       qualityModel ?? null
     );
@@ -490,16 +581,14 @@ class BergamotUtils {
    * to. This function copies over the model blobs into this memory space.
    *
    * @param {Bergamot} bergamot
-   * @param {LanguageTranslationModelFiles} languageTranslationModelFiles
+   * @param {LanguageTranslationModelFiles} languageModelFiles
    * @returns {LanguageTranslationModelFilesAligned}
    */
-  static allocateModelMemory(bergamot, languageTranslationModelFiles) {
+  static allocateModelMemory(bergamot, languageModelFiles) {
     /** @type {LanguageTranslationModelFilesAligned} */
     const results = {};
 
-    for (const [fileType, file] of Object.entries(
-      languageTranslationModelFiles
-    )) {
+    for (const [fileType, file] of Object.entries(languageModelFiles)) {
       const alignment = MODEL_FILE_ALIGNMENTS[fileType];
       if (!alignment) {
         throw new Error(`Unknown file type: "${fileType}"`);
@@ -594,6 +683,7 @@ class BergamotUtils {
    *
    * @param {Bergamot} bergamot
    * @param {string} sourceText
+   * @param {boolean} isHTML
    * @returns {{ messages: Bergamot["VectorString"], options: Bergamot["VectorResponseOptions"] }}
    */
   static getTranslationArgs(bergamot, sourceText, isHTML) {
@@ -621,28 +711,34 @@ class BergamotUtils {
  */
 class MockedEngine {
   /**
-   * @param {string} fromLanguage
-   * @param {string} toLanguage
+   * @param {string} sourceLanguage
+   * @param {string} targetLanguage
    */
-  constructor(fromLanguage, toLanguage) {
+  constructor(sourceLanguage, targetLanguage) {
     /** @type {string} */
-    this.fromLanguage = fromLanguage;
+    this.sourceLanguage = sourceLanguage;
     /** @type {string} */
-    this.toLanguage = toLanguage;
+    this.targetLanguage = targetLanguage;
   }
 
   /**
-   * Create a fake translation of the text.
+   * Create a fake translation of the text, returning a mock object
+   * with both the translated text and time spent.
    *
    * @param {string} sourceText
-   * @param {bool} isHTML
-   * @returns {string}
+   * @param {boolean} isHTML
+   * @returns {{ targetText: string, inferenceMilliseconds: number }}
+   *   An object containing the "translated" text and a mock inference time in ms.
    */
   translate(sourceText, isHTML) {
-    // Note when an HTML translations is requested.
+    const startTime = performance.now();
+
+    // Note when an HTML translation is requested.
     let html = isHTML ? ", html" : "";
-    const targetText = sourceText.toUpperCase();
-    return `${targetText} [${this.fromLanguage} to ${this.toLanguage}${html}]`;
+    const targetText = `${sourceText.toUpperCase()} [${this.sourceLanguage} to ${this.targetLanguage}${html}]`;
+    const endTime = performance.now();
+
+    return { targetText, inferenceMilliseconds: endTime - startTime };
   }
 
   discardTranslations() {}
@@ -783,36 +879,4 @@ class WorkQueue {
     await new Promise(resolve => setTimeout(resolve, 0));
     this.#isWorkCancelled = false;
   }
-}
-
-/**
- * This regex matches the whitespace before and after a text, so that it is preserved.
- */
-const whitespaceRegex = /^(\s*)(.*?)(\s*)$/s;
-//                                            Include newlines in .*
-//                        (^^^)     (^^^)     Match the whitespace at the beginning and end.
-//                             (^^^)      /s  Non-greedily match the text (including newlines.)
-
-/**
- * Do any cleaning steps for the text that are required before sending it into
- * the translation engine.
- *
- * @param {string} sourceText
- * @returns {{ whitespaceBefore: string, whitespaceAfter: string, cleanedSourceText: string }}
- */
-function cleanText(sourceText) {
-  // Whitespace at the beginning or end can confuse translations, but can affect the
-  // presentation of the final result.
-  const result = whitespaceRegex.exec(sourceText);
-  if (!result) {
-    throw new Error("The whitespace regex should always return a result.");
-  }
-  const whitespaceBefore = result[1];
-  const whitespaceAfter = result[3];
-  let cleanedSourceText = result[2];
-
-  // Remove any soft hyphens, as they will break tokenization.
-  cleanedSourceText = cleanedSourceText.replaceAll("\u00AD", "");
-
-  return { whitespaceBefore, whitespaceAfter, cleanedSourceText };
 }

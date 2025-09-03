@@ -12,6 +12,7 @@
 
 #include <algorithm>
 #include <set>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -20,7 +21,9 @@
 #include "api/rtc_error.h"
 #include "call/payload_type.h"
 #include "media/base/codec.h"
+#include "media/base/codec_comparators.h"
 #include "media/base/media_constants.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 
 namespace webrtc {
@@ -40,34 +43,83 @@ static const int kLastDynamicPayloadTypeUpperRange = 127;
 // fmtp parameters. The use of cricket::Codec, which contains more fields,
 // is only a temporary measure.
 
-bool MatchesForSdp(const cricket::Codec& codec_1,
-                   const cricket::Codec& codec_2) {
-  return absl::EqualsIgnoreCase(codec_1.name, codec_2.name) &&
-         codec_1.type == codec_2.type && codec_1.channels == codec_2.channels &&
-         codec_1.clockrate == codec_2.clockrate &&
-         codec_1.params == codec_2.params;
-}
-
 struct MapTableEntry {
   webrtc::SdpAudioFormat format;
   int payload_type;
 };
 
-RTCErrorOr<PayloadType> FindFreePayloadType(std::set<PayloadType> seen_pt) {
+// Helper function to determine whether a codec should use the [35, 63] range.
+// Should be used when adding new codecs (or variants).
+bool CodecPrefersLowerRange(const cricket::Codec& codec) {
+  // All audio codecs prefer upper range.
+  if (codec.type == cricket::Codec::Type::kAudio) {
+    return false;
+  }
+  if (absl::EqualsIgnoreCase(codec.name, cricket::kFlexfecCodecName) ||
+      absl::EqualsIgnoreCase(codec.name, cricket::kAv1CodecName)) {
+    return true;
+  } else if (absl::EqualsIgnoreCase(codec.name, cricket::kH264CodecName)) {
+    std::string profile_level_id;
+    std::string packetization_mode;
+
+    if (codec.GetParam(cricket::kH264FmtpProfileLevelId, &profile_level_id)) {
+      if (absl::StartsWithIgnoreCase(profile_level_id, "4d00")) {
+        if (codec.GetParam(cricket::kH264FmtpPacketizationMode,
+                           &packetization_mode)) {
+          return packetization_mode == "0";
+        }
+      }
+      // H264 with YUV444.
+      return absl::StartsWithIgnoreCase(profile_level_id, "f400");
+    }
+  } else if (absl::EqualsIgnoreCase(codec.name, cricket::kVp9CodecName)) {
+    std::string profile_id;
+
+    if (codec.GetParam(cricket::kVP9ProfileId, &profile_id)) {
+      if (profile_id.compare("1") == 0 || profile_id.compare("3") == 0) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+RTCErrorOr<PayloadType> FindFreePayloadType(const cricket::Codec& codec,
+                                            std::set<PayloadType> seen_pt) {
+  // Prefer to use lower range for codecs that can handle it.
+  bool prefer_lower_range = CodecPrefersLowerRange(codec);
+  if (prefer_lower_range) {
+    for (auto i = kFirstDynamicPayloadTypeLowerRange;
+         i <= kLastDynamicPayloadTypeLowerRange; i++) {
+      if (seen_pt.count(PayloadType(i)) == 0) {
+        return PayloadType(i);
+      }
+    }
+  }
   for (auto i = kFirstDynamicPayloadTypeUpperRange;
-       i < kLastDynamicPayloadTypeUpperRange; i++) {
+       i <= kLastDynamicPayloadTypeUpperRange; i++) {
     if (seen_pt.count(PayloadType(i)) == 0) {
       return PayloadType(i);
     }
   }
-  for (auto i = kFirstDynamicPayloadTypeLowerRange;
-       i < kLastDynamicPayloadTypeLowerRange; i++) {
-    if (seen_pt.count(PayloadType(i)) == 0) {
-      return PayloadType(i);
+  // If the upper range is full, we do lower range also for codecs
+  // that prefer the upper range.
+  if (!prefer_lower_range) {
+    for (auto i = kFirstDynamicPayloadTypeLowerRange;
+         i <= kLastDynamicPayloadTypeLowerRange; i++) {
+      if (seen_pt.count(PayloadType(i)) == 0) {
+        return PayloadType(i);
+      }
     }
   }
-  return RTCError(RTCErrorType::RESOURCE_EXHAUSTED,
-                  "All available dynamic PTs have been assigned");
+  if (prefer_lower_range) {
+    return RTCError(RTCErrorType::RESOURCE_EXHAUSTED,
+                    "All available dynamic PTs have been assigned");
+  } else {
+    return RTCError(
+        RTCErrorType::RESOURCE_EXHAUSTED,
+        "All available dynamic PTs have been assigned, codec preferred upper");
+  }
 }
 
 }  // namespace
@@ -147,10 +199,11 @@ RTCErrorOr<PayloadType> PayloadTypePicker::SuggestMapping(
   // The first matching entry is returned, unless excluder
   // maps it to something different.
   for (auto entry : entries_) {
-    if (MatchesForSdp(entry.codec(), codec)) {
+    if (MatchesWithReferenceAttributes(entry.codec(), codec)) {
       if (excluder) {
         auto result = excluder->LookupCodec(entry.payload_type());
-        if (result.ok() && !MatchesForSdp(result.value(), codec)) {
+        if (result.ok() &&
+            !MatchesWithReferenceAttributes(result.value(), codec)) {
           continue;
         }
       }
@@ -158,7 +211,8 @@ RTCErrorOr<PayloadType> PayloadTypePicker::SuggestMapping(
     }
   }
   // Assign the first free payload type.
-  RTCErrorOr<PayloadType> found_pt = FindFreePayloadType(seen_payload_types_);
+  RTCErrorOr<PayloadType> found_pt =
+      FindFreePayloadType(codec, seen_payload_types_);
   if (found_pt.ok()) {
     AddMapping(found_pt.value(), codec);
   }
@@ -171,7 +225,7 @@ RTCError PayloadTypePicker::AddMapping(PayloadType payload_type,
   // Multiple mappings for the same codec and the same PT are legal;
   for (auto entry : entries_) {
     if (payload_type == entry.payload_type() &&
-        MatchesForSdp(codec, entry.codec())) {
+        MatchesWithReferenceAttributes(codec, entry.codec())) {
       return RTCError::OK();
     }
   }
@@ -184,7 +238,18 @@ RTCError PayloadTypeRecorder::AddMapping(PayloadType payload_type,
                                          cricket::Codec codec) {
   auto existing_codec_it = payload_type_to_codec_.find(payload_type);
   if (existing_codec_it != payload_type_to_codec_.end() &&
-      !MatchesForSdp(codec, existing_codec_it->second)) {
+      !MatchesWithCodecRules(codec, existing_codec_it->second)) {
+    // Redefinition attempted.
+    if (disallow_redefinition_level_ > 0) {
+      if (accepted_definitions_.count(payload_type) > 0) {
+        // We have already defined this PT in this scope.
+        RTC_LOG(LS_WARNING)
+            << "Rejected attempt to redefine mapping for PT " << payload_type
+            << " from " << existing_codec_it->second << " to " << codec;
+        return RTCError(RTCErrorType::INVALID_MODIFICATION,
+                        "Attempt to redefine a codec mapping");
+      }
+    }
     if (absl::EqualsIgnoreCase(codec.name, existing_codec_it->second.name)) {
       // The difference is in clock rate, channels or FMTP parameters.
       RTC_LOG(LS_INFO) << "Warning: Attempt to change a codec's parameters";
@@ -192,15 +257,17 @@ RTCError PayloadTypeRecorder::AddMapping(PayloadType payload_type,
       // This is done in production today, so we can't return an error.
     } else {
       RTC_LOG(LS_WARNING) << "Warning: You attempted to redefine a codec from "
-                          << existing_codec_it->second.ToString() << " to "
-                          << " new codec " << codec.ToString();
+                          << existing_codec_it->second << " to "
+                          << " new codec " << codec;
       // This is a spec violation.
       // TODO: https://issues.webrtc.org/41480892 - return an error.
     }
     // Accept redefinition.
+    accepted_definitions_.emplace(payload_type);
     payload_type_to_codec_.insert_or_assign(payload_type, codec);
     return RTCError::OK();
   }
+  accepted_definitions_.emplace(payload_type);
   payload_type_to_codec_.emplace(payload_type, codec);
   suggester_.AddMapping(payload_type, codec);
   return RTCError::OK();
@@ -215,9 +282,11 @@ RTCErrorOr<PayloadType> PayloadTypeRecorder::LookupPayloadType(
     cricket::Codec codec) const {
   // Note that having multiple PTs mapping to the same codec is NOT an error.
   // In this case, we return the first found (not deterministic).
-  auto result = std::find_if(
-      payload_type_to_codec_.begin(), payload_type_to_codec_.end(),
-      [codec](const auto& iter) { return MatchesForSdp(iter.second, codec); });
+  auto result =
+      std::find_if(payload_type_to_codec_.begin(), payload_type_to_codec_.end(),
+                   [codec](const auto& iter) {
+                     return MatchesWithReferenceAttributes(iter.second, codec);
+                   });
   if (result == payload_type_to_codec_.end()) {
     return RTCError(RTCErrorType::INVALID_PARAMETER,
                     "No payload type found for codec");
@@ -232,6 +301,18 @@ RTCErrorOr<cricket::Codec> PayloadTypeRecorder::LookupCodec(
     return RTCError(RTCErrorType::INVALID_PARAMETER, "No such payload type");
   }
   return result->second;
+}
+
+void PayloadTypeRecorder::DisallowRedefinition() {
+  if (disallow_redefinition_level_ == 0) {
+    accepted_definitions_.clear();
+  }
+  ++disallow_redefinition_level_;
+}
+
+void PayloadTypeRecorder::ReallowRedefinition() {
+  RTC_CHECK(disallow_redefinition_level_ > 0);
+  --disallow_redefinition_level_;
 }
 
 void PayloadTypeRecorder::Commit() {

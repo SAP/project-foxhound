@@ -99,6 +99,7 @@ import org.mozilla.fenix.ext.registerForActivityResult
 import org.mozilla.fenix.ext.requireComponents
 import org.mozilla.fenix.ext.secure
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.search.awesomebar.AwesomeBarView
 import org.mozilla.fenix.search.awesomebar.toSearchProviderState
 import org.mozilla.fenix.search.ext.searchEngineShortcuts
@@ -476,8 +477,22 @@ class SearchDialogFragment : AppCompatDialogFragment(), UserInteractionHandler {
         }
 
         observeClipboardState()
-        observeAwesomeBarState()
         observeSuggestionProvidersState()
+
+        val isPrivate = (requireActivity() as HomeActivity).browsingModeManager.mode.isPrivate
+        if (
+            view.context.settings().shouldShowTrendingSearchSuggestions(
+                isPrivate,
+                requireComponents.core.store.state.search.selectedOrDefaultSearchEngine,
+            ) && (
+                store.state.query.isNotEmpty() ||
+                    FxNimbus.features.searchSuggestionsOnHomepage.value().enabled
+                )
+        ) {
+            binding.awesomeBar.isVisible = true
+        } else {
+            observeAwesomeBarState()
+        }
 
         consumeFrom(store) {
             updateSearchSuggestionsHintVisibility(it)

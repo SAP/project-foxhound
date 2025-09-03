@@ -14,7 +14,6 @@ import webdriver
 from PIL import Image
 from webdriver.bidi.error import InvalidArgumentException, NoSuchFrameException
 from webdriver.bidi.modules.script import ContextTarget
-from webdriver.error import UnsupportedOperationException
 
 
 class Client:
@@ -56,13 +55,10 @@ class Client:
                 self.context = orig_context
 
     def set_screen_size(self, width, height):
-        try:
-            route = "window/size"
-            body = {"width": width, "height": height}
-            self.session.send_session_command("POST", route, body)
+        if self.session.capabilities.get("setWindowRect"):
+            self.session.window.size = (width, height)
             return True
-        except UnsupportedOperationException:
-            return False
+        return False
 
     def get_element_screen_position(self, element):
         return self.execute_script(
@@ -78,95 +74,56 @@ class Client:
             element,
         )
 
-    async def apz_click(self, element=None, x=None, y=None, no_up=False):
-        if x is not None and y is not None:
-            pt = [x, y]
-        elif element is not None:
-            pt = self.get_element_screen_position(element)
+    async def send_apz_mouse_event(
+        self, event_type, coords=None, element=None, button=0
+    ):
+        # note: use button=2 for context menu/right click (0 is left button)
+        if event_type == "down":
+            message = "BUTTON_DOWN"
+        elif event_type == "up":
+            message = "BUTTON_UP"
+        elif event_type == "move":
+            message = "MOVE"
         else:
-            raise ValueError("need element or x and y")
+            raise ValueError("event_type must be 'down', 'up' or 'move'")
+        if coords is None:
+            if element is None:
+                raise ValueError("require coords and/or element")
+            coords = self.get_element_screen_position(element)
         with self.using_context("chrome"):
             return self.execute_async_script(
                 """
-              const [pt, no_up, done] = arguments;
-              const utils = window.windowUtils;
-              const scale = window.devicePixelRatio;
-              const res = utils.getResolution();
-              const ele = window.document.documentElement;
-              window.windowUtils.sendNativeMouseEvent(
-                pt[0] * scale * res,
-                pt[1] * scale * res,
-                utils.NATIVE_MOUSE_MESSAGE_BUTTON_DOWN,
-                0,
-                0,
-                ele,
-                () => {
-                  if (no_up) {
-                    return done();
-                  }
-                  utils.sendNativeMouseEvent(
-                    pt[0] * scale * res,
-                    pt[1] * scale * res,
-                    utils.NATIVE_MOUSE_MESSAGE_BUTTON_UP,
+                const [coords, message, button, done] = arguments;
+                const { devicePixelRatio, windowUtils } = window;
+                const resolution = windowUtils.getResolution();
+                const toScreenCoords = x => x * devicePixelRatio * resolution;
+                windowUtils.sendNativeMouseEvent(
+                    toScreenCoords(coords[0]),
+                    toScreenCoords(coords[1]),
+                    windowUtils[`NATIVE_MOUSE_MESSAGE_${message}`],
+                    button,
                     0,
-                    0,
-                    ele,
-                    done
-                  );
-                }
-              );
+                    window.document.documentElement,
+                    () => { done(coords); },
+                );
             """,
-                pt,
-                no_up,
+                coords,
+                message,
+                button,
             )
 
-    async def apz_drag(self, element, x=0, y=0, no_up=False):
-        pt1 = self.get_element_screen_position(element)
-        pt2 = [pt1[0] + x, pt1[1] + y]
-        with self.using_context("chrome"):
-            return self.execute_async_script(
-                """
-              const [pt1, pt2, no_up, done] = arguments;
-              const utils = window.windowUtils;
-              const scale = window.devicePixelRatio;
-              const res = utils.getResolution();
-              const ele = window.document.documentElement;
-              window.windowUtils.sendNativeMouseEvent(
-                pt1[0] * scale * res,
-                pt1[1] * scale * res,
-                utils.NATIVE_MOUSE_MESSAGE_BUTTON_DOWN,
-                0,
-                0,
-                ele,
-                () => {
-                  utils.sendNativeMouseEvent(
-                    pt2[0] * scale * res,
-                    pt2[1] * scale * res,
-                    utils.NATIVE_MOUSE_MESSAGE_MOVE,
-                    0,
-                    0,
-                    ele,
-                    () => {
-                      if (no_up) {
-                        return done();
-                      }
-                      utils.sendNativeMouseEvent(
-                        pt2[0] * scale * res,
-                        pt2[1] * scale * res,
-                        utils.NATIVE_MOUSE_MESSAGE_BUTTON_UP,
-                        0,
-                        0,
-                        ele,
-                        done
-                      );
-                    }
-                  );
-                })
-            """,
-                pt1,
-                pt2,
-                no_up,
-            )
+    async def apz_down(self, **kwargs):
+        return await self.send_apz_mouse_event("down", **kwargs)
+
+    async def apz_up(self, **kwargs):
+        return await self.send_apz_mouse_event("up", **kwargs)
+
+    async def apz_move(self, **kwargs):
+        return await self.send_apz_mouse_event("move", **kwargs)
+
+    async def apz_click(self, **kwargs):
+        await self.apz_down(**kwargs)
+        return await self.apz_up(**kwargs)
 
     def apz_scroll(self, element, dx=0, dy=0, dz=0):
         pt = self.get_element_screen_position(element)
@@ -174,12 +131,14 @@ class Client:
             return self.execute_script(
                 """
                 const [pt, delta] = arguments;
-                const utils = window.windowUtils;
+                const windowUtils = window.windowUtils;
                 const scale = window.devicePixelRatio;
-                const res = utils.getResolution();
+                const resolution = windowUtils.getResolution();
+                const toScreenCoords = x => x * scale * resolution;
+                const coords = pt.map(toScreenCoords);
                 window.windowUtils.sendWheelEvent(
-                    pt[0] * scale * res,
-                    pt[1] * scale * res,
+                    coords[0],
+                    coords[1],
                     delta[0],
                     delta[1],
                     delta[2],
@@ -380,7 +339,37 @@ class Client:
     def await_script(self, script, *args, **kwargs):
         return self.run_script(script, *args, **kwargs, await_promise=True)
 
+    def await_interventions_started(self):
+        with self.using_context("chrome"):
+            interventionsOn = self.request.node.get_closest_marker("with_interventions")
+            shimsOn = self.request.node.get_closest_marker("with_shims")
+
+            if not interventionsOn and not shimsOn:
+                print("Not waiting for interventions/shims")
+                return
+
+            expectedMsg = (
+                "WebCompatTests:InterventionsStatus"
+                if interventionsOn
+                else "WebCompatTests:ShimsStatus"
+            )
+
+            print("Waiting for", expectedMsg, 'to be "active"')
+            self.execute_async_script(
+                """
+                const [expectedMsg, done] = arguments;
+                const timer = setInterval(() => {
+                  if (Services.ppmm.sharedData.get(expectedMsg) === "active") {
+                    clearInterval(timer);
+                    done();
+                  }
+                }, 100);
+            """,
+                expectedMsg,
+            )
+
     async def navigate(self, url, timeout=90, no_skip=False, **kwargs):
+        self.await_interventions_started()
         try:
             return await asyncio.wait_for(
                 asyncio.ensure_future(self._navigate(url, **kwargs)), timeout=timeout
@@ -729,7 +718,24 @@ class Client:
     async def disable_window_alert(self):
         return await self.make_preload_script("window.alert = () => {}")
 
-    async def await_alert(self, text, timeout=None):
+    async def set_prompt_responses(self, responses, timeout=10):
+        if type(responses) is not list:
+            responses = [responses]
+        if not hasattr(self, "prompts_preload_script"):
+            self.prompts_preload_script = await self.make_preload_script(
+                f"""
+                    const responses = {responses};
+                    window.wrappedJSObject.prompt = function() {{
+                        return responses.shift();
+                    }}
+                """,
+                "prompt_detector",
+            )
+        return self.prompts_preload_script
+
+    async def await_alert(self, texts, timeout=10):
+        if type(texts) is not list:
+            texts = [texts]
         if not hasattr(self, "alert_preload_script"):
             self.alert_preload_script = await self.make_preload_script(
                 """
@@ -741,15 +747,17 @@ class Client:
                 "alert_detector",
             )
         return self.alert_preload_script.run(
-            """(msg, timeout) => new Promise(done => {
+            """(timeout, ...msgs) => new Promise(done => {
                     const interval = 200;
                     let count = 0;
                     const to = setInterval(() => {
-                        for (const a of window.__alerts) {
-                            if (a.includes(msg)) {
-                                clearInterval(to);
-                                done(a);
-                                return;
+                        for (const a of window.__alerts || []) {
+                            for (const msg of msgs) {
+                                if (a.includes(msg)) {
+                                    clearInterval(to);
+                                    done(a);
+                                    return;
+                                }
                             }
                         }
                         count += interval;
@@ -760,8 +768,8 @@ class Client:
                     }, interval);
                })
             """,
-            text,
             timeout,
+            *texts,
             await_promise=True,
         )
 
@@ -909,9 +917,12 @@ class Client:
         except webdriver.error.NoSuchElementException:
             return None
 
-    def find_element(self, finder, is_displayed=None, **kwargs):
-        ele = finder.find(self, **kwargs)
-        return self._do_is_displayed_check(ele, is_displayed)
+    def find_element(self, finder, is_displayed=None, all=None, **kwargs):
+        ele = finder.find(self, all=True, **kwargs)
+        found = self._do_is_displayed_check(ele, is_displayed)
+        if not all:
+            return found[0] if len(found) else None
+        return found
 
     def await_css(self, selector, **kwargs):
         return self.await_element(self.css(selector), **kwargs)
@@ -947,10 +958,12 @@ class Client:
             return client.find_text(self.selector, **kwargs)
 
     def await_first_element_of(
-        self, finders, timeout=None, delay=0.25, condition=False, **kwargs
+        self, finders, timeout=None, delay=0.25, condition=False, all=False, **kwargs
     ):
         t0 = time.time()
-        condition = f"var elem=arguments[0]; return {condition}" if condition else False
+        condition = (
+            f"return arguments[0].filter(elem => {condition})" if condition else False
+        )
 
         if timeout is None:
             timeout = 10
@@ -961,12 +974,11 @@ class Client:
         while time.time() < t0 + timeout:
             for i, finder in enumerate(finders):
                 try:
-                    result = finder.find(self, **kwargs)
-                    if result and (
-                        not condition
-                        or self.session.execute_script(condition, [result])
-                    ):
-                        found[i] = result
+                    result = finder.find(self, all=True, **kwargs)
+                    if len(result):
+                        if condition:
+                            result = self.session.execute_script(condition, [result])
+                        found[i] = result[0] if not all else result
                         return found
                 except webdriver.error.NoSuchElementException as e:
                     exc = e
@@ -1068,12 +1080,19 @@ class Client:
                 left_to_try.append(finder)
         return closed_one
 
-    def click(self, element, force=False, popups=None, popups_timeout=None):
+    def click(
+        self, element, force=False, popups=None, popups_timeout=None, button=None
+    ):
         tries = 0
         while True:
             self.scroll_into_view(element)
             try:
-                element.click()
+                if button:
+                    self.mouse.pointer_move(0, 0, origin=element).pointer_down(
+                        button
+                    ).pointer_up(button).perform()
+                else:
+                    element.click()
                 return
             except webdriver.error.ElementClickInterceptedException as c:
                 if force:
@@ -1160,7 +1179,7 @@ class Client:
         fastclick_preload_script.stop()
 
     async def test_nicochannel_like_site(self, url, shouldPass=True):
-        CONSENT = self.css("button.MuiButton-containedPrimary")
+        CONSENT = self.css(".MuiDialog-container button.MuiButton-containedPrimary")
         BLOCKED = self.text("このブラウザはサポートされていません。")
         PLAY = self.css(".nfcp-overlay-play-lg")
 

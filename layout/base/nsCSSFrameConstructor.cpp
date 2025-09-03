@@ -221,6 +221,7 @@ nsIFrame* NS_NewXULImageFrame(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForContentProperty(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForGeneratedContentIndex(PresShell*, ComputedStyle*);
 nsIFrame* NS_NewImageFrameForListStyleImage(PresShell*, ComputedStyle*);
+nsIFrame* NS_NewImageFrameForViewTransitionOld(PresShell*, ComputedStyle*);
 
 // Returns true if aFrame is an anonymous flex/grid item.
 static inline bool IsAnonymousItem(const nsIFrame* aFrame) {
@@ -1421,7 +1422,8 @@ nsCSSFrameConstructor::nsCSSFrameConstructor(Document* aDocument,
       mCurrentDepth(0),
       mQuotesDirty(false),
       mCountersDirty(false),
-      mAlwaysCreateFramesForIgnorableWhitespace(false) {
+      mAlwaysCreateFramesForIgnorableWhitespace(false),
+      mRemovingContent(false) {
 #ifdef DEBUG
   static bool gFirstTime = true;
   if (gFirstTime) {
@@ -3224,6 +3226,35 @@ nsIFrame* nsCSSFrameConstructor::ConstructFieldSetFrame(
   return fieldsetFrame;
 }
 
+// We always obey display for h1, but this is a convenient place for our
+// counters.
+const nsCSSFrameConstructor::FrameConstructionData*
+nsCSSFrameConstructor::FindH1Data(const Element& aElement,
+                                  ComputedStyle& aStyle) {
+  constexpr auto kCounter =
+      UseCounter::eUseCounter_custom_SectioningH1WithNoFontSizeOrMargins;
+  if (aStyle.HasAuthorSpecifiedMarginAndFontSize()) {
+    return nullptr;
+  }
+  auto* doc = aElement.OwnerDoc();
+  if (doc->HasUseCounter(kCounter)) {
+    return nullptr;
+  }
+  for (auto* ancestor = aElement.GetParent(); ancestor;
+       ancestor = ancestor->GetParent()) {
+    if (ancestor->IsAnyOfHTMLElements(nsGkAtoms::section, nsGkAtoms::aside,
+                                      nsGkAtoms::article, nsGkAtoms::nav)) {
+      doc->SetUseCounter(kCounter);
+      nsContentUtils::ReportToConsole(
+          nsIScriptError::warningFlag, "DOM"_ns, doc,
+          nsContentUtils::eDOM_PROPERTIES,
+          "SectioningH1WithNoFontSizeOrMargins",
+          {u"https://developer.mozilla.org/docs/Web/HTML/Element/Heading_Elements#specifying_a_uniform_font_size_for_h1"_ns});
+    }
+  }
+  return nullptr;
+}
+
 const nsCSSFrameConstructor::FrameConstructionData*
 nsCSSFrameConstructor::FindDetailsData(const Element& aElement,
                                        ComputedStyle& aStyle) {
@@ -3448,18 +3479,24 @@ nsCSSFrameConstructor::FindHTMLData(const Element& aElement,
                    aParentFrame->GetParent()->IsFieldSetFrame(),
                "Unexpected parent for fieldset content anon box");
 
-  if (aElement.IsInNativeAnonymousSubtree() &&
-      aElement.NodeInfo()->NameAtom() == nsGkAtoms::label && aParentFrame) {
-    if (aParentFrame->IsFileControlFrame()) {
-      static constexpr FrameConstructionData sFileLabelData(
-          NS_NewFileControlLabelFrame);
-      return &sFileLabelData;
+  if (aElement.IsInNativeAnonymousSubtree()) {
+    if (aElement.NodeInfo()->NameAtom() == nsGkAtoms::label && aParentFrame) {
+      if (aParentFrame->IsFileControlFrame()) {
+        static constexpr FrameConstructionData sFileLabelData(
+            NS_NewFileControlLabelFrame);
+        return &sFileLabelData;
+      }
+      if (aParentFrame->GetParent() &&
+          aParentFrame->GetParent()->IsComboboxControlFrame()) {
+        static constexpr FrameConstructionData sComboboxLabelData(
+            NS_NewComboboxLabelFrame);
+        return &sComboboxLabelData;
+      }
     }
-    if (aParentFrame->GetParent() &&
-        aParentFrame->GetParent()->IsComboboxControlFrame()) {
-      static constexpr FrameConstructionData sComboboxLabelData(
-          NS_NewComboboxLabelFrame);
-      return &sComboboxLabelData;
+    if (aElement.GetPseudoElementType() == PseudoStyleType::viewTransitionOld) {
+      static constexpr FrameConstructionData sViewTransitionOldData(
+          NS_NewImageFrameForViewTransitionOld);
+      return &sViewTransitionOldData;
     }
   }
 
@@ -3489,6 +3526,7 @@ nsCSSFrameConstructor::FindHTMLData(const Element& aElement,
       SIMPLE_TAG_CREATE(progress, NS_NewProgressFrame),
       SIMPLE_TAG_CREATE(meter, NS_NewMeterFrame),
       SIMPLE_TAG_CHAIN(details, nsCSSFrameConstructor::FindDetailsData),
+      SIMPLE_TAG_CHAIN(h1, nsCSSFrameConstructor::FindH1Data),
   };
 
   return FindDataByTag(aElement, aStyle, sHTMLData, std::size(sHTMLData));
@@ -4084,36 +4122,17 @@ nsresult nsCSSFrameConstructor::GetAnonymousContent(
   return NS_OK;
 }
 
-// XUL frames are not allowed to be out of flow.
-#define SIMPLE_XUL_FCDATA(_func) \
-  FrameConstructionData(_func,   \
-                        FCDATA_DISALLOW_OUT_OF_FLOW | FCDATA_SKIP_ABSPOS_PUSH)
-#define SCROLLABLE_XUL_FCDATA(_func)                         \
-  FrameConstructionData(_func, FCDATA_DISALLOW_OUT_OF_FLOW | \
-                                   FCDATA_SKIP_ABSPOS_PUSH | \
-                                   FCDATA_MAY_NEED_SCROLLFRAME)
-// .. but we allow some XUL frames to be _containers_ for out-of-flow content
-// (This is the same as SCROLLABLE_XUL_FCDATA, but w/o FCDATA_SKIP_ABSPOS_PUSH)
-#define SCROLLABLE_ABSPOS_CONTAINER_XUL_FCDATA(_func) \
-  FrameConstructionData(                              \
-      _func, FCDATA_DISALLOW_OUT_OF_FLOW | FCDATA_MAY_NEED_SCROLLFRAME)
-
-#define SIMPLE_XUL_CREATE(_tag, _func) \
-  {nsGkAtoms::_tag, SIMPLE_XUL_FCDATA(_func)}
-#define SCROLLABLE_XUL_CREATE(_tag, _func) \
-  {nsGkAtoms::_tag, SCROLLABLE_XUL_FCDATA(_func)}
-
 /* static */
 const nsCSSFrameConstructor::FrameConstructionData*
 nsCSSFrameConstructor::FindXULTagData(const Element& aElement,
                                       ComputedStyle& aStyle) {
   MOZ_ASSERT(aElement.IsXULElement());
-  static constexpr FrameConstructionData kPopupData(
-      NS_NewMenuPopupFrame, FCDATA_IS_POPUP | FCDATA_SKIP_ABSPOS_PUSH);
+  static constexpr FrameConstructionData kPopupData(NS_NewMenuPopupFrame,
+                                                    FCDATA_IS_POPUP);
 
   static constexpr FrameConstructionDataByTag sXULTagData[] = {
-      SIMPLE_XUL_CREATE(image, NS_NewXULImageFrame),
-      SIMPLE_XUL_CREATE(treechildren, NS_NewTreeBodyFrame),
+      SIMPLE_TAG_CREATE(image, NS_NewXULImageFrame),
+      SIMPLE_TAG_CREATE(treechildren, NS_NewTreeBodyFrame),
       SIMPLE_TAG_CHAIN(label,
                        nsCSSFrameConstructor::FindXULLabelOrDescriptionData),
       SIMPLE_TAG_CHAIN(description,
@@ -4121,16 +4140,16 @@ nsCSSFrameConstructor::FindXULTagData(const Element& aElement,
 #ifdef XP_MACOSX
       SIMPLE_TAG_CHAIN(menubar, nsCSSFrameConstructor::FindXULMenubarData),
 #endif /* XP_MACOSX */
-      SIMPLE_XUL_CREATE(iframe, NS_NewSubDocumentFrame),
-      SIMPLE_XUL_CREATE(editor, NS_NewSubDocumentFrame),
-      SIMPLE_XUL_CREATE(browser, NS_NewSubDocumentFrame),
-      SIMPLE_XUL_CREATE(splitter, NS_NewSplitterFrame),
-      SIMPLE_XUL_CREATE(scrollbar, NS_NewScrollbarFrame),
-      SIMPLE_XUL_CREATE(slider, NS_NewSliderFrame),
-      SIMPLE_XUL_CREATE(thumb, NS_NewSimpleXULLeafFrame),
-      SIMPLE_XUL_CREATE(scrollcorner, NS_NewSimpleXULLeafFrame),
-      SIMPLE_XUL_CREATE(resizer, NS_NewSimpleXULLeafFrame),
-      SIMPLE_XUL_CREATE(scrollbarbutton, NS_NewScrollbarButtonFrame),
+      SIMPLE_TAG_CREATE(iframe, NS_NewSubDocumentFrame),
+      SIMPLE_TAG_CREATE(editor, NS_NewSubDocumentFrame),
+      SIMPLE_TAG_CREATE(browser, NS_NewSubDocumentFrame),
+      SIMPLE_TAG_CREATE(splitter, NS_NewSplitterFrame),
+      SIMPLE_TAG_CREATE(scrollbar, NS_NewScrollbarFrame),
+      SIMPLE_TAG_CREATE(slider, NS_NewSliderFrame),
+      SIMPLE_TAG_CREATE(thumb, NS_NewSimpleXULLeafFrame),
+      SIMPLE_TAG_CREATE(scrollcorner, NS_NewSimpleXULLeafFrame),
+      SIMPLE_TAG_CREATE(resizer, NS_NewSimpleXULLeafFrame),
+      SIMPLE_TAG_CREATE(scrollbarbutton, NS_NewScrollbarButtonFrame),
       {nsGkAtoms::panel, kPopupData},
       {nsGkAtoms::menupopup, kPopupData},
       {nsGkAtoms::tooltip, kPopupData},
@@ -4154,8 +4173,8 @@ nsCSSFrameConstructor::FindXULLabelOrDescriptionData(const Element& aElement,
     return nullptr;
   }
 
-  static constexpr FrameConstructionData sMiddleCroppingData =
-      SIMPLE_XUL_FCDATA(NS_NewMiddleCroppingLabelFrame);
+  static constexpr FrameConstructionData sMiddleCroppingData(
+      NS_NewMiddleCroppingLabelFrame);
   return &sMiddleCroppingData;
 }
 
@@ -5346,7 +5365,7 @@ void nsCSSFrameConstructor::AddFrameConstructionItemsInternal(
  * create a frame adjacent to a line boundary in the frame tree, and that
  * line boundary is induced by a content node adjacent to the frame's
  * content node in the content tree. The latter condition is necessary so
- * that ContentAppended/ContentInserted/ContentRemoved can easily find any
+ * that ContentAppended/ContentInserted/ContentWillBeRemoved can easily find any
  * text nodes that were suppressed here.
  */
 bool nsCSSFrameConstructor::AtLineBoundary(FCItemIterator& aIter) {
@@ -7299,17 +7318,21 @@ static bool CanRemoveWrapperPseudoForChildRemoval(nsIFrame* aFrame,
   return true;
 }
 
-bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
-                                           nsIContent* aOldNextSibling,
-                                           RemoveFlags aFlags) {
+bool nsCSSFrameConstructor::ContentWillBeRemoved(nsIContent* aChild,
+                                                 RemoveFlags aFlags) {
   MOZ_ASSERT(aChild);
-  MOZ_ASSERT(!aChild->IsRootOfNativeAnonymousSubtree() || !aOldNextSibling,
-             "Anonymous roots don't have siblings");
-  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ContentRemoved",
+  MOZ_ASSERT(
+      !aChild->IsRootOfNativeAnonymousSubtree() || !aChild->GetNextSibling(),
+      "Anonymous roots don't have siblings");
+  AUTO_PROFILER_LABEL_HOT("nsCSSFrameConstructor::ContentWillBeRemoved",
                           LAYOUT_FrameConstruction);
   AUTO_LAYOUT_PHASE_ENTRY_POINT(mPresShell->GetPresContext(), FrameC);
   nsPresContext* presContext = mPresShell->GetPresContext();
   MOZ_ASSERT(presContext, "Our presShell should have a valid presContext");
+
+  const bool wasRemovingContent = mRemovingContent;
+  auto _ = MakeScopeExit([&] { mRemovingContent = wasRemovingContent; });
+  mRemovingContent = true;
 
   // We want to detect when the viewport override element stored in the
   // prescontext is in the subtree being removed.  Except in fullscreen cases
@@ -7318,8 +7341,14 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
   // <body> child of the root element.  So we can only be removing the stored
   // override element if the thing being removed is either the override element
   // itself or the root element (which can be a parent of the override element).
-  if (aChild == presContext->GetViewportScrollStylesOverrideElement() ||
-      (aChild->IsElement() && !aChild->GetParent())) {
+  //
+  // The !wasRemovingContent check makes sure that we don't re-enter here from
+  // other ContentWillBeRemoved calls, as that'd be useless work, and we don't
+  // want to incorrectly pick aChild again as our viewport scroll style element
+  // if it's getting removed from the DOM.
+  if ((aChild == presContext->GetViewportScrollStylesOverrideElement() ||
+       aChild->IsRootElement()) &&
+      !wasRemovingContent) {
     // We might be removing the element that we propagated viewport scrollbar
     // styles from.  Recompute those. (This clause covers two of the three
     // possible scrollbar-propagation sources: the <body> [as aChild or a
@@ -7329,8 +7358,10 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     // part of the fullscreen cleanup code called by Element::UnbindFromTree.
     // We don't handle the fullscreen case here, because it doesn't change the
     // scrollbar styles override element stored on the prescontext.)
+    const Element* removingElement =
+        aFlags == REMOVE_CONTENT ? aChild->AsElement() : nullptr;
     Element* newOverrideElement =
-        presContext->UpdateViewportScrollStylesOverride();
+        presContext->UpdateViewportScrollStylesOverride(removingElement);
 
     // If aChild is the root, then we don't need to do any reframing of
     // newOverrideElement, because we're about to tear down the whole frame tree
@@ -7338,13 +7369,12 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     // reframing the <body> can trigger a reframe of the <html> and then reenter
     // here.
     //
-    // But if aChild is not the root, and if newOverrideElement is not
-    // the root and isn't aChild (which it could be if all we're doing
-    // here is reframing the current override element), it needs
-    // reframing.  In particular, it used to have a scrollframe
-    // (because its overflow was not "visible"), but now it will
-    // propagate its overflow to the viewport, so it should not need a
-    // scrollframe anymore.
+    // But if aChild is not the root, and if newOverrideElement is not the root
+    // and isn't aChild (which it could be if all we're doing here is reframing
+    // the current override element), it needs reframing.  In particular, it
+    // used to have a scrollframe (because its overflow was not "visible"), but
+    // now it will propagate its overflow to the viewport, so it should not need
+    // a scrollframe anymore.
     if (aChild->GetParent() && newOverrideElement &&
         newOverrideElement->GetParent() && newOverrideElement != aChild) {
       LAYOUT_PHASE_TEMP_EXIT();
@@ -7356,9 +7386,8 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
 #ifdef DEBUG
   if (gNoisyContentUpdates) {
     printf(
-        "nsCSSFrameConstructor::ContentRemoved container=%p child=%p "
-        "old-next-sibling=%p\n",
-        aChild->GetParent(), aChild, aOldNextSibling);
+        "nsCSSFrameConstructor::ContentWillBeRemoved container=%p child=%p\n",
+        aChild->GetParent(), aChild);
     if (gReallyNoisyContentUpdates) {
       aChild->GetParent()->List(stdout, 0);
     }
@@ -7417,13 +7446,13 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
 
   if (!childFrame && CouldHaveBeenDisplayContents(aChild)) {
     // NOTE(emilio): We may iterate through ::before and ::after here and they
-    // may be gone after the respective ContentRemoved call. Right now
+    // may be gone after the respective ContentWillBeRemoved call. Right now
     // StyleChildrenIterator handles that properly, so it's not an issue.
     StyleChildrenIterator iter(aChild);
     for (nsIContent* c = iter.GetNextChild(); c; c = iter.GetNextChild()) {
       if (c->GetPrimaryFrame() || CouldHaveBeenDisplayContents(c)) {
         LAYOUT_PHASE_TEMP_EXIT();
-        bool didReconstruct = ContentRemoved(c, nullptr, aFlags);
+        bool didReconstruct = ContentWillBeRemoved(c, aFlags);
         LAYOUT_PHASE_TEMP_REENTER();
         if (didReconstruct) {
           return true;
@@ -7498,7 +7527,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
       // Trap out to special routine that handles adjusting a blocks
       // frame tree when first-letter style is present.
 #ifdef NOISY_FIRST_LETTER
-      printf("ContentRemoved: containingBlock=");
+      printf("ContentWillBeRemoved: containingBlock=");
       containingBlock->ListTag(stdout);
       printf(" parentFrame=");
       parentFrame->ListTag(stdout);
@@ -7533,7 +7562,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
 
 #ifdef DEBUG
     if (gReallyNoisyContentUpdates) {
-      printf("nsCSSFrameConstructor::ContentRemoved: childFrame=");
+      printf("nsCSSFrameConstructor::ContentWillBeRemoved: childFrame=");
       childFrame->ListTag(stdout);
       putchar('\n');
       parentFrame->List(stdout);
@@ -7579,7 +7608,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
     // If we're just reconstructing frames for the element, then the
     // following ContentInserted notification on the element will
     // take care of fixing up any adjacent text nodes.
-    if (aOldNextSibling && aFlags == REMOVE_CONTENT) {
+    if (aFlags == REMOVE_CONTENT) {
       MOZ_ASSERT(aChild->GetParentNode(),
                  "How did we have a sibling without a parent?");
       // Adjacent whitespace-only text nodes might have been suppressed if
@@ -7592,7 +7621,7 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
       // and hence it's adjacent to a block end.
       // If aOldNextSibling is null, then the text node before the node being
       // removed is the last node, and we don't need to worry about it.
-      nsIContent* prevSibling = aOldNextSibling->GetPreviousSibling();
+      nsIContent* prevSibling = aChild->GetPreviousSibling();
       if (prevSibling && prevSibling->GetPreviousSibling()) {
         LAYOUT_PHASE_TEMP_EXIT();
         ReframeTextIfNeeded(prevSibling);
@@ -7600,17 +7629,19 @@ bool nsCSSFrameConstructor::ContentRemoved(nsIContent* aChild,
       }
       // Reframe any text node just after the node being removed, if there is
       // one, and if it's not the last child or the first child.
-      if (aOldNextSibling->GetNextSibling() &&
-          aOldNextSibling->GetPreviousSibling()) {
+      nsIContent* nextSibling = aChild->GetNextSibling();
+      if (nextSibling && prevSibling && nextSibling->GetNextSibling()) {
         LAYOUT_PHASE_TEMP_EXIT();
-        ReframeTextIfNeeded(aOldNextSibling);
+        ReframeTextIfNeeded(nextSibling);
         LAYOUT_PHASE_TEMP_REENTER();
       }
     }
 
 #ifdef DEBUG
     if (gReallyNoisyContentUpdates && parentFrame) {
-      printf("nsCSSFrameConstructor::ContentRemoved: resulting frame model:\n");
+      printf(
+          "nsCSSFrameConstructor::ContentWillBeRemoved: resulting frame "
+          "model:\n");
       parentFrame->List(stdout);
     }
 #endif
@@ -7631,8 +7662,8 @@ static void InvalidateCanvasIfNeeded(PresShell* aPresShell, nsIContent* aNode) {
   MOZ_ASSERT(aPresShell->GetRootFrame(), "What happened here?");
   MOZ_ASSERT(aPresShell->GetPresContext(), "Say what?");
 
-  //  Note that both in ContentRemoved and ContentInserted the content node
-  //  will still have the right parent pointer, so looking at that is ok.
+  //  Note that both in ContentWillBeRemoved and ContentInserted the content
+  //  node will still have the right parent pointer, so looking at that is ok.
 
   nsIContent* parent = aNode->GetParent();
   if (parent) {
@@ -8473,13 +8504,8 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
   }
 
   MOZ_ASSERT(aContent->GetParentNode());
-
-  // Remove the frames associated with the content object.
-  nsIContent* nextSibling = aContent->IsRootOfNativeAnonymousSubtree()
-                                ? nullptr
-                                : aContent->GetNextSibling();
-  bool didReconstruct =
-      ContentRemoved(aContent, nextSibling, REMOVE_FOR_RECONSTRUCTION);
+  const bool didReconstruct =
+      ContentWillBeRemoved(aContent, REMOVE_FOR_RECONSTRUCTION);
 
   if (!didReconstruct) {
     if (aInsertionKind == InsertionKind::Async && aContent->IsElement()) {
@@ -8494,8 +8520,8 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
                                          nsChangeHint_ReconstructFrame);
     } else {
       // Now, recreate the frames associated with this content object. If
-      // ContentRemoved triggered reconstruction, then we don't need to do this
-      // because the frames will already have been built.
+      // ContentWillBeRemoved triggered reconstruction, then we don't need to do
+      // this because the frames will already have been built.
       ContentRangeInserted(aContent, aContent->GetNextSibling(),
                            aInsertionKind);
     }
@@ -8504,12 +8530,7 @@ void nsCSSFrameConstructor::RecreateFramesForContent(
 
 bool nsCSSFrameConstructor::DestroyFramesFor(nsIContent* aContent) {
   MOZ_ASSERT(aContent && aContent->GetParentNode());
-
-  nsIContent* nextSibling = aContent->IsRootOfNativeAnonymousSubtree()
-                                ? nullptr
-                                : aContent->GetNextSibling();
-
-  return ContentRemoved(aContent, nextSibling, REMOVE_FOR_RECONSTRUCTION);
+  return ContentWillBeRemoved(aContent, REMOVE_FOR_RECONSTRUCTION);
 }
 
 //////////////////////////////////////////////////////////////////////

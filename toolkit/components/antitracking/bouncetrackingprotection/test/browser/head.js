@@ -278,6 +278,9 @@ async function waitForRecordBounces(browser) {
  * @param {boolean} [options.skipSiteDataCleanup=false] - Skip the cleanup of
  * site data after the test. When this is enabled the caller is responsible for
  * cleaning up site data.
+ * @param {boolean} [options.skipBounceTrackingProtectionCleanup=false] - Skip
+ * the cleanup of BounceTrackingProtection state. When this is enabled the
+ * caller is responsible for cleaning BTP state.
  * @param {boolean} [options.closeTabAfterBounce=false] - Close the tab right
  * after the bounce completes before the extended navigation ends as the result
  * of a timeout or user interaction.
@@ -297,6 +300,7 @@ async function runTestBounce(options = {}) {
     originAttributes = {},
     postBounceCallback = () => {},
     skipSiteDataCleanup = false,
+    skipBounceTrackingProtectionCleanup = false,
     closeTabAfterBounce = false,
   } = options;
   info(`runTestBounce ${JSON.stringify(options)}`);
@@ -519,6 +523,49 @@ async function runTestBounce(options = {}) {
         expectPurge ? [SITE_TRACKER] : [],
         `Should ${expectPurge ? "" : "not "}purge state for ${SITE_TRACKER}.`
       );
+
+      info("Testing the purge log.");
+      let purgeLog =
+        bounceTrackingProtection.testGetRecentlyPurgedTrackers(
+          originAttributes
+        );
+      // Purges are only logged in (fully) enabled mode. Dry-run mode does not
+      // log purges.
+      if (expectPurge && mode == Ci.nsIBounceTrackingProtection.MODE_ENABLED) {
+        Assert.equal(
+          purgeLog.length,
+          1,
+          "Should have one tracker in purge log."
+        );
+        let { siteHost, timeStamp, purgeTime } = purgeLog[0];
+
+        Assert.equal(
+          siteHost,
+          SITE_TRACKER,
+          `The purge log entry should be for site host '${SITE_TRACKER}'`
+        );
+        Assert.greater(
+          timeStamp,
+          0,
+          "The purge log entry should have a valid timestamp for bounce time."
+        );
+        Assert.greater(
+          purgeTime,
+          0,
+          "The purge log entry should have a valid timestamp for purge time."
+        );
+        Assert.greaterOrEqual(
+          purgeTime,
+          timeStamp,
+          "The purge time should be greater or equal to bounce time."
+        );
+      } else {
+        Assert.equal(
+          purgeLog.length,
+          0,
+          "Should have no trackers in purge log."
+        );
+      }
     }
   } else {
     info("BTP is disabled. Skipping purge call.");
@@ -549,7 +596,10 @@ async function runTestBounce(options = {}) {
       );
     }
   }
-  bounceTrackingProtection?.clearAll();
+  if (!skipBounceTrackingProtectionCleanup) {
+    bounceTrackingProtection?.clearAll();
+  }
+
   if (!skipSiteDataCleanup) {
     await SiteDataTestUtils.clear();
   }

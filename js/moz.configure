@@ -38,26 +38,6 @@ def moz_app_name(value, js_standalone, moz_app_basename):
 
 set_config("MOZ_APP_NAME", moz_app_name)
 
-# SmooshMonkey (new frontend)
-# ==================================================
-
-# Define here in order to use the option from bindgen.configure.
-option(
-    "--enable-smoosh",
-    default=False,
-    help="Enable SmooshMonkey (new JS engine frontend)",
-)
-
-
-@depends("--enable-smoosh")
-def enable_smoosh(value):
-    if value:
-        return True
-
-
-set_config("JS_ENABLE_SMOOSH", enable_smoosh)
-set_define("JS_ENABLE_SMOOSH", enable_smoosh)
-
 include("../build/moz.configure/nspr.configure", when="--enable-compile-environment")
 include("../build/moz.configure/rust.configure", when="--enable-compile-environment")
 include("../build/moz.configure/bindgen.configure", when="--enable-compile-environment")
@@ -136,25 +116,6 @@ def static_js(value):
 
 set_define("MOZ_STATIC_JS", static_js)
 
-
-# Enable records and tuples
-# ===================================================
-option(
-    "--enable-record-tuple",
-    default=False,
-    help="Enable records and tuples (and disables JIT)",
-)
-
-
-@depends("--enable-record-tuple")
-def enable_record_tuple(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_RECORD_TUPLE", enable_record_tuple)
-set_define("ENABLE_RECORD_TUPLE", enable_record_tuple)
-
 # Enable decorators
 # ===================================================
 option(
@@ -224,13 +185,59 @@ set_config(
     depends_if("--enable-portable-baseline-interp-force")(lambda _: True),
 )
 
+# Enable ahead-of-time-known preloaded IC bodies.
+option(
+    "--enable-aot-ics",
+    default=False,
+    help="{Enable|Disable} including ahead-of-time corpus of CacheIR IC bodies",
+)
+
+set_define(
+    "ENABLE_JS_AOT_ICS",
+    depends_if("--enable-aot-ics")(lambda _: True),
+)
+set_config(
+    "ENABLE_JS_AOT_ICS",
+    depends_if("--enable-aot-ics")(lambda _: True),
+)
+
+# Force-on the option for AOT ICs.
+option(
+    "--enable-aot-ics-force",
+    default=False,
+    help="{Enable|Disable} forcing the AOT ICs option on without additional configuration",
+)
+
+set_define(
+    "ENABLE_JS_AOT_ICS_FORCE",
+    depends_if("--enable-aot-ics-force")(lambda _: True),
+)
+set_config(
+    "ENABLE_JS_AOT_ICS_FORCE",
+    depends_if("--enable-aot-ics-force")(lambda _: True),
+)
+
+# Enforce AOT ICs (testing only): abort if a new IC (not in AOT corpus) is encountered.
+option(
+    "--enable-aot-ics-enforce",
+    default=False,
+    help="{Enable|Disable} enforcing that only AOT IC corpus is used, crashing otherwise (TEST ONLY)",
+)
+
+set_define(
+    "ENABLE_JS_AOT_ICS_ENFORCE",
+    depends_if("--enable-aot-ics-enforce")(lambda _: True),
+)
+set_config(
+    "ENABLE_JS_AOT_ICS_ENFORCE",
+    depends_if("--enable-aot-ics-enforce")(lambda _: True),
+)
+
 
 # JIT support
 # =======================================================
-@depends(target, "--enable-record-tuple", "--enable-portable-baseline-interp")
-def jit_default(target, enable_record_tuple, enable_portable_baseline_interp):
-    if enable_record_tuple:
-        return False
+@depends(target, "--enable-portable-baseline-interp")
+def jit_default(target, enable_portable_baseline_interp):
     if enable_portable_baseline_interp:
         return False
     if target.cpu in (
@@ -238,7 +245,6 @@ def jit_default(target, enable_record_tuple, enable_portable_baseline_interp):
         "x86_64",
         "arm",
         "aarch64",
-        "mips32",
         "mips64",
         "loongarch64",
     ):
@@ -261,7 +267,7 @@ def report_deprecated(value):
 # =======================================================
 option(
     "--enable-simulator",
-    choices=("arm", "arm64", "mips32", "mips64", "loong64", "riscv64"),
+    choices=("arm", "arm64", "mips64", "loong64", "riscv64"),
     nargs=1,
     help="Enable a JIT code simulator for the specified architecture",
 )
@@ -274,7 +280,7 @@ def simulator(jit_enabled, simulator_enabled, target):
 
     sim_cpu = simulator_enabled[0]
 
-    if sim_cpu in ("arm", "mips32"):
+    if sim_cpu in ("arm"):
         if target.cpu != "x86":
             die("The %s simulator only works on x86." % sim_cpu)
 
@@ -288,14 +294,12 @@ def simulator(jit_enabled, simulator_enabled, target):
 set_config("JS_SIMULATOR", depends_if(simulator)(lambda x: True))
 set_config("JS_SIMULATOR_ARM", simulator.arm)
 set_config("JS_SIMULATOR_ARM64", simulator.arm64)
-set_config("JS_SIMULATOR_MIPS32", simulator.mips32)
 set_config("JS_SIMULATOR_MIPS64", simulator.mips64)
 set_config("JS_SIMULATOR_LOONG64", simulator.loong64)
 set_config("JS_SIMULATOR_RISCV64", simulator.riscv64)
 set_define("JS_SIMULATOR", depends_if(simulator)(lambda x: True))
 set_define("JS_SIMULATOR_ARM", simulator.arm)
 set_define("JS_SIMULATOR_ARM64", simulator.arm64)
-set_define("JS_SIMULATOR_MIPS32", simulator.mips32)
 set_define("JS_SIMULATOR_MIPS64", simulator.mips64)
 set_define("JS_SIMULATOR_LOONG64", simulator.loong64)
 set_define("JS_SIMULATOR_RISCV64", simulator.riscv64)
@@ -324,7 +328,6 @@ def jit_codegen(jit_enabled, simulator, target):
 set_config("JS_CODEGEN_NONE", jit_codegen.none)
 set_config("JS_CODEGEN_ARM", jit_codegen.arm)
 set_config("JS_CODEGEN_ARM64", jit_codegen.arm64)
-set_config("JS_CODEGEN_MIPS32", jit_codegen.mips32)
 set_config("JS_CODEGEN_MIPS64", jit_codegen.mips64)
 set_config("JS_CODEGEN_LOONG64", jit_codegen.loong64)
 set_config("JS_CODEGEN_RISCV64", jit_codegen.riscv64)
@@ -335,7 +338,6 @@ set_config("JS_CODEGEN_WASM32", jit_codegen.wasm32)
 set_define("JS_CODEGEN_NONE", jit_codegen.none)
 set_define("JS_CODEGEN_ARM", jit_codegen.arm)
 set_define("JS_CODEGEN_ARM64", jit_codegen.arm64)
-set_define("JS_CODEGEN_MIPS32", jit_codegen.mips32)
 set_define("JS_CODEGEN_MIPS64", jit_codegen.mips64)
 set_define("JS_CODEGEN_LOONG64", jit_codegen.loong64)
 set_define("JS_CODEGEN_RISCV64", jit_codegen.riscv64)
@@ -601,41 +603,6 @@ set_config("JS_MASM_VERBOSE", depends_if("--enable-masm-verbose")(lambda _: True
 # =======================================================
 
 
-# Apple silicon does not seem to have any way to query the OS for the JSCVT
-# flag stored in the ID_AA64ISAR1_EL1 system register. In the mean time, we
-# hard code the value of the JSCVT flag which guards the implementation of
-# FJCVTZS instruction as part of ARMv8.3-JSConv.
-@depends(target)
-def is_apple_silicon(target):
-    return target.kernel == "Darwin" and target.cpu == "aarch64"
-
-
-option(
-    "--enable-arm64-fjcvtzs",
-    default=is_apple_silicon,
-    help="{Enable|Disable} static use of FJCVTZS instruction on Aarch64 targets",
-)
-
-
-# The "ARM Architecture Reference Manual" for ARMv8 defines the JSCVT flag as
-# being a 4 bit integer (D12.2.52) and it can be manipulated using >= operator
-# (D12.1.4).
-#
-# The FJCVTZS instruction is implemented if ID_AA64ISAR1_EL1.JSCVT >= 1.
-@depends("--enable-arm64-fjcvtzs", target, simulator)
-def aarch64_jscvt(fjcvtzs, target, simulator):
-    if target.cpu == "aarch64" and fjcvtzs:
-        return 1
-
-    if simulator and getattr(simulator, "arm64", False) and fjcvtzs:
-        return 1
-
-    return 0
-
-
-set_define("MOZ_AARCH64_JSCVT", aarch64_jscvt)
-
-
 @depends(target)
 def has_apple_fast_wx(target):
     return target.kernel == "Darwin" and target.cpu == "aarch64"
@@ -671,22 +638,6 @@ def ctypes_and_compile_environment(ctypes, compile_environment):
 
 
 include("ffi.configure", when=ctypes_and_compile_environment)
-
-
-# Enable pipeline operator
-# ===================================================
-option("--enable-pipeline-operator", default=False, help="Enable pipeline operator")
-
-
-@depends("--enable-pipeline-operator")
-def enable_pipeline_operator(value):
-    if value:
-        return True
-
-
-set_config("ENABLE_PIPELINE_OPERATOR", enable_pipeline_operator)
-set_define("ENABLE_PIPELINE_OPERATOR", enable_pipeline_operator)
-
 
 # SIMD acceleration for encoding_rs
 # ==============================================================
@@ -1050,12 +1001,9 @@ set_define("ENABLE_WASM_MOZ_INTGEMM", wasm_moz_intgemm)
 # ===========================
 
 
-@depends("--enable-simulator", target)
-def default_wasm_memory64(simulator, target):
+@depends(target)
+def default_wasm_memory64(target):
     if target.cpu == "mips32":
-        return
-
-    if simulator and simulator[0] == "mips32":
         return
 
     return True
@@ -1068,16 +1016,13 @@ option(
 )
 
 
-@depends("--enable-wasm-memory64", "--enable-simulator", target)
-def wasm_memory64(value, simulator, target):
+@depends("--enable-wasm-memory64", target)
+def wasm_memory64(value, target):
     if not value:
         return
 
     if target.cpu == "mips32":
         die("Memory64 is incompatible with MIPS32 target")
-
-    if simulator and simulator[0] == "mips32":
-        die("Memory64 is incompatible with MIPS32 simulator")
 
     return True
 
@@ -1259,7 +1204,7 @@ def enable_system_icu_option(enable_system_icu):
     return enable_system_icu
 
 
-system_icu = pkg_check_modules("MOZ_ICU", "icu-i18n >= 73.1", when="--with-system-icu")
+system_icu = pkg_check_modules("MOZ_ICU", "icu-i18n >= 76.1", when="--with-system-icu")
 
 
 @depends(enable_system_icu_option)
@@ -1268,7 +1213,7 @@ def in_tree_icu(system_icu):
 
 
 # Set MOZ_ICU_CFLAGS to an explicit empty value when --with-system-icu is *not* used,
-# for layout/style/extra-bindgen-flags
+# for use for bindgen through the mozbuild crate.
 set_config("MOZ_ICU_CFLAGS", [], when=in_tree_icu)
 
 set_config("MOZ_SYSTEM_ICU", True, when=system_icu)
@@ -1331,7 +1276,11 @@ set_define("U_STATIC_IMPLEMENTATION", True, when=depends(system_icu)(lambda x: n
 # ECMAScript Temporal API Support (uses ICU and ICU4X)
 # ======================================================
 
-option("--with-temporal-api", default=False, help="Enable ECMAScript Temporal API")
+option(
+    "--with-temporal-api",
+    default=milestone.is_nightly,
+    help="{Enable|Disable} ECMAScript Temporal API",
+)
 
 set_config("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")
 set_define("JS_HAS_TEMPORAL_API", True, when="--with-temporal-api")

@@ -1196,7 +1196,7 @@ fuzzy(0-1,0-34360) == 461512-1.html 461512-1-ref.html
 == chrome://reftest/content/bugs/463217-1.xhtml chrome://reftest/content/bugs/463217-1-ref.xhtml
 == 463952-1.html 463952-1-ref.html
 == 464811-1.html 464811-1-ref.html
-== 465574-1.html 465574-1-ref.html # bug 421436
+== 465574-1.html 465574-1-ref.html
 == 466258-1.html 466258-1-ref.html
 == 466395-1.html 466395-1-ref.html
 == 466395-2.html 466395-2-ref.html
@@ -1799,7 +1799,7 @@ fuzzy(0-1,0-24000) == 1025914-1.html 1025914-1-ref.html
 == 1069716-1.html 1069716-1-ref.html
 == 1078262-1.html about:blank # bug 1656792
 test-pref(layout.testing.overlay-scrollbars.always-visible,false) == 1081072-1.html 1081072-1-ref.html
-fuzzy(15-65,100-500) fuzzy-if(useDrawSnapshot,33-33,218-218) == 1081185-1.html 1081185-1-ref.html
+fuzzy(15-65,100-500) fuzzy-if(useDrawSnapshot,0-33,0-218) == 1081185-1.html 1081185-1-ref.html
 == 1097437-1.html 1097437-1-ref.html
 == 1103258-1.html 1103258-1-ref.html # assertion crash test with layers culling test
 == 1105137-1.html 1105137-1-ref.html
@@ -1990,7 +1990,7 @@ needs-focus != 1377447-1.html 1377447-2.html
 == 1379696.html 1379696-ref.html
 == 1380224-1.html 1380224-1-ref.html
 == 1384065.html 1384065-ref.html
-== 1384275-1.html 1384275-1-ref.html
+random-if(winWidget) == 1384275-1.html 1384275-1-ref.html
 == 1381821.html 1381821-ref.html
 == 1395650-1.html 1395650-1-ref.html
 == 1398500-1.html 1398500-1-ref.html
@@ -2011,7 +2011,7 @@ fuzzy(0-255,0-6025) == 1415987-1.html 1415987-1-ref.html
 == 1419820-1.html 1419820-1-ref.html
 == 1420946-1.html 1420946-1-ref.html
 == 1422393.html 1422393-ref.html
-skip-if(nogpu||(winWidget&&isCoverageBuild)) == 1424177.html 1424177-ref.html
+fuzzy-if(nogpu,0-1,0-4) skip-if(winWidget&&isCoverageBuild) == 1424177.html 1424177-ref.html
 == 1424680.html 1424680-ref.html
 == 1424798-1.html 1424798-ref.html
 fuzzy-if(swgl,0-1,0-31430) == 1425243-1.html 1425243-1-ref.html
@@ -2165,3 +2165,5 @@ fuzzy-if(!useDrawSnapshot&&!swgl,254-255,110-121) fuzzy-if(useDrawSnapshot,18-18
 skip-if(((AddressSanitizer||ThreadSanitizer)&&gtkWidget)||(isDebugBuild&&Android)) fuzzy(0-123,0-1425) == 1878294-1.html 1878294-1-ref.html
 == 1888941-text-transform-emergency-wrap.html 1888941-text-transform-emergency-wrap-ref.html
 == 1936259.html 1936259-ref.html
+== 1936563-1.html 1936563-1-ref.html
+== 1941075.html 1941075-ref.html

@@ -73,6 +73,7 @@ add_task(async function test_sidebar_onboarding() {
   Assert.equal(events[0].extra.provider, "none", "Opened with no provider");
   Assert.equal(events[0].extra.step, "1", "First step");
   const browser = await browserPromise;
+  Assert.ok(browser.hasAttribute("maychangeremoteness"), "Supports fission");
   Assert.equal(browser.currentURI.spec, "about:blank", "Nothing loaded yet");
 
   label.click();
@@ -221,5 +222,53 @@ add_task(async function test_sidebar_no_history() {
   Assert.ok(
     !(await PlacesTestUtils.isPageInDB(TEST_CHAT_PROVIDER_URL)),
     "Earlier test with provider from test_sidebar_render is not in history"
+  );
+});
+
+/**
+ * Check that keyboard shortcut toggles and enables chatbot
+ */
+add_task(async function test_keyboard_shortcut() {
+  const key = document.getElementById("viewGenaiChatSidebarKb");
+  const enabled = "browser.ml.chat.enabled";
+  await SpecialPowers.pushPrefEnv({ set: [[enabled, false]] });
+
+  key.doCommand();
+
+  Assert.ok(
+    !Services.prefs.getBoolPref(enabled),
+    "Keyboard shortcut doesn't flip the pref"
+  );
+  Assert.ok(
+    !SidebarController.isOpen,
+    "Keyboard shortcut doesn't Open chatbot if disabled"
+  );
+
+  await SpecialPowers.pushPrefEnv({ set: [[enabled, true]] });
+  key.doCommand();
+
+  Assert.ok(Services.prefs.getBoolPref(enabled), "Enabled with keyboard");
+  Assert.ok(SidebarController.isOpen, "Opened chatbot with keyboard");
+
+  key.doCommand();
+
+  Assert.ok(!SidebarController.isOpen, "Closed chatbot with keyboard");
+
+  Assert.ok(
+    Services.prefs.getBoolPref(enabled),
+    "Keyboard shortcut doesn't flip the pref"
+  );
+
+  const events = Glean.genaiChatbot.keyboardShortcut.testGetValue();
+  Assert.equal(events.length, 3, "Got 3 keyboard events");
+  Assert.equal(events[0].extra.enabled, "false", "Initially disabled");
+  Assert.equal(events[0].extra.sidebar, "", "Initially closed");
+  Assert.equal(events[1].extra.enabled, "true", "Already enabled");
+  Assert.equal(events[1].extra.sidebar, "", "Still closed");
+  Assert.equal(events[2].extra.enabled, "true", "Still enabled");
+  Assert.equal(
+    events[2].extra.sidebar,
+    "viewGenaiChatSidebar",
+    "Already opened"
   );
 });

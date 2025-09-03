@@ -28,6 +28,7 @@
 #include "nsContentUtils.h"
 #include "nsIContent.h"
 #include "nsIDragSession.h"
+#include "nsMathUtils.h"
 #include "nsPrintfCString.h"
 
 #if defined(XP_WIN)
@@ -801,8 +802,8 @@ double WidgetPointerHelper::ComputeAltitudeAngle(int32_t aTiltX,
   if (!aTiltY) {
     return kHalfPi - std::abs(tiltXRadians);
   }
-  return std::atan(1.0 / std::sqrt(std::pow(std::tan(tiltXRadians), 2) +
-                                   std::pow(std::tan(tiltYRadians), 2)));
+  return std::atan(1.0 /
+                   NS_hypot(std::tan(tiltXRadians), std::tan(tiltYRadians)));
 }
 
 // static
@@ -897,6 +898,36 @@ bool WidgetMouseEventBase::InputSourceSupportsHover() const {
     default:
       return false;
   }
+}
+
+bool WidgetMouseEventBase::DOMEventShouldUseFractionalCoords() const {
+  if (!StaticPrefs::dom_event_pointer_fractional_coordinates_enabled()) {
+    return false;  // We completely don't support fractional coordinates
+  }
+  // If we support fractional coordinates only for PointerEvent, the spec
+  // recommend that `click`, `auxclick` and `contextmenu` keep using integer
+  // coordinates.
+  // https://w3c.github.io/pointerevents/#event-coordinates
+  if (mClass == ePointerEventClass && mMessage != ePointerClick &&
+      mMessage != ePointerAuxClick && mMessage != eContextMenu) {
+    return true;
+  }
+  // Untrusted events can be initialized with double values.  However, Chrome
+  // returns integer coordinates for non-PointerEvent instances, `click`,
+  // `auxclick` and `contextmenu`.  Therefore, it may be risky to allow
+  // fractional coordinates for all untrusted events right now because web apps
+  // may initialize untrusted events with quotients.
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/events/pointer_event.h;l=59-91;drc=80c2637874588837a2d656dbd79ad8f227dc67e8
+  // https://source.chromium.org/chromium/chromium/src/+/main:third_party/blink/renderer/core/events/pointer_event.cc;l=110-117;drc=8e948282d37c0e119e3102236878d6f4d5052c16
+  if (!IsTrusted()) {
+    return StaticPrefs::
+        dom_event_mouse_fractional_coordinates_untrusted_enabled();
+  }
+  // CSSOM suggested that MouseEvent interface can treat fractional values in
+  // all instances.  However, it's risky for backward compatibility.  Therefore,
+  // we don't have a plan to enable it for now.
+  return MOZ_UNLIKELY(
+      StaticPrefs::dom_event_mouse_fractional_coordinates_trusted_enabled());
 }
 
 /******************************************************************************

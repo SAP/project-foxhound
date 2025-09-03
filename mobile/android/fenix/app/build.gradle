@@ -62,6 +62,7 @@ android {
         vectorDrawables.useSupportLibrary = true
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         testInstrumentationRunnerArguments clearPackageData: 'true'
+        testInstrumentationRunnerArguments "detect-leaks": 'true'
         resValue "bool", "IS_DEBUG", "false"
         buildConfigField "boolean", "USE_RELEASE_VERSIONING", "false"
         buildConfigField "String", "VCS_HASH", "\"\"" // see override in release builds for why it's blank.
@@ -317,12 +318,12 @@ android.applicationVariants.configureEach { variant ->
     def isDebug = variant.buildType.resValues['bool/IS_DEBUG']?.value ?: false
     def useReleaseVersioning = variant.buildType.buildConfigFields['USE_RELEASE_VERSIONING']?.value ?: false
 
-    println("----------------------------------------------")
-    println("Variant name:      " + variant.name)
-    println("Application ID:    " + [variant.applicationId, variant.buildType.applicationIdSuffix].findAll().join())
-    println("Build type:        " + variant.buildType.name)
-    println("Flavor:            " + variant.flavorName)
-    println("Telemetry enabled: " + !isDebug)
+    project.logger.debug("----------------------------------------------")
+    project.logger.debug("Variant name:      " + variant.name)
+    project.logger.debug("Application ID:    " + [variant.applicationId, variant.buildType.applicationIdSuffix].findAll().join())
+    project.logger.debug("Build type:        " + variant.buildType.name)
+    project.logger.debug("Flavor:            " + variant.flavorName)
+    project.logger.debug("Telemetry enabled: " + !isDebug)
 
     if (useReleaseVersioning) {
         // The Google Play Store does not allow multiple APKs for the same app that all have the
@@ -332,7 +333,7 @@ android.applicationVariants.configureEach { variant ->
         def versionName = variant.buildType.name == 'nightly' ?
                 "${Config.nightlyVersionName(project)}" :
                 "${Config.releaseVersionName(project)}"
-        println("versionName override: $versionName")
+        project.logger.debug("versionName override: $versionName")
 
         variant.outputs.each { output ->
             def isMozillaOnline = project.hasProperty("mozillaOnline") || gradle.hasProperty("localProperties.mozillaOnline")
@@ -344,7 +345,7 @@ android.applicationVariants.configureEach { variant ->
             // channels that never shipped a Fennec build.
             def versionCodeOverride = Config.generateFennecVersionCode(arch, aab)
 
-            println("versionCode for $abi = $versionCodeOverride, isMozillaOnline = $isMozillaOnline")
+            project.logger.debug("versionCode for $abi = $versionCodeOverride, isMozillaOnline = $isMozillaOnline")
 
             if (versionName != null) {
                 output.versionNameOverride = versionName
@@ -353,7 +354,7 @@ android.applicationVariants.configureEach { variant ->
         }
     } else if (gradle.hasProperty("localProperties.branchBuild.fenix.version")) {
         def versionName = gradle.getProperty("localProperties.branchBuild.fenix.version")
-        println("versionName override: $versionName")
+        project.logger.debug("versionName override: $versionName")
         variant.outputs.each { output ->
             output.versionNameOverride = versionName
         }
@@ -394,74 +395,74 @@ android.applicationVariants.configureEach { variant ->
 // Adjust: Read token from local file if it exists (Only release builds)
 // -------------------------------------------------------------------------------------------------
 
-    print("Adjust token: ")
+    project.logger.debug("Adjust token: ")
 
     if (!isDebug) {
         try {
             def token = new File("${rootDir}/.adjust_token").text.trim()
             buildConfigField 'String', 'ADJUST_TOKEN', '"' + token + '"'
-            println "(Added from .adjust_token file)"
+            project.logger.debug("(Added from .adjust_token file)")
         } catch (FileNotFoundException ignored) {
             buildConfigField 'String', 'ADJUST_TOKEN', 'null'
-            println("X_X")
+            project.logger.debug("X_X")
         }
     } else {
         buildConfigField 'String', 'ADJUST_TOKEN', 'null'
-        println("--")
+        project.logger.debug("--")
     }
 
 // -------------------------------------------------------------------------------------------------
 // MLS: Read token from local file if it exists
 // -------------------------------------------------------------------------------------------------
 
-    print("MLS token: ")
+    project.logger.debug("MLS token: ")
 
     try {
         def token = new File("${rootDir}/.mls_token").text.trim()
         buildConfigField 'String', 'MLS_TOKEN', '"' + token + '"'
-        println "(Added from .mls_token file)"
+        project.logger.debug("(Added from .mls_token file)")
     } catch (FileNotFoundException ignored) {
         buildConfigField 'String', 'MLS_TOKEN', '""'
-        println("X_X")
+        project.logger.debug("X_X")
     }
 
 // -------------------------------------------------------------------------------------------------
 // Nimbus: Read endpoint from local.properties of a local file if it exists
 // -------------------------------------------------------------------------------------------------
 
-    print("Nimbus endpoint: ")
+    project.logger.debug("Nimbus endpoint: ")
 
     if (!isDebug) {
         try {
             def url = new File("${rootDir}/.nimbus").text.trim()
             buildConfigField 'String', 'NIMBUS_ENDPOINT', '"' + url + '"'
-            println "(Added from .nimbus file)"
+            project.logger.debug("(Added from .nimbus file)")
         } catch (FileNotFoundException ignored) {
             buildConfigField 'String', 'NIMBUS_ENDPOINT', 'null'
-            println("X_X")
+            project.logger.debug("X_X")
         }
     } else if (gradle.hasProperty("localProperties.nimbus.remote-settings.url")) {
         def url=gradle.getProperty("localProperties.nimbus.remote-settings.url")
         buildConfigField 'String', 'NIMBUS_ENDPOINT', '"' + url + '"'
-        println "(Added from local.properties file)"
+        project.logger.debug("(Added from local.properties file)")
     } else {
         buildConfigField 'String', 'NIMBUS_ENDPOINT', 'null'
-        println("--")
+        project.logger.debug("--")
     }
 
 // -------------------------------------------------------------------------------------------------
 // Glean: Read custom server URL from local.properties of a local file if it exists
 // -------------------------------------------------------------------------------------------------
 
-    print("Glean custom server URL: ")
+    project.logger.debug("Glean custom server URL: ")
 
     if (gradle.hasProperty("localProperties.glean.custom.server.url")) {
         def url=gradle.getProperty("localProperties.glean.custom.server.url")
         buildConfigField 'String', 'GLEAN_CUSTOM_URL', url
-        println "(Added from local.properties file)"
+        project.logger.debug("(Added from local.properties file)")
     } else {
         buildConfigField 'String', 'GLEAN_CUSTOM_URL', 'null'
-        println("--")
+        project.logger.debug("--")
     }
 
 // -------------------------------------------------------------------------------------------------
@@ -478,30 +479,30 @@ android.applicationVariants.configureEach { variant ->
 // BuildConfig: Set remote wallpaper URL using local file if it exists
 // -------------------------------------------------------------------------------------------------
 
-    print("Wallpaper URL: ")
+    project.logger.debug("Wallpaper URL: ")
 
     try {
         def token = new File("${rootDir}/.wallpaper_url").text.trim()
         buildConfigField 'String', 'WALLPAPER_URL', '"' + token + '"'
-        println "(Added from .wallpaper_url file)"
+        project.logger.debug("(Added from .wallpaper_url file)")
     } catch (FileNotFoundException ignored) {
         buildConfigField 'String', 'WALLPAPER_URL', '""'
-        println("--")
+        project.logger.debug("--")
     }
 
 // -------------------------------------------------------------------------------------------------
 // BuildConfig: Set the Pocket consumer key from a local file if it exists
 // -------------------------------------------------------------------------------------------------
 
-    print("Pocket consumer key: ")
+    project.logger.debug("Pocket consumer key: ")
 
     try {
         def token = new File("${rootDir}/.pocket_consumer_key").text.trim()
         buildConfigField 'String', 'POCKET_CONSUMER_KEY', '"' + token + '"'
-        println "(Added from .pocket_consumer_key file)"
+        project.logger.debug("(Added from .pocket_consumer_key file)")
     } catch (FileNotFoundException ignored) {
         buildConfigField 'String', 'POCKET_CONSUMER_KEY', '""'
-        println("--")
+        project.logger.debug("--")
     }
 
 // -------------------------------------------------------------------------------------------------
@@ -511,10 +512,10 @@ android.applicationVariants.configureEach { variant ->
     if (isDebug) {
         if (project.hasProperty("disableLeakCanary") || gradle.hasProperty("localProperties.disableLeakCanary")) {
             buildConfigField "boolean", "LEAKCANARY", "false"
-            println("LeakCanary enabled in debug: false")
+            project.logger.debug("LeakCanary enabled in debug: false")
         } else {
             buildConfigField "boolean", "LEAKCANARY", "true"
-            println("LeakCanary enabled in debug: true")
+            project.logger.debug("LeakCanary enabled in debug: true")
         }
     } else {
         buildConfigField "boolean", "LEAKCANARY", "false"
@@ -569,6 +570,7 @@ dependencies {
     implementation ComponentsDependencies.thirdparty_sentry
 
     implementation project(':compose-awesomebar')
+    implementation project(':compose-base')
     implementation project(':compose-cfr')
 
     implementation project(':concept-awesomebar')
@@ -628,7 +630,7 @@ dependencies {
     implementation project(':feature-webcompat-reporter')
 
     implementation project(':service-pocket')
-    implementation project(':service-contile')
+    implementation project(':service-mars')
     implementation project(':service-digitalassetlinks')
     implementation project(':service-sync-autofill')
     implementation project(':service-sync-logins')
@@ -706,8 +708,8 @@ dependencies {
     implementation ComponentsDependencies.protobuf_javalite
     implementation ComponentsDependencies.google_material
 
-    implementation FenixDependencies.adjust
-    implementation FenixDependencies.installreferrer // Required by Adjust
+    implementation(libs.adjust)
+    implementation(libs.installreferrer)
 
     // Required for the Google Advertising ID
     implementation ComponentsDependencies.play_services_ads_id
@@ -732,6 +734,7 @@ dependencies {
     androidTestImplementation ComponentsDependencies.androidx_test_runner
     androidTestImplementation ComponentsDependencies.androidx_test_uiautomator
     androidTestUtil ComponentsDependencies.androidx_test_orchestrator
+    androidTestImplementation ComponentsDependencies.testing_leakcanary
 
     androidTestImplementation ComponentsDependencies.androidx_benchmark_junit4
     androidTestImplementation ComponentsDependencies.androidx_compose_ui_test
@@ -741,7 +744,7 @@ dependencies {
     testImplementation project(':support-test-libstate')
     testImplementation ComponentsDependencies.androidx_test_junit
     testImplementation ComponentsDependencies.androidx_work_testing
-    testImplementation ComponentsDependencies.mozilla_appservices_full_megazord_forUnitTests
+    testImplementation ComponentsDependencies.mozilla_appservices_full_megazord_libsForTests
     testImplementation (ComponentsDependencies.testing_robolectric) {
         exclude group: 'org.apache.maven'
     }

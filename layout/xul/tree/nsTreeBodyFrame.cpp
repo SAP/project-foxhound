@@ -201,15 +201,27 @@ static void CropStringForWidth(nsAString& aText, gfxContext& aRenderingContext,
   }
 }
 
+nsTreeImageCacheEntry::nsTreeImageCacheEntry() = default;
+nsTreeImageCacheEntry::nsTreeImageCacheEntry(imgIRequest* aRequest,
+                                             nsTreeImageListener* aListener)
+    : request(aRequest), listener(aListener) {}
+nsTreeImageCacheEntry::~nsTreeImageCacheEntry() = default;
+
+static void DoCancelImageCacheEntry(const nsTreeImageCacheEntry& aEntry,
+                                    nsPresContext* aPc) {
+  // If our imgIRequest object was registered with the refresh driver
+  // then we need to deregister it.
+  aEntry.listener->ClearFrame();
+  nsLayoutUtils::DeregisterImageRequest(aPc, aEntry.request, nullptr);
+  aEntry.request->UnlockImage();
+  aEntry.request->CancelAndForgetObserver(NS_BINDING_ABORTED);
+}
+
 // Function that cancels all the image requests in our cache.
 void nsTreeBodyFrame::CancelImageRequests() {
-  for (nsTreeImageCacheEntry entry : mImageCache.Values()) {
-    // If our imgIRequest object was registered with the refresh driver
-    // then we need to deregister it.
-    nsLayoutUtils::DeregisterImageRequest(PresContext(), entry.request,
-                                          nullptr);
-    entry.request->UnlockImage();
-    entry.request->CancelAndForgetObserver(NS_BINDING_ABORTED);
+  auto* pc = PresContext();
+  for (const nsTreeImageCacheEntry& entry : mImageCache.Values()) {
+    DoCancelImageCacheEntry(entry, pc);
   }
 }
 
@@ -252,10 +264,7 @@ nsTreeBodyFrame::nsTreeBodyFrame(ComputedStyle* aStyle,
 }
 
 // Destructor
-nsTreeBodyFrame::~nsTreeBodyFrame() {
-  CancelImageRequests();
-  DetachImageListeners();
-}
+nsTreeBodyFrame::~nsTreeBodyFrame() { CancelImageRequests(); }
 
 static void GetBorderPadding(ComputedStyle* aStyle, nsMargin& aMargin) {
   aMargin.SizeTo(0, 0, 0, 0);
@@ -1846,121 +1855,72 @@ void nsTreeBodyFrame::GetTwistyRect(int32_t aRowIndex, nsTreeColumn* aColumn,
   }
 }
 
-nsresult nsTreeBodyFrame::GetImage(int32_t aRowIndex, nsTreeColumn* aCol,
-                                   bool aUseContext,
-                                   ComputedStyle* aComputedStyle,
-                                   imgIContainer** aResult) {
-  *aResult = nullptr;
-
+already_AddRefed<imgIContainer> nsTreeBodyFrame::GetImage(
+    int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContext,
+    ComputedStyle* aComputedStyle) {
+  Document* doc = PresContext()->Document();
   nsAutoString imageSrc;
   mView->GetImageSrc(aRowIndex, aCol, imageSrc);
   RefPtr<imgRequestProxy> styleRequest;
+  nsCOMPtr<nsIURI> uri;
   if (aUseContext || imageSrc.IsEmpty()) {
     // Obtain the URL from the ComputedStyle.
     styleRequest =
         aComputedStyle->StyleList()->mListStyleImage.GetImageRequest();
     if (!styleRequest) {
-      return NS_OK;
+      return nullptr;
     }
-    nsCOMPtr<nsIURI> uri;
     styleRequest->GetURI(getter_AddRefs(uri));
-    nsAutoCString spec;
-    nsresult rv = uri->GetSpec(spec);
-    NS_ENSURE_SUCCESS(rv, rv);
-    CopyUTF8toUTF16(spec, imageSrc);
+  } else {
+    nsContentUtils::NewURIWithDocumentCharset(getter_AddRefs(uri), imageSrc,
+                                              doc, mContent->GetBaseURI());
   }
-
+  if (!uri) {
+    return nullptr;
+  }
   // Look the image up in our cache.
   nsTreeImageCacheEntry entry;
-  if (mImageCache.Get(imageSrc, &entry)) {
-    // Find out if the image has loaded.
-    uint32_t status;
-    imgIRequest* imgReq = entry.request;
-    imgReq->GetImageStatus(&status);
-    imgReq->GetImage(aResult);  // We hand back the image here.  The GetImage
-                                // call addrefs *aResult.
-    bool animated = true;       // Assuming animated is the safe option
-
-    // We can only call GetAnimated if we're decoded
-    if (*aResult && (status & imgIRequest::STATUS_DECODE_COMPLETE)) {
-      (*aResult)->GetAnimated(&animated);
-    }
-
-    if ((!(status & imgIRequest::STATUS_LOAD_COMPLETE)) || animated) {
-      // We either aren't done loading, or we're animating. Add our row as a
-      // listener for invalidations.
-      nsCOMPtr<imgINotificationObserver> obs;
-      imgReq->GetNotificationObserver(getter_AddRefs(obs));
-
-      if (obs) {
-        static_cast<nsTreeImageListener*>(obs.get())->AddCell(aRowIndex, aCol);
-      }
-
-      return NS_OK;
-    }
+  if (mImageCache.Get(uri, &entry)) {
+    nsCOMPtr<imgIContainer> result;
+    entry.request->GetImage(getter_AddRefs(result));
+    entry.listener->AddCell(aRowIndex, aCol);
+    return result.forget();
   }
 
-  if (!*aResult) {
-    // Create a new nsTreeImageListener object and pass it our row and column
-    // information.
-    nsTreeImageListener* listener = new nsTreeImageListener(this);
-    if (!listener) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
+  // Create a new nsTreeImageListener object and pass it our row and column
+  // information.
+  auto listener = MakeRefPtr<nsTreeImageListener>(this);
+  listener->AddCell(aRowIndex, aCol);
 
-    mCreatedListeners.Insert(listener);
-
-    listener->AddCell(aRowIndex, aCol);
-    nsCOMPtr<imgINotificationObserver> imgNotificationObserver = listener;
-
-    Document* doc = mContent->GetComposedDoc();
-    if (!doc) {
-      // The page is currently being torn down.  Why bother.
-      return NS_ERROR_FAILURE;
-    }
-
-    RefPtr<imgRequestProxy> imageRequest;
-    if (styleRequest) {
-      styleRequest->SyncClone(imgNotificationObserver, doc,
-                              getter_AddRefs(imageRequest));
-    } else {
-      nsCOMPtr<nsIURI> srcURI;
-      nsContentUtils::NewURIWithDocumentCharset(
-          getter_AddRefs(srcURI), imageSrc, doc, mContent->GetBaseURI());
-      if (!srcURI) {
-        return NS_ERROR_FAILURE;
-      }
-
-      auto referrerInfo = MakeRefPtr<mozilla::dom::ReferrerInfo>(*doc);
-
-      // XXXbz what's the origin principal for this stuff that comes from our
-      // view?  I guess we should assume that it's the node's principal...
-      nsresult rv = nsContentUtils::LoadImage(
-          srcURI, mContent, doc, mContent->NodePrincipal(), 0, referrerInfo,
-          imgNotificationObserver, nsIRequest::LOAD_NORMAL, u""_ns,
-          getter_AddRefs(imageRequest));
-      NS_ENSURE_SUCCESS(rv, rv);
-
-      // NOTE(heycam): If it's an SVG image, and we need to want the image to
-      // able to respond to media query changes, it needs to be added to the
-      // document's ImageTracker.  For now, assume we don't need this.
-    }
-    listener->UnsuppressInvalidation();
-
-    if (!imageRequest) {
-      return NS_ERROR_FAILURE;
-    }
-
-    // We don't want discarding/decode-on-draw for xul images
-    imageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
-    imageRequest->LockImage();
-
-    // In a case it was already cached.
-    imageRequest->GetImage(aResult);
-    nsTreeImageCacheEntry cacheEntry(imageRequest, imgNotificationObserver);
-    mImageCache.InsertOrUpdate(imageSrc, cacheEntry);
+  RefPtr<imgRequestProxy> imageRequest;
+  if (styleRequest) {
+    styleRequest->SyncClone(listener, doc, getter_AddRefs(imageRequest));
+  } else {
+    auto referrerInfo = MakeRefPtr<ReferrerInfo>(*doc);
+    // XXXbz what's the origin principal for this stuff that comes from our
+    // view?  I guess we should assume that it's the node's principal...
+    nsContentUtils::LoadImage(uri, mContent, doc, mContent->NodePrincipal(), 0,
+                              referrerInfo, listener, nsIRequest::LOAD_NORMAL,
+                              u""_ns, getter_AddRefs(imageRequest));
   }
-  return NS_OK;
+  listener->UnsuppressInvalidation();
+  if (!imageRequest) {
+    return nullptr;
+  }
+
+  // NOTE(heycam): If it's an SVG image, and we need to want the image to
+  // able to respond to media query changes, it needs to be added to the
+  // document's ImageTracker.  For now, assume we don't need this.
+  // We don't want discarding/decode-on-draw for xul images
+  imageRequest->StartDecoding(imgIContainer::FLAG_ASYNC_NOTIFY);
+  imageRequest->LockImage();
+
+  // In a case it was already cached.
+  mImageCache.InsertOrUpdate(uri,
+                             nsTreeImageCacheEntry(imageRequest, listener));
+  nsCOMPtr<imgIContainer> result;
+  imageRequest->GetImage(getter_AddRefs(result));
+  return result.forget();
 }
 
 nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
@@ -1984,8 +1944,8 @@ nsRect nsTreeBodyFrame::GetImageSize(int32_t aRowIndex, nsTreeColumn* aCol,
 
   // We have to load image even though we already have a size.
   // Don't change this, otherwise things start to go awry.
-  nsCOMPtr<imgIContainer> image;
-  GetImage(aRowIndex, aCol, aUseContext, aComputedStyle, getter_AddRefs(image));
+  nsCOMPtr<imgIContainer> image =
+      GetImage(aRowIndex, aCol, aUseContext, aComputedStyle);
 
   const nsStylePosition* myPosition = aComputedStyle->StylePosition();
   if (myPosition->GetWidth().ConvertsToLength()) {
@@ -2449,7 +2409,8 @@ class nsDisplayTreeBody final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayTreeBody);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayTreeBody)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayTreeBody)
 
   nsDisplayItemGeometry* AllocateGeometry(
       nsDisplayListBuilder* aBuilder) override {
@@ -3079,8 +3040,8 @@ ImgDrawResult nsTreeBodyFrame::PaintTwisty(
   imageSize.Deflate(bp);
 
   // Get the image for drawing.
-  nsCOMPtr<imgIContainer> image;
-  GetImage(aRowIndex, aColumn, true, twistyContext, getter_AddRefs(image));
+  nsCOMPtr<imgIContainer> image =
+      GetImage(aRowIndex, aColumn, true, twistyContext);
   if (!image) {
     return result;
   }
@@ -3125,8 +3086,8 @@ ImgDrawResult nsTreeBodyFrame::PaintImage(
   imageRect.Deflate(imageMargin);
 
   // Get the image.
-  nsCOMPtr<imgIContainer> image;
-  GetImage(aRowIndex, aColumn, false, imageContext, getter_AddRefs(image));
+  nsCOMPtr<imgIContainer> image =
+      GetImage(aRowIndex, aColumn, false, imageContext);
 
   // Get the image destination size.
   nsSize imageDestSize = GetImageDestSize(imageContext, image);
@@ -3438,8 +3399,8 @@ ImgDrawResult nsTreeBodyFrame::PaintCheckbox(int32_t aRowIndex,
   checkboxRect.Deflate(bp);
 
   // Get the image for drawing.
-  nsCOMPtr<imgIContainer> image;
-  GetImage(aRowIndex, aColumn, true, checkboxContext, getter_AddRefs(image));
+  nsCOMPtr<imgIContainer> image =
+      GetImage(aRowIndex, aColumn, true, checkboxContext);
   if (image) {
     nsPoint pt = checkboxRect.TopLeft();
 
@@ -3799,14 +3760,19 @@ void nsTreeBodyFrame::RemoveImageCacheEntry(int32_t aRowIndex,
   if (!view || NS_FAILED(view->GetImageSrc(aRowIndex, aCol, imageSrc))) {
     return;
   }
-  nsTreeImageCacheEntry entry;
-  if (!mImageCache.Get(imageSrc, &entry)) {
+  nsCOMPtr<nsIURI> uri;
+  auto* pc = PresContext();
+  nsContentUtils::NewURIWithDocumentCharset(
+      getter_AddRefs(uri), imageSrc, pc->Document(), mContent->GetBaseURI());
+  if (!uri) {
     return;
   }
-  nsLayoutUtils::DeregisterImageRequest(PresContext(), entry.request, nullptr);
-  entry.request->UnlockImage();
-  entry.request->CancelAndForgetObserver(NS_BINDING_ABORTED);
-  mImageCache.Remove(imageSrc);
+  auto lookup = mImageCache.Lookup(uri);
+  if (!lookup) {
+    return;
+  }
+  DoCancelImageCacheEntry(*lookup, pc);
+  lookup.Remove();
 }
 
 /* virtual */
@@ -4047,14 +4013,6 @@ void nsTreeBodyFrame::ScrollbarActivityStarted() const {
 void nsTreeBodyFrame::ScrollbarActivityStopped() const {
   if (mScrollbarActivity) {
     mScrollbarActivity->ActivityStopped();
-  }
-}
-
-void nsTreeBodyFrame::DetachImageListeners() { mCreatedListeners.Clear(); }
-
-void nsTreeBodyFrame::RemoveTreeImageListener(nsTreeImageListener* aListener) {
-  if (aListener) {
-    mCreatedListeners.Remove(aListener);
   }
 }
 

@@ -11,6 +11,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [activeNotifications](#activenotifications)
 * [addonsInfo](#addonsinfo)
 * [addressesSaved](#addressessaved)
+* [alltabsButtonAreaType](#alltabsButtonAreaType)
 * [archBits](#archbits)
 * [attachedFxAOAuthClients](#attachedfxaoauthclients)
 * [attributionData](#attributiondata)
@@ -21,6 +22,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [canCreateSelectableProfiles](#cancreateselectableprofiles)
 * [creditCardsSaved](#creditcardssaved)
 * [currentDate](#currentdate)
+* [currentTabGroups](#currentTabGroups)
 * [defaultPDFHandler](#defaultpdfhandler)
 * [devToolsOpenedCount](#devtoolsopenedcount)
 * [distributionId](#distributionid)
@@ -67,6 +69,7 @@ Please note that some targeting attributes require stricter controls on the tele
 * [providerCohorts](#providercohorts)
 * [recentBookmarks](#recentbookmarks)
 * [region](#region)
+* [savedTabGroups](#savedtabgroups)
 * [screenImpressions](#screenimpressions)
 * [searchEngines](#searchengines)
 * [sync](#sync)
@@ -620,6 +623,13 @@ Pref used by system administrators to disallow add-ons from installed altogether
 ```ts
 declare const xpinstallEnabled: boolean;
 ```
+### `currentTabGroups`
+
+Returns the number of currently open tab groups.
+
+### `savedTabGroups`
+
+Returns the number of tab groups the user has saved.
 
 ### `hasPinnedTabs`
 
@@ -1009,6 +1019,10 @@ is no distribution associated with the build.
 ### `fxViewButtonAreaType`
 
 A string of the name of the container where the Firefox View button is shown, null if the button has been removed.
+
+### `alltabsButtonAreaType`
+
+A string of the name of the container where the Tab Overflow button (or All Tabs button) is shown, null if the button has been removed.
 
 ### `hasMigratedBookmarks`
 

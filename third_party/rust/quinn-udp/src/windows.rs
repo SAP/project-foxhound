@@ -14,7 +14,7 @@ use windows_sys::Win32::Networking::WinSock;
 
 use crate::{
     cmsg::{self, CMsgHdr},
-    log::{debug, error},
+    log::debug,
     log_sendmsg_error, EcnCodepoint, RecvMeta, Transmit, UdpSockRef, IO_ERROR_LOG_INTERVAL,
 };
 
@@ -61,9 +61,10 @@ impl UdpSocketState {
 
         // We don't support old versions of Windows that do not enable access to `WSARecvMsg()`
         if WSARECVMSG_PTR.is_none() {
-            error!("network stack does not support WSARecvMsg function");
-
-            return Err(io::Error::from(io::ErrorKind::Unsupported));
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "network stack does not support WSARecvMsg function",
+            ));
         }
 
         if is_ipv4 {
@@ -80,7 +81,12 @@ impl UdpSocketState {
                 WinSock::IP_PKTINFO,
                 OPTION_ON,
             )?;
-            set_socket_option(&*socket.0, WinSock::IPPROTO_IP, WinSock::IP_ECN, OPTION_ON)?;
+            set_socket_option(
+                &*socket.0,
+                WinSock::IPPROTO_IP,
+                WinSock::IP_RECVECN,
+                OPTION_ON,
+            )?;
         }
 
         if is_ipv6 {
@@ -101,26 +107,37 @@ impl UdpSocketState {
             set_socket_option(
                 &*socket.0,
                 WinSock::IPPROTO_IPV6,
-                WinSock::IPV6_ECN,
+                WinSock::IPV6_RECVECN,
                 OPTION_ON,
             )?;
         }
-
-        // Opportunistically try to enable GRO
-        _ = set_socket_option(
-            &*socket.0,
-            WinSock::IPPROTO_UDP,
-            WinSock::UDP_RECV_MAX_COALESCED_SIZE,
-            // u32 per
-            // https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-udp-socket-options.
-            // Choice of 2^16 - 1 inspired by msquic.
-            u16::MAX as u32,
-        );
 
         let now = Instant::now();
         Ok(Self {
             last_send_error: Mutex::new(now.checked_sub(2 * IO_ERROR_LOG_INTERVAL).unwrap_or(now)),
         })
+    }
+
+    /// Enable or disable receive offloading.
+    ///
+    /// Also referred to as UDP Receive Segment Coalescing Offload (URO) on Windows.
+    ///
+    /// <https://learn.microsoft.com/en-us/windows-hardware/drivers/network/udp-rsc-offload>
+    ///
+    /// Disabled by default on Windows due to <https://github.com/quinn-rs/quinn/issues/2041>.
+    pub fn set_gro(&self, socket: UdpSockRef<'_>, enable: bool) -> io::Result<()> {
+        set_socket_option(
+            &*socket.0,
+            WinSock::IPPROTO_UDP,
+            WinSock::UDP_RECV_MAX_COALESCED_SIZE,
+            match enable {
+                // u32 per
+                // https://learn.microsoft.com/en-us/windows/win32/winsock/ipproto-udp-socket-options.
+                // Choice of 2^16 - 1 inspired by msquic.
+                true => u16::MAX as u32,
+                false => 0,
+            },
+        )
     }
 
     /// Sends a [`Transmit`] on the given socket.

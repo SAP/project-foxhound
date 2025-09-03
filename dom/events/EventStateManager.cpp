@@ -47,7 +47,7 @@
 #include "mozilla/dom/UIEventBinding.h"
 #include "mozilla/dom/UserActivation.h"
 #include "mozilla/dom/WheelEventBinding.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/ProcesstoolsMetrics.h"
 #include "mozilla/ScrollContainerFrame.h"
 #include "mozilla/StaticPrefs_accessibility.h"
 #include "mozilla/StaticPrefs_browser.h"
@@ -227,6 +227,53 @@ static nsINode* GetCommonAncestorForMouseUp(
   }
 
   return parent;
+}
+
+static bool HasNativeKeyBindings(nsIContent* aContent,
+                                 WidgetKeyboardEvent* aEvent) {
+  MOZ_ASSERT(aEvent->mMessage == eKeyPress);
+
+  if (!aContent) {
+    return false;
+  }
+
+  const RefPtr<dom::Element> targetElement = aContent->AsElement();
+  if (!targetElement) {
+    return false;
+  }
+
+  const auto type = [&]() -> Maybe<NativeKeyBindingsType> {
+    if (BrowserParent::GetFrom(targetElement)) {
+      const nsCOMPtr<nsIWidget> widget = aEvent->mWidget;
+      if (MOZ_UNLIKELY(!widget)) {
+        return Nothing();
+      }
+      widget::InputContext context = widget->GetInputContext();
+      return context.mIMEState.IsEditable()
+                 ? Some(context.GetNativeKeyBindingsType())
+                 : Nothing();
+    }
+
+    const auto* const textControlElement =
+        TextControlElement::FromNode(targetElement);
+    if (textControlElement &&
+        textControlElement->IsSingleLineTextControlOrTextArea() &&
+        !textControlElement->IsInDesignMode()) {
+      return textControlElement->IsTextArea()
+                 ? Some(NativeKeyBindingsType::MultiLineEditor)
+                 : Some(NativeKeyBindingsType::SingleLineEditor);
+    }
+    return targetElement->IsEditable()
+               ? Some(NativeKeyBindingsType::RichTextEditor)
+               : Nothing();
+  }();
+  if (type.isNothing()) {
+    return false;
+  }
+
+  const nsTArray<CommandInt>& commands =
+      aEvent->EditCommandsConstRef(type.value());
+  return !commands.IsEmpty();
 }
 
 LazyLogModule sMouseBoundaryLog("MouseBoundaryEvents");
@@ -942,11 +989,11 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     // XXX Probably doesn't matter much, but storing these in CSS pixels instead
     // of device pixels means behavior can be a bit odd if you zoom while
     // pointer-locked.
-    sLastScreenPoint =
+    sLastScreenPoint = RoundedToInt(
         Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint)
-            .extract();
-    sLastClientPoint = Event::GetClientCoords(
-        aPresContext, aEvent, aEvent->mRefPoint, CSSIntPoint(0, 0));
+            .extract());
+    sLastClientPoint = RoundedToInt(Event::GetClientCoords(
+        aPresContext, aEvent, aEvent->mRefPoint, CSSDoublePoint{0, 0}));
   }
 
   *aStatus = nsEventStatus_eIgnore;
@@ -1179,8 +1226,11 @@ nsresult EventStateManager::PreHandleEvent(nsPresContext* aPresContext,
     }
     case eKeyPress: {
       WidgetKeyboardEvent* keyEvent = aEvent->AsKeyboardEvent();
-      if (keyEvent->ModifiersMatchWithAccessKey(AccessKeyType::eChrome) ||
-          keyEvent->ModifiersMatchWithAccessKey(AccessKeyType::eContent)) {
+      if ((keyEvent->ModifiersMatchWithAccessKey(AccessKeyType::eChrome) ||
+           keyEvent->ModifiersMatchWithAccessKey(AccessKeyType::eContent)) &&
+          // If the key binding of this event is a native key binding, we
+          // prioritize it.
+          !HasNativeKeyBindings(aTargetContent, keyEvent)) {
         // If the eKeyPress event will be sent to a remote process, this
         // process needs to wait reply from the remote process for checking if
         // preceding eKeyDown event is consumed.  If preceding eKeyDown event
@@ -1923,7 +1973,20 @@ static void DispatchCrossProcessMouseExitEvents(WidgetMouseEvent* aMouseEvent,
     mouseExitEvent->mExitFrom =
         Some(aIsReallyExit ? WidgetMouseEvent::ePuppet
                            : WidgetMouseEvent::ePuppetParentToPuppetChild);
-    aRemoteTarget->SendRealMouseEvent(*mouseExitEvent);
+
+    auto ContentReactsToPointerEvents = [](BrowserParent* aRemoteTarget) {
+      if (Element* owner = aRemoteTarget->GetOwnerElement()) {
+        if (nsSubDocumentFrame* subDocFrame =
+                do_QueryFrame(owner->GetPrimaryFrame())) {
+          return subDocFrame->ContentReactsToPointerEvents();
+        }
+      }
+      return true;
+    };
+
+    if (ContentReactsToPointerEvents(aRemoteTarget)) {
+      aRemoteTarget->SendRealMouseEvent(*mouseExitEvent);
+    }
 
     aRemoteTarget = GetBrowserParentAncestor(aRemoteTarget);
   }
@@ -2652,9 +2715,8 @@ void EventStateManager::GenerateDragGesture(nsPresContext* aPresContext,
       // to use drag and drop rather than copy and paste when web apps
       // request to input password twice for conforming new password but
       // they used password generator.
-      TextEditor* textEditor =
-          nsContentUtils::GetTextEditorFromAnonymousNodeWithoutCreation(
-              eventContent);
+      const TextEditor* const textEditor =
+          nsContentUtils::GetExtantTextEditorFromAnonymousNode(eventContent);
       if (!textEditor || !textEditor->IsCopyToClipboardAllowed()) {
         StopTrackingDragGesture(true);
         return;
@@ -4420,9 +4482,9 @@ nsresult EventStateManager::PostHandleEvent(nsPresContext* aPresContext,
           // to set drag end point in such case (you hit assersion if you do
           // it).
           if (sourceWC) {
-            CSSIntPoint dropPointInScreen =
+            const CSSIntPoint dropPointInScreen = RoundedToInt(
                 Event::GetScreenCoords(aPresContext, aEvent, aEvent->mRefPoint)
-                    .extract();
+                    .extract());
             dragSession->SetDragEndPointForTests(dropPointInScreen.x,
                                                  dropPointInScreen.y);
           }
@@ -4685,8 +4747,15 @@ void EventStateManager::UpdateCursor(nsPresContext* aPresContext,
                                      WidgetMouseEvent* aEvent,
                                      nsIFrame* aTargetFrame,
                                      nsEventStatus* aStatus) {
-  if (aTargetFrame && IsRemoteTarget(aTargetFrame->GetContent())) {
-    return;
+  // XXX This is still not entirely correct, e.g. when mouse hover over the
+  // broder of a cross-origin iframe, we should show the cursor specified on the
+  // iframe (see bug 1943530).
+  if (nsSubDocumentFrame* f = do_QueryFrame(aTargetFrame)) {
+    if (auto* fl = f->FrameLoader();
+        fl && fl->IsRemoteFrame() && f->ContentReactsToPointerEvents()) {
+      // The sub-frame will update the cursor if needed.
+      return;
+    }
   }
 
   auto cursor = StyleCursorKind::Default;
@@ -5364,7 +5433,7 @@ void EventStateManager::NotifyMouseOver(WidgetMouseEvent* aMouseEvent,
   // do? At least, dispatching `mouseover` on it is odd.
   MOZ_LOG(logModule, LogLevel::Info,
           ("Dispatching %s event to %s (%p)",
-           isPointer ? "ePointerOver" : "eMoustOver",
+           isPointer ? "ePointerOver" : "eMouseOver",
            aContent ? ToString(*aContent).c_str() : "nullptr", aContent));
   nsCOMPtr<nsIWidget> targetWidget = DispatchMouseOrPointerBoundaryEvent(
       aMouseEvent, isPointer ? ePointerOver : eMouseOver, aContent,
@@ -5626,10 +5695,10 @@ void EventStateManager::GenerateMouseEnterExit(WidgetMouseEvent* aMouseEvent) {
 }
 
 OverOutElementsWrapper* EventStateManager::GetWrapperByEventID(
-    WidgetMouseEvent* aEvent) {
-  WidgetPointerEvent* pointer = aEvent->AsPointerEvent();
+    WidgetMouseEvent* aMouseEvent) {
+  MOZ_ASSERT(aMouseEvent);
+  WidgetPointerEvent* pointer = aMouseEvent->AsPointerEvent();
   if (!pointer) {
-    MOZ_ASSERT(aEvent->AsMouseEvent() != nullptr);
     if (!mMouseEnterLeaveHelper) {
       mMouseEnterLeaveHelper = new OverOutElementsWrapper(
           OverOutElementsWrapper::BoundaryEventType::Mouse);
@@ -6191,11 +6260,25 @@ nsresult EventStateManager::HandleMiddleClickPaste(
     clipboardType = nsIClipboard::kSelectionClipboard;
   }
 
+  RefPtr<DataTransfer> dataTransfer;
+  if (aEditorBase) {
+    // Create the same DataTransfer object here so we can share it between
+    // the clipboard event and the call to HandlePaste below. This prevents
+    // race conditions with Content Analysis on like we see in bug 1918027.
+    dataTransfer =
+        aEditorBase->CreateDataTransferForPaste(ePaste, clipboardType);
+  }
+  const auto clearDataTransfer = MakeScopeExit([&] {
+    if (dataTransfer) {
+      dataTransfer->ClearForPaste();
+    }
+  });
+
   // Fire ePaste event by ourselves since we need to dispatch "paste" event
   // even if the middle click event was consumed for compatibility with
   // Chromium.
   if (!nsCopySupport::FireClipboardEvent(ePaste, Some(clipboardType),
-                                         aPresShell, selection)) {
+                                         aPresShell, selection, dataTransfer)) {
     *aStatus = nsEventStatus_eConsumeNoDefault;
     return NS_OK;
   }
@@ -6230,11 +6313,11 @@ nsresult EventStateManager::HandleMiddleClickPaste(
   // quotation.  Otherwise, paste it as is.
   if (aMouseEvent->IsControl()) {
     DebugOnly<nsresult> rv = aEditorBase->PasteAsQuotationAsAction(
-        clipboardType, EditorBase::DispatchPasteEvent::No);
+        clipboardType, EditorBase::DispatchPasteEvent::No, dataTransfer);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to paste as quotation");
   } else {
     DebugOnly<nsresult> rv = aEditorBase->PasteAsAction(
-        clipboardType, EditorBase::DispatchPasteEvent::No);
+        clipboardType, EditorBase::DispatchPasteEvent::No, dataTransfer);
     NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "Failed to paste");
   }
   *aStatus = nsEventStatus_eConsumeNoDefault;
@@ -7508,6 +7591,26 @@ bool EventStateManager::WheelPrefs::IsOverOnePageScrollAllowedY(
   Init(index);
   return Abs(mMultiplierY[index]) >=
          MIN_MULTIPLIER_VALUE_ALLOWING_OVER_ONE_PAGE_SCROLL;
+}
+
+void EventStateManager::NotifyDestroyingFrameForGesture(nsIFrame* aFrame) {
+  MOZ_ASSERT(aFrame);
+  if (mGestureDownContent != aFrame->GetContent()) {
+    return;
+  }
+
+  if (nsIFrame* parent = aFrame->GetParent()) {
+    nsIFrame* f = nsLayoutUtils::GetNonGeneratedAncestor(parent);
+    MOZ_ASSERT(f);
+
+    nsIContent* content = f->GetContent();
+    mGestureDownContent = content;
+    mGestureDownFrameOwner = content;
+    mGestureDownInTextControl =
+        content && content->IsInNativeAnonymousSubtree() &&
+        TextControlElement::FromNodeOrNull(
+            content->GetClosestNativeAnonymousSubtreeRootParentOrHost());
+  }
 }
 
 }  // namespace mozilla

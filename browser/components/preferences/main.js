@@ -12,6 +12,8 @@ ChromeUtils.defineESModuleGetters(this, {
   BackgroundUpdate: "resource://gre/modules/BackgroundUpdate.sys.mjs",
   UpdateListener: "resource://gre/modules/UpdateListener.sys.mjs",
   MigrationUtils: "resource:///modules/MigrationUtils.sys.mjs",
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
   WindowsLaunchOnLogin: "resource://gre/modules/WindowsLaunchOnLogin.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
@@ -89,6 +91,9 @@ Preferences.addAll([
   { id: "browser.ctrlTab.sortByRecentlyUsed", type: "bool" },
   { id: "browser.tabs.hoverPreview.enabled", type: "bool" },
   { id: "browser.tabs.hoverPreview.showThumbnails", type: "bool" },
+
+  { id: "sidebar.verticalTabs", type: "bool" },
+  { id: "sidebar.revamp", type: "bool" },
 
   // CFR
   {
@@ -289,9 +294,16 @@ var gMainPane = {
         }
 
         // approximately a "requestIdleInterval"
-        window.setTimeout(() => {
-          window.requestIdleCallback(pollForDefaultBrowser);
-        }, backoffTimes[this._backoffIndex + 1 < backoffTimes.length ? this._backoffIndex++ : backoffTimes.length - 1]);
+        window.setTimeout(
+          () => {
+            window.requestIdleCallback(pollForDefaultBrowser);
+          },
+          backoffTimes[
+            this._backoffIndex + 1 < backoffTimes.length
+              ? this._backoffIndex++
+              : backoffTimes.length - 1
+          ]
+        );
       };
 
       window.setTimeout(() => {
@@ -377,7 +389,7 @@ var gMainPane = {
         let quitKey = ShortcutUtils.prettifyShortcut(quitKeyElement);
         document.l10n.setAttributes(
           document.getElementById("warnOnQuitKey"),
-          "confirm-on-quit-with-key",
+          "ask-on-quit-with-key",
           { quitKey }
         );
       } else {
@@ -520,6 +532,16 @@ var gMainPane = {
     ) {
       let backupGroup = document.getElementById("dataBackupGroup");
       backupGroup.removeAttribute("data-hidden-from-search");
+    }
+
+    if (!SelectableProfileService.isEnabled) {
+      // Don't want to rely on .hidden for the toplevel groupbox because
+      // of the pane hiding/showing code potentially interfering:
+      document
+        .getElementById("profilesGroup")
+        .setAttribute("style", "display: none !important");
+    } else {
+      setEventListener("manage-profiles", "command", gMainPane.manageProfiles);
     }
 
     // For media control toggle button, we support it on Windows, macOS and
@@ -710,9 +732,8 @@ var gMainPane = {
           "updateSettingsContainer"
         );
         updateContainer.classList.add("updateSettingCrossUserWarningContainer");
-        document.getElementById(
-          "updateSettingCrossUserWarningDesc"
-        ).hidden = false;
+        document.getElementById("updateSettingCrossUserWarningDesc").hidden =
+          false;
       }
     }
 
@@ -921,9 +942,8 @@ var gMainPane = {
     if (!(await FxAccounts.canConnectAccount())) {
       return;
     }
-    let url = await FxAccounts.config.promiseConnectAccountURI(
-      "dev-edition-setup"
-    );
+    let url =
+      await FxAccounts.config.promiseConnectAccountURI("dev-edition-setup");
     let accountsTab = win.gBrowser.addWebTab(url);
     win.gBrowser.selectedTab = accountsTab;
   },
@@ -1063,9 +1083,8 @@ var gMainPane = {
           await TranslationsParent.getSupportedLanguages();
         const languageList =
           TranslationsParent.getLanguageList(supportedLanguages);
-        const downloadPhases = await TranslationsState.createDownloadPhases(
-          languageList
-        );
+        const downloadPhases =
+          await TranslationsState.createDownloadPhases(languageList);
 
         if (supportedLanguages.languagePairs.length === 0) {
           throw new Error(
@@ -1263,7 +1282,6 @@ var gMainPane = {
         }
         this.updateAllButtons();
         this.elements.installList.appendChild(listFragment);
-        this.elements.installList.hidden = false;
       }
 
       /**
@@ -1778,6 +1796,15 @@ var gMainPane = {
       let setDefaultPane = document.getElementById("setDefaultPane");
       setDefaultPane.classList.toggle("is-default", isDefault);
     }
+  },
+
+  /**
+   *  Shows a subdialog containing the profile selector page.
+   */
+  manageProfiles() {
+    SelectableProfileService.maybeSetupDataStore().then(() => {
+      gSubDialog.open("about:profilemanager");
+    });
   },
 
   /**
@@ -2344,12 +2371,10 @@ var gMainPane = {
     if (Services.appinfo.fissionAutostart) {
       document.getElementById("limitContentProcess").hidden = true;
       document.getElementById("contentProcessCount").hidden = true;
-      document.getElementById(
-        "contentProcessCountEnabledDescription"
-      ).hidden = true;
-      document.getElementById(
-        "contentProcessCountDisabledDescription"
-      ).hidden = true;
+      document.getElementById("contentProcessCountEnabledDescription").hidden =
+        true;
+      document.getElementById("contentProcessCountDisabledDescription").hidden =
+        true;
       return;
     }
     if (Services.appinfo.browserTabsRemoteAutostart) {
@@ -2368,21 +2393,17 @@ var gMainPane = {
 
       document.getElementById("limitContentProcess").disabled = false;
       document.getElementById("contentProcessCount").disabled = false;
-      document.getElementById(
-        "contentProcessCountEnabledDescription"
-      ).hidden = false;
-      document.getElementById(
-        "contentProcessCountDisabledDescription"
-      ).hidden = true;
+      document.getElementById("contentProcessCountEnabledDescription").hidden =
+        false;
+      document.getElementById("contentProcessCountDisabledDescription").hidden =
+        true;
     } else {
       document.getElementById("limitContentProcess").disabled = true;
       document.getElementById("contentProcessCount").disabled = true;
-      document.getElementById(
-        "contentProcessCountEnabledDescription"
-      ).hidden = true;
-      document.getElementById(
-        "contentProcessCountDisabledDescription"
-      ).hidden = false;
+      document.getElementById("contentProcessCountEnabledDescription").hidden =
+        true;
+      document.getElementById("contentProcessCountDisabledDescription").hidden =
+        false;
     }
   },
 

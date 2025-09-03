@@ -3280,6 +3280,8 @@ static bool UpdateExecutionObservabilityOfScriptsInZone(
 
   AutoSuppressProfilerSampling suppressProfilerSampling(cx);
 
+  CancelOffThreadBaselineCompile(zone);
+
   JS::GCContext* gcx = cx->gcContext();
 
   Vector<JSScript*> scripts(cx);
@@ -6278,8 +6280,12 @@ class MOZ_STACK_CLASS Debugger::ObjectQuery {
       Traversal traversal(cx, *this, nogc);
       traversal.wantNames = false;
 
-      return traversal.addStart(JS::ubi::Node(&rootList)) &&
-             traversal.traverse();
+      if (!traversal.addStart(JS::ubi::Node(&rootList)) ||
+          !traversal.traverse()) {
+        ReportOutOfMemory(cx);
+        return false;
+      }
+      return true;
     }
   }
 

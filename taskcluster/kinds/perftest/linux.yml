@@ -16,7 +16,7 @@ task-defaults:
             - artifact: target.perftests.tests.tar.gz
             - artifact: target.xpcshell.tests.tar.gz
             - artifact: target.mochitest.tests.tar.gz
-            - artifact: target.tar.bz2
+            - artifact: target.tar.xz
     platform: linux1804-64-shippable/opt
     require-build:
         linux1804-64-shippable/opt: build-linux64-shippable/opt
@@ -185,8 +185,9 @@ livesites:
         symbol: perftest({symbol})
     attributes:
         batch: false
-        cron: true
+        cron: false
     perftest:
+        # broken: bug 1933712
         - [cloudflare, netwerk/test/perf/perftest_http3_cloudflareblog.js]
         # broken: bug 1678588
         # - [fb-scroll, netwerk/test/perf/perftest_http3_facebook_scroll.js]
@@ -398,7 +399,6 @@ ml-perf:
         fetch:
             - ort.wasm
             - ort.jsep.wasm
-            - ort-training.wasm
             - xenova-all-minilm-l6-v2
     description: Run ML Models Perf Tests
     treeherder:
@@ -416,14 +416,40 @@ ml-perf:
             --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             toolkit/components/ml/tests/browser/browser_ml_engine_perf.js
+
+ml-summarizer-perf:
+    fetches:
+        fetch:
+            - ort.wasm
+            - ort.jsep.wasm
+            - qwen2.5-0.5-instruct
+            - distilbart-cnn-12-6
+    description: Run ML Models Perf Tests
+    treeherder:
+        symbol: perftest(linux-ml-sum-perf)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            toolkit/components/ml/tests/browser/browser_ml_summarizer_perf.js
 
 ml-multi-perf:
     fetches:
         fetch:
             - ort.wasm
             - ort.jsep.wasm
-            - ort-training.wasm
             - xenova-all-minilm-l6-v2
             - mozilla-ner
             - mozilla-intent
@@ -443,14 +469,40 @@ ml-multi-perf:
             --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             toolkit/components/ml/tests/browser/browser_ml_engine_multi_perf.js
+
+ml-perf-suggest-ft:
+    fetches:
+        fetch:
+            - ort.wasm
+            - ort.jsep.wasm
+            - mozilla-ner
+            - mozilla-intent
+    description: Run ML Suggest Feature
+    treeherder:
+        symbol: perftest(linux-ml-perf-suggest-ft)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            toolkit/components/ml/tests/browser/browser_ml_suggest_feature_perf.js
 
 ml-perf-suggest-inf:
     fetches:
         fetch:
             - ort.wasm
             - ort.jsep.wasm
-            - ort-training.wasm
             - mozilla-ner
             - mozilla-intent
     description: Run ML Suggest Inference Model
@@ -469,23 +521,24 @@ ml-perf-suggest-inf:
             --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
             toolkit/components/ml/tests/browser/browser_ml_suggest_inference.js
 
-ml-perf-suggest-int:
+ml-perf-autofill:
     fetches:
         fetch:
             - ort.wasm
             - ort.jsep.wasm
             - ort-training.wasm
-            - mozilla-intent
-    description: Run ML Suggest Intent Model
+            - mozilla-autofill
+    description: Run ML Autofill Model
     treeherder:
-        symbol: perftest(linux-ml-perf-suggest-int)
+        symbol: perftest(linux-ml-perf-autofill)
         tier: 2
     attributes:
         batch: false
         cron: false
-    run-on-projects: []
+    run-on-projects: [autoland, mozilla-central]
     run:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
@@ -494,23 +547,24 @@ ml-perf-suggest-int:
             --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
-            toolkit/components/ml/tests/browser/browser_ml_suggest_intent_perf.js
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            toolkit/components/ml/tests/browser/browser_ml_autofill_perf.js
 
-ml-perf-suggest-ner:
+tr8ns-perf-es-en:
     fetches:
         fetch:
-            - ort.wasm
-            - ort.jsep.wasm
-            - ort-training.wasm
-            - mozilla-ner
-    description: Run ML Suggest NER Model
+            - translations.inference
+            - translations.esen.lex
+            - translations.esen.model
+            - translations.esen.vocab
+    description: Run Full-Page Translations with the Spanish-to-English model
     treeherder:
-        symbol: perftest(linux-ml-perf-suggest-ner)
+        symbol: perftest(linux-tr8ns-perf-es-en)
         tier: 2
     attributes:
         batch: false
         cron: false
-    run-on-projects: []
+    run-on-projects: [autoland, mozilla-central]
     run:
         command: >-
             mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
@@ -519,4 +573,30 @@ ml-perf-suggest-ner:
             --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
             --flavor mochitest
             --output $MOZ_FETCHES_DIR/../artifacts
-            toolkit/components/ml/tests/browser/browser_ml_suggest_ner_perf.js
+            browser/components/translations/tests/browser/browser_translations_perf_es_en.js
+
+ml-perf-smart-tab:
+    fetches:
+        fetch:
+            - ort.wasm
+            - ort.jsep.wasm
+            - mozilla-smart-tab-topic
+            - mozilla-smart-tab-emb
+    description: Run ML Smart Tab Model
+    treeherder:
+        symbol: perftest(linux-ml-perf-smart-tab)
+        tier: 2
+    attributes:
+        batch: false
+        cron: false
+    run-on-projects: [autoland, mozilla-central]
+    run:
+        command: >-
+            mkdir -p $MOZ_FETCHES_DIR/../artifacts &&
+            cd $MOZ_FETCHES_DIR &&
+            python3 python/mozperftest/mozperftest/runner.py
+            --mochitest-binary ${MOZ_FETCHES_DIR}/firefox/firefox-bin
+            --flavor mochitest
+            --output $MOZ_FETCHES_DIR/../artifacts
+            --hooks toolkit/components/ml/tests/tools/hooks_local_hub.py
+            toolkit/components/ml/tests/browser/browser_ml_smart_tab_perf.js

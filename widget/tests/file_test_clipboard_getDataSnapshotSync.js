@@ -48,10 +48,10 @@ clipboardTypes.forEach(function (type) {
 
     let request = getClipboardDataSnapshotSync(type);
     isDeeply(request.flavorList, [], "Check flavorList");
-    await asyncClipboardRequestGetData(request, "text/plain", true).catch(
-      () => {}
-    );
-    syncClipboardRequestGetData(request, "text/plain", true);
+    await asyncClipboardRequestGetData(request, "text/plain", true).catch(e => {
+      is(e, Cr.NS_ERROR_FAILURE, "should throw NS_ERROR_FAILURE error");
+    });
+    syncClipboardRequestGetData(request, "text/plain", Cr.NS_ERROR_FAILURE);
   });
 
   add_task(async function test_clipboard_getDataSnapshotSync_after_write() {
@@ -73,11 +73,11 @@ clipboardTypes.forEach(function (type) {
     );
     ok(request.valid, "request should still be valid");
     // Requesting a flavor that is not in the list should throw error.
-    await asyncClipboardRequestGetData(request, "text/html", true).catch(
-      () => {}
-    );
+    await asyncClipboardRequestGetData(request, "text/html", true).catch(e => {
+      is(e, Cr.NS_ERROR_FAILURE, "should throw NS_ERROR_FAILURE error");
+    });
     ok(request.valid, "request should still be valid");
-    syncClipboardRequestGetData(request, "text/html", true);
+    syncClipboardRequestGetData(request, "text/html", Cr.NS_ERROR_FAILURE);
     ok(request.valid, "request should still be valid");
 
     // Writing a new data should invalid existing get request.
@@ -86,12 +86,20 @@ clipboardTypes.forEach(function (type) {
       () => {
         ok(false, "asyncClipboardRequestGetData should not success");
       },
-      () => {
-        ok(true, "asyncClipboardRequestGetData should reject");
+      e => {
+        is(
+          e,
+          Cr.NS_ERROR_NOT_AVAILABLE,
+          "should throw NS_ERROR_NOT_AVAILABLE error"
+        );
       }
     );
     ok(!request.valid, "request should no longer be valid");
-    syncClipboardRequestGetData(request, "text/plain", true);
+    syncClipboardRequestGetData(
+      request,
+      "text/plain",
+      Cr.NS_ERROR_NOT_AVAILABLE
+    );
     ok(!request.valid, "request should no longer be valid");
 
     info(`check clipboard data again`);
@@ -132,8 +140,12 @@ clipboardTypes.forEach(function (type) {
       () => {
         ok(false, "asyncClipboardRequestGetData should not success");
       },
-      () => {
-        ok(true, "asyncClipboardRequestGetData should reject");
+      e => {
+        is(
+          e,
+          Cr.NS_ERROR_NOT_AVAILABLE,
+          "should throw NS_ERROR_NOT_AVAILABLE error"
+        );
       }
     );
     ok(!request.valid, "request should no longer be valid");
@@ -164,9 +176,9 @@ add_task(async function test_clipboard_getDataSnapshotSync_html_data() {
     "Check data"
   );
   // Requesting a flavor that is not in the list should throw error.
-  await asyncClipboardRequestGetData(request, "text/plain", true).catch(
-    () => {}
-  );
+  await asyncClipboardRequestGetData(request, "text/plain", true).catch(e => {
+    is(e, Cr.NS_ERROR_FAILURE, "should throw NS_ERROR_FAILURE error");
+  });
 
   is(
     syncClipboardRequestGetData(request, "text/html"),
@@ -174,5 +186,42 @@ add_task(async function test_clipboard_getDataSnapshotSync_html_data() {
     "Check data (sync)"
   );
   // Requesting a flavor that is not in the list should throw error.
-  syncClipboardRequestGetData(request, "text/plain", true);
+  syncClipboardRequestGetData(request, "text/plain", Cr.NS_ERROR_FAILURE);
+});
+
+// Test for bug 1935127.
+add_task(async function test_invalidate_dataSnapshot() {
+  const type = clipboard.kGlobalClipboard;
+  writeRandomStringToClipboard("text/plain", type);
+  let request = await getClipboardDataSnapshot(type);
+  ok(request.valid, "request should be valid");
+
+  // Writing a new data should invalid existing get request.
+  writeRandomStringToClipboard("text/plain", type);
+
+  info(
+    "The ClipboardDataSnapshot should no longer be valid as the clipboard content has changed"
+  );
+  syncClipboardRequestGetData(request, "text/plain", Cr.NS_ERROR_NOT_AVAILABLE);
+
+  info("Requesting data again immediately should not cause a crash");
+  await Promise.all([
+    asyncClipboardRequestGetData(request, "text/plain").then(
+      () => {
+        ok(false, "should not success");
+      },
+      e => {
+        is(
+          e,
+          Cr.NS_ERROR_NOT_AVAILABLE,
+          "should be rejected with NS_ERROR_NOT_AVAILABLE error"
+        );
+      }
+    ),
+    syncClipboardRequestGetData(
+      request,
+      "text/plain",
+      Cr.NS_ERROR_NOT_AVAILABLE
+    ),
+  ]);
 });

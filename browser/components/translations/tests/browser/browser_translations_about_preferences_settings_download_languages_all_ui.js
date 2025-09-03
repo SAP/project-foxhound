@@ -12,32 +12,20 @@ add_task(async function test_translations_settings_download_languages_all() {
     prefs: [["browser.translations.newSettingsUI.enable", true]],
   });
 
-  const frenchModels = [
-    "lex.50.50.enfr.s2t.bin",
-    "lex.50.50.fren.s2t.bin",
-    "model.enfr.intgemm.alphas.bin",
-    "model.fren.intgemm.alphas.bin",
-    "vocab.enfr.spm",
-    "vocab.fren.spm",
-  ];
+  const frenchModels = languageModelNames([
+    { fromLang: "fr", toLang: "en" },
+    { fromLang: "en", toLang: "fr" },
+  ]);
 
-  const spainishModels = [
-    "lex.50.50.enes.s2t.bin",
-    "lex.50.50.esen.s2t.bin",
-    "model.enes.intgemm.alphas.bin",
-    "model.esen.intgemm.alphas.bin",
-    "vocab.enes.spm",
-    "vocab.esen.spm",
-  ];
+  const spanishModels = languageModelNames([
+    { fromLang: "es", toLang: "en" },
+    { fromLang: "en", toLang: "es" },
+  ]);
 
-  const ukrainianModels = [
-    "lex.50.50.enuk.s2t.bin",
-    "lex.50.50.uken.s2t.bin",
-    "model.enuk.intgemm.alphas.bin",
-    "model.uken.intgemm.alphas.bin",
-    "vocab.enuk.spm",
-    "vocab.uken.spm",
-  ];
+  const ukrainianModels = languageModelNames([
+    { fromLang: "uk", toLang: "en" },
+    { fromLang: "en", toLang: "uk" },
+  ]);
 
   assertVisibility({
     message: "Expect paneGeneral elements to be visible.",
@@ -47,21 +35,17 @@ add_task(async function test_translations_settings_download_languages_all() {
   info(
     "Open translations settings page by clicking on translations settings button."
   );
-  const { translateDownloadLanguagesList } =
+  const { downloadLanguageList } =
     await TranslationsSettingsTestUtils.openAboutPreferencesTranslationsSettingsPane(
       settingsButton
     );
-
-  let langList = translateDownloadLanguagesList.querySelector(
-    ".translations-settings-language-list"
-  );
 
   info(
     "Install each language French, Spanish and Ukrainian and check if All language state changes to 'all language downloaded' by changing the all language button icon to 'remove icon'"
   );
 
   info("Download French language model.");
-  let langFr = Array.from(langList.querySelectorAll("label")).find(
+  let langFr = Array.from(downloadLanguageList.querySelectorAll("label")).find(
     el => el.getAttribute("value") === "fr"
   );
 
@@ -88,7 +72,7 @@ add_task(async function test_translations_settings_download_languages_all() {
 
   info("Download Spanish language model.");
 
-  let langEs = Array.from(langList.querySelectorAll("label")).find(
+  let langEs = Array.from(downloadLanguageList.querySelectorAll("label")).find(
     el => el.getAttribute("value") === "es"
   );
 
@@ -101,9 +85,9 @@ add_task(async function test_translations_settings_download_languages_all() {
 
   Assert.deepEqual(
     await remoteClients.translationModels.resolvePendingDownloads(
-      spainishModels.length
+      spanishModels.length
     ),
-    spainishModels,
+    spanishModels,
     "Spanish models were downloaded."
   );
 
@@ -115,7 +99,7 @@ add_task(async function test_translations_settings_download_languages_all() {
 
   info("Download Ukrainian language model.");
 
-  let langUk = Array.from(langList.querySelectorAll("label")).find(
+  let langUk = Array.from(downloadLanguageList.querySelectorAll("label")).find(
     el => el.getAttribute("value") === "uk"
   );
 
@@ -141,7 +125,7 @@ add_task(async function test_translations_settings_download_languages_all() {
   );
 
   // Download "All languages" is the first child
-  let langAll = langList.children[0];
+  let langAll = downloadLanguageList.children[0];
 
   ok(
     langAll
@@ -168,7 +152,7 @@ add_task(async function test_translations_settings_download_languages_all() {
     langAll
       .querySelector("moz-button")
       .classList.contains("translations-settings-download-icon"),
-    "Download icon is visible for all languages i.e. all languages are not downloaded since one language, Spainish was removed."
+    "Download icon is visible for all languages i.e. all languages are not downloaded since one language, Spanish was removed."
   );
 
   await cleanup();

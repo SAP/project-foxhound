@@ -9,7 +9,7 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   accessibility:
     "chrome://remote/content/shared/webdriver/Accessibility.sys.mjs",
-  action: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
+  actions: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
   assertTargetInViewPort:
     "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
@@ -175,12 +175,19 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     await lazy.AnimationFramePromise(this.contentWindow);
   }
 
+  #getClientRects(options, _context) {
+    const { elem } = options;
+
+    return elem.getClientRects();
+  }
+
   #getInViewCentrePoint(options) {
     const { rect } = options;
 
     return lazy.dom.getInViewCentrePoint(rect, this.contentWindow);
   }
 
+  // eslint-disable-next-line complexity
   async receiveMessage(msg) {
     if (!this.contentWindow) {
       throw new DOMException("Actor is no longer active", "InactiveActor");
@@ -205,6 +212,9 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
         case "MarionetteCommandsParent:_dispatchEvent":
           this.#dispatchEvent(data);
           waitForNextTick = true;
+          break;
+        case "MarionetteCommandsParent:_getClientRects":
+          result = this.#getClientRects(data);
           break;
         case "MarionetteCommandsParent:_getInViewCentrePoint":
           result = this.#getInViewCentrePoint(data);
@@ -624,10 +634,10 @@ export class MarionetteCommandsChild extends JSWindowActorChild {
     const { actions } = options;
 
     if (this.#actionState === null) {
-      this.#actionState = new lazy.action.State();
+      this.#actionState = new lazy.actions.State();
     }
 
-    const actionChain = await lazy.action.Chain.fromJSON(
+    const actionChain = await lazy.actions.Chain.fromJSON(
       this.#actionState,
       actions,
       this.#actionsOptions

@@ -16,6 +16,7 @@
 #include <optional>
 #include <vector>
 
+#include "api/transport/ecn_marking.h"
 #include "api/units/data_rate.h"
 #include "api/units/data_size.h"
 #include "api/units/time_delta.h"
@@ -168,6 +169,7 @@ struct RTC_EXPORT PacketResult {
 
   SentPacket sent_packet;
   Timestamp receive_time = Timestamp::PlusInfinity();
+  EcnMarking ecn = EcnMarking::kNotEct;
 };
 
 struct RTC_EXPORT TransportPacketsFeedback {
@@ -177,6 +179,7 @@ struct RTC_EXPORT TransportPacketsFeedback {
 
   Timestamp feedback_time = Timestamp::PlusInfinity();
   DataSize data_in_flight = DataSize::Zero();
+  bool transport_supports_ecn = false;
   std::vector<PacketResult> packet_feedbacks;
 
   // Arrival times for messages without send time information.

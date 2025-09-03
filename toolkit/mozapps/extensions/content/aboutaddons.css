@@ -94,7 +94,7 @@ h2 {
 }
 
 .category[name="discover"] {
-  background-image: url("chrome://mozapps/skin/extensions/category-discover.svg");
+  background-image: url("chrome://global/skin/icons/trophy.svg");
 }
 .category[name="locale"] {
   background-image: url("chrome://mozapps/skin/extensions/category-languages.svg");
@@ -258,7 +258,7 @@ addon-card[expanded] .update-postponed-bar {
 addon-card[expanded] .update-postponed-bar + .addon-card-message {
   /* Remove margin between the two message bars when they are both
    * visible in the detail view */
-  margin-top: 0px;
+  margin-top: 0;
 }
 
 .update-postponed-bar + .addon-card-message:not([hidden]) {
@@ -332,26 +332,34 @@ addon-card[expanded] .update-postponed-bar + .addon-card-message {
   flex-shrink: 0;
   border-radius: 11px;
   -moz-context-properties: fill;
-  fill: #fff;
 }
 
 .addon-badge-private-browsing-allowed {
   background-image: url("chrome://global/skin/icons/indicator-private-browsing.svg");
+  /* This unusual value makes the badge the same size as the other badges. */
+  background-size: 23px;
 }
 
-.addon-badge-recommended {
-  background-color: var(--orange-50);
-  background-image: url("chrome://mozapps/skin/extensions/recommended.svg");
-}
-
+.addon-badge-recommended,
 .addon-badge-line {
-  background-color: #fff;
-  background-image: url("chrome://mozapps/skin/extensions/line.svg");
-  background-size: 16px;
-  border-radius: 10px;
   border: 1px solid #CFCFD8;
   width: 20px;
   height: 20px;
+
+  @media (prefers-color-scheme: dark) {
+    border-color: #3A3944;
+  }
+}
+
+.addon-badge-recommended {
+  background-image: url("chrome://global/skin/icons/trophy.svg");
+  background-size: 14px;
+  fill: var(--orange-50);
+}
+
+.addon-badge-line {
+  background-image: url("chrome://mozapps/skin/extensions/line.svg");
+  background-size: 16px;
 }
 
 .addon-badge-verified {
@@ -653,6 +661,10 @@ panel-item[action="report"]::part(button) {
    * the min-height unchanged to avoid potential regressions in the short term.
    */
   min-height: 250px;
+
+  /* Setting display to grid to prevent the inline options page browser element
+   * from hitting the regression tracked by Bug 1939206. */
+  display: grid;
 }
 
 addon-permissions-list > .addon-detail-row {
@@ -662,33 +674,51 @@ addon-permissions-list > .addon-detail-row {
 .addon-permissions-list {
   list-style-type: none;
   margin: 0;
-  padding-inline-start: 8px;
+  padding-inline-start: var(--space-small);
 }
 
 .addon-permissions-list > li {
   border: none;
-  padding-block: 4px;
-  padding-inline-start: 2rem;
+  padding-block: var(--space-xsmall);
   background-image: none;
-  background-position: 0 center;
-  background-size: 1.6rem 1.6rem;
   background-repeat: no-repeat;
   word-break: break-all;
-}
 
-.addon-permissions-list > li:dir(rtl) {
-  background-position-x: right 0;
-}
+  .addon-permissions-required & {
+    --checkmark-width: var(--size-item-small);
+    --checkmark-height: var(--size-item-small);
+    padding-inline-start: calc(var(--checkmark-width) + var(--space-small));
+    background-position: 0 center;
+    background-size: var(--checkmark-width) var(--checkmark-height);
+    /* using a list-style-image prevents aligning the image */
+    background-image: url("chrome://global/skin/icons/check.svg");
+    -moz-context-properties: fill;
+    fill: var(--green-60);
 
-/* using a list-style-image prevents aligning the image */
-.addon-permissions-list > li.permission-checked {
-  background-image: url("chrome://global/skin/icons/check.svg");
-  -moz-context-properties: fill;
-  fill: var(--green-60);
+    &:dir(rtl) {
+      background-position-x: right 0;
+    }
+  }
+
+  .addon-permissions-optional & {
+    padding-inline-start: 0;
+
+    moz-toggle > moz-message-bar {
+      /* decrease from default --space-large to appear closer to the permission
+       * message. Otherwise it is closer to the next permission than the
+       * permission associated with the toggle. */
+      margin-block-start: var(--space-small);
+    }
+  }
 }
 
 .permission-header {
   font-size: 1em;
+
+  /* Increase margin between the required and optional permissions lists. */
+  .addon-permissions-optional > & {
+    margin-top: var(--space-xlarge);
+  }
 }
 
 .tab-group {

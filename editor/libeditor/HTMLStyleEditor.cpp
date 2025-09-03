@@ -8,15 +8,16 @@
 #include "HTMLEditorInlines.h"
 #include "HTMLEditorNestedClasses.h"
 
-#include "AutoRangeArray.h"
+#include "AutoClonedRangeArray.h"
 #include "CSSEditUtils.h"
 #include "EditAction.h"
+#include "EditorLineBreak.h"
 #include "EditorUtils.h"
 #include "HTMLEditHelpers.h"
 #include "HTMLEditUtils.h"
 #include "PendingStyles.h"
 #include "SelectionState.h"
-#include "WSRunObject.h"
+#include "WSRunScanner.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/ContentIterator.h"
@@ -73,13 +74,11 @@ template nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
     const Element& aEditingHost);
 
 template nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
-    AutoRangeArray& aRanges,
-    const AutoTArray<EditorInlineStyleAndValue, 1>& aStylesToSet,
-    const Element& aEditingHost);
+    AutoClonedRangeArray& aRanges,
+    const AutoTArray<EditorInlineStyleAndValue, 1>& aStylesToSet);
 template nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
-    AutoRangeArray& aRanges,
-    const AutoTArray<EditorInlineStyleAndValue, 32>& aStylesToSet,
-    const Element& aEditingHost);
+    AutoClonedRangeArray& aRanges,
+    const AutoTArray<EditorInlineStyleAndValue, 32>& aStylesToSet);
 
 nsresult HTMLEditor::SetInlinePropertyAsAction(nsStaticAtom& aProperty,
                                                nsStaticAtom* aAttribute,
@@ -308,9 +307,8 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
   //       mutation event listeners.  We should try to delete this in a bug.
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
-  AutoRangeArray selectionRanges(SelectionRef());
-  nsresult rv = SetInlinePropertiesAroundRanges(selectionRanges, aStylesToSet,
-                                                aEditingHost);
+  AutoClonedSelectionRangeArray selectionRanges(SelectionRef());
+  nsresult rv = SetInlinePropertiesAroundRanges(selectionRanges, aStylesToSet);
   if (NS_FAILED(rv)) {
     NS_WARNING("HTMLEditor::SetInlinePropertiesAroundRanges() failed");
     return rv;
@@ -320,15 +318,15 @@ nsresult HTMLEditor::SetInlinePropertiesAsSubAction(
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "AutoRangeArray::ApplyTo() failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "AutoClonedSelectionRangeArray::ApplyTo() failed");
   return rv;
 }
 
 template <size_t N>
 nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
-    AutoRangeArray& aRanges,
-    const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet,
-    const Element& aEditingHost) {
+    AutoClonedRangeArray& aRanges,
+    const AutoTArray<EditorInlineStyleAndValue, N>& aStylesToSet) {
   MOZ_ASSERT(!aRanges.HasSavedRanges());
   for (const EditorInlineStyleAndValue& styleToSet : aStylesToSet) {
     AutoInlineStyleSetter inlineStyleSetter(styleToSet);
@@ -369,8 +367,7 @@ nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
           }
         }
         Result<EditorRawDOMRange, nsresult> rangeOrError =
-            inlineStyleSetter.ExtendOrShrinkRangeToApplyTheStyle(*this, range,
-                                                                 aEditingHost);
+            inlineStyleSetter.ExtendOrShrinkRangeToApplyTheStyle(*this, range);
         if (MOZ_UNLIKELY(rangeOrError.isErr())) {
           NS_WARNING(
               "HTMLEditor::ExtendOrShrinkRangeToApplyTheStyle() failed, but "
@@ -392,7 +389,7 @@ nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
       if (range.Collapsed()) {
         Result<RefPtr<Text>, nsresult> emptyTextNodeOrError =
             AutoInlineStyleSetter::GetEmptyTextNodeToApplyNewStyle(
-                *this, range.StartRef(), aEditingHost);
+                *this, range.StartRef());
         if (MOZ_UNLIKELY(emptyTextNodeOrError.isErr())) {
           NS_WARNING(
               "AutoInlineStyleSetter::GetEmptyTextNodeToApplyNewStyle() "
@@ -577,11 +574,10 @@ nsresult HTMLEditor::SetInlinePropertiesAroundRanges(
 // static
 Result<RefPtr<Text>, nsresult>
 HTMLEditor::AutoInlineStyleSetter::GetEmptyTextNodeToApplyNewStyle(
-    HTMLEditor& aHTMLEditor, const EditorDOMPoint& aCandidatePointToInsert,
-    const Element& aEditingHost) {
+    HTMLEditor& aHTMLEditor, const EditorDOMPoint& aCandidatePointToInsert) {
   auto pointToInsertNewText =
       HTMLEditUtils::GetBetterCaretPositionToInsertText<EditorDOMPoint>(
-          aCandidatePointToInsert, aEditingHost);
+          aCandidatePointToInsert);
   if (MOZ_UNLIKELY(!pointToInsertNewText.IsSet())) {
     return RefPtr<Text>();  // cannot insert text there
   }
@@ -1923,8 +1919,7 @@ EditorRawDOMRange HTMLEditor::AutoInlineStyleSetter::
 
 Result<EditorRawDOMRange, nsresult>
 HTMLEditor::AutoInlineStyleSetter::ExtendOrShrinkRangeToApplyTheStyle(
-    const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange,
-    const Element& aEditingHost) const {
+    const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange) const {
   if (NS_WARN_IF(!aRange.IsPositioned())) {
     return Err(NS_ERROR_FAILURE);
   }
@@ -1943,7 +1938,7 @@ HTMLEditor::AutoInlineStyleSetter::ExtendOrShrinkRangeToApplyTheStyle(
   if (range.EndRef().IsInContentNode()) {
     const WSScanResult nextContentData =
         WSRunScanner::ScanInclusiveNextVisibleNodeOrBlockBoundary(
-            &aEditingHost, range.EndRef(),
+            WSRunScanner::Scan::EditableNodes, range.EndRef(),
             BlockInlineCheck::UseComputedDisplayOutsideStyle);
     if (nextContentData.ReachedInvisibleBRElement() &&
         nextContentData.BRElementPtr()->GetParentElement() &&
@@ -2315,7 +2310,7 @@ HTMLEditor::SplitAncestorStyledInlineElementsAt(
 
 Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
     const EditorDOMPoint& aPoint, const EditorInlineStyle& aStyleToRemove,
-    SpecifiedStyle aSpecifiedStyle) {
+    SpecifiedStyle aSpecifiedStyle, const Element& aEditingHost) {
   MOZ_ASSERT(IsEditActionDataAvailable());
 
   if (NS_WARN_IF(!aPoint.IsSet())) {
@@ -2399,14 +2394,18 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
       firstLeafChildOfNextNode ? firstLeafChildOfNextNode
                                : unwrappedSplitNodeResult.GetNextContent(),
       0);
-  RefPtr<HTMLBRElement> brElement;
+  Maybe<EditorLineBreak> lineBreak;
   // But don't try to split non-containers like `<br>`, `<hr>` and `<img>`
   // element.
   if (!atStartOfNextNode.IsInContentNode() ||
       !HTMLEditUtils::IsContainerNode(
           *atStartOfNextNode.ContainerAs<nsIContent>())) {
     // If it's a `<br>` element, let's move it into new node later.
-    brElement = HTMLBRElement::FromNode(atStartOfNextNode.GetContainer());
+    auto* const brElement =
+        HTMLBRElement::FromNode(atStartOfNextNode.GetContainer());
+    if (brElement) {
+      lineBreak.emplace(*brElement);
+    }
     if (!atStartOfNextNode.GetContainerParentAs<nsIContent>()) {
       NS_WARNING("atStartOfNextNode was in an orphan node");
       return Err(NS_ERROR_FAILURE);
@@ -2449,22 +2448,6 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
             {EmptyCheckOption::TreatListItemAsVisible,
              EmptyCheckOption::TreatTableCellAsVisible},
             &seenBR)) {
-      if (seenBR && !brElement) {
-        brElement = HTMLEditUtils::GetFirstBRElement(
-            *unwrappedSplitResultAtStartOfNextNode.GetNextContentAs<Element>());
-      }
-      // Once we remove <br> element's parent, we lose the rights to remove it
-      // from the parent because the parent becomes not editable.  Therefore, we
-      // need to delete the <br> element before removing its parents for reusing
-      // it later.
-      if (brElement) {
-        nsresult rv = DeleteNodeWithTransaction(*brElement);
-        if (NS_FAILED(rv)) {
-          NS_WARNING("EditorBase::DeleteNodeWithTransaction() failed");
-          return Err(rv);
-        }
-      }
-      // Delete next node if it's empty.
       // MOZ_KnownLive because of grabbed by
       // unwrappedSplitResultAtStartOfNextNode.
       nsresult rv = DeleteNodeWithTransaction(MOZ_KnownLive(
@@ -2504,33 +2487,34 @@ Result<EditorDOMPoint, nsresult> HTMLEditor::ClearStyleAt(
           : unwrappedSplitResultAtStartOfNextNode.GetPreviousContent(),
       0);
 
-  // If the right node starts with a `<br>`, suck it out of right node and into
-  // the left node left node.  This is so we you don't revert back to the
+  // If the right node starts with a line break, suck it out of right node and
+  // into the left node left node.  This is so we you don't revert back to the
   // previous style if you happen to click at the end of a line.
-  if (brElement) {
-    if (brElement->GetParentNode()) {
-      Result<MoveNodeResult, nsresult> moveBRElementResult =
-          MoveNodeWithTransaction(*brElement, pointToPutCaret);
-      if (MOZ_UNLIKELY(moveBRElementResult.isErr())) {
-        NS_WARNING("HTMLEditor::MoveNodeWithTransaction() failed");
-        return moveBRElementResult.propagateErr();
+  if (lineBreak.isSome()) {
+    if (lineBreak->IsInComposedDoc()) {
+      Result<EditorDOMPoint, nsresult> lineBreakPointOrError =
+          DeleteLineBreakWithTransaction(lineBreak.ref(), nsIEditor::eStrip,
+                                         aEditingHost);
+      if (MOZ_UNLIKELY(lineBreakPointOrError.isErr())) {
+        NS_WARNING("HTMLEditor::DeleteLineBreakWithTransaction() failed");
+        return lineBreakPointOrError.propagateErr();
       }
-      moveBRElementResult.unwrap().MoveCaretPointTo(
-          pointToPutCaret, *this,
-          {SuggestCaret::OnlyIfHasSuggestion,
-           SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
-    } else {
-      Result<CreateElementResult, nsresult> insertBRElementResult =
-          InsertNodeWithTransaction<Element>(*brElement, pointToPutCaret);
-      if (MOZ_UNLIKELY(insertBRElementResult.isErr())) {
-        NS_WARNING("EditorBase::InsertNodeWithTransaction() failed");
-        return insertBRElementResult.propagateErr();
-      }
-      insertBRElementResult.unwrap().MoveCaretPointTo(
-          pointToPutCaret, *this,
-          {SuggestCaret::OnlyIfHasSuggestion,
-           SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
     }
+    Result<CreateLineBreakResult, nsresult> insertBRElementResultOrError =
+        InsertLineBreak(WithTransaction::Yes, LineBreakType::BRElement,
+                        pointToPutCaret);
+    if (MOZ_UNLIKELY(insertBRElementResultOrError.isErr())) {
+      NS_WARNING(
+          "HTMLEditor::InsertLineBreak(WithTransaction::Yes, "
+          "LineBreakType::BRElement) failed");
+      return insertBRElementResultOrError.propagateErr();
+    }
+    CreateLineBreakResult insertBRElementResult =
+        insertBRElementResultOrError.unwrap();
+    insertBRElementResult.MoveCaretPointTo(
+        pointToPutCaret, *this,
+        {SuggestCaret::OnlyIfHasSuggestion,
+         SuggestCaret::OnlyIfTransactionsAllowedToDoIt});
 
     if (unwrappedSplitResultAtStartOfNextNode.GetNextContent() &&
         unwrappedSplitResultAtStartOfNextNode.GetNextContent()
@@ -3447,7 +3431,7 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
   //       mutation event listeners.  We should try to delete this in a bug.
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
-  AutoRangeArray selectionRanges(SelectionRef());
+  AutoClonedSelectionRangeArray selectionRanges(SelectionRef());
   for (const EditorInlineStyle& styleToRemove : aStylesToRemove) {
     // The ranges may be updated by changing the DOM tree.  In strictly
     // speaking, we should save and restore the ranges at every range loop,
@@ -3761,7 +3745,8 @@ nsresult HTMLEditor::RemoveInlinePropertiesAsSubAction(
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "AutoRangeArray::ApplyTo() failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "AutoClonedSelectionRangeArray::ApplyTo() failed");
   return rv;
 }
 
@@ -3967,7 +3952,7 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
   //       mutation event listeners.  We should try to delete this in a bug.
   AutoTransactionsConserveSelection dontChangeMySelection(*this);
 
-  AutoRangeArray selectionRanges(SelectionRef());
+  AutoClonedSelectionRangeArray selectionRanges(SelectionRef());
   MOZ_ALWAYS_TRUE(selectionRanges.SaveAndTrackRanges(*this));
   for (const OwningNonNull<nsRange>& domRange : selectionRanges.Ranges()) {
     // TODO: We should stop extending the range outside ancestor blocks because
@@ -4082,7 +4067,8 @@ nsresult HTMLEditor::IncrementOrDecrementFontSizeAsSubAction(
   if (NS_WARN_IF(Destroyed())) {
     return NS_ERROR_EDITOR_DESTROYED;
   }
-  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv), "AutoRangeArray::ApplyTo() failed");
+  NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
+                       "AutoClonedSelectionRangeArray::ApplyTo() failed");
   return rv;
 }
 

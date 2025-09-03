@@ -61,6 +61,9 @@ document.addEventListener(
         case "menu_openFirefoxView":
           FirefoxViewHandler.openTab();
           break;
+        case "hiddenUndoCloseWindow":
+          undoCloseWindow(0);
+          break;
 
         // == menu_HelpPopup ==
         // (Duplicated in PanelUI._onHelpCommand)
@@ -92,7 +95,7 @@ document.addEventListener(
           });
           break;
         case "menu_HelpPopup_reportPhishingErrortoolmenu":
-          ReportFalseDeceptiveSite();
+          gSafeBrowsing.reportFalseDeceptiveSite();
           break;
         case "helpSwitchDevice":
           openSwitchingDevicesPage();

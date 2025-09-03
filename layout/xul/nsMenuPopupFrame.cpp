@@ -70,8 +70,6 @@ using mozilla::dom::Element;
 using mozilla::dom::Event;
 using mozilla::dom::XULButtonElement;
 
-int8_t nsMenuPopupFrame::sDefaultLevelIsTop = -1;
-
 TimeStamp nsMenuPopupFrame::sLastKeyTime;
 
 #ifdef MOZ_WAYLAND
@@ -105,15 +103,7 @@ NS_QUERYFRAME_TAIL_INHERITING(nsBlockFrame)
 //
 nsMenuPopupFrame::nsMenuPopupFrame(ComputedStyle* aStyle,
                                    nsPresContext* aPresContext)
-    : nsBlockFrame(aStyle, aPresContext, kClassID) {
-  // the preference name is backwards here. True means that the 'top' level is
-  // the default, and false means that the 'parent' level is the default.
-  if (sDefaultLevelIsTop >= 0) {
-    return;
-  }
-  sDefaultLevelIsTop =
-      Preferences::GetBool("ui.panel.default_level_parent", false);
-}  // ctor
+    : nsBlockFrame(aStyle, aPresContext, kClassID) {}
 
 nsMenuPopupFrame::~nsMenuPopupFrame() = default;
 
@@ -149,12 +139,7 @@ void nsMenuPopupFrame::Init(nsIContent* aContent, nsContainerFrame* aParent,
 
   CreatePopupView();
 
-  // XXX Hack. The popup's view should float above all other views,
-  // so we use the nsView::SetFloating() to tell the view manager
-  // about that constraint.
   nsView* ourView = GetView();
-  nsViewManager* viewManager = ourView->GetViewManager();
-  viewManager->SetViewFloating(ourView, true);
 
   const auto& el = PopupElement();
   mPopupType = PopupType::Panel;
@@ -240,24 +225,56 @@ widget::PopupLevel nsMenuPopupFrame::GetPopupLevel(bool aIsNoAutoHide) const {
   }
 
   // Otherwise, the result depends on the platform.
-  return sDefaultLevelIsTop ? PopupLevel::Top : PopupLevel::Parent;
+  return StaticPrefs::ui_panel_default_level_parent() ? PopupLevel::Parent
+                                                      : PopupLevel::Top;
 }
 
-void nsMenuPopupFrame::PrepareWidget(bool aRecreate) {
+void nsMenuPopupFrame::PrepareWidget(bool aForceRecreate) {
   nsView* ourView = GetView();
-  if (aRecreate) {
-    if (auto* widget = GetWidget()) {
+  if (auto* widget = GetWidget()) {
+    nsCOMPtr<nsIWidget> parent = ComputeParentWidget();
+    if (aForceRecreate || widget->GetParent() != parent ||
+        widget->NeedsRecreateToReshow()) {
       // Widget's WebRender resources needs to be cleared before creating new
       // widget.
       widget->ClearCachedWebrenderResources();
+      ourView->DestroyWidget();
     }
-    ourView->DestroyWidget();
   }
   if (!ourView->HasWidget()) {
     CreateWidgetForView(ourView);
   } else {
     PropagateStyleToWidget();
   }
+}
+
+already_AddRefed<nsIWidget> nsMenuPopupFrame::ComputeParentWidget() const {
+  auto popupLevel = GetPopupLevel(IsNoAutoHide());
+  // Panels which have a parent level need a parent widget. This allows them to
+  // always appear in front of the parent window but behind other windows that
+  // should be in front of it.
+  nsCOMPtr<nsIWidget> parentWidget;
+  if (popupLevel != PopupLevel::Top) {
+    nsCOMPtr<nsIDocShellTreeItem> dsti = PresContext()->GetDocShell();
+    if (!dsti) {
+      return nullptr;
+    }
+
+    nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
+    dsti->GetTreeOwner(getter_AddRefs(treeOwner));
+    if (!treeOwner) {
+      return nullptr;
+    }
+
+    nsCOMPtr<nsIBaseWindow> baseWindow(do_QueryInterface(treeOwner));
+    if (baseWindow) {
+      baseWindow->GetMainWidget(getter_AddRefs(parentWidget));
+    }
+  }
+  if (!parentWidget && mView && mView->GetParent()) {
+    parentWidget = mView->GetParent()->GetNearestWidget(nullptr);
+  }
+  return parentWidget.forget();
 }
 
 nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
@@ -278,33 +295,16 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
     }
   }
 
-  bool remote = HasRemoteContent();
+  const bool remote = HasRemoteContent();
 
   const auto mode = nsLayoutUtils::GetFrameTransparency(this, this);
   widgetData.mHasRemoteContent = remote;
   widgetData.mTransparencyMode = mode;
   widgetData.mPopupLevel = GetPopupLevel(widgetData.mNoAutoHide);
 
-  // Panels which have a parent level need a parent widget. This allows them to
-  // always appear in front of the parent window but behind other windows that
-  // should be in front of it.
-  nsCOMPtr<nsIWidget> parentWidget;
-  if (widgetData.mPopupLevel != PopupLevel::Top) {
-    nsCOMPtr<nsIDocShellTreeItem> dsti = PresContext()->GetDocShell();
-    if (!dsti) {
-      return NS_ERROR_FAILURE;
-    }
-
-    nsCOMPtr<nsIDocShellTreeOwner> treeOwner;
-    dsti->GetTreeOwner(getter_AddRefs(treeOwner));
-    if (!treeOwner) {
-      return NS_ERROR_FAILURE;
-    }
-
-    nsCOMPtr<nsIBaseWindow> baseWindow(do_QueryInterface(treeOwner));
-    if (baseWindow) {
-      baseWindow->GetMainWidget(getter_AddRefs(parentWidget));
-    }
+  nsCOMPtr<nsIWidget> parentWidget = ComputeParentWidget();
+  if (NS_WARN_IF(!parentWidget)) {
+    return NS_ERROR_FAILURE;
   }
 
   nsresult rv = aView->CreateWidgetForPopup(&widgetData, parentWidget);
@@ -313,8 +313,9 @@ nsresult nsMenuPopupFrame::CreateWidgetForView(nsView* aView) {
   }
 
   nsIWidget* widget = aView->GetWidget();
-  widget->SetTransparencyMode(mode);
+  MOZ_ASSERT(widget->GetParent() == parentWidget);
 
+  widget->SetTransparencyMode(mode);
   PropagateStyleToWidget();
 
   return NS_OK;
@@ -344,6 +345,10 @@ void nsMenuPopupFrame::PropagateStyleToWidget(WidgetStyleFlags aFlags) const {
   }
   if (aFlags.contains(WidgetStyle::Transform)) {
     widget->SetWindowTransform(ComputeWidgetTransform());
+  }
+  if (aFlags.contains(WidgetStyle::MicaBackdrop)) {
+    widget->SetMicaBackdrop(StyleDisplay()->EffectiveAppearance() ==
+                            StyleAppearance::Menupopup);
   }
 }
 
@@ -453,6 +458,11 @@ void nsMenuPopupFrame::DidSetComputedStyle(ComputedStyle* aOldStyle) {
 
   if (newUI.mWindowShadow != oldUI.mWindowShadow) {
     flags += WidgetStyle::Shadow;
+  }
+
+  if (aOldStyle->StyleDisplay()->EffectiveAppearance() !=
+      StyleDisplay()->EffectiveAppearance()) {
+    flags += WidgetStyle::MicaBackdrop;
   }
 
   const auto& pc = *PresContext();
@@ -645,8 +655,7 @@ void nsMenuPopupFrame::LayoutPopup(nsPresContext* aPresContext,
         mContent->AsElement()->AttrValueIs(kNameSpaceID_None,
                                            nsGkAtoms::animate, nsGkAtoms::open,
                                            eCaseMatters) &&
-        AnimationUtils::HasCurrentTransitions(mContent->AsElement(),
-                                              PseudoStyleType::NotPseudo)) {
+        AnimationUtils::HasCurrentTransitions(mContent->AsElement())) {
       mPopupShownDispatcher = new nsXULPopupShownEvent(mContent, aPresContext);
       mContent->AddSystemEventListener(u"transitionend"_ns,
                                        mPopupShownDispatcher, false, false);
@@ -763,9 +772,7 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
                                        int32_t aXPos, int32_t aYPos,
                                        MenuPopupAnchorType aAnchorType,
                                        bool aAttributesOverride) {
-  auto* widget = GetWidget();
-  bool recreateWidget = widget && widget->NeedsRecreateToReshow();
-  PrepareWidget(recreateWidget);
+  PrepareWidget();
 
   mPopupState = ePopupShowing;
   mAnchorContent = aAnchorContent;
@@ -866,6 +873,8 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
       InitPositionFromAnchorAlign(anchor, align);
     }
   }
+  mUntransformedPopupAnchor = mPopupAnchor;
+  mUntransformedPopupAlignment = mPopupAlignment;
 
   if (aAttributesOverride) {
     // Use |left| and |top| dimension attributes to position the popup if
@@ -893,9 +902,7 @@ void nsMenuPopupFrame::InitializePopup(nsIContent* aAnchorContent,
 void nsMenuPopupFrame::InitializePopupAtScreen(nsIContent* aTriggerContent,
                                                int32_t aXPos, int32_t aYPos,
                                                bool aIsContextMenu) {
-  auto* widget = GetWidget();
-  bool recreateWidget = widget && widget->NeedsRecreateToReshow();
-  PrepareWidget(recreateWidget);
+  PrepareWidget();
 
   mPopupState = ePopupShowing;
   mAnchorContent = nullptr;
@@ -1038,10 +1045,7 @@ void nsMenuPopupFrame::HidePopup(bool aDeselectMenu, nsPopupState aNewState,
   mConstrainedByLayout = false;
 
   if (auto* widget = GetWidget()) {
-    // Ideally we should call ClearCachedWebrenderResources but there are
-    // intermittent failures (see bug 1748788), so we currently call
-    // ClearWebrenderAnimationResources instead.
-    widget->ClearWebrenderAnimationResources();
+    widget->ClearCachedWebrenderResources();
   }
 
   nsView* view = GetView();
@@ -2086,10 +2090,12 @@ nsresult nsMenuPopupFrame::AttributeChanged(int32_t aNameSpaceID,
     MoveToAttributePosition();
   }
 
-  if (aAttribute == nsGkAtoms::remote) {
+  if (aAttribute == nsGkAtoms::remote && GetWidget()) {
     // When the remote attribute changes, we need to create a new widget to
     // ensure that it has the correct compositor and transparency settings to
-    // match the new value.
+    // match the new value. Do that only if we already have a widget.
+    // TODO(emilio): We should consider doing it only when we get re-shown or
+    // so.
     PrepareWidget(true);
   }
 

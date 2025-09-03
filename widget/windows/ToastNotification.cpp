@@ -460,13 +460,10 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
   MOZ_TRY(aAlert->GetPrincipal(getter_AddRefs(principal)));
   bool isSystemPrincipal = principal && principal->IsSystemPrincipal();
 
-  bool handleActions = false;
   auto imagePlacement = ImagePlacement::eInline;
   if (isSystemPrincipal) {
     nsCOMPtr<nsIWindowsAlertNotification> winAlert(do_QueryInterface(aAlert));
     if (winAlert) {
-      MOZ_TRY(winAlert->GetHandleActions(&handleActions));
-
       nsIWindowsAlertNotification::ImagePlacement placement;
       MOZ_TRY(winAlert->GetImagePlacement(&placement));
       switch (placement) {
@@ -487,14 +484,16 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
     }
   }
 
-  RefPtr<ToastNotificationHandler> oldHandler = mActiveHandlers.Get(name);
+  // If there was a previous handler with the same name then unregister it.
+  if (RefPtr<ToastNotificationHandler> oldHandler = mActiveHandlers.Get(name)) {
+    oldHandler->UnregisterHandler();
+  }
 
   NS_ENSURE_TRUE(mAumid.isSome(), NS_ERROR_UNEXPECTED);
   RefPtr<ToastNotificationHandler> handler = new ToastNotificationHandler(
-      this, mAumid.ref(), aAlertListener, name, cookie, title, text, hostPort,
-      textClickable, requireInteraction, actions, isSystemPrincipal,
-      opaqueRelaunchData, inPrivateBrowsing, isSilent, handleActions,
-      imagePlacement);
+      this, mAumid.ref(), aAlert, aAlertListener, name, cookie, title, text,
+      hostPort, textClickable, requireInteraction, actions, isSystemPrincipal,
+      opaqueRelaunchData, inPrivateBrowsing, isSilent, imagePlacement);
   mActiveHandlers.InsertOrUpdate(name, RefPtr{handler});
 
   MOZ_LOG(sWASLog, LogLevel::Debug,
@@ -502,7 +501,7 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
            NS_ConvertUTF16toUTF8(name).get(), handler.get(),
            mActiveHandlers.Count()));
 
-  nsresult rv = handler->InitAlertAsync(aAlert);
+  nsresult rv = handler->InitAlertAsync();
   if (NS_WARN_IF(NS_FAILED(rv))) {
     MOZ_LOG(sWASLog, LogLevel::Debug,
             ("Failed to init alert, removing '%s'",
@@ -510,11 +509,6 @@ ToastNotification::ShowAlert(nsIAlertNotification* aAlert,
     mActiveHandlers.Remove(name);
     handler->UnregisterHandler();
     return rv;
-  }
-
-  // If there was a previous handler with the same name then unregister it.
-  if (oldHandler) {
-    oldHandler->UnregisterHandler();
   }
 
   return NS_OK;
@@ -565,8 +559,8 @@ ToastNotification::GetXmlStringForWindowsAlert(nsIAlertNotification* aAlert,
 
   NS_ENSURE_TRUE(mAumid.isSome(), NS_ERROR_UNEXPECTED);
   RefPtr<ToastNotificationHandler> handler = new ToastNotificationHandler(
-      this, mAumid.ref(), nullptr /* aAlertListener */, name, cookie, title,
-      text, hostPort, textClickable, requireInteraction, actions,
+      this, mAumid.ref(), aAlert, nullptr /* aAlertListener */, name, cookie,
+      title, text, hostPort, textClickable, requireInteraction, actions,
       isSystemPrincipal, opaqueRelaunchData, inPrivateBrowsing, isSilent);
 
   // Usually, this will be empty during testing, making test output
@@ -873,18 +867,6 @@ ToastNotification::RemoveAllNotificationsForInstall() {
 
 NS_IMPL_ISUPPORTS_INHERITED(WindowsAlertNotification, AlertNotification,
                             nsIWindowsAlertNotification)
-
-NS_IMETHODIMP
-WindowsAlertNotification::GetHandleActions(bool* aHandleActions) {
-  *aHandleActions = mHandleActions;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-WindowsAlertNotification::SetHandleActions(bool aHandleActions) {
-  mHandleActions = aHandleActions;
-  return NS_OK;
-}
 
 NS_IMETHODIMP WindowsAlertNotification::GetImagePlacement(
     nsIWindowsAlertNotification::ImagePlacement* aImagePlacement) {

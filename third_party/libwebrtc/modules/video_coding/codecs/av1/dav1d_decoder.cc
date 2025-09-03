@@ -72,7 +72,7 @@ class ScopedDav1dPicture
 constexpr char kDav1dName[] = "dav1d";
 
 // Calling `dav1d_data_wrap` requires a `free_callback` to be registered.
-void NullFreeCallback(const uint8_t* buffer, void* opaque) {}
+void NullFreeCallback(const uint8_t* /* buffer */, void* /* opaque */) {}
 
 Dav1dDecoder::Dav1dDecoder() = default;
 
@@ -84,7 +84,7 @@ bool Dav1dDecoder::Configure(const Settings& settings) {
   Dav1dSettings s;
   dav1d_default_settings(&s);
 
-  s.n_threads = std::max(2, settings.number_of_cores());
+  s.n_threads = std::clamp(settings.number_of_cores(), 1, DAV1D_MAX_THREADS);
   s.max_frame_delay = 1;   // For low latency decoding.
   s.all_layers = 0;        // Don't output a frame for every spatial layer.
   // Limit max frame size to avoid OOM'ing fuzzers. crbug.com/325284120.

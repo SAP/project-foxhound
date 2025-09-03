@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2021, Alliance for Open Media. All rights reserved
+ * Copyright (c) 2021, Alliance for Open Media. All rights reserved.
  *
  * This source code is subject to the terms of the BSD 2 Clause License and
  * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -13,11 +13,11 @@
 
 #include <memory>
 
+#include "gtest/gtest.h"
 #include "test/codec_factory.h"
 #include "test/encode_test_driver.h"
-#include "test/util.h"
 #include "test/i420_video_source.h"
-#include "third_party/googletest/src/googletest/include/gtest/gtest.h"
+#include "test/util.h"
 
 namespace {
 
@@ -37,7 +37,7 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
       : EncoderTest(GET_PARAM(0)), aq_mode_(GET_PARAM(1)), key_interval_(3000),
         encoder_exit_(false), layer_frame_cnt_(0), superframe_cnt_(0),
         frame_cnt_(0), dynamic_temporal_layers_(false),
-        dynamic_spatial_layers_(false), num_drops_(0), max_consec_drop_(0),
+        dynamic_spatial_layers_(false), num_drops_(0), max_consec_drop_ms_(0),
         frame_drop_thresh_(0) {
     memset(&svc_params_, 0, sizeof(svc_params_));
     memset(&layer_id_, 0, sizeof(layer_id_));
@@ -59,6 +59,7 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
     if (video->frame() == 0 && layer_frame_cnt_ == 0) {
       encoder->Control(AOME_SET_CPUUSED, 7);
       encoder->Control(AV1E_SET_AQ_MODE, aq_mode_);
+      encoder->Control(AV1E_SET_ENABLE_ORDER_HINT, 0);
       if (rc_cfg_.is_screen) {
         encoder->Control(AV1E_SET_TUNE_CONTENT, AOM_CONTENT_SCREEN);
       } else {
@@ -67,7 +68,8 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
       encoder->Control(AOME_SET_MAX_INTRA_BITRATE_PCT,
                        rc_cfg_.max_intra_bitrate_pct);
       if (use_svc) encoder->Control(AV1E_SET_SVC_PARAMS, &svc_params_);
-      encoder->Control(AV1E_SET_MAX_CONSEC_FRAME_DROP_CBR, max_consec_drop_);
+      encoder->Control(AV1E_SET_MAX_CONSEC_FRAME_DROP_MS_CBR,
+                       max_consec_drop_ms_);
     }
     // SVC specific settings
     if (use_svc) {
@@ -152,7 +154,7 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
       superframe_cnt_++;
     int qp;
     encoder->Control(AOME_GET_LAST_QUANTIZER, &qp);
-    if (rc_api_->ComputeQP(frame_params_) == aom::FrameDropDecision::kOk) {
+    if (rc_api_->ComputeQP(frame_params_) == aom::kFrameDropDecisionOk) {
       ASSERT_EQ(rc_api_->GetQP(), qp) << "at frame " << frame_cnt_ - 1;
       int encoder_lpf_level;
       encoder->Control(AOME_GET_LOOPFILTER_LEVEL, &encoder_lpf_level);
@@ -210,7 +212,7 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
 
   void RunOneLayerDropFramesCBR() {
     key_interval_ = 10000;
-    max_consec_drop_ = 8;
+    max_consec_drop_ms_ = 250;
     frame_drop_thresh_ = 30;
     SetConfig();
     rc_cfg_.target_bandwidth = 100;
@@ -319,7 +321,7 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
     rc_cfg_.min_quantizers[0] = 2;
     rc_cfg_.aq_mode = aq_mode_;
     rc_cfg_.frame_drop_thresh = frame_drop_thresh_;
-    rc_cfg_.max_consec_drop = max_consec_drop_;
+    rc_cfg_.max_consec_drop_ms = max_consec_drop_ms_;
 
     // Encoder settings for ground truth.
     cfg_.g_w = 640;
@@ -480,9 +482,185 @@ class RcInterfaceTest : public ::libaom_test::EncoderTest,
   bool dynamic_temporal_layers_;
   bool dynamic_spatial_layers_;
   int num_drops_;
-  int max_consec_drop_;
+  int max_consec_drop_ms_;
   int frame_drop_thresh_;
 };
+
+class RcExternMethodsInterfaceTest
+    : public ::libaom_test::EncoderTest,
+      public ::libaom_test::CodecTestWithParam<int> {
+ public:
+  RcExternMethodsInterfaceTest()
+      : EncoderTest(GET_PARAM(0)), aq_mode_(GET_PARAM(1)) {
+    SetConfig();
+  }
+  ~RcExternMethodsInterfaceTest() = default;
+
+  // Test APIS
+  void TestCreateRateControl();
+  void TestUpdateRateControl();
+  void TestGetLoopFilterLevelRateControl();
+  void TestPostEncodeUpdateRateControl();
+  void TestGetQPRateControl();
+  void TestComputeQPRateControl();
+  void TestGetSegmentationDataRateControl();
+  void TestGetCdefInfoRateControl();
+  void TestCreateRateControlConfig();
+  void TestDestroyRateControlRTC();
+  void SetConfig();
+
+ private:
+  aom::AV1RateControlRtcConfig rc_cfg_;
+  int aq_mode_;
+  aom::AV1FrameParamsRTC frame_params_;
+};
+
+void RcExternMethodsInterfaceTest::SetConfig() {
+  rc_cfg_.width = 640;
+  rc_cfg_.height = 480;
+  rc_cfg_.max_quantizer = 52;
+  rc_cfg_.min_quantizer = 2;
+  rc_cfg_.target_bandwidth = 1000;
+  rc_cfg_.buf_initial_sz = 600;
+  rc_cfg_.buf_optimal_sz = 600;
+  rc_cfg_.buf_sz = 1000;
+  rc_cfg_.undershoot_pct = 50;
+  rc_cfg_.overshoot_pct = 50;
+  rc_cfg_.max_intra_bitrate_pct = 1000;
+  rc_cfg_.framerate = 30.0;
+  rc_cfg_.ss_number_layers = 1;
+  rc_cfg_.ts_number_layers = 1;
+  rc_cfg_.scaling_factor_num[0] = 1;
+  rc_cfg_.scaling_factor_den[0] = 1;
+  rc_cfg_.layer_target_bitrate[0] = 1000;
+  rc_cfg_.max_quantizers[0] = 52;
+  rc_cfg_.min_quantizers[0] = 2;
+  rc_cfg_.aq_mode = aq_mode_;
+}
+
+void RcExternMethodsInterfaceTest::TestCreateRateControl() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+
+  ASSERT_NE(controller, nullptr);
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestUpdateRateControl() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+
+  ASSERT_NE(controller, nullptr);
+
+  ASSERT_TRUE(av1_ratecontrol_rtc_update(controller, &rc_cfg_));
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestGetQPRateControl() {
+  frame_params_.spatial_layer_id = 0;
+  frame_params_.temporal_layer_id = 0;
+  frame_params_.frame_type = kAomKeyFrame;
+
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+
+  const AomFrameDropDecision decision =
+      av1_ratecontrol_rtc_compute_qp(controller, &frame_params_);
+  if (decision == kAomFrameDropDecisionOk) {
+    int qp = av1_ratecontrol_rtc_get_qp(controller);
+    ASSERT_NE(qp, 0);  // 0 is invalid for qp
+  }
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestComputeQPRateControl() {
+  frame_params_.spatial_layer_id = 0;
+  frame_params_.temporal_layer_id = 0;
+  frame_params_.frame_type = kAomKeyFrame;
+
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+
+  const AomFrameDropDecision decision =
+      av1_ratecontrol_rtc_compute_qp(controller, &frame_params_);
+  ASSERT_EQ(decision, kAomFrameDropDecisionOk);
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestGetLoopFilterLevelRateControl() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+
+  AomAV1LoopfilterLevel lpf_level;
+  lpf_level.filter_level[0] = 0xfdbd;
+  lpf_level.filter_level[1] = 0xfdbd;
+  lpf_level.filter_level_u = 0xfdbd;
+  lpf_level.filter_level_v = 0xfdbd;
+
+  lpf_level = av1_ratecontrol_rtc_get_loop_filter_level(controller);
+
+  ASSERT_NE(lpf_level.filter_level[0], 0xfdbd);
+  ASSERT_NE(lpf_level.filter_level[1], 0xfdbd);
+  ASSERT_NE(lpf_level.filter_level_u, 0xfdbd);
+  ASSERT_NE(lpf_level.filter_level_v, 0xfdbd);
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestPostEncodeUpdateRateControl() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+  av1_ratecontrol_rtc_post_encode_update(controller, 380);
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestGetSegmentationDataRateControl() {
+  rc_cfg_.aq_mode = 1;  // VARIANCE_AQ = 1
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+  AomAV1SegmentationData segmentation_data;
+  // This should return false as this test case doesn't run any part of the
+  // underlying rate control, and cyclic refresh will not be turned on.
+  ASSERT_FALSE(
+      av1_ratecontrol_rtc_get_segmentation(controller, &segmentation_data));
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestGetCdefInfoRateControl() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+  AomAV1CdefInfo cdef_level;
+  cdef_level.cdef_strength_y = 0xabcd;
+  cdef_level.cdef_strength_uv = 0xabcd;
+  cdef_level.damping = 0xabcd;
+  cdef_level = av1_ratecontrol_rtc_get_cdef_info(controller);
+
+  ASSERT_NE(cdef_level.cdef_strength_y, 0xabcd);
+  ASSERT_NE(cdef_level.cdef_strength_uv, 0xabcd);
+  ASSERT_NE(cdef_level.damping, 0xabcd);
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestCreateRateControlConfig() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+
+  AomAV1RateControlRtcConfig config;
+  av1_ratecontrol_rtc_init_ratecontrol_config(&config);
+  ASSERT_EQ(config.width, 1280);
+  ASSERT_EQ(config.height, 720);
+  // only width and height is checked. can be extended
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
+
+void RcExternMethodsInterfaceTest::TestDestroyRateControlRTC() {
+  AomAV1RateControlRTC *controller = av1_ratecontrol_rtc_create(&rc_cfg_);
+  ASSERT_NE(controller, nullptr);
+
+  av1_ratecontrol_rtc_destroy(controller);
+}
 
 TEST_P(RcInterfaceTest, OneLayer) { RunOneLayer(); }
 
@@ -500,6 +678,48 @@ TEST_P(RcInterfaceTest, SvcDynamicTemporal) { RunSvcDynamicTemporal(); }
 
 TEST_P(RcInterfaceTest, SvcDynamicSpatial) { RunSvcDynamicSpatial(); }
 
+TEST_P(RcExternMethodsInterfaceTest, CreateRateControlTest) {
+  TestCreateRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, UpdateRateControllerTest) {
+  TestUpdateRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, GetQpRateControllerTest) {
+  TestGetQPRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, ComputeQPRateControllerTest) {
+  TestComputeQPRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, GetLoopFilterLevelRateControllerTest) {
+  TestGetLoopFilterLevelRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, PostEncodeUpdateRateControllerTest) {
+  TestPostEncodeUpdateRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, GetSegmenationDataRateControllerTest) {
+  TestGetSegmentationDataRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, GetCdedInfoRateControllerTest) {
+  TestGetCdefInfoRateControl();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, CreateRateControlConfigTest) {
+  TestCreateRateControlConfig();
+}
+
+TEST_P(RcExternMethodsInterfaceTest, DestroyRateControlRTCTest) {
+  TestDestroyRateControlRTC();
+}
+
 AV1_INSTANTIATE_TEST_SUITE(RcInterfaceTest, ::testing::Values(0, 3));
+AV1_INSTANTIATE_TEST_SUITE(RcExternMethodsInterfaceTest,
+                           ::testing::Values(0, 3));
 
 }  // namespace

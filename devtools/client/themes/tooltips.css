@@ -339,6 +339,16 @@ strong {
   flex-grow: 1;
 }
 
+/* Adding the scrollbar in the RDM tooltip */
+#device-selector-menu .tooltip-panel {
+  max-height: 500px;
+}
+
+#device-selector-menu .tooltip-panel > .checkbox-container {
+  height: 100%;
+  overflow-y: auto;
+}
+
 .tooltip-visible {
   display: flex;
 }
@@ -610,7 +620,12 @@ strong {
     }
   }
 
-  .menuitem > button.command:is([role="menuitem"],[role="menuitemcheckbox"],[role="link"]) {
+  /* Use :where to avoid having a high specificity that would take over the rule above */
+  .menuitem > button.command:where(
+    [role="menuitem"],
+    [role="menuitemcheckbox"],
+    [role="link"]
+  ) {
     appearance: none;
     border: none;
     background-color: transparent;
@@ -1004,4 +1019,14 @@ strong {
       border-block-start: 1px solid var(--theme-splitter-color);
     }
   }
+}
+
+/* Indent the content script items */
+.webconsole-evaluation-selector-item.indented::before {
+  content: "\2514\2500" !important;
+  z-index:1000;
+  margin-inline-start: 20px;
+}
+.checkbox-container .menuitem > .command.indented > .label {
+  padding-inline-start: 4px;
 }

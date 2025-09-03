@@ -78,7 +78,7 @@ const NV12BufferInterface* VideoFrameBuffer::GetNV12() const {
 }
 
 rtc::scoped_refptr<VideoFrameBuffer> VideoFrameBuffer::GetMappedFrameBuffer(
-    rtc::ArrayView<Type> types) {
+    rtc::ArrayView<Type> /* types */) {
   RTC_CHECK(type() == Type::kNative);
   return nullptr;
 }
@@ -245,6 +245,18 @@ rtc::scoped_refptr<VideoFrameBuffer> NV12BufferInterface::CropAndScale(
       NV12Buffer::Create(scaled_width, scaled_height);
   result->CropAndScaleFrom(*this, offset_x, offset_y, crop_width, crop_height);
   return result;
+}
+
+void CheckValidDimensions(int width,
+                          int height,
+                          int stride_y,
+                          int stride_u,
+                          int stride_v) {
+  RTC_CHECK_GT(width, 0);
+  RTC_CHECK_GT(height, 0);
+  RTC_CHECK_GE(stride_y, width);
+  RTC_CHECK_GT(stride_u, 0);
+  RTC_CHECK_GT(stride_v, 0);
 }
 
 }  // namespace webrtc

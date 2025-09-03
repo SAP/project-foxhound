@@ -20,6 +20,7 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.feature.accounts.push.SendTabUseCases
 import mozilla.components.lib.state.helpers.AbstractBinding
 import mozilla.components.ui.widgets.SnackbarDelegate
+import org.mozilla.fenix.GleanMetrics.SentFromFirefox
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.components.AppStore
@@ -29,7 +30,10 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.snackbar.SnackbarState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.navigateWithBreadcrumb
+import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.library.bookmarks.friendlyRootTitle
+
+const val WEBCOMPAT_SNACKBAR_DURATION_MS = 20000
 
 /**
  * A binding for observing the [SnackbarState] in the [AppStore] and displaying the snackbar.
@@ -140,6 +144,31 @@ class SnackbarBinding(
                         appStore.dispatch(SnackbarAction.SnackbarShown)
                     }
 
+                    is SnackbarState.ShareToWhatsApp -> {
+                        snackbarDelegate.show(
+                            text = R.string.link_shared_snackbar_message,
+                            duration = Snackbar.LENGTH_LONG,
+                            action = R.string.link_shared_snackbar_action,
+                        ) {
+                            SentFromFirefox.snackbarClicked.record()
+                            // Navigating twice ensures the correct behavior when opening the link
+                            // sharing settings screen. The first navigation scrolls to the link
+                            // sharing section in the settings screen. The second navigation opens
+                            // the dedicated link sharing settings screen.
+                            navController.navigate(
+                                BrowserFragmentDirections.actionBrowserFragmentToSettingsFragment(
+                                    preferenceToScrollTo = context.getString(R.string.pref_key_link_sharing),
+                                ),
+                            )
+                            navController.navigate(
+                                BrowserFragmentDirections.actionGlobalLinkSharingFragment(),
+                            )
+                        }
+
+                        context.settings().linkSharingSettingsSnackbarShown = true
+                        appStore.dispatch(SnackbarAction.SnackbarShown)
+                    }
+
                     is SnackbarState.SharedTabsSuccessfully -> {
                         snackbarDelegate.show(
                             text = when (state.tabs.size) {
@@ -197,6 +226,24 @@ class SnackbarBinding(
                         snackbarDelegate.show(
                             text = R.string.toast_copy_link_to_clipboard,
                             duration = Snackbar.LENGTH_SHORT,
+                        )
+
+                        appStore.dispatch(SnackbarAction.SnackbarShown)
+                    }
+
+                    SnackbarState.WebCompatReportSent -> {
+                        snackbarDelegate.show(
+                            text = context.getString(R.string.webcompat_reporter_success_snackbar_text),
+                            duration = WEBCOMPAT_SNACKBAR_DURATION_MS,
+                            action = context.getString(R.string.webcompat_reporter_dismiss_success_snackbar_text),
+                            listener = { snackbarDelegate.dismiss() },
+                        )
+                    }
+
+                    SnackbarState.SiteDataCleared -> {
+                        snackbarDelegate.show(
+                            text = R.string.clear_site_data_snackbar,
+                            duration = Snackbar.LENGTH_LONG,
                         )
 
                         appStore.dispatch(SnackbarAction.SnackbarShown)

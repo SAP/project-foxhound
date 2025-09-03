@@ -487,7 +487,14 @@ bool RemoteAccessible::ContainsPoint(int32_t aX, int32_t aY) {
     MOZ_ASSERT(lineEnd >= lineStart);
     nsRect lineRect = GetCachedCharRect(lineStart);
     if (lineEnd > lineStart) {
-      lineRect.UnionRect(lineRect, GetCachedCharRect(lineEnd));
+      nsRect lineEndRect = GetCachedCharRect(lineEnd);
+      if (lineEndRect.IsEmpty() && lineEnd - 1 > lineStart) {
+        // The line feed character at the end of a line in pre-formatted text
+        // doesn't have a useful rect. Use the previous character. Otherwise,
+        // lineRect won't span the line of text and we'll miss characters.
+        lineEndRect = GetCachedCharRect(lineEnd - 1);
+      }
+      lineRect.UnionRect(lineRect, lineEndRect);
     }
     if (BoundsWithOffset(Some(lineRect), true).Contains(aX, aY)) {
       return true;
@@ -1651,10 +1658,6 @@ already_AddRefed<AccAttributes> RemoteAccessible::Attributes() {
       attributes->SetAttribute(nsGkAtoms::tag, *tag);
     }
 
-    GroupPos groupPos = GroupPosition();
-    nsAccUtils::SetAccGroupAttrs(attributes, groupPos.level, groupPos.setSize,
-                                 groupPos.posInSet);
-
     bool hierarchical = false;
     uint32_t itemCount = AccGroupInfo::TotalItemCount(this, &hierarchical);
     if (itemCount) {
@@ -1782,18 +1785,6 @@ nsAtom* RemoteAccessible::TagName() const {
     if (auto tag =
             mCachedFields->GetAttribute<RefPtr<nsAtom>>(CacheKey::TagName)) {
       return *tag;
-    }
-  }
-
-  return nullptr;
-}
-
-already_AddRefed<nsAtom> RemoteAccessible::InputType() const {
-  if (mCachedFields) {
-    if (auto inputType =
-            mCachedFields->GetAttribute<RefPtr<nsAtom>>(CacheKey::InputType)) {
-      RefPtr<nsAtom> result = *inputType;
-      return result.forget();
     }
   }
 

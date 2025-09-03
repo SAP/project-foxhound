@@ -31,9 +31,11 @@ extern bool RuntimeFromMainThreadIsHeapMajorCollecting(
     JS::shadow::Zone* shadowZone);
 
 #ifdef DEBUG
-// Barriers can't be triggered during backend Ion compilation, which may run on
-// a helper thread.
+// Barriers can't be triggered during offthread baseline or Ion
+// compilation, which may run on a helper thread.
+extern bool CurrentThreadIsBaselineCompiling();
 extern bool CurrentThreadIsIonCompiling();
+extern bool CurrentThreadIsOffThreadCompiling();
 #endif
 
 extern void TraceManuallyBarrieredGenericPointerEdge(JSTracer* trc,
@@ -545,7 +547,7 @@ template <typename T, typename F>
 MOZ_ALWAYS_INLINE void PreWriteBarrier(JS::Zone* zone, T* data,
                                        const F& traceFn) {
   MOZ_ASSERT(data);
-  MOZ_ASSERT(!CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(!CurrentThreadIsOffThreadCompiling());
   MOZ_ASSERT(!CurrentThreadIsGCMarking());
 
   auto* shadowZone = JS::shadow::Zone::from(zone);
@@ -872,6 +874,33 @@ template <>
 inline bool TenuredThingIsMarkedAny<Cell>(Cell* thing) {
   return thing->asTenured().isMarkedAny();
 }
+
+class alignas(gc::CellAlignBytes) SmallBuffer : public TenuredCell {
+ public:
+  static constexpr uintptr_t NURSERY_OWNED_BIT = Bit(3);
+
+  void check() const {}  // No check value.
+
+  bool isNurseryOwned() const;
+  void setNurseryOwned(bool value);
+
+  static const JS::TraceKind TraceKind = JS::TraceKind::SmallBuffer;
+  void finalize(JS::GCContext* gcx) {
+    // Sized allocations don't have finalizers.
+  }
+  void traceChildren(JSTracer* trc) {
+    // TODO: Generic tracing not supported for sized allocations.
+    // GCRuntime::checkForCompartmentMismatches ends up calling this because it
+    // iterates all GC cells.
+  }
+  void* data() { return this + 1; }
+};
+template <size_t bytes>
+struct SmallBufferN : public SmallBuffer {
+  uint8_t data[bytes - sizeof(SmallBuffer)];
+};
+static_assert(sizeof(SmallBufferN<16>) == 16);
+static_assert(sizeof(SmallBufferN<128>) == 128);
 
 } /* namespace gc */
 } /* namespace js */

@@ -15,7 +15,6 @@ namespace js {
 namespace jit {
 
 class CodeGeneratorARM;
-class OutOfLineBailout;
 class OutOfLineTableSwitch;
 
 using OutOfLineWasmTruncateCheck =
@@ -91,13 +90,7 @@ class CodeGeneratorARM : public CodeGeneratorShared {
   template <typename T>
   void emitWasmUnalignedStore(T* ins);
 
-  ValueOperand ToValue(LInstruction* ins, size_t pos);
-  ValueOperand ToTempValue(LInstruction* ins, size_t pos);
-
-  Register64 ToOperandOrRegister64(const LInt64Allocation input);
-
-  // Functions for LTestVAndBranch.
-  void splitTagForTest(const ValueOperand& value, ScratchTagScope& tag);
+  Register64 ToOperandOrRegister64(const LInt64Allocation& input);
 
   void divICommon(MDiv* mir, Register lhs, Register rhs, Register output,
                   LSnapshot* snapshot, Label& done);
@@ -120,27 +113,13 @@ class CodeGeneratorARM : public CodeGeneratorShared {
                                   Register flagTemp);
 
  public:
-  void visitOutOfLineBailout(OutOfLineBailout* ool);
+  void emitBailoutOOL(LSnapshot* snapshot);
+
   void visitOutOfLineTableSwitch(OutOfLineTableSwitch* ool);
   void visitOutOfLineWasmTruncateCheck(OutOfLineWasmTruncateCheck* ool);
 };
 
 using CodeGeneratorSpecific = CodeGeneratorARM;
-
-// An out-of-line bailout thunk.
-class OutOfLineBailout : public OutOfLineCodeBase<CodeGeneratorARM> {
- protected:  // Silence Clang warning.
-  LSnapshot* snapshot_;
-  uint32_t frameSize_;
-
- public:
-  OutOfLineBailout(LSnapshot* snapshot, uint32_t frameSize)
-      : snapshot_(snapshot), frameSize_(frameSize) {}
-
-  void accept(CodeGeneratorARM* codegen) override;
-
-  LSnapshot* snapshot() const { return snapshot_; }
-};
 
 }  // namespace jit
 }  // namespace js

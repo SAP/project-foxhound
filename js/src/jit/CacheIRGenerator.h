@@ -569,6 +569,11 @@ class MOZ_RAII CallIRGenerator : public IRGenerator {
   AttachDecision tryAttachCallNative(HandleFunction calleeFunc);
   AttachDecision tryAttachCallHook(HandleObject calleeObj);
   AttachDecision tryAttachBoundFunction(Handle<BoundFunctionObject*> calleeObj);
+  AttachDecision tryAttachBoundNative(Handle<BoundFunctionObject*> calleeObj);
+  AttachDecision tryAttachBoundFunCall(Handle<BoundFunctionObject*> calleeObj);
+  AttachDecision tryAttachBoundFunApply(Handle<BoundFunctionObject*> calleeObj);
+  AttachDecision tryAttachFunCallBound(Handle<JSFunction*> callee);
+  AttachDecision tryAttachFunApplyBound(Handle<JSFunction*> callee);
 
   void trackAttached(const char* name /* must be a C string literal */);
 
@@ -586,18 +591,26 @@ class MOZ_RAII InlinableNativeIRGenerator {
   CacheIRWriter& writer;
   JSContext* cx_;
 
-  HandleFunction callee_;
+  HandleFunction target_;
   HandleValue newTarget_;
   HandleValue thisval_;
   HandleValueArray args_;
-  uint32_t argc_;
   CallFlags flags_;
 
   HandleScript script() const { return generator_.script_; }
+  JSObject* callee() const { return &generator_.callee_.toObject(); }
   bool isFirstStub() const { return generator_.isFirstStub_; }
   bool ignoresResult() const { return generator_.op_ == JSOp::CallIgnoresRv; }
+  JSOp op() const { return generator_.op_; }
+  uint32_t stackArgc() const { return generator_.argc_; }
 
-  void emitNativeCalleeGuard();
+  bool isCalleeBoundFunction() const;
+  BoundFunctionObject* boundCallee() const;
+
+  bool isTargetBoundFunction() const;
+  BoundFunctionObject* boundTarget() const;
+
+  ObjOperandId emitNativeCalleeGuard(Int32OperandId argcId);
   void emitOptimisticClassGuard(ObjOperandId objId, JSObject* obj,
                                 GuardClassKind kind) {
     generator_.emitOptimisticClassGuard(objId, obj, kind);
@@ -605,13 +618,23 @@ class MOZ_RAII InlinableNativeIRGenerator {
 
   ObjOperandId emitLoadArgsArray();
 
-  void initializeInputOperand() {
-    // The input operand is already initialized for FunCall and FunApplyArray.
-    if (flags_.getArgFormat() == CallFlags::FunCall ||
-        flags_.getArgFormat() == CallFlags::FunApplyArray) {
-      return;
-    }
-    (void)writer.setInputOperandId(0);
+  ValOperandId loadBoundArgument(ObjOperandId calleeId, size_t argIndex);
+
+  ValOperandId loadThis(ObjOperandId calleeId);
+
+  ValOperandId loadArgument(ObjOperandId calleeId, ArgumentKind kind);
+
+  ValOperandId loadArgumentIntrinsic(ArgumentKind kind) {
+    // Intrinsics can't be called through bound functions
+    MOZ_ASSERT(target_->isIntrinsic());
+    MOZ_ASSERT(flags_.getArgFormat() == CallFlags::Standard);
+    return writer.loadArgumentFixedSlot(kind, stackArgc(), flags_);
+  }
+
+  bool hasBoundArguments() const;
+
+  Int32OperandId initializeInputOperand() {
+    return Int32OperandId(writer.setInputOperandId(0));
   }
 
   auto emitToStringGuard(ValOperandId id, const Value& v) {
@@ -789,17 +812,16 @@ class MOZ_RAII InlinableNativeIRGenerator {
   }
 
  public:
-  InlinableNativeIRGenerator(CallIRGenerator& generator, HandleFunction callee,
+  InlinableNativeIRGenerator(CallIRGenerator& generator, HandleFunction target,
                              HandleValue newTarget, HandleValue thisValue,
                              HandleValueArray args, CallFlags flags)
       : generator_(generator),
         writer(generator.writer),
         cx_(generator.cx_),
-        callee_(callee),
+        target_(target),
         newTarget_(newTarget),
         thisval_(thisValue),
         args_(args),
-        argc_(args.length()),
         flags_(flags) {}
 
   AttachDecision tryAttachStub();
@@ -971,6 +993,24 @@ class MOZ_RAII NewObjectIRGenerator : public IRGenerator {
   AttachDecision tryAttachPlainObject();
 };
 
+class MOZ_RAII LambdaIRGenerator : public IRGenerator {
+#ifdef JS_CACHEIR_SPEW
+  JSOp op_;
+#endif
+  Handle<JSFunction*> canonicalFunction_;
+
+  void trackAttached(const char* name /* must be a C string literal */);
+
+ public:
+  LambdaIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
+                    ICState state, JSOp op,
+                    Handle<JSFunction*> canonicalFunction,
+                    BaselineFrame* frame);
+
+  AttachDecision tryAttachStub();
+  AttachDecision tryAttachFunctionClone();
+};
+
 // Returns true for bytecode ops that can use InlinableNativeIRGenerator.
 inline bool BytecodeCallOpCanHaveInlinableNative(JSOp op) {
   return op == JSOp::Call || op == JSOp::CallContent || op == JSOp::New ||
@@ -997,6 +1037,17 @@ class MOZ_RAII CloseIterIRGenerator : public IRGenerator {
   AttachDecision tryAttachStub();
   AttachDecision tryAttachNoReturnMethod();
   AttachDecision tryAttachScriptedReturn();
+};
+
+class MOZ_RAII GetImportIRGenerator : public IRGenerator {
+  void trackAttached(const char* name /* must be a C string literal */);
+
+ public:
+  GetImportIRGenerator(JSContext* cx, HandleScript script, jsbytecode* pc,
+                       ICState state);
+
+  AttachDecision tryAttachStub();
+  AttachDecision tryAttachInitialized();
 };
 
 // Retrieve Xray JIT info set by the embedder.

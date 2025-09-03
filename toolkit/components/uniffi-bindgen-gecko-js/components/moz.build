@@ -7,9 +7,11 @@
 EXTRA_JS_MODULES += [
     "generated/RustRelevancy.sys.mjs",
     "generated/RustRemoteSettings.sys.mjs",
+    "generated/RustSearch.sys.mjs",
     "generated/RustSuggest.sys.mjs",
     "generated/RustSync15.sys.mjs",
     "generated/RustTabs.sys.mjs",
+    "generated/RustWebextstorage.sys.mjs",
 ]
 
 with Files("**"):

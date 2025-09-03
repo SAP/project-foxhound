@@ -52,10 +52,10 @@ class CommonAnimationManager {
    * ::before, ::after and ::marker.
    */
   void StopAnimationsForElement(dom::Element* aElement,
-                                PseudoStyleType aPseudoType) {
+                                const PseudoStyleRequest& aPseudoRequest) {
     MOZ_ASSERT(aElement);
     auto* collection =
-        AnimationCollection<AnimationType>::Get(aElement, aPseudoType);
+        AnimationCollection<AnimationType>::Get(aElement, aPseudoRequest);
     if (!collection) {
       return;
     }
@@ -104,8 +104,9 @@ class OwningElementRef final {
   explicit OwningElementRef(const NonOwningAnimationTarget& aTarget)
       : mTarget(aTarget) {}
 
-  OwningElementRef(dom::Element& aElement, PseudoStyleType aPseudoType)
-      : mTarget(&aElement, aPseudoType) {}
+  OwningElementRef(dom::Element& aElement,
+                   const PseudoStyleRequest& aPseudoRequest)
+      : mTarget(&aElement, aPseudoRequest) {}
 
   bool Equals(const OwningElementRef& aOther) const {
     return mTarget == aOther.mTarget;
@@ -122,20 +123,61 @@ class OwningElementRef final {
                                               &aChildIndex, &aOtherChildIndex);
     }
 
-    return mTarget.mPseudoType == PseudoStyleType::NotPseudo ||
-           (mTarget.mPseudoType == PseudoStyleType::before &&
-            aOther.mTarget.mPseudoType == PseudoStyleType::after) ||
-           (mTarget.mPseudoType == PseudoStyleType::marker &&
-            aOther.mTarget.mPseudoType == PseudoStyleType::before) ||
-           (mTarget.mPseudoType == PseudoStyleType::marker &&
-            aOther.mTarget.mPseudoType == PseudoStyleType::after);
+    enum SortingIndex : uint8_t {
+      NotPseudo,
+      Marker,
+      Before,
+      After,
+      ViewTransition,
+      ViewTransitionGroup,
+      ViewTransitionImagePair,
+      ViewTransitionOld,
+      ViewTransitionNew,
+      Other
+    };
+    auto sortingIndex =
+        [](const PseudoStyleRequest& aPseudoRequest) -> SortingIndex {
+      switch (aPseudoRequest.mType) {
+        case PseudoStyleType::NotPseudo:
+          return SortingIndex::NotPseudo;
+        case PseudoStyleType::marker:
+          return SortingIndex::Marker;
+        case PseudoStyleType::before:
+          return SortingIndex::Before;
+        case PseudoStyleType::after:
+          return SortingIndex::After;
+        case PseudoStyleType::viewTransition:
+          return SortingIndex::ViewTransition;
+        case PseudoStyleType::viewTransitionGroup:
+          return SortingIndex::ViewTransitionGroup;
+        case PseudoStyleType::viewTransitionImagePair:
+          return SortingIndex::ViewTransitionImagePair;
+        case PseudoStyleType::viewTransitionOld:
+          return SortingIndex::ViewTransitionOld;
+        case PseudoStyleType::viewTransitionNew:
+          return SortingIndex::ViewTransitionNew;
+        default:
+          MOZ_ASSERT_UNREACHABLE("Unexpected pseudo type");
+          return SortingIndex::Other;
+      }
+    };
+    return sortingIndex(mTarget.mPseudoRequest) <
+           sortingIndex(aOther.mTarget.mPseudoRequest);
   }
 
   bool IsSet() const { return !!mTarget.mElement; }
 
-  void GetElement(dom::Element*& aElement, PseudoStyleType& aPseudoType) const {
+  bool ShouldFireEvents() const {
+    // NOTE(emilio): Pseudo-elements are represented with a non-native animation
+    // target, and a pseudo-element separately, so the check is also correct for
+    // them.
+    return IsSet() && !mTarget.mElement->IsInNativeAnonymousSubtree();
+  }
+
+  void GetElement(dom::Element*& aElement,
+                  PseudoStyleRequest& aPseudoRequest) const {
     aElement = mTarget.mElement;
-    aPseudoType = mTarget.mPseudoType;
+    aPseudoRequest = mTarget.mPseudoRequest;
   }
 
   const NonOwningAnimationTarget& Target() const { return mTarget; }

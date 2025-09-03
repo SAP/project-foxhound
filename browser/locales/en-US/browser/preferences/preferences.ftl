@@ -2,15 +2,8 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-do-not-track-description = Send websites a “Do Not Track” signal that you don’t want to be tracked
-do-not-track-description2 =
-    .label = Send websites a “Do Not Track” request
-    .accesskey = d
+do-not-track-removal = We no longer support the “Do Not Track” signal
 do-not-track-learn-more = Learn more
-do-not-track-option-default-content-blocking-known =
-    .label = Only when { -brand-short-name } is set to block known trackers
-do-not-track-option-always =
-    .label = Always
 
 global-privacy-control-description =
     .label = Tell websites not to sell or share my data
@@ -175,6 +168,12 @@ preferences-data-migration-button =
     .label = Import Data
     .accesskey = m
 
+preferences-profiles-header = Profiles
+preferences-manage-profiles-description = Each profile has separate browsing data and settings, including history, passwords, and more.
+preferences-manage-profiles-learn-more = Learn more
+preferences-manage-profiles-button =
+  .label = Manage Profiles
+
 tabs-group-header = Tabs
 
 ctrl-tab-recently-used-order =
@@ -185,8 +184,8 @@ open-new-link-as-tabs =
     .label = Open links in tabs instead of new windows
     .accesskey = w
 
-confirm-on-close-multiple-tabs =
-    .label = Confirm before closing multiple tabs
+ask-on-close-multiple-tabs =
+    .label = Ask before closing multiple tabs
     .accesskey = m
 
 # This string is used for the confirm before quitting preference.
@@ -194,8 +193,8 @@ confirm-on-close-multiple-tabs =
 #   $quitKey (string) - the quit keyboard shortcut, and formatted
 #                       in the same manner as it would appear,
 #                       for example, in the File menu.
-confirm-on-quit-with-key =
-    .label = Confirm before quitting with { $quitKey }
+ask-on-quit-with-key =
+    .label = Ask before quitting with { $quitKey }
     .accesskey = b
 
 warn-on-open-many-tabs =
@@ -257,6 +256,21 @@ containers-remove-cancel-button = Don’t remove this Container
 settings-tabs-show-image-in-preview =
     .label = Show an image preview when you hover on a tab
     .accessKey = h
+
+
+browser-layout-header = Browser Layout
+
+browser-layout-horizontal-tabs =
+    .label = Horizontal tabs
+browser-layout-horizontal-tabs-desc = Display at top of browser
+
+browser-layout-vertical-tabs =
+    .label = Vertical tabs
+browser-layout-vertical-tabs-desc = Display on the side, in the sidebar
+
+browser-layout-show-sidebar =
+    .label = Show sidebar
+browser-layout-show-sidebar-desc = Quickly access bookmarks, tabs from your phone, AI chatbots, and more without leaving your main view.
 
 ## General Section - Language & Appearance
 
@@ -1221,6 +1235,16 @@ addressbar-header = Address Bar
 
 addressbar-suggest = When using the address bar, suggest
 
+# When Firefox Suggest is enabled, this replaces `addressbar-header`.
+addressbar-header-firefox-suggest = Address Bar — { -firefox-suggest-brand-name }
+
+# When Firefox Suggest is enabled, this replaces `addressbar-suggest`.
+addressbar-suggest-firefox-suggest = Choose the type of suggestions that appear in the address bar.
+
+# When Firefox Suggest is enabled, a "Learn more" link appears at the end of
+# `addressbar-suggest-firefox-suggest`.
+addressbar-locbar-firefox-suggest-learn-more = Learn more
+
 addressbar-locbar-history-option =
     .label = Browsing history
     .accesskey = h
@@ -1253,7 +1277,21 @@ addressbar-locbar-showtrendingsuggestions-option =
     .label = Show trending search suggestions
     .accesskey = t
 
+# Nonsponsored suggestions refers to Firefox Suggest suggestions like Wikipedia.
+addressbar-locbar-suggest-nonsponsored-option =
+  .label = Suggestions from { -brand-short-name }
+addressbar-locbar-suggest-nonsponsored-desc = Get suggestions from the web related to your search.
+
+addressbar-locbar-suggest-sponsored-option =
+  .label = Suggestions from sponsors
+addressbar-locbar-suggest-sponsored-desc = Support { -brand-short-name } with occasional sponsored suggestions.
+
 addressbar-quickactions-learn-more = Learn more
+
+addressbar-dismissed-suggestions-label = Dismissed suggestions
+addressbar-restore-dismissed-suggestions-description = Restore dismissed suggestions from sponsors and { -brand-short-name }.
+addressbar-restore-dismissed-suggestions-button =
+  .label = Restore
 
 ## Privacy Section - Content Blocking
 
@@ -1438,31 +1476,40 @@ permissions-addon-exceptions =
 collection-header2 = { -brand-short-name } Data Collection and Use
     .searchkeywords = telemetry
 
-collection-description = We strive to provide you with choices and collect only what we need to provide and improve { -brand-short-name } for everyone. We always ask permission before receiving personal information.
-collection-privacy-notice = Privacy Notice
+preferences-collection-description = We strive to provide you with choices and collect only the minimal data necessary to improve { -brand-product-name } for everyone.
+preferences-collection-privacy-notice = View Privacy Notice
 
 collection-health-report-telemetry-disabled = You’re no longer allowing { -vendor-short-name } to capture technical and interaction data. All past data will be deleted within 30 days.
 collection-health-report-telemetry-disabled-link = Learn more
 
-collection-health-report =
-    .label = Allow { -brand-short-name } to send technical and interaction data to { -vendor-short-name }
+collection-usage-ping =
+    .label = Send daily usage ping to { -vendor-short-name }
+    .accesskey = u
+collection-usage-ping-description = This helps { -vendor-short-name } to estimate active users.
+
+collection-health-report2 =
+    .label = Send technical and interaction data to { -vendor-short-name }
     .accesskey = r
 collection-health-report-link = Learn more
+collection-health-report-description = This helps us improve { -brand-product-name } features, performance, and stability.
 
-collection-studies =
-    .label = Allow { -brand-short-name } to install and run studies
+collection-studies2 =
+    .label = Install and run studies
+collection-studies-description = Try out features and ideas before they’re released to everyone.
 collection-studies-link = View { -brand-short-name } studies
 
-addon-recommendations =
-    .label = Allow { -brand-short-name } to make personalized extension recommendations
-addon-recommendations-link = Learn more
+addon-recommendations2 =
+    .label = Allow personalized extension recommendations
+addon-recommendations-description = Get extension recommendations to improve your browsing experience.
 
 # This message is displayed above disabled data sharing options in developer builds
 # or builds with no Telemetry support available.
-collection-health-report-disabled = Data reporting is disabled for this build configuration
+collection-health-report-disabled2 = Data reporting is disabled for this build configuration.
 
-collection-backlogged-crash-reports = Allow { -brand-short-name } to send backlogged crash reports on your behalf
+collection-backlogged-crash-reports2 =
+    .label = Automatically send crash reports
     .accesskey = c
+collection-backlogged-crash-reports-description = This helps { -vendor-short-name } diagnose and fix issues with the browser. Reports may include personal or sensitive data.
 
 privacy-segmentation-section-header = New features that enhance your browsing
 
@@ -1538,24 +1585,19 @@ space-alert-under-5gb-message2 = <strong>{ -brand-short-name } is running out of
 
 httpsonly-header = HTTPS-Only Mode
 
-httpsonly-description2 = { -brand-short-name } creates secure and encrypted connections to sites you visit. { -brand-short-name } will warn you if a connection isn’t secure when HTTPS-Only is on.
+httpsonly-description3 = Only allows secure connections to websites. { -brand-short-name } will ask before connecting insecurely.
 
-httpsonly-learn-more = Learn more
+httpsonly-learn-more2 = How HTTPS-Only works
 
 httpsonly-radio-enabled =
     .label = Enable HTTPS-Only Mode in all windows
-httpsonly-radio-enabled2 =
-    .label = Only use HTTPS in all windows
 
 httpsonly-radio-enabled-pbm =
     .label = Enable HTTPS-Only Mode in private windows only
-httpsonly-radio-enabled-pbm2 =
-    .label = Only use HTTPS in private windows
 
-httpsonly-radio-disabled =
+httpsonly-radio-disabled3 =
     .label = Don’t enable HTTPS-Only Mode
-httpsonly-radio-disabled2 =
-    .label = Try HTTPS first, but allow connections that are not secure
+    .description = { -brand-short-name } may still upgrade some connections
 
 ## DoH Section
 
@@ -1614,10 +1656,6 @@ preferences-doh-setting-off =
   .label = Off
   .accesskey = O
 preferences-doh-off-desc = Use your default DNS resolver
-
-preferences-doh-checkbox-warn =
-    .label = Warn if a third party actively prevents secure DNS
-    .accesskey = W
 
 preferences-doh-select-resolver = Choose provider:
 

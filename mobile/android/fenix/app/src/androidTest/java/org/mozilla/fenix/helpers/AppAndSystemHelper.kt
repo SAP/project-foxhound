@@ -56,6 +56,7 @@ import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
+import org.mozilla.fenix.helpers.NetworkConnectionStatusHelper.checkActiveNetworkState
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.appContext
@@ -245,6 +246,8 @@ object AppAndSystemHelper {
     fun setNetworkEnabled(enabled: Boolean) {
         val networkDisconnectedIdlingResource = NetworkConnectionIdlingResource(false)
         val networkConnectedIdlingResource = NetworkConnectionIdlingResource(true)
+        val enableNetworkTimerIdlingResource = TimerIdlingResource(5000)
+        val disableNetworkTimerIdlingResource = TimerIdlingResource(3000)
 
         when (enabled) {
             true -> {
@@ -270,6 +273,16 @@ object AppAndSystemHelper {
                     IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
                 }
                 Log.i(TAG, "setNetworkEnabled: Network connection was enabled.")
+
+                // Register the TimerIdlingResource
+                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+
+                // Wait for the TimerIdlingResource to become idle
+                Espresso.onIdle {
+                    IdlingRegistry.getInstance().unregister(networkConnectedIdlingResource)
+                    // Check the active network state
+                    checkActiveNetworkState(enabled = true)
+                }
             }
 
             false -> {
@@ -295,6 +308,34 @@ object AppAndSystemHelper {
                     IdlingRegistry.getInstance().unregister(networkDisconnectedIdlingResource)
                 }
                 Log.i(TAG, "setNetworkEnabled: Network connection was disabled.")
+
+                // Register the TimerIdlingResource
+                IdlingRegistry.getInstance().register(enableNetworkTimerIdlingResource)
+
+                // Wait for the TimerIdlingResource to become idle
+                Espresso.onIdle {
+                    IdlingRegistry.getInstance().unregister(disableNetworkTimerIdlingResource)
+                    // Check the active network state
+                    checkActiveNetworkState(enabled = false)
+                }
+            }
+        }
+    }
+
+    fun disableWifiNetworkConnection() {
+        mDevice.executeShellCommand("svc wifi disable")
+        Log.i(TAG, "disableWifiNetworkConnection: Wifi network connection disable command sent.")
+    }
+
+    fun enableDataSaverSystemSetting(enabled: Boolean) {
+        when (enabled) {
+            true -> {
+                mDevice.executeShellCommand("cmd netpolicy set restrict-background true")
+                Log.i(TAG, "enableDataSaverSystemSetting: Command to enable data saver system setting sent.")
+            }
+            false -> {
+                mDevice.executeShellCommand("cmd netpolicy set restrict-background false")
+                Log.i(TAG, "enableDataSaverSystemSetting: Command to disable data saver system setting sent.")
             }
         }
     }
@@ -312,27 +353,25 @@ object AppAndSystemHelper {
         }
     }
 
-    fun assertAppWithPackageNameOpens(appPackageName: String) {
+    fun assertExternalAppOpens(appPackageName: String) {
         if (isPackageInstalled(appPackageName)) {
             try {
-                Log.i(TAG, "assertAppWithPackageNameOpens: Trying to check the intent sent.")
+                Log.i(TAG, "assertExternalAppOpens: Trying to check the intent sent.")
                 intended(toPackage(appPackageName))
-                Log.i(TAG, "assertAppWithPackageNameOpens: Matched open intent to $appPackageName.")
+                Log.i(TAG, "assertExternalAppOpens: Matched open intent to $appPackageName.")
             } catch (e: AssertionFailedError) {
-                Log.i(TAG, "assertAppWithPackageNameOpens: Intent match failure. ${e.message}")
+                Log.i(TAG, "assertExternalAppOpens: Intent match failure. ${e.message}")
             } finally {
-                if (appPackageName != packageName) {
-                    // Stop the app from running in the background
-                    forceCloseApp(appPackageName)
-                }
+                // Stop the app from running in the background
+                forceCloseApp(appPackageName)
             }
         } else {
-            Log.i(TAG, "assertAppWithPackageNameOpens: Trying to verify the \"Could not open file\" message.")
+            Log.i(TAG, "assertExternalAppOpens: Trying to verify the \"Could not open file\" message.")
             mDevice.waitNotNull(
                 Until.findObject(By.text("Could not open file")),
                 waitingTime,
             )
-            Log.i(TAG, "assertAppWithPackageNameOpens: Verified \"Could not open file\" message")
+            Log.i(TAG, "assertExternalAppOpens: Verified \"Could not open file\" message")
         }
     }
 
@@ -359,6 +398,13 @@ object AppAndSystemHelper {
     }
 
     fun assertYoutubeAppOpens() {
+        Log.i(TAG, "assertYoutubeAppOpens: Trying to revoke the Notifications permission for the YouTube app.")
+        runBlocking {
+            // This will prevent the Youtube app to show the "Allow notifications" dialog
+            Log.i(TAG, "assertYoutubeAppOpens: Granting the Notifications permission for the YouTube app.")
+            mDevice.executeShellCommand("pm grant com.google.android.youtube android.permission.POST_NOTIFICATIONS")
+            Log.i(TAG, "assertYoutubeAppOpens: Granted the Notifications permission for the YouTube app.")
+        }
         Log.i(TAG, "assertYoutubeAppOpens: Trying to check the intent to YouTube.")
         intended(toPackage(YOUTUBE_APP))
         Log.i(TAG, "assertYoutubeAppOpens: Verified the intent matches YouTube.")

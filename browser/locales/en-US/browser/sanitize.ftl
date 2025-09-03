@@ -75,11 +75,7 @@ item-history-and-downloads =
     .label = Browsing & download history
     .accesskey = B
 
-item-history-form-data-downloads =
-    .label = History
-    .accesskey = H
-
-item-history-form-data-downloads-description = Clears site and download history, saved form info, and searches
+item-history-and-downloads-description = Clears search, site and download history
 
 item-cookies =
     .label = Cookies
@@ -126,6 +122,12 @@ item-form-search-history =
 item-site-prefs =
     .label = Site settings
     .accesskey = i
+
+item-formdata-prefs =
+    .label = Saved form info
+    .accesskey = o
+
+item-formdata-description = Clears things like names, emails, and other items you enter in forms
 
 item-site-prefs-description = Resets your permissions and site preferences to original settings
 

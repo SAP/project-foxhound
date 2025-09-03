@@ -26,7 +26,7 @@
  */
 
 // We expose a singleton from this module. Some tests may import the
-// constructor via a backstage pass.
+// constructor via the system global.
 import { FormAutofill } from "resource://autofill/FormAutofill.sys.mjs";
 import { FormAutofillUtils } from "resource://gre/modules/shared/FormAutofillUtils.sys.mjs";
 
@@ -193,6 +193,14 @@ export let FormAutofillStatus = {
 
   async observe(subject, topic, data) {
     lazy.log.debug("observe:", topic, "with data:", data);
+
+    if (
+      !FormAutofill.isAutofillCreditCardsAvailable &&
+      !FormAutofill.isAutofillAddressesAvailable
+    ) {
+      return;
+    }
+
     switch (topic) {
       case "privacy-pane-loaded": {
         let formAutofillPreferences = new lazy.FormAutofillPreferences();
@@ -291,6 +299,13 @@ export class FormAutofillParent extends JSWindowActorParent {
    * @param   {object} message.data The data of the message.
    */
   async receiveMessage({ name, data }) {
+    if (
+      !FormAutofill.isAutofillCreditCardsAvailable &&
+      !FormAutofill.isAutofillAddressesAvailable
+    ) {
+      return undefined;
+    }
+
     switch (name) {
       case "FormAutofill:InitStorage": {
         await lazy.gFormAutofillStorage.initialize();
@@ -298,7 +313,7 @@ export class FormAutofillParent extends JSWindowActorParent {
         break;
       }
       case "FormAutofill:GetRecords": {
-        const records = await FormAutofillParent.getRecords(data);
+        const records = await this.getRecords(data);
         return { records };
       }
       case "FormAutofill:OnFormSubmit": {
@@ -307,9 +322,6 @@ export class FormAutofillParent extends JSWindowActorParent {
         this.onFormSubmit(rootElementId, formFilledData);
         break;
       }
-      case "FormAutofill:UpdateWarningMessage":
-        this.notifyMessageObservers("updateWarningNote", data);
-        break;
 
       case "FormAutofill:FieldsIdentified":
         this.notifyMessageObservers("fieldsIdentified", data);
@@ -371,7 +383,7 @@ export class FormAutofillParent extends JSWindowActorParent {
   }
 
   static getActor(browsingContext) {
-    return browsingContext.currentWindowGlobal?.getActor("FormAutofill");
+    return browsingContext?.currentWindowGlobal?.getActor("FormAutofill");
   }
 
   get formOrigin() {
@@ -407,7 +419,8 @@ export class FormAutofillParent extends JSWindowActorParent {
   async identifyAllSubTreeFields(
     browsingContext,
     focusedBCId,
-    alreadyIdentifiedFields
+    alreadyIdentifiedFields,
+    msg
   ) {
     let identifiedFieldsIncludeIframe = [];
     try {
@@ -415,7 +428,7 @@ export class FormAutofillParent extends JSWindowActorParent {
       if (actor == this) {
         identifiedFieldsIncludeIframe = alreadyIdentifiedFields;
       } else {
-        const msg = "FormAutofill:IdentifyFields";
+        msg ||= "FormAutofill:IdentifyFields";
         identifiedFieldsIncludeIframe = await actor.sendQuery(msg, {
           focusedBCId,
         });
@@ -441,11 +454,33 @@ export class FormAutofillParent extends JSWindowActorParent {
       const [fields] = await this.identifyAllSubTreeFields(
         iframeBC,
         focusedBCId,
-        alreadyIdentifiedFields
+        alreadyIdentifiedFields,
+        msg
       );
       subTreeDetails.push(...fields);
     }
     return [subTreeDetails, rootElementId];
+  }
+
+  /**
+   * After collecting all the fields, we apply heuristics to:
+   * 1. Update field names based on the context of surrounding fields.
+   *    For instance, a field named 'name' might be renamed to 'cc-name' if
+   *    it follows a field named 'cc-number'.
+   * 2. Identify and classify address and credit card sections. Sections
+   *    are used to group fields that should be autofilled together.
+   *
+   * @param {Array<FieldDetail>} fieldDetails
+   *        An array of the identified fields.
+   * @param {object} options
+   *        options to parse to 'classifySections'
+   */
+  static parseAndClassifyFields(fieldDetails, options = {}) {
+    lazy.FormAutofillHeuristics.parseAndUpdateFieldNamesParent(fieldDetails);
+
+    // At this point we have identified all the fields that are under the same
+    // root element. We can run section classification heuristic now.
+    return lazy.FormAutofillSection.classifySections(fieldDetails, options);
   }
 
   /**
@@ -481,11 +516,8 @@ export class FormAutofillParent extends JSWindowActorParent {
 
     // Now we have collected all the fields for the form, run parsing heuristics
     // to update the field name based on surrounding fields.
-    lazy.FormAutofillHeuristics.parseAndUpdateFieldNamesParent(fieldDetails);
+    const sections = FormAutofillParent.parseAndClassifyFields(fieldDetails);
 
-    // At this point we have identified all the fields that are under the same
-    // root element. We can run section classification heuristic now.
-    const sections = lazy.FormAutofillSection.classifySections(fieldDetails);
     this.sectionsByRootId.set(rootElementId, sections);
 
     // Note that 'onFieldsDetected' is not only called when a form is detected,
@@ -494,8 +526,7 @@ export class FormAutofillParent extends JSWindowActorParent {
     sections.forEach(section => section.onDetected());
 
     if (FormAutofill.isMLExperimentEnabled) {
-      const allFieldDetails = sections.flatMap(section => section.fieldDetails);
-      lazy.MLAutofill.runInference(allFieldDetails);
+      sections.forEach(section => lazy.MLAutofill.runInference(section));
     }
 
     // Inform all the child actors of the updated 'fieldDetails'
@@ -647,10 +678,9 @@ export class FormAutofillParent extends JSWindowActorParent {
    * @param  {string} data.collectionName
    *         The name used to specify which collection to retrieve records.
    * @param  {string} data.fieldName
-   *         The field name to search. If not specified, return all records in
-   *         the collection
+   *         The field name to search.
    */
-  static async getRecords({ searchString, collectionName, fieldName }) {
+  async getRecords({ searchString, collectionName, fieldName }) {
     // Derive the collection name from field name if it doesn't exist
     collectionName ||=
       FormAutofillUtils.getCollectionNameFromFieldName(fieldName);
@@ -661,6 +691,10 @@ export class FormAutofillParent extends JSWindowActorParent {
     }
 
     const records = await collection.getAll();
+
+    // Add testing records if exists
+    records.push(...this.#getTemporaryRecordForTab(collectionName));
+
     if (!fieldName || !records.length) {
       return records;
     }
@@ -681,7 +715,6 @@ export class FormAutofillParent extends JSWindowActorParent {
 
       if (
         collectionName == ADDRESSES_COLLECTION_NAME &&
-        record.country &&
         !FormAutofill.isAutofillAddressesAvailableInCountry(record.country)
       ) {
         // Address autofill isn't supported for the record's country so we don't
@@ -701,6 +734,10 @@ export class FormAutofillParent extends JSWindowActorParent {
    */
 
   async _onAddressSubmit(address, browser) {
+    if (!FormAutofill.isAutofillAddressesEnabled) {
+      return false;
+    }
+
     const storage = lazy.gFormAutofillStorage.addresses;
 
     // Make sure record is normalized before comparing with records in the storage
@@ -849,10 +886,7 @@ export class FormAutofillParent extends JSWindowActorParent {
     }
 
     // Do not save address for regions that we don't support
-    if (
-      FormAutofill._isAutofillAddressesAvailable == "detect" &&
-      !FormAutofill.isAutofillAddressesAvailableInCountry(record.country)
-    ) {
+    if (!FormAutofill.isAutofillAddressesAvailableInCountry(record.country)) {
       lazy.log.debug(
         `Do not show the address capture prompt for unsupported regions - ${record.country}`
       );
@@ -906,13 +940,13 @@ export class FormAutofillParent extends JSWindowActorParent {
     }
 
     const relayPromise = lazy.FirefoxRelay.autocompleteItemsAsync({
-      formOrigin: this.formOrigin,
+      origin: this.formOrigin,
       scenarioName,
       hasInput: !!searchString?.length,
     });
 
     // Retrieve information for the autocomplete entry
-    const recordsPromise = FormAutofillParent.getRecords({
+    const recordsPromise = this.getRecords({
       searchString,
       fieldName,
     });
@@ -1146,6 +1180,13 @@ export class FormAutofillParent extends JSWindowActorParent {
 
     section.onCleared(elementId);
 
+    section.fieldDetails.forEach(field => {
+      if (!this.filledResult.has(field.elementId)) {
+        return;
+      }
+      this.filledResult.get(field.elementId).filledState = FIELD_STATES.NORMAL;
+    });
+
     const msg = "FormAutofill:ClearFilledFields";
     await this.#triggerAutofillActionInChildren(msg, elementId, section);
 
@@ -1225,6 +1266,122 @@ export class FormAutofillParent extends JSWindowActorParent {
       } catch (ex) {
         console.error(ex);
       }
+    }
+  }
+
+  /**
+   * Autofill Developer Tools Related API.
+   * API Below are used by autofill developer tools.
+   * Do not change the function name or argument unless we are going to update
+   * the autofill developer tool as well.
+   */
+
+  /**
+   * Autofill Developer Tool API to inspect the autofill fields in this
+   * tab.
+   *
+   * @param {Array<object>} overwriteFieldDetails
+   *        A list of FieldDetail object to overwrite the detected result.
+   *        This is used by the developer tool to correct the inspected
+   *        result.
+   * @returns {Array<object>}
+   *        A list of sections representing the inspected result for this page.
+   */
+  async inspectFields(overwriteFieldDetails = []) {
+    // Start with inspecting the fields in the top-level
+    const topBC = this.browsingContext.top;
+    const actor = FormAutofillParent.getActor(topBC);
+    const fields = await actor.sendQuery("FormAutofill:InspectFields");
+
+    if (!fields.length) {
+      return [];
+    }
+
+    // Group fields that belong to the same form.
+    const fieldsByForm = [];
+    const rootElementIdByFormIndex = {};
+    for (const field of fields) {
+      let index = rootElementIdByFormIndex[field.rootElementId];
+      if (index == undefined) {
+        index = fieldsByForm.length;
+        rootElementIdByFormIndex[field.rootElementId] = index;
+        fieldsByForm.push([]);
+      }
+      fieldsByForm[index].push(field);
+    }
+
+    // Use `onFieldsDetected` function to simulate the behavior that when
+    // users click on a field, we will also identify fields that are in an <iframe>
+    const allSections = [];
+    for (const formFields of fieldsByForm) {
+      const msg = "FormAutofill:InspectFields";
+      const [fieldDetails] = await this.identifyAllSubTreeFields(
+        topBC,
+        null,
+        formFields,
+        msg
+      );
+
+      fieldDetails.forEach(field => {
+        const overwriteField = overwriteFieldDetails.find(
+          ow => ow.inspectId == field.inspectId
+        );
+        if (overwriteField) {
+          Object.assign(field, overwriteField);
+        }
+      });
+
+      const formSections = FormAutofillParent.parseAndClassifyFields(
+        fieldDetails,
+        { ignoreUnknownField: false }
+      );
+      if (formSections.length) {
+        allSections.push(formSections);
+      }
+    }
+    return allSections;
+  }
+
+  #getTemporaryRecordForTab(collectionName) {
+    // The temporary record is stored in the top-level actor.
+    const topBC = this.browsingContext.top;
+    const actor = FormAutofillParent.getActor(topBC);
+    return actor?.temporaryRecords?.[collectionName] ?? [];
+  }
+
+  /**
+   * Autofill Developer Tools Related API:
+   * Add test records for this tab.
+   *
+   * @param {Array<object>} records
+   *        A list of address or credit card records
+   */
+  async setTemporaryRecordsForTab(records) {
+    const topBC = this.browsingContext.top;
+    const actor = FormAutofillParent.getActor(topBC);
+    actor.temporaryRecords = {
+      [ADDRESSES_COLLECTION_NAME]: [],
+      [CREDITCARDS_COLLECTION_NAME]: [],
+    };
+
+    for (const record of records) {
+      const fields = Object.keys(record);
+      if (!fields.length) {
+        continue;
+      }
+      const collection = FormAutofillUtils.getCollectionNameFromFieldName(
+        fields[0]
+      );
+      const storage =
+        collection == ADDRESSES_COLLECTION_NAME
+          ? lazy.gFormAutofillStorage.addresses
+          : lazy.gFormAutofillStorage.creditCards;
+      // Since we don't define the pattern for the passed 'record',
+      // we need to normalize it first.
+      storage._normalizeRecord(record);
+      await storage.computeFields(record);
+
+      actor.temporaryRecords[collection]?.push(record);
     }
   }
 }

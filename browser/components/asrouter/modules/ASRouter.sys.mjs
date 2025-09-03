@@ -1385,7 +1385,7 @@ export class _ASRouter {
       return { message: {} };
     }
 
-    // filter out messages we want to exclude from tests
+    // Filters out messages we want to exclude from tests
     if (
       message.skip_in_tests &&
       // `this.messagesEnabledInAutomation` should be stubbed in tests
@@ -1487,7 +1487,13 @@ export class _ASRouter {
     return { message };
   }
 
-  addScreenImpression(screen) {
+  async addScreenImpression(screen) {
+    // wait to ensure storage has been intialized before setting
+    // screenImpression
+    if (!this.initialized) {
+      await this.waitForInitialized;
+    }
+
     lazy.ASRouterPreferences.console.debug(
       `entering addScreenImpression for ${screen.id}`
     );
@@ -2109,7 +2115,7 @@ export class _ASRouter {
       privateBrowserOpener.browsingContext.currentWindowGlobal
         .getActor("AboutPrivateBrowsing")
         .sendAsyncMessage("ShowDevToolsMessage", msg);
-    }, 100);
+    }, 200);
 
     return privateBrowserOpener;
   }

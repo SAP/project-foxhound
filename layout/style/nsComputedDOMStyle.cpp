@@ -129,12 +129,10 @@ static bool ElementNeedsRestyle(Element* aElement,
     return true;
   }
 
-  // TODO: Bug 1921553. Use PseudoStyleRequest for web animations.
   // If the pseudo-element is animating, make sure to flush.
-  if (aElement->MayHaveAnimations() &&
-      aPseudo.mType != PseudoStyleType::NotPseudo &&
-      AnimationUtils::IsSupportedPseudoForAnimations(aPseudo.mType)) {
-    if (EffectSet::Get(aElement, aPseudo.mType)) {
+  if (aElement->MayHaveAnimations() && !aPseudo.IsNotPseudo() &&
+      AnimationUtils::IsSupportedPseudoForAnimations(aPseudo)) {
+    if (EffectSet::Get(aElement, aPseudo)) {
       return true;
     }
   }
@@ -588,9 +586,7 @@ nsComputedDOMStyle::GetUnanimatedComputedStyleNoFlush(
   MOZ_ASSERT(presShell,
              "How in the world did we get a style a few lines above?");
 
-  // TODO: Bug 1921553. Use PseudoStyleRequest for animations.
-  Element* elementOrPseudoElement =
-      AnimationUtils::GetElementForRestyle(aElement, aPseudo.mType);
+  Element* elementOrPseudoElement = aElement->GetPseudoElement(aPseudo);
   if (!elementOrPseudoElement) {
     return nullptr;
   }
@@ -1914,22 +1910,24 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetNonStaticPositionOffset(
     PercentageBaseGetter aHeightGetter) {
   const nsStylePosition* positionData = StylePosition();
   int32_t sign = 1;
-  auto coord = positionData->GetInset(aSide);
+  const auto positionProperty = StyleDisplay()->mPosition;
+  auto coord = positionData->GetAnchorResolvedInset(aSide, positionProperty);
 
-  if (!coord.IsLengthPercentage()) {
+  if (coord->IsAuto()) {
     if (!aResolveAuto) {
       auto val = MakeRefPtr<nsROCSSPrimitiveValue>();
       val->SetString("auto");
       return val.forget();
     }
-    coord = positionData->GetInset(NS_OPPOSITE_SIDE(aSide));
+    coord = positionData->GetAnchorResolvedInset(NS_OPPOSITE_SIDE(aSide),
+                                                 positionProperty);
     sign = -1;
   }
-  if (!coord.IsLengthPercentage()) {
+  if (coord->IsAuto()) {
     return PixelsToCSSValue(0.0f);
   }
 
-  const auto& lp = coord.AsLengthPercentage();
+  const auto& lp = coord->AsLengthPercentage();
   if (lp.ConvertsToLength()) {
     return PixelsToCSSValue(sign * lp.ToLengthInCSSPixels());
   }
@@ -1941,20 +1939,25 @@ already_AddRefed<CSSValue> nsComputedDOMStyle::GetNonStaticPositionOffset(
   if (!(this->*baseGetter)(percentageBase)) {
     return PixelsToCSSValue(0.0f);
   }
-  nscoord result = lp.Resolve(percentageBase);
+
+  nscoord result = lp.ResolveWithAnchor(
+      percentageBase, GetStylePhysicalAxis(aSide), positionProperty);
   return AppUnitsToCSSValue(sign * result);
 }
 
 already_AddRefed<CSSValue> nsComputedDOMStyle::GetAbsoluteOffset(
     mozilla::Side aSide) {
-  const auto& coord = StylePosition()->GetInset(aSide);
-  const auto& oppositeCoord =
-      StylePosition()->GetInset(NS_OPPOSITE_SIDE(aSide));
+  const auto positionProperty = StyleDisplay()->mPosition;
+  const auto coord =
+      StylePosition()->GetAnchorResolvedInset(aSide, positionProperty);
+  const auto oppositeCoord = StylePosition()->GetAnchorResolvedInset(
+      NS_OPPOSITE_SIDE(aSide), positionProperty);
 
-  if (coord.IsAuto() || oppositeCoord.IsAuto()) {
+  if (coord->IsAuto() || oppositeCoord->IsAuto()) {
     return AppUnitsToCSSValue(GetUsedAbsoluteOffset(aSide));
   }
 
+  // TODO(dshin): We're resolving anchor offset potentially twice...
   return GetNonStaticPositionOffset(
       aSide, false, &nsComputedDOMStyle::GetCBPaddingRectWidth,
       &nsComputedDOMStyle::GetCBPaddingRectHeight);
@@ -2026,7 +2029,15 @@ nscoord nsComputedDOMStyle::GetUsedAbsoluteOffset(mozilla::Side aSide) {
 already_AddRefed<CSSValue> nsComputedDOMStyle::GetStaticOffset(
     mozilla::Side aSide) {
   auto val = MakeRefPtr<nsROCSSPrimitiveValue>();
-  SetValueToInset(val, StylePosition()->GetInset(aSide));
+  const auto resolved =
+      StylePosition()->GetAnchorResolvedInset(aSide, StyleDisplay()->mPosition);
+  if (resolved->IsAuto()) {
+    val->SetString("auto");
+  } else {
+    // Any calc node containing anchor should have been resolved as invalid by
+    // this point.
+    SetValueToLengthPercentage(val, resolved->AsLengthPercentage(), false);
+  }
   return val.forget();
 }
 
@@ -2150,17 +2161,6 @@ void nsComputedDOMStyle::SetValueToLengthPercentageOrAuto(
   }
   SetValueToLengthPercentage(aValue, aSize.AsLengthPercentage(),
                              aClampNegativeCalc);
-}
-
-void nsComputedDOMStyle::SetValueToInset(nsROCSSPrimitiveValue* aValue,
-                                         const mozilla::StyleInset& aInset) {
-  // This function isn't used for absolutely positioned insets, so just assume
-  // `anchor()` or `anchor-size()` is `auto`.
-  if (!aInset.IsLengthPercentage()) {
-    aValue->SetString("auto");
-    return;
-  }
-  SetValueToLengthPercentage(aValue, aInset.AsLengthPercentage(), false);
 }
 
 void nsComputedDOMStyle::SetValueToMargin(nsROCSSPrimitiveValue* aValue,

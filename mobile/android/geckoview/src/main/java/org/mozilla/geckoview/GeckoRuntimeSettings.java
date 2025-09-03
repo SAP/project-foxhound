@@ -22,7 +22,9 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import java.lang.annotation.Retention;
 import java.lang.annotation.RetentionPolicy;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import org.mozilla.gecko.EventDispatcher;
 import org.mozilla.gecko.GeckoSystemStateListener;
@@ -578,6 +580,17 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
     }
 
     /**
+     * Set the default DNS-over-HTTPS server URI.
+     *
+     * @param uri default URI of the DNS-over-HTTPS server.
+     * @return This Builder instance.
+     */
+    public @NonNull Builder defaultRecursiveResolverUri(final @NonNull String uri) {
+      getSettings().setDefaultRecursiveResolverUri(uri);
+      return this;
+    }
+
+    /**
      * Set the factor by which to increase the keepalive timeout when the NS_HTTP_LARGE_KEEPALIVE
      * flag is used for a connection.
      *
@@ -644,6 +657,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new PrefWithoutDefault<>("network.trr.mode");
   /* package */ final PrefWithoutDefault<String> mTrustedRecursiveResolverUri =
       new PrefWithoutDefault<>("network.trr.uri");
+  /* package */ final PrefWithoutDefault<String> mDefaultRecursiveResolverUri =
+      new PrefWithoutDefault<>("network.trr.default_provider_uri");
+  /* package */ final PrefWithoutDefault<String> mTrustedRecursiveResolverExcludedDomains =
+      new PrefWithoutDefault<>("network.trr.excluded-domains");
   /* package */ final PrefWithoutDefault<Integer> mLargeKeepalivefactor =
       new PrefWithoutDefault<>("network.http.largeKeepaliveFactor");
   /* package */ final Pref<Integer> mProcessCount = new Pref<>("dom.ipc.processCount", 2);
@@ -661,10 +678,10 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("privacy.globalprivacycontrol.pbmode.enabled", true);
   /* package */ final Pref<Boolean> mGlobalPrivacyControlFunctionalityEnabled =
       new Pref<Boolean>("privacy.globalprivacycontrol.functionality.enabled", true);
-  /* package */ final Pref<Boolean> mFingerprintingProtection =
-      new Pref<Boolean>("privacy.fingerprintingProtection", false);
-  /* package */ final Pref<Boolean> mFingerprintingProtectionPrivateMode =
-      new Pref<Boolean>("privacy.fingerprintingProtection.pbmode", true);
+  /* package */ final PrefWithoutDefault<Boolean> mFingerprintingProtection =
+      new PrefWithoutDefault<Boolean>("privacy.fingerprintingProtection");
+  /* package */ final PrefWithoutDefault<Boolean> mFingerprintingProtectionPrivateMode =
+      new PrefWithoutDefault<Boolean>("privacy.fingerprintingProtection.pbmode");
   /* package */ final PrefWithoutDefault<String> mFingerprintingProtectionOverrides =
       new PrefWithoutDefault<>("privacy.fingerprintingProtection.overrides");
   /* package */ final Pref<Boolean> mFdlibmMathEnabled =
@@ -681,6 +698,12 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
       new Pref<Boolean>("network.cookie.cookieBehavior.optInPartitioning", false);
   /* package */ final Pref<Boolean> mCookieBehaviorOptInPartitioningPBM =
       new Pref<Boolean>("network.cookie.cookieBehavior.optInPartitioning.pbmode", false);
+  /* package */ final Pref<Integer> mCertificateTransparencyMode =
+      new Pref<Integer>("security.pki.certificate_transparency.mode", 0);
+  /* package */ final Pref<Boolean> mPostQuantumKeyExchangeTLSEnabled =
+      new Pref<Boolean>("security.tls.enable_kyber", false);
+  /* package */ final Pref<Boolean> mPostQuantumKeyExchangeHttp3Enabled =
+      new Pref<Boolean>("network.http.http3.enable_kyber", false);
 
   /* package */ int mPreferredColorScheme = COLOR_SCHEME_SYSTEM;
 
@@ -872,7 +895,8 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    *
    * @return Whether Fingerprint protection is enabled in all tabs.
    */
-  public boolean getFingerprintingProtection() {
+  public @Nullable Boolean getFingerprintingProtection() {
+
     return mFingerprintingProtection.get();
   }
 
@@ -881,7 +905,7 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    *
    * @return Whether Fingerprint protection is enabled private browsing mode.
    */
-  public boolean getFingerprintingProtectionPrivateBrowsing() {
+  public @Nullable Boolean getFingerprintingProtectionPrivateBrowsing() {
     return mFingerprintingProtectionPrivateMode.get();
   }
 
@@ -1026,6 +1050,28 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    */
   public boolean getFetchPriorityEnabled() {
     return mFetchPriorityEnabled.get();
+  }
+
+  /**
+   * Set the pref to control security.pki.certificate_transparency.mode.
+   *
+   * @param mode What to set the certificate transparency mode to. 0 disables certificate
+   *     transparency entirely. 1 enables certificate transparency, but only collects telemetry. 2
+   *     enforces certificate transparency.
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setCertificateTransparencyMode(final int mode) {
+    mCertificateTransparencyMode.commit(mode);
+    return this;
+  }
+
+  /**
+   * Get the value of security.pki.certificate_transparency.mode.
+   *
+   * @return What certificate transparency mode has been set.
+   */
+  public @NonNull int getCertificateTransparencyMode() {
+    return mCertificateTransparencyMode.get();
   }
 
   /**
@@ -1894,6 +1940,52 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
   }
 
   /**
+   * Get the default DNS-over-HTTPS (DoH) server URI.
+   *
+   * @return default URI of the DoH server.
+   */
+  public @Nullable String getDefaultRecursiveResolverUri() {
+    return mDefaultRecursiveResolverUri.get();
+  }
+
+  /**
+   * Set the default DNS-over-HTTPS server URI.
+   *
+   * @param uri default URI of the DNS-over-HTTPS server.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setDefaultRecursiveResolverUri(final @NonNull String uri) {
+    mDefaultRecursiveResolverUri.commit(uri);
+    return this;
+  }
+
+  /**
+   * Get the domains excluded from using DNS-over-HTTPS
+   *
+   * @return A list of strings containing the domains saved in the pref.
+   */
+  public @NonNull List<String> getTrustedRecursiveResolverExcludedDomains() {
+    final String domains = mTrustedRecursiveResolverExcludedDomains.get();
+    if (domains.isEmpty()) {
+      return List.of();
+    }
+    return Arrays.asList(domains.split("[\\s,]+"));
+  }
+
+  /**
+   * Set the DNS-over-HTTPS excluded domains
+   *
+   * @param domains list of domains that will be excluded from using DoH. They will use platform DNS
+   *     instead.
+   * @return This GeckoRuntimeSettings instance.
+   */
+  public @NonNull GeckoRuntimeSettings setTrustedRecursiveResolverExcludedDomains(
+      final @NonNull List<String> domains) {
+    mTrustedRecursiveResolverExcludedDomains.commit(String.join(",", domains));
+    return this;
+  }
+
+  /**
    * Get the current user characteristic ping version.
    *
    * @return The current version.
@@ -1926,6 +2018,27 @@ public final class GeckoRuntimeSettings extends RuntimeSettings {
    */
   public @Nullable Boolean getDisableShip() {
     return mDisableShip.get();
+  }
+
+  /**
+   * Set the preferences that control the use of post-quantum key exchange mechanisms
+   *
+   * @param enable Whether to enable or disable the preferences.
+   * @return This GeckoRuntimeSettings instance
+   */
+  public @NonNull GeckoRuntimeSettings setPostQuantumKeyExchangeEnabled(final boolean enable) {
+    mPostQuantumKeyExchangeTLSEnabled.commit(enable);
+    mPostQuantumKeyExchangeHttp3Enabled.commit(enable);
+    return this;
+  }
+
+  /**
+   * Get whether post-quantum key exchange mechanisms are enabled.
+   *
+   * @return Whether post-quantum key exchange mechanisms are enabled.
+   */
+  public @NonNull boolean getPostQuantumKeyExchangeEnabled() {
+    return mPostQuantumKeyExchangeTLSEnabled.get() && mPostQuantumKeyExchangeHttp3Enabled.get();
   }
 
   // For internal use only

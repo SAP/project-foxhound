@@ -37,6 +37,7 @@
 #include "mozilla/ProfilerLabels.h"
 #include "nsJSUtils.h"  // for nsJSUtils::GetCurrentlyRunningCodeInnerWindowID
 #include "nsString.h"
+#include "nsFmtString.h"
 #include "ETWTools.h"
 
 class nsIDocShell;
@@ -248,6 +249,60 @@ using Tracing = mozilla::baseprofiler::markers::Tracing;
                         options, ::geckoprofiler::markers::TextMarker{},     \
                         text);                                               \
   } while (false)
+
+#define PROFILER_MARKER_FMT(markerName, categoryName, options, format, ...)   \
+  do {                                                                        \
+    if (profiler_is_collecting_markers()) {                                   \
+      AUTO_PROFILER_STATS(PROFILER_MARKER_TEXT);                              \
+      nsFmtCString fmt(FMT_STRING(format), ##__VA_ARGS__);                    \
+      profiler_add_marker(                                                    \
+          markerName, ::geckoprofiler::category::categoryName, options,       \
+          ::geckoprofiler::markers::TextMarker{},                             \
+          mozilla::ProfilerString8View::WrapNullTerminatedString(fmt.get())); \
+    }                                                                         \
+  } while (false)
+
+// RAII object that adds a PROFILER_MARKER_UNTYPED when destroyed; the marker's
+// timing will be the interval from construction (unless an instant or start
+// time is already specified in the provided options) until destruction.
+class MOZ_RAII AutoProfilerUntypedMarker {
+ public:
+  AutoProfilerUntypedMarker(const char* aMarkerName,
+                            const mozilla::MarkerCategory& aCategory,
+                            mozilla::MarkerOptions&& aOptions)
+      : mMarkerName(aMarkerName),
+        mCategory(aCategory),
+        mOptions(std::move(aOptions)) {
+    MOZ_ASSERT(mOptions.Timing().EndTime().IsNull(),
+               "AutoProfilerUntypedMarker options shouldn't have an end time");
+    if (profiler_is_active_and_unpaused() &&
+        mOptions.Timing().StartTime().IsNull()) {
+      mOptions.Set(mozilla::MarkerTiming::InstantNow());
+    }
+  }
+
+  ~AutoProfilerUntypedMarker() {
+    if (profiler_is_active_and_unpaused()) {
+      AUTO_PROFILER_LABEL("UntypedMarker", PROFILER);
+      mOptions.TimingRef().SetIntervalEnd();
+      AUTO_PROFILER_STATS(AUTO_PROFILER_MARKER_UNTYPED);
+      profiler_add_marker(
+          mozilla::ProfilerString8View::WrapNullTerminatedString(mMarkerName),
+          mCategory, std::move(mOptions));
+    }
+  }
+
+ protected:
+  const char* mMarkerName;
+  mozilla::MarkerCategory mCategory;
+  mozilla::MarkerOptions mOptions;
+};
+
+// Creates an AutoProfilerUntypedMarker RAII object. This macro is safe to use
+// even if MOZ_GECKO_PROFILER is not #defined.
+#define AUTO_PROFILER_MARKER_UNTYPED(markerName, categoryName, options) \
+  AutoProfilerUntypedMarker PROFILER_RAII(                              \
+      markerName, ::mozilla::baseprofiler::category::categoryName, options)
 
 // RAII object that adds a PROFILER_MARKER_TEXT when destroyed; the marker's
 // timing will be the interval from construction (unless an instant or start

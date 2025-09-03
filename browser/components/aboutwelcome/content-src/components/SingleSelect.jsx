@@ -5,9 +5,9 @@
 import React, { useEffect } from "react";
 
 import { Localized } from "./MSLocalized";
+import { AboutWelcomeUtils } from "../lib/aboutwelcome-utils.mjs";
 
-// This component was formerly "Themes" and continues to support theme and
-// wallpaper pickers.
+// This component was formerly "Themes" and continues to support theme
 export const SingleSelect = ({
   activeSingleSelect,
   activeTheme,
@@ -21,7 +21,11 @@ export const SingleSelect = ({
   const autoTriggerAllowed = itemAction => {
     // Currently only enabled for sidebar experiment prefs
     const allowedActions = ["SET_PREF"];
-    const allowedPrefs = ["sidebar.revamp", "sidebar.verticalTabs"];
+    const allowedPrefs = [
+      "sidebar.revamp",
+      "sidebar.verticalTabs",
+      "sidebar.visibility",
+    ];
     const checkAction = action => {
       if (!allowedActions.includes(action.type)) {
         return false;
@@ -63,25 +67,16 @@ export const SingleSelect = ({
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const getIconStyles = (icon = {}) => {
-    const CONFIGURABLE_STYLES = [
-      "background",
-      "borderRadius",
-      "height",
-      "marginBlock",
-      "marginInline",
-      "paddingBlock",
-      "paddingInline",
-      "width",
-    ];
-    let styles = {};
-    Object.keys(icon).forEach(styleProp => {
-      if (CONFIGURABLE_STYLES.includes(styleProp)) {
-        styles[styleProp] = icon[styleProp];
-      }
-    });
-    return styles;
-  };
+  const CONFIGURABLE_STYLES = [
+    "background",
+    "borderRadius",
+    "height",
+    "marginBlock",
+    "marginInline",
+    "paddingBlock",
+    "paddingInline",
+    "width",
+  ];
 
   return (
     <div className="tiles-single-select-container">
@@ -158,7 +153,10 @@ export const SingleSelect = ({
                     </Localized>
                     <div
                       className={`icon ${selected ? " selected" : ""} ${value}`}
-                      style={getIconStyles(icon)}
+                      style={AboutWelcomeUtils.getValidStyle(
+                        icon,
+                        CONFIGURABLE_STYLES
+                      )}
                     />
                     <Localized text={label}>
                       <div className="text" />

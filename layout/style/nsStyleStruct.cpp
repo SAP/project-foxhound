@@ -116,13 +116,11 @@ void StyleComputedUrl::ResolveImage(Document& aDocument,
                                     const StyleComputedUrl* aOldImage) {
   MOZ_DIAGNOSTIC_ASSERT(NS_IsMainThread());
 
-  StyleLoadData& data = LoadData();
+  StyleLoadData& data = MutLoadData();
 
   MOZ_ASSERT(!(data.flags & StyleLoadDataFlags::TRIED_TO_RESOLVE_IMAGE));
 
   data.flags |= StyleLoadDataFlags::TRIED_TO_RESOLVE_IMAGE;
-
-  MOZ_ASSERT(NS_IsMainThread());
 
   // TODO(emilio, bug 1440442): This is a hackaround to avoid flickering due the
   // lack of non-http image caching in imagelib (bug 1406134), which causes
@@ -1309,8 +1307,12 @@ nsChangeHint nsStylePosition::CalcDifference(
   // Don't try to handle changes between types efficiently; at least for
   // changing into/out of `auto`, we will hardly ever be able to avoid a reflow.
   // TODO(dshin, Bug 1917695): Re-evaulate this for `anchor()`.
-  if (!InsetEquals(aNewData)) {
-    if (IsEqualInsetType(mOffset, aNewData.mOffset)) {
+  if (mOffset != aNewData.mOffset) {
+    if (IsEqualInsetType(mOffset, aNewData.mOffset) &&
+        aNewData.mOffset.All([](const StyleInset& aInset) {
+          // Err on the side of triggering reflow for anchor positioning.
+          return !aInset.IsAnchorPositioningFunction();
+        })) {
       hint |=
           nsChangeHint_RecomputePosition | nsChangeHint_UpdateParentOverflow;
     } else {
@@ -1358,7 +1360,106 @@ StyleJustifySelf nsStylePosition::UsedJustifySelf(
   return {StyleAlignFlags::NORMAL};
 }
 
-MOZ_RUNINIT const StyleInset nsStylePosition::kAutoInset = StyleInset::Auto();
+AnchorResolvedInset nsStylePosition::GetAnchorResolvedInset(
+    Side aSide, StylePositionProperty aPosition) const {
+  return {mOffset.Get(aSide), GetStylePhysicalAxis(aSide), aPosition};
+}
+
+AnchorResolvedInset nsStylePosition::GetAnchorResolvedInset(
+    mozilla::LogicalSide aSide, WritingMode aWM,
+    mozilla::StylePositionProperty aPosition) const {
+  return GetAnchorResolvedInset(aWM.PhysicalSide(aSide), aPosition);
+}
+
+AnchorResolvedInset::AnchorResolvedInset(
+    const mozilla::StyleInset& aValue, mozilla::StylePhysicalAxis aAxis,
+    mozilla::StylePositionProperty aPosition)
+    : AnchorResolved<StyleInset>{FromUnresolved(aValue, aAxis, aPosition)} {}
+
+AnchorResolvedInset::AnchorResolvedInset(
+    const mozilla::StyleInset& aValue, mozilla::LogicalAxis aAxis,
+    mozilla::WritingMode aWM, mozilla::StylePositionProperty aPosition)
+    : AnchorResolved<StyleInset>{FromUnresolved(
+          aValue, ToStylePhysicalAxis(aWM.PhysicalAxis(aAxis)), aPosition)} {}
+
+AnchorResolved<mozilla::StyleInset> AnchorResolvedInset::Invalid() {
+  return AnchorResolved::Evaluated(StyleInset::Auto());
+}
+
+AnchorResolved<mozilla::StyleInset> AnchorResolvedInset::Evaluated(
+    mozilla::StyleLengthPercentage&& aLP) {
+  return AnchorResolved::Evaluated(StyleInset::LengthPercentage(aLP));
+}
+
+AnchorResolved<mozilla::StyleInset> AnchorResolvedInset::Evaluated(
+    const mozilla::StyleLengthPercentage& aLP) {
+  return AnchorResolved::Evaluated(StyleInset::LengthPercentage(aLP));
+}
+
+AnchorResolved<mozilla::StyleInset> AnchorResolvedInset::FromUnresolved(
+    const mozilla::StyleInset& aValue, mozilla::StylePhysicalAxis aAxis,
+    mozilla::StylePositionProperty aPosition) {
+  // TODO(dshin): Maybe worth pref-gating here.
+  static_assert(static_cast<uint8_t>(mozilla::PhysicalAxis::Vertical) ==
+                    static_cast<uint8_t>(StylePhysicalAxis::Vertical),
+                "Vertical axis doesn't match");
+  static_assert(static_cast<uint8_t>(mozilla::PhysicalAxis::Horizontal) ==
+                    static_cast<uint8_t>(StylePhysicalAxis::Horizontal),
+                "Horizontal axis doesn't match");
+  switch (aValue.tag) {
+    case StyleInset::Tag::Auto:
+      return AnchorResolved::Unchanged(aValue);
+    case StyleInset::Tag::LengthPercentage: {
+      const auto& lp = aValue.AsLengthPercentage();
+      if (lp.IsCalc()) {
+        const auto& c = lp.AsCalc();
+        float result{};
+        bool percentageUsed{};
+        if (!Servo_ResolveCalcLengthPercentageWithAnchorFunctions(
+                &c, 0.0, aAxis, aPosition, &result, &percentageUsed)) {
+          return Invalid();
+        }
+        if (percentageUsed) {
+          // We just resolved to a wrong value, will need to re-resolve - keep
+          // the original data. This ensures that `HasPercent()` calls to it
+          // makes sense as well.
+          return Unchanged(aValue);
+        }
+        // Guaranteed to not contain any percentage value.
+        return Evaluated(StyleLengthPercentage::FromPixels(result));
+      }
+      return Unchanged(aValue);
+    }
+    case StyleInset::Tag::AnchorFunction: {
+      auto resolved = StyleAnchorPositioningFunctionResolution::Invalid();
+      Servo_ResolveAnchorFunction(&*aValue.AsAnchorFunction(), aAxis, aPosition,
+                                  &resolved);
+      if (resolved.IsInvalid()) {
+        return Invalid();
+      }
+      if (resolved.IsResolvedReference()) {
+        return Evaluated(*resolved.AsResolvedReference());
+      }
+      return Evaluated(resolved.AsResolved());
+    }
+    case StyleInset::Tag::AnchorSizeFunction: {
+      auto resolved = StyleAnchorPositioningFunctionResolution::Invalid();
+      Servo_ResolveAnchorSizeFunction(&*aValue.AsAnchorSizeFunction(),
+                                      aPosition, &resolved);
+      if (resolved.IsInvalid()) {
+        return Invalid();
+      }
+      if (resolved.IsResolvedReference()) {
+        return Evaluated(*resolved.AsResolvedReference());
+      }
+      return Evaluated(resolved.AsResolved());
+    }
+    default:
+      MOZ_ASSERT_UNREACHABLE("Unhandled inset type");
+      return Invalid();
+  }
+}
+
 MOZ_RUNINIT const StyleSize nsStylePosition::kAutoSize = StyleSize::Auto();
 MOZ_RUNINIT const StyleMaxSize nsStylePosition::kNoneMaxSize =
     StyleMaxSize::None();
@@ -1550,7 +1651,7 @@ void StyleImage::ResolveImage(Document& aDoc, const StyleImage* aOld) {
   const auto* url = GetImageRequestURLValue();
   // We could avoid this const_cast generating more code but it's not really
   // worth it.
-  const_cast<StyleComputedImageUrl*>(url)->ResolveImage(aDoc, old);
+  const_cast<StyleComputedUrl*>(url)->ResolveImage(aDoc, old);
 }
 
 template <>
@@ -1903,7 +2004,7 @@ bool nsStyleImageLayers::Layer::operator==(const Layer& aOther) const {
 template <class ComputedValueItem>
 static void FillImageLayerList(
     nsStyleAutoArray<nsStyleImageLayers::Layer>& aLayers,
-    ComputedValueItem nsStyleImageLayers::Layer::*aResultLocation,
+    ComputedValueItem nsStyleImageLayers::Layer::* aResultLocation,
     uint32_t aItemCount, uint32_t aFillCount) {
   MOZ_ASSERT(aFillCount <= aLayers.Length(), "unexpected array length");
   for (uint32_t sourceLayer = 0, destLayer = aItemCount; destLayer < aFillCount;
@@ -1916,7 +2017,7 @@ static void FillImageLayerList(
 // layer.mPosition.*aResultLocation instead of layer.*aResultLocation.
 static void FillImageLayerPositionCoordList(
     nsStyleAutoArray<nsStyleImageLayers::Layer>& aLayers,
-    LengthPercentage Position::*aResultLocation, uint32_t aItemCount,
+    LengthPercentage Position::* aResultLocation, uint32_t aItemCount,
     uint32_t aFillCount) {
   MOZ_ASSERT(aFillCount <= aLayers.Length(), "unexpected array length");
   for (uint32_t sourceLayer = 0, destLayer = aItemCount; destLayer < aFillCount;
@@ -2877,6 +2978,7 @@ nsStyleText::nsStyleText(const nsStyleText& aSource)
       mTextShadow(aSource.mTextShadow),
       mTextEmphasisStyle(aSource.mTextEmphasisStyle),
       mHyphenateCharacter(aSource.mHyphenateCharacter),
+      mHyphenateLimitChars(aSource.mHyphenateLimitChars),
       mWebkitTextSecurity(aSource.mWebkitTextSecurity),
       mTextWrapStyle(aSource.mTextWrapStyle) {
   MOZ_COUNT_CTOR(nsStyleText);
@@ -2912,6 +3014,7 @@ nsChangeHint nsStyleText::CalcDifference(const nsStyleText& aNewData) const {
       (mWordSpacing != aNewData.mWordSpacing) ||
       (mTabSize != aNewData.mTabSize) ||
       (mHyphenateCharacter != aNewData.mHyphenateCharacter) ||
+      (mHyphenateLimitChars != aNewData.mHyphenateLimitChars) ||
       (mWebkitTextSecurity != aNewData.mWebkitTextSecurity) ||
       (mTextWrapStyle != aNewData.mTextWrapStyle)) {
     return NS_STYLE_HINT_REFLOW;
@@ -3101,9 +3204,6 @@ nsStyleUIReset::nsStyleUIReset()
       mWindowShadow(StyleWindowShadow::Auto),
       mWindowOpacity(1.0),
       mMozWindowInputRegionMargin(StyleLength::Zero()),
-      mWindowTransformOrigin{LengthPercentage::FromPercentage(0.5),
-                             LengthPercentage::FromPercentage(0.5),
-                             {0.}},
       mTransitions(
           nsStyleAutoArray<StyleTransition>::WITH_SINGLE_INITIAL_ELEMENT),
       mTransitionTimingFunctionCount(1),
@@ -3147,7 +3247,6 @@ nsStyleUIReset::nsStyleUIReset(const nsStyleUIReset& aSource)
       mWindowOpacity(aSource.mWindowOpacity),
       mMozWindowInputRegionMargin(aSource.mMozWindowInputRegionMargin),
       mMozWindowTransform(aSource.mMozWindowTransform),
-      mWindowTransformOrigin(aSource.mWindowTransformOrigin),
       mTransitions(aSource.mTransitions.Clone()),
       mTransitionTimingFunctionCount(aSource.mTransitionTimingFunctionCount),
       mTransitionDurationCount(aSource.mTransitionDurationCount),

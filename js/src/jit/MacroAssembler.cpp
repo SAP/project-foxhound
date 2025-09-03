@@ -116,25 +116,6 @@ void MacroAssembler::storeToTypedFloatArray(Scalar::Type arrayType,
   StoreToTypedFloatArray(*this, arrayType, value, dest, temp, volatileLiveRegs);
 }
 
-template <typename S, typename T>
-static void StoreToTypedBigIntArray(MacroAssembler& masm,
-                                    Scalar::Type arrayType, const S& value,
-                                    const T& dest) {
-  MOZ_ASSERT(Scalar::isBigIntType(arrayType));
-  masm.store64(value, dest);
-}
-
-void MacroAssembler::storeToTypedBigIntArray(Scalar::Type arrayType,
-                                             Register64 value,
-                                             const BaseIndex& dest) {
-  StoreToTypedBigIntArray(*this, arrayType, value, dest);
-}
-void MacroAssembler::storeToTypedBigIntArray(Scalar::Type arrayType,
-                                             Register64 value,
-                                             const Address& dest) {
-  StoreToTypedBigIntArray(*this, arrayType, value, dest);
-}
-
 void MacroAssembler::boxUint32(Register source, ValueOperand dest,
                                Uint32Mode mode, Label* fail) {
   switch (mode) {
@@ -217,8 +198,8 @@ template void MacroAssembler::loadFromTypedArray(
     Register temp1, Register temp2, Label* fail,
     LiveRegisterSet volatileLiveRegs);
 
-template <typename T>
-void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
+void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType,
+                                        const BaseIndex& src,
                                         const ValueOperand& dest,
                                         Uint32Mode uint32Mode, Register temp,
                                         Label* fail,
@@ -270,33 +251,17 @@ void MacroAssembler::loadFromTypedArray(Scalar::Type arrayType, const T& src,
   }
 }
 
-template void MacroAssembler::loadFromTypedArray(
-    Scalar::Type arrayType, const Address& src, const ValueOperand& dest,
-    Uint32Mode uint32Mode, Register temp, Label* fail,
-    LiveRegisterSet volatileLiveRegs);
-template void MacroAssembler::loadFromTypedArray(
-    Scalar::Type arrayType, const BaseIndex& src, const ValueOperand& dest,
-    Uint32Mode uint32Mode, Register temp, Label* fail,
-    LiveRegisterSet volatileLiveRegs);
-
-template <typename T>
 void MacroAssembler::loadFromTypedBigIntArray(Scalar::Type arrayType,
-                                              const T& src, Register bigInt,
+                                              const BaseIndex& src,
+                                              const ValueOperand& dest,
+                                              Register bigInt,
                                               Register64 temp) {
   MOZ_ASSERT(Scalar::isBigIntType(arrayType));
 
   load64(src, temp);
   initializeBigInt64(arrayType, bigInt, temp);
+  tagValue(JSVAL_TYPE_BIGINT, bigInt, dest);
 }
-
-template void MacroAssembler::loadFromTypedBigIntArray(Scalar::Type arrayType,
-                                                       const Address& src,
-                                                       Register bigInt,
-                                                       Register64 temp);
-template void MacroAssembler::loadFromTypedBigIntArray(Scalar::Type arrayType,
-                                                       const BaseIndex& src,
-                                                       Register bigInt,
-                                                       Register64 temp);
 
 // Inlined version of gc::CheckAllocatorState that checks the bare essentials
 // and bails for anything that cannot be handled with our jit allocators.
@@ -578,6 +543,64 @@ void MacroAssembler::createArrayWithFixedElements(
     loadPtr(Address(result, NativeObject::offsetOfSlots()), dynamicSlotsTemp);
     fillSlotsWithUndefined(Address(dynamicSlotsTemp, 0), temp, 0,
                            numUsedDynamicSlots);
+  }
+}
+
+void MacroAssembler::createFunctionClone(Register result, Register canonical,
+                                         Register envChain, Register temp,
+                                         gc::AllocKind allocKind, Label* fail) {
+  MOZ_ASSERT(allocKind == gc::AllocKind::FUNCTION ||
+             allocKind == gc::AllocKind::FUNCTION_EXTENDED);
+  MOZ_ASSERT(result != temp);
+
+  // Allocate object.
+  size_t numDynamicSlots = 0;
+  gc::Heap initialHeap = gc::Heap::Default;
+  allocateObject(result, temp, allocKind, numDynamicSlots, initialHeap, fail);
+
+  // Initialize shape field.
+  loadPtr(Address(canonical, JSObject::offsetOfShape()), temp);
+  storePtr(temp, Address(result, JSObject::offsetOfShape()));
+
+  // Initialize dynamic slots and elements pointers.
+  storePtr(ImmPtr(emptyObjectSlots),
+           Address(result, NativeObject::offsetOfSlots()));
+  storePtr(ImmPtr(emptyObjectElements),
+           Address(result, NativeObject::offsetOfElements()));
+
+  // Initialize FlagsAndArgCountSlot.
+  storeValue(Address(canonical, JSFunction::offsetOfFlagsAndArgCount()),
+             Address(result, JSFunction::offsetOfFlagsAndArgCount()), temp);
+
+  // Initialize NativeFuncOrInterpretedEnvSlot.
+  storeValue(JSVAL_TYPE_OBJECT, envChain,
+             Address(result, JSFunction::offsetOfEnvironment()));
+#ifdef DEBUG
+  // The new function must be allocated in the nursery if the nursery is
+  // enabled. Assert no post-barrier is needed.
+  Label ok;
+  branchPtrInNurseryChunk(Assembler::Equal, result, temp, &ok);
+  branchPtrInNurseryChunk(Assembler::NotEqual, envChain, temp, &ok);
+  assumeUnreachable("Missing post write barrier in createFunctionClone");
+  bind(&ok);
+#endif
+
+  // Initialize NativeJitInfoOrInterpretedScriptSlot. This is a BaseScript*
+  // pointer stored as PrivateValue.
+  loadPrivate(Address(canonical, JSFunction::offsetOfJitInfoOrScript()), temp);
+  storePrivateValue(temp,
+                    Address(result, JSFunction::offsetOfJitInfoOrScript()));
+
+  // Initialize AtomSlot.
+  storeValue(Address(canonical, JSFunction::offsetOfAtom()),
+             Address(result, JSFunction::offsetOfAtom()), temp);
+
+  // Initialize extended slots.
+  if (allocKind == gc::AllocKind::FUNCTION_EXTENDED) {
+    for (size_t i = 0; i < FunctionExtended::NUM_EXTENDED_SLOTS; i++) {
+      Address addr(result, FunctionExtended::offsetOfExtendedSlot(i));
+      storeValue(UndefinedValue(), addr);
+    }
   }
 }
 
@@ -1758,11 +1781,7 @@ void MacroAssembler::branchSurrogate(Assembler::Condition cond, Register src,
                               ? unicode::LeadSurrogateMin
                               : unicode::TrailSurrogateMin;
 
-  if (src != scratch) {
-    move32(src, scratch);
-  }
-
-  and32(Imm32(SurrogateMask), scratch);
+  and32(Imm32(SurrogateMask), src, scratch);
   branch32(cond, scratch, Imm32(SurrogateMin), label);
 }
 
@@ -1961,11 +1980,8 @@ void MacroAssembler::loadInt32ToStringWithBase(
     if (mozilla::IsPowerOfTwo(uint32_t(base))) {
       uint32_t shift = mozilla::FloorLog2(base);
 
-      move32(input, scratch1);
-      rshift32(Imm32(shift), scratch1);
-
-      move32(input, scratch2);
-      and32(Imm32((uint32_t(1) << shift) - 1), scratch2);
+      rshift32(Imm32(shift), input, scratch1);
+      and32(Imm32((uint32_t(1) << shift) - 1), input, scratch2);
     } else {
       // The following code matches CodeGenerator::visitUDivOrModConstant()
       // for x86-shared. Also see Hacker's Delight 2nd edition, chapter 10-8
@@ -2698,6 +2714,15 @@ void MacroAssembler::setIsCrossRealmArrayConstructor(Register obj,
   bind(&done);
 }
 
+void MacroAssembler::guardObjectHasSameRealm(Register obj, Register scratch,
+                                             Label* fail) {
+  loadPtr(Address(obj, JSObject::offsetOfShape()), scratch);
+  loadPtr(Address(scratch, Shape::offsetOfBaseShape()), scratch);
+  loadPtr(Address(scratch, BaseShape::offsetOfRealm()), scratch);
+  branchPtr(Assembler::NotEqual, AbsoluteAddress(ContextRealmPtr(runtime())),
+            scratch, fail);
+}
+
 void MacroAssembler::setIsDefinitelyTypedArrayConstructor(Register obj,
                                                           Register output) {
   Label isFalse, isTrue, done;
@@ -2833,7 +2858,8 @@ void MacroAssembler::loadAtomOrSymbolAndHash(ValueOperand value, Register outId,
 
 void MacroAssembler::emitExtractValueFromMegamorphicCacheEntry(
     Register obj, Register entry, Register scratch1, Register scratch2,
-    ValueOperand output, Label* cacheHit, Label* cacheMiss) {
+    ValueOperand output, Label* cacheHit, Label* cacheMiss,
+    Label* cacheHitGetter) {
   Label isMissing, dynamicSlot, protoLoopHead, protoLoopTail;
 
   // scratch2 = entry->hopsAndKind_
@@ -2843,9 +2869,35 @@ void MacroAssembler::emitExtractValueFromMegamorphicCacheEntry(
   branch32(Assembler::Equal, scratch2,
            Imm32(MegamorphicCache::Entry::NumHopsForMissingProperty),
            &isMissing);
-  // if (scratch2 & NonDataPropertyFlag) goto cacheMiss
-  branchTest32(Assembler::NonZero, scratch2,
-               Imm32(MegamorphicCache::Entry::NonDataPropertyFlag), cacheMiss);
+
+  if (cacheHitGetter) {
+    // Here we're going to set scratch1 to 0 for a data property and 1 for a
+    // getter and scratch2 to the number of hops
+    Label dataProperty;
+
+    // if (scratch2 & NonDataPropertyFlag == 0) goto dataProperty
+    move32(Imm32(0), scratch1);
+    branchTest32(Assembler::Zero, scratch2,
+                 Imm32(MegamorphicCache::Entry::NonDataPropertyFlag),
+                 &dataProperty);
+
+    // if (scratch2 > NonDataPropertyFlag | MaxHopsForAccessorProperty) goto
+    // cacheMiss
+    branch32(Assembler::GreaterThan, scratch2,
+             Imm32(MegamorphicCache::Entry::NonDataPropertyFlag |
+                   MegamorphicCache::Entry::MaxHopsForAccessorProperty),
+             cacheMiss);
+
+    and32(Imm32(~MegamorphicCache::Entry::NonDataPropertyFlag), scratch2);
+    move32(Imm32(1), scratch1);
+
+    bind(&dataProperty);
+  } else {
+    // if (scratch2 & NonDataPropertyFlag) goto cacheMiss
+    branchTest32(Assembler::NonZero, scratch2,
+                 Imm32(MegamorphicCache::Entry::NonDataPropertyFlag),
+                 cacheMiss);
+  }
 
   // NOTE: Where this is called, `output` can actually alias `obj`, and before
   // the last cacheMiss branch above we can't write to `obj`, so we can't
@@ -2863,24 +2915,29 @@ void MacroAssembler::emitExtractValueFromMegamorphicCacheEntry(
   branchSub32(Assembler::NonZero, Imm32(1), scratch2, &protoLoopHead);
   bind(&protoLoopTail);
 
-  // scratch1 = entry->slotOffset()
-  load32(Address(entry, MegamorphicCacheEntry::offsetOfSlotOffset()), scratch1);
+  // entry = entry->slotOffset()
+  load32(Address(entry, MegamorphicCacheEntry::offsetOfSlotOffset()), entry);
 
   // scratch2 = slotOffset.offset()
-  move32(scratch1, scratch2);
-  rshift32(Imm32(TaggedSlotOffset::OffsetShift), scratch2);
+  rshift32(Imm32(TaggedSlotOffset::OffsetShift), entry, scratch2);
 
   // if (!slotOffset.isFixedSlot()) goto dynamicSlot
-  branchTest32(Assembler::Zero, scratch1,
-               Imm32(TaggedSlotOffset::IsFixedSlotFlag), &dynamicSlot);
+  branchTest32(Assembler::Zero, entry, Imm32(TaggedSlotOffset::IsFixedSlotFlag),
+               &dynamicSlot);
   // output = outputScratch[scratch2]
   loadValue(BaseIndex(outputScratch, scratch2, TimesOne), output);
+  if (cacheHitGetter) {
+    branchTest32(Assembler::NonZero, scratch1, scratch1, cacheHitGetter);
+  }
   jump(cacheHit);
 
   bind(&dynamicSlot);
   // output = outputScratch->slots_[scratch2]
   loadPtr(Address(outputScratch, NativeObject::offsetOfSlots()), outputScratch);
   loadValue(BaseIndex(outputScratch, scratch2, TimesOne), output);
+  if (cacheHitGetter) {
+    branchTest32(Assembler::NonZero, scratch1, scratch1, cacheHitGetter);
+  }
   jump(cacheHit);
 
   bind(&isMissing);
@@ -2964,7 +3021,8 @@ void MacroAssembler::emitMegamorphicCacheLookupByValueCommon(
 
 void MacroAssembler::emitMegamorphicCacheLookup(
     PropertyKey id, Register obj, Register scratch1, Register scratch2,
-    Register outEntryPtr, ValueOperand output, Label* cacheHit) {
+    Register outEntryPtr, ValueOperand output, Label* cacheHit,
+    Label* cacheHitGetter) {
   Label cacheMiss, isMissing, dynamicSlot, protoLoopHead, protoLoopTail;
 
   // scratch1 = obj->shape()
@@ -3022,8 +3080,9 @@ void MacroAssembler::emitMegamorphicCacheLookup(
   // if (outEntryPtr->generation_ != scratch2) goto cacheMiss
   branch32(Assembler::NotEqual, scratch1, scratch2, &cacheMiss);
 
-  emitExtractValueFromMegamorphicCacheEntry(
-      obj, outEntryPtr, scratch1, scratch2, output, cacheHit, &cacheMiss);
+  emitExtractValueFromMegamorphicCacheEntry(obj, outEntryPtr, scratch1,
+                                            scratch2, output, cacheHit,
+                                            &cacheMiss, cacheHitGetter);
 
   bind(&cacheMiss);
 }
@@ -3031,14 +3090,15 @@ void MacroAssembler::emitMegamorphicCacheLookup(
 template <typename IdOperandType>
 void MacroAssembler::emitMegamorphicCacheLookupByValue(
     IdOperandType id, Register obj, Register scratch1, Register scratch2,
-    Register outEntryPtr, ValueOperand output, Label* cacheHit) {
+    Register outEntryPtr, ValueOperand output, Label* cacheHit,
+    Label* cacheHitGetter) {
   Label cacheMiss, cacheMissWithEntry;
   emitMegamorphicCacheLookupByValueCommon(id, obj, scratch1, scratch2,
                                           outEntryPtr, &cacheMiss,
                                           &cacheMissWithEntry);
-  emitExtractValueFromMegamorphicCacheEntry(obj, outEntryPtr, scratch1,
-                                            scratch2, output, cacheHit,
-                                            &cacheMissWithEntry);
+  emitExtractValueFromMegamorphicCacheEntry(
+      obj, outEntryPtr, scratch1, scratch2, output, cacheHit,
+      &cacheMissWithEntry, cacheHitGetter);
   bind(&cacheMiss);
   xorPtr(outEntryPtr, outEntryPtr);
   bind(&cacheMissWithEntry);
@@ -3046,11 +3106,13 @@ void MacroAssembler::emitMegamorphicCacheLookupByValue(
 
 template void MacroAssembler::emitMegamorphicCacheLookupByValue<ValueOperand>(
     ValueOperand id, Register obj, Register scratch1, Register scratch2,
-    Register outEntryPtr, ValueOperand output, Label* cacheHit);
+    Register outEntryPtr, ValueOperand output, Label* cacheHit,
+    Label* cacheHitGetter);
 
 template void MacroAssembler::emitMegamorphicCacheLookupByValue<Register>(
     Register id, Register obj, Register scratch1, Register scratch2,
-    Register outEntryPtr, ValueOperand output, Label* cacheHit);
+    Register outEntryPtr, ValueOperand output, Label* cacheHit,
+    Label* cacheHitGetter);
 
 void MacroAssembler::emitMegamorphicCacheLookupExists(
     ValueOperand id, Register obj, Register scratch1, Register scratch2,
@@ -3117,8 +3179,7 @@ void MacroAssembler::extractCurrentIndexAndKindFromIterator(Register iterator,
          outIndex);
 
   // Extract kind.
-  move32(outIndex, outKind);
-  rshift32(Imm32(PropertyIndex::KindShift), outKind);
+  rshift32(Imm32(PropertyIndex::KindShift), outIndex, outKind);
 
   // Extract index.
   and32(Imm32(PropertyIndex::IndexMask), outIndex);
@@ -3200,8 +3261,7 @@ void MacroAssembler::emitMegamorphicCachedSetSlot(
       scratch2);
 
   // scratch1 = slotOffset.offset()
-  move32(scratch2, scratch1);
-  rshift32(Imm32(TaggedSlotOffset::OffsetShift), scratch1);
+  rshift32(Imm32(TaggedSlotOffset::OffsetShift), scratch2, scratch1);
 
   Address afterShapePtr(scratch3,
                         MegamorphicSetPropCache::Entry::offsetOfAfterShape());
@@ -3497,7 +3557,7 @@ void MacroAssembler::dateTimeFromSecondsIntoYear(ValueOperand secondsIntoYear,
 #ifdef DEBUG
   Label okValue;
   branchTestInt32(Assembler::Equal, secondsIntoYear, &okValue);
-  branchTestValue(Assembler::Equal, secondsIntoYear, JS::NaNValue(), &okValue);
+  branchTestNaNValue(Assembler::Equal, secondsIntoYear, scratch1, &okValue);
   assumeUnreachable("secondsIntoYear is an int32 or NaN");
   bind(&okValue);
 #endif
@@ -3635,6 +3695,12 @@ void MacroAssembler::loadDOMExpandoValueGuardGeneration(
 void MacroAssembler::loadJitActivation(Register dest) {
   loadJSContext(dest);
   loadPtr(Address(dest, offsetof(JSContext, activation_)), dest);
+}
+
+void MacroAssembler::loadBaselineCompileQueue(Register dest) {
+  loadPtr(AbsoluteAddress(ContextRealmPtr(runtime())), dest);
+  computeEffectiveAddress(Address(dest, Realm::offsetOfBaselineCompileQueue()),
+                          dest);
 }
 
 void MacroAssembler::guardSpecificAtom(Register str, JSAtom* atom,
@@ -3875,9 +3941,8 @@ void MacroAssembler::loadBaselineJitCodeRaw(Register func, Register dest,
   // Load BaselineScript
   loadPtr(Address(dest, JitScript::offsetOfBaselineScript()), dest);
   if (failure) {
-    static_assert(BaselineDisabledScript == 0x1);
-    branchPtr(Assembler::BelowOrEqual, dest, ImmWord(BaselineDisabledScript),
-              failure);
+    static_assert(DisabledScript < CompilingScript);
+    branchPtr(Assembler::BelowOrEqual, dest, ImmWord(CompilingScript), failure);
   }
 
   // Load Baseline jitcode
@@ -4051,149 +4116,117 @@ void MacroAssembler::outOfLineTruncateSlow(FloatRegister src, Register dest,
                                            bool widenFloatToDouble,
                                            bool compilingWasm,
                                            wasm::BytecodeOffset callOffset) {
-  if (compilingWasm) {
-    Push(InstanceReg);
-  }
-  int32_t framePushedAfterInstance = framePushed();
-
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||     \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
-    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
   ScratchDoubleScope fpscratch(*this);
   if (widenFloatToDouble) {
     convertFloat32ToDouble(src, fpscratch);
     src = fpscratch;
   }
-#elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-  FloatRegister srcSingle;
-  if (widenFloatToDouble) {
-    MOZ_ASSERT(src.isSingle());
-    srcSingle = src;
-    src = src.asDouble();
-    Push(srcSingle);
-    convertFloat32ToDouble(srcSingle, src);
-  }
-#else
-  // Also see below
-  MOZ_CRASH("MacroAssembler platform hook: outOfLineTruncateSlow");
-#endif
-
   MOZ_ASSERT(src.isDouble());
 
   if (compilingWasm) {
-    int32_t instanceOffset = framePushed() - framePushedAfterInstance;
+    Push(InstanceReg);
+    int32_t framePushedAfterInstance = framePushed();
+
     setupWasmABICall();
     passABIArg(src, ABIType::Float64);
+
+    int32_t instanceOffset = framePushed() - framePushedAfterInstance;
     callWithABI(callOffset, wasm::SymbolicAddress::ToInt32,
                 mozilla::Some(instanceOffset));
+    storeCallInt32Result(dest);
+
+    Pop(InstanceReg);
   } else {
     using Fn = int32_t (*)(double);
     setupUnalignedABICall(dest);
     passABIArg(src, ABIType::Float64);
     callWithABI<Fn, JS::ToInt32>(ABIType::General,
                                  CheckUnsafeCallWithABI::DontCheckOther);
-  }
-  storeCallInt32Result(dest);
-
-#if defined(JS_CODEGEN_ARM) || defined(JS_CODEGEN_ARM64) ||     \
-    defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64) || \
-    defined(JS_CODEGEN_LOONG64) || defined(JS_CODEGEN_RISCV64)
-  // Nothing
-#elif defined(JS_CODEGEN_X86) || defined(JS_CODEGEN_X64)
-  if (widenFloatToDouble) {
-    Pop(srcSingle);
-  }
-#else
-  MOZ_CRASH("MacroAssembler platform hook: outOfLineTruncateSlow");
-#endif
-
-  if (compilingWasm) {
-    Pop(InstanceReg);
+    storeCallInt32Result(dest);
   }
 }
 
-void MacroAssembler::convertDoubleToInt(FloatRegister src, Register output,
-                                        FloatRegister temp, Label* truncateFail,
-                                        Label* fail,
-                                        IntConversionBehavior behavior) {
-  switch (behavior) {
-    case IntConversionBehavior::Normal:
-    case IntConversionBehavior::NegativeZeroCheck:
-      convertDoubleToInt32(
-          src, output, fail,
-          behavior == IntConversionBehavior::NegativeZeroCheck);
-      break;
-    case IntConversionBehavior::Truncate:
-      branchTruncateDoubleMaybeModUint32(src, output,
-                                         truncateFail ? truncateFail : fail);
-      break;
-    case IntConversionBehavior::ClampToUint8:
-      // Clamping clobbers the input register, so use a temp.
-      if (src != temp) {
-        moveDouble(src, temp);
-      }
-      clampDoubleToUint8(temp, output);
-      break;
-  }
-}
-
-void MacroAssembler::convertValueToInt(
-    ValueOperand value, Label* handleStringEntry, Label* handleStringRejoin,
-    Label* truncateDoubleSlow, Register stringReg, FloatRegister temp,
-    Register output, Label* fail, IntConversionBehavior behavior,
-    IntConversionInputKind conversion) {
-  Label done, isInt32, isBool, isDouble, isNull, isString;
-
-  bool handleStrings = (behavior == IntConversionBehavior::Truncate ||
-                        behavior == IntConversionBehavior::ClampToUint8) &&
-                       handleStringEntry && handleStringRejoin;
-
-  MOZ_ASSERT_IF(handleStrings, conversion == IntConversionInputKind::Any);
+void MacroAssembler::convertValueToInt32(ValueOperand value, FloatRegister temp,
+                                         Register output, Label* fail,
+                                         bool negativeZeroCheck,
+                                         IntConversionInputKind conversion) {
+  Label done, isInt32, isBool, isDouble, isString;
 
   {
     ScratchTagScope tag(*this, value);
     splitTagForTest(value, tag);
 
     branchTestInt32(Equal, tag, &isInt32);
+    branchTestDouble(Equal, tag, &isDouble);
     if (conversion == IntConversionInputKind::Any) {
       branchTestBoolean(Equal, tag, &isBool);
-    }
-    branchTestDouble(Equal, tag, &isDouble);
-
-    if (conversion == IntConversionInputKind::Any) {
-      // If we are not truncating, we fail for anything that's not
-      // null. Otherwise we might be able to handle strings and undefined.
-      switch (behavior) {
-        case IntConversionBehavior::Normal:
-        case IntConversionBehavior::NegativeZeroCheck:
-          branchTestNull(Assembler::NotEqual, tag, fail);
-          break;
-
-        case IntConversionBehavior::Truncate:
-        case IntConversionBehavior::ClampToUint8:
-          branchTestNull(Equal, tag, &isNull);
-          if (handleStrings) {
-            branchTestString(Equal, tag, &isString);
-          }
-          branchTestUndefined(Assembler::NotEqual, tag, fail);
-          break;
-      }
+      branchTestNull(Assembler::NotEqual, tag, fail);
     } else {
       jump(fail);
     }
   }
 
-  // The value is null or undefined in truncation contexts - just emit 0.
+  // The value is null - just emit 0.
   if (conversion == IntConversionInputKind::Any) {
-    if (isNull.used()) {
-      bind(&isNull);
-    }
-    mov(ImmWord(0), output);
+    move32(Imm32(0), output);
     jump(&done);
   }
 
+  // Try converting double into integer.
+  {
+    bind(&isDouble);
+    unboxDouble(value, temp);
+    convertDoubleToInt32(temp, output, fail, negativeZeroCheck);
+    jump(&done);
+  }
+
+  // Just unbox a bool, the result is 0 or 1.
+  if (conversion == IntConversionInputKind::Any) {
+    bind(&isBool);
+    unboxBoolean(value, output);
+    jump(&done);
+  }
+
+  // Integers can be unboxed.
+  {
+    bind(&isInt32);
+    unboxInt32(value, output);
+  }
+
+  bind(&done);
+}
+
+void MacroAssembler::truncateValueToInt32(
+    ValueOperand value, Label* handleStringEntry, Label* handleStringRejoin,
+    Label* truncateDoubleSlow, Register stringReg, FloatRegister temp,
+    Register output, Label* fail) {
+  Label done, isInt32, isBool, isDouble, isNull, isString;
+
+  bool handleStrings = handleStringEntry && handleStringRejoin;
+
   // |output| needs to be different from |stringReg| to load string indices.
-  bool handleStringIndices = handleStrings && output != stringReg;
+  MOZ_ASSERT_IF(handleStrings, stringReg != output);
+
+  {
+    ScratchTagScope tag(*this, value);
+    splitTagForTest(value, tag);
+
+    branchTestInt32(Equal, tag, &isInt32);
+    branchTestDouble(Equal, tag, &isDouble);
+    branchTestBoolean(Equal, tag, &isBool);
+    branchTestNull(Equal, tag, &isNull);
+    if (handleStrings) {
+      branchTestString(Equal, tag, &isString);
+    }
+    branchTestUndefined(Assembler::NotEqual, tag, fail);
+  }
+
+  // The value is null or undefined in truncation contexts - just emit 0.
+  {
+    bind(&isNull);
+    move32(Imm32(0), output);
+    jump(&done);
+  }
 
   // First try loading a string index. If that fails, try converting a string
   // into a double, then jump to the double case.
@@ -4201,50 +4234,92 @@ void MacroAssembler::convertValueToInt(
   if (handleStrings) {
     bind(&isString);
     unboxString(value, stringReg);
-    if (handleStringIndices) {
-      loadStringIndexValue(stringReg, output, handleStringEntry);
-      jump(&handleStringIndex);
-    } else {
-      jump(handleStringEntry);
-    }
+    loadStringIndexValue(stringReg, output, handleStringEntry);
+    jump(&done);
   }
 
   // Try converting double into integer.
-  if (isDouble.used() || handleStrings) {
-    if (isDouble.used()) {
-      bind(&isDouble);
-      unboxDouble(value, temp);
-    }
+  {
+    bind(&isDouble);
+    unboxDouble(value, temp);
 
     if (handleStrings) {
       bind(handleStringRejoin);
     }
-
-    convertDoubleToInt(temp, output, temp, truncateDoubleSlow, fail, behavior);
+    branchTruncateDoubleMaybeModUint32(
+        temp, output, truncateDoubleSlow ? truncateDoubleSlow : fail);
     jump(&done);
   }
 
   // Just unbox a bool, the result is 0 or 1.
-  if (isBool.used()) {
+  {
     bind(&isBool);
     unboxBoolean(value, output);
     jump(&done);
   }
 
   // Integers can be unboxed.
-  if (isInt32.used() || handleStringIndices) {
-    if (isInt32.used()) {
-      bind(&isInt32);
-      unboxInt32(value, output);
-    }
+  {
+    bind(&isInt32);
+    unboxInt32(value, output);
+  }
 
-    if (handleStringIndices) {
-      bind(&handleStringIndex);
-    }
+  bind(&done);
+}
 
-    if (behavior == IntConversionBehavior::ClampToUint8) {
-      clampIntToUint8(output);
-    }
+void MacroAssembler::clampValueToUint8(ValueOperand value,
+                                       Label* handleStringEntry,
+                                       Label* handleStringRejoin,
+                                       Register stringReg, FloatRegister temp,
+                                       Register output, Label* fail) {
+  Label done, isInt32, isBool, isDouble, isNull, isString;
+  {
+    ScratchTagScope tag(*this, value);
+    splitTagForTest(value, tag);
+
+    branchTestInt32(Equal, tag, &isInt32);
+    branchTestDouble(Equal, tag, &isDouble);
+    branchTestBoolean(Equal, tag, &isBool);
+    branchTestNull(Equal, tag, &isNull);
+    branchTestString(Equal, tag, &isString);
+    branchTestUndefined(Assembler::NotEqual, tag, fail);
+  }
+
+  // The value is null or undefined in truncation contexts - just emit 0.
+  {
+    bind(&isNull);
+    move32(Imm32(0), output);
+    jump(&done);
+  }
+
+  // Try converting a string into a double, then jump to the double case.
+  {
+    bind(&isString);
+    unboxString(value, stringReg);
+    jump(handleStringEntry);
+  }
+
+  // Try converting double into integer.
+  {
+    bind(&isDouble);
+    unboxDouble(value, temp);
+    bind(handleStringRejoin);
+    clampDoubleToUint8(temp, output);
+    jump(&done);
+  }
+
+  // Just unbox a bool, the result is 0 or 1.
+  {
+    bind(&isBool);
+    unboxBoolean(value, output);
+    jump(&done);
+  }
+
+  // Integers can be unboxed.
+  {
+    bind(&isInt32);
+    unboxInt32(value, output);
+    clampIntToUint8(output);
   }
 
   bind(&done);
@@ -4404,10 +4479,10 @@ StackMacroAssembler::StackMacroAssembler(JSContext* cx, TempAllocator& alloc)
     : MacroAssembler(alloc, CompileRuntime::get(cx->runtime()),
                      CompileRealm::get(cx->realm())) {}
 
-IonHeapMacroAssembler::IonHeapMacroAssembler(TempAllocator& alloc,
-                                             CompileRealm* realm)
+OffThreadMacroAssembler::OffThreadMacroAssembler(TempAllocator& alloc,
+                                                 CompileRealm* realm)
     : MacroAssembler(alloc, realm->runtime(), realm) {
-  MOZ_ASSERT(CurrentThreadIsIonCompiling());
+  MOZ_ASSERT(CurrentThreadIsOffThreadCompiling());
 }
 
 WasmMacroAssembler::WasmMacroAssembler(TempAllocator& alloc, bool limitedSize)
@@ -4472,6 +4547,30 @@ void MacroAssembler::Push(PropertyKey key, Register scratchReg) {
     MOZ_ASSERT(key.isInt());
     Push(ImmWord(key.asRawBits()));
   }
+}
+
+void MacroAssembler::moveValue(const TypedOrValueRegister& src,
+                               const ValueOperand& dest) {
+  if (src.hasValue()) {
+    moveValue(src.valueReg(), dest);
+    return;
+  }
+
+  MIRType type = src.type();
+  AnyRegister reg = src.typedReg();
+
+  if (!IsFloatingPointType(type)) {
+    boxNonDouble(ValueTypeFromMIRType(type), reg.gpr(), dest);
+    return;
+  }
+
+  ScratchDoubleScope scratch(*this);
+  FloatRegister freg = reg.fpu();
+  if (type == MIRType::Float32) {
+    convertFloat32ToDouble(freg, scratch);
+    freg = scratch;
+  }
+  boxDouble(freg, dest, scratch);
 }
 
 void MacroAssembler::movePropertyKey(PropertyKey key, Register dest) {
@@ -4595,8 +4694,6 @@ void MacroAssembler::freeStack(uint32_t amount) {
   framePushed_ -= amount;
 }
 
-void MacroAssembler::freeStack(Register amount) { addToStackPtr(amount); }
-
 void MacroAssembler::reserveVMFunctionOutParamSpace(const VMFunctionData& f) {
   switch (f.outParam) {
     case Type_Handle:
@@ -4686,14 +4783,6 @@ void MacroAssembler::setupABICallHelper() {
 #if defined(JS_CODEGEN_ARM)
   // On ARM, we need to know what ABI we are using.
   abiArgs_.setUseHardFp(ARMFlags::UseHardFpABI());
-#endif
-
-#if defined(JS_CODEGEN_MIPS32)
-  // On MIPS, the system ABI use general registers pairs to encode double
-  // arguments, after one or 2 integer-like arguments. Unfortunately, the
-  // Lowering phase is not capable to express it at the moment. So we enforce
-  // the system ABI here.
-  abiArgs_.enforceO32ABI();
 #endif
 }
 
@@ -4820,7 +4909,7 @@ CodeOffset MacroAssembler::callWithABI(wasm::BytecodeOffset bytecode,
     MOZ_CRASH("instanceOffset is Nothing only for unsupported abi calls.");
   }
   CodeOffset raOffset = call(
-      wasm::CallSiteDesc(bytecode.offset(), wasm::CallSite::Symbolic), imm);
+      wasm::CallSiteDesc(bytecode.offset(), wasm::CallSiteKind::Symbolic), imm);
 
   callWithABIPost(stackAdjust, result, /* callFromWasm = */ true);
 
@@ -4971,8 +5060,7 @@ void MacroAssembler::powPtr(Register base, Register power, Register dest,
 void MacroAssembler::signInt32(Register input, Register output) {
   MOZ_ASSERT(input != output);
 
-  move32(input, output);
-  rshift32Arithmetic(Imm32(31), output);
+  rshift32Arithmetic(Imm32(31), input, output);
   or32(Imm32(1), output);
   cmp32Move32(Assembler::Equal, input, Imm32(0), input, output);
 }
@@ -5369,8 +5457,7 @@ void MacroAssembler::loadFunctionLength(Register func,
                Imm32(FunctionFlags::BASESCRIPT), &isInterpreted);
   {
     // The length property of a native function stored with the flags.
-    move32(funFlagsAndArgCount, output);
-    rshift32(Imm32(JSFunction::ArgCountShift), output);
+    rshift32(Imm32(JSFunction::ArgCountShift), funFlagsAndArgCount, output);
     jump(&lengthLoaded);
   }
   bind(&isInterpreted);
@@ -5588,17 +5675,17 @@ void MacroAssembler::branchTestObjectNeedsProxyResultValidation(
 }
 
 void MacroAssembler::wasmTrap(wasm::Trap trap,
-                              wasm::BytecodeOffset bytecodeOffset) {
+                              const wasm::TrapSiteDesc& trapSiteDesc) {
   FaultingCodeOffset fco = wasmTrapInstruction();
   MOZ_ASSERT_IF(!oom(),
                 currentOffset() - fco.get() == WasmTrapInstructionLength);
 
-  append(trap, wasm::TrapSite(wasm::TrapMachineInsn::OfficialUD, fco,
-                              bytecodeOffset));
+  append(trap,
+         wasm::TrapSite(wasm::TrapMachineInsn::OfficialUD, fco, trapSiteDesc));
 }
 
 std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
-    uint32_t amount, wasm::BytecodeOffset trapOffset) {
+    uint32_t amount, const wasm::TrapSiteDesc& trapSiteDesc) {
   if (amount > MAX_UNCHECKED_LEAF_FRAME_SIZE) {
     // The frame is large.  Don't bump sp until after the stack limit check so
     // that the trap handler isn't called with a wild sp.
@@ -5614,7 +5701,7 @@ std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
               scratch, &ok);
 
     bind(&trap);
-    wasmTrap(wasm::Trap::StackOverflow, trapOffset);
+    wasmTrap(wasm::Trap::StackOverflow, trapSiteDesc);
     CodeOffset trapInsnOffset = CodeOffset(currentOffset());
 
     bind(&ok);
@@ -5627,7 +5714,7 @@ std::pair<CodeOffset, uint32_t> MacroAssembler::wasmReserveStackChecked(
   branchStackPtrRhs(Assembler::Below,
                     Address(InstanceReg, wasm::Instance::offsetOfStackLimit()),
                     &ok);
-  wasmTrap(wasm::Trap::StackOverflow, trapOffset);
+  wasmTrap(wasm::Trap::StackOverflow, trapSiteDesc);
   CodeOffset trapInsnOffset = CodeOffset(currentOffset());
   bind(&ok);
   return std::pair<CodeOffset, uint32_t>(trapInsnOffset, amount);
@@ -6050,7 +6137,7 @@ CodeOffset MacroAssembler::wasmCallImport(const wasm::CallSiteDesc& desc,
 
   storePtr(InstanceReg,
            Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   return wasmMarkedSlowCall(desc, ABINonArgReg0);
 }
@@ -6091,10 +6178,10 @@ CodeOffset MacroAssembler::wasmReturnCallImport(
 
   storePtr(InstanceReg,
            Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
-                              wasm::CallSiteDesc::ReturnStub);
+                              wasm::CallSiteKind::ReturnStub);
   wasmCollapseFrameSlow(retCallInfo, stubDesc);
   jump(ABINonArgReg0);
   append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
@@ -6131,15 +6218,14 @@ CodeOffset MacroAssembler::wasmCallBuiltinInstanceMethod(
   }
 
   CodeOffset ret = call(desc, builtin);
-  wasmTrapOnFailedInstanceCall(ReturnReg, failureMode,
-                               wasm::BytecodeOffset(desc.lineOrBytecode()));
+  wasmTrapOnFailedInstanceCall(ReturnReg, failureMode, desc.toTrapSiteDesc());
 
   return ret;
 }
 
 void MacroAssembler::wasmTrapOnFailedInstanceCall(
     Register resultRegister, wasm::FailureMode failureMode,
-    wasm::BytecodeOffset bytecodeOffset) {
+    const wasm::TrapSiteDesc& trapSiteDesc) {
   Label noTrap;
   switch (failureMode) {
     case wasm::FailureMode::Infallible:
@@ -6162,7 +6248,7 @@ void MacroAssembler::wasmTrapOnFailedInstanceCall(
                 &noTrap);
       break;
   }
-  wasmTrap(wasm::Trap::ThrowReported, bytecodeOffset);
+  wasmTrap(wasm::Trap::ThrowReported, trapSiteDesc);
   bind(&noTrap);
 }
 
@@ -6222,7 +6308,6 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
   MOZ_ASSERT(callee.which() == wasm::CalleeDesc::WasmTable);
 
   const int shift = sizeof(wasm::FunctionTableElem) == 8 ? 3 : 4;
-  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
   const Register calleeScratch = WasmTableCallScratchReg0;
   const Register index = WasmTableCallIndexReg;
 
@@ -6304,13 +6389,13 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
   // Use the null pointer exception resulting from loading HeapReg from a null
   // instance to handle a call to a null slot.
   MOZ_ASSERT(nullCheckFailedLabel == nullptr);
-  loadWasmPinnedRegsFromInstance(mozilla::Some(trapOffset));
+  loadWasmPinnedRegsFromInstance(mozilla::Some(desc.toTrapSiteDesc()));
 #else
   MOZ_ASSERT(nullCheckFailedLabel != nullptr);
   branchTestPtr(Assembler::Zero, InstanceReg, InstanceReg,
                 nullCheckFailedLabel);
 
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 #endif
   switchToWasmInstanceRealm(index, WasmTableCallScratchReg1);
 
@@ -6323,7 +6408,7 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
 
   loadPtr(Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
           InstanceReg);
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
   switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
   jump(&done);
 
@@ -6343,7 +6428,7 @@ void MacroAssembler::wasmCallIndirect(const wasm::CallSiteDesc& desc,
   // slots in the frame do not have valid values.
 
   wasm::CallSiteDesc newDesc(desc.lineOrBytecode(),
-                             wasm::CallSiteDesc::IndirectFast);
+                             wasm::CallSiteKind::IndirectFast);
   *fastCallOffset = call(newDesc, calleeScratch);
 
   bind(&done);
@@ -6359,7 +6444,6 @@ void MacroAssembler::wasmReturnCallIndirect(
   MOZ_ASSERT(callee.which() == wasm::CalleeDesc::WasmTable);
 
   const int shift = sizeof(wasm::FunctionTableElem) == 8 ? 3 : 4;
-  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
   const Register calleeScratch = WasmTableCallScratchReg0;
   const Register index = WasmTableCallIndexReg;
 
@@ -6433,13 +6517,13 @@ void MacroAssembler::wasmReturnCallIndirect(
   // Use the null pointer exception resulting from loading HeapReg from a null
   // instance to handle a call to a null slot.
   MOZ_ASSERT(nullCheckFailedLabel == nullptr);
-  loadWasmPinnedRegsFromInstance(mozilla::Some(trapOffset));
+  loadWasmPinnedRegsFromInstance(mozilla::Some(desc.toTrapSiteDesc()));
 #else
   MOZ_ASSERT(nullCheckFailedLabel != nullptr);
   branchTestPtr(Assembler::Zero, InstanceReg, InstanceReg,
                 nullCheckFailedLabel);
 
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 #endif
   switchToWasmInstanceRealm(index, WasmTableCallScratchReg1);
 
@@ -6447,7 +6531,7 @@ void MacroAssembler::wasmReturnCallIndirect(
           calleeScratch);
 
   wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
-                              wasm::CallSiteDesc::ReturnStub);
+                              wasm::CallSiteKind::ReturnStub);
   wasmCollapseFrameSlow(retCallInfo, stubDesc);
   jump(calleeScratch);
   append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
@@ -6482,11 +6566,11 @@ void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
   size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
       FunctionExtended::WASM_INSTANCE_SLOT);
   static_assert(FunctionExtended::WASM_INSTANCE_SLOT < wasm::NullPtrGuardSize);
-  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
   FaultingCodeOffset fco =
       loadPtr(Address(calleeFnObj, instanceSlotOffset), newInstanceTemp);
   append(wasm::Trap::NullPointerDereference,
-         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, trapOffset));
+         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco,
+                        desc.toTrapSiteDesc()));
   branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
 
   storePtr(InstanceReg,
@@ -6495,7 +6579,7 @@ void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
   storePtr(InstanceReg,
            Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
 
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
   switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
                             WasmCallRefCallScratchReg1);
 
@@ -6510,7 +6594,7 @@ void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
   // Restore registers and realm and back to this caller's.
   loadPtr(Address(getStackPointer(), WasmCallerInstanceOffsetBeforeCall),
           InstanceReg);
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
   switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
   jump(&done);
 
@@ -6525,7 +6609,7 @@ void MacroAssembler::wasmCallRef(const wasm::CallSiteDesc& desc,
   // slots in the frame do not have valid values.
 
   wasm::CallSiteDesc newDesc(desc.lineOrBytecode(),
-                             wasm::CallSiteDesc::FuncRefFast);
+                             wasm::CallSiteKind::FuncRefFast);
   *fastCallOffset = call(newDesc, calleeScratch);
 
   bind(&done);
@@ -6548,11 +6632,11 @@ void MacroAssembler::wasmReturnCallRef(
   size_t instanceSlotOffset = FunctionExtended::offsetOfExtendedSlot(
       FunctionExtended::WASM_INSTANCE_SLOT);
   static_assert(FunctionExtended::WASM_INSTANCE_SLOT < wasm::NullPtrGuardSize);
-  wasm::BytecodeOffset trapOffset(desc.lineOrBytecode());
   FaultingCodeOffset fco =
       loadPtr(Address(calleeFnObj, instanceSlotOffset), newInstanceTemp);
   append(wasm::Trap::NullPointerDereference,
-         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, trapOffset));
+         wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco,
+                        desc.toTrapSiteDesc()));
   branchPtr(Assembler::Equal, InstanceReg, newInstanceTemp, &fastCall);
 
   storePtr(InstanceReg,
@@ -6561,7 +6645,7 @@ void MacroAssembler::wasmReturnCallRef(
   storePtr(InstanceReg,
            Address(getStackPointer(), WasmCalleeInstanceOffsetBeforeCall));
 
-  loadWasmPinnedRegsFromInstance();
+  loadWasmPinnedRegsFromInstance(mozilla::Nothing());
   switchToWasmInstanceRealm(WasmCallRefCallScratchReg0,
                             WasmCallRefCallScratchReg1);
 
@@ -6572,7 +6656,7 @@ void MacroAssembler::wasmReturnCallRef(
   loadPtr(Address(calleeFnObj, uncheckedEntrySlotOffset), calleeScratch);
 
   wasm::CallSiteDesc stubDesc(desc.lineOrBytecode(),
-                              wasm::CallSiteDesc::ReturnStub);
+                              wasm::CallSiteKind::ReturnStub);
   wasmCollapseFrameSlow(retCallInfo, stubDesc);
   jump(calleeScratch);
   append(wasm::CodeRangeUnwindInfo::Normal, currentOffset());
@@ -6591,7 +6675,7 @@ void MacroAssembler::wasmReturnCallRef(
 
 void MacroAssembler::wasmBoundsCheckRange32(
     Register index, Register length, Register limit, Register tmp,
-    wasm::BytecodeOffset bytecodeOffset) {
+    const wasm::TrapSiteDesc& trapSiteDesc) {
   Label ok;
   Label fail;
 
@@ -6601,7 +6685,7 @@ void MacroAssembler::wasmBoundsCheckRange32(
   jump(&ok);
 
   bind(&fail);
-  wasmTrap(wasm::Trap::OutOfBounds, bytecodeOffset);
+  wasmTrap(wasm::Trap::OutOfBounds, trapSiteDesc);
 
   bind(&ok);
 }
@@ -6954,8 +7038,7 @@ void MacroAssembler::branchWasmSTVIsSubtypeDynamicDepth(
 }
 
 void MacroAssembler::extractWasmAnyRefTag(Register src, Register dest) {
-  movePtr(src, dest);
-  andPtr(Imm32(int32_t(wasm::AnyRef::TagMask)), dest);
+  andPtr(Imm32(int32_t(wasm::AnyRef::TagMask)), src, dest);
 }
 
 void MacroAssembler::untagWasmAnyRef(Register src, Register dest,
@@ -7017,10 +7100,10 @@ void MacroAssembler::truncate32ToWasmI31Ref(Register src, Register dest) {
   // This will either zero-extend or sign-extend the high 32-bits on 64-bit
   // platforms (see comments on invariants in MacroAssembler.h). Either case
   // is fine, as we won't use this bits.
-  move32(src, dest);
+  //
   // Move the payload of the integer over by 1 to make room for the tag. This
   // will perform the truncation required by the spec.
-  lshift32(Imm32(1), dest);
+  lshift32(Imm32(1), src, dest);
   // Add the i31 tag to the integer.
   orPtr(Imm32(int32_t(wasm::AnyRefTag::I31)), dest);
 #ifdef JS_64BIT
@@ -7035,10 +7118,10 @@ void MacroAssembler::convertWasmI31RefTo32Signed(Register src, Register dest) {
   // This will either zero-extend or sign-extend the high 32-bits on 64-bit
   // platforms (see comments on invariants in MacroAssembler.h). Either case
   // is fine, as we won't use this bits.
-  move32(src, dest);
+  //
   // Shift the payload back (clobbering the tag). This will sign-extend, giving
   // us the unsigned behavior we want.
-  rshift32Arithmetic(Imm32(1), dest);
+  rshift32Arithmetic(Imm32(1), src, dest);
 }
 
 void MacroAssembler::convertWasmI31RefTo32Unsigned(Register src,
@@ -7049,10 +7132,10 @@ void MacroAssembler::convertWasmI31RefTo32Unsigned(Register src,
   // This will either zero-extend or sign-extend the high 32-bits on 64-bit
   // platforms (see comments on invariants in MacroAssembler.h). Either case
   // is fine, as we won't use this bits.
-  move32(src, dest);
+  //
   // Shift the payload back (clobbering the tag). This will zero-extend, giving
   // us the unsigned behavior we want.
-  rshift32(Imm32(1), dest);
+  rshift32(Imm32(1), src, dest);
 }
 
 void MacroAssembler::branchValueConvertsToWasmAnyRefInline(
@@ -7062,34 +7145,37 @@ void MacroAssembler::branchValueConvertsToWasmAnyRefInline(
   Label checkInt32;
   Label checkDouble;
   Label fallthrough;
-  ScratchTagScope tag(*this, src);
-  splitTagForTest(src, tag);
-  branchTestObject(Assembler::Equal, tag, label);
-  branchTestString(Assembler::Equal, tag, label);
-  branchTestNull(Assembler::Equal, tag, label);
-  branchTestInt32(Assembler::Equal, tag, &checkInt32);
-  branchTestDouble(Assembler::Equal, tag, &checkDouble);
+  {
+    ScratchTagScope tag(*this, src);
+    splitTagForTest(src, tag);
+    branchTestObject(Assembler::Equal, tag, label);
+    branchTestString(Assembler::Equal, tag, label);
+    branchTestNull(Assembler::Equal, tag, label);
+    branchTestInt32(Assembler::Equal, tag, &checkInt32);
+    branchTestDouble(Assembler::Equal, tag, &checkDouble);
+  }
   jump(&fallthrough);
 
   bind(&checkInt32);
-  unboxInt32(src, scratchInt);
-  branch32(Assembler::GreaterThan, scratchInt, Imm32(wasm::AnyRef::MaxI31Value),
-           &fallthrough);
-  branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
-           &fallthrough);
-  jump(label);
+  {
+    unboxInt32(src, scratchInt);
+    branch32(Assembler::GreaterThan, scratchInt,
+             Imm32(wasm::AnyRef::MaxI31Value), &fallthrough);
+    branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
+             &fallthrough);
+    jump(label);
+  }
 
   bind(&checkDouble);
   {
-    ScratchTagScopeRelease _(&tag);
-    convertValueToInt32(src, scratchFloat, scratchInt, &fallthrough, true,
-                        IntConversionInputKind::NumbersOnly);
+    unboxDouble(src, scratchFloat);
+    convertDoubleToInt32(scratchFloat, scratchInt, &fallthrough);
+    branch32(Assembler::GreaterThan, scratchInt,
+             Imm32(wasm::AnyRef::MaxI31Value), &fallthrough);
+    branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
+             &fallthrough);
+    jump(label);
   }
-  branch32(Assembler::GreaterThan, scratchInt, Imm32(wasm::AnyRef::MaxI31Value),
-           &fallthrough);
-  branch32(Assembler::LessThan, scratchInt, Imm32(wasm::AnyRef::MinI31Value),
-           &fallthrough);
-  jump(label);
 
   bind(&fallthrough);
 }
@@ -7110,37 +7196,46 @@ void MacroAssembler::convertValueToWasmAnyRef(ValueOperand src, Register dest,
   }
 
   bind(&doubleValue);
-  convertValueToInt32(src, scratchFloat, dest, oolConvert, true,
-                      IntConversionInputKind::NumbersOnly);
-  branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
-           oolConvert);
-  branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
-           oolConvert);
-  lshiftPtr(Imm32(1), dest);
-  or32(Imm32((int32_t)wasm::AnyRefTag::I31), dest);
-  jump(&done);
+  {
+    unboxDouble(src, scratchFloat);
+    convertDoubleToInt32(scratchFloat, dest, oolConvert);
+    branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
+             oolConvert);
+    branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
+             oolConvert);
+    truncate32ToWasmI31Ref(dest, dest);
+    jump(&done);
+  }
 
   bind(&int32Value);
-  unboxInt32(src, dest);
-  branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
-           oolConvert);
-  branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
-           oolConvert);
-  truncate32ToWasmI31Ref(dest, dest);
-  jump(&done);
+  {
+    unboxInt32(src, dest);
+    branch32(Assembler::GreaterThan, dest, Imm32(wasm::AnyRef::MaxI31Value),
+             oolConvert);
+    branch32(Assembler::LessThan, dest, Imm32(wasm::AnyRef::MinI31Value),
+             oolConvert);
+    truncate32ToWasmI31Ref(dest, dest);
+    jump(&done);
+  }
 
   bind(&nullValue);
-  static_assert(wasm::AnyRef::NullRefValue == 0);
-  xorPtr(dest, dest);
-  jump(&done);
+  {
+    static_assert(wasm::AnyRef::NullRefValue == 0);
+    xorPtr(dest, dest);
+    jump(&done);
+  }
 
   bind(&stringValue);
-  unboxString(src, dest);
-  orPtr(Imm32((int32_t)wasm::AnyRefTag::String), dest);
-  jump(&done);
+  {
+    unboxString(src, dest);
+    orPtr(Imm32((int32_t)wasm::AnyRefTag::String), dest);
+    jump(&done);
+  }
 
   bind(&objectValue);
-  unboxObject(src, dest);
+  {
+    unboxObject(src, dest);
+  }
 
   bind(&done);
 }
@@ -7152,8 +7247,7 @@ void MacroAssembler::convertObjectToWasmAnyRef(Register src, Register dest) {
 
 void MacroAssembler::convertStringToWasmAnyRef(Register src, Register dest) {
   // JS strings require a tag.
-  movePtr(src, dest);
-  orPtr(Imm32(int32_t(wasm::AnyRefTag::String)), dest);
+  orPtr(Imm32(int32_t(wasm::AnyRefTag::String)), src, dest);
 }
 
 void MacroAssembler::branchObjectIsWasmGcObject(bool isGcObject, Register src,
@@ -7686,8 +7780,7 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
 #endif
 
   // Load the chunk address in temp2.
-  movePtr(temp1, temp2);
-  andPtr(Imm32(int32_t(~gc::ChunkMask)), temp2);
+  andPtr(Imm32(int32_t(~gc::ChunkMask)), temp1, temp2);
 
   // If the GC thing is in the nursery, we don't need to barrier it.
   if (type == MIRType::Value || type == MIRType::Object ||
@@ -7753,8 +7846,6 @@ void MacroAssembler::emitPreBarrierFastPath(JSRuntime* rt, MIRType type,
   ma_lsl(temp3, temp1, temp1);
 #elif JS_CODEGEN_ARM64
   Lsl(ARMRegister(temp1, 64), ARMRegister(temp1, 64), ARMRegister(temp3, 64));
-#elif JS_CODEGEN_MIPS32
-  ma_sll(temp1, temp1, temp3);
 #elif JS_CODEGEN_MIPS64
   ma_dsll(temp1, temp1, temp3);
 #elif JS_CODEGEN_LOONG64
@@ -7851,19 +7942,19 @@ void MacroAssembler::boundsCheck32PowerOfTwo(Register index, uint32_t length,
 }
 
 void MacroAssembler::loadWasmPinnedRegsFromInstance(
-    mozilla::Maybe<wasm::BytecodeOffset> trapOffset) {
+    const wasm::MaybeTrapSiteDesc& trapSiteDesc) {
 #ifdef WASM_HAS_HEAPREG
   static_assert(wasm::Instance::offsetOfMemory0Base() < 4096,
                 "We count only on the low page being inaccessible");
   FaultingCodeOffset fco = loadPtr(
       Address(InstanceReg, wasm::Instance::offsetOfMemory0Base()), HeapReg);
-  if (trapOffset) {
+  if (trapSiteDesc) {
     append(
         wasm::Trap::IndirectCallToNull,
-        wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, *trapOffset));
+        wasm::TrapSite(wasm::TrapMachineInsnForLoadWord(), fco, *trapSiteDesc));
   }
 #else
-  MOZ_ASSERT(!trapOffset);
+  MOZ_ASSERT(!trapSiteDesc);
 #endif
 }
 
@@ -9063,8 +9154,7 @@ void MacroAssembler::maybeLoadIteratorFromShape(Register obj, Register dest,
   loadPtr(Address(shapeAndProto, Shape::offsetOfCachePtr()), dest);
 
   // Check if it's an iterator.
-  movePtr(dest, temp3);
-  andPtr(Imm32(ShapeCachePtr::MASK), temp3);
+  andPtr(Imm32(ShapeCachePtr::MASK), dest, temp3);
   branch32(Assembler::NotEqual, temp3, Imm32(ShapeCachePtr::ITERATOR), failure);
 
   // If we've cached an iterator, |obj| must be a native object.
@@ -9867,8 +9957,7 @@ void MacroAssembler::touchFrameValues(Register numStackValues,
 
   moveStackPtrTo(scratch2);
 
-  mov(numStackValues, scratch1);
-  lshiftPtr(Imm32(3), scratch1);
+  lshiftPtr(Imm32(3), numStackValues, scratch1);
   {
     // Note: this loop needs to update the stack pointer register because older
     // Linux kernels check the distance between the touched address and RSP.

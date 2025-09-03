@@ -298,8 +298,6 @@ support-files = ["file_bug966552.html"]
 
 ["test_bug1068979.html"]
 
-["test_bug1094000.html"]
-
 ["test_bug1102906.html"]
 skip-if = ["os == 'android'"]
 
@@ -362,8 +360,6 @@ skip-if = ["headless"]
 ["test_bug1332876.html"]
 
 ["test_bug1352799.html"]
-
-["test_bug1355792.html"]
 
 ["test_bug1358025.html"]
 
@@ -479,6 +475,9 @@ skip-if = ["os == 'android'"] # Needs interaction with the scrollbar
 
 ["test_label_contenteditable.html"]
 
+["test_mailcite_keep_trailing_br_after_delete.html"]
+skip-if = ["xorigin"] # Testing internal API for comm-central
+
 ["test_middle_click_paste.html"]
 skip-if = ["headless"]
 
@@ -581,6 +580,8 @@ skip-if = ["xorigin"] # Testing internal API for comm-central
 ["test_pasteImgTextarea.html"]
 
 ["test_paste_as_quote_in_text_control.html"]
+
+["test_paste_clipboard_change.html"]
 
 ["test_paste_no_formatting.html"]
 

@@ -112,6 +112,7 @@ pub fn set_crash_ping_metrics(
         }
         environment {
             experimental_features: (string_list ',') = "ExperimentalFeatures"
+            nimbus_enrollments: (string_list ',') = "NimbusEnrollments"
             headless_mode: bool = "HeadlessMode"
             uptime: seconds = "UptimeTS"
         }
@@ -151,7 +152,9 @@ fn glean_datetime(datetime: time::OffsetDateTime) -> ::glean::Datetime {
 }
 
 fn convert_async_shutdown_timeout(value: &serde_json::Value) -> anyhow::Result<serde_json::Value> {
-    let mut ret = value.as_object().context("expected object")?.clone();
+    // The JSON value is stored as a string, so we need to deserialize it.
+    let mut ret: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(value.as_str().context("expected string")?)?;
     if let Some(conditions) = ret.get_mut("conditions") {
         if !conditions.is_string() {
             *conditions = serde_json::to_string(conditions)
@@ -184,7 +187,7 @@ fn convert_stack_traces(value: &serde_json::Value) -> anyhow::Result<serde_json:
         "error": value["status"].as_str().and_then(|v| (v != "OK").then_some(v)),
         "crash_type": value["crash_info"]["type"],
         "crash_address": value["crash_info"]["address"],
-        "crash_thread": value["crass_info"]["crashing_thread"],
+        "crash_thread": value["crash_info"]["crashing_thread"],
         "main_module": value["main_module"],
         "modules": value["modules"].as_array().map(|modules| {
             modules.iter().map(|m| serde_json::json! {{

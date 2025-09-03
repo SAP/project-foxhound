@@ -188,6 +188,7 @@ TESTPLANARTOP(H010, uint16_t, 2, 2, 2, H010, uint16_t, 2, 2, 2, 10)
 TESTPLANARTOP(H010, uint16_t, 2, 2, 2, H420, uint8_t, 1, 2, 2, 10)
 TESTPLANARTOP(H420, uint8_t, 1, 2, 2, H010, uint16_t, 2, 2, 2, 8)
 TESTPLANARTOP(H420, uint8_t, 1, 2, 2, H012, uint16_t, 2, 2, 2, 8)
+TESTPLANARTOP(J420, uint8_t, 1, 2, 2, I420, uint8_t, 1, 2, 2, 8)
 TESTPLANARTOP(I010, uint16_t, 2, 2, 2, I410, uint16_t, 2, 1, 1, 10)
 TESTPLANARTOP(I210, uint16_t, 2, 2, 1, I410, uint16_t, 2, 1, 1, 10)
 TESTPLANARTOP(I012, uint16_t, 2, 2, 2, I412, uint16_t, 2, 1, 1, 12)
@@ -326,18 +327,18 @@ TESTAPLANARTOP(Android420, NV21, 2, 1, 0, 2, 2, I420, 2, 2)
 #undef TESTAPLANARTOPI
 
 // wrapper to keep API the same
-int I400ToNV21(const uint8_t* src_y,
-               int src_stride_y,
-               const uint8_t* /* src_u */,
-               int /* src_stride_u */,
-               const uint8_t* /* src_v */,
-               int /* src_stride_v */,
-               uint8_t* dst_y,
-               int dst_stride_y,
-               uint8_t* dst_vu,
-               int dst_stride_vu,
-               int width,
-               int height) {
+static int I400ToNV21(const uint8_t* src_y,
+                      int src_stride_y,
+                      const uint8_t* /* src_u */,
+                      int /* src_stride_u */,
+                      const uint8_t* /* src_v */,
+                      int /* src_stride_v */,
+                      uint8_t* dst_y,
+                      int dst_stride_y,
+                      uint8_t* dst_vu,
+                      int dst_stride_vu,
+                      int width,
+                      int height) {
   return I400ToNV21(src_y, src_stride_y, dst_y, dst_stride_y, dst_vu,
                     dst_stride_vu, width, height);
 }
@@ -452,6 +453,7 @@ TESTPLANARTOBP(I422, uint8_t, 1, 2, 1, NV21, uint8_t, 1, 2, 2, 8)
 TESTPLANARTOBP(I444, uint8_t, 1, 1, 1, NV12, uint8_t, 1, 2, 2, 8)
 TESTPLANARTOBP(I444, uint8_t, 1, 1, 1, NV21, uint8_t, 1, 2, 2, 8)
 TESTPLANARTOBP(I400, uint8_t, 1, 2, 2, NV21, uint8_t, 1, 2, 2, 8)
+TESTPLANARTOBP(I010, uint16_t, 2, 2, 2, NV12, uint8_t, 1, 2, 2, 8)
 TESTPLANARTOBP(I010, uint16_t, 2, 2, 2, P010, uint16_t, 2, 2, 2, 10)
 TESTPLANARTOBP(I210, uint16_t, 2, 2, 1, P210, uint16_t, 2, 2, 1, 10)
 TESTPLANARTOBP(I012, uint16_t, 2, 2, 2, P012, uint16_t, 2, 2, 2, 12)
@@ -592,6 +594,7 @@ TESTBPTOBP(P016, uint16_t, 2, 2, 2, P416, uint16_t, 2, 1, 1, 12, 1, 1)
 TESTBPTOBP(P216, uint16_t, 2, 2, 1, P416, uint16_t, 2, 1, 1, 12, 1, 1)
 TESTBPTOBP(MM21, uint8_t, 1, 2, 2, NV12, uint8_t, 1, 2, 2, 8, 16, 32)
 TESTBPTOBP(MT2T, uint8_t, 10 / 8, 2, 2, P010, uint16_t, 2, 2, 2, 10, 16, 32)
+TESTBPTOBP(P010, uint16_t, 2, 2, 2, NV12, uint8_t, 1, 2, 2, 8, 1, 1)
 
 #define TESTATOPLANARI(FMT_A, BPP_A, YALIGN, FMT_PLANAR, SUBSAMP_X, SUBSAMP_Y, \
                        W1280, N, NEG, OFF)                                     \
@@ -663,6 +666,7 @@ TESTATOPLANAR(ARGB, 4, 1, I422, 2, 1)
 TESTATOPLANAR(ARGB, 4, 1, I444, 1, 1)
 TESTATOPLANAR(ARGB, 4, 1, J420, 2, 2)
 TESTATOPLANAR(ARGB, 4, 1, J422, 2, 1)
+TESTATOPLANAR(ARGB, 4, 1, J444, 1, 1)
 TESTATOPLANAR(ABGR, 4, 1, J420, 2, 2)
 TESTATOPLANAR(ABGR, 4, 1, J422, 2, 1)
 #ifdef LITTLE_ENDIAN_ONLY_TEST
@@ -675,6 +679,7 @@ TESTATOPLANAR(I400, 1, 1, I420, 2, 2)
 TESTATOPLANAR(J400, 1, 1, J420, 2, 2)
 TESTATOPLANAR(RAW, 3, 1, I420, 2, 2)
 TESTATOPLANAR(RAW, 3, 1, J420, 2, 2)
+TESTATOPLANAR(RAW, 3, 1, J444, 1, 1)
 TESTATOPLANAR(RGB24, 3, 1, I420, 2, 2)
 TESTATOPLANAR(RGB24, 3, 1, J420, 2, 2)
 TESTATOPLANAR(RGBA, 4, 1, I420, 2, 2)
@@ -2104,6 +2109,28 @@ TEST_F(LibYUVConvertTest, TestRGB24ToI420) {
   free_aligned_buffer_page_end(dest_i420);
 }
 #endif
+
+TEST_F(LibYUVConvertTest, TestJ420ToI420) {
+  const uint8_t src_y[12] = {0, 0, 128, 128, 255, 255,
+                             0, 0, 128, 128, 255, 255};
+  const uint8_t src_u[3] = {0, 128, 255};
+  const uint8_t src_v[3] = {0, 128, 255};
+  uint8_t dst_y[12];
+  uint8_t dst_u[3];
+  uint8_t dst_v[3];
+  ASSERT_EQ(J420ToI420(src_y, 6, src_u, 3, src_v, 3, dst_y, 6, dst_u, 3, dst_v,
+                       3, 6, 2),
+            0);
+  EXPECT_EQ(dst_y[0], 16);
+  EXPECT_EQ(dst_y[2], 126);
+  EXPECT_EQ(dst_y[4], 235);
+  EXPECT_EQ(dst_u[0], 16);
+  EXPECT_EQ(dst_u[1], 128);
+  EXPECT_EQ(dst_u[2], 240);
+  EXPECT_EQ(dst_v[0], 16);
+  EXPECT_EQ(dst_v[1], 128);
+  EXPECT_EQ(dst_v[2], 240);
+}
 
 #endif  // !defined(LEAN_TESTS)
 

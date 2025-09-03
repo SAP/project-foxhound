@@ -11,11 +11,14 @@ import io.mockk.spyk
 import io.mockk.verify
 import io.mockk.verifyOrder
 import mozilla.components.service.pocket.PocketStory
+import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
+import mozilla.components.service.pocket.PocketStory.SponsoredContent
+import mozilla.components.service.pocket.PocketStory.SponsoredContentCallbacks
 import mozilla.components.service.pocket.ext.getCurrentFlightImpressions
 import mozilla.components.support.test.robolectric.testContext
-import mozilla.telemetry.glean.testing.GleanTestRule
+import mozilla.components.support.test.rule.MainCoroutineRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
@@ -34,7 +37,9 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
+import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.home.pocket.controller.DefaultPocketStoriesController
 import org.mozilla.fenix.utils.Settings
 
@@ -42,10 +47,16 @@ import org.mozilla.fenix.utils.Settings
 class DefaultPocketStoriesControllerTest {
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val coroutinesTestRule = MainCoroutineRule()
+
+    @get:Rule
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     private val homeActivity: HomeActivity = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
+    private val marsUseCases: MARSUseCases = mockk(relaxed = true)
+
+    private val scope = coroutinesTestRule.scope
 
     @Before
     fun setup() {
@@ -184,11 +195,19 @@ class DefaultPocketStoriesControllerTest {
         val store = spyk(AppStore())
         val controller = createController(appStore = store)
         val storyShown: PocketRecommendedStory = mockk()
-        val storyGridLocation = 1 to 2
+        val storyPosition = Triple(1, 2, 3)
 
-        controller.handleStoryShown(storyShown, storyGridLocation)
+        controller.handleStoryShown(storyShown, storyPosition)
 
-        verify { store.dispatch(ContentRecommendationsAction.PocketStoriesShown(listOf(storyShown))) }
+        verify {
+            store.dispatch(
+                ContentRecommendationsAction.PocketStoriesShown(
+                    impressions = listOf(
+                        PocketImpression(story = storyShown, position = 3),
+                    ),
+                ),
+            )
+        }
     }
 
     @Test
@@ -211,9 +230,17 @@ class DefaultPocketStoriesControllerTest {
                 wasPingSent = true
             }
 
-            controller.handleStoryShown(storyShown, 1 to 2)
+            controller.handleStoryShown(storyShown, storyPosition = Triple(1, 2, 3))
 
-            verify { store.dispatch(ContentRecommendationsAction.PocketStoriesShown(listOf(storyShown))) }
+            verify {
+                store.dispatch(
+                    ContentRecommendationsAction.PocketStoriesShown(
+                        impressions = listOf(
+                            PocketImpression(story = storyShown, position = 3),
+                        ),
+                    ),
+                )
+            }
             assertNotNull(Pocket.homeRecsSpocShown.testGetValue())
             assertEquals(1, Pocket.homeRecsSpocShown.testGetValue()!!.size)
             val data = Pocket.homeRecsSpocShown.testGetValue()!!.single().extra
@@ -225,15 +252,73 @@ class DefaultPocketStoriesControllerTest {
     }
 
     @Test
+    fun `WHEN a sponsored content is shown THEN update the State and record telemetry`() {
+        val store = spyk(AppStore())
+        val controller = createController(appStore = store)
+        val sponsoredContent = SponsoredContent(
+            url = "https://firefox.com",
+            title = "Firefox",
+            callbacks = SponsoredContentCallbacks(
+                clickUrl = "https://firefox.com/click",
+                impressionUrl = "https://firefox.com/impression",
+            ),
+            imageUrl = "https://test.com/image1.jpg",
+            domain = "firefox.com",
+            excerpt = "Mozilla Firefox",
+            sponsor = "Mozilla",
+            blockKey = "1",
+            caps = mockk(relaxed = true),
+            priority = 3,
+        )
+
+        mockkStatic("mozilla.components.service.pocket.ext.PocketStoryKt") {
+            every { sponsoredContent.getCurrentFlightImpressions() } returns listOf(2L, 3L, 7L)
+
+            controller.handleStoryShown(sponsoredContent, storyPosition = Triple(1, 2, 3))
+
+            assertEquals(1, Pocket.homeRecsSpocShown.testGetValue()!!.size)
+
+            val data = Pocket.homeRecsSpocShown.testGetValue()!!.single().extra
+            assertEquals(2, data?.size)
+            assertEquals("1x2", data?.entries?.first { it.key == "position" }?.value)
+            assertEquals("4", data?.entries?.first { it.key == "times_shown" }?.value)
+
+            verify {
+                store.dispatch(
+                    ContentRecommendationsAction.PocketStoriesShown(
+                        impressions = listOf(
+                            PocketImpression(story = sponsoredContent, position = 3),
+                        ),
+                    ),
+                )
+            }
+        }
+    }
+
+    @Test
     fun `WHEN new stories are shown THEN update the State and record telemetry`() {
         val store = spyk(AppStore())
         val controller = createController(appStore = store)
-        val storiesShown: List<PocketStory> = mockk()
+        val recommendation = mockk<ContentRecommendation>()
+        val story = mockk<PocketStory>()
+        val sponsoredStory = mockk<PocketSponsoredStory>()
+        val storiesShown = listOf(recommendation, story, sponsoredStory)
+
         assertNull(Pocket.homeRecsShown.testGetValue())
 
         controller.handleStoriesShown(storiesShown)
 
-        verify { store.dispatch(ContentRecommendationsAction.PocketStoriesShown(storiesShown)) }
+        verify {
+            store.dispatch(
+                ContentRecommendationsAction.PocketStoriesShown(
+                    impressions = listOf(
+                        PocketImpression(story = recommendation, position = 0),
+                        PocketImpression(story = story, position = 1),
+                    ),
+                ),
+            )
+        }
+
         assertNotNull(Pocket.homeRecsShown.testGetValue())
         assertEquals(1, Pocket.homeRecsShown.testGetValue()!!.size)
         assertNull(Pocket.homeRecsShown.testGetValue()!!.single().extra)
@@ -253,7 +338,7 @@ class DefaultPocketStoriesControllerTest {
         val controller = createController()
         assertNull(Pocket.homeRecsStoryClicked.testGetValue())
 
-        controller.handleStoryClicked(story, 1 to 2)
+        controller.handleStoryClicked(story, storyPosition = Triple(1, 2, 3))
 
         verify { homeActivity.openToBrowserAndLoad(story.url, true, BrowserDirection.FromHome) }
 
@@ -282,7 +367,7 @@ class DefaultPocketStoriesControllerTest {
         val controller = createController()
         assertNull(Pocket.homeRecsStoryClicked.testGetValue())
 
-        controller.handleStoryClicked(story, 1 to 2)
+        controller.handleStoryClicked(story, storyPosition = Triple(1, 2, 3))
 
         verify { homeActivity.openToBrowserAndLoad(story.url, false, BrowserDirection.FromHome) }
 
@@ -323,7 +408,7 @@ class DefaultPocketStoriesControllerTest {
                 wasPingSent = true
             }
 
-            controller.handleStoryClicked(storyClicked, 2 to 3)
+            controller.handleStoryClicked(storyClicked, storyPosition = Triple(2, 3, 4))
 
             verify { homeActivity.openToBrowserAndLoad(storyClicked.url, true, BrowserDirection.FromHome) }
             assertNotNull(Pocket.homeRecsSpocClicked.testGetValue())
@@ -366,7 +451,7 @@ class DefaultPocketStoriesControllerTest {
                 wasPingSent = true
             }
 
-            controller.handleStoryClicked(storyClicked, 2 to 3)
+            controller.handleStoryClicked(storyClicked, storyPosition = Triple(2, 3, 4))
 
             verify { homeActivity.openToBrowserAndLoad(storyClicked.url, false, BrowserDirection.FromHome) }
             assertNotNull(Pocket.homeRecsSpocClicked.testGetValue())
@@ -376,6 +461,49 @@ class DefaultPocketStoriesControllerTest {
             assertEquals("2x3", data?.entries?.first { it.key == "position" }?.value)
             assertEquals("3", data?.entries?.first { it.key == "times_shown" }?.value)
             assertTrue(wasPingSent)
+        }
+    }
+
+    @Test
+    fun `WHEN a sponsored content is clicked THEN navigate to the sponsored content URL and record the interaction`() {
+        val sponsoredContent = SponsoredContent(
+            url = "https://firefox.com",
+            title = "Firefox",
+            callbacks = SponsoredContentCallbacks(
+                clickUrl = "https://firefox.com/click",
+                impressionUrl = "https://firefox.com/impression",
+            ),
+            imageUrl = "https://test.com/image1.jpg",
+            domain = "firefox.com",
+            excerpt = "Mozilla Firefox",
+            sponsor = "Mozilla",
+            blockKey = "1",
+            caps = mockk(relaxed = true),
+            priority = 3,
+        )
+        val controller = createController()
+
+        assertNull(Pocket.homeRecsSpocClicked.testGetValue())
+
+        mockkStatic("mozilla.components.service.pocket.ext.PocketStoryKt") {
+            every { sponsoredContent.getCurrentFlightImpressions() } returns listOf(2L, 3L)
+
+            controller.handleStoryClicked(sponsoredContent, storyPosition = Triple(2, 3, 4))
+
+            assertEquals(1, Pocket.homeRecsSpocClicked.testGetValue()!!.size)
+            val data = Pocket.homeRecsSpocClicked.testGetValue()!!.single().extra
+            assertEquals(2, data?.size)
+            assertEquals("2x3", data?.entries?.first { it.key == "position" }?.value)
+            assertEquals("3", data?.entries?.first { it.key == "times_shown" }?.value)
+
+            verify {
+                homeActivity.openToBrowserAndLoad(
+                    sponsoredContent.url,
+                    true,
+                    BrowserDirection.FromHome,
+                )
+                marsUseCases.recordInteraction(sponsoredContent.callbacks.clickUrl)
+            }
         }
     }
 
@@ -411,7 +539,7 @@ class DefaultPocketStoriesControllerTest {
         val story = PocketRecommendedStory("", "url", "", "", "", 0, 0)
         val controller = createController()
 
-        controller.handleStoryClicked(story, 1 to 2)
+        controller.handleStoryClicked(story, storyPosition = Triple(1, 2, 3))
 
         verifyOrder {
             homeActivity.openToBrowserAndLoad(story.url, true, BrowserDirection.FromHome)
@@ -425,7 +553,7 @@ class DefaultPocketStoriesControllerTest {
         val story = PocketRecommendedStory("", "url", "", "", "", 0, 0)
         val controller = createController()
 
-        controller.handleStoryClicked(story, 1 to 2)
+        controller.handleStoryClicked(story, storyPosition = Triple(1, 2, 3))
 
         verifyOrder {
             homeActivity.openToBrowserAndLoad(story.url, false, BrowserDirection.FromHome)
@@ -462,5 +590,7 @@ class DefaultPocketStoriesControllerTest {
         homeActivity = homeActivity,
         appStore = appStore,
         settings = settings,
+        marsUseCases = marsUseCases,
+        viewLifecycleScope = scope,
     )
 }

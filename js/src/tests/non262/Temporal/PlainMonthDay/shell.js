@@ -1,5 +1,10 @@
+/*---
+defines: [ISOFields, assertSameISOFields]
+allow_unused: True
+---*/
+
 function ISOFields(monthDay) {
-  let re = /^(?<year>\d{4,6})-(?<month>\d{2})-(?<day>\d{2})\[u-ca=(?<calendar>[\w\-]+)\]$/;
+  let re = /^(?<year>-?\d{4,6})-(?<month>\d{2})-(?<day>\d{2})\[u-ca=(?<calendar>[\w\-]+)\]$/;
 
   let str = monthDay.toString({calendarName: "always"});
   let match = str.match(re);

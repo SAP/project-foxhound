@@ -19,6 +19,7 @@ import mozilla.components.feature.addons.AddonManager
 import mozilla.components.feature.addons.AddonManagerException
 import mozilla.components.feature.app.links.AppLinksUseCases
 import mozilla.components.feature.session.SessionUseCases
+import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.feature.top.sites.PinnedSiteStorage
 import mozilla.components.feature.top.sites.TopSite
 import mozilla.components.feature.top.sites.TopSitesUseCases
@@ -37,6 +38,7 @@ import org.mozilla.fenix.components.bookmarks.BookmarksUseCase
 import org.mozilla.fenix.components.menu.store.BookmarkState
 import org.mozilla.fenix.components.menu.store.MenuAction
 import org.mozilla.fenix.components.menu.store.MenuState
+import org.mozilla.fenix.utils.LastSavedFolderCache
 import org.mozilla.fenix.utils.Settings
 
 /**
@@ -60,6 +62,7 @@ import org.mozilla.fenix.utils.Settings
  * selected tab from pinned shortcuts.
  * @param requestDesktopSiteUseCase The [SessionUseCases.RequestDesktopSiteUseCase] for toggling
  * desktop mode for the current session.
+ * @param tabsUseCases The [TabsUseCases] for reopening a private tab as a regular (ie, non-private) tab.
  * @param alertDialogBuilder The [AlertDialog.Builder] used to create a popup when trying to
  * add a shortcut after the shortcut limit has been reached.
  * @param topSitesMaxLimit The maximum number of top sites the user can have.
@@ -67,6 +70,7 @@ import org.mozilla.fenix.utils.Settings
  * @param onDismiss Callback invoked to dismiss the menu dialog.
  * @param onSendPendingIntentWithUrl Callback invoked to send the pending intent of a custom menu item
  * with the url of the custom tab.
+ * @param lastSavedFolderCache used to fetch the guid of the folder to save a bookmark in.
  * @param scope [CoroutineScope] used to launch coroutines.
  */
 @Suppress("LongParameterList", "CyclomaticComplexMethod")
@@ -81,11 +85,13 @@ class MenuDialogMiddleware(
     private val addPinnedSiteUseCase: TopSitesUseCases.AddPinnedSiteUseCase,
     private val removePinnedSitesUseCase: TopSitesUseCases.RemoveTopSiteUseCase,
     private val requestDesktopSiteUseCase: SessionUseCases.RequestDesktopSiteUseCase,
+    private val tabsUseCases: TabsUseCases,
     private val alertDialogBuilder: AlertDialog.Builder,
     private val topSitesMaxLimit: Int,
     private val onDeleteAndQuit: () -> Unit,
     private val onDismiss: suspend () -> Unit,
     private val onSendPendingIntentWithUrl: (intent: PendingIntent, url: String?) -> Unit,
+    private val lastSavedFolderCache: LastSavedFolderCache,
     private val scope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Middleware<MenuState, MenuAction> {
 
@@ -111,7 +117,8 @@ class MenuDialogMiddleware(
             is MenuAction.CustomMenuItemAction -> customMenuItemAction(action.intent, action.url)
             is MenuAction.ToggleReaderView -> toggleReaderView(state = currentState)
             is MenuAction.CustomizeReaderView -> customizeReaderView()
-
+            is MenuAction.OnCFRShown -> onCFRShown()
+            is MenuAction.OpenInRegularTab -> openInRegularTab(state = currentState)
             is MenuAction.RequestDesktopSite,
             is MenuAction.RequestMobileSite,
             -> requestSiteMode(
@@ -208,11 +215,7 @@ class MenuDialogMiddleware(
         val selectedTab = browserMenuState.selectedTab
         val url = selectedTab.getUrl() ?: return@launch
 
-        val parentGuid = bookmarksStorage
-            .getRecentBookmarks(1)
-            .firstOrNull()
-            ?.parentGuid
-            ?: BookmarkRoot.Mobile.id
+        val parentGuid = lastSavedFolderCache.getGuid() ?: BookmarkRoot.Mobile.id
 
         val parentNode = bookmarksStorage.getBookmark(parentGuid)
 
@@ -328,7 +331,7 @@ class MenuDialogMiddleware(
     private fun installAddon(
         store: Store<MenuState, MenuAction>,
         addon: Addon,
-    ) = scope.launch {
+    ) = scope.launch(Dispatchers.Main) {
         if (addon.isInstalled()) {
             return@launch
         }
@@ -402,6 +405,21 @@ class MenuDialogMiddleware(
     ) = scope.launch {
         onSendPendingIntentWithUrl(intent, url)
         onDismiss()
+    }
+
+    private fun openInRegularTab(state: MenuState) = scope.launch {
+        state.browserMenuState?.selectedTab?.id?.let { sessionId ->
+            tabsUseCases.migratePrivateTabUseCase.invoke(
+                sessionId,
+                state.browserMenuState.selectedTab.getUrl(),
+            )
+        }
+        onDismiss()
+    }
+
+    private fun onCFRShown() = scope.launch {
+        settings.shouldShowMenuCFR = false
+        settings.lastCfrShownTimeInMillis = System.currentTimeMillis()
     }
 
     companion object {

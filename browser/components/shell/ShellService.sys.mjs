@@ -284,12 +284,7 @@ let ShellServiceInternal = {
 
       throw ex;
     } finally {
-      try {
-        const histogram = Services.telemetry.getHistogramById(
-          "BROWSER_SET_DEFAULT_USER_CHOICE_RESULT"
-        );
-        histogram.add(telemetryResult);
-      } catch (ex) {}
+      Glean.browser.setDefaultUserChoiceResult[telemetryResult].add(1);
     }
   },
 
@@ -319,12 +314,9 @@ let ShellServiceInternal = {
 
       throw ex;
     } finally {
-      try {
-        const histogram = Services.telemetry.getHistogramById(
-          "BROWSER_SET_DEFAULT_PDF_HANDLER_USER_CHOICE_RESULT"
-        );
-        histogram.add(telemetryResult);
-      } catch (ex) {}
+      Glean.browser.setDefaultPdfHandlerUserChoiceResult[telemetryResult].add(
+        1
+      );
     }
   },
 
@@ -377,16 +369,12 @@ let ShellServiceInternal = {
       setAsDefaultError = true;
       console.error(ex);
     }
-    // Here BROWSER_IS_USER_DEFAULT and BROWSER_SET_USER_DEFAULT_ERROR appear
+    // Here isUserDefault and setUserDefaultError appear
     // to be inverse of each other, but that is only because this function is
     // called when the browser is set as the default. During startup we record
-    // the BROWSER_IS_USER_DEFAULT value without recording BROWSER_SET_USER_DEFAULT_ERROR.
-    Services.telemetry
-      .getHistogramById("BROWSER_IS_USER_DEFAULT")
-      .add(!setAsDefaultError);
-    Services.telemetry
-      .getHistogramById("BROWSER_SET_DEFAULT_ERROR")
-      .add(setAsDefaultError);
+    // the isUserDefault value without recording setUserDefaultError.
+    Glean.browser.isUserDefault[!setAsDefaultError ? "true" : "false"].add();
+    Glean.browser.setDefaultError[setAsDefaultError ? "true" : "false"].add();
   },
 
   setAsDefaultPDFHandler(onlyIfKnownBrowser = false) {
@@ -500,9 +488,8 @@ let ShellServiceInternal = {
   async pinToStartMenu() {
     if (await this.doesAppNeedStartMenuPin()) {
       try {
-        let pinSuccess = await this.shellService.pinCurrentAppToStartMenuAsync(
-          false
-        );
+        let pinSuccess =
+          await this.shellService.pinCurrentAppToStartMenuAsync(false);
         Services.prefs.setBoolPref(MSIX_PREVIOUSLY_PINNED_PREF, pinSuccess);
         return pinSuccess;
       } catch (err) {

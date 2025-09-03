@@ -112,10 +112,6 @@ exports.ACCESSIBLE_EVENTS = [
   "index-in-parent-change",
 ];
 
-// Telemetry name constants.
-exports.A11Y_SERVICE_DURATION =
-  "DEVTOOLS_ACCESSIBILITY_SERVICE_TIME_ACTIVE_SECONDS";
-
 // URL constants
 exports.A11Y_LEARN_MORE_LINK =
   "https://firefox-source-docs.mozilla.org/devtools-user/accessibility_inspector/";
@@ -155,9 +151,8 @@ const A11Y_TEXT_LABEL_LINK_IDS = {
 
 const A11Y_TEXT_LABEL_LINKS = {};
 for (const key in A11Y_TEXT_LABEL_LINK_IDS) {
-  A11Y_TEXT_LABEL_LINKS[
-    key
-  ] = `${A11Y_TEXT_LABEL_LINK_BASE}#${A11Y_TEXT_LABEL_LINK_IDS[key]}`;
+  A11Y_TEXT_LABEL_LINKS[key] =
+    `${A11Y_TEXT_LABEL_LINK_BASE}#${A11Y_TEXT_LABEL_LINK_IDS[key]}`;
 }
 exports.A11Y_TEXT_LABEL_LINKS = A11Y_TEXT_LABEL_LINKS;
 
@@ -180,9 +175,8 @@ const A11Y_KEYBOARD_LINK_IDS = {
 
 const A11Y_KEYBOARD_LINKS = {};
 for (const key in A11Y_KEYBOARD_LINK_IDS) {
-  A11Y_KEYBOARD_LINKS[
-    key
-  ] = `${A11Y_KEYBOARD_LINK_BASE}#${A11Y_KEYBOARD_LINK_IDS[key]}`;
+  A11Y_KEYBOARD_LINKS[key] =
+    `${A11Y_KEYBOARD_LINK_BASE}#${A11Y_KEYBOARD_LINK_IDS[key]}`;
 }
 exports.A11Y_KEYBOARD_LINKS = A11Y_KEYBOARD_LINKS;
 

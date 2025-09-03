@@ -72,7 +72,7 @@ enum testFlagsImplicit {
 declare global {
 
 interface nsIXPCTestCEnums extends nsISupports, Enums<typeof nsIXPCTestCEnums.testFlagsExplicit & typeof nsIXPCTestCEnums.testFlagsImplicit> {
-  readonly testConst: 1;
+  readonly testConst?: 1;
 
   testCEnumInput(abc: nsIXPCTestCEnums.testFlagsExplicit): void;
   testCEnumOutput(): nsIXPCTestCEnums.testFlagsExplicit;
@@ -143,10 +143,10 @@ interface nsIXPCTestReturnCodeParent extends nsISupports {
 }
 
 interface nsIXPCTestReturnCodeChild extends nsISupports {
-  readonly CHILD_SHOULD_THROW: 0;
-  readonly CHILD_SHOULD_RETURN_SUCCESS: 1;
-  readonly CHILD_SHOULD_RETURN_RESULTCODE: 2;
-  readonly CHILD_SHOULD_NEST_RESULTCODES: 3;
+  readonly CHILD_SHOULD_THROW?: 0;
+  readonly CHILD_SHOULD_RETURN_SUCCESS?: 1;
+  readonly CHILD_SHOULD_RETURN_RESULTCODE?: 2;
+  readonly CHILD_SHOULD_NEST_RESULTCODES?: 3;
 
   doIt(behavior: i32): void;
 }
@@ -187,52 +187,7 @@ interface nsIXPCComponents_Interfaces {
 // Typedefs from xpidl.
 type PRTime = i64;
 
-/**
- * Gecko XPCOM builtins.
- */
-declare global {
-  /**
-   * Generic IDs are created by most code which passes a nsID to js.
-   * https://searchfox.org/mozilla-central/source/js/xpconnect/src/XPCJSID.cpp#24
-   */
-  interface nsID<uuid = string> {
-    readonly number: uuid;
-  }
-
-  /**
-   * In addition to nsID, interface IIDs support instanceof type guards,
-   * and expose constants defined on the class, including variants from enums.
-   * https://searchfox.org/mozilla-central/source/js/xpconnect/src/XPCJSID.cpp#45
-   */
-  type nsJSIID<iface, enums = {}> = nsID & Constants<iface> & enums & {
-    new (_: never): void;
-    prototype: iface;
-  }
-
-  /** A union type of all known interface IIDs. */
-  type nsIID = nsIXPCComponents_Interfaces[keyof nsIXPCComponents_Interfaces];
-
-  /** A generic to resolve QueryInterface return type from a nsIID. */
-  export type nsQIResult<iid> = iid extends { prototype: infer U } ? U : never;
-
-  /** u32 */
-  type nsresult = u32;
-
-  // Numeric typedefs, useful as a quick reference in method signatures.
-  type double = number;
-  type float = number;
-  type i16 = number;
-  type i32 = number;
-  type i64 = number;
-  type u16 = number;
-  type u32 = number;
-  type u64 = number;
-  type u8 = number;
-}
-
-/**
- * XPCOM utility types.
- */
+// XPCOM internal utility types.
 
 /** XPCOM inout param is passed in as a js object with a value property. */
 type InOutParam<T> = { value: T };
@@ -240,16 +195,10 @@ type InOutParam<T> = { value: T };
 /** XPCOM out param is written to the passed in object's value property. */
 type OutParam<T> = { value?: T };
 
-/** A named type to enable interfaces to inherit from enums. */
-type Enums<enums> = enums;
+/** Enable interfaces to inherit from enums: pick variants as optional. */
+type Enums<enums> = Partial<Pick<enums, keyof enums>>;
 
 /** Callable accepts either form of a [function] interface. */
 type Callable<iface> = iface | Extract<iface[keyof iface], Function>
-
-/** Picks only const number properties from T. */
-type Constants<T> = { [K in keyof T as IfConst<K, T[K]>]: T[K] };
-
-/** Resolves only for keys K whose corresponding type T is a narrow number. */
-type IfConst<K, T> = T extends number ? (number extends T ? never : K) : never;
 
 export {};

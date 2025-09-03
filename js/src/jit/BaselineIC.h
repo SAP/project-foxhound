@@ -445,6 +445,9 @@ extern bool DoNewArrayFallback(JSContext* cx, BaselineFrame* frame,
 extern bool DoNewObjectFallback(JSContext* cx, BaselineFrame* frame,
                                 ICFallbackStub* stub, MutableHandleValue res);
 
+extern bool DoLambdaFallback(JSContext* cx, BaselineFrame* frame,
+                             ICFallbackStub* stub, MutableHandleValue res);
+
 extern bool DoCompareFallback(JSContext* cx, BaselineFrame* frame,
                               ICFallbackStub* stub, HandleValue lhs,
                               HandleValue rhs, MutableHandleValue ret);
@@ -456,6 +459,8 @@ extern bool DoOptimizeGetIteratorFallback(JSContext* cx, BaselineFrame* frame,
                                           ICFallbackStub* stub,
                                           HandleValue value,
                                           MutableHandleValue res);
+extern bool DoGetImportFallback(JSContext* cx, BaselineFrame* frame,
+                                ICFallbackStub* stub, MutableHandleValue res);
 
 }  // namespace jit
 }  // namespace js

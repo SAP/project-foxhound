@@ -225,6 +225,10 @@
   background-color: rgba(0, 0, 0, 0.1);
 }
 
+#requests-list-override-button:hover {
+  background-color: unset;
+}
+
 .requests-list-header-button > .button-text,
 .message-list-header-button > .button-text {
   display: inline-block;
@@ -374,6 +378,10 @@
 
 .request-list-item.selected .status-code:not(.status-code-blocked) {
   outline: 1px solid currentColor;
+}
+
+:root[forced-colors-active] .request-list-item.selected .status-code {
+  color: var(--theme-selection-color);
 }
 
 .request-list-item.selected .status-code-blocked,

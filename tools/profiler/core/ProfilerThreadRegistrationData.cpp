@@ -8,7 +8,6 @@
 
 #include "mozilla/CycleCollectedJSContext.h"
 #include "mozilla/FOGIPC.h"
-#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/ProfilerMarkers.h"
 #include "js/AllocationRecording.h"
 #include "js/ProfilingStack.h"
@@ -77,11 +76,30 @@ ThreadRegistrationData::ThreadRegistrationData(const char* aName,
 
 // This is a simplified version of profiler_add_marker that can be easily passed
 // into the JS engine.
-static void profiler_add_js_marker(const char* aMarkerName,
+static void profiler_add_js_marker(mozilla::MarkerCategory aCategory,
+                                   const char* aMarkerName,
                                    const char* aMarkerText) {
-  PROFILER_MARKER_TEXT(
-      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerName), JS,
-      {}, mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerText));
+#ifdef MOZ_GECKO_PROFILER
+  AUTO_PROFILER_STATS(js_marker);
+  profiler_add_marker(
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerName),
+      aCategory, {}, ::geckoprofiler::markers::TextMarker{},
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerText));
+#endif
+}
+
+static void profiler_add_js_interval(mozilla::MarkerCategory aCategory,
+                                     const char* aMarkerName,
+                                     mozilla::TimeStamp aStartTime,
+                                     const char* aMarkerText) {
+#ifdef MOZ_GECKO_PROFILER
+  AUTO_PROFILER_STATS(js_interval);
+  profiler_add_marker(
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerName),
+      aCategory, mozilla::MarkerTiming::IntervalUntilNowFrom(aStartTime),
+      ::geckoprofiler::markers::TextMarker{},
+      mozilla::ProfilerString8View::WrapNullTerminatedString(aMarkerText));
+#endif
 }
 
 static void profiler_add_js_allocation_marker(JS::RecordAllocationInfo&& info) {
@@ -243,7 +261,8 @@ void ThreadRegistrationLockedRWOnThread::PollJSSampling() {
         JS::EnableRecordingAllocations(cx, profiler_add_js_allocation_marker,
                                        0.01);
       }
-      js::RegisterContextProfilingEventMarker(cx, profiler_add_js_marker);
+      js::RegisterContextProfilingEventMarker(cx, profiler_add_js_marker,
+                                              profiler_add_js_interval);
 
     } else if (mJSSampling == INACTIVE_REQUESTED) {
       mJSSampling = INACTIVE;

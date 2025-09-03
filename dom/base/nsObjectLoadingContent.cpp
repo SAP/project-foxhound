@@ -673,8 +673,12 @@ bool nsObjectLoadingContent::CheckProcessPolicy(int16_t* aContentPolicy) {
 }
 
 bool nsObjectLoadingContent::IsSyntheticImageDocument() const {
-  return mType == ObjectType::Document &&
-         imgLoader::SupportImageWithMimeType(mContentType);
+  if (mType != ObjectType::Document || !mFrameLoader) {
+    return false;
+  }
+
+  BrowsingContext* browsingContext = mFrameLoader->GetExtantBrowsingContext();
+  return browsingContext && browsingContext->GetIsSyntheticDocumentContainer();
 }
 
 nsObjectLoadingContent::ParameterUpdateFlags
@@ -1465,6 +1469,17 @@ nsresult nsObjectLoadingContent::OpenChannel() {
     loadState->SetReferrerInfo(referrerInfo);
 
     loadState->SetShouldCheckForRecursion(true);
+
+    // When loading using DocumentChannel, ensure that the MIME type hint is
+    // propagated to DocumentLoadListener. Object elements can override MIME
+    // handling in some scenarios.
+    if (!mOriginalContentType.IsEmpty()) {
+      nsAutoCString parsedMime, dummy;
+      NS_ParseResponseContentType(mOriginalContentType, parsedMime, dummy);
+      if (!parsedMime.IsEmpty()) {
+        loadState->SetTypeHint(parsedMime);
+      }
+    }
 
     chan =
         DocumentChannel::CreateForObject(loadState, loadInfo, loadFlags, shim);

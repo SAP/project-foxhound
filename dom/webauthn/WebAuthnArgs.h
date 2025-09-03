@@ -18,11 +18,18 @@ class WebAuthnRegisterArgs final : public nsIWebAuthnRegisterArgs {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIWEBAUTHNREGISTERARGS
 
-  explicit WebAuthnRegisterArgs(const WebAuthnMakeCredentialInfo& aInfo)
-      : mInfo(aInfo),
+  explicit WebAuthnRegisterArgs(const nsCString& aOrigin,
+                                const nsCString& aClientDataJSON,
+                                const bool aPrivateBrowsing,
+                                const WebAuthnMakeCredentialInfo& aInfo)
+      : mOrigin(aOrigin),
+        mClientDataJSON(aClientDataJSON),
+        mPrivateBrowsing(aPrivateBrowsing),
+        mInfo(aInfo),
         mCredProps(false),
         mHmacCreateSecret(false),
-        mMinPinLength(false) {
+        mMinPinLength(false),
+        mPrf(false) {
     for (const WebAuthnExtension& ext : mInfo.Extensions()) {
       switch (ext.type()) {
         case WebAuthnExtension::TWebAuthnExtensionCredProps:
@@ -36,7 +43,8 @@ class WebAuthnRegisterArgs final : public nsIWebAuthnRegisterArgs {
           mMinPinLength =
               ext.get_WebAuthnExtensionMinPinLength().minPinLength();
           break;
-        case WebAuthnExtension::TWebAuthnExtensionAppId:
+        case WebAuthnExtension::TWebAuthnExtensionPrf:
+          mPrf = true;
           break;
         case WebAuthnExtension::T__None:
           break;
@@ -47,12 +55,16 @@ class WebAuthnRegisterArgs final : public nsIWebAuthnRegisterArgs {
  private:
   ~WebAuthnRegisterArgs() = default;
 
+  const nsCString mOrigin;
+  const nsCString mClientDataJSON;
+  const bool mPrivateBrowsing;
   const WebAuthnMakeCredentialInfo mInfo;
 
   // Flags to indicate whether an extension is being requested.
   bool mCredProps;
   bool mHmacCreateSecret;
   bool mMinPinLength;
+  bool mPrf;
 };
 
 class WebAuthnSignArgs final : public nsIWebAuthnSignArgs {
@@ -60,18 +72,26 @@ class WebAuthnSignArgs final : public nsIWebAuthnSignArgs {
   NS_DECL_THREADSAFE_ISUPPORTS
   NS_DECL_NSIWEBAUTHNSIGNARGS
 
-  explicit WebAuthnSignArgs(const WebAuthnGetAssertionInfo& aInfo)
-      : mInfo(aInfo) {
+  explicit WebAuthnSignArgs(const nsCString& aOrigin,
+                            const nsCString& aClientDataJSON,
+                            const bool aPrivateBrowsing,
+                            const WebAuthnGetAssertionInfo& aInfo)
+      : mOrigin(aOrigin),
+        mClientDataJSON(aClientDataJSON),
+        mPrivateBrowsing(aPrivateBrowsing),
+        mInfo(aInfo),
+        mPrf(false) {
     for (const WebAuthnExtension& ext : mInfo.Extensions()) {
       switch (ext.type()) {
-        case WebAuthnExtension::TWebAuthnExtensionAppId:
-          mAppId = Some(ext.get_WebAuthnExtensionAppId().appIdentifier());
-          break;
         case WebAuthnExtension::TWebAuthnExtensionCredProps:
           break;
         case WebAuthnExtension::TWebAuthnExtensionHmacSecret:
           break;
         case WebAuthnExtension::TWebAuthnExtensionMinPinLength:
+          break;
+        case WebAuthnExtension::TWebAuthnExtensionPrf:
+          mPrf = ext.get_WebAuthnExtensionPrf().eval().isSome() ||
+                 ext.get_WebAuthnExtensionPrf().evalByCredentialMaybe();
           break;
         case WebAuthnExtension::T__None:
           break;
@@ -82,8 +102,11 @@ class WebAuthnSignArgs final : public nsIWebAuthnSignArgs {
  private:
   ~WebAuthnSignArgs() = default;
 
+  const nsCString mOrigin;
+  const nsCString mClientDataJSON;
+  const bool mPrivateBrowsing;
   const WebAuthnGetAssertionInfo mInfo;
-  Maybe<nsString> mAppId;
+  bool mPrf;
 };
 
 }  // namespace mozilla::dom

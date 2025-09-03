@@ -55,7 +55,7 @@ known_metadata = [
     "permit_non_commutative_operations_over_ipc",
 ]
 
-# List of all ping-specific args that JOG undertsands.
+# List of all ping-specific args that JOG understands.
 known_ping_args = [
     "name",
     "include_client_id",
@@ -65,6 +65,7 @@ known_ping_args = [
     "enabled",
     "schedules_pings",
     "reason_codes",
+    "follows_collection_enabled",
 ]
 
 
@@ -136,7 +137,6 @@ def output_factory(objs, output_fd, options={}):
 
     output_fd.write(
         template.render(
-            all_objs=objs,
             common_metric_data_args=common_metric_data_args,
             extra_args=util.extra_args,
             metric_types=metric_types,

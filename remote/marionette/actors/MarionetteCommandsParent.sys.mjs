@@ -45,10 +45,10 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
     return this.sendQuery("MarionetteCommandsParent:_finalizeAction");
   }
 
-  getClientRects(element, _context) {
-    return this.executeScript("return arguments[0].getClientRects()", [
-      element,
-    ]);
+  getClientRects(webEl, _context) {
+    return this.sendQuery("MarionetteCommandsParent:_getClientRects", {
+      elem: webEl,
+    });
   }
 
   getInViewCentrePoint(rect, _context) {
@@ -343,7 +343,7 @@ export class MarionetteCommandsParent extends JSWindowActorParent {
         return lazy.capture.toHash(canvas);
 
       case lazy.capture.Format.Base64:
-        return lazy.capture.toBase64(canvas);
+        return lazy.capture.toBase64(canvas, "image/png");
 
       default:
         throw new TypeError(`Invalid capture format: ${format}`);
@@ -397,15 +397,13 @@ export function getMarionetteCommandsActorProxy(browsingContextFn) {
               );
             }
 
-            if (!browsingContext) {
-              throw new lazy.error.UnknownError(
+            if (!browsingContext || browsingContext.isDiscarded) {
+              throw new lazy.error.NoSuchWindowError(
                 `BrowsingContext does no longer exist`
               );
             }
 
             try {
-              // TODO: Scenarios where the window/tab got closed and
-              // currentWindowGlobal is null will be handled in Bug 1662808.
               const actor =
                 browsingContext.currentWindowGlobal.getActor(
                   "MarionetteCommands"

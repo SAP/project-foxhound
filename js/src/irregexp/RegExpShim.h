@@ -207,7 +207,8 @@ inline constexpr bool IsInRange(T value, U lower_limit, U higher_limit) {
 }
 
 #define LAZY_INSTANCE_INITIALIZER \
-  {}
+  {                               \
+  }
 
 template <typename T>
 class LazyInstanceImpl {
@@ -939,6 +940,9 @@ using DirectHandle = Handle<T>;
 template <typename T>
 using IndirectHandle = Handle<T>;
 
+template <typename T>
+using MaybeDirectHandle = MaybeHandle<T>;
+
 // RAII Guard classes
 
 using DisallowGarbageCollection = JS::AutoAssertNoGC;
@@ -1348,6 +1352,9 @@ class Code : public HeapObject {
 // Only used in function signature of functions we don't implement
 // (NativeRegExpMacroAssembler::CheckStackGuardState)
 class InstructionStream {};
+
+// Only used in the definition of RegExpGlobalExecRunner, which we don't use.
+class RegExpResultVectorScope {};
 
 // Origin: https://github.com/v8/v8/blob/master/src/codegen/label.h
 class Label {

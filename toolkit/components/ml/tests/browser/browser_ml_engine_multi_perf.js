@@ -63,9 +63,6 @@ const BASE_METRICS = [
   PIPELINE_READY_LATENCY,
   INITIALIZATION_LATENCY,
   MODEL_RUN_LATENCY,
-  PIPELINE_READY_MEMORY,
-  INITIALIZATION_MEMORY,
-  MODEL_RUN_MEMORY,
 ];
 
 // Generate prefixed metrics for each engine
@@ -85,98 +82,21 @@ for (let metric of METRICS) {
 const perfMetadata = {
   owner: "GenAI Team",
   name: "ML Test Multi Model",
-  description: "Testing model execution concurrenty",
+  description: "Testing model execution concurrently",
   options: {
     default: {
       perfherder: true,
       perfherder_metrics: [
         {
-          name: `intent-pipeline-ready-latency`,
+          name: "latency",
           unit: "ms",
           shouldAlert: true,
         },
         {
-          name: `intent-initialization-latency`,
-          unit: "ms",
+          name: "memory",
+          unit: "MiB",
           shouldAlert: true,
         },
-        { name: `intent-model-run-latency`, unit: "ms", shouldAlert: true },
-        { name: `intent-pipeline-ready-memory`, unit: "MB", shouldAlert: true },
-        { name: `intent-initialization-memory`, unit: "MB", shouldAlert: true },
-        { name: `intent-model-run-memory`, unit: "MB", shouldAlert: true },
-        { name: `intent-total-memory-usage`, unit: "MB", shouldAlert: true },
-        {
-          name: `suggest-pipeline-ready-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-        {
-          name: `suggest-initialization-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-        { name: `suggest-model-run-latency`, unit: "ms", shouldAlert: true },
-        {
-          name: `suggest-pipeline-ready-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        {
-          name: `suggest-initialization-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        { name: `suggest-model-run-memory`, unit: "MB", shouldAlert: true },
-
-        { name: `suggest-total-memory-usage`, unit: "MB", shouldAlert: true },
-        {
-          name: `engine3-pipeline-ready-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-
-        {
-          name: `engine3-initialization-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-        { name: `engine3-model-run-latency`, unit: "ms", shouldAlert: true },
-        {
-          name: `engine3-pipeline-ready-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        {
-          name: `engine3-initialization-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        { name: `engine3-model-run-memory`, unit: "MB", shouldAlert: true },
-
-        { name: `engine3-total-memory-usage`, unit: "MB", shouldAlert: true },
-        {
-          name: `engine4-pipeline-ready-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-        {
-          name: `engine4-initialization-latency`,
-          unit: "ms",
-          shouldAlert: true,
-        },
-        { name: `engine4-model-run-latency`, unit: "ms", shouldAlert: true },
-        {
-          name: `engine4-pipeline-ready-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        {
-          name: `engine4-initialization-memory`,
-          unit: "MB",
-          shouldAlert: true,
-        },
-        { name: `engine4-model-run-memory`, unit: "MB", shouldAlert: true },
-        { name: `engine4-total-memory-usage`, unit: "MB", shouldAlert: true },
       ],
       verbose: true,
       manifest: "perftest.toml",
@@ -189,7 +109,7 @@ const perfMetadata = {
 for (let metric of METRICS) {
   perfMetadata.options.default.perfherder_metrics.push({
     name: metric,
-    unit: metric.includes("latency") ? "ms" : "MB",
+    unit: metric.includes("latency") ? "ms" : "MiB",
     shouldAlert: true,
   });
 }
@@ -237,7 +157,7 @@ add_task(async function test_ml_generic_pipeline_concurrent_separate_phases() {
   const engineInstances = await Promise.all(
     Object.values(ENGINES).map(async engineConfig => {
       const { cleanup, engine } = await initializeEngine(
-        new PipelineOptions(engineConfig)
+        new PipelineOptions({ timeoutMS: -1, ...engineConfig })
       );
       return { cleanup, engine };
     })

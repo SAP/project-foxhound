@@ -186,6 +186,10 @@ support-files = [
   "!/devtools/client/webconsole/test/node/fixtures/stubs/pageError.js",
   "!/devtools/client/webconsole/test/node/fixtures/stubs/platformMessage.js",
 ]
+prefs = [
+  "javascript.options.experimental.explicit_resource_management=true", # This pref has to be set before the process starts
+  "javascript.options.experimental.temporal=true", # This pref has to be set before the process starts
+]
 
 ["browser_webconsole_allow_mixedcontent_securityerrors.js"]
 tags = "mcb"
@@ -406,6 +410,8 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_webconsole_error_with_url.js"]
 
 ["browser_webconsole_errors_after_page_reload.js"]
+
+["browser_webconsole_errors.js"]
 
 ["browser_webconsole_eval_error.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
@@ -687,6 +693,10 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 
 ["browser_webconsole_scroll.js"]
 fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1923756
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1923756
+]
 
 ["browser_webconsole_select_all.js"]
 
@@ -753,6 +763,9 @@ skip-if = [
 
 ["browser_webconsole_stubs_platform_messages.js"]
 
+["browser_webconsole_temporal.js"]
+skip-if = ["!nightly_build"] # Bug 1912511
+
 ["browser_webconsole_telemetry_execute_js.js"]
 
 ["browser_webconsole_telemetry_filters_changed.js"]
@@ -818,7 +831,7 @@ skip-if = ["true"] # Bug 1765369
 
 ["browser_webconsole_wasm_errors.js"]
 
-["browser_webconsole_webextension_promise_rejection.js"]
+["browser_webconsole_webextension_content_script.js"]
 
 ["browser_webconsole_websocket.js"]
 

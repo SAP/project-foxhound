@@ -53,24 +53,30 @@ const Template = ({
   hasSlottedDescription,
   useOtherOptions,
   options = useOtherOptions ? OTHER_OPTIONS : DEFAULT_OPTIONS,
+  hasSlottedSupportLink,
 }) => html`
-  <moz-select
-    name=${name}
-    value=${ifDefined(value || null)}
-    iconsrc=${ifDefined(iconSrc || null)}
-    ?disabled=${disabled}
-    data-l10n-id=${l10nId}
-    support-page=${ifDefined(supportPage || null)}
-    accesskey=${ifDefined(accessKey || null)}
-  >
-    ${hasSlottedDescription
-      ? html`<div slot="description">${description}</div>`
-      : ""}
-    ${options.map(
-      opt =>
-        html`<moz-option value=${opt.value} label=${opt.label}></moz-option>`
-    )}
-  </moz-select>
+  <div style="width:300px">
+    <moz-select
+      name=${name}
+      value=${ifDefined(value || null)}
+      iconsrc=${ifDefined(iconSrc || null)}
+      ?disabled=${disabled}
+      data-l10n-id=${l10nId}
+      support-page=${ifDefined(supportPage || null)}
+      accesskey=${ifDefined(accessKey || null)}
+    >
+      ${hasSlottedDescription
+        ? html`<div slot="description">${description}</div>`
+        : ""}
+      ${hasSlottedSupportLink
+        ? html`<a slot="support-link" href="www.example.com">Click me!</a>`
+        : ""}
+      ${options.map(
+        opt =>
+          html`<moz-option value=${opt.value} label=${opt.label}></moz-option>`
+      )}
+    </moz-select>
+  </div>
 `;
 
 export const Default = Template.bind({});
@@ -85,6 +91,7 @@ Default.args = {
   accessKey: "",
   hasSlottedDescription: false,
   useOtherOptions: false,
+  hasSlottedSupportLink: false,
 };
 
 export const WithIcon = Template.bind({});
@@ -118,10 +125,17 @@ WithAccesskey.args = {
   accessKey: "s",
 };
 
-export const WithSupportPage = Template.bind({});
-WithSupportPage.args = {
+export const WithSupportLink = Template.bind({});
+WithSupportLink.args = {
   ...Default.args,
   supportPage: "support-page",
+  l10nId: "moz-select-description",
+};
+
+export const WithSlottedSupportLink = Template.bind({});
+WithSlottedSupportLink.args = {
+  ...Default.args,
+  hasSlottedSupportLink: true,
   l10nId: "moz-select-description",
 };
 

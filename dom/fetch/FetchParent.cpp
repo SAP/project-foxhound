@@ -106,6 +106,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
   mNeedOnDataAvailable = aArgs.needOnDataAvailable();
   mHasCSPEventListener = aArgs.hasCSPEventListener();
   mIsThirdPartyContext = aArgs.isThirdPartyContext();
+  mIsOn3PCBExceptionList = aArgs.isOn3PCBExceptionList();
 
   if (mHasCSPEventListener) {
     mCSPEventListener =
@@ -181,19 +182,24 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
                self->mBackgroundEventTarget, self->mID,
                self->mIsThirdPartyContext,
                MozPromiseRequestHolder<FetchServiceResponseEndPromise>(),
-               self->mPromise})));
+               self->mPromise, self->mIsOn3PCBExceptionList})));
     } else {
       MOZ_ASSERT(self->mRequest->GetKeepalive());
       self->mResponsePromises =
-          fetchService->Fetch(AsVariant(FetchService::MainThreadFetchArgs(
-              {self->mRequest.clonePtr(), self->mPrincipalInfo,
-               self->mCookieJarSettings, self->mNeedOnDataAvailable,
-               self->mCSPEventListener, self->mAssociatedBrowsingContextID,
-               self->mBackgroundEventTarget, self->mID})));
+          fetchService->Fetch(AsVariant(FetchService::MainThreadFetchArgs({
+              self->mRequest.clonePtr(),
+              self->mPrincipalInfo,
+              self->mCookieJarSettings,
+              self->mNeedOnDataAvailable,
+              self->mCSPEventListener,
+              self->mAssociatedBrowsingContextID,
+              self->mBackgroundEventTarget,
+              self->mID,
+              self->mIsThirdPartyContext,
+          })));
     }
 
-    bool isResolved =
-        self->mResponsePromises->GetResponseEndPromise()->IsResolved();
+    bool isResolved = self->mResponsePromises->IsResponseEndPromiseResolved();
     if (!isResolved && self->mIsWorkerFetch) {
       // track only unresolved promises for worker fetch requests
       // this is needed for clean-up of keepalive requests

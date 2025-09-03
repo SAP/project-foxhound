@@ -14,7 +14,10 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import mozilla.components.service.pocket.PocketStoriesService
+import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
+import mozilla.components.service.pocket.PocketStory.SponsoredContent
+import mozilla.components.service.pocket.PocketStory.SponsoredContentCallbacks
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
@@ -26,6 +29,7 @@ import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.components.appstate.recommendations.ContentRecommendationsState
 import org.mozilla.fenix.datastore.SelectedPocketStoriesCategories
 import org.mozilla.fenix.datastore.SelectedPocketStoriesCategories.SelectedPocketStoriesCategory
+import org.mozilla.fenix.home.pocket.PocketImpression
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesCategory
 import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesSelectedCategory
 
@@ -47,7 +51,7 @@ class PocketUpdatesMiddlewareTest {
         val story2 = story1.copy("title2", "url2")
         val story3 = story1.copy("title3", "url3")
         val pocketService: PocketStoriesService = mockk(relaxed = true)
-        val pocketMiddleware = PocketUpdatesMiddleware(pocketService, mockk(), this)
+        val pocketMiddleware = PocketUpdatesMiddleware(lazy { pocketService }, mockk(), this)
         val appstore = AppStore(
             AppState(
                 recommendationState = ContentRecommendationsState(
@@ -57,7 +61,16 @@ class PocketUpdatesMiddlewareTest {
             listOf(pocketMiddleware),
         )
 
-        appstore.dispatch(ContentRecommendationsAction.PocketStoriesShown(listOf(story2))).joinBlocking()
+        appstore.dispatch(
+            ContentRecommendationsAction.PocketStoriesShown(
+                impressions = listOf(
+                    PocketImpression(
+                        story = story2,
+                        position = 1,
+                    ),
+                ),
+            ),
+        ).joinBlocking()
 
         coVerify { pocketService.updateStoriesTimesShown(listOf(story2.copy(timesShown = 1))) }
     }
@@ -73,8 +86,40 @@ class PocketUpdatesMiddlewareTest {
             0,
             timesShown = 3,
         )
-        val stories = listOf(story)
+        val recommendation = ContentRecommendation(
+            corpusItemId = "0",
+            scheduledCorpusItemId = "1",
+            url = "testUrl",
+            title = "",
+            excerpt = "",
+            topic = "",
+            publisher = "",
+            isTimeSensitive = false,
+            imageUrl = "",
+            tileId = 1,
+            receivedRank = 33,
+            recommendedAt = 1L,
+            impressions = 0,
+        )
+        val sponsoredContent = SponsoredContent(
+            url = "https://firefox.com",
+            title = "Firefox",
+            callbacks = SponsoredContentCallbacks(
+                clickUrl = "https://firefox.com/click",
+                impressionUrl = "https://firefox.com/impression",
+            ),
+            imageUrl = "https://test.com/image1.jpg",
+            domain = "firefox.com",
+            excerpt = "Mozilla Firefox",
+            sponsor = "Mozilla",
+            blockKey = "1",
+            caps = mockk(relaxed = true),
+            priority = 3,
+        )
+        val stories = listOf(story, recommendation, sponsoredContent)
         val expectedStoryUpdate = story.copy(timesShown = story.timesShown.inc())
+        val expectedRecommendationUpdate = recommendation.copy(impressions = recommendation.impressions.inc())
+
         val pocketService: PocketStoriesService = mockk(relaxed = true)
 
         persistStoriesImpressions(
@@ -83,7 +128,11 @@ class PocketUpdatesMiddlewareTest {
             updatedStories = stories,
         )
 
-        coVerify { pocketService.updateStoriesTimesShown(listOf(expectedStoryUpdate)) }
+        coVerify {
+            pocketService.updateStoriesTimesShown(listOf(expectedStoryUpdate))
+            pocketService.updateRecommendationsImpressions(listOf(expectedRecommendationUpdate))
+            pocketService.recordSponsoredContentImpressions(impressions = listOf(sponsoredContent.url))
+        }
     }
 
     @Test

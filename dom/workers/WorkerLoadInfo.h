@@ -146,9 +146,10 @@ struct WorkerLoadInfoData {
   bool mUsingStorageAccess;
   bool mServiceWorkersTestingInWindow;
   bool mShouldResistFingerprinting;
-  Maybe<RFPTarget> mOverriddenFingerprintingSettings;
+  Maybe<RFPTargetSet> mOverriddenFingerprintingSettings;
   OriginAttributes mOriginAttributes;
   bool mIsThirdPartyContext;
+  bool mIsOn3PCBExceptionList;
 
   enum {
     eNotSet,

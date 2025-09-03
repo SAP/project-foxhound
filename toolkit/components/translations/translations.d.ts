@@ -36,6 +36,9 @@ export interface TranslationModelRecord {
   fromLang: string;
   // The BCP 47 language tag, e.g. "en"
   toLang: string;
+  // A model variant. This is a developer-only property that can be used in Nightly or
+  // local builds to test different types of models.
+  variant?: string;
   // The semver number, used for handling future format changes. e.g. 1.0
   version: string;
   // e.g. "lex"
@@ -100,7 +103,7 @@ export namespace Bergamot {
   export class Vector<T> {
     size(): number;
     get(index: number): T;
-    push_back(item: T);
+    push_back(item: T): void;
   }
 
   export class VectorResponse extends Vector<Response> {}
@@ -116,7 +119,7 @@ export namespace Bergamot {
      * Translate multiple messages in a single synchronous API call using a single model.
      */
     translate(
-      translationModel,
+      translationModel: TranslationModel,
       vectorSourceText: VectorString,
       vectorResponseOptions: VectorResponseOptions
     ): VectorResponse;
@@ -153,7 +156,7 @@ export namespace Bergamot {
     size(): number;
     getByteArrayView(): Uint8Array;
   }
-  
+
   /**
    * The response from the translation. This definition isn't complete, but just
    * contains a subset of the available methods.
@@ -164,7 +167,7 @@ export namespace Bergamot {
     getOriginalText(): string;
     getTranslatedText(): string;
   }
-  
+
   /**
    * The options to configure a translation response.
    *
@@ -204,15 +207,24 @@ interface LanguageTranslationModelFile {
 }
 
 /**
- * The files necessary to run the translations, these will be sent to the Bergamot
- * translation engine.
+ * The data required to construct a Bergamot Translation Model.
+ */
+interface TranslationModelPayload {
+  sourceLanguage: string,
+  targetLanguage: string,
+  variant?: string,
+  languageModelFiles: LanguageTranslationModelFiles,
+}
+
+/**
+ * The files required to construct a Bergamot Translation Model's aligned memory.
  */
 interface LanguageTranslationModelFiles {
   // The machine learning language model.
   model: LanguageTranslationModelFile,
   // The lexical shortlist that limits possible output of the decoder and makes
   // inference faster.
-  lex: LanguageTranslationModelFile,
+  lex?: LanguageTranslationModelFile,
   // A model that can generate a translation quality estimation.
   qualityModel?: LanguageTranslationModelFile,
 
@@ -222,13 +234,13 @@ interface LanguageTranslationModelFiles {
   // Or there are two:
   srcvocab?: LanguageTranslationModelFile,
   trgvocab?: LanguageTranslationModelFile,
-};
+}
 
 /**
  * This is the type that is generated when the models are loaded into wasm aligned memory.
  */
 type LanguageTranslationModelFilesAligned = {
-  [K in keyof LanguageTranslationModelFiles]: AlignedMemory
+  [K in keyof LanguageTranslationModelFiles]: Bergamot.AlignedMemory
 };
 
 /**
@@ -238,7 +250,7 @@ type LanguageTranslationModelFilesAligned = {
  */
 interface TranslationsEnginePayload {
   bergamotWasmArrayBuffer: ArrayBuffer,
-  languageModelFiles: LanguageTranslationModelFiles[]
+  translationModelPayloads: TranslationModelPayload[]
   isMocked: boolean,
 }
 
@@ -254,18 +266,48 @@ export interface LangTags {
   isDocLangTagSupported: boolean,
   docLangTag: string | null,
   userLangTag: string | null,
+  htmlLangAttribute: string | null,
+  identifiedLangTag: string | null,
+  identifiedLangConfident?: boolean,
 }
 
-export interface LanguagePair { fromLang: string, toLang: string };
+/**
+ * All of the necessary information to pick models for doing a translation. This pair
+ * should be solvable by picking model variants, and pivoting through English.
+ */
+export interface LanguagePair {
+  sourceLanguage: string,
+  targetLanguage: string,
+  sourceVariant?: string,
+  targetVariant?: string
+}
+
+/**
+ * In the case of a single model, there will only be a single potential model variant.
+ * A LanguagePair can resolve into 1 or 2 NonPivotLanguagePair depending on the pivoting
+ * needs and how they are resolved.
+ */
+export interface NonPivotLanguagePair {
+  sourceLanguage: string,
+  targetLanguage: string,
+  variant?: string,
+}
+
+export interface SupportedLanguage {
+  langTag: string,
+  langTagKey: string,
+  variant: string
+  displayName: string,
+}
 
 /**
  * A structure that contains all of the information needed to render dropdowns
  * for translation language selection.
  */
 export interface SupportedLanguages {
-  languagePairs: LanguagePair[],
-  fromLanguages: Array<{ langTag: string, displayName: string, }>,
-  toLanguages: Array<{ langTag: string, displayName: string }>,
+  languagePairs: NonPivotLanguagePair[],
+  sourceLanguages: Array<SupportedLanguage>,
+  targetLanguages: Array<SupportedLanguage>,
 }
 
 export type TranslationErrors = "engine-load-error";
@@ -275,23 +317,39 @@ export type SelectTranslationsPanelState =
   | { phase: "closed"; }
 
   // The panel is idle after successful initialization and ready to attempt translation.
-  | { phase: "idle"; fromLanguage: string; toLanguage: string, sourceText: string, }
+  | { phase: "idle"; sourceLanguage: string; targetLanguage: string, sourceText: string, }
 
   // The language dropdown menus failed to populate upon opening the panel.
   // This state contains all of the information for the try-again button to close and re-open the panel.
-  | { phase: "init-failure"; event: Event, screenX: number, screenY: number, sourceText: string, isTextSelected: boolean, langPairPromise: Promise<{fromLang?: string, toLang?: string}> }
+  | { phase: "init-failure"; event: Event, screenX: number, screenY: number, sourceText: string, isTextSelected: boolean, langPairPromise: Promise<{sourceLanguage?: string, targetLanguage?: string}> }
 
   // The translation failed to complete.
-  | { phase: "translation-failure"; fromLanguage: string; toLanguage: string, sourceText: string, }
+  | { phase: "translation-failure"; sourceLanguage: string; targetLanguage: string, sourceText: string, }
 
   // The selected language pair is determined to be translatable.
-  | { phase: "translatable"; fromLanguage: string; toLanguage: string, sourceText: string, }
+  | { phase: "translatable"; sourceLanguage: string; targetLanguage: string, sourceText: string, }
 
   // The panel is actively translating the source text.
-  | { phase: "translating"; fromLanguage: string; toLanguage: string, sourceText: string, }
+  | { phase: "translating"; sourceLanguage: string; targetLanguage: string, sourceText: string, }
 
   // The source text has been translated successfully.
-  | { phase: "translated"; fromLanguage: string; toLanguage: string, sourceText: string, translatedText: string, }
+  | { phase: "translated"; sourceLanguage: string; targetLanguage: string, sourceText: string, translatedText: string, }
 
   // The source language is not currently supported by Translations in Firefox.
-  | { phase: "unsupported"; detectedLanguage: string; toLanguage: string, sourceText: string }
+  | { phase: "unsupported"; detectedLanguage: string; targetLanguage: string, sourceText: string }
+
+export type RequestTranslationsPort = (languagePair: LanguagePair) => Promise<MessagePort>
+
+export type TranslationsPortMessages = {
+  type: "TranslationsPort:TranslationRequest",
+  translationId: string,
+  sourceText: string,
+  isHTML: boolean,
+}
+
+export type EngineStatus = "uninitialized" | "ready" | "error" | "closed";
+
+export type PortToPage =
+  | { type: "TranslationsPort:TranslationResponse", targetText: string, translationId: number }
+  | { type: "TranslationsPort:GetEngineStatusResponse", status: EngineStatus }
+  | { type: "TranslationsPort:EngineTerminated" }

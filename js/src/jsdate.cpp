@@ -1545,8 +1545,8 @@ static constexpr size_t MinKeywordLength(const CharsAndAction (&keywords)[N]) {
 }
 
 template <typename CharT>
-static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
-                      size_t length, ClippedTime* result) {
+static bool ParseDate(JSContext* cx, DateTimeInfo::ForceUTC forceUTC,
+                      const CharT* s, size_t length, ClippedTime* result) {
   if (length == 0) {
     return false;
   }
@@ -1554,6 +1554,10 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
   if (ParseISOStyleDate(forceUTC, s, length, result)) {
     return true;
   }
+
+  // Collect telemetry on how often Date.parse enters implementation defined
+  // code. This can be removed in the future, see Bug 1944630.
+  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::DATEPARSE_IMPL_DEF);
 
   size_t index = 0;
   int mon = -1;
@@ -2044,12 +2048,16 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const CharT* s,
   return true;
 }
 
-static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const JSLinearString* s,
-                      ClippedTime* result) {
+static bool ParseDate(JSContext* cx, DateTimeInfo::ForceUTC forceUTC,
+                      const JSLinearString* s, ClippedTime* result) {
   AutoCheckCannotGC nogc;
-  return s->hasLatin1Chars()
-             ? ParseDate(forceUTC, s->latin1Chars(nogc), s->length(), result)
-             : ParseDate(forceUTC, s->twoByteChars(nogc), s->length(), result);
+  // Collect telemetry on how often Date.parse is being used.
+  // This can be removed in the future, see Bug 1944630.
+  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::DATEPARSE);
+  return s->hasLatin1Chars() ? ParseDate(cx, forceUTC, s->latin1Chars(nogc),
+                                         s->length(), result)
+                             : ParseDate(cx, forceUTC, s->twoByteChars(nogc),
+                                         s->length(), result);
 }
 
 /**
@@ -2059,6 +2067,7 @@ static bool ParseDate(DateTimeInfo::ForceUTC forceUTC, const JSLinearString* s,
  */
 static bool date_parse(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Date", "parse");
+
   CallArgs args = CallArgsFromVp(argc, vp);
   if (args.length() == 0) {
     args.rval().setNaN();
@@ -2076,7 +2085,7 @@ static bool date_parse(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   ClippedTime result;
-  if (!ParseDate(ForceUTC(cx->realm()), linearStr, &result)) {
+  if (!ParseDate(cx, ForceUTC(cx->realm()), linearStr, &result)) {
     args.rval().setNaN();
     return true;
   }
@@ -2134,7 +2143,7 @@ static ClippedTime NowAsMillis(JSContext* cx) {
 
 JS::ClippedTime js::DateNow(JSContext* cx) { return NowAsMillis(cx); }
 
-bool js::date_now(JSContext* cx, unsigned argc, Value* vp) {
+static bool date_now(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "Date", "now");
   CallArgs args = CallArgsFromVp(argc, vp);
   args.rval().set(TimeValue(NowAsMillis(cx)));
@@ -4414,27 +4423,30 @@ bool js::date_toPrimitive(JSContext* cx, unsigned argc, Value* vp) {
 static bool date_toTemporalInstant(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // Step 1.
+  // Steps 1-2.
   auto* unwrapped =
       UnwrapAndTypeCheckThis<DateObject>(cx, args, "toTemporalInstant");
   if (!unwrapped) {
     return false;
   }
 
-  // Step 2.
-  double utctime = unwrapped->UTCTime().toDouble();
-  if (!std::isfinite(utctime)) {
+  // Step 3.
+  double t = unwrapped->UTCTime().toDouble();
+  MOZ_ASSERT(IsTimeValue(t));
+
+  // Step 4.
+  if (std::isnan(t)) {
     JS_ReportErrorNumberASCII(cx, js::GetErrorMessage, nullptr,
                               JSMSG_INVALID_DATE);
     return false;
   }
-  MOZ_ASSERT(IsInteger(utctime));
+  int64_t tv = static_cast<int64_t>(t);
 
-  auto instant = temporal::Instant::fromMilliseconds(int64_t(utctime));
-  MOZ_ASSERT(temporal::IsValidEpochInstant(instant));
+  auto epochNs = temporal::EpochNanoseconds::fromMilliseconds(tv);
+  MOZ_ASSERT(temporal::IsValidEpochNanoseconds(epochNs));
 
-  // Step 3.
-  auto* result = temporal::CreateTemporalInstant(cx, instant);
+  // Step 5.
+  auto* result = temporal::CreateTemporalInstant(cx, epochNs);
   if (!result) {
     return false;
   }
@@ -4602,7 +4614,7 @@ static bool DateOneArgument(JSContext* cx, const CallArgs& args) {
       return false;
     }
 
-    if (!ParseDate(ForceUTC(cx->realm()), linearStr, &t)) {
+    if (!ParseDate(cx, ForceUTC(cx->realm()), linearStr, &t)) {
       t = ClippedTime::invalid();
     }
   } else {

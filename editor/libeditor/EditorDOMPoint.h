@@ -211,7 +211,8 @@ class EditorDOMPointBase final {
   template <typename ContentNodeType>
   ContentNodeType* ContainerAs() const {
     MOZ_ASSERT(mParent);
-    MOZ_DIAGNOSTIC_ASSERT(ContentNodeType::FromNode(mParent));
+    MOZ_DIAGNOSTIC_ASSERT(
+        ContentNodeType::FromNode(static_cast<const nsINode*>(mParent)));
     return static_cast<ContentNodeType*>(GetContainer());
   }
 
@@ -282,6 +283,11 @@ class EditorDOMPointBase final {
    * Returns true if the container node is an element node.
    */
   bool IsContainerElement() const { return mParent && mParent->IsElement(); }
+
+  /**
+   * Returns true if the container node is an editing host.
+   */
+  [[nodiscard]] bool IsContainerEditableRoot() const;
 
   /**
    * IsContainerHTMLElement() returns true if the container node is an HTML
@@ -642,6 +648,10 @@ class EditorDOMPointBase final {
     }
     SetToEndOf(parentNode);
   }
+  void SetAfterContainer() {
+    MOZ_ASSERT(mParent);
+    SetAfter(mParent);
+  }
   template <typename ContainerType>
   static SelfType After(
       const ContainerType& aContainer,
@@ -703,6 +713,11 @@ class EditorDOMPointBase final {
     if (!IsEndOfContainer()) {
       return NextPoint<EditorDOMPointType>();
     }
+    return AfterContainer<EditorDOMPointType>();
+  }
+  template <typename EditorDOMPointType = SelfType>
+  EditorDOMPointType AfterContainer() const {
+    MOZ_ASSERT(IsInContentNode());
     return EditorDOMPointType::After(*ContainerAs<nsIContent>());
   }
   template <typename EditorDOMPointType = SelfType>
@@ -869,12 +884,29 @@ class EditorDOMPointBase final {
     return true;
   }
 
+  [[nodiscard]] bool IsInContentNodeAndValid() const {
+    return IsInContentNode() && IsSetAndValid();
+  }
+
   [[nodiscard]] bool IsInComposedDoc() const {
     return IsSet() && mParent->IsInComposedDoc();
   }
 
   [[nodiscard]] bool IsSetAndValidInComposedDoc() const {
     return IsInComposedDoc() && IsSetAndValid();
+  }
+
+  [[nodiscard]] bool IsInContentNodeAndValidInComposedDoc() const {
+    return IsInContentNode() && IsSetAndValidInComposedDoc();
+  }
+
+  [[nodiscard]] bool IsInNativeAnonymousSubtreeInTextControl() const {
+    if (!mParent || !mParent->IsInNativeAnonymousSubtree()) {
+      return false;
+    }
+    nsIContent* maybeTextControl =
+        mParent->GetClosestNativeAnonymousSubtreeRootParentOrHost();
+    return !!maybeTextControl;
   }
 
   bool IsStartOfContainer() const {
@@ -1124,7 +1156,9 @@ class EditorDOMPointBase final {
       // If the container is a data node like a text node, we need to create
       // RangeBoundaryBase instance only with mOffset because mChild is always
       // nullptr.
-      return RawRangeBoundary(mParent, mOffset.value());
+      return RawRangeBoundary(mParent, mOffset.value(),
+                              // Avoid immediately to compute the child node.
+                              RangeBoundaryIsMutationObserved::No);
     }
     if (mIsChildInitialized && mOffset.isSome()) {
       // If we've already set both child and offset, we should create
@@ -1137,12 +1171,16 @@ class EditorDOMPointBase final {
         MOZ_ASSERT(mParent->Length() == mOffset.value());
       }
 #endif  // #ifdef DEBUG
-      return RawRangeBoundary(mParent, mOffset.value());
+      return RawRangeBoundary(mParent, mOffset.value(),
+                              // Avoid immediately to compute the child node.
+                              RangeBoundaryIsMutationObserved::No);
     }
     // Otherwise, we should create RangeBoundaryBase only with available
     // information.
     if (mOffset.isSome()) {
-      return RawRangeBoundary(mParent, mOffset.value());
+      return RawRangeBoundary(mParent, mOffset.value(),
+                              // Avoid immediately to compute the child node.
+                              RangeBoundaryIsMutationObserved::No);
     }
     if (mChild) {
       return RawRangeBoundary(mParent, mChild->GetPreviousSibling());
@@ -1355,6 +1393,80 @@ class EditorDOMRangeBase final {
     mStart = std::move(aStart);
     mEnd = std::move(aEnd);
   }
+  template <typename PT, typename CT>
+  void MergeWith(const EditorDOMPointBase<PT, CT>& aPoint) {
+    MOZ_ASSERT(aPoint.IsSet());
+    if (!IsPositioned()) {
+      SetStartAndEnd(aPoint, aPoint);
+      return;
+    }
+    MOZ_ASSERT(nsContentUtils::GetClosestCommonInclusiveAncestor(
+        GetClosestCommonInclusiveAncestor(), aPoint.GetContainer()));
+    if (mEnd.EqualsOrIsBefore(aPoint)) {
+      SetEnd(aPoint);
+      return;
+    }
+    if (aPoint.IsBefore(mStart)) {
+      SetStart(aPoint);
+      return;
+    }
+  }
+  void MergeWith(PointType&& aPoint) {
+    MOZ_ASSERT(aPoint.IsSet());
+    if (!IsPositioned()) {
+      SetStartAndEnd(aPoint, aPoint);
+      return;
+    }
+    MOZ_ASSERT(GetClosestCommonInclusiveAncestor());
+    MOZ_ASSERT(nsContentUtils::GetClosestCommonInclusiveAncestor(
+        GetClosestCommonInclusiveAncestor(), aPoint.GetContainer()));
+    if (mEnd.EqualsOrIsBefore(aPoint)) {
+      SetEnd(std::move(aPoint));
+      return;
+    }
+    if (aPoint.IsBefore(mStart)) {
+      SetStart(std::move(aPoint));
+      return;
+    }
+  }
+  template <typename PT, typename CT>
+  void MergeWith(const EditorDOMRangeBase<EditorDOMPointBase<PT, CT>>& aRange) {
+    MOZ_ASSERT(aRange.IsPositioned());
+    MOZ_ASSERT(aRange.GetClosestCommonInclusiveAncestor());
+    if (!IsPositioned()) {
+      SetStartAndEnd(aRange.mStart, aRange.mEnd);
+      return;
+    }
+    MOZ_ASSERT(GetClosestCommonInclusiveAncestor());
+    MOZ_ASSERT(nsContentUtils::GetClosestCommonInclusiveAncestor(
+        GetClosestCommonInclusiveAncestor(),
+        aRange.GetClosestCommonInclusiveAncestor()));
+    if (mEnd.IsBefore(aRange.mEnd)) {
+      SetEnd(aRange.mEnd);
+    }
+    if (aRange.mStart.IsBefore(mStart)) {
+      SetStart(aRange.mStart);
+    }
+  }
+  void MergeWith(SelfType&& aRange) {
+    MOZ_ASSERT(aRange.IsPositioned());
+    MOZ_ASSERT(aRange.GetClosestCommonInclusiveAncestor());
+    if (!IsPositioned()) {
+      SetStartAndEnd(std::move(aRange.mStart), std::move(aRange.mEnd));
+      return;
+    }
+    MOZ_ASSERT(GetClosestCommonInclusiveAncestor());
+    MOZ_ASSERT(nsContentUtils::GetClosestCommonInclusiveAncestor(
+        GetClosestCommonInclusiveAncestor(),
+        aRange.GetClosestCommonInclusiveAncestor()));
+    if (mEnd.IsBefore(aRange.mEnd)) {
+      SetEnd(std::move(aRange.mEnd));
+    }
+    if (aRange.mStart.IsBefore(mStart)) {
+      SetStart(std::move(aRange.mStart));
+    }
+    aRange.Clear();
+  }
   void Clear() {
     mStart.Clear();
     mEnd.Clear();
@@ -1371,6 +1483,9 @@ class EditorDOMRangeBase final {
   bool IsPositionedAndValid() const {
     return mStart.IsSetAndValid() && mEnd.IsSetAndValid() &&
            mStart.EqualsOrIsBefore(mEnd);
+  }
+  bool IsPositionedAndValidInComposedDoc() const {
+    return IsPositionedAndValid() && mStart.GetContainer()->IsInComposedDoc();
   }
   template <typename OtherPointType>
   MOZ_NEVER_INLINE_DEBUG bool Contains(const OtherPointType& aPoint) const {

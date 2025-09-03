@@ -16,6 +16,7 @@ import {
   REPORTING_RESPONSE_SCHEMA,
   REPORTING_REQUEST_SCHEMA,
   ProductConfig,
+  ProductConfigDEFR,
   ShoppingEnvironment,
 } from "chrome://global/content/shopping/ProductConfig.mjs";
 
@@ -50,6 +51,23 @@ const API_POLL_WAIT = 1000;
  * @property {boolean} valid
  *  If the product is valid or not
  */
+
+/**
+ * Status returned from an analysis.
+ *
+ * @enum {string}
+ */
+const AnalysisStatus = {
+  NOT_FOUND: "not_found",
+  COMPLETED: "completed",
+  PENDING: "pending",
+  IN_PROGRESS: "in_progress",
+  NOT_ANALYZABLE: "not_analyzable",
+  UNPROCESSABLE: "unprocessable",
+  PAGE_NOT_SUPPORTED: "page_not_supported",
+  NOT_ENOUGH_REVIEWS: "not_enough_reviews",
+  STALE: "stale",
+};
 
 /**
  * Class for working with the products shopping API,
@@ -98,6 +116,42 @@ export class ShoppingProduct extends EventEmitter {
   }
 
   /**
+   * Gets an object of website names and urls supported by Review Checker.
+   * This function uses the ProductConfig for validation.
+   * The object made is a simplified version of ProductConfig and is meant to be used
+   * for content updates.
+   *
+   * @param {object} [productConfig=ProductConfig]
+   *  The ProductConfig to use to determine which sites we can use for reviews.
+   * @returns {object | null}
+   *  An object mapping website names to arrays of valid url strings, or null if an error occurs.
+   */
+  static getSupportedDomains(productConfig = ProductConfig) {
+    let supportedSites = {};
+    try {
+      if (
+        Services.prefs.getBoolPref(
+          "toolkit.shopping.experience2023.defr",
+          false
+        ) &&
+        productConfig === ProductConfig
+      ) {
+        productConfig = ProductConfigDEFR;
+      }
+      Object.keys(productConfig).forEach(sitename => {
+        let tldsMap = productConfig[sitename].validTLDs.map(tld => {
+          return `https://${sitename}.${tld}`;
+        });
+        supportedSites[sitename] = tldsMap;
+      });
+      return supportedSites;
+    } catch {
+      console.error("Failed to get supported sites from config.");
+      return null;
+    }
+  }
+
+  /**
    * Gets a Product from a URL.
    *
    * @param {URL} url
@@ -131,6 +185,13 @@ export class ShoppingProduct extends EventEmitter {
 
     // Check if sitename is one the API has products for
     let siteConfig = ProductConfig[sitename];
+
+    if (
+      Services.prefs.getBoolPref("toolkit.shopping.experience2023.defr", false)
+    ) {
+      siteConfig = ProductConfigDEFR[sitename];
+    }
+
     if (!siteConfig) {
       return result;
     }
@@ -175,6 +236,85 @@ export class ShoppingProduct extends EventEmitter {
       product.host &&
       product.sitename &&
       product.tld
+    );
+  }
+
+  /**
+   * Check if an invalid Product is a supported site.
+   *
+   * @param {Product} product
+   *  Product to check.
+   * @returns {boolean}
+   */
+  static isSupportedSite(product) {
+    return !!(
+      product &&
+      !product.valid &&
+      product.host &&
+      product.sitename &&
+      product.tld
+    );
+  }
+
+  /**
+   * Check if an analysis is still in progress.
+   *
+   * @param {AnalysisStatus} analysisStatus
+   * @returns {boolean}
+   */
+  static isAnalysisInProgress(analysisStatus) {
+    if (!analysisStatus) {
+      return false;
+    }
+    return (
+      analysisStatus == AnalysisStatus.PENDING ||
+      analysisStatus == AnalysisStatus.IN_PROGRESS
+    );
+  }
+
+  /**
+   * Check if an analysis has finished.
+   *
+   * @param {AnalysisStatus} analysisStatus
+   * @returns {boolean}
+   */
+  static hasAnalysisFinished(analysisStatus) {
+    if (!analysisStatus) {
+      return true;
+    }
+    return !ShoppingProduct.isAnalysisInProgress(analysisStatus);
+  }
+
+  /**
+   * Check if an analysis has completed successfully.
+   * Status will be "not_found" if the current analysis is up-to-date.
+   *
+   * @param {AnalysisStatus} analysisStatus
+   * @returns {boolean}
+   */
+  static hasAnalysisCompleted(analysisStatus) {
+    if (!analysisStatus) {
+      return false;
+    }
+    return (
+      analysisStatus == AnalysisStatus.COMPLETED ||
+      analysisStatus == AnalysisStatus.NOT_FOUND
+    );
+  }
+
+  /**
+   * Check if an analysis has failed.
+   *
+   * @param {AnalysisStatus} analysisStatus
+   * @returns {boolean}
+   */
+  static hasAnalysisFailed(analysisStatus) {
+    if (!analysisStatus) {
+      return true;
+    }
+    return (
+      !ShoppingProduct.isAnalysisInProgress(analysisStatus) &&
+      !ShoppingProduct.hasAnalysisCompleted(analysisStatus)
     );
   }
 
@@ -407,8 +547,10 @@ export class ShoppingProduct extends EventEmitter {
         }
       }
     } catch (error) {
-      Glean?.shoppingProduct?.requestError.record();
-      console.error(error);
+      if (error.name !== "AbortError") {
+        Glean?.shoppingProduct?.requestError.record();
+        console.error(error);
+      }
     }
 
     if (!responseOk && responseStatus < 500) {
@@ -497,11 +639,23 @@ export class ShoppingProduct extends EventEmitter {
       let response = await imgRequestPromise;
       imgResult = await response.blob();
     } catch (error) {
-      console.error(error);
+      if (error.name !== "AbortError") {
+        Glean?.shoppingProduct?.requestError.record();
+        console.error(error);
+      }
     }
 
     return imgResult;
   }
+
+  /**
+   * The pollForAnalysisCompleted callback, called after each
+   * time the progress for an analysis is received.
+   *
+   * @callback progressCallback
+   * @param {number} progress
+   *   The progress of the current analysis for a product.
+   */
 
   /**
    * Poll Analysis Status API until an analysis has finished.
@@ -532,10 +686,12 @@ export class ShoppingProduct extends EventEmitter {
    * }
    * @param {object} options
    *  Override default API url and schema.
+   * @param {progressCallback} [callback]
+   *  Callback for analysis progress.
    * @returns {object} result
    *  Parsed JSON API result or null.
    */
-  async pollForAnalysisCompleted(options) {
+  async pollForAnalysisCompleted(options, callback) {
     let pollCount = 0;
     let initialWait = options?.pollInitialWait || API_POLL_INITIAL_WAIT;
     let pollTimeout = options?.pollTimeout || API_POLL_WAIT;
@@ -556,11 +712,9 @@ export class ShoppingProduct extends EventEmitter {
         result = await this.requestAnalysisCreationStatus(undefined, options);
         if (result?.progress) {
           this.emit("analysis-progress", result.progress);
+          callback && callback(result.progress);
         }
-        isFinished =
-          result &&
-          result.status != "pending" &&
-          result.status != "in_progress";
+        isFinished = ShoppingProduct.hasAnalysisFinished(result?.status);
       } catch (error) {
         console.error(error);
         return null;
@@ -778,4 +932,22 @@ export function isProductURL(url) {
   }
   let productInfo = ShoppingProduct.fromURL(url);
   return ShoppingProduct.isProduct(productInfo);
+}
+
+/**
+ * Check if a URL is a valid product site.
+ *
+ * @param {URL | nsIURI } url
+ *  URL to check.
+ * @returns {boolean}
+ */
+export function isSupportedSiteURL(url) {
+  if (url instanceof Ci.nsIURI) {
+    url = URL.fromURI(url);
+  }
+  if (!URL.isInstance(url)) {
+    return false;
+  }
+  let productInfo = ShoppingProduct.fromURL(url);
+  return ShoppingProduct.isSupportedSite(productInfo);
 }

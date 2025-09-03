@@ -56,7 +56,7 @@ tlsfuzzer_init()
 
     # Install tlslite-ng dependencies
     ${QADIR}/../fuzz/config/git-copy.sh https://github.com/warner/python-ecdsa master python-ecdsa
-    ${QADIR}/../fuzz/config/git-copy.sh https://github.com/benjaminp/six master six
+    ${QADIR}/../fuzz/config/git-copy.sh https://github.com/benjaminp/six main six
 
     pushd "$TLSFUZZER"
     ln -s ../python-ecdsa/src/ecdsa ecdsa
@@ -99,7 +99,7 @@ tlsfuzzer_cleanup()
 tlsfuzzer_run_tests()
 {
   pushd "${HOSTDIR}/tlsfuzzer/${TLSFUZZER}"
-  PYTHONPATH=. python tests/scripts_retention.py config.json "${BINDIR}/selfserv" 512
+  PYTHONPATH=. python3 tests/scripts_retention.py config.json "${BINDIR}/selfserv" 512
   html_msg $? 0 "tlsfuzzer" "Run successfully"
   popd
 }

@@ -31,6 +31,7 @@
 #include "TexUnpackBlob.h"
 #include "WebGLBuffer.h"
 #include "WebGLContext.h"
+#include "WebGLFormats.h"
 #include "WebGLContextUtils.h"
 #include "WebGLFramebuffer.h"
 #include "WebGLTexelConversions.h"
@@ -197,18 +198,33 @@ Maybe<webgl::TexUnpackBlobDesc> FromSurfaceFromElementResult(
     }
   }
 
-  RefPtr<gfx::DataSourceSurface> dataSurf;
+  RefPtr<gfx::SourceSurface> sourceSurf;
   if (!sd && sfer.GetSourceSurface()) {
     const auto surf = sfer.GetSourceSurface();
     elemSize = *uvec2::FromSize(surf->GetSize());
-
-    // WARNING: OSX can lose our MakeCurrent here.
-    dataSurf = surf->GetDataSurface();
+    if (surf->GetType() == gfx::SurfaceType::RECORDING) {
+      // If we find a recording surface, then try to create a descriptor for it
+      // to avoid transferring data for it. The underlying Canvas2D commands
+      // have most likely not been processed yet, so trying to access the data
+      // here would cause cross-process synchronization. The descriptor avoids
+      // having to synchronize and then read back Canvas2D data across a process
+      // gap. If CanvasSurface descriptors are unsupported, then the underlying
+      // source surface will be converted to data for transferring later.
+      layers::SurfaceDescriptor desc;
+      if (surf->GetSurfaceDescriptor(desc)) {
+        sd = Some(desc);
+        sourceSurf = surf;
+      }
+    }
+    if (!sd) {
+      // WARNING: OSX can lose our MakeCurrent here.
+      sourceSurf = surf->GetDataSurface();
+    }
   }
 
   if (!sd) {
     // For SourceSurfaceSharedData, try to get SurfaceDescriptorExternalImage.
-    layers::SharedSurfacesChild::Share(dataSurf, sd);
+    layers::SharedSurfacesChild::Share(sourceSurf, sd);
   }
 
   //////
@@ -219,7 +235,7 @@ Maybe<webgl::TexUnpackBlobDesc> FromSurfaceFromElementResult(
 
   ////
 
-  if (!sd && !dataSurf) {
+  if (!sd && !sourceSurf) {
     webgl.EnqueueWarning("Resource has no data (yet?). Uploading zeros.");
     if (!size) {
       size.emplace(0, 0, 1);
@@ -264,7 +280,7 @@ Maybe<webgl::TexUnpackBlobDesc> FromSurfaceFromElementResult(
                                 Some(elemSize),
                                 layersImage,
                                 sd,
-                                dataSurf});
+                                sourceSurf});
 }
 
 }  // namespace webgl
@@ -538,7 +554,7 @@ static bool EnsureImageDataInitializedForUpload(
       hasUninitialized |= isSliceUninit[z];
     }
     if (!hasUninitialized) {
-      imageInfo->mUninitializedSlices = Nothing();
+      imageInfo->mUninitializedSlices.reset();
     }
     return true;
   }
@@ -913,7 +929,7 @@ void WebGLTexture::TexStorage(TexTarget target, uint32_t levels,
   ////////////////////////////////////
   // Update our specification data.
 
-  auto uninitializedSlices = Some(std::vector<bool>(size.z, true));
+  std::vector<bool> uninitializedSlices(size.z, true);
   const webgl::ImageInfo newInfo{dstUsage, size.x, size.y, size.z,
                                  std::move(uninitializedSlices)};
 
@@ -1062,8 +1078,7 @@ void WebGLTexture::TexImage(uint32_t level, GLenum respecFormat,
     // generally slower.
     newImageInfo = Some(webgl::ImageInfo{dstUsage, size.x, size.y, size.z});
     if (!blob->HasData()) {
-      newImageInfo->mUninitializedSlices =
-          Some(std::vector<bool>(size.z, true));
+      newImageInfo->mUninitializedSlices.emplace(size.z, true);
     }
 
     isRespec = (imageInfo->mWidth != newImageInfo->mWidth ||
@@ -1334,7 +1349,7 @@ void WebGLTexture::CompressedTexImage(bool sub, GLenum imageTarget,
   // Update our specification data?
 
   if (!sub) {
-    const auto uninitializedSlices = Nothing();
+    constexpr auto uninitializedSlices = std::nullopt;
     const webgl::ImageInfo newImageInfo{usage, size.x, size.y, size.z,
                                         uninitializedSlices};
     *imageInfo = newImageInfo;
@@ -1889,7 +1904,7 @@ void WebGLTexture::CopyTexImage(GLenum imageTarget, uint32_t level,
   // Update our specification data?
 
   if (respecFormat) {
-    const auto uninitializedSlices = Nothing();
+    constexpr auto uninitializedSlices = std::nullopt;
     const webgl::ImageInfo newImageInfo{dstUsage, size.x, size.y, size.z,
                                         uninitializedSlices};
     *imageInfo = newImageInfo;

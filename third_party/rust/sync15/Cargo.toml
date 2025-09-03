@@ -19,12 +19,30 @@ exclude = [
     "/android",
     "/ios",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
 readme = "README.md"
 license = "MPL-2.0"
+
+[features]
+crypto = [
+    "rc_crypto",
+    "base16",
+    "base64",
+]
+default = ["sync-engine"]
+random-guid = ["sync-guid/random"]
+standalone-sync = ["sync-client"]
+sync-client = [
+    "sync-engine",
+    "crypto",
+    "viaduct",
+    "url",
+]
+sync-engine = ["random-guid"]
 
 [lib]
 name = "sync15"
@@ -73,7 +91,7 @@ features = ["random"]
 version = "0.28.2"
 
 [dependencies.url]
-version = "2.1"
+version = "2"
 optional = true
 
 [dependencies.viaduct]
@@ -88,19 +106,5 @@ default-features = false
 version = "0.28.2"
 features = ["build"]
 
-[features]
-crypto = [
-    "rc_crypto",
-    "base16",
-    "base64",
-]
-default = ["sync-engine"]
-random-guid = ["sync-guid/random"]
-standalone-sync = ["sync-client"]
-sync-client = [
-    "sync-engine",
-    "crypto",
-    "viaduct",
-    "url",
-]
-sync-engine = ["random-guid"]
+[lints.clippy]
+empty-line-after-doc-comments = "allow"

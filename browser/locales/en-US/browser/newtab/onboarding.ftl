@@ -55,10 +55,6 @@ mr1-onboarding-theme-header = Make it your own
 mr1-onboarding-theme-subtitle = Personalize { -brand-short-name } with a theme.
 mr1-onboarding-theme-secondary-button-label = Not now
 
-newtab-wallpaper-onboarding-title = Try a splash of color
-newtab-wallpaper-onboarding-subtitle = Choose a wallpaper to give your New Tab a fresh look.
-newtab-wallpaper-onboarding-primary-button-label = Set wallpaper
-
 # System theme uses operating system color settings
 mr1-onboarding-theme-label-system = System theme
 
@@ -195,6 +191,13 @@ mr2022-onboarding-easy-setup-import-checkbox-label = Import from previous browse
 
 ## MR2022 New User Pin Firefox screen strings
 
+# Title used on about:welcome for new users when Firefox is not pinned.
+# In this context, open up is synonymous with "Discover".
+# The metaphor is that when they open their Firefox browser, it helps them discover an amazing internet.
+# If this translation does not make sense in your language, feel free to use the word "discover."
+mr2022-onboarding-welcome-pin-header = Open up an amazing internet
+# Subtitle is used on onboarding page for new users page when Firefox is not pinned
+mr2022-onboarding-welcome-pin-subtitle = Launch { -brand-short-name } from anywhere with a single click. Every time you do, you’re choosing a more open and independent web.
 # Primary button string used on welcome page for when Firefox is not pinned.
 mr2022-onboarding-pin-primary-button-label = { PLATFORM() ->
     [macos] Keep { -brand-short-name } in Dock
@@ -357,6 +360,18 @@ onboarding-new-tabs-title = Tell us where you’d like your tabs
 # Setup screen for vertical tabs - "Switch it up" refers to switching between horizontal and vertical tabs.
 onboarding-new-tabs-subtitle = Switch it up whenever you want in the sidebar settings.
 
+# Setup screen for vertical tabs - too many tabs variation
+onboarding-many-tabs-title = Your tabs, your way
+
+# Setup screen for vertical tabs - subtitle for too many tabs variation
+onboarding-many-tabs-subtitle = Keep a lot of tabs open? Try your tabs on the side for a more streamlined view. Or keep it classic with tabs on the top. Switch anytime.
+
+# Setup screen for vertical tabs - focused variation
+onboarding-focused-tabs-title = Choose your tab layout
+
+# Setup screen for vertical tabs - subtitle for focused variation
+onboarding-focused-tabs-subtitle = For a streamlined view that can help you stay focused, try your tabs on the side. Or keep it classic with tabs on the top. Switch anytime.
+
 # Text underneath an image used for selecting browser tabs to appear on the side of the browser.
 onboarding-new-vertical-tabs-label = Tabs on the side
 
@@ -418,3 +433,37 @@ onboarding-checklist-pin = Pin { -brand-short-name } to taskbar
 onboarding-checklist-import = Import from previous browser
 onboarding-checklist-extension = Add an extension
 onboarding-checklist-sign-up = Sign up or sign in to your account
+
+## Tab Groups feature onboarding strings
+
+tab-groups-onboarding-feature-callout-title = Try tab groups for less clutter, more focus
+tab-groups-onboarding-feature-callout-subtitle = Get organized by dragging one tab on top of another to create your first group.
+tab-groups-onboarding-create-group-title-2 = Find your tab groups here anytime.
+tab-groups-onboarding-create-group-no-alltabs-button-title = Find your groups by searching for them in the address bar.
+tab-groups-onboarding-saved-groups-title-2 = When you close a tab group, you can reopen it here anytime.
+tab-groups-onboarding-saved-groups-no-alltabs-button-title-2 = Find your closed groups by searching for them in the address bar.
+tab-groups-onboarding-session-restore-title = Reopen your tab groups here anytime.
+tab-groups-onboarding-dismiss = OK
+
+## Multi Profiles feature onboarding messages
+
+multi-profile-spotlight-title = Say hello to { -brand-product-name } profiles
+multi-profile-spotlight-body = Easily switch between browsing for work and fun. Profiles keep your browsing info, including search history and passwords, totally separate so you can stay organized.
+multi-profile-spotlight-cta = Create a profile
+
+multi-profile-callout-title = Create different profiles for work and fun
+multi-profile-callout-subtitle = Profiles let you keep your browsing info, like search history and passwords, totally separate.
+multi-profile-callout-cta = Create a profile
+
+## Desktop to Mobile Adoption feature callout strings
+
+# If translating the headline is challenging, consider using a simplified alternative as a reference: 'Sync your browsing with Firefox for mobile.'
+desktop-to-mobile-headline = Download, sync, and go!
+
+# The phrase, 'on the go', is used to describe when people are very busy and are traveling from place to place.
+desktop-to-mobile-subtitle = Scan the QR code to download { -brand-product-name } for mobile. Once installed, select “Sync to mobile” to access your passwords, bookmarks, and more on the go.
+
+dismiss-button-label = Dismiss
+sync-to-mobile-button-label = Sync to mobile
+desktop-to-mobile-qr-code-alt =
+  .aria-label = QR code to download { -brand-product-name } for mobile

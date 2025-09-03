@@ -244,16 +244,20 @@ function isLayerized(elementId) {
 // Return a rect (or null) that holds the last known content-side displayport
 // for a given element. (The element selection works the same way, and with
 // the same assumptions as the isLayerized function above).
-function getLastContentDisplayportFor(elementId, expectPainted = true) {
-  var contentTestData =
-    SpecialPowers.getDOMWindowUtils(window).getContentAPZTestData();
+function getLastContentDisplayportFor(
+  aElementId,
+  aOptions = { expectPainted: true, popupElement: null }
+) {
+  var contentTestData = SpecialPowers.getDOMWindowUtils(
+    aOptions.popupElement ? aOptions.popupElement.ownerGlobal : window
+  ).getContentAPZTestData(aOptions.popupElement);
   if (contentTestData == undefined) {
-    ok(!expectPainted, "expected to have apz test data (1)");
+    ok(!aOptions.expectPainted, "expected to have apz test data (1)");
     return null;
   }
   var nonEmptyBucket = getLastNonemptyBucket(contentTestData.paints);
   if (nonEmptyBucket == null) {
-    ok(!expectPainted, "expected to have apz test data (2)");
+    ok(!aOptions.expectPainted, "expected to have apz test data (2)");
     return null;
   }
   var seqno = nonEmptyBucket.sequenceNumber;
@@ -261,7 +265,7 @@ function getLastContentDisplayportFor(elementId, expectPainted = true) {
   var paint = contentTestData.paints[seqno];
   for (var scrollId in paint) {
     if ("contentDescription" in paint[scrollId]) {
-      if (paint[scrollId].contentDescription.includes(elementId)) {
+      if (paint[scrollId].contentDescription.includes(aElementId)) {
         if ("displayport" in paint[scrollId]) {
           return parseRect(paint[scrollId].displayport);
         }
@@ -308,18 +312,22 @@ function promiseAfterPaint() {
 // APZ handler on the main thread, the repaints themselves may not have
 // occurred by the the returned promise resolves. If you want to wait
 // for those repaints, consider using promiseApzFlushedRepaints instead.
-function promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow = window) {
+function promiseOnlyApzControllerFlushedWithoutSetTimeout(
+  aWindow = window,
+  aElement
+) {
   return new Promise(function (resolve) {
+    var fail = false;
     var repaintDone = function () {
       dump("PromiseApzRepaintsFlushed: APZ flush done\n");
       SpecialPowers.Services.obs.removeObserver(
         repaintDone,
         "apz-repaints-flushed"
       );
-      resolve();
+      resolve(!fail);
     };
     SpecialPowers.Services.obs.addObserver(repaintDone, "apz-repaints-flushed");
-    if (SpecialPowers.getDOMWindowUtils(aWindow).flushApzRepaints()) {
+    if (SpecialPowers.getDOMWindowUtils(aWindow).flushApzRepaints(aElement)) {
       dump(
         "PromiseApzRepaintsFlushed: Flushed APZ repaints, waiting for callback...\n"
       );
@@ -327,6 +335,7 @@ function promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow = window) {
       dump(
         "PromiseApzRepaintsFlushed: Flushing APZ repaints was a no-op, triggering callback directly...\n"
       );
+      fail = true;
       repaintDone();
     }
   });
@@ -334,11 +343,17 @@ function promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow = window) {
 
 // Another variant of the above promiseOnlyApzControllerFlushedWithoutSetTimeout
 // but with a setTimeout(0) callback.
-function promiseOnlyApzControllerFlushed(aWindow = window) {
+// |aElement| is an optional argument to do
+// promiseOnlyApzControllerFlushedWithoutSetTimeout for the given |aElement|
+// rather than |aWindow|. If you want to do "apz-repaints-flushed" in popup
+// windows, you need to specify the element inside the popup window.
+function promiseOnlyApzControllerFlushed(aWindow = window, aElement) {
   return new Promise(resolve => {
-    promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow).then(() => {
-      setTimeout(resolve, 0);
-    });
+    promiseOnlyApzControllerFlushedWithoutSetTimeout(aWindow, aElement).then(
+      result => {
+        setTimeout(() => resolve(result), 0);
+      }
+    );
   });
 }
 
@@ -351,9 +366,16 @@ function promiseOnlyApzControllerFlushed(aWindow = window) {
 // specific times, this method is the way to go. Even if in doubt, this is the
 // preferred method as the extra step is "safe" and shouldn't interfere with
 // most tests.
-async function promiseApzFlushedRepaints() {
+// If you want to do the flush in popup windows, you need to specify |aPopupElement|.
+async function promiseApzFlushedRepaints(aPopupElement = null) {
+  if (aPopupElement) {
+    SimpleTest.ok(XULPopupElement.isInstance(aPopupElement));
+  }
   await promiseAllPaintsDone();
-  await promiseOnlyApzControllerFlushed();
+  await promiseOnlyApzControllerFlushed(
+    aPopupElement ? aPopupElement.ownerGlobal : window,
+    aPopupElement
+  );
   await promiseAllPaintsDone();
 }
 
@@ -767,23 +789,11 @@ function centerOf(element) {
 // The returned object has two fields:
 //   hitInfo: a combination of APZHitResultFlags
 //   scrollId: the view-id of the scroll frame that was hit
-function hitTest(point) {
+function hitTest(point, popupElement = null) {
   var utils = getHitTestConfig().utils;
   dump("Hit-testing point (" + point.x + ", " + point.y + ")\n");
-  utils.sendMouseEvent(
-    "MozMouseHittest",
-    point.x,
-    point.y,
-    0,
-    0,
-    0,
-    true,
-    0,
-    0,
-    true,
-    true
-  );
-  var data = utils.getCompositorAPZTestData();
+  utils.sendMozMouseHitTestEvent(point.x, point.y, popupElement);
+  var data = utils.getCompositorAPZTestData(popupElement);
   ok(
     data.hitResults.length >= 1,
     "Expected at least one hit result in the APZTestData"
@@ -1197,12 +1207,15 @@ async function cancelScrollAnimation(aElement, aWindow = window) {
   await aWindow.promiseApzFlushedRepaints();
 }
 
-function collectSampledScrollOffsets(aElement) {
-  let data = SpecialPowers.DOMWindowUtils.getCompositorAPZTestData();
+function collectSampledScrollOffsets(aElement, aPopupElement = null) {
+  const utils = SpecialPowers.getDOMWindowUtils(
+    aPopupElement ? aPopupElement.ownerGlobal : window
+  );
+  let data = utils.getCompositorAPZTestData(aPopupElement);
   let sampledResults = data.sampledResults;
 
-  const layersId = SpecialPowers.DOMWindowUtils.getLayersId();
-  const scrollId = SpecialPowers.DOMWindowUtils.getViewId(aElement);
+  const layersId = utils.getLayersId(aPopupElement);
+  const scrollId = utils.getViewId(aElement);
 
   return sampledResults.filter(
     result =>
@@ -1247,23 +1260,49 @@ function compareVisualViewport(
 }
 
 // Loads a URL in an iframe and waits until APZ is stable
-async function setupIframe(aIFrame, aURL) {
+async function setupIframe(aIFrame, aURL, aIsOffScreen = false) {
   const iframeLoadPromise = promiseOneEvent(aIFrame, "load", null);
   aIFrame.src = aURL;
   await iframeLoadPromise;
 
-  await SpecialPowers.spawn(aIFrame, [], async () => {
-    await content.wrappedJSObject.waitUntilApzStable();
-  });
+  if (!aIsOffScreen) {
+    await SpecialPowers.spawn(aIFrame, [], async () => {
+      await content.wrappedJSObject.waitUntilApzStable();
+    });
+  }
 }
 
 // Loads a URL in an iframe and replaces its origin to
 // create an out-of-process iframe
-async function setupCrossOriginIFrame(aIFrame, aUrl) {
+async function setupCrossOriginIFrame(aIFrame, aUrl, aIsOffScreen = false) {
   let iframeURL = SimpleTest.getTestFileURL(aUrl);
   iframeURL = iframeURL.replace(window.location.origin, "https://example.com");
-  await setupIframe(aIFrame, iframeURL);
-  await SpecialPowers.spawn(aIFrame, [], async () => {
-    await SpecialPowers.contentTransformsReceived(content);
-  });
+  await setupIframe(aIFrame, iframeURL, aIsOffScreen);
+  if (!aIsOffScreen) {
+    await SpecialPowers.spawn(aIFrame, [], async () => {
+      await SpecialPowers.contentTransformsReceived(content);
+    });
+  }
+}
+
+// Make sure APZ is ready for the popup.
+// With enabling GPU process initiating APZ in the popup takes some time.
+// Before the APZ has been initiated, calling flushApzRepaints() for the popup
+// returns false.
+async function ensureApzReadyForPopup(
+  aPopupElement,
+  aWindow = window,
+  aRetry = 10
+) {
+  let retry = 0;
+  while (
+    !SpecialPowers.getDOMWindowUtils(aWindow).flushApzRepaints(aPopupElement)
+  ) {
+    await promiseFrame();
+    retry++;
+    if (retry > aRetry) {
+      ok(false, "The popup didn't initialize APZ");
+      return;
+    }
+  }
 }

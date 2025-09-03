@@ -81,6 +81,10 @@ class ProfilerChild final : public PProfilerChild,
   void ProcessChunkManagerUpdate(
       ProfileBufferControlledChunkManager::Update&& aUpdate);
 
+  void JoinGatherProfileThread();
+
+  static void ClearPendingUpdate();
+
   static void GatherProfileThreadFunction(void* already_AddRefedParameters);
 
   nsCOMPtr<nsIThread> mThread;
@@ -99,6 +103,9 @@ class ProfilerChild final : public PProfilerChild,
       sPendingChunkManagerUpdate;
 
   RefPtr<ProgressLogger::SharedProgress> mGatherProfileProgress;
+
+  // Handle to the gather profile thread so we can join it.
+  PRThread* mGatherProfileThread = nullptr;
 };
 
 }  // namespace mozilla

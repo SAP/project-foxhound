@@ -324,9 +324,6 @@ struct MutableValueHandleWrapper {
 
   void operator=(JSObject* aObject) {
     MOZ_ASSERT(aObject);
-#ifdef ENABLE_RECORD_TUPLE
-    MOZ_ASSERT(!js::gc::MaybeForwardedIsExtendedPrimitive(*aObject));
-#endif
     mHandle.setObject(*aObject);
   }
 
@@ -951,26 +948,168 @@ struct IsRefcounted {
 #undef HAS_MEMBER_CHECK
 #undef HAS_MEMBER_TYPEDEFS
 
-#ifdef DEBUG
-template <class T, bool isISupports = std::is_base_of<nsISupports, T>::value>
-struct CheckWrapperCacheCast {
-  static bool Check() {
-    return reinterpret_cast<uintptr_t>(
-               static_cast<nsWrapperCache*>(reinterpret_cast<T*>(1))) == 1;
+namespace binding_detail {
+
+/**
+ * We support a couple of cases for the classes used as NativeType for bindings:
+ *
+ * 1) Classes derived from nsISupports, but not inheriting from nsWrapperCache.
+ *    For these classes we'll use QI on the nsISupports pointer to get to the
+ *    nsWrapperCache. The classes for native objects for the binding probably
+ *    inherit from the NativeType class, and from nsWrapperCache.
+ * 2) Classes derived from nsISupports, and inheriting from nsWrapperCache. For
+ *    these we rely on the class or one of its ancestors on the primary
+ *    inheritance chain that is identical to:
+ *       class Foo : public nsISupports, public nsWrapperCache {}
+ *    This allows us to calculate offsets that allow us to cast a void* pointer
+ *    to the object to nsWrapperCache by adding a fixed offset.
+ * 3) Classes that are not derived from nsISupports, but inherit from
+ *    nsWrapperCache. For these we rely on being able to cast a void* pointer
+ *    directly to nsWrapperCache.
+ */
+
+// Small helper that has access to nsWrapperCache internals.
+class CastableToWrapperCacheHelper {
+ public:
+  template <class T>
+  static constexpr uintptr_t OffsetOf() {
+    return offsetof(T, mWrapper) - offsetof(nsWrapperCache, mWrapper);
   }
 };
+
+template <size_t Offset>
+class CastableToWrapperCache {
+ protected:
+  static nsWrapperCache* GetWrapperCache(void* aObj) {
+    return aObj ? reinterpret_cast<nsWrapperCache*>(uintptr_t(aObj) + Offset)
+                : nullptr;
+  }
+
+ public:
+  static nsWrapperCache* GetWrapperCache(JSObject* aObj) {
+    return GetWrapperCache(UnwrapPossiblyNotInitializedDOMObject<void>(aObj));
+  }
+
+  static size_t ObjectMoved(JSObject* aObj, JSObject* aOld) {
+    JS::AutoAssertGCCallback inCallback;
+    nsWrapperCache* cache = GetWrapperCache(aObj);
+    if (cache) {
+      cache->UpdateWrapper(aObj, aOld);
+    }
+
+    return 0;
+  }
+  static constexpr js::ClassExtension sClassExtension = {ObjectMoved};
+};
+
+class NeedsQIToWrapperCache {
+ protected:
+  static nsWrapperCache* GetWrapperCache(nsISupports* aObj) {
+    if (!aObj) {
+      return nullptr;
+    }
+    nsWrapperCache* cache;
+    CallQueryInterface(aObj, &cache);
+    return cache;
+  }
+
+ public:
+  static nsWrapperCache* GetWrapperCache(JSObject* aObj) {
+    return GetWrapperCache(
+        UnwrapPossiblyNotInitializedDOMObject<nsISupports>(aObj));
+  }
+
+  static size_t ObjectMoved(JSObject* aObj, JSObject* aOld);
+  static constexpr js::ClassExtension sClassExtension = {ObjectMoved};
+};
+
+template <class T>
+using ToWrapperCacheHelper = std::conditional_t<
+    std::is_base_of_v<nsWrapperCache, T>,
+    CastableToWrapperCache<CastableToWrapperCacheHelper::OffsetOf<T>()>,
+    NeedsQIToWrapperCache>;
+
+template <class Base>
+class NativeTypeHelpersBase_nsISupports : public Base {
+ public:
+  static bool AddProperty(JSContext* cx, JS::Handle<JSObject*> aObj,
+                          JS::Handle<jsid>, JS::Handle<JS::Value>) {
+    nsISupports* self =
+        UnwrapPossiblyNotInitializedDOMObject<nsISupports>(aObj);
+    // We obviously can't preserve if we're not initialized.
+    if (self) {
+      nsWrapperCache* cache = Base::GetWrapperCache(self);
+      // We don't want to preserve if we don't have a wrapper.
+      if (cache->GetWrapperPreserveColor()) {
+        cache->PreserveWrapper(self);
+      }
+    }
+    return true;
+  }
+};
+
+template <class T,
+          bool CastableToWrapperCache = std::is_base_of_v<nsWrapperCache, T>>
+class NativeTypeHelpers_nsISupports;
+
+template <class T>
+class NativeTypeHelpers_nsISupports<T, true>
+    : public NativeTypeHelpersBase_nsISupports<
+          CastableToWrapperCache<CastableToWrapperCacheHelper::OffsetOf<T>()>> {
+};
+
+template <class T>
+class NativeTypeHelpers_nsISupports<T, false>
+    : public NativeTypeHelpersBase_nsISupports<NeedsQIToWrapperCache> {};
+
+template <class T>
+class NativeTypeHelpers_Other
+    : public CastableToWrapperCache<
+          CastableToWrapperCacheHelper::OffsetOf<T>()> {
+ public:
+  static bool AddProperty(JSContext* cx, JS::Handle<JSObject*> aObj,
+                          JS::Handle<jsid>, JS::Handle<JS::Value>) {
+    T* self = UnwrapPossiblyNotInitializedDOMObject<T>(aObj);
+    // We obviously can't preserve if we're not initialized, and we don't want
+    // to preserve if we don't have a wrapper.
+    if (self && self->GetWrapperPreserveColor()) {
+      self->PreserveWrapper(self, NS_CYCLE_COLLECTION_PARTICIPANT(T));
+    }
+    return true;
+  }
+};
+
+template <class T>
+using NativeTypeHelpers = std::conditional_t<std::is_base_of_v<nsISupports, T>,
+                                             NativeTypeHelpers_nsISupports<T>,
+                                             NativeTypeHelpers_Other<T>>;
+
+}  // namespace binding_detail
+
+#ifdef DEBUG
+template <class T>
+struct CheckCastableWrapperCache {
+  static bool Check() {
+    return reinterpret_cast<uintptr_t>(
+               static_cast<nsWrapperCache*>(reinterpret_cast<T*>(1))) ==
+           1 + binding_detail::CastableToWrapperCacheHelper::OffsetOf<T>();
+  }
+};
+template <class T, bool isISupports = std::is_base_of<nsISupports, T>::value>
+struct CheckWrapperCacheCast : public CheckCastableWrapperCache<T> {};
 template <class T>
 struct CheckWrapperCacheCast<T, true> {
-  static bool Check() { return true; }
+  static bool Check() {
+    if constexpr (std::is_base_of_v<nsWrapperCache, T>) {
+      return CheckCastableWrapperCache<T>::Check();
+    } else {
+      return true;
+    }
+  }
 };
 #endif
 
 inline bool TryToOuterize(JS::MutableHandle<JS::Value> rval) {
-#ifdef ENABLE_RECORD_TUPLE
-  if (rval.isExtendedPrimitive()) {
-    return true;
-  }
-#endif
   MOZ_ASSERT(rval.isObject());
   if (js::IsWindow(&rval.toObject())) {
     JSObject* obj = js::ToWindowProxyIfWindow(&rval.toObject());
@@ -1007,10 +1146,10 @@ bool MaybeWrapStringValue(JSContext* cx, JS::MutableHandle<JS::Value> rval) {
 // needed.  This will work correctly, but possibly slowly, on all objects.
 MOZ_ALWAYS_INLINE
 bool MaybeWrapObjectValue(JSContext* cx, JS::MutableHandle<JS::Value> rval) {
-  MOZ_ASSERT(rval.hasObjectPayload());
+  MOZ_ASSERT(rval.isObject());
 
   // Cross-compartment always requires wrapping.
-  JSObject* obj = &rval.getObjectPayload();
+  JSObject* obj = &rval.toObject();
   if (JS::GetCompartment(obj) != js::GetContextCompartment(cx)) {
     return JS_WrapValue(cx, rval);
   }
@@ -1082,7 +1221,7 @@ MOZ_ALWAYS_INLINE bool MaybeWrapValue(JSContext* cx,
     if (rval.isString()) {
       return MaybeWrapStringValue(cx, rval);
     }
-    if (rval.hasObjectPayload()) {
+    if (rval.isObject()) {
       return MaybeWrapObjectValue(cx, rval);
     }
     // This could be optimized by checking the zone first, similar to
@@ -1204,9 +1343,6 @@ MOZ_ALWAYS_INLINE bool DoGetOrCreateDOMReflector(
   }
 #endif
 
-#ifdef ENABLE_RECORD_TUPLE
-  MOZ_ASSERT(!js::gc::MaybeForwardedIsExtendedPrimitive(*obj));
-#endif
   rval.set(JS::ObjectValue(*obj));
 
   if (JS::GetCompartment(obj) == js::GetContextCompartment(cx)) {
@@ -1258,12 +1394,6 @@ MOZ_ALWAYS_INLINE bool GetOrCreateDOMReflectorNoWrap(
 // Helper for different overloadings of WrapNewBindingNonWrapperCachedObject()
 inline bool FinishWrapping(JSContext* cx, JS::Handle<JSObject*> obj,
                            JS::MutableHandle<JS::Value> rval) {
-#ifdef ENABLE_RECORD_TUPLE
-  // If calling an (object) value's WrapObject() method returned a record/tuple,
-  // then something is very wrong.
-  MOZ_ASSERT(!js::gc::MaybeForwardedIsExtendedPrimitive(*obj));
-#endif
-
   // We can end up here in all sorts of compartments, per comments in
   // WrapNewBindingNonWrapperCachedObject(). Make sure to JS_WrapValue!
   rval.set(JS::ObjectValue(*obj));

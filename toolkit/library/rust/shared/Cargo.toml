@@ -13,7 +13,7 @@ mozglue-static = { path = "../../../../mozglue/static/rust" }
 geckoservo = { path = "../../../../servo/ports/geckolib" }
 kvstore = { path = "../../../components/kvstore" }
 lmdb-rkv-sys = { version = "0.11", features = ["mdb_idl_logn_9"] }
-mp4parse_capi = { git = "https://github.com/mozilla/mp4parse-rust", rev = "a138e40ec1c603615873e524b5b22e11c0ec4820", features = ["missing-pixi-permitted"] }
+mp4parse_capi = { git = "https://github.com/mozilla/mp4parse-rust", rev = "e64650a686e5c5732395cd059e17cfd3b1e5b63b", features = ["missing-pixi-permitted"] }
 nserror = { path = "../../../../xpcom/rust/nserror" }
 nsstring = { path = "../../../../xpcom/rust/nsstring" }
 netwerk_helper = { path = "../../../../netwerk/base/rust-helper" }
@@ -42,10 +42,12 @@ signature_cache = { path = "../../../../security/certverifier/signature_cache" }
 cert_storage = { path = "../../../../security/manager/ssl/cert_storage" }
 crypto_hash = { path = "../../../../security/manager/ssl/crypto_hash" }
 data_storage = { path = "../../../../security/manager/ssl/data_storage" }
+ipcclientcerts = { path = "../../../../security/manager/ssl/ipcclientcerts" }
+trust-anchors = { path = "../../../../security/manager/ssl/trust_anchors" }
 bitsdownload = { path = "../../../components/bitsdownload", optional = true }
 storage = { path = "../../../../storage/rust" }
 bookmark_sync = { path = "../../../components/places/bookmark_sync", optional = true }
-buildid_reader = { path = "../../buildid_reader" }
+buildid_reader_ffi = { path = "../../buildid_reader/ffi" }
 chardetng_c = "0.1.1"
 audio_thread_priority = { version = "0.32", default-features = false }
 mdns_service = { path="../../../../dom/media/webrtc/transport/mdns_service", optional = true }
@@ -79,6 +81,7 @@ dap_ffi = { path = "../../../components/telemetry/dap/ffi" }
 data-encoding-ffi = { path = "../../../../dom/fs/parent/rust/data-encoding-ffi" }
 binary_http = { path = "../../../../netwerk/protocol/http/binary_http" }
 oblivious_http = { path = "../../../../netwerk/protocol/http/oblivious_http" }
+mls_gk = { path = "../../../../security/mls/mls_gk" }
 mime-guess-ffi = { path = "../../../../dom/fs/parent/rust/mime-guess-ffi" }
 
 # Note: `modern_sqlite` means rusqlite's bindings file be for a sqlite with
@@ -98,7 +101,7 @@ processtools = { path = "../../../components/processtools" }
 qcms = { path = "../../../../gfx/qcms", features = ["c_bindings", "neon"], default-features = false }
 
 wpf-gpu-raster = { git = "https://github.com/FirefoxGraphics/wpf-gpu-raster", rev = "99979da091fd58fba8477e7fcdf5ec0727102916" }
-aa-stroke = { git = "https://github.com/FirefoxGraphics/aa-stroke", rev = "35a650261605662795a04cc249c465436cbfab45" }
+aa-stroke = { git = "https://github.com/FirefoxGraphics/aa-stroke", rev = "a821fa621c2def48e90c82774b4c6563b5a8ea4a" }
 etagere = { version = "0.2.13", features = ["ffi"] }
 
 url = "2.5.0"
@@ -106,13 +109,16 @@ url = "2.5.0"
 # Since we're building with at least rustc 1.63, enable rust 1.57 features (use of try_reserve methods).
 fallible_collections = { version = "0.4", features = ["rust_1_57"] }
 
-libz-rs-sys = { git = "https://github.com/memorysafety/zlib-rs", rev = "4aa430ccb77537d0d60dab8db993ca51bb1194c5", features = ["custom-prefix"], optional = true }
+libz-rs-sys = { version = "0.4.1", features = ["custom-prefix"], optional = true }
+
+[target.'cfg(any(target_os = "macos",target_os = "ios", all(target_os = "windows", not(target_arch = "aarch64"))))'.dependencies]
+osclientcerts = { path = "../../../../security/manager/ssl/osclientcerts" }
 
 [target.'cfg(not(target_os = "android"))'.dependencies]
-gkrust-uniffi-components = { path = "../../../components/uniffi-bindgen-gecko-js/components/" }
-gkrust-uniffi-fixtures = { path = "../../../components/uniffi-bindgen-gecko-js/fixtures/", optional = true }
+gkrust-uniffi-components = { path = "../../../components/uniffi-bindgen-gecko-js/components/", features = ["xpcom"] }
+gkrust-uniffi-fixtures = { path = "../../../components/uniffi-bindgen-gecko-js/fixtures/", features = ["xpcom"], optional = true }
 viaduct = "0.1"
-webext_storage_bridge = { path = "../../../components/extensions/storage/webext_storage_bridge" }
+webext-storage = "0.1"
 
 [target.'cfg(target_os = "windows")'.dependencies]
 detect_win32k_conflicts = { path = "../../../xre/detect_win32k_conflicts" }
@@ -128,7 +134,6 @@ gecko_refcount_logging = ["geckoservo/gecko_refcount_logging", "xpcom/gecko_refc
 simd-accel = ["encoding_glue/simd-accel", "jsrust_shared/simd-accel"]
 moz_places = ["bookmark_sync"]
 spidermonkey_rust = []
-smoosh = ["jsrust_shared/smoosh"]
 gecko_profiler = ["gecko-profiler/enabled", "profiler_helper"]
 gecko_profiler_parse_elf = ["profiler_helper/parse_elf"]
 libfuzzer = ["authrs_bridge/fuzzing"]

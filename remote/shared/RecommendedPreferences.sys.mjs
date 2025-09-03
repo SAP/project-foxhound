@@ -103,6 +103,9 @@ const COMMON_PREFERENCES = new Map([
   // inconsistently.
   ["browser.download.panel.shown", true],
 
+  // Make sure error page is not shown for blank pages with 4xx or 5xx response code
+  ["browser.http.blank_page_with_error_response.enabled", true],
+
   // Make sure newtab weather doesn't hit the network to retrieve weather data.
   [
     "browser.newtabpage.activity-stream.discoverystream.region-weather-config",
@@ -335,6 +338,9 @@ const COMMON_PREFERENCES = new Map([
 
   // Do not download intermediate certificates
   ["security.remote_settings.intermediates.enabled", false],
+
+  // Disable logging for remote settings
+  ["services.settings.loglevel", "off"],
 
   // Ensure remote settings do not hit the network
   ["services.settings.server", "data:,#remote-settings-dummy/v1"],

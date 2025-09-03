@@ -11,8 +11,12 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.annotation.DrawableRes
 import androidx.appcompat.app.AppCompatActivity
+import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.platform.LocalContext
 import androidx.core.content.ContextCompat
 import androidx.core.content.res.ResourcesCompat
+import androidx.core.view.isVisible
 import androidx.lifecycle.MutableLiveData
 import androidx.lifecycle.Observer
 import androidx.recyclerview.widget.LinearLayoutManager
@@ -36,7 +40,21 @@ import mozilla.components.browser.menu.item.SimpleBrowserMenuItem
 import mozilla.components.browser.menu2.BrowserMenuController
 import mozilla.components.browser.toolbar.BrowserToolbar
 import mozilla.components.browser.toolbar.display.DisplayToolbar
+import mozilla.components.compose.base.theme.AcornTheme
+import mozilla.components.compose.browser.toolbar.BrowserToolbarDefaults
+import mozilla.components.compose.browser.toolbar.CustomTabToolbarColors
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
+import mozilla.components.compose.browser.toolbar.concept.Action.CustomAction
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
+import mozilla.components.compose.browser.toolbar.store.DisplayState
+import mozilla.components.compose.browser.toolbar.store.EditState
+import mozilla.components.compose.browser.toolbar.store.Mode
+import mozilla.components.compose.browser.toolbar.ui.SearchSelector
 import mozilla.components.concept.menu.Side
+import mozilla.components.concept.menu.candidate.DecorativeTextMenuCandidate
 import mozilla.components.concept.menu.candidate.DividerMenuCandidate
 import mozilla.components.concept.menu.candidate.DrawableMenuIcon
 import mozilla.components.concept.menu.candidate.NestedMenuCandidate
@@ -47,6 +65,7 @@ import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.support.ktx.android.view.hideKeyboard
 import mozilla.components.support.ktx.util.URLStringUtils
 import mozilla.components.ui.tabcounter.TabCounter
+import org.mozilla.samples.toolbar.compose.BrowserToolbar
 import org.mozilla.samples.toolbar.databinding.ActivityToolbarBinding
 import mozilla.components.browser.menu.R as menuR
 import mozilla.components.browser.toolbar.R as toolbarR
@@ -81,6 +100,8 @@ class ToolbarActivity : AppCompatActivity() {
             ToolbarConfiguration.PRIVATE_MODE -> setupDefaultToolbar(private = true)
             ToolbarConfiguration.FENIX -> setupFenixToolbar()
             ToolbarConfiguration.FENIX_CUSTOMTAB -> setupFenixCustomTabToolbar()
+            ToolbarConfiguration.COMPOSE_TOOLBAR -> setupComposeToolbar()
+            ToolbarConfiguration.COMPOSE_CUSTOMTAB -> setupComposeCustomTabToolbar()
         }
 
         val recyclerView: RecyclerView = findViewById(R.id.recyclerView)
@@ -105,6 +126,8 @@ class ToolbarActivity : AppCompatActivity() {
      * A very simple toolbar with mostly default values.
      */
     private fun setupDefaultToolbar(private: Boolean = false) {
+        showToolbar()
+
         binding.toolbar.setBackgroundColor(
             ContextCompat.getColor(this, colorsR.color.photonBlue80),
         )
@@ -118,6 +141,8 @@ class ToolbarActivity : AppCompatActivity() {
      * A toolbar that looks like Firefox Focus on tablets.
      */
     private fun setupFocusTabletToolbar() {
+        showToolbar()
+
         // //////////////////////////////////////////////////////////////////////////////////////////
         // Use the iconic gradient background
         // //////////////////////////////////////////////////////////////////////////////////////////
@@ -191,6 +216,8 @@ class ToolbarActivity : AppCompatActivity() {
      * A custom browser menu.
      */
     private fun setupCustomMenu() {
+        showToolbar()
+
         binding.toolbar.setBackgroundColor(
             ContextCompat.getColor(this, colorsR.color.photonBlue80),
         )
@@ -224,6 +251,8 @@ class ToolbarActivity : AppCompatActivity() {
      * A toolbar that looks like Firefox Focus on phones.
      */
     private fun setupFocusPhoneToolbar() {
+        showToolbar()
+
         // //////////////////////////////////////////////////////////////////////////////////////////
         // Use the iconic gradient background
         // //////////////////////////////////////////////////////////////////////////////////////////
@@ -314,6 +343,8 @@ class ToolbarActivity : AppCompatActivity() {
      */
     @Suppress("MagicNumber")
     fun setupFenixToolbar() {
+        showToolbar()
+
         binding.toolbar.setBackgroundColor(0xFFFFFFFF.toInt())
 
         binding.toolbar.display.indicators = listOf(
@@ -400,6 +431,8 @@ class ToolbarActivity : AppCompatActivity() {
     @OptIn(DelicateCoroutinesApi::class) // GlobalScope usage
     @Suppress("MagicNumber")
     fun setupFenixCustomTabToolbar() {
+        showToolbar()
+
         binding.toolbar.setBackgroundColor(0xFFFFFFFF.toInt())
 
         binding.toolbar.display.indicators = listOf(
@@ -462,6 +495,147 @@ class ToolbarActivity : AppCompatActivity() {
             delay(2000)
             binding.toolbar.title = "Mobile browsers for iOS and Android | Firefox"
         }
+    }
+
+    @Suppress("LongMethod")
+    private fun setupComposeToolbar() {
+        showToolbar(isCompose = true)
+
+        val header = DecorativeTextMenuCandidate(
+            text = "This time search in:",
+        )
+        val bookmarks = TextMenuCandidate(
+            "Bookmarks",
+            start = DrawableMenuIcon(this, iconsR.drawable.mozac_ic_bookmark_tray_24),
+        ) { /* Do nothing */ }
+        val tabs = TextMenuCandidate(
+            "Tabs",
+            start = DrawableMenuIcon(this, iconsR.drawable.mozac_ic_tab_tray_24),
+        ) { /* Do nothing */ }
+        val history = TextMenuCandidate(
+            "History",
+            start = DrawableMenuIcon(this, iconsR.drawable.mozac_ic_history_24),
+        ) { /* Do nothing */ }
+        val settings = TextMenuCandidate(
+            "Search settings",
+            start = DrawableMenuIcon(this, iconsR.drawable.mozac_ic_settings_24),
+        ) { /* Do nothing */ }
+
+        val items = listOf(header, bookmarks, tabs, history, settings)
+        val menuController = BrowserMenuController().apply {
+            submitList(items)
+        }
+
+        binding.composeToolbar.setContent {
+            AcornTheme {
+                val iconPrimaryTint = AcornTheme.colors.iconPrimary.toArgb()
+
+                val store = remember {
+                    BrowserToolbarStore(
+                        initialState = BrowserToolbarState(
+                            displayState = DisplayState(
+                                hint = "Search or enter address",
+                                pageActions = listOf(
+                                    ActionButton(
+                                        icon = iconsR.drawable.mozac_ic_arrow_clockwise_24,
+                                        contentDescription = null,
+                                        tint = iconPrimaryTint,
+                                        onClick = {},
+                                    ),
+                                ),
+                            ),
+                            editState = EditState(
+                                editActionsStart = listOf(
+                                    CustomAction(
+                                        content = {
+                                            SearchSelector(
+                                                onClick = {},
+                                                menu = menuController,
+                                                icon = ContextCompat.getDrawable(
+                                                    LocalContext.current,
+                                                    iconsR.drawable.mozac_ic_search_24,
+                                                ),
+                                            )
+                                        },
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                }
+
+                BrowserToolbar(
+                    store = store,
+                    onDisplayToolbarClick = {
+                        store.dispatch(BrowserToolbarAction.ToggleEditMode(editMode = true))
+                    },
+                    onTextEdit = { text ->
+                        store.dispatch(BrowserEditToolbarAction.UpdateEditText(text = text))
+                    },
+                    onTextCommit = {
+                        store.dispatch(BrowserToolbarAction.ToggleEditMode(editMode = false))
+                    },
+                    url = "https://www.mozilla.org/en-US/firefox/mobile/",
+                )
+            }
+        }
+    }
+
+    private fun setupComposeCustomTabToolbar() {
+        showToolbar(isCompose = true)
+
+        binding.composeToolbar.setContent {
+            AcornTheme {
+                val iconPrimaryTint = AcornTheme.colors.iconPrimary.toArgb()
+
+                val store = remember {
+                    BrowserToolbarStore(
+                        initialState = BrowserToolbarState(
+                            mode = Mode.CUSTOM_TAB,
+                            displayState = DisplayState(
+                                navigationActions = listOf(
+                                    ActionButton(
+                                        icon = iconsR.drawable.mozac_ic_cross_24,
+                                        contentDescription = null,
+                                        tint = iconPrimaryTint,
+                                        onClick = {},
+                                    ),
+                                ),
+                                browserActions = listOf(
+                                    ActionButton(
+                                        icon = iconsR.drawable.mozac_ic_arrow_clockwise_24,
+                                        contentDescription = null,
+                                        tint = iconPrimaryTint,
+                                        onClick = {},
+                                    ),
+                                ),
+                            ),
+                        ),
+                    )
+                }
+
+                BrowserToolbar(
+                    store = store,
+                    onDisplayToolbarClick = {},
+                    onTextEdit = {},
+                    onTextCommit = {},
+                    colors = BrowserToolbarDefaults.colors(
+                        customTabToolbarColors = CustomTabToolbarColors(
+                            background = AcornTheme.colors.layer1,
+                            title = AcornTheme.colors.textPrimary,
+                            url = AcornTheme.colors.textSecondary,
+                        ),
+                    ),
+                    url = "https://www.mozilla.org/en-US/firefox/mobile/",
+                    title = "Mozilla",
+                )
+            }
+        }
+    }
+
+    private fun showToolbar(isCompose: Boolean = false) {
+        binding.toolbar.isVisible = !isCompose
+        binding.composeToolbar.isVisible = isCompose
     }
 
     // For testing purposes

@@ -5,13 +5,8 @@
 use inherent::inherent;
 use std::sync::Arc;
 
-use super::{CommonMetricData, MetricId};
+use super::{CommonMetricData, MetricGetter, MetricId};
 use crate::ipc::need_ipc;
-
-#[cfg(feature = "with_gecko")]
-use super::profiler_utils::StringLikeMetricMarker;
-#[cfg(feature = "with_gecko")]
-use gecko_profiler::gecko_profiler_category;
 
 /// A string metric.
 ///
@@ -45,7 +40,10 @@ use gecko_profiler::gecko_profiler_category;
 #[derive(Clone)]
 pub enum StringMetric {
     Parent {
-        id: MetricId,
+        /// The metric's ID. Used for testing and profiler markers. String
+        /// metrics can be labeled, so we may have either a metric ID or
+        /// sub-metric ID.
+        id: MetricGetter,
         inner: Arc<glean::private::StringMetric>,
     },
     Child(StringMetricIpc),
@@ -60,7 +58,7 @@ impl StringMetric {
             StringMetric::Child(StringMetricIpc)
         } else {
             StringMetric::Parent {
-                id,
+                id: id.into(),
                 inner: Arc::new(glean::private::StringMetric::new(meta)),
             }
         }
@@ -92,14 +90,11 @@ impl glean::traits::String for StringMetric {
             StringMetric::Parent { id, inner } => {
                 let value = value.into();
                 #[cfg(feature = "with_gecko")]
-                if gecko_profiler::can_accept_markers() {
-                    gecko_profiler::add_marker(
-                        "String::set",
-                        gecko_profiler_category!(Telemetry),
-                        Default::default(),
-                        StringLikeMetricMarker::new(*id, &value),
-                    );
-                }
+                gecko_profiler::lazy_add_marker!(
+                    "String::set",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    super::profiler_utils::StringLikeMetricMarker::new(*id, &value)
+                );
                 inner.set(value);
             }
             StringMetric::Child(_) => {
@@ -172,7 +167,7 @@ mod test {
 
         assert_eq!(
             "test_string_value",
-            metric.test_get_value("store1").unwrap()
+            metric.test_get_value("test-ping").unwrap()
         );
     }
 
@@ -200,7 +195,7 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "test_parent_value" == parent_metric.test_get_value("store1").unwrap(),
+            "test_parent_value" == parent_metric.test_get_value("test-ping").unwrap(),
             "String metrics should only work in the parent process"
         );
     }

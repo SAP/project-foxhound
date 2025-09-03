@@ -57,7 +57,6 @@
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/Opcodes.h"
-#include "vm/PIC.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Scope.h"
 #include "vm/Shape.h"
@@ -68,11 +67,6 @@
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  include "vm/UsingHint.h"
 #endif
-#ifdef ENABLE_RECORD_TUPLE
-#  include "vm/RecordType.h"
-#  include "vm/TupleType.h"
-#endif
-
 #include "builtin/Boolean-inl.h"
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ArgumentsObject-inl.h"
@@ -349,39 +343,6 @@ static bool MaybeCreateThisForConstructor(JSContext* cx, const CallArgs& args) {
   // relazifyFunctions testing function that doesn't have this restriction.
   return JSFunction::getOrCreateScript(cx, callee);
 }
-
-#ifdef ENABLE_RECORD_TUPLE
-static bool AddRecordSpreadOperation(JSContext* cx, HandleValue recHandle,
-                                     HandleValue spreadeeHandle) {
-  MOZ_ASSERT(recHandle.toExtendedPrimitive().is<RecordType>());
-  RecordType* rec = &recHandle.toExtendedPrimitive().as<RecordType>();
-
-  RootedObject obj(cx, ToObjectOrGetObjectPayload(cx, spreadeeHandle));
-
-  RootedIdVector keys(cx);
-  if (!GetPropertyKeys(cx, obj, JSITER_OWNONLY | JSITER_SYMBOLS, &keys)) {
-    return false;
-  }
-
-  size_t len = keys.length();
-  RootedId propKey(cx);
-  RootedValue propValue(cx);
-  for (size_t i = 0; i < len; i++) {
-    propKey.set(keys[i]);
-
-    // Step 4.c.ii.1.
-    if (MOZ_UNLIKELY(!GetProperty(cx, obj, obj, propKey, &propValue))) {
-      return false;
-    }
-
-    if (MOZ_UNLIKELY(!rec->initializeNextProperty(cx, propKey, propValue))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-#endif
 
 InterpreterFrame* InvokeState::pushInterpreterFrame(JSContext* cx) {
   return cx->interpreterStack().pushInvokeFrame(cx, args_, construct_);
@@ -973,10 +934,6 @@ bool js::InstanceofOperator(JSContext* cx, HandleObject obj, HandleValue v,
 }
 
 JSType js::TypeOfObject(JSObject* obj) {
-#ifdef ENABLE_RECORD_TUPLE
-  MOZ_ASSERT(!js::IsExtendedPrimitive(*obj));
-#endif
-
   AutoUnsafeCallWithABI unsafe;
   if (EmulatesUndefined(obj)) {
     return JSTYPE_UNDEFINED;
@@ -986,20 +943,6 @@ JSType js::TypeOfObject(JSObject* obj) {
   }
   return JSTYPE_OBJECT;
 }
-
-#ifdef ENABLE_RECORD_TUPLE
-JSType TypeOfExtendedPrimitive(JSObject* obj) {
-  MOZ_ASSERT(js::IsExtendedPrimitive(*obj));
-
-  if (obj->is<RecordType>()) {
-    return JSTYPE_RECORD;
-  }
-  if (obj->is<TupleType>()) {
-    return JSTYPE_TUPLE;
-  }
-  MOZ_CRASH("Unknown ExtendedPrimitive");
-}
-#endif
 
 JSType js::TypeOfValue(const Value& v) {
   switch (v.type()) {
@@ -1014,10 +957,6 @@ JSType js::TypeOfValue(const Value& v) {
       return JSTYPE_UNDEFINED;
     case ValueType::Object:
       return TypeOfObject(&v.toObject());
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive:
-      return TypeOfExtendedPrimitive(&v.toExtendedPrimitive());
-#endif
     case ValueType::Boolean:
       return JSTYPE_BOOLEAN;
     case ValueType::BigInt:
@@ -1436,13 +1375,6 @@ again:
     REGS.sp++->setObjectOrNull(obj); \
     cx->debugOnlyCheck(REGS.sp[-1]); \
   } while (0)
-#ifdef ENABLE_RECORD_TUPLE
-#  define PUSH_EXTENDED_PRIMITIVE(obj)      \
-    do {                                    \
-      REGS.sp++->setExtendedPrimitive(obj); \
-      cx->debugOnlyCheck(REGS.sp[-1]);      \
-    } while (0)
-#endif
 #define PUSH_MAGIC(magic) REGS.sp++->setMagic(magic)
 #define POP_COPY_TO(v) (v) = *--REGS.sp
 #define POP_RETURN_VALUE() REGS.fp()->setReturnValue(*--REGS.sp)
@@ -1753,9 +1685,18 @@ ErrorObject* js::CreateSuppressedError(JSContext* cx,
   JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                            JSMSG_ERROR_WAS_SUPPRESSED);
 
+  if (cx->isThrowingOutOfMemory()) {
+    return nullptr;
+  }
+
   JS::Rooted<JS::Value> thrownSuppressed(cx);
 
   if (!cx->getPendingException(&thrownSuppressed)) {
+    return nullptr;
+  }
+
+  if (!thrownSuppressed.isObject() ||
+      !thrownSuppressed.toObject().is<ErrorObject>()) {
     return nullptr;
   }
 
@@ -2479,13 +2420,8 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(CloseIter)
 
     CASE(OptimizeGetIterator) {
-      ReservedRooted<Value> val(&rootValue0, REGS.sp[-1]);
-      MutableHandleValue rval = REGS.stackHandleAt(-1);
-      bool result;
-      if (!OptimizeGetIterator(cx, val, &result)) {
-        goto error;
-      }
-      rval.setBoolean(result);
+      bool result = OptimizeGetIterator(REGS.sp[-1], cx);
+      REGS.sp[-1].setBoolean(result);
     }
     END_CASE(OptimizeGetIterator)
 
@@ -4066,91 +4002,6 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     }
     END_CASE(InitElemInc)
 
-#ifdef ENABLE_RECORD_TUPLE
-    CASE(InitRecord) {
-      uint32_t length = GET_UINT32(REGS.pc);
-      RecordType* rec = RecordType::createUninitialized(cx, length);
-      if (!rec) {
-        goto error;
-      }
-      PUSH_EXTENDED_PRIMITIVE(*rec);
-    }
-    END_CASE(InitRecord)
-
-    CASE(AddRecordProperty) {
-      MOZ_ASSERT(REGS.stackDepth() >= 3);
-
-      ReservedRooted<JSObject*> rec(&rootObject0,
-                                    &REGS.sp[-3].toExtendedPrimitive());
-      MOZ_ASSERT(rec->is<RecordType>());
-
-      ReservedRooted<Value> key(&rootValue0, REGS.sp[-2]);
-      ReservedRooted<jsid> id(&rootId0);
-      if (!JS_ValueToId(cx, key, &id)) {
-        goto error;
-      }
-      if (!rec->as<RecordType>().initializeNextProperty(
-              cx, id, REGS.stackHandleAt(-1))) {
-        goto error;
-      }
-
-      REGS.sp -= 2;
-    }
-    END_CASE(AddRecordProperty)
-
-    CASE(AddRecordSpread) {
-      MOZ_ASSERT(REGS.stackDepth() >= 2);
-
-      if (!AddRecordSpreadOperation(cx, REGS.stackHandleAt(-2),
-                                    REGS.stackHandleAt(-1))) {
-        goto error;
-      }
-      REGS.sp--;
-    }
-    END_CASE(AddRecordSpread)
-
-    CASE(FinishRecord) {
-      MOZ_ASSERT(REGS.stackDepth() >= 1);
-      RecordType* rec = &REGS.sp[-1].toExtendedPrimitive().as<RecordType>();
-      if (!rec->finishInitialization(cx)) {
-        goto error;
-      }
-    }
-    END_CASE(FinishRecord)
-
-    CASE(InitTuple) {
-      uint32_t length = GET_UINT32(REGS.pc);
-      TupleType* tup = TupleType::createUninitialized(cx, length);
-      if (!tup) {
-        goto error;
-      }
-      PUSH_EXTENDED_PRIMITIVE(*tup);
-    }
-    END_CASE(InitTuple)
-
-    CASE(AddTupleElement) {
-      MOZ_ASSERT(REGS.stackDepth() >= 2);
-
-      ReservedRooted<JSObject*> tup(&rootObject0,
-                                    &REGS.sp[-2].toExtendedPrimitive());
-      HandleValue val = REGS.stackHandleAt(-1);
-
-      if (!tup->as<TupleType>().initializeNextElement(cx, val)) {
-        goto error;
-      }
-
-      REGS.sp--;
-    }
-    END_CASE(AddTupleElement)
-
-    CASE(FinishTuple) {
-      MOZ_ASSERT(REGS.stackDepth() >= 1);
-      TupleType& tup = REGS.sp[-1].toExtendedPrimitive().as<TupleType>();
-      tup.finishInitialization(cx);
-    }
-    END_CASE(FinishTuple)
-#endif
-
     CASE(Exception) {
       PUSH_NULL();
       MutableHandleValue res = REGS.stackHandleAt(-1);
@@ -4742,13 +4593,6 @@ bool js::GetProperty(JSContext* cx, HandleValue v, Handle<PropertyName*> name,
       case ValueType::BigInt:
         proto = GlobalObject::getOrCreateBigIntPrototype(cx, cx->global());
         break;
-#ifdef ENABLE_RECORD_TUPLE
-      case ValueType::ExtendedPrimitive: {
-        RootedObject obj(cx, &v.toExtendedPrimitive());
-        RootedId id(cx, NameToId(name));
-        return ExtendedPrimitiveGetProperty(cx, obj, v, id, vp);
-      }
-#endif
       case ValueType::Undefined:
       case ValueType::Null:
       case ValueType::Magic:
@@ -5026,15 +4870,6 @@ bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
   bool status = result.ok();
   res.setBoolean(status);
 
-#ifndef NIGHTLY_BUILD
-  if (status) {
-    // Deleting a name from the global object removes it from [[VarNames]].
-    if (pobj == env && env->is<GlobalObject>()) {
-      env->as<GlobalObject>().removeFromVarNames(name);
-    }
-  }
-#endif
-
   return true;
 }
 
@@ -5188,10 +5023,7 @@ bool js::SpreadCallOperation(JSContext* cx, HandleScript script, jsbytecode* pc,
   return true;
 }
 
-static bool OptimizeArrayIteration(JSContext* cx, HandleObject obj,
-                                   bool* optimized) {
-  *optimized = false;
-
+static bool OptimizeArrayIteration(JSObject* obj, JSContext* cx) {
   // Optimize spread call by skipping spread operation when following
   // conditions are met:
   //   * the argument is an array
@@ -5202,20 +5034,7 @@ static bool OptimizeArrayIteration(JSContext* cx, HandleObject obj,
   //   * %ArrayIteratorPrototype%.next is not modified
   //   * %ArrayIteratorPrototype%.return is not defined
   //   * return is nowhere on the proto chain
-  if (!IsPackedArray(obj)) {
-    return true;
-  }
-
-  ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
-  }
-
-  if (!stubChain->tryOptimizeArray(cx, obj.as<ArrayObject>(), optimized)) {
-    return false;
-  }
-
-  return true;
+  return IsArrayWithDefaultIterator<MustBePacked::Yes>(obj, cx);
 }
 
 static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
@@ -5228,6 +5047,8 @@ static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
   //   * the arguments object has no deleted elements
   //   * arguments.length is not overridden
   //   * arguments[@@iterator] is not overridden
+  //   * the arguments object belongs to the current realm (affects which
+  //     %ArrayIteratorPrototype% is used)
   //   * %ArrayIteratorPrototype%.next is not modified
 
   if (!obj->is<ArgumentsObject>()) {
@@ -5239,17 +5060,11 @@ static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
       args->hasOverriddenIterator()) {
     return true;
   }
-
-  ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
+  if (cx->realm() != args->realm()) {
+    return true;
   }
 
-  bool optimized;
-  if (!stubChain->tryOptimizeArrayIteratorNext(cx, &optimized)) {
-    return false;
-  }
-  if (!optimized) {
+  if (!HasOptimizableArrayIteratorPrototype(cx)) {
     return true;
   }
 
@@ -5273,11 +5088,7 @@ bool js::OptimizeSpreadCall(JSContext* cx, HandleValue arg,
   }
 
   RootedObject obj(cx, &arg.toObject());
-  bool optimized;
-  if (!OptimizeArrayIteration(cx, obj, &optimized)) {
-    return false;
-  }
-  if (optimized) {
+  if (OptimizeArrayIteration(obj, cx)) {
     result.setObject(*obj);
     return true;
   }
@@ -5293,28 +5104,11 @@ bool js::OptimizeSpreadCall(JSContext* cx, HandleValue arg,
   return true;
 }
 
-bool js::OptimizeGetIterator(JSContext* cx, HandleValue arg, bool* result) {
-  // This function returns |false| if the iteration can't be optimized.
-  *result = false;
-
+bool js::OptimizeGetIterator(const Value& arg, JSContext* cx) {
   if (!arg.isObject()) {
-    return true;
-  }
-
-  RootedObject obj(cx, &arg.toObject());
-
-  bool optimized;
-  if (!OptimizeArrayIteration(cx, obj, &optimized)) {
     return false;
   }
-
-  if (optimized) {
-    *result = true;
-    return true;
-  }
-
-  MOZ_ASSERT(!*result);
-  return true;
+  return OptimizeArrayIteration(&arg.toObject(), cx);
 }
 
 ArrayObject* js::ArrayFromArgumentsObject(JSContext* cx,
@@ -5345,6 +5139,11 @@ JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
   }
 
   MOZ_ASSERT(JSOp(*pc) == JSOp::NewInit);
+  uint8_t propCount = GET_UINT8(pc);
+  if (propCount > 0) {
+    gc::AllocKind allocKind = gc::GetGCObjectKind(propCount);
+    return NewPlainObjectWithAllocKind(cx, allocKind);
+  }
   return NewPlainObject(cx);
 }
 

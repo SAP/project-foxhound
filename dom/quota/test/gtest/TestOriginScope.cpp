@@ -4,6 +4,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this file,
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include "QuotaManagerTestHelpers.h"
 #include "gtest/gtest.h"
 #include "mozilla/dom/quota/OriginScope.h"
 #include "nsStringFwd.h"
@@ -12,25 +13,7 @@
 
 namespace mozilla::dom::quota {
 
-namespace {
-
-PrincipalMetadata GetPrincipalMetadata(const nsCString& aGroup,
-                                       const nsCString& aOriginNoSuffix) {
-  return PrincipalMetadata{""_ns, aGroup, aOriginNoSuffix, aOriginNoSuffix,
-                           /* aIsPrivate */ false};
-}
-
-PrincipalMetadata GetPrincipalMetadata(const nsCString& aSuffix,
-                                       const nsCString& aGroupNoSuffix,
-                                       const nsCString& aOriginNoSuffix) {
-  nsCString group = aGroupNoSuffix + "^"_ns + aSuffix;
-  nsCString origin = aOriginNoSuffix + "^"_ns + aSuffix;
-
-  return PrincipalMetadata{aSuffix, group, origin, origin,
-                           /* aIsPrivate */ false};
-}
-
-}  // namespace
+using test::GetPrincipalMetadata;
 
 TEST(DOM_Quota_OriginScope, SanityChecks)
 {
@@ -82,10 +65,10 @@ TEST(DOM_Quota_OriginScope, MatchesOrigin)
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
         GetPrincipalMetadata("mozilla.org"_ns, "http://www.mozilla.org"_ns))));
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "mozilla.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "mozilla.org"_ns,
                              "http://www.mozilla.org"_ns))));
     EXPECT_FALSE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "example.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "example.org"_ns,
                              "http://www.example.org"_ns))));
   }
 
@@ -96,10 +79,10 @@ TEST(DOM_Quota_OriginScope, MatchesOrigin)
     EXPECT_FALSE(originScope.Matches(OriginScope::FromOrigin(
         GetPrincipalMetadata("mozilla.org"_ns, "http://www.mozilla.org"_ns))));
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "mozilla.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "mozilla.org"_ns,
                              "http://www.mozilla.org"_ns))));
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "example.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "example.org"_ns,
                              "http://www.example.org"_ns))));
   }
 
@@ -109,10 +92,10 @@ TEST(DOM_Quota_OriginScope, MatchesOrigin)
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
         GetPrincipalMetadata("mozilla.org"_ns, "http://www.mozilla.org"_ns))));
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "mozilla.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "mozilla.org"_ns,
                              "http://www.mozilla.org"_ns))));
     EXPECT_TRUE(originScope.Matches(OriginScope::FromOrigin(
-        GetPrincipalMetadata("userContextId=1"_ns, "example.org"_ns,
+        GetPrincipalMetadata("^userContextId=1"_ns, "example.org"_ns,
                              "http://www.example.org"_ns))));
   }
 }
@@ -131,7 +114,7 @@ TEST(DOM_Quota_OriginScope, MatchesGroup)
 
   {
     const auto originScope(OriginScope::FromOrigin(GetPrincipalMetadata(
-        "userContextId=1"_ns, "mozilla.org"_ns, "http://www.mozilla.org"_ns)));
+        "^userContextId=1"_ns, "mozilla.org"_ns, "http://www.mozilla.org"_ns)));
 
     ASSERT_FALSE(originScope.Matches(OriginScope::FromGroup("mozilla.org"_ns)));
     ASSERT_TRUE(originScope.Matches(

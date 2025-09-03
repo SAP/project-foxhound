@@ -50,4 +50,27 @@ object Constants {
             "Wikipedia" to "Wikipedia",
         )
     }
+
+    // "Ghostery" not included in the list because of the name discrepancy
+    // between the recommended list and the install confirmation prompt
+    val recommendedAddons = listOf(
+        "uBlock Origin",
+        "Privacy Badger",
+        "AdGuard AdBlocker",
+        "Dark Reader",
+        "Bitwarden Password Manager",
+        "Tampermonkey",
+        "FoxyProxy",
+        "NoScript",
+        "Search by Image",
+        "ClearURLs",
+        "Firefox Relay",
+        "Read Aloud: A Text to Speech Voice Reader",
+        "Decentraleyes",
+        "YouTube High Definition",
+        "Web Archives",
+        "Video Background Play Fix",
+        "Tomato Clock",
+        "Google Search Fixer",
+    )
 }

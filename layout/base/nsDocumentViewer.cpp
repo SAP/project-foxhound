@@ -270,8 +270,8 @@ void BFCachePreventionObserver::ContentInserted(nsIContent* aChild) {
   MutationHappened();
 }
 
-void BFCachePreventionObserver::ContentRemoved(nsIContent* aChild,
-                                               nsIContent* aPreviousSibling) {
+void BFCachePreventionObserver::ContentWillBeRemoved(nsIContent* aChild,
+                                                     const BatchRemovalState*) {
   if (aChild->IsInNativeAnonymousSubtree()) {
     return;
   }
@@ -2431,7 +2431,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocumentViewer::SelectAll() {
 NS_IMETHODIMP nsDocumentViewer::CopySelection() {
   RefPtr<PresShell> presShell = mPresShell;
   nsCopySupport::FireClipboardEvent(eCopy, Some(nsIClipboard::kGlobalClipboard),
-                                    presShell, nullptr);
+                                    presShell, nullptr, nullptr);
   return NS_OK;
 }
 
@@ -2636,7 +2636,7 @@ MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocumentViewer::GetContentSize(
       prefISize = root->GetPrefISize(input);
     }
     prefISize = nsPresContext::RoundUpAppUnitsToCSSPixel(
-        std::max(minISize, std::min(prefISize, maxISize)));
+        CSSMinMax(prefISize, minISize, maxISize));
   }
 
   // We should never intentionally get here with this sentinel value, but it's

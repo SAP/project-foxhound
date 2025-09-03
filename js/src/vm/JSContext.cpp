@@ -208,9 +208,9 @@ void js::DestroyContext(JSContext* cx) {
 
   cx->checkNoGCRooters();
 
-  // Cancel all off thread Ion compiles. Completed Ion compiles may try to
+  // Cancel all off thread compiles. Completed compiles may try to
   // interrupt this context. See HelperThread::handleIonWorkload.
-  CancelOffThreadIonCompile(cx->runtime());
+  CancelOffThreadCompile(cx->runtime());
 
   cx->jobQueue = nullptr;
   cx->internalJobQueue = nullptr;
@@ -814,18 +814,17 @@ JS_PUBLIC_API void js::RunJobs(JSContext* cx) {
   JS::ClearKeptObjects(cx);
 }
 
-JSObject* InternalJobQueue::getIncumbentGlobal(JSContext* cx) {
-  if (!cx->compartment()) {
-    return nullptr;
-  }
-  return cx->global();
+bool InternalJobQueue::getHostDefinedData(
+    JSContext* cx, JS::MutableHandle<JSObject*> data) const {
+  data.set(nullptr);
+  return true;
 }
 
 bool InternalJobQueue::enqueuePromiseJob(JSContext* cx,
                                          JS::HandleObject promise,
                                          JS::HandleObject job,
                                          JS::HandleObject allocationSite,
-                                         JS::HandleObject incumbentGlobal) {
+                                         JS::HandleObject hostDefinedData) {
   MOZ_ASSERT(job);
   if (!queue.pushBack(job)) {
     ReportOutOfMemory(cx);
@@ -1234,15 +1233,35 @@ bool JSContext::isThrowingDebuggeeWouldRun() {
              JSEXN_DEBUGGEEWOULDRUN;
 }
 
-bool JSContext::isRuntimeCodeGenEnabled(JS::RuntimeCode kind,
-                                        HandleString code) {
+bool JSContext::isRuntimeCodeGenEnabled(
+    JS::RuntimeCode kind, JS::Handle<JSString*> codeString,
+    JS::CompilationType compilationType,
+    JS::Handle<JS::StackGCVector<JSString*>> parameterStrings,
+    JS::Handle<JSString*> bodyString,
+    JS::Handle<JS::StackGCVector<JS::Value>> parameterArgs,
+    JS::Handle<JS::Value> bodyArg, bool* outCanCompileStrings) {
   // Make sure that the CSP callback is installed and that it permits runtime
   // code generation.
   if (JSCSPEvalChecker allows =
           runtime()->securityCallbacks->contentSecurityPolicyAllows) {
-    return allows(this, kind, code);
+    return allows(this, kind, codeString, compilationType, parameterStrings,
+                  bodyString, parameterArgs, bodyArg, outCanCompileStrings);
   }
 
+  // Default implementation from the "Dynamic Code Brand Checks" spec.
+  // https://tc39.es/proposal-dynamic-code-brand-checks/#sec-hostensurecancompilestrings
+  *outCanCompileStrings = true;
+  return true;
+}
+
+bool JSContext::getCodeForEval(HandleObject code,
+                               JS::MutableHandle<JSString*> outCode) {
+  if (JSCodeForEvalOp gets = runtime()->securityCallbacks->codeForEvalGets) {
+    return gets(this, code, outCode);
+  }
+  // Default implementation from the "Dynamic Code Brand Checks" spec.
+  // https://tc39.es/proposal-dynamic-code-brand-checks/#sec-hostgetcodeforeval
+  outCode.set(nullptr);
   return true;
 }
 

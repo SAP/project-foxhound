@@ -13,44 +13,17 @@ add_task(
       prefs: [["browser.translations.newSettingsUI.enable", true]],
     });
 
-    const frenchModels = [
-      "lex.50.50.enfr.s2t.bin",
-      "lex.50.50.fren.s2t.bin",
-      "model.enfr.intgemm.alphas.bin",
-      "model.fren.intgemm.alphas.bin",
-      "vocab.enfr.spm",
-      "vocab.fren.spm",
-    ];
+    const frenchModels = languageModelNames([
+      { fromLang: "fr", toLang: "en" },
+      { fromLang: "en", toLang: "fr" },
+    ]);
 
-    const spainishModels = [
-      "lex.50.50.enes.s2t.bin",
-      "lex.50.50.esen.s2t.bin",
-      "model.enes.intgemm.alphas.bin",
-      "model.esen.intgemm.alphas.bin",
-      "vocab.enes.spm",
-      "vocab.esen.spm",
-    ];
+    const spanishModels = languageModelNames([
+      { fromLang: "es", toLang: "en" },
+      { fromLang: "en", toLang: "es" },
+    ]);
 
-    const allModels = [
-      "lex.50.50.enes.s2t.bin",
-      "lex.50.50.enfr.s2t.bin",
-      "lex.50.50.enuk.s2t.bin",
-      "lex.50.50.esen.s2t.bin",
-      "lex.50.50.fren.s2t.bin",
-      "lex.50.50.uken.s2t.bin",
-      "model.enes.intgemm.alphas.bin",
-      "model.enfr.intgemm.alphas.bin",
-      "model.enuk.intgemm.alphas.bin",
-      "model.esen.intgemm.alphas.bin",
-      "model.fren.intgemm.alphas.bin",
-      "model.uken.intgemm.alphas.bin",
-      "vocab.enes.spm",
-      "vocab.enfr.spm",
-      "vocab.enuk.spm",
-      "vocab.esen.spm",
-      "vocab.fren.spm",
-      "vocab.uken.spm",
-    ];
+    const allModels = languageModelNames(LANGUAGE_PAIRS);
 
     assertVisibility({
       message: "Expect paneGeneral elements to be visible.",
@@ -60,20 +33,16 @@ add_task(
     info(
       "Open translations settings page by clicking on translations settings button."
     );
-    const { translateDownloadLanguagesList } =
+    const { downloadLanguageList } =
       await TranslationsSettingsTestUtils.openAboutPreferencesTranslationsSettingsPane(
         settingsButton
       );
 
-    let langList = translateDownloadLanguagesList.querySelector(
-      ".translations-settings-language-list"
-    );
-
     info("Test French language model for download error");
 
-    let langFr = Array.from(langList.querySelectorAll("label")).find(
-      el => el.getAttribute("value") === "fr"
-    );
+    let langFr = Array.from(
+      downloadLanguageList.querySelectorAll("label")
+    ).find(el => el.getAttribute("value") === "fr");
 
     let clickButton = BrowserTestUtils.waitForEvent(
       langFr.parentNode.querySelector("moz-button"),
@@ -117,9 +86,9 @@ add_task(
 
     info("Download Spanish language model successfully.");
 
-    let langEs = Array.from(langList.querySelectorAll("label")).find(
-      el => el.getAttribute("value") === "es"
-    );
+    let langEs = Array.from(
+      downloadLanguageList.querySelectorAll("label")
+    ).find(el => el.getAttribute("value") === "es");
 
     clickButton = BrowserTestUtils.waitForEvent(
       langEs.parentNode.querySelector("moz-button"),
@@ -140,9 +109,9 @@ add_task(
 
     Assert.deepEqual(
       await remoteClients.translationModels.resolvePendingDownloads(
-        spainishModels.length
+        spanishModels.length
       ),
-      spainishModels,
+      spanishModels,
       "Spanish models were downloaded."
     );
 
@@ -154,7 +123,7 @@ add_task(
 
     info("Test All language models download error");
     // Download "All languages" is the first child
-    let langAll = langList.children[0];
+    let langAll = downloadLanguageList.children[0];
 
     let clickButtonAll = BrowserTestUtils.waitForEvent(
       langAll.querySelector("moz-button"),

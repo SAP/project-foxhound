@@ -15,7 +15,7 @@
 #include "ipc/EnumSerializer.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/GfxMessageUtils.h"
-#include "mozilla/dom/WebGLIpdl.h"
+#include "mozilla/ParamTraits_TiedFields.h"
 #include "mozilla/gfx/Rect.h"
 #include "mozilla/dom/MFCDMSerializers.h"
 
@@ -215,7 +215,7 @@ struct ParamTraits<mozilla::MediaDataDecoder::ConversionRequired>
           mozilla::MediaDataDecoder::ConversionRequired,
           mozilla::MediaDataDecoder::ConversionRequired(0),
           mozilla::MediaDataDecoder::ConversionRequired(
-              mozilla::MediaDataDecoder::ConversionRequired::kNeedAnnexB)> {};
+              mozilla::MediaDataDecoder::ConversionRequired::kNeedHVCC)> {};
 
 template <>
 struct ParamTraits<mozilla::media::TimeUnit> {

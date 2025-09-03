@@ -332,21 +332,14 @@ nsresult MediaEngineFakeVideoSource::Start() {
   }
 
   // Start timer for subsequent frames
-  uint32_t interval;
-#if defined(MOZ_WIDGET_ANDROID) && defined(DEBUG)
-  // emulator debug is very, very slow and has problems dealing with realtime
-  // audio inputs
-  interval = 10 * (1000 / mOpts.mFPS);
-#else
-  interval = 1000 / mOpts.mFPS;
-#endif
+  const uint32_t interval = 1000 / mOpts.mFPS;
   mTimer->InitWithNamedFuncCallback(
       [](nsITimer* aTimer, void* aClosure) {
         RefPtr<MediaEngineFakeVideoSource> source =
             static_cast<MediaEngineFakeVideoSource*>(aClosure);
         source->GenerateFrame();
       },
-      this, interval, nsITimer::TYPE_REPEATING_SLACK,
+      this, interval, nsITimer::TYPE_REPEATING_PRECISE_CAN_SKIP,
       "MediaEngineFakeVideoSource::GenerateFrame");
 
   mState = kStarted;

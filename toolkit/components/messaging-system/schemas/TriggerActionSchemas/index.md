@@ -51,6 +51,9 @@ let patterns: string[];
 - [`pdfJsFeatureCalloutCheck`](#pdfjsfeaturecalloutcheck)
 - [`newtabFeatureCalloutCheck`](#newtabfeaturecalloutcheck)
 - [`nthTabClosed`](#nthtabclosed)
+- [`nthTabOpened`](#nthtabopened)
+- [`tabGroupCreated`](#tabgroupcreated)
+- [`tabGroupSaved`](#tabgroupsaved)
 - [`activityAfterIdle`](#activityafteridle)
 - [`cookieBannerDetected`](#cookiebannerdetected)
 - [`cookieBannerHandled`](#cookiebannerhandled)
@@ -58,6 +61,8 @@ let patterns: string[];
 - [`pageActionInUrlbar`](#pageactioninurlbar)
 - [`onSearch`](#onsearch)
 - [`sidebarToolOpened`](#sidebartoolopened)
+- [`shoppingProductPageWithIntegratedRCSidebarClosed`](#shoppingproductpage)
+- [`reviewCheckerSidebarClosedCallout`](#sidebarclosed)
 - [`elementClicked`](#elementclicked)
 
 ### `openArticleURL`
@@ -215,6 +220,82 @@ Happens when the user closes n or more tabs in a session
   targeting: "tabsClosedCount >= 2"
 }
 ```
+```js
+// The trigger also tracks the number of tabs currently open,
+// and the currentTabsOpen context variable can be used in targeting
+// to ensure a minimum number of tabs are open.
+// Here, the message will trigger on the next tab closed
+// after 4 tabs are opened (and remain open).
+{
+  trigger: { id: "nthTabClosed" },
+  targeting: "currentTabsOpen >= 4"
+}
+```
+
+### `nthTabOpened`
+
+Happens when the user opens n or more tabs in a session
+
+```js
+// Register a message with the following trigger and
+// include the tabsOpenedCount context variable in the targeting.
+// Here, the message triggers once two or more tabs are opened,
+// even if the tabs were closed in between.
+{
+  trigger: { id: "nthTabOpened" },
+  targeting: "tabsOpenedCount >= 2"
+}
+```
+```js
+// The trigger also tracks the number of tabs currently open,
+// and the currentTabsOpen context variable can be used in targeting
+// to ensure a minimum number of tabs are open.
+// Here, the message will trigger on the next tab opened
+// while 4 tabs remain open in the browser.
+{
+  trigger: { id: "nthTabOpened" },
+  targeting: "currentTabsOpen >= 4"
+}
+```
+
+### `tabGroupCreated`
+
+Happens whenever a user creates a tab group.
+
+```js
+{
+  trigger: { id: "tabGroupCreated" }
+}
+```
+```js
+// The trigger can also track the number or tab groups created in a
+// session, by including the tabGroupsCreatedCount context variable in targeting.
+// Here, the message triggers once two or more tab groups have been created,
+// even if the tabs were closed in between.
+{
+  trigger: { id: "tabGroupCreated" },
+  targeting: { "tabGroupsCreatedCount >= 2" }
+}
+```
+
+### `tabGroupSaved`
+
+Happens whenever a user uses the "Save and Close" action on a tab group.
+
+```js
+{
+  trigger: { id: "tabGroupSaved" }
+}
+```
+```js
+// The trigger can also track the number or tab groups closed in a
+// session, by including the tabGroupsClosedCount context variable in targeting.
+// Here, the message triggers once two tab groups have been saved and closed.
+{
+  trigger: { id: "tabGroupSaved" },
+  targeting: { "tabGroupsSavedCount >= 2" }
+}
+```
 
 ### `activityAfterIdle`
 
@@ -301,6 +382,32 @@ The `clickCounts` object context variable is also available in targeting, and in
 {
   trigger: { id: "sidebarToolOpened" },
   targeting: `'sidebar.position_start'|preferenceValue && view != 'viewGenaiChatSidebar' && clickCounts.totalToolsMinusGenai == 5 && !'messaging-system-action.sidebar-tools-microsurvey-complete-or-dismissed'|preferenceValue`
+}
+```
+
+### `shoppingProductPageWithIntegratedRCSidebarClosed`
+
+Happens when the user navigates to a product page
+
+The `isReviewCheckerInSidebarClosed` string context variable is available in targeting, and will correspond with which whether the Review Checker panel in the sidebar is closed
+
+```js
+{
+  trigger: { id: "shoppingProductPageWithIntegratedRCSidebarClosed" },
+  targeting: `'sidebar.main.tools' | preferenceValue | regExpMatch('reviewchecker') && !'messaging-system-action.shopping-block-review-checker-callout-3' | preferenceValue && !'messaging-system-action.shopping-block-review-checker-callouts' | preferenceValue && isReviewCheckerInSidebarClosed && 'browser.shopping.experience2023.integratedSidebar' | preferenceValue && 'sidebar.revamp' | preferenceValue && 'browser.shopping.experience2023.optedIn' | preferenceValue == 0 && 'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue != false && 'browser.shopping.experience2023.onboardingImpressionTime' | preferenceValue && ((currentDate | date - ('browser.shopping.experience2023.onboardingImpressionTime' | preferenceValue * 1000)) / 3600000) > 24 && !'sidebar.verticalTabs' | preferenceValue`
+}
+```
+
+### `reviewCheckerSidebarClosedCallout`
+
+Happens when the user navigates to a product page
+
+The `isReviewCheckerInSidebarClosed` string context variable is available in targeting, and will correspond with which whether the Review Checker panel in the sidebar is closed
+
+```js
+{
+  trigger: { id: "shoppingProductPageWithIntegratedRCSidebarClosed" },
+  targeting: `'browser.newtabpage.activity-stream.asrouter.userprefs.cfr.features' | preferenceValue && 'browser.shopping.experience2023.integratedSidebar' | preferenceValue && 'sidebar.revamp' | preferenceValue && 'browser.shopping.experience2023.optedIn' | preferenceValue == 1 && isReviewCheckerInSidebarClosed && !'sidebar.verticalTabs' | preferenceValue`
 }
 ```
 

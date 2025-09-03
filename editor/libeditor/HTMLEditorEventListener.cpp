@@ -80,8 +80,8 @@ NS_IMETHODIMP HTMLEditorEventListener::HandleEvent(Event* aEvent) {
 
       RefPtr<HTMLEditor> htmlEditor = mEditorBase->AsHTMLEditor();
       DebugOnly<nsresult> rvIgnored =
-          htmlEditor->UpdateResizerOrGrabberPositionTo(CSSIntPoint(
-              mouseMoveEvent->ClientX(), mouseMoveEvent->ClientY()));
+          htmlEditor->UpdateResizerOrGrabberPositionTo(
+              RoundedToInt(mouseMoveEvent->ClientPoint()));
       NS_WARNING_ASSERTION(
           NS_SUCCEEDED(rvIgnored),
           "HTMLEditor::UpdateResizerOrGrabberPositionTo() failed, but ignored");
@@ -245,7 +245,7 @@ nsresult HTMLEditorEventListener::MouseUp(MouseEvent* aMouseEvent) {
   //      on native anonymous node like a resizer.
 
   DebugOnly<nsresult> rvIgnored = htmlEditor->StopDraggingResizerOrGrabberAt(
-      CSSIntPoint(aMouseEvent->ClientX(), aMouseEvent->ClientY()));
+      RoundedToInt(aMouseEvent->ClientPoint()));
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rvIgnored),
       "HTMLEditor::StopDraggingResizerOrGrabberAt() failed, but ignored");

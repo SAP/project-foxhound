@@ -291,6 +291,15 @@ projects:
     - support-utils
     - tooling-lint
     - ui-icons
+  compose-base:
+    description: A component containing base Composable components based on Acorn Design System.
+    path: components/compose/base
+    publish: true
+    upstream_dependencies:
+    - support-test
+    - tooling-lint
+    - ui-colors
+    - ui-icons
   compose-browser-toolbar:
     description: A customizable toolbar for browsers using Jetpack Compose.
     path: components/compose/browser-toolbar
@@ -965,6 +974,7 @@ projects:
     - browser-state
     - browser-tabstray
     - browser-thumbnails
+    - compose-base
     - concept-awesomebar
     - concept-base
     - concept-engine
@@ -1142,6 +1152,16 @@ projects:
     - ui-colors
     - ui-icons
     - ui-tabcounter
+  feature-screendetection:
+    description: Feature implementation connecting an engine implementation with the
+      search module.
+    path: components/feature/screendetection
+    publish: true
+    upstream_dependencies:
+      - support-test
+      - support-test-fakes
+      - support-test-libstate
+      - tooling-lint
   feature-serviceworker:
     description: Feature that adds support for service workers when using GeckoEngine.
     path: components/feature/serviceworker
@@ -1879,9 +1899,9 @@ projects:
     - ui-icons
     - ui-tabcounter
     - ui-widgets
-  service-contile:
+  service-mars:
     description: A library to communicate with the Contile services API
-    path: components/service/contile
+    path: components/service/mars
     publish: true
     upstream_dependencies:
     - browser-storage-sync

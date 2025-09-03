@@ -55,6 +55,11 @@ GtkCompositorWidget::GtkCompositorWidget(
 GtkCompositorWidget::~GtkCompositorWidget() {
   LOG("GtkCompositorWidget::~GtkCompositorWidget [%p]\n", (void*)mWidget.get());
   CleanupResources();
+#ifdef MOZ_WAYLAND
+  if (mNativeLayerRoot) {
+    mNativeLayerRoot->Shutdown();
+  }
+#endif
   RefPtr<nsIWidget> widget = mWidget.forget();
   NS_ReleaseOnMainThread("GtkCompositorWidget::mWidget", widget.forget());
 }
@@ -92,27 +97,6 @@ LayoutDeviceIntSize GtkCompositorWidget::GetClientSize() {
   return *size;
 }
 
-void GtkCompositorWidget::RemoteLayoutSizeUpdated(
-    const LayoutDeviceRect& aSize) {
-  if (!mWidget || !mWidget->IsWaitingForCompositorResume()) {
-    return;
-  }
-
-  LOG("GtkCompositorWidget::RemoteLayoutSizeUpdated() %d x %d",
-      (int)aSize.width, (int)aSize.height);
-
-  // We're waiting for layout to match widget size.
-  auto clientSize = mClientSize.Lock();
-  if (clientSize->width != (int)aSize.width ||
-      clientSize->height != (int)aSize.height) {
-    LOG("quit, client size doesn't match (%d x %d)", clientSize->width,
-        clientSize->height);
-    return;
-  }
-
-  mWidget->ResumeCompositorFromCompositorThread();
-}
-
 EGLNativeWindowType GtkCompositorWidget::GetEGLNativeWindow() {
   EGLNativeWindowType window = nullptr;
   if (mWidget) {
@@ -131,7 +115,8 @@ EGLNativeWindowType GtkCompositorWidget::GetEGLNativeWindow() {
 bool GtkCompositorWidget::SetEGLNativeWindowSize(
     const LayoutDeviceIntSize& aEGLWindowSize) {
 #if defined(MOZ_WAYLAND)
-  if (mWidget) {
+  // We explicitly need to set EGL window size on Wayland only.
+  if (GdkIsWaylandDisplay() && mWidget) {
     return mWidget->SetEGLNativeWindowSize(aEGLWindowSize);
   }
 #endif
@@ -152,9 +137,12 @@ RefPtr<mozilla::layers::NativeLayerRoot>
 GtkCompositorWidget::GetNativeLayerRoot() {
   if (gfx::gfxVars::UseWebRenderCompositor()) {
     if (!mNativeLayerRoot) {
+      LOG("GtkCompositorWidget::GetNativeLayerRoot [%p] create",
+          (void*)mWidget.get());
       MOZ_ASSERT(mWidget && mWidget->GetMozContainer());
-      mNativeLayerRoot = NativeLayerRootWayland::CreateForMozContainer(
-          mWidget->GetMozContainer());
+      mNativeLayerRoot = layers::NativeLayerRootWayland::Create(
+          MOZ_WL_SURFACE(mWidget->GetMozContainer()));
+      mNativeLayerRoot->Init();
     }
     return mNativeLayerRoot;
   }
@@ -208,7 +196,7 @@ bool GtkCompositorWidget::IsPopup() {
 }
 #endif
 
-UniquePtr<MozContainerSurfaceLock> GtkCompositorWidget::LockSurface() {
+UniquePtr<WaylandSurfaceLock> GtkCompositorWidget::LockSurface() {
   return mWidget ? mWidget->LockSurface() : nullptr;
 }
 

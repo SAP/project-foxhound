@@ -170,7 +170,7 @@ class XPCShellTestThread(Thread):
     def __init__(
         self,
         test_object,
-        retry=True,
+        retry=None,
         verbose=False,
         usingTSan=False,
         usingCrashReporter=False,
@@ -181,6 +181,10 @@ class XPCShellTestThread(Thread):
 
         self.test_object = test_object
         self.retry = retry
+        if retry is None:
+            # Retry in CI, but report results without retry when run locally to
+            # avoid confusion and ease local debugging.
+            self.retry = os.environ.get("MOZ_AUTOMATION", 0) != 0
         self.verbose = verbose
         self.usingTSan = usingTSan
         self.usingCrashReporter = usingCrashReporter
@@ -1584,6 +1588,10 @@ class XPCShellTests(object):
             "network.http.network_access_on_socket_process.enabled", False
         )
 
+        self.mozInfo["inc_origin_init"] = (
+            os.environ.get("MOZ_ENABLE_INC_ORIGIN_INIT") == "1"
+        )
+
         self.mozInfo["condprof"] = options.get("conditionedProfile", False)
         self.mozInfo["msix"] = options.get("variant", "") == "msix"
 
@@ -1594,7 +1602,7 @@ class XPCShellTests(object):
             (release, versioninfo, machine) = platform.mac_ver()
             versionNums = release.split(".")[:2]
             os_version = "%s.%s" % (versionNums[0], versionNums[1].ljust(2, "0"))
-            if os_version.split(".")[0] == "14":
+            if os_version.split(".")[0] in ["14", "15"]:
                 self.mozInfo["crashreporter"] = False
 
         # we default to false for e10s on xpcshell
@@ -1908,6 +1916,33 @@ class XPCShellTests(object):
 
         self.cleanup_dir_list = []
 
+        # If any of the tests that are about to be run uses npm packages
+        # we should install them now. It would also be possible for tests
+        # to define the location where they want the npm modules to be
+        # installed, but for now only netwerk xpcshell tests use it.
+        installNPM = False
+        for test in self.alltests:
+            if "usesNPM" in test:
+                installNPM = True
+                break
+
+        if installNPM:
+            command = "npm ci"
+            working_directory = os.path.join(SCRIPT_DIR, "moz-http2")
+            result = subprocess.run(
+                command,
+                shell=True,
+                cwd=working_directory,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+            # Print the output
+            self.log.info("npm output: " + result.stdout)
+            self.log.info("npm error: " + result.stderr)
+            self.log.info("npm return code: " + str(result.returncode))
+
         kwargs = {
             "appPath": self.appPath,
             "xrePath": self.xrePath,
@@ -2218,9 +2253,7 @@ class XPCShellTests(object):
                 self.start_test(test)
                 test.join()
                 self.test_ended(test)
-                if (test.failCount > 0 or test.passCount <= 0) and os.environ.get(
-                    "MOZ_AUTOMATION", 0
-                ) != 0:
+                if (test.failCount > 0 or test.passCount <= 0) and test.retry:
                     self.try_again_list.append(test.test_object)
                     continue
                 self.addTestResults(test)

@@ -1,4 +1,10 @@
-use std::{collections::hash_map::Entry, ops::Range, sync::Arc, vec::Drain};
+use alloc::{
+    sync::Arc,
+    vec::{Drain, Vec},
+};
+use core::ops::Range;
+
+use hashbrown::hash_map::Entry;
 
 use crate::{
     device::Device,
@@ -211,12 +217,12 @@ impl BakedCommands {
             // must already know about it.
             let transition = device_tracker
                 .buffers
-                .set_single(&buffer, hal::BufferUses::COPY_DST);
+                .set_single(&buffer, wgt::BufferUses::COPY_DST);
 
             let raw_buf = buffer.try_raw(snatch_guard)?;
 
             unsafe {
-                self.encoder.transition_buffers(
+                self.encoder.raw.transition_buffers(
                     transition
                         .map(|pending| pending.into_hal(&buffer, snatch_guard))
                         .as_slice(),
@@ -240,7 +246,7 @@ impl BakedCommands {
                 );
 
                 unsafe {
-                    self.encoder.clear_buffer(raw_buf, range.clone());
+                    self.encoder.raw.clear_buffer(raw_buf, range.clone());
                 }
             }
         }
@@ -293,7 +299,7 @@ impl BakedCommands {
                 let clear_result = clear_texture(
                     &texture_use.texture,
                     range,
-                    self.encoder.as_mut(),
+                    self.encoder.raw.as_mut(),
                     &mut device_tracker.textures,
                     &device.alignments,
                     device.zero_buffer.as_ref(),

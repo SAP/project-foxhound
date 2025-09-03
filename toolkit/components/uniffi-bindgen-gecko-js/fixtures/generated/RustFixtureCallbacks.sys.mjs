@@ -161,10 +161,10 @@ class ArrayBufferDataStream {
       return bytes
     }
 
-    writeBytes(uint8Array) {
-      this.writeUint32(uint8Array.length);
+    writeBytes(value) {
+      this.writeUint32(value.length);
       value.forEach((elt) => {
-        dataStream.writeUint8(elt);
+        this.writeUint8(elt);
       })
     }
 }
@@ -226,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -439,7 +470,7 @@ export class FfiConverterU32 extends FfiConverter {
             throw new UniFFITypeError(`${value} exceeds the U32 bounds`);
         }
     }
-    static computeSize() {
+    static computeSize(_value) {
         return 4;
     }
     static lift(value) {
@@ -467,7 +498,7 @@ export class FfiConverterI32 extends FfiConverter {
             throw new UniFFITypeError(`${value} exceeds the I32 bounds`);
         }
     }
-    static computeSize() {
+    static computeSize(_value) {
         return 4;
     }
     static lift(value) {
@@ -706,7 +737,7 @@ export function callLogRepeat(logger,message,count,exclude) {
                 throw e;
             }
             return UniFFIScaffolding.callAsyncWrapper(
-                75, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_call_log_repeat
+                103, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_call_log_repeat
                 FfiConverterTypeLogger.lower(logger),
                 FfiConverterString.lower(message),
                 FfiConverterU32.lower(count),
@@ -745,7 +776,7 @@ export function logEvenNumbers(logger,items) {
                 throw e;
             }
             return UniFFIScaffolding.callAsyncWrapper(
-                76, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers
+                104, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers
                 FfiConverterTypeLogger.lower(logger),
                 FfiConverterSequencei32.lower(items),
             )
@@ -782,7 +813,7 @@ export function logEvenNumbersMainThread(logger,items) {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                77, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers_main_thread
+                105, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers_main_thread
                 FfiConverterTypeLogger.lower(logger),
                 FfiConverterSequencei32.lower(items),
             )

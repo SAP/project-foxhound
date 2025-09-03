@@ -1812,12 +1812,8 @@ void nsGlobalWindowOuter::SetInitialPrincipal(
   }
 }
 
-#define WINDOWSTATEHOLDER_IID                        \
-  {                                                  \
-    0x0b917c3e, 0xbd50, 0x4683, {                    \
-      0xaf, 0xc9, 0xc7, 0x81, 0x07, 0xae, 0x33, 0x26 \
-    }                                                \
-  }
+#define WINDOWSTATEHOLDER_IID \
+  {0x0b917c3e, 0xbd50, 0x4683, {0xaf, 0xc9, 0xc7, 0x81, 0x07, 0xae, 0x33, 0x26}}
 
 class WindowStateHolder final : public nsISupports {
  public:
@@ -6528,17 +6524,11 @@ void nsGlobalWindowOuter::SetIsBackground(bool aIsBackground) {
     if (inner && changed) {
       inner->StopGamepadHaptics();
       inner->StopVRActivity();
-      // true is for asking to set the delta time to
-      // the telemetry.
-      inner->ResetVRTelemetry(true);
     }
     return;
   }
 
   if (inner) {
-    // When switching to be as a top tab, restart the telemetry.
-    // false is for only resetting the timestamp.
-    inner->ResetVRTelemetry(false);
     inner->SyncGamepadState();
     inner->StartVRActivity();
   }
@@ -6660,7 +6650,7 @@ bool nsGlobalWindowOuter::IsSuspended() const {
   if (!mInnerWindow) {
     return true;
   }
-  return mInnerWindow->IsSuspended();
+  return nsGlobalWindowInner::Cast(mInnerWindow)->IsSuspended();
 }
 
 bool nsGlobalWindowOuter::IsFrozen() const {
@@ -6669,7 +6659,7 @@ bool nsGlobalWindowOuter::IsFrozen() const {
   if (!mInnerWindow) {
     return true;
   }
-  return mInnerWindow->IsFrozen();
+  return nsGlobalWindowInner::Cast(mInnerWindow)->IsFrozen();
 }
 
 nsresult nsGlobalWindowOuter::FireDelayedDOMEvents(bool aIncludeSubWindows) {
@@ -6849,6 +6839,13 @@ nsresult nsGlobalWindowOuter::OpenInternal(
       FireAbuseEvents(aUrl, windowName, aOptions);
       return aDoJSFixups ? NS_OK : NS_ERROR_FAILURE;
     }
+  }
+
+  // Per https://github.com/whatwg/html/pull/10547, we should always consume
+  // user activation when opening a new window, even if the popup blocker is
+  // disabled or the website has popup permission.
+  if (!windowExists && mDoc) {
+    mDoc->ConsumeTransientUserGestureActivation();
   }
 
   RefPtr<BrowsingContext> domReturn;

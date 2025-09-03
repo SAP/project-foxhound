@@ -24,6 +24,7 @@
 #include "api/crypto/crypto_options.h"
 #include "api/jsep.h"
 #include "api/media_types.h"
+#include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
 #include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
@@ -34,7 +35,7 @@
 #include "media/base/rtp_utils.h"
 #include "media/base/stream_params.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "p2p/base/dtls_transport_internal.h"
+#include "p2p/dtls/dtls_transport_internal.h"
 #include "pc/rtp_media_utils.h"
 #include "pc/rtp_transport_internal.h"
 #include "pc/session_description.h"
@@ -382,6 +383,13 @@ void BaseChannel::SetFirstPacketReceivedCallback(
   on_first_packet_received_ = std::move(callback);
 }
 
+void BaseChannel::SetFirstPacketSentCallback(std::function<void()> callback) {
+  RTC_DCHECK_RUN_ON(network_thread());
+  RTC_DCHECK(!on_first_packet_sent_ || !callback);
+
+  on_first_packet_sent_ = std::move(callback);
+}
+
 void BaseChannel::OnTransportReadyToSend(bool ready) {
   RTC_DCHECK_RUN_ON(network_thread());
   RTC_DCHECK(network_initialized());
@@ -428,6 +436,11 @@ bool BaseChannel::SendPacket(bool rtcp,
     RTC_DLOG(LS_WARNING) << "Sending an " << (rtcp ? "RTCP" : "RTP")
                          << " packet without encryption for " << ToString()
                          << ".";
+  }
+
+  if (on_first_packet_sent_ && options.info_signaled_after_sent.is_media) {
+    on_first_packet_sent_();
+    on_first_packet_sent_ = nullptr;
   }
 
   return rtcp ? rtp_transport_->SendRtcpPacket(packet, options, PF_SRTP_BYPASS)
@@ -959,6 +972,12 @@ bool VoiceChannel::SetRemoteContent_w(const MediaContentDescription* content,
         mid().c_str());
     return false;
   }
+  // The receive channel can send RTCP packets in the reverse direction. It
+  // should use the reduced size mode if a peer has requested it through the
+  // remote content.
+  media_receive_channel()->SetRtcpMode(content->rtcp_reduced_size()
+                                           ? webrtc::RtcpMode::kReducedSize
+                                           : webrtc::RtcpMode::kCompound);
   // Update Receive channel based on Send channel's codec information.
   // TODO(bugs.webrtc.org/14911): This is silly. Stop doing it.
   media_receive_channel()->SetReceiveNackEnabled(

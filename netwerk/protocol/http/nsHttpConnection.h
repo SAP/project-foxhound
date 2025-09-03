@@ -38,12 +38,8 @@ class nsHttpHandler;
 class ASpdySession;
 
 // 1dcc863e-db90-4652-a1fe-13fea0b54e46
-#define NS_HTTPCONNECTION_IID                        \
-  {                                                  \
-    0x1dcc863e, 0xdb90, 0x4652, {                    \
-      0xa1, 0xfe, 0x13, 0xfe, 0xa0, 0xb5, 0x4e, 0x46 \
-    }                                                \
-  }
+#define NS_HTTPCONNECTION_IID \
+  {0x1dcc863e, 0xdb90, 0x4652, {0xa1, 0xfe, 0x13, 0xfe, 0xa0, 0xb5, 0x4e, 0x46}}
 
 //-----------------------------------------------------------------------------
 // nsHttpConnection - represents a connection to a HTTP server (or proxy)
@@ -174,7 +170,7 @@ class nsHttpConnection final : public HttpConnectionBase,
   // has finished this returns false.
   bool NoClientCertAuth() const override;
 
-  WebSocketSupport GetWebSocketSupport() override;
+  ExtendedCONNECTSupport GetExtendedCONNECTSupport() override;
 
   int64_t BytesWritten() override { return mTotalBytesWritten; }
 
@@ -198,7 +194,7 @@ class nsHttpConnection final : public HttpConnectionBase,
 
   nsresult CreateTunnelStream(nsAHttpTransaction* httpTransaction,
                               nsHttpConnection** aHttpConnection,
-                              bool aIsWebSocket = false);
+                              bool aIsExtendedCONNECT = false);
 
   bool RequestDone() { return mRequestDone; }
 
@@ -221,7 +217,8 @@ class nsHttpConnection final : public HttpConnectionBase,
   void HandleWebSocketResponse(nsHttpRequestHead* requestHead,
                                nsHttpResponseHead* responseHead,
                                uint16_t responseStatus);
-  void ResetTransaction(RefPtr<nsAHttpTransaction>&& trans);
+  void ResetTransaction(RefPtr<nsAHttpTransaction>&& trans,
+                        bool aForH2Proxy = false);
 
   // Value (set in mTCPKeepaliveConfig) indicates which set of prefs to use.
   enum TCPKeepaliveConfig {
@@ -328,7 +325,7 @@ class nsHttpConnection final : public HttpConnectionBase,
   SpdyVersion mUsingSpdyVersion{SpdyVersion::NONE};
 
   RefPtr<ASpdySession> mSpdySession;
-  RefPtr<ASpdySession> mWebSocketHttp2Session;
+  RefPtr<ASpdySession> mExtendedCONNECTHttp2Session;
   int32_t mPriority{nsISupportsPriority::PRIORITY_NORMAL};
   bool mReportedSpdy{false};
 

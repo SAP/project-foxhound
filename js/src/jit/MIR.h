@@ -13,6 +13,7 @@
 #define jit_MIR_h
 
 #include "mozilla/Array.h"
+#include "mozilla/EnumSet.h"
 #include "mozilla/HashFunctions.h"
 #ifdef JS_JITSPEW
 #  include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
@@ -724,24 +725,18 @@ class MDefinition : public MNode {
   // is MIRType::Int32.
   MIRType type() const { return resultType_; }
 
-  bool mightBeType(MIRType type) const {
-    MOZ_ASSERT(type != MIRType::Value);
+  // Default EnumSet serialization is based on the enum's underlying type, which
+  // means uint8_t for MIRType. To store all possible MIRType values we need at
+  // least uint32_t.
+  using MIRTypeEnumSet = mozilla::EnumSet<MIRType, uint32_t>;
+  static_assert(static_cast<size_t>(MIRType::Last) <
+                sizeof(MIRTypeEnumSet::serializedType) * CHAR_BIT);
 
-    if (type == this->type()) {
-      return true;
-    }
-
-    if (this->type() == MIRType::Value) {
-      return true;
-    }
-
-    return false;
+  // Return true if the result type is a member of the given types.
+  bool typeIsOneOf(MIRTypeEnumSet types) const {
+    MOZ_ASSERT(!types.isEmpty());
+    return types.contains(type());
   }
-
-  bool mightBeMagicType() const;
-
-  // Return true if the result-set types are a subset of the given types.
-  bool definitelyType(std::initializer_list<MIRType> types) const;
 
   // Float32 specialization operations (see big comment in IonAnalysis before
   // the Float32 specialization algorithm).
@@ -2829,7 +2824,6 @@ class MCompare : public MBinaryInstruction, public ComparePolicy::Data {
   bool isNumericComparison() const {
     return isInt32Comparison() || isDoubleComparison() || isFloat32Comparison();
   }
-  MIRType inputType();
 
   JSOp jsop() const { return jsop_; }
   bool operandsAreNeverNaN() const { return operandsAreNeverNaN_; }
@@ -3334,9 +3328,9 @@ class MToFPInstruction : public MUnaryInstruction, public ToDoublePolicy::Data {
     setMovable();
 
     // Guard unless the conversion is known to be non-effectful & non-throwing.
-    if (!def->definitelyType({MIRType::Undefined, MIRType::Null,
-                              MIRType::Boolean, MIRType::Int32, MIRType::Double,
-                              MIRType::Float32, MIRType::String})) {
+    if (!def->typeIsOneOf({MIRType::Undefined, MIRType::Null, MIRType::Boolean,
+                           MIRType::Int32, MIRType::Double, MIRType::Float32,
+                           MIRType::String})) {
       setGuard();
     }
   }
@@ -3369,10 +3363,6 @@ class MToDouble : public MToFPInstruction {
 #ifdef DEBUG
   bool isConsistentFloat32Use(MUse* use) const override { return true; }
 #endif
-
-  bool canProduceFloat32() const override {
-    return input()->canProduceFloat32();
-  }
 
   TruncateKind truncateKind() const { return implicitTruncate_; }
   void setTruncateKind(TruncateKind kind) {
@@ -3722,9 +3712,9 @@ class MToNumberInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
     setMovable();
 
     // Guard unless the conversion is known to be non-effectful & non-throwing.
-    if (!def->definitelyType({MIRType::Undefined, MIRType::Null,
-                              MIRType::Boolean, MIRType::Int32, MIRType::Double,
-                              MIRType::Float32, MIRType::String})) {
+    if (!def->typeIsOneOf({MIRType::Undefined, MIRType::Null, MIRType::Boolean,
+                           MIRType::Int32, MIRType::Double, MIRType::Float32,
+                           MIRType::String})) {
       setGuard();
     }
   }
@@ -3767,12 +3757,11 @@ class MToNumberInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
 // Converts a value or typed input to a truncated int32, for use with bitwise
 // operations. This is an infallible ValueToECMAInt32.
 class MTruncateToInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
-  wasm::BytecodeOffset bytecodeOffset_;
+  wasm::TrapSiteDesc trapSiteDesc_;
 
   explicit MTruncateToInt32(
-      MDefinition* def,
-      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset())
-      : MUnaryInstruction(classOpcode, def), bytecodeOffset_(bytecodeOffset) {
+      MDefinition* def, wasm::TrapSiteDesc trapSiteDesc = wasm::TrapSiteDesc())
+      : MUnaryInstruction(classOpcode, def), trapSiteDesc_(trapSiteDesc) {
     setResultType(MIRType::Int32);
     setMovable();
 
@@ -3787,9 +3776,9 @@ class MTruncateToInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
   TRIVIAL_NEW_WRAPPERS
 
   static bool mightHaveSideEffects(MDefinition* def) {
-    return !def->definitelyType(
-        {MIRType::Undefined, MIRType::Null, MIRType::Boolean, MIRType::Int32,
-         MIRType::Double, MIRType::Float32, MIRType::String});
+    return !def->typeIsOneOf({MIRType::Undefined, MIRType::Null,
+                              MIRType::Boolean, MIRType::Int32, MIRType::Double,
+                              MIRType::Float32, MIRType::String});
   }
 
   MDefinition* foldsTo(TempAllocator& alloc) override;
@@ -3811,7 +3800,7 @@ class MTruncateToInt32 : public MUnaryInstruction, public ToInt32Policy::Data {
     return input()->type() < MIRType::Symbol;
   }
 
-  wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
+  const wasm::TrapSiteDesc& trapSiteDesc() const { return trapSiteDesc_; }
 
   ALLOW_CLONE(MTruncateToInt32)
 };
@@ -3825,7 +3814,7 @@ class MToBigInt : public MUnaryInstruction, public ToBigIntPolicy::Data {
     setMovable();
 
     // Guard unless the conversion is known to be non-effectful & non-throwing.
-    if (!def->definitelyType({MIRType::Boolean, MIRType::BigInt})) {
+    if (!def->typeIsOneOf({MIRType::Boolean, MIRType::BigInt})) {
       setGuard();
     }
   }
@@ -3850,7 +3839,7 @@ class MToInt64 : public MUnaryInstruction, public ToInt64Policy::Data {
     setMovable();
 
     // Guard unless the conversion is known to be non-effectful & non-throwing.
-    if (!def->definitelyType(
+    if (!def->typeIsOneOf(
             {MIRType::Boolean, MIRType::BigInt, MIRType::Int64})) {
       setGuard();
     }
@@ -3993,10 +3982,9 @@ class MToString : public MUnaryInstruction, public ToStringPolicy::Data {
       : MUnaryInstruction(classOpcode, def), sideEffects_(sideEffects) {
     setResultType(MIRType::String);
 
-    if (!def->definitelyType({MIRType::Undefined, MIRType::Null,
-                              MIRType::Boolean, MIRType::Int32, MIRType::Double,
-                              MIRType::Float32, MIRType::String,
-                              MIRType::BigInt})) {
+    if (!def->typeIsOneOf({MIRType::Undefined, MIRType::Null, MIRType::Boolean,
+                           MIRType::Int32, MIRType::Double, MIRType::Float32,
+                           MIRType::String, MIRType::BigInt})) {
       mightHaveSideEffects_ = true;
     }
 
@@ -5158,7 +5146,7 @@ class MDiv : public MBinaryArithInstruction {
   bool canBeNegativeDividend_;
   bool unsigned_;  // If false, signedness will be derived from operands
   bool trapOnError_;
-  wasm::BytecodeOffset bytecodeOffset_;
+  wasm::TrapSiteDesc trapSiteDesc_;
 
   MDiv(MDefinition* left, MDefinition* right, MIRType type)
       : MBinaryArithInstruction(classOpcode, left, right, type),
@@ -5178,12 +5166,12 @@ class MDiv : public MBinaryArithInstruction {
   }
   static MDiv* New(TempAllocator& alloc, MDefinition* left, MDefinition* right,
                    MIRType type, bool unsignd, bool trapOnError = false,
-                   wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset(),
+                   wasm::TrapSiteDesc trapSiteDesc = wasm::TrapSiteDesc(),
                    bool mustPreserveNaN = false) {
     auto* div = new (alloc) MDiv(left, right, type);
     div->unsigned_ = unsignd;
     div->trapOnError_ = trapOnError;
-    div->bytecodeOffset_ = bytecodeOffset;
+    div->trapSiteDesc_ = trapSiteDesc;
     if (trapOnError) {
       div->setGuard();  // not removable because of possible side-effects.
       div->setNotMovable();
@@ -5244,9 +5232,9 @@ class MDiv : public MBinaryArithInstruction {
   }
 
   bool trapOnError() const { return trapOnError_; }
-  wasm::BytecodeOffset bytecodeOffset() const {
-    MOZ_ASSERT(bytecodeOffset_.isValid());
-    return bytecodeOffset_;
+  const wasm::TrapSiteDesc& trapSiteDesc() const {
+    MOZ_ASSERT(trapSiteDesc_.isValid());
+    return trapSiteDesc_;
   }
 
   bool isFloat32Commutative() const override { return true; }
@@ -5280,7 +5268,7 @@ class MMod : public MBinaryArithInstruction {
   bool canBePowerOfTwoDivisor_;
   bool canBeDivideByZero_;
   bool trapOnError_;
-  wasm::BytecodeOffset bytecodeOffset_;
+  wasm::TrapSiteDesc trapSiteDesc_;
 
   MMod(MDefinition* left, MDefinition* right, MIRType type)
       : MBinaryArithInstruction(classOpcode, left, right, type),
@@ -5297,14 +5285,13 @@ class MMod : public MBinaryArithInstruction {
                    MIRType type) {
     return new (alloc) MMod(left, right, type);
   }
-  static MMod* New(
-      TempAllocator& alloc, MDefinition* left, MDefinition* right, MIRType type,
-      bool unsignd, bool trapOnError = false,
-      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset()) {
+  static MMod* New(TempAllocator& alloc, MDefinition* left, MDefinition* right,
+                   MIRType type, bool unsignd, bool trapOnError = false,
+                   wasm::TrapSiteDesc trapSiteDesc = wasm::TrapSiteDesc()) {
     auto* mod = new (alloc) MMod(left, right, type);
     mod->unsigned_ = unsignd;
     mod->trapOnError_ = trapOnError;
-    mod->bytecodeOffset_ = bytecodeOffset;
+    mod->trapSiteDesc_ = trapSiteDesc;
     if (trapOnError) {
       mod->setGuard();  // not removable because of possible side-effects.
       mod->setNotMovable();
@@ -5340,9 +5327,9 @@ class MMod : public MBinaryArithInstruction {
   bool isUnsigned() const { return unsigned_; }
 
   bool trapOnError() const { return trapOnError_; }
-  wasm::BytecodeOffset bytecodeOffset() const {
-    MOZ_ASSERT(bytecodeOffset_.isValid());
-    return bytecodeOffset_;
+  const wasm::TrapSiteDesc& trapSiteDesc() const {
+    MOZ_ASSERT(trapSiteDesc_.isValid());
+    return trapSiteDesc_;
   }
 
   [[nodiscard]] bool writeRecoverData(
@@ -6607,7 +6594,7 @@ class MGuardNumberToIntPtrIndex : public MUnaryInstruction,
 
   MGuardNumberToIntPtrIndex(MDefinition* def, bool supportOOB)
       : MUnaryInstruction(classOpcode, def), supportOOB_(supportOOB) {
-    MOZ_ASSERT(def->type() == MIRType::Double);
+    MOZ_ASSERT(IsNumberType(def->type()));
     setResultType(MIRType::IntPtr);
     setMovable();
     if (!supportOOB) {
@@ -9442,6 +9429,43 @@ class MRotate : public MBinaryInstruction, public NoTypePolicy::Data {
   bool isLeftRotate() const { return isLeftRotate_; }
 
   ALLOW_CLONE(MRotate)
+};
+
+class MReinterpretCast : public MUnaryInstruction, public NoTypePolicy::Data {
+  MReinterpretCast(MDefinition* val, MIRType toType)
+      : MUnaryInstruction(classOpcode, val) {
+    switch (val->type()) {
+      case MIRType::Int32:
+        MOZ_ASSERT(toType == MIRType::Float32);
+        break;
+      case MIRType::Float32:
+        MOZ_ASSERT(toType == MIRType::Int32);
+        break;
+      case MIRType::Double:
+        MOZ_ASSERT(toType == MIRType::Int64);
+        break;
+      case MIRType::Int64:
+        MOZ_ASSERT(toType == MIRType::Double);
+        break;
+      default:
+        MOZ_CRASH("unexpected reinterpret conversion");
+    }
+    setMovable();
+    setResultType(toType);
+  }
+
+ public:
+  INSTRUCTION_HEADER(ReinterpretCast)
+  TRIVIAL_NEW_WRAPPERS
+
+  AliasSet getAliasSet() const override { return AliasSet::None(); }
+  bool congruentTo(const MDefinition* ins) const override {
+    // No need to check type() here, because congruentIfOperandsEqual will
+    // check it.
+    return congruentIfOperandsEqual(ins);
+  }
+
+  ALLOW_CLONE(MReinterpretCast)
 };
 
 // Used by MIR building to represent the bytecode result of an operation for

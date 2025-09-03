@@ -177,6 +177,35 @@ TEST(LibaomAv1EncoderTest, SetsEndOfPictureForLastFrameInTemporalUnit) {
   EXPECT_TRUE(encoded_frames[5].codec_specific_info.end_of_picture);
 }
 
+TEST(LibaomAv1EncoderTest,
+     SetsEndOfPictureForLastFrameInTemporalUnitWhenLayerDrop) {
+  VideoBitrateAllocation allocation;
+  allocation.SetBitrate(0, 0, 30000);
+  allocation.SetBitrate(1, 0, 40000);
+  // Lower bitrate for the last spatial layer to provoke layer drop.
+  allocation.SetBitrate(2, 0, 500);
+
+  std::unique_ptr<VideoEncoder> encoder =
+      CreateLibaomAv1Encoder(CreateEnvironment());
+  VideoCodec codec_settings = DefaultCodecSettings();
+  // Configure encoder with 3 spatial layers.
+  codec_settings.SetScalabilityMode(ScalabilityMode::kL3T1);
+  codec_settings.startBitrate = allocation.get_sum_kbps();
+  ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
+            WEBRTC_VIDEO_CODEC_OK);
+
+  encoder->SetRates(VideoEncoder::RateControlParameters(
+      allocation, codec_settings.maxFramerate));
+
+  std::vector<EncodedVideoFrameProducer::EncodedFrame> encoded_frames =
+      EncodedVideoFrameProducer(*encoder).SetNumInputFrames(2).Encode();
+  ASSERT_THAT(encoded_frames, SizeIs(4));
+  EXPECT_FALSE(encoded_frames[0].codec_specific_info.end_of_picture);
+  EXPECT_TRUE(encoded_frames[1].codec_specific_info.end_of_picture);
+  EXPECT_FALSE(encoded_frames[2].codec_specific_info.end_of_picture);
+  EXPECT_TRUE(encoded_frames[3].codec_specific_info.end_of_picture);
+}
+
 TEST(LibaomAv1EncoderTest, CheckOddDimensionsWithSpatialLayers) {
   VideoBitrateAllocation allocation;
   allocation.SetBitrate(0, 0, 30000);
@@ -356,10 +385,10 @@ TEST(LibaomAv1EncoderTest, RtpTimestampWrap) {
               Eq(VideoFrameType::kVideoFrameDelta));
 }
 
-TEST(LibaomAv1EncoderTest, TestCaptureTimeId) {
+TEST(LibaomAv1EncoderTest, TestPresentationTimestamp) {
   std::unique_ptr<VideoEncoder> encoder =
       CreateLibaomAv1Encoder(CreateEnvironment());
-  const Timestamp capture_time_id = Timestamp::Micros(2000);
+  const Timestamp presentation_timestamp = Timestamp::Micros(2000);
   VideoCodec codec_settings = DefaultCodecSettings();
   codec_settings.SetScalabilityMode(ScalabilityMode::kL2T1);
   ASSERT_EQ(encoder->InitEncode(&codec_settings, DefaultEncoderSettings()),
@@ -376,17 +405,17 @@ TEST(LibaomAv1EncoderTest, TestCaptureTimeId) {
   std::vector<EncodedVideoFrameProducer::EncodedFrame> encoded_frames =
       EncodedVideoFrameProducer(*encoder)
           .SetNumInputFrames(1)
-          .SetCaptureTimeIdentifier(capture_time_id)
+          .SetPresentationTimestamp(presentation_timestamp)
           .Encode();
   ASSERT_THAT(encoded_frames, SizeIs(2));
   ASSERT_TRUE(
-      encoded_frames[0].encoded_image.CaptureTimeIdentifier().has_value());
+      encoded_frames[0].encoded_image.PresentationTimestamp().has_value());
   ASSERT_TRUE(
-      encoded_frames[1].encoded_image.CaptureTimeIdentifier().has_value());
-  EXPECT_EQ(encoded_frames[0].encoded_image.CaptureTimeIdentifier()->us(),
-            capture_time_id.us());
-  EXPECT_EQ(encoded_frames[1].encoded_image.CaptureTimeIdentifier()->us(),
-            capture_time_id.us());
+      encoded_frames[1].encoded_image.PresentationTimestamp().has_value());
+  EXPECT_EQ(encoded_frames[0].encoded_image.PresentationTimestamp()->us(),
+            presentation_timestamp.us());
+  EXPECT_EQ(encoded_frames[1].encoded_image.PresentationTimestamp()->us(),
+            presentation_timestamp.us());
 }
 
 TEST(LibaomAv1EncoderTest, AdheresToTargetBitrateDespiteUnevenFrameTiming) {
@@ -415,7 +444,7 @@ TEST(LibaomAv1EncoderTest, AdheresToTargetBitrateDespiteUnevenFrameTiming) {
    private:
     Result OnEncodedImage(
         const EncodedImage& encoded_image,
-        const CodecSpecificInfo* codec_specific_info) override {
+        const CodecSpecificInfo* /* codec_specific_info */) override {
       bytes_encoded_ += DataSize::Bytes(encoded_image.size());
       return Result(Result::Error::OK);
     }

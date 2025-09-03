@@ -478,18 +478,18 @@ add_task(async function notRelevant() {
     matches: [result],
   });
 
-  info("Triggering the 'Not relevant' command");
-  QuickSuggest.getFeature("YelpSuggestions").handleCommand(
-    {
-      controller: { removeResult() {} },
-    },
+  triggerCommand({
     result,
-    "not_relevant"
-  );
+    command: "not_relevant",
+    feature: QuickSuggest.getFeature("YelpSuggestions"),
+    expectedCountsByCall: {
+      removeResult: 1,
+    },
+  });
   await QuickSuggest.blockedSuggestions._test_readyPromise;
 
   Assert.ok(
-    await QuickSuggest.blockedSuggestions.has(result.payload.originalUrl),
+    await QuickSuggest.blockedSuggestions.isResultBlocked(result),
     "The result's URL should be blocked"
   );
 
@@ -588,6 +588,7 @@ function makeExpectedResult({
       title,
       displayUrl,
       icon: null,
+      isSponsored: true,
     },
   };
 }

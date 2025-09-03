@@ -351,28 +351,9 @@ void JitRuntime::freeIonOsrTempData() {
   ionOsrTempDataSize_ = 0;
 }
 
-template <typename T>
-static T PopNextBitmaskValue(uint32_t* bitmask) {
-  MOZ_ASSERT(*bitmask);
-  uint32_t index = mozilla::CountTrailingZeroes32(*bitmask);
-  *bitmask ^= 1 << index;
-
-  MOZ_ASSERT(index < uint32_t(T::Count));
-  return T(index);
-}
-
-void JitZone::performStubReadBarriers(uint32_t stubsToBarrier) const {
-  while (stubsToBarrier) {
-    auto stub = PopNextBitmaskValue<StubIndex>(&stubsToBarrier);
-    const WeakHeapPtr<JitCode*>& jitCode = stubs_[stub];
-    MOZ_ASSERT(jitCode);
-    jitCode.get();
-  }
-}
-
 static bool LinkCodeGen(JSContext* cx, CodeGenerator* codegen,
-                        HandleScript script, const WarpSnapshot* snapshot) {
-  if (!codegen->link(cx, snapshot)) {
+                        HandleScript script) {
+  if (!codegen->link(cx)) {
     return false;
   }
 
@@ -392,7 +373,7 @@ static bool LinkBackgroundCodeGen(JSContext* cx, IonCompileTask* task) {
 
   JitContext jctx(cx);
   RootedScript script(cx, task->script());
-  return LinkCodeGen(cx, codegen, script, task->snapshot());
+  return LinkCodeGen(cx, codegen, script);
 }
 
 void jit::LinkIonScript(JSContext* cx, HandleScript calleeScript) {
@@ -559,9 +540,6 @@ bool RecompileInfo::traceWeak(JSTracer* trc) {
 
 void JitZone::traceWeak(JSTracer* trc, Zone* zone) {
   MOZ_ASSERT(this == zone->jitZone());
-
-  // Any outstanding compilations should have been cancelled by the GC.
-  MOZ_ASSERT(!HasOffThreadIonCompile(zone));
 
   for (WeakHeapPtr<JitCode*>& stub : stubs_) {
     TraceWeakEdge(trc, &stub, "JitZone::stubs_");
@@ -1596,13 +1574,14 @@ LIRGraph* GenerateLIR(MIRGenerator* mir) {
   return lir;
 }
 
-CodeGenerator* GenerateCode(MIRGenerator* mir, LIRGraph* lir) {
+static CodeGenerator* GenerateCode(MIRGenerator* mir, LIRGraph* lir,
+                                   const WarpSnapshot* snapshot) {
   auto codegen = MakeUnique<CodeGenerator>(mir, lir);
   if (!codegen) {
     return nullptr;
   }
 
-  if (!codegen->generate()) {
+  if (!codegen->generate(snapshot)) {
     return nullptr;
   }
 
@@ -1632,7 +1611,7 @@ CodeGenerator* CompileBackEnd(MIRGenerator* mir, WarpSnapshot* snapshot) {
     return nullptr;
   }
 
-  CodeGenerator* codegen = GenerateCode(mir, lir);
+  CodeGenerator* codegen = GenerateCode(mir, lir, snapshot);
   if (codegen) {
     codegen->setCompilationTime(mozilla::TimeStamp::Now() - compileStartTime);
   }
@@ -1659,22 +1638,56 @@ static AbortReasonOr<WarpSnapshot*> CreateWarpSnapshot(JSContext* cx,
   return result;
 }
 
+UniquePtr<LifoAlloc> JitRuntime::tryReuseIonLifoAlloc() {
+  // Try to reuse the LifoAlloc of a finished Ion compilation task for a new
+  // Ion compilation. If there are multiple tasks, we pick the one with the
+  // largest LifoAlloc.
+
+  auto& batch = ionFreeTaskBatch_.ref();
+  IonCompileTask* bestTask = nullptr;
+  size_t bestTaskIndex = 0;
+  size_t bestTaskSize = 0;
+
+  for (size_t i = 0, len = batch.length(); i < len; i++) {
+    IonCompileTask* task = batch[i];
+    if (task->alloc().lifoAlloc()->isHuge()) {
+      // Ignore 'huge' LifoAllocs. This avoids keeping a lot of memory alive and
+      // also avoids freeing all LifoAlloc memory (instead of reusing it) in
+      // freeAllIfHugeAndUnused.
+      continue;
+    }
+    size_t taskSize = task->alloc().lifoAlloc()->computedSizeOfExcludingThis();
+    if (!bestTask || taskSize >= bestTaskSize) {
+      bestTask = task;
+      bestTaskIndex = i;
+      bestTaskSize = taskSize;
+    }
+  }
+
+  if (bestTask) {
+    batch.erase(&batch[bestTaskIndex]);
+    return FreeIonCompileTaskAndReuseLifoAlloc(bestTask);
+  }
+
+  return nullptr;
+}
+
 static AbortReason IonCompile(JSContext* cx, HandleScript script,
                               jsbytecode* osrPc) {
   cx->check(script);
-
-  auto alloc = cx->make_unique<LifoAlloc>(TempAllocator::PreferredLifoChunkSize,
-                                          js::MallocArena);
-  if (!alloc) {
-    return AbortReason::Error;
-  }
 
   if (!cx->zone()->ensureJitZoneExists(cx)) {
     return AbortReason::Error;
   }
 
-  if (!cx->zone()->jitZone()->ensureIonStubsExist(cx)) {
-    return AbortReason::Error;
+  UniquePtr<LifoAlloc> alloc =
+      cx->runtime()->jitRuntime()->tryReuseIonLifoAlloc();
+  if (!alloc) {
+    alloc = cx->make_unique<LifoAlloc>(TempAllocator::PreferredLifoChunkSize,
+                                       js::MallocArena);
+    if (!alloc) {
+      return AbortReason::Error;
+    }
   }
 
   TempAllocator* temp = alloc->new_<TempAllocator>(alloc.get());
@@ -1771,7 +1784,7 @@ static AbortReason IonCompile(JSContext* cx, HandleScript script,
       return AbortReason::Disable;
     }
 
-    succeeded = LinkCodeGen(cx, codegen.get(), script, snapshot);
+    succeeded = LinkCodeGen(cx, codegen.get(), script);
   }
 
   if (succeeded) {

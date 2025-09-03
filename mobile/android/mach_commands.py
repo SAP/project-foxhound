@@ -48,25 +48,8 @@ def android(command_context):
 
 @SubCommand(
     "android",
-    "assemble-app",
-    """Assemble Firefox for Android.
-    See http://firefox-source-docs.mozilla.org/build/buildsystem/toolchains.html#firefox-for-android-with-gradle""",  # NOQA: E501
-)
-@CommandArgument("args", nargs=argparse.REMAINDER)
-def android_assemble_app(command_context, args):
-    ret = gradle(
-        command_context,
-        command_context.substs["GRADLE_ANDROID_APP_TASKS"] + ["-x", "lint"] + args,
-        verbose=True,
-    )
-
-    return ret
-
-
-@SubCommand(
-    "android",
-    "generate-sdk-bindings",
-    """Generate SDK bindings used when building GeckoView.""",
+    "export",
+    """Generate SDK bindings and GeckoView JNI wrappers used when building GeckoView.""",
 )
 @CommandArgument(
     "inputs",
@@ -74,7 +57,7 @@ def android_assemble_app(command_context, args):
     help="config files, like [/path/to/ClassName-classes.txt]+",
 )
 @CommandArgument("args", nargs=argparse.REMAINDER)
-def android_generate_sdk_bindings(command_context, inputs, args):
+def export(command_context, inputs, args):
     import itertools
 
     def stem(input):
@@ -86,25 +69,9 @@ def android_generate_sdk_bindings(command_context, inputs, args):
 
     ret = gradle(
         command_context,
-        command_context.substs["GRADLE_ANDROID_GENERATE_SDK_BINDINGS_TASKS"]
-        + [bindings_args]
-        + args,
-        verbose=True,
-    )
-
-    return ret
-
-
-@SubCommand(
-    "android",
-    "generate-generated-jni-wrappers",
-    """Generate GeckoView JNI wrappers used when building GeckoView.""",
-)
-@CommandArgument("args", nargs=argparse.REMAINDER)
-def android_generate_generated_jni_wrappers(command_context, args):
-    ret = gradle(
-        command_context,
         command_context.substs["GRADLE_ANDROID_GENERATE_GENERATED_JNI_WRAPPERS_TASKS"]
+        + command_context.substs["GRADLE_ANDROID_GENERATE_SDK_BINDINGS_TASKS"]
+        + [bindings_args]
         + args,
         verbose=True,
     )
@@ -755,3 +722,32 @@ def emulator(
                 "Unable to retrieve Android emulator return code.",
             )
     return 0
+
+
+@Command(
+    "adb",
+    category="devenv",
+    description="Run the version of Android Debug Bridge (adb) utility that the build system would use.",
+)
+@CommandArgument("args", nargs=argparse.REMAINDER)
+def adb(
+    command_context,
+    args,
+):
+    """Run the version of Android Debug Bridge (adb) utility that the build
+    system would use."""
+    from mozrunner.devices.android_device import get_adb_path
+
+    adb_path = get_adb_path(command_context)
+    if not adb_path:
+        command_context.log(
+            logging.ERROR,
+            "adb",
+            {},
+            "ADB not found. Did you run `mach bootstrap` with Android selected yet?",
+        )
+        return 1
+
+    return command_context.run_process(
+        [adb_path] + args, pass_thru=True, ensure_exit_code=False
+    )

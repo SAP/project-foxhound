@@ -90,6 +90,7 @@ using ComputedKeyframeValues = nsTArray<PropertyStyleAnimationValuePair>;
 
 class ComputedStyle;
 enum class LogicalAxis : uint8_t;
+enum class PhysicalAxis : uint8_t;
 class SeenPtrs;
 class SharedFontList;
 class StyleSheet;
@@ -111,6 +112,9 @@ enum class LogicalSide : uint8_t;
 enum class PseudoStyleType : uint8_t;
 enum class OriginFlags : uint8_t;
 enum class UseBoxSizing : uint8_t;
+
+template <typename L>
+union StyleGenericCalcNode;
 
 namespace css {
 class Loader;

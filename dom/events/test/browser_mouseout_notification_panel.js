@@ -91,7 +91,6 @@ add_setup(async function init() {
 
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.urlbar.scotchBonnet.enableOverride", false],
       ["test.events.async.enabled", true],
       // This test aims to synthesize mousemove events at specific times, so
       // disable the automatically synthesized mousemove events during reflow.

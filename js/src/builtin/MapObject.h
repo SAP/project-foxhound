@@ -12,7 +12,6 @@
 #include "builtin/OrderedHashTableObject.h"
 #include "vm/JSObject.h"
 #include "vm/NativeObject.h"
-#include "vm/PIC.h"
 
 namespace js {
 
@@ -144,9 +143,13 @@ class MapObject : public OrderedHashMapObject {
   [[nodiscard]] bool getKeysAndValuesInterleaved(
       JS::MutableHandle<GCVector<JS::Value>> entries);
   [[nodiscard]] static bool entries(JSContext* cx, unsigned argc, Value* vp);
+
   static MapObject* createWithProto(JSContext* cx, HandleObject proto,
                                     NewObjectKind newKind);
   static MapObject* create(JSContext* cx, HandleObject proto = nullptr);
+  static MapObject* createFromIterable(
+      JSContext* cx, Handle<JSObject*> proto, Handle<Value> iterable,
+      Handle<MapObject*> allocatedFromJit = nullptr);
 
   // Publicly exposed Map calls for JSAPI access (webidl maplike/setlike
   // interfaces, etc.)
@@ -178,6 +181,7 @@ class MapObject : public OrderedHashMapObject {
 
   [[nodiscard]] static bool get(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool set(JSContext* cx, unsigned argc, Value* vp);
+  [[nodiscard]] static bool has(JSContext* cx, unsigned argc, Value* vp);
 
   static bool isOriginalSizeGetter(Native native) {
     return native == static_cast<Native>(MapObject::size);
@@ -214,7 +218,6 @@ class MapObject : public OrderedHashMapObject {
   [[nodiscard]] static bool size(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool get_impl(JSContext* cx, const CallArgs& args);
   [[nodiscard]] static bool has_impl(JSContext* cx, const CallArgs& args);
-  [[nodiscard]] static bool has(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool set_impl(JSContext* cx, const CallArgs& args);
   [[nodiscard]] static bool delete_impl(JSContext* cx, const CallArgs& args);
   [[nodiscard]] static bool delete_(JSContext* cx, unsigned argc, Value* vp);
@@ -278,6 +281,10 @@ class SetObject : public OrderedHashSetObject {
   static SetObject* createWithProto(JSContext* cx, HandleObject proto,
                                     NewObjectKind newKind);
   static SetObject* create(JSContext* cx, HandleObject proto = nullptr);
+  static SetObject* createFromIterable(
+      JSContext* cx, Handle<JSObject*> proto, Handle<Value> iterable,
+      Handle<SetObject*> allocatedFromJit = nullptr);
+
   uint32_t size();
   [[nodiscard]] static bool size(JSContext* cx, unsigned argc, Value* vp);
   [[nodiscard]] static bool add(JSContext* cx, unsigned argc, Value* vp);
@@ -330,8 +337,6 @@ class SetObject : public OrderedHashSetObject {
   static bool is(HandleValue v);
   static bool is(HandleObject o);
 
-  static bool isBuiltinAdd(HandleValue add);
-
   [[nodiscard]] static bool iterator_impl(JSContext* cx, const CallArgs& args,
                                           IteratorKind kind);
 
@@ -364,57 +369,6 @@ class SetIteratorObject : public TableIteratorObject {
  private:
   SetObject* target() const;
 };
-
-using SetInitGetPrototypeOp = NativeObject* (*)(JSContext*,
-                                                Handle<GlobalObject*>);
-using SetInitIsBuiltinOp = bool (*)(HandleValue);
-
-template <SetInitGetPrototypeOp getPrototypeOp, SetInitIsBuiltinOp isBuiltinOp>
-[[nodiscard]] static bool IsOptimizableInitForSet(JSContext* cx,
-                                                  HandleObject setObject,
-                                                  HandleValue iterable,
-                                                  bool* optimized) {
-  MOZ_ASSERT(!*optimized);
-
-  if (!iterable.isObject()) {
-    return true;
-  }
-
-  RootedObject array(cx, &iterable.toObject());
-  if (!IsPackedArray(array)) {
-    return true;
-  }
-
-  // Get the canonical prototype object.
-  Rooted<NativeObject*> setProto(cx, getPrototypeOp(cx, cx->global()));
-  if (!setProto) {
-    return false;
-  }
-
-  // Ensures setObject's prototype is the canonical prototype.
-  if (setObject->staticPrototype() != setProto) {
-    return true;
-  }
-
-  // Look up the 'add' value on the prototype object.
-  mozilla::Maybe<PropertyInfo> addProp = setProto->lookup(cx, cx->names().add);
-  if (addProp.isNothing() || !addProp->isDataProperty()) {
-    return true;
-  }
-
-  // Get the referred value, ensure it holds the canonical add function.
-  RootedValue add(cx, setProto->getSlot(addProp->slot()));
-  if (!isBuiltinOp(add)) {
-    return true;
-  }
-
-  ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
-  }
-
-  return stubChain->tryOptimizeArray(cx, array.as<ArrayObject>(), optimized);
-}
 
 } /* namespace js */
 

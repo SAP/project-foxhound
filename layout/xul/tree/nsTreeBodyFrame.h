@@ -40,13 +40,12 @@ class ScrollbarActivity;
 
 // An entry in the tree's image cache
 struct nsTreeImageCacheEntry {
-  nsTreeImageCacheEntry() = default;
-  nsTreeImageCacheEntry(imgIRequest* aRequest,
-                        imgINotificationObserver* aListener)
-      : request(aRequest), listener(aListener) {}
+  nsTreeImageCacheEntry();
+  nsTreeImageCacheEntry(imgIRequest* aRequest, nsTreeImageListener* aListener);
+  ~nsTreeImageCacheEntry();
 
   nsCOMPtr<imgIRequest> request;
-  nsCOMPtr<imgINotificationObserver> listener;
+  RefPtr<nsTreeImageListener> listener;
 };
 
 // The actual frame that paints the cells and rows.
@@ -295,9 +294,10 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
                      nsPresContext* aPresContext,
                      ComputedStyle* aTwistyContext);
 
-  // Fetch an image from the image cache.
-  nsresult GetImage(int32_t aRowIndex, nsTreeColumn* aCol, bool aUseContext,
-                    ComputedStyle* aComputedStyle, imgIContainer** aResult);
+  // Fetch an image from the image cache, or request it.
+  already_AddRefed<imgIContainer> GetImage(int32_t aRowIndex,
+                                           nsTreeColumn* aCol, bool aUseContext,
+                                           ComputedStyle* aComputedStyle);
 
   // Returns the size of a given image.   This size *includes* border and
   // padding.  It does not include margins.
@@ -390,16 +390,6 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
       InvalidateRow(aRow + aOrientation);
     }
   }
-
- public:
-  /**
-   * Remove an nsITreeImageListener from being tracked by this frame. Only tree
-   * image listeners that are created by this frame are tracked.
-   *
-   * @param aListener A pointer to an nsTreeImageListener to no longer
-   *        track.
-   */
-  void RemoveTreeImageListener(nsTreeImageListener* aListener);
 
  protected:
   // Create a new timer. This method is used to delay various actions like
@@ -533,8 +523,7 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
   // A hashtable that maps from URLs to image request/listener pairs.  The URL
   // is provided by the view or by the ComputedStyle. The ComputedStyle
   // represents a resolved :-moz-tree-cell-image (or twisty) pseudo-element.
-  // It maps directly to an imgIRequest.
-  nsTHashMap<nsStringHashKey, nsTreeImageCacheEntry> mImageCache;
+  nsTHashMap<nsURIHashKey, nsTreeImageCacheEntry> mImageCache;
 
   // A scratch array used when looking up cached ComputedStyles.
   mozilla::AtomArray mScratchArray;
@@ -587,11 +576,6 @@ class nsTreeBodyFrame final : public mozilla::SimpleXULLeafFrame,
   // Set while we flush layout to take account of effects of overflow/underflow
   // event handlers
   bool mCheckingOverflow;
-
-  // Hash set to keep track of which listeners we created and thus
-  // have pointers to us.
-  nsTHashSet<nsTreeImageListener*> mCreatedListeners;
-
 };  // class nsTreeBodyFrame
 
 #endif

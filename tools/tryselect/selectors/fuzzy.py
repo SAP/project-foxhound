@@ -47,8 +47,11 @@ class FuzzyParser(BaseTryParser):
             {
                 "action": "store_true",
                 "default": False,
-                "help": "Force running fzf interactively even when using presets or "
-                "queries with -q/--query.",
+                "help": "Run fzf interactively, even if --preset or --query is used. "
+                "Tasks selected interactively will be unioned with tasks selected "
+                "by the --preset/--query flags. If -x/--and is also specified, tasks "
+                "selected interactively will instead be intersected with tasks "
+                "selected by --preset/--query.",
             },
         ],
         [
@@ -88,7 +91,7 @@ class FuzzyParser(BaseTryParser):
             },
         ],
         [
-            ["--disable-target-task-filter"],
+            ["--disable-target-task-filter", "--all-tasks"],
             {
                 "action": "store_true",
                 "default": False,

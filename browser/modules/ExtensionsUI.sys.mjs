@@ -35,13 +35,6 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", () =>
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
-  "POSTINSTALL_PRIVATEBROWSING_CHECKBOX",
-  "extensions.ui.postInstallPrivateBrowsingCheckbox",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
   "SHOW_FULL_DOMAINS_LIST",
   "extensions.ui.installDialogFullDomains",
   true
@@ -74,10 +67,6 @@ export var ExtensionsUI = {
 
   get SHOW_FULL_DOMAINS_LIST() {
     return lazy.SHOW_FULL_DOMAINS_LIST;
-  },
-
-  get POSTINSTALL_PRIVATEBROWSING_CHECKBOX() {
-    return lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
   },
 
   async init() {
@@ -193,17 +182,6 @@ export var ExtensionsUI = {
         await addon.enable();
 
         this._updateNotifications();
-
-        // The user has just enabled a sideloaded extension, if the permission
-        // can be changed for the extension, show the post-install panel to
-        // give the user that opportunity.
-        if (
-          ExtensionsUI.POSTINSTALL_PRIVATEBROWSING_CHECKBOX &&
-          addon.permissions &
-            lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
-        ) {
-          this.showInstallNotification(tabbrowser.selectedBrowser, addon);
-        }
       }
       this.emit("sideload-response");
     });
@@ -252,7 +230,10 @@ export var ExtensionsUI = {
       if (
         info.unsigned &&
         Cu.isInAutomation &&
-        Services.prefs.getBoolPref("extensions.ui.ignoreUnsigned", false)
+        Services.prefs.getBoolPref(
+          "extensions.ui.showAddonIconForUnsigned",
+          false
+        )
       ) {
         info.unsigned = false;
       }
@@ -336,7 +317,22 @@ export var ExtensionsUI = {
         resolve(true);
         return;
       }
-      resolve(this.showPermissionsPrompt(browser, strings, icon));
+      // "userScripts" is an OptionalOnlyPermission, which means that it can
+      // only be requested through the permissions.request() API, without other
+      // permissions in the same request.
+      let isUserScriptsRequest =
+        permissions.permissions.length === 1 &&
+        permissions.permissions[0] === "userScripts";
+      resolve(
+        this.showPermissionsPrompt(
+          browser,
+          strings,
+          icon,
+          /* addon */ undefined,
+          /* shouldShowIncognitoCheckbox */ false,
+          isUserScriptsRequest
+        )
+      );
     } else if (topic == "webextension-defaultsearch-prompt") {
       let { browser, name, icon, respond, currentEngine, newEngine } =
         subject.wrappedJSObject;
@@ -395,13 +391,12 @@ export var ExtensionsUI = {
     strings,
     icon,
     addon = undefined,
-    shouldShowIncognitoCheckbox = false
+    shouldShowIncognitoCheckbox = false,
+    isUserScriptsRequest = false
   ) {
     let { browser, window } = getTabBrowser(target);
 
-    let showIncognitoCheckbox =
-      shouldShowIncognitoCheckbox && !lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
-
+    let showIncognitoCheckbox = shouldShowIncognitoCheckbox;
     if (showIncognitoCheckbox) {
       showIncognitoCheckbox = !!(
         addon.permissions &
@@ -468,6 +463,7 @@ export var ExtensionsUI = {
           onPrivateBrowsingAllowedChanged(value) {
             grantPrivateBrowsingAllowed = value;
           },
+          isUserScriptsRequest,
         },
       };
       // The prompt/notification machinery has a special affordance wherein
@@ -612,77 +608,77 @@ export var ExtensionsUI = {
       addonName: "<>",
     });
 
-    const hideIncognitoCheckbox = !lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
-    const permissionName = "internal:privateBrowsingAllowed";
-    const { permissions } = await lazy.ExtensionPermissions.get(addon.id);
-    const hasIncognito = permissions.includes(permissionName);
-
     return new Promise(resolve => {
-      // Show or hide private permission ui based on the pref.
-      function setCheckbox(win) {
-        let checkbox = win.document.getElementById("addon-incognito-checkbox");
-        checkbox.checked = hasIncognito;
-        checkbox.hidden =
-          hideIncognitoCheckbox ||
-          !(
-            addon.permissions &
-            lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
-          );
-      }
-
-      async function actionResolve(win) {
-        let checkbox = win.document.getElementById("addon-incognito-checkbox");
-
-        if (hideIncognitoCheckbox || checkbox.checked == hasIncognito) {
-          resolve();
-          return;
-        }
-
-        let incognitoPermission = {
-          permissions: [permissionName],
-          origins: [],
-        };
-
-        // The checkbox has been changed at this point, otherwise we would
-        // have exited early above.
-        if (checkbox.checked) {
-          await lazy.ExtensionPermissions.add(addon.id, incognitoPermission);
-        } else if (hasIncognito) {
-          await lazy.ExtensionPermissions.remove(addon.id, incognitoPermission);
-        }
-        // Reload the extension if it is already enabled.  This ensures any change
-        // on the private browsing permission is properly handled.
-        if (addon.isActive) {
-          await addon.reload();
-        }
-
-        resolve();
-      }
-
-      let action = {
-        callback: actionResolve,
-      };
-
       let icon = addon.isWebExtension
         ? lazy.AddonManager.getPreferredIconURL(addon, 32, window) ||
           DEFAULT_EXTENSION_ICON
         : "chrome://browser/skin/addons/addon-install-installed.svg";
-      let options = {
-        name: addon.name,
-        message,
-        popupIconURL: icon,
-        onRefresh: setCheckbox,
-        onDismissed: win => {
-          lazy.AppMenuNotifications.removeNotification("addon-installed");
-          actionResolve(win);
-        },
-      };
-      lazy.AppMenuNotifications.showNotification(
-        "addon-installed",
-        action,
-        null,
-        options
-      );
+
+      if (addon.type == "theme") {
+        const { previousActiveThemeID } = addon;
+
+        async function themeActionUndo() {
+          try {
+            // Undoing a theme install means re-enabling the previous active theme
+            // ID, and uninstalling the theme that was just installed
+            const theme = await lazy.AddonManager.getAddonByID(
+              previousActiveThemeID
+            );
+
+            if (theme) {
+              await theme.enable();
+            }
+
+            // `addon` is the theme that was just installed
+            await addon.uninstall();
+          } finally {
+            resolve();
+          }
+        }
+
+        let themePrimaryAction = { callback: resolve };
+
+        // Show the undo button if previousActiveThemeID is set.
+        let themeSecondaryAction = previousActiveThemeID
+          ? { callback: themeActionUndo }
+          : null;
+
+        let options = {
+          name: addon.name,
+          message,
+          popupIconURL: icon,
+          onDismissed: () => {
+            lazy.AppMenuNotifications.removeNotification("theme-installed");
+            resolve();
+          },
+        };
+        lazy.AppMenuNotifications.showNotification(
+          "theme-installed",
+          themePrimaryAction,
+          themeSecondaryAction,
+          options
+        );
+      } else {
+        let action = {
+          callback: resolve,
+        };
+
+        let options = {
+          name: addon.name,
+          message,
+          popupIconURL: icon,
+          onDismissed: () => {
+            lazy.AppMenuNotifications.removeNotification("addon-installed");
+            resolve();
+          },
+        };
+        lazy.AppMenuNotifications.showNotification(
+          "addon-installed",
+          action,
+          null,
+          options
+        );
+      }
     });
   },
 

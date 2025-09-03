@@ -26,6 +26,10 @@
 #include <dlfcn.h>
 #include <gtk/gtk.h>
 
+#ifdef MOZ_WAYLAND
+#  include "nsWaylandDisplay.h"
+#endif  // MOZ_WAYLAND
+
 namespace mozilla::widget {
 
 using GtkMenuPopupAtRect = void (*)(GtkMenu* menu, GdkWindow* rect_window,
@@ -232,9 +236,11 @@ class MenuModelGMenu final : public MenuModel {
 
 NS_IMPL_ISUPPORTS(MenuModel, nsIMutationObserver)
 
-void MenuModel::ContentRemoved(nsIContent* aChild, nsIContent*) {
+void MenuModel::ContentWillBeRemoved(nsIContent* aChild,
+                                     const BatchRemovalState* aState) {
   if (NodeIsRelevant(*aChild)) {
-    DirtyModel();
+    nsContentUtils::AddScriptRunner(NewRunnableMethod(
+        "MenuModel::ContentWillBeRemoved", this, &MenuModel::DirtyModel));
   }
 }
 

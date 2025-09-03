@@ -5,7 +5,7 @@ use crate::{
     TypeInner,
 };
 
-impl<'w> BlockContext<'w> {
+impl BlockContext<'_> {
     pub(super) fn write_subgroup_ballot(
         &mut self,
         predicate: &Option<Handle<crate::Expression>>,
@@ -135,13 +135,15 @@ impl<'w> BlockContext<'w> {
             &[spirv::Capability::GroupNonUniformBallot],
         )?;
         match *mode {
-            crate::GatherMode::BroadcastFirst | crate::GatherMode::Broadcast(_) => {
+            crate::GatherMode::BroadcastFirst => {
                 self.writer.require_any(
                     "GroupNonUniformBallot",
                     &[spirv::Capability::GroupNonUniformBallot],
                 )?;
             }
-            crate::GatherMode::Shuffle(_) | crate::GatherMode::ShuffleXor(_) => {
+            crate::GatherMode::Shuffle(_)
+            | crate::GatherMode::ShuffleXor(_)
+            | crate::GatherMode::Broadcast(_) => {
                 self.writer.require_any(
                     "GroupNonUniformShuffle",
                     &[spirv::Capability::GroupNonUniformShuffle],

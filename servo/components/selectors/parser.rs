@@ -777,27 +777,23 @@ pub fn namespace_empty_string<Impl: SelectorImpl>() -> Impl::NamespaceUrl {
 
 type SelectorData<Impl> = ThinArc<SpecificityAndFlags, Component<Impl>>;
 
-bitflags! {
-    /// What kind of selectors potentially matching featureless shawdow host are present.
-    #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-    pub struct FeaturelessHostMatches: u8 {
-        /// This selector matches featureless shadow host via `:host`.
-        const FOR_HOST = 1 << 0;
-        /// This selector matches featureless shadow host via `:scope`.
-        /// Featureless match applies only if we're:
-        /// 1) In a scoping context, AND
-        /// 2) The scope is a shadow host.
-        const FOR_SCOPE = 1 << 1;
-    }
+/// Whether a selector may match a featureless host element, and whether it may match other
+/// elements.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MatchesFeaturelessHost {
+    /// The selector may match a featureless host, but also a non-featureless element.
+    Yes,
+    /// The selector is guaranteed to never match a non-featureless host element.
+    Only,
+    /// The selector never matches a featureless host.
+    Never,
 }
 
-impl FeaturelessHostMatches {
-    fn insert_not_empty(&mut self, other: Self) -> bool {
-        if other.is_empty() {
-            return false;
-        }
-        self.insert(other);
-        true
+impl MatchesFeaturelessHost {
+    /// Whether we may match.
+    #[inline]
+    pub fn may_match(self) -> bool {
+        return !matches!(self, Self::Never)
     }
 }
 
@@ -942,6 +938,36 @@ impl<Impl: SelectorImpl> Selector<Impl> {
         })
     }
 
+    /// Whether this selector may match a featureless shadow host, with no combinators to the
+    /// left, and optionally has a pseudo-element to the right.
+    #[inline]
+    pub fn matches_featureless_host(&self, scope_matches_featureless_host: bool) -> MatchesFeaturelessHost {
+        let flags = self.flags();
+        if !flags.intersects(SelectorFlags::HAS_HOST | SelectorFlags::HAS_SCOPE) {
+            return MatchesFeaturelessHost::Never;
+        }
+
+        let mut iter = self.iter();
+        if flags.intersects(SelectorFlags::HAS_PSEUDO) {
+            for _ in &mut iter {
+                // Skip over pseudo-elements
+            }
+            match iter.next_sequence() {
+                Some(c) if c.is_pseudo_element() => {},
+                _ => {
+                    debug_assert!(false, "Pseudo selector without pseudo combinator?");
+                    return MatchesFeaturelessHost::Never;
+                }
+            }
+        }
+
+        let compound_matches = crate::matching::compound_matches_featureless_host(&mut iter, scope_matches_featureless_host);
+        if iter.next_sequence().is_some() {
+            return MatchesFeaturelessHost::Never;
+        }
+        return compound_matches;
+    }
+
     /// Returns an iterator over this selector in matching order (right-to-left).
     /// When a combinator is reached, the iterator will return None, and
     /// next_sequence() may be called to continue to the next sequence.
@@ -975,25 +1001,6 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             iter: self.0.slice()[..self.len() - 2].iter(),
             next_combinator: None,
         }
-    }
-
-    /// Whether this selector matches a featureless shadow host, with no combinators to the left, and
-    /// optionally has a pseudo-element to the right.
-    #[inline]
-    pub fn matches_featureless_host_selector_or_pseudo_element(&self) -> FeaturelessHostMatches {
-        let flags = self.flags();
-
-        let mut result = FeaturelessHostMatches::empty();
-        if flags.intersects(SelectorFlags::HAS_NON_FEATURELESS_COMPONENT) {
-            return result;
-        }
-        if flags.intersects(SelectorFlags::HAS_HOST) {
-            result.insert(FeaturelessHostMatches::FOR_HOST);
-        }
-        if flags.intersects(SelectorFlags::HAS_SCOPE) {
-            result.insert(FeaturelessHostMatches::FOR_SCOPE);
-        }
-        result
     }
 
     /// Returns an iterator over this selector in matching order (right-to-left),
@@ -1074,10 +1081,11 @@ impl<Impl: SelectorImpl> Selector<Impl> {
 
     pub fn replace_parent_selector(&self, parent: &SelectorList<Impl>) -> Self {
         let parent_specificity_and_flags =
-            selector_list_specificity_and_flags(parent.slice().iter());
+            selector_list_specificity_and_flags(parent.slice().iter(), /* for_nesting_parent = */ true);
 
         let mut specificity = Specificity::from(self.specificity());
         let mut flags = self.flags() - SelectorFlags::HAS_PARENT;
+        let forbidden_flags = SelectorFlags::forbidden_for_nesting();
 
         fn replace_parent_on_selector_list<Impl: SelectorImpl>(
             orig: &[Selector<Impl>],
@@ -1085,7 +1093,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             specificity: &mut Specificity,
             flags: &mut SelectorFlags,
             propagate_specificity: bool,
-            flags_to_propagate: SelectorFlags,
+            forbidden_flags: SelectorFlags,
         ) -> Option<SelectorList<Impl>> {
             if !orig.iter().any(|s| s.has_parent_selector()) {
                 return None;
@@ -1096,18 +1104,14 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             }));
 
             let result_specificity_and_flags =
-                selector_list_specificity_and_flags(result.slice().iter());
+                selector_list_specificity_and_flags(result.slice().iter(), /* for_nesting_parent = */ false);
             if propagate_specificity {
                 *specificity += Specificity::from(
                     result_specificity_and_flags.specificity -
-                        selector_list_specificity_and_flags(orig.iter()).specificity,
+                        selector_list_specificity_and_flags(orig.iter(), /* for_nesting_parent = */ false).specificity,
                 );
             }
-            flags.insert(
-                result_specificity_and_flags
-                    .flags
-                    .intersection(flags_to_propagate),
-            );
+            flags.insert(result_specificity_and_flags.flags - forbidden_flags);
             Some(result)
         }
 
@@ -1116,7 +1120,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             parent: &SelectorList<Impl>,
             specificity: &mut Specificity,
             flags: &mut SelectorFlags,
-            flags_to_propagate: SelectorFlags,
+            forbidden_flags: SelectorFlags,
         ) -> Vec<RelativeSelector<Impl>> {
             let mut any = false;
 
@@ -1139,15 +1143,11 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             }
 
             let result_specificity_and_flags =
-                relative_selector_list_specificity_and_flags(&result);
-            flags.insert(
-                result_specificity_and_flags
-                    .flags
-                    .intersection(flags_to_propagate),
-            );
+                relative_selector_list_specificity_and_flags(&result, /* for_nesting_parent = */ false);
+            flags.insert(result_specificity_and_flags .flags - forbidden_flags);
             *specificity += Specificity::from(
                 result_specificity_and_flags.specificity -
-                    relative_selector_list_specificity_and_flags(orig).specificity,
+                    relative_selector_list_specificity_and_flags(orig, /* for_nesting_parent = */ false).specificity,
             );
             result
         }
@@ -1157,11 +1157,11 @@ impl<Impl: SelectorImpl> Selector<Impl> {
             parent: &SelectorList<Impl>,
             specificity: &mut Specificity,
             flags: &mut SelectorFlags,
-            flags_to_propagate: SelectorFlags,
+            forbidden_flags: SelectorFlags,
         ) -> Selector<Impl> {
             let new_selector = orig.replace_parent_selector(parent);
             *specificity += Specificity::from(new_selector.specificity() - orig.specificity());
-            flags.insert(new_selector.flags().intersection(flags_to_propagate));
+            flags.insert(new_selector.flags() - forbidden_flags);
             new_selector
         }
 
@@ -1197,11 +1197,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                 RelativeSelectorAnchor => component.clone(),
                 ParentSelector => {
                     specificity += Specificity::from(parent_specificity_and_flags.specificity);
-                    flags.insert(
-                        parent_specificity_and_flags
-                            .flags
-                            .intersection(SelectorFlags::for_nesting()),
-                    );
+                    flags.insert(parent_specificity_and_flags.flags - forbidden_flags);
                     Is(parent.clone())
                 },
                 Negation(ref selectors) => {
@@ -1212,7 +1208,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                             &mut specificity,
                             &mut flags,
                             /* propagate_specificity = */ true,
-                            SelectorFlags::for_nesting(),
+                            forbidden_flags,
                         )
                         .unwrap_or_else(|| selectors.clone()),
                     )
@@ -1224,7 +1220,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                         &mut specificity,
                         &mut flags,
                         /* propagate_specificity = */ true,
-                        SelectorFlags::for_nesting(),
+                        forbidden_flags,
                     )
                     .unwrap_or_else(|| selectors.clone()))
                 },
@@ -1236,7 +1232,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                             &mut specificity,
                             &mut flags,
                             /* propagate_specificity = */ false,
-                            SelectorFlags::for_nesting(),
+                            forbidden_flags,
                         )
                         .unwrap_or_else(|| selectors.clone()),
                     )
@@ -1246,7 +1242,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                     parent,
                     &mut specificity,
                     &mut flags,
-                    SelectorFlags::for_nesting(),
+                    forbidden_flags,
                 )
                 .into_boxed_slice()),
 
@@ -1255,7 +1251,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                     parent,
                     &mut specificity,
                     &mut flags,
-                    SelectorFlags::for_nesting() - SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                    forbidden_flags,
                 ))),
                 NthOf(ref data) => {
                     let selectors = replace_parent_on_selector_list(
@@ -1264,7 +1260,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                         &mut specificity,
                         &mut flags,
                         /* propagate_specificity = */ true,
-                        SelectorFlags::for_nesting(),
+                        forbidden_flags,
                     );
                     NthOf(match selectors {
                         Some(s) => {
@@ -1278,7 +1274,7 @@ impl<Impl: SelectorImpl> Selector<Impl> {
                     parent,
                     &mut specificity,
                     &mut flags,
-                    SelectorFlags::for_nesting(),
+                    forbidden_flags,
                 )),
             }
         });
@@ -1426,28 +1422,6 @@ impl<'a, Impl: 'a + SelectorImpl> SelectorIter<'a, Impl> {
     #[inline]
     pub fn next_sequence(&mut self) -> Option<Combinator> {
         self.next_combinator.take()
-    }
-
-    /// Whether this selector is a featureless selector matching the shadow host, with no
-    /// combinators to the left.
-    #[inline]
-    pub(crate) fn is_featureless_host_selector(&mut self) -> FeaturelessHostMatches {
-        if self.selector_length() == 0 {
-            return FeaturelessHostMatches::empty();
-        }
-        let mut result = FeaturelessHostMatches::empty();
-        while let Some(c) = self.next() {
-            let component_matches = c.matches_featureless_host();
-            if component_matches.is_empty() {
-                return FeaturelessHostMatches::empty();
-            }
-            result.insert(component_matches);
-        }
-        if self.next_sequence().is_some() {
-            FeaturelessHostMatches::empty()
-        } else {
-            result
-        }
     }
 
     #[inline]
@@ -2130,32 +2104,6 @@ impl<Impl: SelectorImpl> Component<Impl> {
     #[inline]
     pub fn is_host(&self) -> bool {
         matches!(*self, Component::Host(..))
-    }
-
-    /// Returns if this component can match a featureless shadow host, and if so,
-    /// via which selector.
-    #[inline]
-    pub fn matches_featureless_host(&self) -> FeaturelessHostMatches {
-        match *self {
-            Component::Host(..) => FeaturelessHostMatches::FOR_HOST,
-            Component::Scope | Component::ImplicitScope => FeaturelessHostMatches::FOR_SCOPE,
-            Component::Where(ref l) | Component::Is(ref l) => {
-                debug_assert!(l.len() > 0, "Zero length selector?");
-                // TODO(emilio): For now we require that everything in logical combination can match
-                // the featureless shadow host, because not doing so brings up a fair amount of extra
-                // complexity (we can't make the decision on whether to walk out statically).
-                let mut result = FeaturelessHostMatches::empty();
-                for i in l.slice() {
-                    if !result.insert_not_empty(
-                        i.matches_featureless_host_selector_or_pseudo_element()
-                    ) {
-                        return FeaturelessHostMatches::empty();
-                    }
-                }
-                result
-            },
-            _ => FeaturelessHostMatches::empty(),
-        }
     }
 
     /// Returns the value as a combinator if applicable, None otherwise.
@@ -4062,7 +4010,7 @@ pub mod tests {
                     lower_name: DummyAtom::from("eeÉ"),
                 })],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4076,7 +4024,7 @@ pub mod tests {
                     }),
                 ],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // When the default namespace is not set, *| should be elided.
@@ -4089,7 +4037,7 @@ pub mod tests {
                     lower_name: DummyAtom::from("e"),
                 })],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // When the default namespace is set, *| should _not_ be elided (as foo
@@ -4110,7 +4058,7 @@ pub mod tests {
                     }),
                 ],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4118,7 +4066,7 @@ pub mod tests {
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::ExplicitUniversalType],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4129,7 +4077,7 @@ pub mod tests {
                     Component::ExplicitUniversalType,
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4137,7 +4085,7 @@ pub mod tests {
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::ExplicitUniversalType],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4151,7 +4099,7 @@ pub mod tests {
                     Component::ExplicitUniversalType,
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4162,7 +4110,7 @@ pub mod tests {
                     Component::NonTSPseudoClass(PseudoClass::Lang("en-US".to_owned())),
                 ],
                 specificity(0, 2, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4170,7 +4118,7 @@ pub mod tests {
             Ok(SelectorList::from_vec(vec![Selector::from_vec(
                 vec![Component::ID(DummyAtom::from("bar"))],
                 specificity(1, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4185,7 +4133,7 @@ pub mod tests {
                     Component::ID(DummyAtom::from("bar")),
                 ],
                 specificity(1, 1, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4201,7 +4149,7 @@ pub mod tests {
                     Component::ID(DummyAtom::from("bar")),
                 ],
                 specificity(1, 1, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // Default namespace does not apply to attribute selectors
@@ -4215,7 +4163,7 @@ pub mod tests {
                     local_name_lower: DummyAtom::from("foo"),
                 }],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert!(parse_ns("svg|circle", &parser).is_err());
@@ -4233,7 +4181,7 @@ pub mod tests {
                     }),
                 ],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4244,7 +4192,7 @@ pub mod tests {
                     Component::ExplicitUniversalType,
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // Default namespace does not apply to attribute selectors
@@ -4263,7 +4211,7 @@ pub mod tests {
                     },
                 ],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // Default namespace does apply to type selectors
@@ -4278,7 +4226,7 @@ pub mod tests {
                     }),
                 ],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4289,7 +4237,7 @@ pub mod tests {
                     Component::ExplicitUniversalType,
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4300,7 +4248,7 @@ pub mod tests {
                     Component::ExplicitUniversalType,
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // Default namespace applies to universal and type selectors inside :not and :matches,
@@ -4313,11 +4261,11 @@ pub mod tests {
                     Component::Negation(SelectorList::from_vec(vec![Selector::from_vec(
                         vec![Component::Class(DummyAtom::from("cl"))],
                         specificity(0, 1, 0),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )])),
                 ],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4331,11 +4279,11 @@ pub mod tests {
                             Component::ExplicitUniversalType,
                         ],
                         specificity(0, 0, 0),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )]),),
                 ],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4352,11 +4300,11 @@ pub mod tests {
                             }),
                         ],
                         specificity(0, 0, 1),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )])),
                 ],
                 specificity(0, 0, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4369,7 +4317,7 @@ pub mod tests {
                     case_sensitivity: ParsedCaseSensitivity::CaseSensitive,
                 }],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // https://github.com/mozilla/servo/issues/1723
@@ -4393,7 +4341,7 @@ pub mod tests {
                     Component::NonTSPseudoClass(PseudoClass::Hover),
                 ],
                 specificity(0, 1, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT | SelectorFlags::HAS_PSEUDO,
+                SelectorFlags::HAS_PSEUDO,
             )]))
         );
         assert_eq!(
@@ -4406,7 +4354,7 @@ pub mod tests {
                     Component::NonTSPseudoClass(PseudoClass::Hover),
                 ],
                 specificity(0, 2, 1),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT | SelectorFlags::HAS_PSEUDO,
+                SelectorFlags::HAS_PSEUDO,
             )]))
         );
         assert!(parse("::before:hover:lang(foo)").is_err());
@@ -4430,7 +4378,7 @@ pub mod tests {
                     Component::PseudoElement(PseudoElement::After),
                 ],
                 specificity(0, 0, 2),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT | SelectorFlags::HAS_PSEUDO,
+                SelectorFlags::HAS_PSEUDO,
             )]))
         );
         assert_eq!(
@@ -4442,7 +4390,7 @@ pub mod tests {
                     Component::Class(DummyAtom::from("ok")),
                 ],
                 (1 << 20) + (1 << 10) + (0 << 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         parser.default_ns = None;
@@ -4457,11 +4405,11 @@ pub mod tests {
                     Selector::from_vec(
                         vec![Component::ExplicitUniversalType],
                         specificity(0, 0, 0),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )
                 ]))],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         assert_eq!(
@@ -4474,11 +4422,11 @@ pub mod tests {
                             Component::ExplicitUniversalType,
                         ],
                         specificity(0, 0, 0),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )
                 ]))],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
         // *| should be elided if there is no default namespace.
@@ -4490,11 +4438,11 @@ pub mod tests {
                     Selector::from_vec(
                         vec![Component::ExplicitUniversalType],
                         specificity(0, 0, 0),
-                        SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                        SelectorFlags::empty(),
                     )
                 ]))],
                 specificity(0, 0, 0),
-                SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::empty(),
             )]))
         );
 
@@ -4537,7 +4485,7 @@ pub mod tests {
                     Component::Class(DummyAtom::from("bar")),
                 ],
                 (1 << 20) + (1 << 10) + (0 << 0),
-                SelectorFlags::HAS_PARENT | SelectorFlags::HAS_NON_FEATURELESS_COMPONENT
+                SelectorFlags::HAS_PARENT
             )]))
         );
 
@@ -4621,7 +4569,7 @@ pub mod tests {
                     Component::Class(DummyAtom::from("foo")),
                 ],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_SCOPE | SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::HAS_SCOPE,
             )])
         );
 
@@ -4634,7 +4582,7 @@ pub mod tests {
                     Component::Class(DummyAtom::from("foo")),
                 ],
                 specificity(0, 2, 0),
-                SelectorFlags::HAS_SCOPE | SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::HAS_SCOPE
             )])
         );
 
@@ -4647,7 +4595,7 @@ pub mod tests {
                     Component::Class(DummyAtom::from("foo")),
                 ],
                 specificity(0, 1, 0),
-                SelectorFlags::HAS_SCOPE | SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::HAS_SCOPE
             )])
         );
 
@@ -4662,24 +4610,9 @@ pub mod tests {
                     Component::Class(DummyAtom::from("bar")),
                 ],
                 specificity(0, 3, 0),
-                SelectorFlags::HAS_SCOPE | SelectorFlags::HAS_NON_FEATURELESS_COMPONENT,
+                SelectorFlags::HAS_SCOPE
             )])
         );
-    }
-
-    #[test]
-    fn test_featureless() {
-        let featureless = parse(":host, :scope").unwrap();
-        assert_eq!(featureless.slice().len(), 2);
-        for selector in featureless.slice() {
-            assert!(!selector.flags().intersects(SelectorFlags::HAS_NON_FEATURELESS_COMPONENT));
-        }
-
-        let non_featureless = parse(":host.foo, :scope.foo, :host .foo, :scope .foo").unwrap();
-        assert_eq!(non_featureless.slice().len(), 4);
-        for selector in non_featureless.slice() {
-            assert!(selector.flags().intersects(SelectorFlags::HAS_NON_FEATURELESS_COMPONENT));
-        }
     }
 
     struct TestVisitor {

@@ -269,14 +269,11 @@ class StyleRuleActor extends Actor {
       const inspectorActor = this.pageStyle.inspector;
       const resourceId =
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(sheet);
-      const styleSheetIndex =
-        this.pageStyle.styleSheetsManager.getStyleSheetIndex(resourceId);
       data.source = {
         // Inline stylesheets have a null href; Use window URL instead.
         type: sheet.href ? "stylesheet" : "inline",
         href: sheet.href || inspectorActor.window.location.toString(),
         id: resourceId,
-        index: styleSheetIndex,
         // Whether the stylesheet lives in a different frame than the host document.
         isFramed: inspectorActor.window !== inspectorActor.window.top,
       };
@@ -825,9 +822,8 @@ class StyleRuleActor extends Actor {
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
           this._parentSheet
         );
-      const cssText = await this.pageStyle.styleSheetsManager.getText(
-        resourceId
-      );
+      const cssText =
+        await this.pageStyle.styleSheetsManager.getText(resourceId);
       const text = getRuleText(cssText, this.line, this.column);
       // Cache the result on the rule actor to avoid parsing again next time
       this._failedToGetRuleText = false;
@@ -874,9 +870,8 @@ class StyleRuleActor extends Actor {
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
           this._parentSheet
         );
-      const stylesheetText = await this.pageStyle.styleSheetsManager.getText(
-        resourceId
-      );
+      const stylesheetText =
+        await this.pageStyle.styleSheetsManager.getText(resourceId);
 
       const [start, end] = getSelectorOffsets(
         stylesheetText,
@@ -928,9 +923,8 @@ class StyleRuleActor extends Actor {
           this._parentSheet
         );
 
-      const sheetText = await this.pageStyle.styleSheetsManager.getText(
-        resourceId
-      );
+      const sheetText =
+        await this.pageStyle.styleSheetsManager.getText(resourceId);
       const cssText = InspectorUtils.replaceBlockRuleBodyTextInStylesheet(
         sheetText,
         this.line,
@@ -1072,9 +1066,8 @@ class StyleRuleActor extends Actor {
         this.pageStyle.styleSheetsManager.getStyleSheetResourceId(
           this._parentSheet
         );
-      let authoredText = await this.pageStyle.styleSheetsManager.getText(
-        resourceId
-      );
+      let authoredText =
+        await this.pageStyle.styleSheetsManager.getText(resourceId);
 
       const [startOffset, endOffset] = getSelectorOffsets(
         authoredText,

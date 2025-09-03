@@ -23,6 +23,8 @@
 #include "mozilla/dom/MutationObservers.h"
 #include "mozilla/dom/Text.h"
 #include "mozilla/dom/TreeOrderedArrayInlines.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/dom/UnbindContext.h"
 #include "mozilla/EventDispatcher.h"
 #include "mozilla/IdentifierMapEntry.h"
@@ -526,8 +528,8 @@ void ShadowRoot::InsertSheetIntoAuthorData(
 // presumably.
 void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
   auto& sheetList = aSheet.IsConstructed() ? mAdoptedStyleSheets : mStyleSheets;
-  int32_t index = sheetList.LastIndexOf(&aSheet);
-  if (index < 0) {
+  size_t index = sheetList.LastIndexOf(&aSheet);
+  if (index == sheetList.NoIndex) {
     // NOTE(emilio): @import sheets are handled in the relevant RuleAdded
     // notification, which only notifies after the sheet is loaded.
     //
@@ -538,7 +540,7 @@ void ShadowRoot::StyleSheetApplicableStateChanged(StyleSheet& aSheet) {
     return;
   }
   if (aSheet.IsApplicable()) {
-    InsertSheetIntoAuthorData(size_t(index), aSheet, sheetList);
+    InsertSheetIntoAuthorData(index, aSheet, sheetList);
   } else {
     MOZ_ASSERT(mServoStyles);
     if (mStyleRuleMap) {
@@ -584,14 +586,14 @@ void ShadowRoot::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
 
   // https://dom.spec.whatwg.org/#ref-for-get-the-parent%E2%91%A6
   if (!aVisitor.mEvent->mFlags.mComposed) {
-    nsCOMPtr<nsIContent> originalTarget =
+    nsIContent* originalTarget =
         nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mOriginalTarget);
     if (originalTarget && originalTarget->GetContainingShadow() == this) {
       // If we do stop propagation, we still want to propagate
       // the event to chrome (nsPIDOMWindow::GetParentTarget()).
       // The load event is special in that we don't ever propagate it
       // to chrome.
-      nsCOMPtr<nsPIDOMWindowOuter> win = OwnerDoc()->GetWindow();
+      nsPIDOMWindowOuter* win = OwnerDoc()->GetWindow();
       EventTarget* parentTarget = win && aVisitor.mEvent->mMessage != eLoad
                                       ? win->GetParentTarget()
                                       : nullptr;
@@ -604,8 +606,8 @@ void ShadowRoot::GetEventTargetParent(EventChainPreVisitor& aVisitor) {
   nsIContent* shadowHost = GetHost();
   aVisitor.SetParentTarget(shadowHost, false);
 
-  nsCOMPtr<nsIContent> content(
-      nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mTarget));
+  nsIContent* content =
+      nsIContent::FromEventTargetOrNull(aVisitor.mEvent->mTarget);
   if (content && content->GetContainingShadow() == this) {
     aVisitor.mEventTargetAtParent = shadowHost;
   }
@@ -885,9 +887,32 @@ nsresult ShadowRoot::Clone(dom::NodeInfo* aNodeInfo, nsINode** aResult) const {
   return NS_ERROR_DOM_NOT_SUPPORTED_ERR;
 }
 
-void ShadowRoot::SetHTMLUnsafe(const nsAString& aHTML) {
+void ShadowRoot::SetHTMLUnsafe(const TrustedHTMLOrString& aHTML,
+                               ErrorResult& aError) {
   RefPtr<Element> host = GetHost();
-  nsContentUtils::SetHTMLUnsafe(this, host, aHTML);
+  nsContentUtils::SetHTMLUnsafe(this, host, aHTML, true /*aIsShadowRoot*/,
+                                aError);
+}
+
+void ShadowRoot::GetInnerHTML(
+    OwningTrustedHTMLOrNullIsEmptyString& aInnerHTML) {
+  DocumentFragment::GetInnerHTML(aInnerHTML.SetAsNullIsEmptyString());
+}
+
+MOZ_CAN_RUN_SCRIPT void ShadowRoot::SetInnerHTML(
+    const TrustedHTMLOrNullIsEmptyString& aInnerHTML, ErrorResult& aError) {
+  constexpr nsLiteralString sink = u"ShadowRoot innerHTML"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aInnerHTML, sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+  if (aError.Failed()) {
+    return;
+  }
+
+  SetInnerHTMLInternal(*compliantString, aError);
 }
 
 void ShadowRoot::GetHTML(const GetHTMLOptions& aOptions, nsAString& aResult) {

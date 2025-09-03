@@ -51,6 +51,8 @@ import android.view.ContextThemeWrapper;
 import android.view.Display;
 import android.view.InputDevice;
 import android.view.WindowManager;
+import android.view.inputmethod.InputMethodManager;
+import android.view.inputmethod.InputMethodSubtype;
 import android.webkit.MimeTypeMap;
 import androidx.annotation.Nullable;
 import androidx.collection.SimpleArrayMap;
@@ -762,6 +764,11 @@ public class GeckoAppShell {
   }
 
   @WrapForJNI(calledFrom = "gecko")
+  public static String getExtensionFromMimeType(final String aMimeType) {
+    return MimeTypeMap.getSingleton().getExtensionFromMimeType(aMimeType);
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
   public static String getMimeTypeFromExtensions(final String aFileExt) {
     final StringTokenizer st = new StringTokenizer(aFileExt, ".,; ");
     String type = null;
@@ -914,6 +921,33 @@ public class GeckoAppShell {
       sScreenRefreshRate = Float.valueOf(refreshRate);
     }
     return refreshRate;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static boolean hasHDRScreen() {
+    if (Build.VERSION.SDK_INT < 24) {
+      return false;
+    }
+    final WindowManager wm =
+        (WindowManager) getApplicationContext().getSystemService(Context.WINDOW_SERVICE);
+    final Display display = wm.getDefaultDisplay();
+    if (Build.VERSION.SDK_INT >= 26) {
+      return display.isHdr();
+    }
+    final Display.HdrCapabilities hdrCapabilities = display.getHdrCapabilities();
+    if (hdrCapabilities == null) {
+      return false;
+    }
+    final int[] supportedHdrTypes = hdrCapabilities.getSupportedHdrTypes();
+    for (final int type : supportedHdrTypes) {
+      if (type == Display.HdrCapabilities.HDR_TYPE_HDR10
+          || type == Display.HdrCapabilities.HDR_TYPE_HDR10_PLUS
+          || type == Display.HdrCapabilities.HDR_TYPE_HLG
+          || type == Display.HdrCapabilities.HDR_TYPE_DOLBY_VISION) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @WrapForJNI(calledFrom = "gecko")
@@ -1117,6 +1151,25 @@ public class GeckoAppShell {
     }
 
     return result;
+  }
+
+  @WrapForJNI(calledFrom = "gecko")
+  private static String getKeyboardLayout() {
+    final InputMethodManager imm =
+        (InputMethodManager) getApplicationContext().getSystemService(Context.INPUT_METHOD_SERVICE);
+    final InputMethodSubtype ims = imm.getCurrentInputMethodSubtype();
+    if (ims == null) {
+      return null;
+    }
+
+    // TODO(m_kato):
+    // Android 16 will have `layout related APIs such as setLayoutLabelNonLocalized
+    // to get keyboard layout label.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+      return ims.getLanguageTag();
+    } else {
+      return ims.getLocale();
+    }
   }
 
   @WrapForJNI(calledFrom = "gecko")

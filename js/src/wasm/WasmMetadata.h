@@ -58,6 +58,9 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
   // This may be empty for internally constructed modules which don't care
   // about this information.
   BuiltinModuleFuncIdVector knownFuncImports;
+  // Treat imported wasm functions as if they were JS functions. This is used
+  // when compiling the module for new WebAssembly.Function.
+  bool funcImportsAreJS;
   // The number of imported globals in the module.
   uint32_t numGlobalImports;
 
@@ -232,6 +235,7 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
       : kind(kind),
         compileArgs(compileArgs),
         numFuncImports(0),
+        funcImportsAreJS(false),
         numGlobalImports(0),
         callRefHints(nullptr),
         debugEnabled(false),
@@ -326,6 +330,9 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
     uint32_t funcDefIndex = funcIndex - numFuncImports;
     return funcDefFeatureUsages[funcDefIndex];
   }
+  // Given a bytecode offset inside a function definition, find the function
+  // index.
+  uint32_t findFuncIndex(uint32_t bytecodeOffset) const;
 
   BuiltinModuleFuncId knownFuncImport(uint32_t funcIndex) const {
     MOZ_ASSERT(funcIndex < numFuncImports);
@@ -349,7 +356,7 @@ struct CodeMetadata : public ShareableBase<CodeMetadata> {
 
   CallRefHint getCallRefHint(uint32_t callRefIndex) const {
     if (!callRefHints) {
-      return CallRefHint::unknown();
+      return CallRefHint();
     }
     return CallRefHint::fromRepr(callRefHints[callRefIndex]);
   }

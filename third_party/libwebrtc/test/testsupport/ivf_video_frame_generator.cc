@@ -43,9 +43,9 @@ std::unique_ptr<VideoDecoder> CreateDecoder(const Environment& env,
     case VideoCodecType::kVideoCodecAV1:
       return CreateDav1dDecoder();
     case VideoCodecType::kVideoCodecH265:
-      // TODO: bugs.webrtc.org/13485 - implement H265 decoder
+      // No H.265 SW decoder implementation will be provided.
       return nullptr;
-    default:
+    case VideoCodecType::kVideoCodecGeneric:
       return nullptr;
   }
 }
@@ -53,12 +53,14 @@ std::unique_ptr<VideoDecoder> CreateDecoder(const Environment& env,
 }  // namespace
 
 IvfVideoFrameGenerator::IvfVideoFrameGenerator(const Environment& env,
-                                               absl::string_view file_name)
+                                               absl::string_view file_name,
+                                               std::optional<int> fps_hint)
     : callback_(this),
       file_reader_(IvfFileReader::Create(FileWrapper::OpenReadOnly(file_name))),
       video_decoder_(CreateDecoder(env, file_reader_->GetVideoCodecType())),
       width_(file_reader_->GetFrameWidth()),
-      height_(file_reader_->GetFrameHeight()) {
+      height_(file_reader_->GetFrameHeight()),
+      fps_hint_(fps_hint) {
   RTC_CHECK(video_decoder_) << "No decoder found for file's video codec type";
   VideoDecoder::Settings decoder_settings;
   decoder_settings.set_codec_type(file_reader_->GetVideoCodecType());

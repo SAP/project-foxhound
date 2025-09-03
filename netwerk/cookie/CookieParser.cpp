@@ -8,7 +8,7 @@
 
 #include "mozilla/CheckedInt.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 #include "mozilla/net/Cookie.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/TextUtils.h"
@@ -284,18 +284,14 @@ CookieParser::~CookieParser() {
 
 // helper functions for GetTokenValue
 static inline bool iswhitespace(char c) { return c == ' ' || c == '\t'; }
-static inline bool isterminator(char c) { return c == '\n' || c == '\r'; }
-static inline bool isvalueseparator(char c) {
-  return isterminator(c) || c == ';';
-}
+static inline bool isvalueseparator(char c) { return c == ';'; }
 static inline bool istokenseparator(char c) {
   return isvalueseparator(c) || c == '=';
 }
 
 // Parse a single token/value pair.
-// Returns true if a cookie terminator is found, so caller can parse new cookie.
 // static
-bool CookieParser::GetTokenValue(nsACString::const_char_iterator& aIter,
+void CookieParser::GetTokenValue(nsACString::const_char_iterator& aIter,
                                  nsACString::const_char_iterator& aEndIter,
                                  nsDependentCSubstring& aTokenString,
                                  nsDependentCSubstring& aTokenValue,
@@ -350,15 +346,9 @@ bool CookieParser::GetTokenValue(nsACString::const_char_iterator& aIter,
 
   // aIter is on ';', or terminator, or EOS
   if (aIter != aEndIter) {
-    // if on terminator, increment past & return true to process new cookie
-    if (isterminator(*aIter)) {
-      ++aIter;
-      return true;
-    }
-    // fall-through: aIter is on ';', increment and return false
+    // fall-through: aIter is on ';', increment and return
     ++aIter;
   }
-  return false;
 }
 
 static inline void SetSameSiteAttribute(CookieStruct& aCookieData,
@@ -403,7 +393,7 @@ bool CookieParser::CheckAttributeSize(const nsACString& currentValue,
 // Parses attributes from cookie header. expires/max-age attributes aren't
 // folded into the cookie struct here, because we don't know which one to use
 // until we've parsed the header.
-bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
+void CookieParser::ParseAttributes(nsCString& aCookieHeader,
                                    nsACString& aExpires, nsACString& aMaxage,
                                    bool& aAcceptedByParser) {
   aAcceptedByParser = false;
@@ -433,16 +423,13 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
 
   nsDependentCSubstring tokenString(cookieStart, cookieStart);
   nsDependentCSubstring tokenValue(cookieStart, cookieStart);
-  bool newCookie;
   bool equalsFound;
 
   // extract cookie <NAME> & <VALUE> (first attribute), and copy the strings.
-  // if we find multiple cookies, return for processing
   // note: if there's no '=', we assume token is <VALUE>. this is required by
   //       some sites (see bug 169091).
   // XXX fix the parser to parse according to <VALUE> grammar for this case
-  newCookie = GetTokenValue(cookieStart, cookieEnd, tokenString, tokenValue,
-                            equalsFound);
+  GetTokenValue(cookieStart, cookieEnd, tokenString, tokenValue, equalsFound);
   if (equalsFound) {
     mCookieData.name() = tokenString;
     mCookieData.value() = tokenValue;
@@ -451,13 +438,12 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
   }
 
   // extract remaining attributes
-  while (cookieStart != cookieEnd && !newCookie) {
-    newCookie = GetTokenValue(cookieStart, cookieEnd, tokenString, tokenValue,
-                              equalsFound);
+  while (cookieStart != cookieEnd) {
+    GetTokenValue(cookieStart, cookieEnd, tokenString, tokenValue, equalsFound);
 
     if (ContainsControlChars(tokenString) || ContainsControlChars(tokenValue)) {
       RejectCookie(RejectedInvalidCharAttributes);
-      return newCookie;
+      return;
     }
 
     // decide which attribute we have, and copy the string
@@ -518,7 +504,7 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
       mCookieData.sameSite() == nsICookie::SAMESITE_NONE) {
     if (StaticPrefs::network_cookie_sameSite_noneRequiresSecure()) {
       RejectCookie(RejectedNoneRequiresSecure);
-      return newCookie;
+      return;
     }
 
     // Still warn about the missing Secure attribute when not enforcing.
@@ -530,7 +516,7 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
   if (StaticPrefs::network_cookie_CHIPS_enabled() &&
       mCookieData.isPartitioned() && !mCookieData.isSecure()) {
     RejectCookie(RejectedPartitionedRequiresSecure);
-    return newCookie;
+    return;
   }
 
   if (mCookieData.rawSameSite() == nsICookie::SAMESITE_NONE &&
@@ -541,7 +527,8 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
             mHostURI, "network.cookie.sameSite.laxByDefault.disabledHosts");
     if (laxByDefault) {
       mWarnings.mSameSiteLaxForced = true;
-    } else {
+    } else if (StaticPrefs::
+                   network_cookie_sameSite_laxByDefaultWarningsForBeta()) {
       mWarnings.mSameSiteLaxForcedForBeta = true;
     }
   }
@@ -550,7 +537,6 @@ bool CookieParser::ParseAttributes(nsCString& aCookieHeader,
   aAcceptedByParser = true;
 
   MOZ_ASSERT(Cookie::ValidateSameSite(mCookieData));
-  return newCookie;
 }
 
 namespace {
@@ -747,17 +733,11 @@ bool CookieParser::GetExpiry(CookieStruct& aCookieData,
 
       PRTime dateHeaderTime;
       if (PR_ParseTimeString(aDateHeader.BeginReading(), true,
-                             &dateHeaderTime) == PR_SUCCESS) {
+                             &dateHeaderTime) == PR_SUCCESS &&
+          StaticPrefs::network_cookie_useServerTime()) {
         int64_t serverTime = dateHeaderTime / int64_t(PR_USEC_PER_SEC);
         int64_t delta = aCurrentTime - serverTime;
-
-        if (StaticPrefs::network_cookie_useServerTime()) {
-          expires += delta;
-        } else if (expires <= aCurrentTime &&
-                   (expires + delta) > aCurrentTime) {
-          mozilla::glean::networking::set_cookie_expired_without_server_time
-              .AddToNumerator(1);
-        }
+        expires += delta;
       }
     }
 
@@ -868,11 +848,11 @@ static void RecordPartitionedTelemetry(const CookieStruct& aCookieData,
 
 // processes a single cookie, and returns true if there are more cookies
 // to be processed
-bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
+void CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
                          CookieStatus aStatus, nsCString& aCookieHeader,
                          const nsACString& aDateHeader, bool aFromHttp,
                          bool aIsForeignAndNotAddon, bool aPartitionedOnly,
-                         bool aIsInPrivateBrowsing) {
+                         bool aIsInPrivateBrowsing, bool aOn3pcbException) {
   MOZ_ASSERT(!mContainsCookie);
 
   // init expiryTime such that session cookies won't prematurely expire
@@ -889,10 +869,9 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
   nsAutoCString expires;
   nsAutoCString maxage;
   bool acceptedByParser = false;
-  bool newCookie =
-      ParseAttributes(aCookieHeader, expires, maxage, acceptedByParser);
+  ParseAttributes(aCookieHeader, expires, maxage, acceptedByParser);
   if (!acceptedByParser) {
-    return newCookie;
+    return;
   }
 
   // Collect telemetry on how often secure cookies are set from non-secure
@@ -923,7 +902,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
                       "cookie name and value are empty");
 
     RejectCookie(RejectedEmptyNameAndValue);
-    return newCookie;
+    return;
   }
 
   // reject cookie if it's over the size limit, per RFC2109
@@ -931,7 +910,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "cookie too big (> 4kb)");
     RejectCookie(RejectedNameValueOversize);
-    return newCookie;
+    return;
   }
 
   // We count SetCookie operations in the parent process only for HTTP set
@@ -944,7 +923,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "invalid name character");
     RejectCookie(RejectedInvalidCharName);
-    return newCookie;
+    return;
   }
 
   // domain & path checks
@@ -952,13 +931,13 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "failed the domain tests");
     RejectCookie(RejectedInvalidDomain);
-    return newCookie;
+    return;
   }
 
   if (!CheckPath()) {
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "failed the path tests");
-    return newCookie;
+    return;
   }
 
   // If a cookie is nameless, then its value must not start with
@@ -968,7 +947,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "failed hidden prefix tests");
     RejectCookie(RejectedInvalidPrefix);
-    return newCookie;
+    return;
   }
 
   // magic prefix checks. MUST be run after CheckDomain() and CheckPath()
@@ -976,14 +955,14 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "failed the prefix tests");
     RejectCookie(RejectedInvalidPrefix);
-    return newCookie;
+    return;
   }
 
   if (!CookieCommons::CheckValue(mCookieData)) {
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "invalid value character");
     RejectCookie(RejectedInvalidCharValue);
-    return newCookie;
+    return;
   }
 
   // if the new cookie is httponly, make sure we're not coming from script
@@ -991,7 +970,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "cookie is httponly; coming from script");
     RejectCookie(RejectedHttpOnlyButFromScript);
-    return newCookie;
+    return;
   }
 
   // If the new cookie is non-https and wants to set secure flag,
@@ -1001,7 +980,7 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, aCookieHeader,
                       "non-https cookie can't set secure flag");
     RejectCookie(RejectedSecureButNonHttps);
-    return newCookie;
+    return;
   }
 
   // If the new cookie is same-site but in a cross site context,
@@ -1017,7 +996,20 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
     COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                       "failed the samesite tests");
     RejectCookie(RejectedForNonSameSiteness);
-    return newCookie;
+    return;
+  }
+
+  // If the cookie is on the 3pcd exception list, we apply partitioned
+  // attribute to the cookie.
+  if (aOn3pcbException) {
+    // We send a warning if the cookie doesn't have the partitioned attribute
+    // in the foreign context.
+    if (aPartitionedOnly && !mCookieData.isPartitioned() &&
+        aIsForeignAndNotAddon) {
+      mWarnings.mForeignNoPartitionedWarning = true;
+    }
+
+    mCookieData.isPartitioned() = true;
   }
 
   // If the cookie does not have the partitioned attribute,
@@ -1033,13 +1025,13 @@ bool CookieParser::Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
       COOKIE_LOGFAILURE(SET_COOKIE, mHostURI, mCookieString,
                         "foreign cookies must be partitioned");
       RejectCookie(RejectedForeignNoPartitionedError);
-      return newCookie;
+      return;
     }
+
     mWarnings.mForeignNoPartitionedWarning = true;
   }
 
   mContainsCookie = true;
-  return newCookie;
 }
 
 void CookieParser::RejectCookie(Rejection aRejection) {

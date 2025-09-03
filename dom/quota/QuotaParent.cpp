@@ -183,9 +183,6 @@ bool Quota::VerifyRequestParams(const RequestParams& aParams) const {
       break;
     }
 
-    case RequestParams::TListOriginsParams:
-      break;
-
     case RequestParams::TPersistedParams: {
       const PersistedParams& params = aParams.get_PersistedParams();
 
@@ -268,9 +265,6 @@ PQuotaRequestParent* Quota::AllocPQuotaRequestParent(
 
       case RequestParams::TEstimateParams:
         return CreateEstimateOp(quotaManager, aParams.get_EstimateParams());
-
-      case RequestParams::TListOriginsParams:
-        return CreateListOriginsOp(quotaManager);
 
       default:
         MOZ_CRASH("Should never get here!");
@@ -379,7 +373,12 @@ mozilla::ipc::IPCResult Quota::RecvTemporaryGroupInitialized(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
-  quotaManager->TemporaryGroupInitialized(aPrincipalInfo)
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
+  quotaManager->TemporaryGroupInitialized(principalMetadata)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -403,7 +402,14 @@ mozilla::ipc::IPCResult Quota::RecvPersistentOriginInitialized(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
-  quotaManager->PersistentOriginInitialized(aPrincipalInfo)
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
+  quotaManager
+      ->PersistentOriginInitialized(OriginMetadata{std::move(principalMetadata),
+                                                   PERSISTENCE_TYPE_PERSISTENT})
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -431,7 +437,14 @@ mozilla::ipc::IPCResult Quota::RecvTemporaryOriginInitialized(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
-  quotaManager->TemporaryOriginInitialized(aPersistenceType, aPrincipalInfo)
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
+  quotaManager
+      ->TemporaryOriginInitialized(
+          OriginMetadata{std::move(principalMetadata), aPersistenceType})
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -491,7 +504,12 @@ mozilla::ipc::IPCResult Quota::RecvInitializeTemporaryGroup(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
-  quotaManager->InitializeTemporaryGroup(aPrincipalInfo)
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
+  quotaManager->InitializeTemporaryGroup(principalMetadata)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -515,7 +533,14 @@ mozilla::ipc::IPCResult Quota::RecvInitializePersistentOrigin(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
-  quotaManager->InitializePersistentOrigin(aPrincipalInfo)
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
+  quotaManager
+      ->InitializePersistentOrigin(OriginMetadata{std::move(principalMetadata),
+                                                  PERSISTENCE_TYPE_PERSISTENT})
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -543,9 +568,15 @@ mozilla::ipc::IPCResult Quota::RecvInitializeTemporaryOrigin(
                 QuotaManager::GetOrCreate(),
                 ResolveBoolResponseAndReturn(aResolve));
 
+  QM_TRY_UNWRAP(
+      PrincipalMetadata principalMetadata,
+      GetInfoFromValidatedPrincipalInfo(*quotaManager, aPrincipalInfo),
+      ResolveBoolResponseAndReturn(aResolve));
+
   quotaManager
-      ->InitializeTemporaryOrigin(aPersistenceType, aPrincipalInfo,
-                                  aCreateIfNonExistent)
+      ->InitializeTemporaryOrigin(
+          OriginMetadata{std::move(principalMetadata), aPersistenceType},
+          aCreateIfNonExistent)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              BoolPromiseResolveOrRejectCallback(this, std::move(aResolve)));
 
@@ -728,6 +759,24 @@ mozilla::ipc::IPCResult Quota::RecvGetCachedOriginUsage(
   quotaManager->GetCachedOriginUsage(aPrincipalInfo)
       ->Then(GetCurrentSerialEventTarget(), __func__,
              UInt64PromiseResolveOrRejectCallback(this, std::move(aResolver)));
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Quota::RecvListOrigins(
+    ListCachedOriginsResolver&& aResolver) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()),
+         ResolveCStringArrayResponseAndReturn(aResolver));
+
+  QM_TRY_UNWRAP(const NotNull<RefPtr<QuotaManager>> quotaManager,
+                QuotaManager::GetOrCreate(),
+                ResolveCStringArrayResponseAndReturn(aResolver));
+
+  quotaManager->ListOrigins()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      CStringArrayPromiseResolveOrRejectCallback(this, std::move(aResolver)));
 
   return IPC_OK();
 }
@@ -1063,6 +1112,35 @@ mozilla::ipc::IPCResult Quota::RecvAbortOperationsForProcess(
   }
 
   quotaManager->AbortOperationsForProcess(aContentParentId);
+
+  return IPC_OK();
+}
+
+mozilla::ipc::IPCResult Quota::RecvSetThumbnailPrivateIdentityId(
+    const uint32_t& aThumbnailPrivateIdentityId) {
+  AssertIsOnBackgroundThread();
+
+  QM_TRY(MOZ_TO_RESULT(!QuotaManager::IsShuttingDown()), IPC_OK());
+
+  if (!TrustParams()) {
+    QM_TRY(MOZ_TO_RESULT(!BackgroundParent::IsOtherProcessActor(Manager())),
+           QM_CUF_AND_IPC_FAIL(this));
+  }
+
+  QM_TRY_UNWRAP(const NotNull<RefPtr<QuotaManager>> quotaManager,
+                QuotaManager::GetOrCreate(), IPC_OK());
+
+  MOZ_ALWAYS_SUCCEEDS(quotaManager->IOThread()->Dispatch(
+      NS_NewRunnableFunction(
+          "dom::quota::Quota::RecvSetThumbnailPrivateIdentityId",
+          [aThumbnailPrivateIdentityId]() {
+            QuotaManager* quotaManager = QuotaManager::Get();
+            MOZ_ASSERT(quotaManager);
+
+            quotaManager->SetThumbnailPrivateIdentityId(
+                aThumbnailPrivateIdentityId);
+          }),
+      NS_DISPATCH_NORMAL));
 
   return IPC_OK();
 }

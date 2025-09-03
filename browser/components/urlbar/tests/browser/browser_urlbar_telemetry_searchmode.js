@@ -10,7 +10,6 @@
 "use strict";
 
 const ENTRY_SCALAR_PREFIX = "urlbar.searchmode.";
-const PICKED_SCALAR_PREFIX = "urlbar.picked.searchmode.";
 const ENGINE_ALIAS = "alias";
 const TEST_QUERY = "test";
 let engineName;
@@ -32,18 +31,14 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 /**
- * Asserts that search mode telemetry was recorded correctly. Checks both the
- * urlbar.searchmode.* and urlbar.searchmode_picked.* probes.
+ * Asserts that search mode telemetry was recorded correctly.
  *
  * @param {string} entry
  *   A search mode entry point.
  * @param {string} engineOrSource
  *   An engine name or a search mode source.
- * @param {number} [resultIndex]
- *   The index of the result picked while in search mode. Only pass this
- *   parameter if a result is picked.
  */
-function assertSearchModeScalars(entry, engineOrSource, resultIndex = -1) {
+function assertSearchModeScalars(entry, engineOrSource) {
   // Check if the urlbar.searchmode.entry scalar contains the expected value.
   const scalars = TelemetryTestUtils.getProcessScalars("parent", true, false);
   TelemetryTestUtils.assertKeyedScalar(
@@ -68,15 +63,6 @@ function assertSearchModeScalars(entry, engineOrSource, resultIndex = -1) {
     }
   }
 
-  if (resultIndex >= 0) {
-    TelemetryTestUtils.assertKeyedScalar(
-      scalars,
-      PICKED_SCALAR_PREFIX + entry,
-      resultIndex,
-      1
-    );
-  }
-
   Services.telemetry.clearScalars();
   Services.telemetry.clearEvents();
 }
@@ -95,9 +81,9 @@ add_setup(async function () {
   // for this test.
   let suggestionEngine = await SearchTestUtils.installOpenSearchEngine({
     url: getRootDirectory(gTestPath) + "urlbarTelemetrySearchSuggestions.xml",
+    faviconURL: "https://www.example.com/favicon.ico",
     setAsDefault: true,
   });
-  suggestionEngine._setIcon("https://www.example.com/favicon.ico", false);
   suggestionEngine.alias = ENGINE_ALIAS;
   engineDomain = suggestionEngine.searchUrlDomain;
   engineName = suggestionEngine.name;
@@ -415,7 +401,7 @@ add_task(async function test_keywordoffer_restrict_keyword() {
   let restrictResult = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
 
   Assert.equal(
-    restrictResult.result.payload.l10nRestrictKeyword,
+    restrictResult.result.payload.l10nRestrictKeywords[0],
     "bookmarks",
     "The first result should be restrict bookmarks result with the correct keyword."
   );
@@ -688,7 +674,7 @@ add_task(async function test_unified_search_button() {
 
   info("Press on the search engine we added for test and enter search mode");
   let popupHidden = UrlbarTestUtils.searchModeSwitcherPopupClosed(window);
-  popup.querySelector("toolbarbutton").click();
+  popup.querySelector("menuitem:not([disabled])").click();
   await popupHidden;
   await UrlbarTestUtils.assertSearchMode(window, {
     engineName,

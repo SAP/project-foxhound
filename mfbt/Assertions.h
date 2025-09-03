@@ -53,9 +53,13 @@ MOZ_END_EXTERN_C
 #if defined(MOZ_HAS_MOZGLUE) || defined(MOZILLA_INTERNAL_API)
 static inline void AnnotateMozCrashReason(const char* reason) {
   gMozCrashReason = reason;
-  // See bug 1681846, on 32-bit Android ARM the compiler removes the store to
-  // gMozCrashReason if this barrier is not present.
-  asm volatile("" ::: "memory");
+  // The following assembly fakes a memory read/write to the compiler, which
+  // prevents the removal of gMozCrashReason store. See bug 1681846 and 1945507.
+#  if defined(__clang__)
+  asm volatile("" : "+r,m"(gMozCrashReason) : : "memory");
+#  else
+  asm volatile("" : "+m,r"(gMozCrashReason) : : "memory");
+#  endif
 }
 #  define MOZ_CRASH_ANNOTATE(...) AnnotateMozCrashReason(__VA_ARGS__)
 #else
@@ -249,17 +253,58 @@ MOZ_NoReturn(int aLine) {
 #    define MOZ_CRASH_WRITE_ADDR NULL
 #  endif
 
+/*
+ * MOZ_CrashSequence() executes a sequence that causes the process to crash by
+ * writing the line number specified in the `aLine` parameter to the address
+ * provide by `aAddress`. The store is implemented as volatile assembly code to
+ * ensure it's always included in the output and always executed. This does not
+ * apply to ASAN builds where we use `__builtin_trap()` instead, as an illegal
+ * access would trip ASAN's checks.
+ */
+#  if !defined(MOZ_ASAN)
+static inline void MOZ_CrashSequence(void* aAddress, intptr_t aLine) {
+#    if defined(__i386__) || defined(__x86_64__)
+  asm volatile(
+      "mov %1, (%0);\n"  // Write the line number to the crashing address
+      :                  // no output registers
+      : "r"(aAddress), "r"(aLine));
+#    elif defined(__arm__) || defined(__aarch64__)
+  asm volatile(
+      "str %1,[%0];\n"  // Write the line number to the crashing address
+      :                 // no output registers
+      : "r"(aAddress), "r"(aLine));
+#    elif defined(__riscv) && (__riscv_xlen == 64)
+  asm volatile(
+      "sd %1,0(%0);\n"  // Write the line number to the crashing address
+      :                 // no output registers
+      : "r"(aAddress), "r"(aLine));
+#    elif defined(__sparc__) && defined(__arch64__)
+  asm volatile(
+      "stx %1,[%0];\n"  // Write the line number to the crashing address
+      :                 // no output registers
+      : "r"(aAddress), "r"(aLine));
+#    else
+#      warning \
+          "Unsupported architecture, replace the code below with assembly suitable to crash the process"
+  asm volatile("" ::: "memory");
+  *((volatile int*)MOZ_CRASH_WRITE_ADDR) = aLine; /* NOLINT */
+#    endif
+}
+#  else
+#    define MOZ_CrashSequence(x, y) __builtin_trap()
+#  endif
+
 #  ifdef __cplusplus
-#    define MOZ_REALLY_CRASH(line)                                  \
-      do {                                                          \
-        *((volatile int*)MOZ_CRASH_WRITE_ADDR) = line; /* NOLINT */ \
-        MOZ_NOMERGE ::abort();                                      \
+#    define MOZ_REALLY_CRASH(line)                     \
+      do {                                             \
+        MOZ_CrashSequence(MOZ_CRASH_WRITE_ADDR, line); \
+        MOZ_NOMERGE ::abort();                         \
       } while (false)
 #  else
-#    define MOZ_REALLY_CRASH(line)                                  \
-      do {                                                          \
-        *((volatile int*)MOZ_CRASH_WRITE_ADDR) = line; /* NOLINT */ \
-        MOZ_NOMERGE abort();                                        \
+#    define MOZ_REALLY_CRASH(line)                     \
+      do {                                             \
+        MOZ_CrashSequence(MOZ_CRASH_WRITE_ADDR, line); \
+        MOZ_NOMERGE abort();                           \
       } while (false)
 #  endif
 #endif
@@ -279,13 +324,13 @@ MOZ_NoReturn(int aLine) {
  * MOZ_CRASH() calls whose rationale is non-obvious; don't use it if it's
  * obvious why we're crashing.
  *
- * If we're a DEBUG build and we crash at a MOZ_CRASH which provides an
- * explanation-string, we print the string to stderr.  Otherwise, we don't
- * print anything; this is because we want MOZ_CRASH to be 100% safe in release
- * builds, and it's hard to print to stderr safely when memory might have been
- * corrupted.
+ * If we're a DEBUG, ASAN or FUZZING build and we crash at a MOZ_CRASH which
+ * provides an explanation-string, we print the string to stderr.  Otherwise,
+ * we don't print anything; this is because we want MOZ_CRASH to be 100% safe
+ * in release builds, and it's hard to print to stderr safely when memory might
+ * have been corrupted.
  */
-#if !(defined(DEBUG) || defined(FUZZING))
+#if !(defined(DEBUG) || defined(MOZ_ASAN) || defined(FUZZING))
 #  define MOZ_CRASH(...)                                                      \
     do {                                                                      \
       MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_CRASH", __FILE__, __LINE__, NULL); \
@@ -330,7 +375,7 @@ MOZ_NoReturn(int aLine) {
 static MOZ_ALWAYS_INLINE_EVEN_DEBUG MOZ_COLD MOZ_NORETURN void MOZ_Crash(
     const char* aFilename, int aLine, const char* aReason) {
   MOZ_FUZZING_HANDLE_CRASH_EVENT4("MOZ_CRASH", aFilename, aLine, aReason);
-#if defined(DEBUG) || defined(FUZZING)
+#if defined(DEBUG) || defined(MOZ_ASAN) || defined(FUZZING)
   MOZ_ReportCrash(aReason, aFilename, aLine);
 #endif
   MOZ_CRASH_ANNOTATE(aReason);

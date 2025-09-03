@@ -58,15 +58,13 @@ class DefaultDelete<webgpu::ffi::WGPUGlobal> {
   }
 };
 
-#if !defined(XP_MACOSX)
 template <>
-class DefaultDelete<webgpu::ffi::WGPUVkImageHandle> {
+class DefaultDelete<webgpu::ffi::WGPUMetalSharedEventHandle> {
  public:
-  void operator()(webgpu::ffi::WGPUVkImageHandle* aPtr) const {
-    webgpu::ffi::wgpu_vkimage_delete(aPtr);
+  void operator()(webgpu::ffi::WGPUMetalSharedEventHandle* aPtr) const {
+    webgpu::ffi::wgpu_server_delete_metal_shared_event(aPtr);
   }
 };
-#endif
 
 }  // namespace mozilla
 

@@ -461,16 +461,18 @@ void SMILTimedElement::SetTimeClient(SMILAnimationFunction* aClient) {
   mClient = aClient;
 }
 
-void SMILTimedElement::SampleAt(SMILTime aContainerTime) {
+void SMILTimedElement::SampleAt(SMILTime aContainerTime,
+                                DiscardArray& aDiscards) {
   if (mIsDisabled) return;
 
   // Milestones are cleared before a sample
   mPrevRegisteredMilestone = sMaxMilestone;
 
-  DoSampleAt(aContainerTime, false);
+  DoSampleAt(aContainerTime, aDiscards, false);
 }
 
-void SMILTimedElement::SampleEndAt(SMILTime aContainerTime) {
+void SMILTimedElement::SampleEndAt(SMILTime aContainerTime,
+                                   DiscardArray& aDiscards) {
   if (mIsDisabled) return;
 
   // Milestones are cleared before a sample
@@ -486,7 +488,7 @@ void SMILTimedElement::SampleEndAt(SMILTime aContainerTime) {
   // initial interval. Therefore an end sample from the startup state is also
   // acceptable.
   if (mElementState == STATE_ACTIVE || mElementState == STATE_STARTUP) {
-    DoSampleAt(aContainerTime, true);  // End sample
+    DoSampleAt(aContainerTime, aDiscards, true);  // End sample
   } else {
     // Even if this was an unnecessary milestone sample we want to be sure that
     // our next real milestone is registered.
@@ -494,7 +496,8 @@ void SMILTimedElement::SampleEndAt(SMILTime aContainerTime) {
   }
 }
 
-void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
+void SMILTimedElement::DoSampleAt(SMILTime aContainerTime,
+                                  DiscardArray& aDiscards, bool aEndOnly) {
   MOZ_ASSERT(mAnimationElement,
              "Got sample before being registered with an animation element");
   MOZ_ASSERT(GetTimeContainer(),
@@ -583,6 +586,7 @@ void SMILTimedElement::DoSampleAt(SMILTime aContainerTime, bool aEndOnly) {
             // after this.
             UpdateCurrentInterval();
           }
+          mAnimationElement->AddDiscards(aDiscards);
           stateChanged = true;
         }
       } break;
@@ -1905,6 +1909,7 @@ void SMILTimedElement::SampleFillValue() {
   if (mFillMode != FILL_FREEZE || !mClient) return;
 
   SMILTime activeTime;
+  SMILTimeValue repeatDuration = GetRepeatDuration();
 
   if (mElementState == STATE_WAITING || mElementState == STATE_POSTACTIVE) {
     const SMILInterval* prevInterval = GetPreviousInterval();
@@ -1922,7 +1927,6 @@ void SMILTimedElement::SampleFillValue() {
     // If the interval's repeat duration was shorter than its active duration,
     // use the end of the repeat duration to determine the frozen animation's
     // state.
-    SMILTimeValue repeatDuration = GetRepeatDuration();
     if (repeatDuration.IsDefinite()) {
       activeTime = std::min(repeatDuration.GetMillis(), activeTime);
     }
@@ -1932,12 +1936,12 @@ void SMILTimedElement::SampleFillValue() {
         "Attempting to sample fill value when we're in an unexpected state "
         "(probably STATE_STARTUP)");
 
-    // If we are being asked to sample the fill value while active we *must*
-    // have a repeat duration shorter than the active duration so use that.
-    MOZ_ASSERT(GetRepeatDuration().IsDefinite(),
-               "Attempting to sample fill value of an active animation with "
-               "an indefinite repeat duration");
-    activeTime = GetRepeatDuration().GetMillis();
+    if (!repeatDuration.IsDefinite()) {
+      // Normally we'd expect a definite repeat duration here so presumably
+      // it's only just been set to indefinite.
+      return;
+    }
+    activeTime = repeatDuration.GetMillis();
   }
 
   uint32_t repeatIteration;

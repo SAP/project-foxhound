@@ -100,6 +100,9 @@ flagged as errors as well.
 
 */
 
+use alloc::sync::Arc;
+use core::fmt::Debug;
+
 use crate::{
     binding_model::{BindGroup, BindGroupLayout, PipelineLayout},
     command::{CommandBuffer, RenderBundle},
@@ -107,9 +110,10 @@ use crate::{
     instance::Adapter,
     pipeline::{ComputePipeline, PipelineCache, RenderPipeline, ShaderModule},
     registry::{Registry, RegistryReport},
-    resource::{Buffer, Fallible, QuerySet, Sampler, StagingBuffer, Texture, TextureView},
+    resource::{
+        Blas, Buffer, Fallible, QuerySet, Sampler, StagingBuffer, Texture, TextureView, Tlas,
+    },
 };
-use std::{fmt::Debug, sync::Arc};
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct HubReport {
@@ -178,6 +182,8 @@ pub struct Hub {
     pub(crate) textures: Registry<Fallible<Texture>>,
     pub(crate) texture_views: Registry<Fallible<TextureView>>,
     pub(crate) samplers: Registry<Fallible<Sampler>>,
+    pub(crate) blas_s: Registry<Fallible<Blas>>,
+    pub(crate) tlas_s: Registry<Fallible<Tlas>>,
 }
 
 impl Hub {
@@ -201,6 +207,8 @@ impl Hub {
             textures: Registry::new(),
             texture_views: Registry::new(),
             samplers: Registry::new(),
+            blas_s: Registry::new(),
+            tlas_s: Registry::new(),
         }
     }
 

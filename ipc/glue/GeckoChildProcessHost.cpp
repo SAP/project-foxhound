@@ -52,7 +52,7 @@
 #include "mozilla/SharedThreadPool.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtrExtensions.h"
 #include "mozilla/ipc/IOThread.h"
@@ -506,6 +506,7 @@ void GeckoChildProcessHost::Destroy() {
 // static
 mozilla::BinPathType BaseProcessLauncher::GetPathToBinary(
     FilePath& exePath, GeckoProcessType processType) {
+  exePath = {};
   BinPathType pathType = XRE_GetChildProcBinPathType(processType);
 
   if (pathType == BinPathType::Self) {
@@ -543,21 +544,25 @@ mozilla::BinPathType BaseProcessLauncher::GetPathToBinary(
     exePath = FilePath(char16ptr_t(gGREBinPath));
 #elif MOZ_WIDGET_COCOA
     nsCOMPtr<nsIFile> childProcPath;
-    NS_NewLocalFile(nsDependentString(gGREBinPath),
-                    getter_AddRefs(childProcPath));
-
-    // We need to use an App Bundle on OS X so that we can hide
-    // the dock icon. See Bug 557225.
-    childProcPath->AppendNative(bundleName);
-    childProcPath->AppendNative("Contents"_ns);
-    childProcPath->AppendNative("MacOS"_ns);
-    nsCString tempCPath;
-    childProcPath->GetNativePath(tempCPath);
-    exePath = FilePath(tempCPath.get());
+    if (NS_SUCCEEDED(NS_NewLocalFile(nsDependentString(gGREBinPath),
+                                     getter_AddRefs(childProcPath)))) {
+      // We need to use an App Bundle on OS X so that we can hide
+      // the dock icon. See Bug 557225.
+      if (NS_SUCCEEDED(childProcPath->AppendNative(bundleName)) &&
+          NS_SUCCEEDED(childProcPath->AppendNative("Contents"_ns)) &&
+          NS_SUCCEEDED(childProcPath->AppendNative("MacOS"_ns))) {
+        nsCString tempCPath;
+        if (NS_SUCCEEDED(childProcPath->GetNativePath(tempCPath))) {
+          exePath = FilePath(tempCPath.get());
+        }
+      }
+    }
 #else
     nsCString path;
-    NS_CopyUnicodeToNative(nsDependentString(gGREBinPath), path);
-    exePath = FilePath(path.get());
+    if (NS_SUCCEEDED(
+            NS_CopyUnicodeToNative(nsDependentString(gGREBinPath), path))) {
+      exePath = FilePath(path.get());
+    }
 #endif
   }
 
@@ -1116,7 +1121,8 @@ Result<Ok, LaunchError> BaseProcessLauncher::DoSetup() {
   geckoargs::sParentPid.Put(static_cast<uint64_t>(base::GetCurrentProcId()),
                             mChildArgs);
 
-  if (!CrashReporter::IsDummy() && CrashReporter::GetEnabled()) {
+  if (!CrashReporter::IsDummy() && CrashReporter::GetEnabled() &&
+      mProcessType != GeckoProcessType_ForkServer) {
 #if defined(MOZ_WIDGET_COCOA) || defined(XP_WIN)
     geckoargs::sCrashReporter.Put(CrashReporter::GetChildNotificationPipe(),
                                   mChildArgs);
@@ -1306,6 +1312,12 @@ Result<Ok, LaunchError> PosixProcessLauncher::DoSetup() {
 
   mChildArgs.mArgs.push_back(ChildProcessType());
 
+#  ifdef MOZ_ENABLE_FORKSERVER
+  MOZ_ASSERT(mProcessType != GeckoProcessType_ForkServer ||
+                 mChildArgs.mFiles.size() == 1,
+             "The ForkServer only expects a single FD argument");
+#  endif
+
 #  if !defined(MOZ_WIDGET_ANDROID)
   // Add any files which need to be transferred to fds_to_remap.
   // NOTE: This doesn't transfer ownership of the files out of `mChildArgs`.
@@ -1346,9 +1358,6 @@ RefPtr<ProcessHandlePromise> PosixProcessLauncher::DoLaunch() {
 
 #ifdef XP_IOS
 RefPtr<ProcessHandlePromise> IosProcessLauncher::DoLaunch() {
-  MOZ_RELEASE_ASSERT(mLaunchOptions->fds_to_remap.size() == 3,
-                     "Unexpected fds_to_remap on iOS");
-
   ExtensionKitProcess::Kind kind = ExtensionKitProcess::Kind::WebContent;
   if (mProcessType == GeckoProcessType_GPU) {
     kind = ExtensionKitProcess::Kind::Rendering;
@@ -1389,6 +1398,23 @@ RefPtr<ProcessHandlePromise> IosProcessLauncher::DoLaunch() {
   }
   MOZ_ASSERT(xpc_array_get_count(fdsArray.get()) == mChildArgs.mFiles.size());
   xpc_dictionary_set_value(bootstrapMessage.get(), "fds", fdsArray.get());
+
+  DarwinObjectPtr<xpc_object_t> sendRightsArray =
+      AdoptDarwinObject(xpc_array_create_empty());
+  for (auto& sendRight : mChildArgs.mSendRights) {
+    // NOTE: As iOS doesn't expose an xpc_array_set_mach_send function, send
+    // rights are wrapped with single-key dictionaries.
+    DarwinObjectPtr<xpc_object_t> sendRightWrapper =
+        AdoptDarwinObject(xpc_dictionary_create_empty());
+    xpc_dictionary_set_mach_send(sendRightWrapper.get(), "port",
+                                 sendRight.get());
+    xpc_array_set_value(sendRightsArray.get(), XPC_ARRAY_APPEND,
+                        sendRightWrapper.get());
+  }
+  MOZ_ASSERT(xpc_array_get_count(sendRightsArray.get()) ==
+             mChildArgs.mSendRights.size());
+  xpc_dictionary_set_value(bootstrapMessage.get(), "sendRights",
+                           sendRightsArray.get());
 
   auto promise = MakeRefPtr<ProcessHandlePromise::Private>(__func__);
   ExtensionKitProcess::StartProcess(kind, [self = RefPtr{this}, promise,
@@ -1507,11 +1533,6 @@ Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
   FilePath exePath;
   BinPathType pathType = GetPathToBinary(exePath, mProcessType);
 
-#  if defined(MOZ_SANDBOX) || defined(_ARM64_)
-  const bool isGMP = mProcessType == GeckoProcessType_GMPlugin;
-  const bool isWidevine = isGMP && Contains(mChildArgs, "gmp-widevinecdm");
-#  endif  // defined(MOZ_SANDBOX) || defined(_ARM64_)
-
   mCmdLine.emplace(exePath.ToWStringHack());
 
   if (pathType == BinPathType::Self) {
@@ -1555,14 +1576,15 @@ Result<Ok, LaunchError> WindowsProcessLauncher::DoSetup() {
       break;
     case GeckoProcessType_GMPlugin:
       if (!PR_GetEnv("MOZ_DISABLE_GMP_SANDBOX")) {
-        // The Widevine CDM on Windows can only load at USER_RESTRICTED,
-        // not at USER_LOCKDOWN. So look in the command line arguments
-        // to see if we're loading the path to the Widevine CDM, and if
-        // so use sandbox level USER_RESTRICTED instead of USER_LOCKDOWN.
-        auto level =
-            isWidevine ? SandboxBroker::Restricted : SandboxBroker::LockDown;
-        if (NS_WARN_IF(
-                !mResults.mSandboxBroker->SetSecurityLevelForGMPlugin(level))) {
+        auto gmpSandboxKind = GMPSandboxKind::Default;
+        if (Contains(mChildArgs, "gmp-widevinecdm")) {
+          gmpSandboxKind = GMPSandboxKind::Widevine;
+        } else if (Contains(mChildArgs, "gmp-clearkey")) {
+          gmpSandboxKind = GMPSandboxKind::Clearkey;
+        }
+
+        if (NS_WARN_IF(!mResults.mSandboxBroker->SetSecurityLevelForGMPlugin(
+                gmpSandboxKind))) {
           return Err(LaunchError("SetSecurityLevelForGMPlugin"));
         }
         mUseSandbox = true;

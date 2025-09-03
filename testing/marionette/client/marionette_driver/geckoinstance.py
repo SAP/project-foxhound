@@ -46,6 +46,8 @@ class GeckoInstance(object):
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Make sure error page is not shown for blank pages with 4xx or 5xx response code
+        "browser.http.blank_page_with_error_response.enabled": True,
         # Don't pull weather data from the network
         "browser.newtabpage.activity-stream.discoverystream.region-weather-config": "",
         # Don't pull wallpaper content from the network
@@ -162,6 +164,8 @@ class GeckoInstance(object):
         "security.notification_enable_delay": 0,
         # Do not download intermediate certificates
         "security.remote_settings.intermediates.enabled": False,
+        # Disable logging for remote settings
+        "services.settings.loglevel": "off",
         # Ensure blocklist updates don't hit the network
         "services.settings.server": "data:,#remote-settings-dummy/v1",
         # Disable password capture, so that tests that include forms aren"t

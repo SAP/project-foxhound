@@ -51,7 +51,7 @@ class gfxVarReceiver;
   _(WebglAllowCoreProfile, bool, true)                             \
   _(WebglAllowWindowsNativeGl, bool, false)                        \
   _(WebRenderMaxPartialPresentRects, int32_t, 0)                   \
-  _(WebRenderDebugFlags, int32_t, 0)                               \
+  _(WebRenderDebugFlags, uint64_t, 0)                              \
   _(WebRenderBoolParameters, int32_t, 0)                           \
   _(WebRenderBatchingLookback, int32_t, 10)                        \
   _(WebRenderBlobTileSize, int32_t, 256)                           \
@@ -93,6 +93,7 @@ class gfxVarReceiver;
   _(UseVP9HwDecode, bool, false)                                   \
   _(UseAV1HwDecode, bool, false)                                   \
   _(UseH264HwDecode, bool, false)                                  \
+  _(UseHEVCHwDecode, bool, false)                                  \
   _(HwDecodedVideoZeroCopy, bool, false)                           \
   _(UseDMABufSurfaceExport, bool, true)                            \
   _(ReuseDecoderDevice, bool, false)                               \

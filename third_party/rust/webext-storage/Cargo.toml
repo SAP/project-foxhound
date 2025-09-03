@@ -16,12 +16,16 @@ version = "0.1.0"
 authors = ["sync-team@mozilla.com"]
 build = "build.rs"
 exclude = ["/android"]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
 autobenches = false
 readme = "README.md"
 license = "MPL-2.0"
+
+[features]
+default = []
 
 [lib]
 name = "webext_storage"
@@ -92,5 +96,5 @@ path = "../support/sql"
 version = "0.28.2"
 features = ["build"]
 
-[features]
-default = []
+[lints.clippy]
+empty-line-after-doc-comments = "allow"

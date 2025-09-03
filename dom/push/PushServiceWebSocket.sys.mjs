@@ -52,10 +52,7 @@ const kERROR_CODE_TO_GLEAN_LABEL = {
 const prefs = Services.prefs.getBranch("dom.push.");
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => {
-  let { ConsoleAPI } = ChromeUtils.importESModule(
-    "resource://gre/modules/Console.sys.mjs"
-  );
-  return new ConsoleAPI({
+  return console.createInstance({
     maxLogLevelPref: "dom.push.loglevel",
     prefix: "PushServiceWebSocket",
   });
@@ -145,7 +142,7 @@ export var PushServiceWebSocket = {
   },
 
   observe(aSubject, aTopic, aData) {
-    if (aTopic == "nsPref:changed" && aData == "dom.push.userAgentID") {
+    if (aTopic == "nsPref:changed" && aData == "userAgentID") {
       this._onUAIDChanged();
     } else if (aTopic == "timer-callback") {
       this._onTimerFired(aSubject);
@@ -890,15 +887,16 @@ export var PushServiceWebSocket = {
       });
     }
 
-    return this._sendRequestForReply(record, data).then(record => {
+    return this._sendRequestForReply(record, data).then(requestRecord => {
       if (!this._dataEnabled) {
-        return record;
+        return requestRecord;
       }
       return PushCrypto.generateKeys().then(([publicKey, privateKey]) => {
-        record.p256dhPublicKey = publicKey;
-        record.p256dhPrivateKey = privateKey;
-        record.authenticationSecret = PushCrypto.generateAuthenticationSecret();
-        return record;
+        requestRecord.p256dhPublicKey = publicKey;
+        requestRecord.p256dhPrivateKey = privateKey;
+        requestRecord.authenticationSecret =
+          PushCrypto.generateAuthenticationSecret();
+        return requestRecord;
       });
     });
   },

@@ -268,6 +268,9 @@
         "DefaultResult": {
           "type": "number"
         },
+        "TimeoutResult": {
+          "type": "number"
+        },
         "BypassForSameTabOperations": {
           "type": "boolean"
         },
@@ -279,6 +282,9 @@
               "properties": {
                 "Enabled": {
                   "type": "boolean"
+                },
+                "PlainTextOnly": {
+                  "type": "boolean"
                 }
               }
             },
@@ -286,6 +292,9 @@
               "type": "object",
               "properties": {
                 "Enabled": {
+                  "type": "boolean"
+                },
+                "PlainTextOnly": {
                   "type": "boolean"
                 }
               }
@@ -746,6 +755,9 @@
               "enum": ["navbar", "menupanel"]
             },
             "temporarily_allow_weak_signatures": {
+              "type": "boolean"
+            },
+            "private_browsing": {
               "type": "boolean"
             }
           }

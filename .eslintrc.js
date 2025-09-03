@@ -65,7 +65,10 @@ module.exports = {
     "plugin:json/recommended-with-comments-legacy",
     "prettier",
   ],
-  plugins: ["mozilla", "html", "import", "json"],
+  plugins: ["mozilla", "html", "import", "json", "promise", "lit"],
+  rules: {
+    "lit/quoted-expressions": ["error", "never"],
+  },
   overrides: [
     {
       files: ["*.*"],
@@ -176,7 +179,7 @@ module.exports = {
     {
       ...xpcshellTestConfig,
       files: testPaths.xpcshell.map(filePath => `${filePath}**`),
-      excludedFiles: ["**/*.jsm", "**/*.mjs", "**/*.sjs"],
+      excludedFiles: ["**/*.mjs", "**/*.sjs"],
     },
     {
       // If it is an xpcshell head file, we turn off global unused variable checks, as it
@@ -215,13 +218,12 @@ module.exports = {
     {
       ...browserTestConfig,
       files: testPaths.browser.map(filePath => `${filePath}**`),
-      excludedFiles: ["**/*.jsm", "**/*.mjs", "**/*.sjs"],
+      excludedFiles: ["**/*.mjs", "**/*.sjs"],
     },
     {
       ...mochitestTestConfig,
       files: testPaths.mochitest.map(filePath => `${filePath}**`),
       excludedFiles: [
-        "**/*.jsm",
         "**/*.mjs",
         "security/manager/ssl/tests/mochitest/browser/**",
       ],
@@ -229,7 +231,7 @@ module.exports = {
     {
       ...chromeTestConfig,
       files: testPaths.chrome.map(filePath => `${filePath}**`),
-      excludedFiles: ["**/*.jsm", "**/*.mjs", "**/*.sjs"],
+      excludedFiles: ["**/*.mjs", "**/*.sjs"],
     },
     {
       env: {
@@ -242,7 +244,7 @@ module.exports = {
         ...testPaths.mochitest.map(filePath => `${filePath}/**/*.js`),
         ...testPaths.chrome.map(filePath => `${filePath}/**/*.js`),
       ],
-      excludedFiles: ["**/*.jsm", "**/*.mjs", "**/*.sjs"],
+      excludedFiles: ["**/*.mjs", "**/*.sjs"],
     },
     {
       // Some directories have multiple kinds of tests, and some rules
@@ -278,8 +280,8 @@ module.exports = {
       files: [
         "browser/components/aboutwelcome/**",
         "browser/components/asrouter/**",
-        "browser/components/newtab/**",
         "browser/components/pocket/**",
+        "browser/extensions/newtab/**",
         "devtools/**",
       ],
       rules: {
@@ -293,40 +295,6 @@ module.exports = {
       files: httpTestingPaths.map(filePath => `${filePath}**`),
       rules: {
         "@microsoft/sdl/no-insecure-url": "off",
-      },
-    },
-    // JSM Handling. This handles the obsolete JSM files whilst we await the
-    // removal of JSM. These reflect some of the rules in recommended.js but
-    // are moved here to simplify reworking the configuration for flat config.
-    {
-      // System mjs files and jsm files are not loaded in the browser scope,
-      // so we turn that off for those. Though we do have our own special
-      // environment for them.
-      env: {
-        browser: false,
-        "mozilla/sysmjs": true,
-      },
-      files: ["**/*.jsm"],
-      rules: {
-        "mozilla/lazy-getter-object-name": "error",
-        "mozilla/mark-exported-symbols-as-used": "error",
-        "mozilla/reject-eager-module-in-lazy-getter": "error",
-        "mozilla/reject-global-this": "error",
-        "mozilla/reject-globalThis-modification": "error",
-        // For all system modules, we expect no properties to need importing,
-        // hence reject everything.
-        "mozilla/reject-importGlobalProperties": ["error", "everything"],
-        "mozilla/reject-mixing-eager-and-lazy": "error",
-        "mozilla/reject-top-level-await": "error",
-        // Modules and workers are far easier to check for no-unused-vars on a
-        // global scope, than our content files. Hence we turn that on here.
-        "no-unused-vars": [
-          "error",
-          {
-            argsIgnorePattern: "^_",
-            vars: "all",
-          },
-        ],
       },
     },
     ...rollouts,

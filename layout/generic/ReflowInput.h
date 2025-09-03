@@ -169,7 +169,7 @@ struct SizeComputationInput {
                    const Maybe<LogicalMargin>& aPadding,
                    const nsStyleDisplay* aDisplay = nullptr);
 
-  /*
+  /**
    * Convert StyleSize or StyleMaxSize to nscoord when percentages depend on the
    * inline size of the containing block, and enumerated values are for inline
    * size, min-inline-size, or max-inline-size.  Does not handle auto inline
@@ -180,6 +180,20 @@ struct SizeComputationInput {
                                    StyleBoxSizing aBoxSizing,
                                    const SizeOrMaxSize&) const;
 
+  /**
+   * Wrapper for SizeComputationInput::ComputeBSizeValue (defined below, which
+   * itself is a wrapper for nsLayoutUtils::ComputeBSizeValue). This one just
+   * handles 'stretch' sizes first.
+   */
+  template <typename SizeOrMaxSize>
+  inline nscoord ComputeBSizeValueHandlingStretch(
+      nscoord aContainingBlockBSize, StyleBoxSizing aBoxSizing,
+      const SizeOrMaxSize& aSize) const;
+
+  /**
+   * Wrapper for nsLayoutUtils::ComputeBSizeValue, which automatically figures
+   * out the value to pass for its aContentEdgeToBoxSizingBoxEdge param.
+   */
   nscoord ComputeBSizeValue(nscoord aContainingBlockBSize,
                             StyleBoxSizing aBoxSizing,
                             const LengthPercentage& aCoord) const;
@@ -357,6 +371,10 @@ struct ReflowInput : public SizeComputationInput {
   // Return ReflowInput's computed size including border-padding, with
   // unconstrained dimensions replaced by zero.
   nsSize ComputedSizeAsContainerIfConstrained() const;
+
+  // Get the writing mode of the containing block, to resolve float/clear
+  // logical sides appropriately.
+  WritingMode GetCBWritingMode() const;
 
   // Our saved containing block dimensions.
   LogicalSize mContainingBlockSize{mWritingMode};
@@ -865,18 +883,6 @@ struct ReflowInput : public SizeComputationInput {
   void CalculateHypotheticalPosition(
       nsPlaceholderFrame* aPlaceholderFrame, const ReflowInput* aCBReflowInput,
       nsHypotheticalPosition& aHypotheticalPos) const;
-
-  // Check if we can use the resolved auto block size (by insets) to compute
-  // the inline size through aspect-ratio on absolute-positioned elements.
-  // This is only needed for non-replaced elements.
-  // https://drafts.csswg.org/css-position/#abspos-auto-size
-  bool IsInlineSizeComputableByBlockSizeAndAspectRatio(
-      nscoord aBlockSize) const;
-
-  // This calculates the size by using the resolved auto block size (from
-  // non-auto block insets), according to the writing mode of current block.
-  LogicalSize CalculateAbsoluteSizeWithResolvedAutoBlockSize(
-      nscoord aAutoBSize, const LogicalSize& aTentativeComputedSize);
 
   void InitAbsoluteConstraints(const ReflowInput* aCBReflowInput,
                                const LogicalSize& aCBSize);

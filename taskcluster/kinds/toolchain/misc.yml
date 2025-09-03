@@ -262,7 +262,7 @@ android-custom-car:
         symbol: TL(custom-car-android)
     worker:
         docker-image: {in-tree: custom-car-android}
-        max-run-time: 25000
+        max-run-time: 30000
     use-python: default
     run-on-projects: []
     run:
@@ -296,7 +296,7 @@ linux64-custom-car:
         symbol: TL(custom-car)
     worker:
         docker-image: {in-tree: custom-car-linux}
-        max-run-time: 18000
+        max-run-time: 25000
     use-python: default
     run-on-projects: []
     run:
@@ -500,6 +500,24 @@ win64-mozmake:
         symbol: TW64(mozmake)
     run:
         script: build-mozmake.sh
+        arguments: ['x86_64-pc-windows-msvc']
+        toolchain-artifact: public/build/mozmake.tar.zst
+    fetches:
+        fetch:
+            - gnumake
+        toolchain:
+            - linux64-clang-toolchain
+            - vs-toolchain
+
+win64-aarch64-mozmake:
+    description: "mozmake for Windows"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TWA64(mozmake)
+    run:
+        script: build-mozmake.sh
+        arguments: ['aarch64-pc-windows-msvc']
         toolchain-artifact: public/build/mozmake.tar.zst
     fetches:
         fetch:
@@ -700,3 +718,39 @@ talos-pdfs:
     fetches:
         fetch:
             - mozilla-pdf.js
+
+win64-dxc:
+    description: "DirectX Shader Compiler (x86_64)"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TW64(dxc)
+    run:
+        script: build-dxc.sh
+        arguments:
+            - "x86_64"
+        toolchain-artifact: public/build/dxc.tar.zst
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - vs-toolchain
+        fetch:
+            - dxc-src
+
+win64-aarch64-dxc:
+    description: "DirectX Shader Compiler (aarch64)"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TWA64(dxc)
+    run:
+        script: build-dxc.sh
+        arguments:
+            - "aarch64"
+        toolchain-artifact: public/build/dxc.tar.zst
+    fetches:
+        toolchain:
+            - linux64-clang-toolchain
+            - vs-toolchain
+        fetch:
+            - dxc-src

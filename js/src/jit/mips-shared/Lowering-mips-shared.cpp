@@ -78,36 +78,13 @@ void LIRGeneratorMIPSShared::lowerForMulInt64(LMulI64* ins, MMul* mir,
   bool cannotAliasRhs = false;
   bool reuseInput = true;
 
-#ifdef JS_CODEGEN_MIPS32
-  needsTemp = true;
-  cannotAliasRhs = true;
-  // See the documentation on willHaveDifferentLIRNodes; that test does not
-  // allow additional constraints.
-  MOZ_CRASH(
-      "cannotAliasRhs cannot be used the way it is used in the guard below");
-  if (rhs->isConstant()) {
-    int64_t constant = rhs->toConstant()->toInt64();
-    int32_t shift = mozilla::FloorLog2(constant);
-    // See special cases in CodeGeneratorMIPSShared::visitMulI64
-    if (constant >= -1 && constant <= 2) {
-      needsTemp = false;
-    }
-    if (int64_t(1) << shift == constant) {
-      needsTemp = false;
-    }
-    if (mozilla::IsPowerOfTwo(static_cast<uint32_t>(constant + 1)) ||
-        mozilla::IsPowerOfTwo(static_cast<uint32_t>(constant - 1)))
-      reuseInput = false;
-  }
-#endif
-  ins->setInt64Operand(0, useInt64RegisterAtStart(lhs));
-  ins->setInt64Operand(INT64_PIECES,
-                       (willHaveDifferentLIRNodes(lhs, rhs) || cannotAliasRhs)
-                           ? useInt64OrConstant(rhs)
-                           : useInt64OrConstantAtStart(rhs));
+  ins->setLhs(useInt64RegisterAtStart(lhs));
+  ins->setRhs((willHaveDifferentLIRNodes(lhs, rhs) || cannotAliasRhs)
+                  ? useInt64OrConstant(rhs)
+                  : useInt64OrConstantAtStart(rhs));
 
   if (needsTemp) {
-    ins->setTemp(0, temp());
+    ins->setTemp0(temp());
   }
   if (reuseInput) {
     defineInt64ReuseInput(ins, mir, 0);
@@ -116,47 +93,29 @@ void LIRGeneratorMIPSShared::lowerForMulInt64(LMulI64* ins, MMul* mir,
   }
 }
 
-template <size_t Temps>
-void LIRGeneratorMIPSShared::lowerForShiftInt64(
-    LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, Temps>* ins,
-    MDefinition* mir, MDefinition* lhs, MDefinition* rhs) {
-#ifdef JS_CODEGEN_MIPS32
-  if (mir->isRotate()) {
-    if (!rhs->isConstant()) {
-      ins->setTemp(0, temp());
-    }
-    ins->setInt64Operand(0, useInt64Register(lhs));
+template <class LInstr>
+void LIRGeneratorMIPSShared::lowerForShiftInt64(LInstr* ins, MDefinition* mir,
+                                                MDefinition* lhs,
+                                                MDefinition* rhs) {
+  if constexpr (std::is_same_v<LInstr, LShiftI64>) {
+    ins->setLhs(useInt64RegisterAtStart(lhs));
+    ins->setRhs(useRegisterOrConstant(rhs));
+    defineInt64ReuseInput(ins, mir, LShiftI64::LhsIndex);
   } else {
-    ins->setInt64Operand(0, useInt64RegisterAtStart(lhs));
+    ins->setInput(useInt64RegisterAtStart(lhs));
+    ins->setCount(useRegisterOrConstant(rhs));
+    defineInt64ReuseInput(ins, mir, LRotateI64::InputIndex);
   }
-#else
-  ins->setInt64Operand(0, useInt64RegisterAtStart(lhs));
-#endif
-
-  static_assert(LShiftI64::Rhs == INT64_PIECES,
-                "Assume Rhs is located at INT64_PIECES.");
-  static_assert(LRotateI64::Count == INT64_PIECES,
-                "Assume Count is located at INT64_PIECES.");
-
-  ins->setOperand(INT64_PIECES, useRegisterOrConstant(rhs));
-
-#ifdef JS_CODEGEN_MIPS32
-  if (mir->isRotate()) {
-    defineInt64(ins, mir);
-  } else {
-    defineInt64ReuseInput(ins, mir, 0);
-  }
-#else
-  defineInt64ReuseInput(ins, mir, 0);
-#endif
 }
 
-template void LIRGeneratorMIPSShared::lowerForShiftInt64(
-    LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, 0>* ins,
-    MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
-template void LIRGeneratorMIPSShared::lowerForShiftInt64(
-    LInstructionHelper<INT64_PIECES, INT64_PIECES + 1, 1>* ins,
-    MDefinition* mir, MDefinition* lhs, MDefinition* rhs);
+template void LIRGeneratorMIPSShared::lowerForShiftInt64(LShiftI64* ins,
+                                                         MDefinition* mir,
+                                                         MDefinition* lhs,
+                                                         MDefinition* rhs);
+template void LIRGeneratorMIPSShared::lowerForShiftInt64(LRotateI64* ins,
+                                                         MDefinition* mir,
+                                                         MDefinition* lhs,
+                                                         MDefinition* rhs);
 
 void LIRGeneratorMIPSShared::lowerForFPU(LInstructionHelper<1, 1, 0>* ins,
                                          MDefinition* mir, MDefinition* input) {
@@ -229,7 +188,7 @@ void LIRGeneratorMIPSShared::lowerDivI(MDiv* div) {
     int32_t shift = FloorLog2(rhs);
     if (rhs > 0 && 1 << shift == rhs) {
       LDivPowTwoI* lir =
-          new (alloc()) LDivPowTwoI(useRegister(div->lhs()), shift, temp());
+          new (alloc()) LDivPowTwoI(useRegister(div->lhs()), temp(), shift);
       if (div->fallible()) {
         assignSnapshot(lir, div->bailoutKind());
       }
@@ -289,8 +248,7 @@ void LIRGeneratorMIPSShared::lowerModI(MMod* mod) {
       return;
     } else if (shift < 31 && (1 << (shift + 1)) - 1 == rhs) {
       LModMaskI* lir = new (alloc())
-          LModMaskI(useRegister(mod->lhs()), temp(LDefinition::GENERAL),
-                    temp(LDefinition::GENERAL), shift + 1);
+          LModMaskI(useRegister(mod->lhs()), temp(), temp(), shift + 1);
       if (mod->fallible()) {
         assignSnapshot(lir, mod->bailoutKind());
       }
@@ -298,9 +256,8 @@ void LIRGeneratorMIPSShared::lowerModI(MMod* mod) {
       return;
     }
   }
-  LModI* lir =
-      new (alloc()) LModI(useRegister(mod->lhs()), useRegister(mod->rhs()),
-                          temp(LDefinition::GENERAL));
+  LModI* lir = new (alloc())
+      LModI(useRegister(mod->lhs()), useRegister(mod->rhs()), temp());
 
   if (mod->fallible()) {
     assignSnapshot(lir, mod->bailoutKind());
@@ -330,15 +287,13 @@ void LIRGeneratorMIPSShared::lowerWasmSelectI64(MWasmSelect* select) {
 }
 
 LTableSwitch* LIRGeneratorMIPSShared::newLTableSwitch(
-    const LAllocation& in, const LDefinition& inputCopy,
-    MTableSwitch* tableswitch) {
-  return new (alloc()) LTableSwitch(in, inputCopy, temp(), tableswitch);
+    const LAllocation& in, const LDefinition& inputCopy) {
+  return new (alloc()) LTableSwitch(in, inputCopy, temp());
 }
 
 LTableSwitchV* LIRGeneratorMIPSShared::newLTableSwitchV(
-    MTableSwitch* tableswitch) {
-  return new (alloc()) LTableSwitchV(useBox(tableswitch->getOperand(0)), temp(),
-                                     tempDouble(), temp(), tableswitch);
+    const LBoxAllocation& in) {
+  return new (alloc()) LTableSwitchV(in, temp(), tempDouble(), temp());
 }
 
 void LIRGeneratorMIPSShared::lowerUrshD(MUrsh* mir) {
@@ -417,59 +372,34 @@ void LIRGenerator::visitWasmLoad(MWasmLoad* ins) {
       ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
                            : LGeneralReg(HeapReg);
 
-  LAllocation ptr;
-#ifdef JS_CODEGEN_MIPS32
-  if (ins->type() == MIRType::Int64) {
-    ptr = useRegister(base);
-  } else {
-    ptr = useRegisterAtStart(base);
+  LAllocation ptr = useRegisterAtStart(base);
+
+  LDefinition ptrCopy = LDefinition::BogusTemp();
+  if (ins->access().offset32()) {
+    ptrCopy = tempCopy(base, 0);
   }
-#else
-  ptr = useRegisterAtStart(base);
-#endif
 
-  if (IsUnaligned(ins->access())) {
-    if (ins->type() == MIRType::Int64) {
-      auto* lir = new (alloc()) LWasmUnalignedLoadI64(ptr, memoryBase, temp());
-      if (ins->access().offset32()) {
-        lir->setTemp(0, tempCopy(base, 0));
-      }
-
+  if (ins->access().type() == Scalar::Int64) {
+    if (IsUnaligned(ins->access())) {
+      auto* lir =
+          new (alloc()) LWasmUnalignedLoadI64(ptr, memoryBase, ptrCopy, temp());
       defineInt64(lir, ins);
       return;
     }
 
-    auto* lir = new (alloc()) LWasmUnalignedLoad(ptr, memoryBase, temp());
-    if (ins->access().offset32()) {
-      lir->setTemp(0, tempCopy(base, 0));
-    }
-
-    define(lir, ins);
-    return;
-  }
-
-  if (ins->type() == MIRType::Int64) {
-#ifdef JS_CODEGEN_MIPS32
-    if (ins->access().isAtomic()) {
-      auto* lir = new (alloc()) LWasmAtomicLoadI64(ptr);
-      defineInt64(lir, ins);
-      return;
-    }
-#endif
-    auto* lir = new (alloc()) LWasmLoadI64(ptr, memoryBase);
-    if (ins->access().offset32()) {
-      lir->setTemp(0, tempCopy(base, 0));
-    }
-
+    auto* lir = new (alloc()) LWasmLoadI64(ptr, memoryBase, ptrCopy);
     defineInt64(lir, ins);
     return;
   }
 
-  auto* lir = new (alloc()) LWasmLoad(ptr, memoryBase);
-  if (ins->access().offset32()) {
-    lir->setTemp(0, tempCopy(base, 0));
+  if (IsUnaligned(ins->access())) {
+    auto* lir =
+        new (alloc()) LWasmUnalignedLoad(ptr, memoryBase, ptrCopy, temp());
+    define(lir, ins);
+    return;
   }
 
+  auto* lir = new (alloc()) LWasmLoad(ptr, memoryBase, ptrCopy);
   define(lir, ins);
 }
 
@@ -483,59 +413,40 @@ void LIRGenerator::visitWasmStore(MWasmStore* ins) {
       ins->hasMemoryBase() ? LAllocation(useRegisterAtStart(ins->memoryBase()))
                            : LGeneralReg(HeapReg);
 
-  if (IsUnaligned(ins->access())) {
-    LAllocation baseAlloc = useRegisterAtStart(base);
-    if (ins->access().type() == Scalar::Int64) {
-      LInt64Allocation valueAlloc = useInt64RegisterAtStart(value);
-      auto* lir = new (alloc())
-          LWasmUnalignedStoreI64(baseAlloc, valueAlloc, memoryBase, temp());
-      if (ins->access().offset32()) {
-        lir->setTemp(0, tempCopy(base, 0));
-      }
+  LAllocation baseAlloc = useRegisterAtStart(base);
 
-      add(lir, ins);
-      return;
-    }
-
-    LAllocation valueAlloc = useRegisterAtStart(value);
-    auto* lir = new (alloc())
-        LWasmUnalignedStore(baseAlloc, valueAlloc, memoryBase, temp());
-    if (ins->access().offset32()) {
-      lir->setTemp(0, tempCopy(base, 0));
-    }
-
-    add(lir, ins);
-    return;
+  LDefinition ptrCopy = LDefinition::BogusTemp();
+  if (ins->access().offset32()) {
+    ptrCopy = tempCopy(base, 0);
   }
 
   if (ins->access().type() == Scalar::Int64) {
-#ifdef JS_CODEGEN_MIPS32
-    if (ins->access().isAtomic()) {
-      auto* lir = new (alloc()) LWasmAtomicStoreI64(
-          useRegister(base), useInt64Register(value), temp());
+    LInt64Allocation valueAlloc = useInt64RegisterAtStart(value);
+
+    if (IsUnaligned(ins->access())) {
+      auto* lir = new (alloc()) LWasmUnalignedStoreI64(
+          baseAlloc, valueAlloc, memoryBase, ptrCopy, temp());
       add(lir, ins);
       return;
     }
-#endif
 
-    LAllocation baseAlloc = useRegisterAtStart(base);
-    LInt64Allocation valueAlloc = useInt64RegisterAtStart(value);
-    auto* lir = new (alloc()) LWasmStoreI64(baseAlloc, valueAlloc, memoryBase);
-    if (ins->access().offset32()) {
-      lir->setTemp(0, tempCopy(base, 0));
-    }
-
+    auto* lir =
+        new (alloc()) LWasmStoreI64(baseAlloc, valueAlloc, memoryBase, ptrCopy);
     add(lir, ins);
     return;
   }
 
-  LAllocation baseAlloc = useRegisterAtStart(base);
   LAllocation valueAlloc = useRegisterAtStart(value);
-  auto* lir = new (alloc()) LWasmStore(baseAlloc, valueAlloc, memoryBase);
-  if (ins->access().offset32()) {
-    lir->setTemp(0, tempCopy(base, 0));
+
+  if (IsUnaligned(ins->access())) {
+    auto* lir = new (alloc())
+        LWasmUnalignedStore(baseAlloc, valueAlloc, memoryBase, ptrCopy, temp());
+    add(lir, ins);
+    return;
   }
 
+  auto* lir =
+      new (alloc()) LWasmStore(baseAlloc, valueAlloc, memoryBase, ptrCopy);
   add(lir, ins);
 }
 
@@ -762,10 +673,10 @@ void LIRGenerator::visitWasmCompareExchangeHeap(MWasmCompareExchangeHeap* ins) {
     maskTemp = temp();
   }
 
-  LWasmCompareExchangeHeap* lir = new (alloc())
+  auto* lir = new (alloc())
       LWasmCompareExchangeHeap(useRegister(base), useRegister(ins->oldValue()),
-                               useRegister(ins->newValue()), valueTemp,
-                               offsetTemp, maskTemp, memoryBase);
+                               useRegister(ins->newValue()), memoryBase,
+                               valueTemp, offsetTemp, maskTemp);
 
   define(lir, ins);
 }
@@ -795,9 +706,9 @@ void LIRGenerator::visitWasmAtomicExchangeHeap(MWasmAtomicExchangeHeap* ins) {
     maskTemp = temp();
   }
 
-  LWasmAtomicExchangeHeap* lir = new (alloc())
+  auto* lir = new (alloc())
       LWasmAtomicExchangeHeap(useRegister(base), useRegister(ins->value()),
-                              valueTemp, offsetTemp, maskTemp, memoryBase);
+                              memoryBase, valueTemp, offsetTemp, maskTemp);
   define(lir, ins);
 }
 
@@ -810,12 +721,9 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
                            : LGeneralReg(HeapReg);
 
   if (ins->access().type() == Scalar::Int64) {
-    auto* lir = new (alloc()) LWasmAtomicBinopI64(
-        useRegister(base), useInt64Register(ins->value()), memoryBase);
-    lir->setTemp(0, temp());
-#ifdef JS_CODEGEN_MIPS32
-    lir->setTemp(1, temp());
-#endif
+    auto* lir = new (alloc())
+        LWasmAtomicBinopI64(useRegister(base), useInt64Register(ins->value()),
+                            memoryBase, tempInt64());
     defineInt64(lir, ins);
     return;
   }
@@ -831,17 +739,16 @@ void LIRGenerator::visitWasmAtomicBinopHeap(MWasmAtomicBinopHeap* ins) {
   }
 
   if (!ins->hasUses()) {
-    LWasmAtomicBinopHeapForEffect* lir = new (alloc())
-        LWasmAtomicBinopHeapForEffect(useRegister(base),
-                                      useRegister(ins->value()), valueTemp,
-                                      offsetTemp, maskTemp, memoryBase);
+    auto* lir = new (alloc()) LWasmAtomicBinopHeapForEffect(
+        useRegister(base), useRegister(ins->value()), memoryBase, valueTemp,
+        offsetTemp, maskTemp);
     add(lir, ins);
     return;
   }
 
-  LWasmAtomicBinopHeap* lir = new (alloc())
+  auto* lir = new (alloc())
       LWasmAtomicBinopHeap(useRegister(base), useRegister(ins->value()),
-                           valueTemp, offsetTemp, maskTemp, memoryBase);
+                           memoryBase, valueTemp, offsetTemp, maskTemp);
 
   define(lir, ins);
 }
@@ -961,8 +868,8 @@ void LIRGeneratorShared::lowerWasmCompareAndSelect(MWasmSelect* ins,
                                                    JSOp jsop) {
   MOZ_ASSERT(canSpecializeWasmCompareAndSelect(compTy, ins->type()));
   auto* lir = new (alloc()) LWasmCompareAndSelect(
-      useRegister(lhs), useRegister(rhs), compTy, jsop,
-      useRegisterAtStart(ins->trueExpr()), useRegister(ins->falseExpr()));
+      useRegister(lhs), useRegister(rhs), useRegisterAtStart(ins->trueExpr()),
+      useRegister(ins->falseExpr()), compTy, jsop);
   defineReuseInput(lir, ins, LWasmCompareAndSelect::IfTrueExprIndex);
 }
 

@@ -20,7 +20,7 @@
 
 #include "mozilla/gfx/Logging.h"
 #include "mozilla/SSE.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/XREAppData.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/GUniquePtr.h"
@@ -60,6 +60,7 @@ constexpr int CODEC_HW_H264 = 1 << 4;
 constexpr int CODEC_HW_VP8 = 1 << 5;
 constexpr int CODEC_HW_VP9 = 1 << 6;
 constexpr int CODEC_HW_AV1 = 1 << 7;
+constexpr int CODEC_HW_HEVC = 1 << 8;
 
 nsresult GfxInfo::Init() {
   mGLMajorVersion = 0;
@@ -129,7 +130,7 @@ static bool ManageChildProcess(const char* aProcessName, int* aPID, int* aPipe,
   const TimeStamp deadline =
       TimeStamp::Now() + TimeDuration::FromMilliseconds(aTimeout);
 
-  struct pollfd pfd {};
+  struct pollfd pfd{};
   pfd.fd = *aPipe;
   pfd.events = POLLIN;
 
@@ -310,7 +311,7 @@ void GfxInfo::GetData() {
 
   // only useful for Linux kernel version check for FGLRX driver.
   // assumes X client == X server, which is sad.
-  struct utsname unameobj {};
+  struct utsname unameobj{};
   if (uname(&unameobj) >= 0) {
     mOS.Assign(unameobj.sysname);
     mOSRelease.Assign(unameobj.release);
@@ -703,6 +704,10 @@ void GfxInfo::GetDataVAAPI() {
       if (mVAAPISupportedCodecs & CODEC_HW_AV1) {
         media::MCSInfo::AddSupport(
             media::MediaCodecsSupport::AV1HardwareDecode);
+      }
+      if (mVAAPISupportedCodecs & CODEC_HW_HEVC) {
+        media::MCSInfo::AddSupport(
+            media::MediaCodecsSupport::HEVCHardwareDecode);
       }
     } else if (!strcmp(line, "WARNING") || !strcmp(line, "ERROR")) {
       gfxCriticalNote << "vaapitest: " << line;
@@ -1097,22 +1102,15 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_COMPARISON_IGNORED,
         V(0, 0, 0, 0), "FEATURE_HARDWARE_VIDEO_DECODING_NO_R600", "");
 
-    // Disable on AMD devices using broken Mesa (Bug 1832080).
+    // Disable on AMD devices using broken Mesa (Bug 1837140).
+    // https://gitlab.freedesktop.org/mesa/mesa/-/commit/0c024bbe641b092bbb
     APPEND_TO_DRIVER_BLOCKLIST_EXT(
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
         WindowProtocol::All, DriverVendor::MesaAll, DeviceFamily::AtiAll,
         nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
-        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN, V(23, 1, 1, 0),
-        "FEATURE_HARDWARE_VIDEO_DECODING_AMD_DISABLE", "Mesa 23.1.1.0");
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN, V(24, 2, 0, 0),
+        "FEATURE_HARDWARE_VIDEO_DECODING_AMD_DISABLE", "Mesa 24.2.0");
 
-    // Disable on Release/late Beta on AMD
-#if !defined(EARLY_BETA_OR_EARLIER)
-    APPEND_TO_DRIVER_BLOCKLIST(OperatingSystem::Linux, DeviceFamily::AtiAll,
-                               nsIGfxInfo::FEATURE_HARDWARE_VIDEO_DECODING,
-                               nsIGfxInfo::FEATURE_BLOCKED_DEVICE,
-                               DRIVER_COMPARISON_IGNORED, V(0, 0, 0, 0),
-                               "FEATURE_HARDWARE_VIDEO_DECODING_DISABLE", "");
-#endif
     ////////////////////////////////////
     // FEATURE_HW_DECODED_VIDEO_ZERO_COPY - ALLOWLIST
     APPEND_TO_DRIVER_BLOCKLIST2(OperatingSystem::Linux, DeviceFamily::All,
@@ -1126,8 +1124,8 @@ const nsTArray<GfxDriverInfo>& GfxInfo::GetGfxDriverInfo() {
         OperatingSystem::Linux, ScreenSizeStatus::All, BatteryStatus::All,
         WindowProtocol::All, DriverVendor::MesaAll, DeviceFamily::AtiAll,
         nsIGfxInfo::FEATURE_HW_DECODED_VIDEO_ZERO_COPY,
-        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN, V(23, 1, 1, 0),
-        "FEATURE_HARDWARE_VIDEO_ZERO_COPY_LINUX_AMD_DISABLE", "Mesa 23.1.1.0");
+        nsIGfxInfo::FEATURE_BLOCKED_DEVICE, DRIVER_LESS_THAN, V(24, 2, 0, 0),
+        "FEATURE_HARDWARE_VIDEO_ZERO_COPY_LINUX_AMD_DISABLE", "Mesa 24.2.0.0");
 
     ////////////////////////////////////
     // FEATURE_WEBRENDER_PARTIAL_PRESENT
@@ -1300,7 +1298,8 @@ nsresult GfxInfo::GetFeatureStatusImpl(
   } kFeatureToCodecs[] = {{nsIGfxInfo::FEATURE_H264_HW_DECODE, CODEC_HW_H264},
                           {nsIGfxInfo::FEATURE_VP8_HW_DECODE, CODEC_HW_VP8},
                           {nsIGfxInfo::FEATURE_VP9_HW_DECODE, CODEC_HW_VP9},
-                          {nsIGfxInfo::FEATURE_AV1_HW_DECODE, CODEC_HW_AV1}};
+                          {nsIGfxInfo::FEATURE_AV1_HW_DECODE, CODEC_HW_AV1},
+                          {nsIGfxInfo::FEATURE_HEVC_HW_DECODE, CODEC_HW_HEVC}};
 
   for (const auto& pair : kFeatureToCodecs) {
     if (aFeature != pair.mFeature) {
@@ -1327,8 +1326,7 @@ nsresult GfxInfo::GetFeatureStatusImpl(
     bool probeHWDecode =
         mIsAccelerated &&
         (*aStatus == nsIGfxInfo::FEATURE_STATUS_OK ||
-         StaticPrefs::media_hardware_video_decoding_force_enabled_AtStartup() ||
-         StaticPrefs::media_ffmpeg_vaapi_enabled_AtStartup());
+         StaticPrefs::media_hardware_video_decoding_force_enabled_AtStartup());
     if (probeHWDecode) {
       GetDataVAAPI();
       GetDataV4L2();

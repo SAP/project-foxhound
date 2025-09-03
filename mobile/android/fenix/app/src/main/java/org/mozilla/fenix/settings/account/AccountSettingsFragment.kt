@@ -14,7 +14,6 @@ import android.text.InputFilter
 import android.text.format.DateUtils
 import android.view.View
 import androidx.appcompat.app.AlertDialog
-import androidx.compose.material.SnackbarDuration
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import androidx.preference.CheckBoxPreference
@@ -70,7 +69,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
 
         override fun onLoggedOut() {
             viewLifecycleOwner.lifecycleScope.launch {
-                findNavController().popBackStack()
+                findNavController().popBackStack(R.id.accountSettingsFragment, inclusive = true)
 
                 // Remove the device name when we log out.
                 context?.let {
@@ -328,7 +327,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
             isChecked = syncEnginesStatus.getOrElse(SyncEngine.Tabs) { true }
         }
         requirePreference<CheckBoxPreference>(R.string.pref_key_sync_address).apply {
-            isVisible = FeatureFlags.syncAddressesFeature
+            isVisible = FeatureFlags.SYNC_ADDRESSES_FEATURE
             isEnabled = syncEnginesStatus.containsKey(SyncEngine.Addresses)
             isChecked = syncEnginesStatus.getOrElse(SyncEngine.Addresses) { true }
         }
@@ -411,7 +410,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
                     snackBarParentView = requireView(),
                     snackbarState = SnackbarState(
                         message = getString(R.string.empty_device_name_error),
-                        duration = SnackbarDuration.Long,
+                        duration = SnackbarState.Duration.Preset.Long,
                     ),
                 ).show()
             }

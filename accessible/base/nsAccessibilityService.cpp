@@ -40,7 +40,6 @@
 #  include "RootAccessibleWrap.h"
 #endif
 #include "States.h"
-#include "Statistics.h"
 #include "TextLeafAccessible.h"
 #include "xpcAccessibleApplication.h"
 
@@ -1519,7 +1518,7 @@ mozilla::Monitor& nsAccessibilityService::GetAndroidMonitor() {
 // nsAccessibilityService private
 
 bool nsAccessibilityService::Init(uint64_t aCacheDomains) {
-  AUTO_PROFILER_MARKER_TEXT("nsAccessibilityService::Init", A11Y, {}, ""_ns);
+  AUTO_PROFILER_MARKER_UNTYPED("nsAccessibilityService::Init", A11Y, {});
   // DO NOT ADD CODE ABOVE HERE: THIS CODE IS MEASURING TIMINGS.
 
   // Initialize accessible document manager.
@@ -1591,8 +1590,6 @@ bool nsAccessibilityService::Init(uint64_t aCacheDomains) {
   // Set the active accessibility cache domains. We might want to modify the
   // domains that we activate based on information about the instantiator.
   gCacheDomains = ::GetCacheDomainsForKnownClients(aCacheDomains);
-
-  statistics::A11yInitialized();
 
   static const char16_t kInitIndicator[] = {'1', 0};
   observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown",
@@ -1963,7 +1960,7 @@ nsAccessibilityService* GetOrCreateAccService(uint32_t aNewConsumer,
   return nsAccessibilityService::gAccessibilityService;
 }
 
-void MaybeShutdownAccService(uint32_t aFormerConsumer) {
+void MaybeShutdownAccService(uint32_t aFormerConsumer, bool aAsync) {
   nsAccessibilityService* accService =
       nsAccessibilityService::gAccessibilityService;
 
@@ -1988,11 +1985,32 @@ void MaybeShutdownAccService(uint32_t aFormerConsumer) {
   }
 
   if (nsAccessibilityService::gConsumers & ~aFormerConsumer) {
+    // There are still other consumers of the accessibility service, so we
+    // can't shut down.
     accService->UnsetConsumers(aFormerConsumer);
-  } else {
+    return;
+  }
+
+  if (!aAsync) {
     accService
         ->Shutdown();  // Will unset all nsAccessibilityService::gConsumers
+    return;
   }
+
+  static bool sIsPending = false;
+  if (sIsPending) {
+    // An async shutdown runnable is pending. Don't dispatch another.
+    return;
+  }
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "a11y::MaybeShutdownAccService", [aFormerConsumer]() {
+        // It's possible (albeit very unlikely) that another accessibility
+        // service consumer arrived since this runnable was dispatched. Use
+        // MaybeShutdownAccService to be safe.
+        MaybeShutdownAccService(aFormerConsumer, false);
+        sIsPending = false;
+      }));
+  sIsPending = true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

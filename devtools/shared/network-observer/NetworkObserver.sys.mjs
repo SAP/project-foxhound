@@ -24,6 +24,7 @@ ChromeUtils.defineESModuleGetters(
   {
     ChannelMap:
       "resource://devtools/shared/network-observer/ChannelMap.sys.mjs",
+    NetUtil: "resource://gre/modules/NetUtil.sys.mjs",
     NetworkAuthListener:
       "resource://devtools/shared/network-observer/NetworkAuthListener.sys.mjs",
     NetworkHelper:
@@ -591,7 +592,9 @@ export class NetworkObserver {
       ) {
         return;
       }
-      const channel = subject.QueryInterface(Ci.nsIChannel);
+      const channel = subject.QueryInterface(Ci.nsIDataChannel);
+      channel.QueryInterface(Ci.nsIIdentChannel);
+      channel.QueryInterface(Ci.nsIChannel);
 
       if (this.#ignoreChannelFunction(channel)) {
         return;
@@ -612,7 +615,7 @@ export class NetworkObserver {
       // For data URLs we can not set up a stream listener as for http,
       // so we have to create a response manually and complete it.
       const response = {
-        // TODO: Bug 1903807. Reevaluate if it's correct to just return
+        // TODO: Bug 1903807. Re-evaluate if it's correct to just return
         // zero for `bodySize` and `decodedBodySize`.
         bodySize: 0,
         decodedBodySize: 0,
@@ -625,6 +628,38 @@ export class NetworkObserver {
         ),
         transferredSize: 0,
       };
+
+      // For data URIs all timings can be set to zero.
+      const result = NetworkTimings.getEmptyHARTimings();
+      networkEvent.addEventTimings(
+        result.total,
+        result.timings,
+        result.offsets
+      );
+
+      const url = channel.URI.spec;
+      response.text = url.substring(url.indexOf(",") + 1);
+      if (
+        !response.mimeType ||
+        !lazy.NetworkHelper.isTextMimeType(response.mimeType)
+      ) {
+        response.encoding = "base64";
+        try {
+          response.text = btoa(response.text);
+        } catch (err) {
+          // Ignore.
+        }
+      }
+
+      // Note: `size`` is only used by DevTools, WebDriverBiDi relies on
+      // `bodySize` and `decodedBodySize`. Waiting on Bug 1903807 to decide
+      // if those fields should have non-0 values as well.
+      response.size = response.text.length;
+
+      // Security information is not relevant for data channel, but it should
+      // not be considered as insecure either. Set empty string as security
+      // state.
+      networkEvent.addSecurityInfo({ state: "" });
       networkEvent.addResponseContent(response, {});
     }
   );
@@ -655,16 +690,70 @@ export class NetworkObserver {
       }
 
       logPlatformEvent(topic, channel);
+      const owner = this.#onNetworkEvent({}, channel, true);
 
-      const fileActivity = this.#createOrGetActivityObject(channel);
-      fileActivity.owner = this.#onNetworkEvent({}, channel);
-
-      fileActivity.owner.addResponseStart({
-        channel: fileActivity.channel,
-        fromCache: fileActivity.fromCache || fileActivity.fromServiceWorker,
-        rawHeaders: fileActivity.responseRawHeaders,
-        proxyResponseRawHeaders: fileActivity.proxyResponseRawHeaders,
+      owner.addResponseStart({
+        channel,
+        fromCache: false,
+        rawHeaders: "",
       });
+
+      // For file URLs we can not set up a stream listener as for http,
+      // so we have to create a response manually and complete it.
+      const response = {
+        contentCharset: channel.contentCharset,
+        contentLength: channel.contentLength,
+        contentType: channel.contentType,
+        mimeType: lazy.NetworkHelper.addCharsetToMimeType(
+          channel.contentType,
+          channel.contentCharset
+        ),
+        // Same as for cached responses, the transferredSize for file URLs
+        // should be 0 regardless of the actual size of the response.
+        transferredSize: 0,
+      };
+
+      // For file URIs all timings can be set to zero.
+      const result = NetworkTimings.getEmptyHARTimings();
+      owner.addEventTimings(result.total, result.timings, result.offsets);
+
+      const fstream = Cc[
+        "@mozilla.org/network/file-input-stream;1"
+      ].createInstance(Ci.nsIFileInputStream);
+      fstream.init(channel.file, -1, 0, 0);
+      response.text = lazy.NetUtil.readInputStreamToString(
+        fstream,
+        fstream.available()
+      );
+      fstream.close();
+
+      // Set the bodySize to the current response.text.length
+      response.bodySize = response.text.length;
+
+      if (
+        !response.mimeType ||
+        !lazy.NetworkHelper.isTextMimeType(response.mimeType)
+      ) {
+        response.encoding = "base64";
+        try {
+          response.text = btoa(response.text);
+        } catch (err) {
+          // Ignore.
+        }
+      }
+
+      // Set the size/decodedBodySize to the updated response.text.length, after
+      // potentially decoding the data.
+      // NB: `size` is used by DevTools, while WebDriverBiDi relies on
+      // decodedBodySize, because the name is more explicit.
+      response.decodedBodySize = response.text.length;
+      response.size = response.decodedBodySize;
+
+      // Security information is not relevant for file channel, but it should
+      // not be considered as insecure either. Set empty string as security
+      // state.
+      owner.addSecurityInfo({ state: "" });
+      owner.addResponseContent(response, {});
     }
   );
 
@@ -751,83 +840,85 @@ export class NetworkObserver {
    * @param number extraSizeData
    * @param string extraStringData
    */
-  observeActivity = DevToolsInfaillibleUtils.makeInfallible(function (
-    channel,
-    activityType,
-    activitySubtype,
-    timestamp,
-    extraSizeData,
-    extraStringData
-  ) {
-    if (
-      this.#isDestroyed ||
-      (activityType != gActivityDistributor.ACTIVITY_TYPE_HTTP_TRANSACTION &&
-        activityType != gActivityDistributor.ACTIVITY_TYPE_SOCKET_TRANSPORT)
+  observeActivity = DevToolsInfaillibleUtils.makeInfallible(
+    function (
+      channel,
+      activityType,
+      activitySubtype,
+      timestamp,
+      extraSizeData,
+      extraStringData
     ) {
-      return;
-    }
+      if (
+        this.#isDestroyed ||
+        (activityType != gActivityDistributor.ACTIVITY_TYPE_HTTP_TRANSACTION &&
+          activityType != gActivityDistributor.ACTIVITY_TYPE_SOCKET_TRANSPORT)
+      ) {
+        return;
+      }
 
-    if (
-      !(channel instanceof Ci.nsIHttpChannel) ||
-      !(channel instanceof Ci.nsIClassifiedChannel)
-    ) {
-      return;
-    }
+      if (
+        !(channel instanceof Ci.nsIHttpChannel) ||
+        !(channel instanceof Ci.nsIClassifiedChannel)
+      ) {
+        return;
+      }
 
-    channel = channel.QueryInterface(Ci.nsIHttpChannel);
-    channel = channel.QueryInterface(Ci.nsIClassifiedChannel);
+      channel = channel.QueryInterface(Ci.nsIHttpChannel);
+      channel = channel.QueryInterface(Ci.nsIClassifiedChannel);
 
-    if (DEBUG_PLATFORM_EVENTS) {
-      logPlatformEvent(
-        this.getActivityTypeString(activityType, activitySubtype),
-        channel
-      );
-    }
+      if (DEBUG_PLATFORM_EVENTS) {
+        logPlatformEvent(
+          this.getActivityTypeString(activityType, activitySubtype),
+          channel
+        );
+      }
 
-    if (
-      activitySubtype == gActivityDistributor.ACTIVITY_SUBTYPE_REQUEST_HEADER
-    ) {
-      this.#onRequestHeader(channel, timestamp, extraStringData);
-      return;
-    }
+      if (
+        activitySubtype == gActivityDistributor.ACTIVITY_SUBTYPE_REQUEST_HEADER
+      ) {
+        this.#onRequestHeader(channel, timestamp, extraStringData);
+        return;
+      }
 
-    // Iterate over all currently ongoing requests. If channel can't
-    // be found within them, then exit this function.
-    const httpActivity = this.#findActivityObject(channel);
-    if (!httpActivity) {
-      return;
-    }
+      // Iterate over all currently ongoing requests. If channel can't
+      // be found within them, then exit this function.
+      const httpActivity = this.#findActivityObject(channel);
+      if (!httpActivity) {
+        return;
+      }
 
-    // If we're throttling, we must not report events as they arrive
-    // from platform, but instead let the throttler emit the events
-    // after some time has elapsed.
-    if (
-      httpActivity.downloadThrottle &&
-      HTTP_DOWNLOAD_ACTIVITIES.includes(activitySubtype)
-    ) {
-      const callback = this.#dispatchActivity.bind(this);
-      httpActivity.downloadThrottle.addActivityCallback(
-        callback,
-        httpActivity,
-        channel,
-        activityType,
-        activitySubtype,
-        timestamp,
-        extraSizeData,
-        extraStringData
-      );
-    } else {
-      this.#dispatchActivity(
-        httpActivity,
-        channel,
-        activityType,
-        activitySubtype,
-        timestamp,
-        extraSizeData,
-        extraStringData
-      );
+      // If we're throttling, we must not report events as they arrive
+      // from platform, but instead let the throttler emit the events
+      // after some time has elapsed.
+      if (
+        httpActivity.downloadThrottle &&
+        HTTP_DOWNLOAD_ACTIVITIES.includes(activitySubtype)
+      ) {
+        const callback = this.#dispatchActivity.bind(this);
+        httpActivity.downloadThrottle.addActivityCallback(
+          callback,
+          httpActivity,
+          channel,
+          activityType,
+          activitySubtype,
+          timestamp,
+          extraSizeData,
+          extraStringData
+        );
+      } else {
+        this.#dispatchActivity(
+          httpActivity,
+          channel,
+          activityType,
+          activitySubtype,
+          timestamp,
+          extraSizeData,
+          extraStringData
+        );
+      }
     }
-  });
+  );
 
   /**
    * Craft the "event" object passed to the Watcher class in order
@@ -956,8 +1047,8 @@ export class NetworkObserver {
    * this point.
    *
    * @see http://www.softwareishard.com/blog/har-12-spec
-   * @param {(nsIHttpChannel|nsIFileChannel)} channel
-   *        The HTTP channel for which the HTTP activity object is created.
+   * @param {nsIChannel} channel
+   *        The channel for which the activity object is created.
    * @return object
    *         The new HTTP activity object.
    */
@@ -1274,27 +1365,7 @@ export const NetworkTimings = new (class {
     if (httpActivity.fromCache) {
       // If it came from the browser cache, we have no timing
       // information and these should all be 0
-      return {
-        total: 0,
-        timings: {
-          blocked: 0,
-          dns: 0,
-          ssl: 0,
-          connect: 0,
-          send: 0,
-          wait: 0,
-          receive: 0,
-        },
-        offsets: {
-          blocked: 0,
-          dns: 0,
-          ssl: 0,
-          connect: 0,
-          send: 0,
-          wait: 0,
-          receive: 0,
-        },
-      };
+      return this.getEmptyHARTimings();
     }
 
     const timings = httpActivity.timings;
@@ -1435,6 +1506,37 @@ export const NetworkTimings = new (class {
       handledByServiceWorker:
         timedChannel.handleFetchEventEndTime -
         timedChannel.handleFetchEventStartTime,
+    };
+  }
+
+  /**
+   * For some requests such as cached or data: URI requests, we don't have
+   * access to any timing information so all timings should be 0.
+   *
+   * @return {Object}
+   *     A timings object (@see extractHarTimings), with all values set to 0.
+   */
+  getEmptyHARTimings() {
+    return {
+      total: 0,
+      timings: {
+        blocked: 0,
+        dns: 0,
+        ssl: 0,
+        connect: 0,
+        send: 0,
+        wait: 0,
+        receive: 0,
+      },
+      offsets: {
+        blocked: 0,
+        dns: 0,
+        ssl: 0,
+        connect: 0,
+        send: 0,
+        wait: 0,
+        receive: 0,
+      },
     };
   }
 

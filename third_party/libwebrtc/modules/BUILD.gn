@@ -83,8 +83,6 @@ if (rtc_include_tests && !build_with_chromium) {
         # rtc_test targets. Therefore we include this target here, instead of
         # in video_coding_modules_tests, where it is actually used.
         "../sdk/android:libjingle_peerconnection_java",
-        "//sdk/android:native_test_jni_onload",
-        "//testing/android/native_test:native_test_support",
       ]
       shard_timeout = 900
     }
@@ -160,6 +158,7 @@ if (rtc_include_tests && !build_with_chromium) {
     "../resources/near22_stereo.pcm",
     "../resources/near32_stereo.pcm",
     "../resources/near44_stereo.pcm",
+    "../resources/near48_mono.pcm",
     "../resources/near48_stereo.pcm",
     "../resources/near88_stereo.pcm",
     "../resources/near8_stereo.pcm",
@@ -237,10 +236,7 @@ if (rtc_include_tests && !build_with_chromium) {
 
     if (is_android) {
       use_default_launcher = false
-      deps += [
-        "../sdk/android:libjingle_peerconnection_java",
-        "//testing/android/native_test:native_test_support",
-      ]
+      deps += [ "../sdk/android:libjingle_peerconnection_java" ]
       shard_timeout = 900
     }
     if (is_ios) {

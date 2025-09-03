@@ -19,6 +19,8 @@
   --default-focusring-width: 2px;
   --default-focusring: var(--default-focusring-width) dotted;
 
+  --animation-easing-function: cubic-bezier(.07, .95, 0, 1);
+
   --arrowpanel-background: Field;
   --arrowpanel-color: FieldText;
   --arrowpanel-border-color: ThreeDShadow;
@@ -35,6 +37,8 @@
   --input-border-color: color-mix(in srgb, currentColor 46%, transparent);
 
   --toolbarbutton-icon-fill: currentColor;
+  --toolbarbutton-icon-fill-attention: AccentColor;
+  --toolbarbutton-icon-fill-attention-text: AccentColorText;
   --toolbarbutton-disabled-opacity: 0.4;
 
   --toolbar-field-background-color: Field;
@@ -68,6 +72,20 @@
   &[lwtheme] {
     --toolbar-bgcolor: rgba(255,255,255,.4);
     --toolbar-color: var(--lwt-text-color, inherit);
+
+    --toolbarbutton-icon-fill-attention: light-dark(rgb(0, 97, 224), rgb(0, 221, 255));
+    --toolbarbutton-icon-fill-attention-text-light: rgb(240, 240, 244);
+    --toolbarbutton-icon-fill-attention-text-dark: rgb(28, 27, 34);
+    --toolbarbutton-icon-fill-attention-text: light-dark(
+      var(--toolbarbutton-icon-fill-attention-text-light),
+      var(--toolbarbutton-icon-fill-attention-text-dark)
+    );
+    &[lwt-icon-fill-attention="dark"] {
+      --toolbarbutton-icon-fill-attention-text: var(--toolbarbutton-icon-fill-attention-text-light);
+    }
+    &[lwt-icon-fill-attention="light"] {
+      --toolbarbutton-icon-fill-attention-text: var(--toolbarbutton-icon-fill-attention-text-dark);
+    }
   }
 
   /* This color scheme should match --toolbar-color. However, note that
@@ -99,6 +117,7 @@
   background-color: -moz-Dialog;
   color: -moz-DialogText;
   font: message-box;
+  -moz-box-collapse: legacy;
 
   &[dialogroot] {
     font: menu;
@@ -132,6 +151,18 @@
 
 :root[lwtheme-image][lwtheme-brighttext] {
   text-shadow: 1px 1px 1.5px black;
+}
+
+/* Rules for 'hiding' portions of the chrome for special
+   kinds of windows with toolbars (not just browser windows) */
+:root[chromehidden~="menubar"] .chromeclass-menubar,
+:root[chromehidden~="directories"] .chromeclass-directories,
+:root[chromehidden~="status"] .chromeclass-status,
+:root[chromehidden~="extrachrome"] .chromeclass-extrachrome,
+:root[chromehidden~="location"] .chromeclass-location,
+:root[chromehidden~="location"][chromehidden~="toolbar"] .chromeclass-toolbar,
+:root[chromehidden~="toolbar"] .chromeclass-toolbar-additional {
+  display: none;
 }
 
 /* General styles */

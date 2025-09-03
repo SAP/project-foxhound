@@ -4,24 +4,28 @@
 
 package org.mozilla.fenix.webcompat.store
 
+import android.webkit.URLUtil
 import androidx.annotation.StringRes
-import androidx.compose.runtime.Composable
-import androidx.compose.ui.res.stringResource
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import mozilla.components.lib.state.Action
+import mozilla.components.lib.state.Middleware
 import mozilla.components.lib.state.State
 import mozilla.components.lib.state.UiStore
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.MenuItem
 
 /**
  * Value type that represents the state of the WebCompat Reporter.
  *
- * @property url The URL that is being reported as broken.
- * @property reason Optional param specifying the reason that [url] is broken.
+ * @property tabUrl The URL of the current tab when the reporter was opened.
+ * @property enteredUrl The URL that is being reported as broken.
+ * @property reason Specifies the reason that [enteredUrl] is broken.
  * @property problemDescription Description of the encountered problem.
  */
 data class WebCompatReporterState(
-    val url: String = "",
+    val tabUrl: String = "",
+    val enteredUrl: String = "",
     val reason: BrokenSiteReason? = null,
     val problemDescription: String = "",
 ) : State {
@@ -53,37 +57,38 @@ data class WebCompatReporterState(
     }
 
     /**
-     * Helper function used to obtain the list of dropdown menu items derived from [BrokenSiteReason].
-     *
-     * @param onDropdownItemClick Callback invoked when the particular dropdown item is selected.
-     * @return The list of [MenuItem] to display in the dropdown.
-     */
-    @Composable
-    fun toDropdownItems(
-        onDropdownItemClick: (BrokenSiteReason) -> Unit,
-    ): List<MenuItem> {
-        return BrokenSiteReason.entries.map { reason ->
-            MenuItem(
-                title = stringResource(id = reason.displayStringId),
-                isChecked = this.reason == reason,
-                onClick = {
-                    onDropdownItemClick(reason)
-                },
-            )
-        }
-    }
-
-    /**
      * Whether the URL text field has an error.
      */
     val hasUrlTextError: Boolean
-        get() = url.isEmpty()
+        get() = !URLUtil.isNetworkUrl(enteredUrl)
+
+    /**
+     * Whether the reason dropdown has an error.
+     */
+    val hasReasonDropdownError: Boolean
+        get() = reason == null
+
+    /**
+     * Whether the submit button is enabled.
+     */
+    val isSubmitEnabled: Boolean
+        get() = !hasUrlTextError && !hasReasonDropdownError
 }
 
 /**
  * [Action] implementation related to [WebCompatReporterStore].
  */
 sealed class WebCompatReporterAction : Action {
+
+    /**
+     * A sealed type representing [WebCompatReporterAction]s which have storage side effects.
+     */
+    sealed interface WebCompatReporterStorageAction
+
+    /**
+     * Dispatched when [WebCompatReporterStore] has been initialized.
+     */
+    data object Initialized : WebCompatReporterAction(), WebCompatReporterStorageAction
 
     /**
      * Dispatched when the URL field is updated.
@@ -107,39 +112,54 @@ sealed class WebCompatReporterAction : Action {
     data class ProblemDescriptionChanged(val newProblemDescription: String) : WebCompatReporterAction()
 
     /**
+     * [Action] fired when the user navigates within the WebCompat Reporter.
+     */
+    sealed interface NavigationAction
+
+    /**
      * Dispatched when the user requests to send the WebCompat report.
      */
     data object SendReportClicked : WebCompatReporterAction()
 
     /**
+     * Dispatched when the WebCompat report has been submitted.
+     */
+    data object ReportSubmitted : WebCompatReporterAction(), NavigationAction
+
+    /**
      * Dispatched when the user requests to send more info.
      */
-    data object SendMoreInfoClicked : WebCompatReporterAction()
+    data object SendMoreInfoClicked : WebCompatReporterAction(), WebCompatReporterStorageAction, NavigationAction
 
     /**
      * Dispatched when the user requests to cancel the report.
      */
-    data object CancelClicked : WebCompatReporterAction()
+    data object CancelClicked : WebCompatReporterAction(), WebCompatReporterStorageAction, NavigationAction
 
     /**
      * Dispatched when the user requests to navigate to the previous page.
      */
-    data object BackPressed : WebCompatReporterAction()
+    data object BackPressed : WebCompatReporterAction(), WebCompatReporterStorageAction, NavigationAction
+
+    /**
+     * Dispatched when a previous [WebCompatReporterState] has been restored.
+     */
+    data class StateRestored(val restoredState: WebCompatReporterState) : WebCompatReporterAction()
 }
 
 private fun reduce(
     state: WebCompatReporterState,
     action: WebCompatReporterAction,
 ): WebCompatReporterState = when (action) {
-    is WebCompatReporterAction.BrokenSiteChanged -> state.copy(url = action.newUrl)
+    is WebCompatReporterAction.BrokenSiteChanged -> state.copy(enteredUrl = action.newUrl)
     is WebCompatReporterAction.ProblemDescriptionChanged -> state.copy(
         problemDescription = action.newProblemDescription,
     )
     is WebCompatReporterAction.ReasonChanged -> state.copy(reason = action.newReason)
-    WebCompatReporterAction.SendMoreInfoClicked -> state
-    WebCompatReporterAction.SendReportClicked -> state
-    WebCompatReporterAction.BackPressed -> state
-    WebCompatReporterAction.CancelClicked -> state
+    WebCompatReporterAction.Initialized -> state
+    is WebCompatReporterAction.StateRestored -> action.restoredState
+    is WebCompatReporterAction.NavigationAction -> state
+    is WebCompatReporterAction.SendReportClicked -> state
 }
 
 /**
@@ -148,7 +168,24 @@ private fun reduce(
  */
 class WebCompatReporterStore(
     initialState: WebCompatReporterState = WebCompatReporterState(),
+    middleware: List<Middleware<WebCompatReporterState, WebCompatReporterAction>> = listOf(),
 ) : UiStore<WebCompatReporterState, WebCompatReporterAction>(
     initialState,
     ::reduce,
-)
+    middleware,
+) {
+    init {
+        dispatch(WebCompatReporterAction.Initialized)
+    }
+
+    private val _navEvents = MutableSharedFlow<WebCompatReporterAction.NavigationAction>(
+        extraBufferCapacity = 1,
+    )
+
+    val navEvents: SharedFlow<WebCompatReporterAction.NavigationAction>
+        get() = _navEvents.asSharedFlow()
+
+    internal fun emitNavAction(
+        action: WebCompatReporterAction.NavigationAction,
+    ) = _navEvents.tryEmit(action)
+}

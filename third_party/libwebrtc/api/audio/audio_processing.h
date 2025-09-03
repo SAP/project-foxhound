@@ -33,6 +33,7 @@
 #include "api/array_view.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio/echo_control.h"
+#include "api/environment/environment.h"
 #include "api/ref_count.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
@@ -85,7 +86,6 @@ class EchoDetector;
 // float interfaces use deinterleaved data.
 //
 // Usage example, omitting error checking:
-// rtc::scoped_refptr<AudioProcessing> apm = AudioProcessingBuilder().Create();
 //
 // AudioProcessing::Config config;
 // config.echo_canceller.enabled = true;
@@ -101,7 +101,8 @@ class EchoDetector;
 //
 // config.high_pass_filter.enabled = true;
 //
-// apm->ApplyConfig(config)
+// scoped_refptr<AudioProcessing> apm =
+//     BuiltinAudioProcessingBuilder(config).Build(CreateEnvironment());
 //
 // // Start a voice call...
 //
@@ -733,6 +734,23 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   static int GetFrameSize(int sample_rate_hz) { return sample_rate_hz / 100; }
 };
 
+class AudioProcessingBuilderInterface {
+ public:
+  virtual ~AudioProcessingBuilderInterface() = default;
+
+  virtual absl::Nullable<scoped_refptr<AudioProcessing>> Build(
+      const Environment& env) = 0;
+};
+
+// Returns builder that returns the `audio_processing` ignoring the extra
+// construction parameter `env`.
+// nullptr `audio_processing` is not supported as in some scenarios that imply
+// no audio processing, while in others - default builtin audio processing.
+// Callers should be explicit which of these two behaviors they want.
+absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>>
+CustomAudioProcessing(
+    absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing);
+
 // Experimental interface for a custom analysis submodule.
 class CustomAudioAnalyzer {
  public:
@@ -760,69 +778,6 @@ class CustomProcessing {
   virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting);
 
   virtual ~CustomProcessing() {}
-};
-
-class RTC_EXPORT AudioProcessingBuilder {
- public:
-  AudioProcessingBuilder();
-  AudioProcessingBuilder(const AudioProcessingBuilder&) = delete;
-  AudioProcessingBuilder& operator=(const AudioProcessingBuilder&) = delete;
-  ~AudioProcessingBuilder();
-
-  // Sets the APM configuration.
-  AudioProcessingBuilder& SetConfig(const AudioProcessing::Config& config) {
-    config_ = config;
-    return *this;
-  }
-
-  // Sets the echo controller factory to inject when APM is created.
-  AudioProcessingBuilder& SetEchoControlFactory(
-      std::unique_ptr<EchoControlFactory> echo_control_factory) {
-    echo_control_factory_ = std::move(echo_control_factory);
-    return *this;
-  }
-
-  // Sets the capture post-processing sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetCapturePostProcessing(
-      std::unique_ptr<CustomProcessing> capture_post_processing) {
-    capture_post_processing_ = std::move(capture_post_processing);
-    return *this;
-  }
-
-  // Sets the render pre-processing sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetRenderPreProcessing(
-      std::unique_ptr<CustomProcessing> render_pre_processing) {
-    render_pre_processing_ = std::move(render_pre_processing);
-    return *this;
-  }
-
-  // Sets the echo detector to inject when APM is created.
-  AudioProcessingBuilder& SetEchoDetector(
-      rtc::scoped_refptr<EchoDetector> echo_detector) {
-    echo_detector_ = std::move(echo_detector);
-    return *this;
-  }
-
-  // Sets the capture analyzer sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetCaptureAnalyzer(
-      std::unique_ptr<CustomAudioAnalyzer> capture_analyzer) {
-    capture_analyzer_ = std::move(capture_analyzer);
-    return *this;
-  }
-
-  // Creates an APM instance with the specified config or the default one if
-  // unspecified. Injects the specified components transferring the ownership
-  // to the newly created APM instance - i.e., except for the config, the
-  // builder is reset to its initial state.
-  rtc::scoped_refptr<AudioProcessing> Create();
-
- private:
-  AudioProcessing::Config config_;
-  std::unique_ptr<EchoControlFactory> echo_control_factory_;
-  std::unique_ptr<CustomProcessing> capture_post_processing_;
-  std::unique_ptr<CustomProcessing> render_pre_processing_;
-  rtc::scoped_refptr<EchoDetector> echo_detector_;
-  std::unique_ptr<CustomAudioAnalyzer> capture_analyzer_;
 };
 
 class StreamConfig {

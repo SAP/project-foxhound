@@ -2,6 +2,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+/**
+ * @typedef {import("../content/Utils.sys.mjs").ProgressAndStatusCallbackParams} ProgressAndStatusCallbackParams
+ */
+
 /* eslint-disable-next-line mozilla/reject-import-system-module-from-non-system */
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
@@ -25,6 +29,14 @@ ChromeUtils.defineLazyGetter(lazy, "console", () => {
     prefix: "ML:ONNXPipeline",
   });
 });
+
+ChromeUtils.defineESModuleGetters(
+  lazy,
+  {
+    Progress: "chrome://global/content/ml/Utils.sys.mjs",
+  },
+  { global: "current" }
+);
 
 /**
  * Conditional import for Transformer.js
@@ -117,10 +129,11 @@ async function imageToText(request, model, tokenizer, processor, _config) {
   const { pixel_values } = await processor(rawImage);
   result.metrics.tokenizingTime += Date.now() - start;
   const toReturn = [];
+  const streamer = request.options?.streamer;
   for (const batch of pixel_values) {
     batch.dims = [1, ...batch.dims];
     start = Date.now();
-    const output = await model.generate({ inputs: batch });
+    const output = await model.generate({ inputs: batch, streamer });
     result.metrics.inferenceTime += Date.now() - start;
     start = Date.now();
     const decoded = tokenizer
@@ -277,22 +290,7 @@ export class Pipeline {
     transformers.env.customCache = this.#mlEngineWorker;
     // using `NO_LOCAL` so when the custom cache is used, we don't try to fetch it (see MLEngineWorker.match)
     transformers.env.localModelPath = "NO_LOCAL";
-
-    // numThreads can be set in Remote Settings for the model and we also have a theorical
-    // best number of threads based on navigator.hardwareConcurrency and a max of 4.
-    // ONNX will take at most 4 threads
-    let numThreads = config.numThreads || 0;
-    const hardwareConcurrency = navigator.hardwareConcurrency || 1;
-
-    if (numThreads == 0) {
-      numThreads = Math.min(4, Math.ceil(hardwareConcurrency / 2));
-    } else if (numThreads > hardwareConcurrency) {
-      numThreads = hardwareConcurrency;
-      lazy.console.warn(
-        `numThreads was set equal or higher than hardwareConcurrency, lowering it to ${numThreads}`
-      );
-    }
-    transformers.env.backends.onnx.wasm.numThreads = numThreads;
+    transformers.env.backends.onnx.wasm.numThreads = config.numThreads;
 
     // ONNX runtime - we set up the wasm runtime we got from RS for the ONNX backend to pick
     transformers.env.backends.onnx.wasm.wasmPaths = {};
@@ -351,6 +349,7 @@ export class Pipeline {
             revision: config.modelRevision,
             device,
             dtype,
+            use_external_data_format: config.useExternalDataFormat,
           }
         );
       }
@@ -378,7 +377,12 @@ export class Pipeline {
         this.#genericPipelineFunction = transformers.pipeline(
           config.taskName,
           config.modelId,
-          { revision: config.modelRevision, device, dtype }
+          {
+            revision: config.modelRevision,
+            device,
+            dtype,
+            use_external_data_format: config.useExternalDataFormat,
+          }
         );
       } else {
         this.#genericPipelineFunction = async () => {};
@@ -435,6 +439,7 @@ export class Pipeline {
         modelRevision: options.modelRevision || "default",
         dtype: options.dtype || "fp16",
         device: options.device || "wasm",
+        useExternalDataFormat: options.useExternalDataFormat ?? false,
       };
     } else {
       // Loading the config defaults for the task
@@ -524,34 +529,145 @@ export class Pipeline {
    * When the pipeline is initialized with the generic pipeline function, the request contains
    * `args` and `options` fields. The `args` field is an array of values that are passed
    * to the generic pipeline function. The `options` field is an object that contains the options for the pipeline.
+   * The request may include a `streamerOptions` field to configure streaming behavior.
+   * `streamerOptions` is an object with the following properties:
+   *
+   * - `perTokens` (boolean): If `true`, streams data per token; otherwise, streams per word.
+   * - `skipPrompt` (boolean): If `false`, the first returned value will include the prompt.
+   * - `returnTokens` (boolean): If `true`, the response will include tokens.
+   * @param {string} requestId - The identifier used to internally track this request.
+   * @param {?function(ProgressAndStatusCallbackParams):void} inferenceProgressCallback A function to call to indicate inference progress.
    * @returns {Promise<object>} The result object from the pipeline execution.
    */
-  async run(request) {
+  async run(request, requestId, inferenceProgressCallback = null) {
     lazy.console.debug("Running task: ", this.#config.taskName);
 
     let result;
     await this.#metricsSnapShot({ name: "runStart" });
 
+    const tokenizer =
+      this.#genericPipelineFunction?.tokenizer ?? this.#tokenizer;
+
+    const progressInfo = {
+      ok: true,
+      id: request.id ?? requestId,
+    };
+
+    const streamerOptions = {
+      perTokens: false,
+      skipPrompt: true,
+      returnTokens: false,
+      ...request.streamerOptions,
+    };
+
+    let streamer = undefined;
+    let chunkTokens = [];
+    let chunkText = "";
+    let nextTokensArePrompt = !streamerOptions.skipPrompt;
+    let restoreTokenizer = false;
+
+    if (tokenizer && inferenceProgressCallback) {
+      const flushPrompts = _tokens => {
+        streamer.token_cache = _tokens;
+        streamer.end();
+        streamer.tokenizer = {
+          decode: () => {
+            streamer.token_cache = [];
+            return "";
+          },
+        };
+        restoreTokenizer = true;
+        streamer.next_tokens_are_prompt = false;
+      };
+      streamer = new transformers.TextStreamer(tokenizer, {
+        skip_prompt: streamerOptions.skipPrompt,
+        decode_kwargs: {
+          skip_special_tokens: true,
+        },
+        token_callback_function: tokens => {
+          if (restoreTokenizer) {
+            streamer.tokenizer = tokenizer;
+            restoreTokenizer = false;
+          }
+          if (streamerOptions.perTokens) {
+            if (nextTokensArePrompt) {
+              flushPrompts(tokens);
+            }
+
+            inferenceProgressCallback({
+              ...progressInfo,
+              metadata: {
+                text: chunkText,
+                tokens: streamerOptions.returnTokens ? tokens : null,
+                isPrompt: nextTokensArePrompt,
+                requestId,
+              },
+              type: lazy.Progress.ProgressType.INFERENCE,
+              statusText: lazy.Progress.ProgressStatusText.IN_PROGRESS,
+            });
+
+            // We have sent the text, now resetting it
+            chunkText = "";
+          } else {
+            // Append newly received tokens.
+            chunkTokens.push(tokens);
+
+            if (nextTokensArePrompt) {
+              flushPrompts(tokens);
+            }
+          }
+          nextTokensArePrompt = false;
+        },
+        // Per-word callback function
+        callback_function: text => {
+          if (streamerOptions.perTokens) {
+            chunkText = text;
+          } else {
+            inferenceProgressCallback({
+              ...progressInfo,
+              metadata: {
+                text,
+                tokens: streamerOptions.returnTokens ? chunkTokens : null,
+                requestId,
+                isPrompt: nextTokensArePrompt,
+              },
+              type: lazy.Progress.ProgressType.INFERENCE,
+              statusText: lazy.Progress.ProgressStatusText.IN_PROGRESS,
+            });
+            // reset the chunks.
+            chunkTokens = [];
+          }
+        },
+      });
+    }
+
+    // Override streamer in options
+    const requestWithCallback = inferenceProgressCallback
+      ? {
+          ...request,
+          options: { ...request.options, streamer },
+        }
+      : request;
+
     if (this.#genericPipelineFunction) {
       if (this.#config.modelId === "test-echo") {
         result = {
-          output: request.args,
+          output: requestWithCallback.args,
           config: this.#config,
           multiThreadSupported: isMultiThreadSupported(),
         };
       } else {
         result = await this.#genericPipelineFunction(
-          ...request.args,
-          request.options || {}
+          ...requestWithCallback.args,
+          requestWithCallback.options || {}
         );
-
-        // When the pipeline returns Tensors they are Proxy objects that cannot be cloned.
-        // Workaround: convert to JSON and back to JS objects.
-        result = JSON.parse(JSON.stringify(result));
+        if (result instanceof transformers.Tensor) {
+          result = result.tolist();
+        }
       }
     } else {
       result = await this.#pipelineFunction(
-        request,
+        requestWithCallback,
         this.#model,
         this.#tokenizer,
         this.#processor,
@@ -560,6 +676,19 @@ export class Pipeline {
     }
     await this.#metricsSnapShot({ name: "runEnd" });
     result.metrics = this.#metrics;
+
+    if (streamer) {
+      inferenceProgressCallback?.({
+        ...progressInfo,
+        metadata: {
+          text: "",
+          requestId,
+        },
+        type: lazy.Progress.ProgressType.INFERENCE,
+        statusText: lazy.Progress.ProgressStatusText.DONE,
+      });
+    }
+
     return result;
   }
 }

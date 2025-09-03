@@ -6,7 +6,8 @@ use crate::{
     Arena, Block, Constant, Expression, Function, Handle, Literal, Module, Override, Range, Scalar,
     Span, Statement, TypeInner, WithSpan,
 };
-use std::{borrow::Cow, collections::HashSet, mem};
+use hashbrown::HashSet;
+use std::{borrow::Cow, mem};
 use thiserror::Error;
 
 #[derive(Error, Debug, Clone)]
@@ -25,6 +26,8 @@ pub enum PipelineConstantError {
     ConstantEvaluatorError(#[from] ConstantEvaluatorError),
     #[error(transparent)]
     ValidationError(#[from] WithSpan<ValidationError>),
+    #[error("workgroup_size override isn't strictly positive")]
+    NegativeWorkgroupSize,
 }
 
 /// Replace all overrides in `module` with constants.
@@ -72,6 +75,7 @@ pub fn process_overrides<'a>(
     let mut adjusted_constant_initializers = HashSet::with_capacity(module.constants.len());
 
     let mut global_expression_kind_tracker = crate::proc::ExpressionKindTracker::new();
+    let mut layouter = crate::proc::Layouter::default();
 
     // An iterator through the original overrides table, consumed in
     // approximate tandem with the global expressions.
@@ -144,6 +148,7 @@ pub fn process_overrides<'a>(
         let mut evaluator = ConstantEvaluator::for_wgsl_module(
             &mut module,
             &mut global_expression_kind_tracker,
+            &mut layouter,
             false,
         );
         adjust_expr(&adjusted_global_expressions, &mut expr);
@@ -183,15 +188,18 @@ pub fn process_overrides<'a>(
 
     let mut functions = mem::take(&mut module.functions);
     for (_, function) in functions.iter_mut() {
-        process_function(&mut module, &override_map, function)?;
+        process_function(&mut module, &override_map, &mut layouter, function)?;
     }
     module.functions = functions;
 
     let mut entry_points = mem::take(&mut module.entry_points);
     for ep in entry_points.iter_mut() {
-        process_function(&mut module, &override_map, &mut ep.function)?;
+        process_function(&mut module, &override_map, &mut layouter, &mut ep.function)?;
+        process_workgroup_size_override(&mut module, &adjusted_global_expressions, ep)?;
     }
     module.entry_points = entry_points;
+
+    process_pending(&mut module, &override_map, &adjusted_global_expressions)?;
 
     // Now that we've rewritten all the expressions, we need to
     // recompute their types and other metadata. For the time being,
@@ -202,11 +210,104 @@ pub fn process_overrides<'a>(
     Ok((Cow::Owned(module), Cow::Owned(module_info)))
 }
 
+fn process_pending(
+    module: &mut Module,
+    override_map: &HandleVec<Override, Handle<Constant>>,
+    adjusted_global_expressions: &HandleVec<Expression, Handle<Expression>>,
+) -> Result<(), PipelineConstantError> {
+    for (handle, ty) in module.types.clone().iter() {
+        if let TypeInner::Array {
+            base,
+            size: crate::ArraySize::Pending(size),
+            stride,
+        } = ty.inner
+        {
+            let expr = match size {
+                crate::PendingArraySize::Expression(size_expr) => {
+                    adjusted_global_expressions[size_expr]
+                }
+                crate::PendingArraySize::Override(size_override) => {
+                    module.constants[override_map[size_override]].init
+                }
+            };
+            let value = module
+                .to_ctx()
+                .eval_expr_to_u32(expr)
+                .map(|n| {
+                    if n == 0 {
+                        Err(PipelineConstantError::ValidationError(
+                            WithSpan::new(ValidationError::ArraySizeError { handle: expr })
+                                .with_span(
+                                    module.global_expressions.get_span(expr),
+                                    "evaluated to zero",
+                                ),
+                        ))
+                    } else {
+                        Ok(std::num::NonZeroU32::new(n).unwrap())
+                    }
+                })
+                .map_err(|_| {
+                    PipelineConstantError::ValidationError(
+                        WithSpan::new(ValidationError::ArraySizeError { handle: expr })
+                            .with_span(module.global_expressions.get_span(expr), "negative"),
+                    )
+                })??;
+            module.types.replace(
+                handle,
+                crate::Type {
+                    name: None,
+                    inner: TypeInner::Array {
+                        base,
+                        size: crate::ArraySize::Constant(value),
+                        stride,
+                    },
+                },
+            );
+        }
+    }
+    Ok(())
+}
+
+fn process_workgroup_size_override(
+    module: &mut Module,
+    adjusted_global_expressions: &HandleVec<Expression, Handle<Expression>>,
+    ep: &mut crate::EntryPoint,
+) -> Result<(), PipelineConstantError> {
+    match ep.workgroup_size_overrides {
+        None => {}
+        Some(overrides) => {
+            overrides.iter().enumerate().try_for_each(
+                |(i, overridden)| -> Result<(), PipelineConstantError> {
+                    match *overridden {
+                        None => Ok(()),
+                        Some(h) => {
+                            ep.workgroup_size[i] = module
+                                .to_ctx()
+                                .eval_expr_to_u32(adjusted_global_expressions[h])
+                                .map(|n| {
+                                    if n == 0 {
+                                        Err(PipelineConstantError::NegativeWorkgroupSize)
+                                    } else {
+                                        Ok(n)
+                                    }
+                                })
+                                .map_err(|_| PipelineConstantError::NegativeWorkgroupSize)??;
+                            Ok(())
+                        }
+                    }
+                },
+            )?;
+            ep.workgroup_size_overrides = None;
+        }
+    }
+    Ok(())
+}
+
 /// Add a [`Constant`] to `module` for the override `old_h`.
 ///
 /// Add the new `Constant` to `override_map` and `adjusted_constant_initializers`.
 fn process_override(
-    (old_h, override_, span): (Handle<Override>, Override, Span),
+    (old_h, r#override, span): (Handle<Override>, Override, Span),
     pipeline_constants: &PipelineConstants,
     module: &mut Module,
     override_map: &mut HandleVec<Override, Handle<Constant>>,
@@ -214,20 +315,20 @@ fn process_override(
     adjusted_constant_initializers: &mut HashSet<Handle<Constant>>,
     global_expression_kind_tracker: &mut crate::proc::ExpressionKindTracker,
 ) -> Result<Handle<Constant>, PipelineConstantError> {
-    // Determine which key to use for `override_` in `pipeline_constants`.
-    let key = if let Some(id) = override_.id {
+    // Determine which key to use for `r#override` in `pipeline_constants`.
+    let key = if let Some(id) = r#override.id {
         Cow::Owned(id.to_string())
-    } else if let Some(ref name) = override_.name {
+    } else if let Some(ref name) = r#override.name {
         Cow::Borrowed(name)
     } else {
         unreachable!();
     };
 
-    // Generate a global expression for `override_`'s value, either
+    // Generate a global expression for `r#override`'s value, either
     // from the provided `pipeline_constants` table or its initializer
     // in the module.
     let init = if let Some(value) = pipeline_constants.get::<str>(&key) {
-        let literal = match module.types[override_.ty].inner {
+        let literal = match module.types[r#override.ty].inner {
             TypeInner::Scalar(scalar) => map_value_to_literal(*value, scalar)?,
             _ => unreachable!(),
         };
@@ -236,7 +337,7 @@ fn process_override(
             .append(Expression::Literal(literal), Span::UNDEFINED);
         global_expression_kind_tracker.insert(expr, crate::proc::ExpressionKind::Const);
         expr
-    } else if let Some(init) = override_.init {
+    } else if let Some(init) = r#override.init {
         adjusted_global_expressions[init]
     } else {
         return Err(PipelineConstantError::MissingValue(key.to_string()));
@@ -244,8 +345,8 @@ fn process_override(
 
     // Generate a new `Constant` to represent the override's value.
     let constant = Constant {
-        name: override_.name,
-        ty: override_.ty,
+        name: r#override.name,
+        ty: r#override.ty,
         init,
     };
     let h = module.constants.append(constant, span);
@@ -266,6 +367,7 @@ fn process_override(
 fn process_function(
     module: &mut Module,
     override_map: &HandleVec<Override, Handle<Constant>>,
+    layouter: &mut crate::proc::Layouter,
     function: &mut Function,
 ) -> Result<(), ConstantEvaluatorError> {
     // A map from original local expression handles to
@@ -290,6 +392,7 @@ fn process_function(
         module,
         &mut function.expressions,
         &mut local_expression_kind_tracker,
+        layouter,
         &mut emitter,
         &mut block,
         false,
@@ -638,6 +741,20 @@ fn adjust_stmt(new_pos: &HandleVec<Expression, Handle<Expression>>, stmt: &mut S
                 | crate::AtomicFunction::Exchange { compare: None } => {}
             }
         }
+        Statement::ImageAtomic {
+            ref mut image,
+            ref mut coordinate,
+            ref mut array_index,
+            fun: _,
+            ref mut value,
+        } => {
+            adjust(image);
+            adjust(coordinate);
+            if let Some(ref mut array_index) = *array_index {
+                adjust(array_index);
+            }
+            adjust(value);
+        }
         Statement::WorkGroupUniformLoad {
             ref mut pointer,
             ref mut result,
@@ -708,6 +825,10 @@ fn adjust_stmt(new_pos: &HandleVec<Expression, Handle<Expression>>, stmt: &mut S
                 crate::RayQueryFunction::Proceed { ref mut result } => {
                     adjust(result);
                 }
+                crate::RayQueryFunction::GenerateIntersection { ref mut hit_t } => {
+                    adjust(hit_t);
+                }
+                crate::RayQueryFunction::ConfirmIntersection => {}
                 crate::RayQueryFunction::Terminate => {}
             }
         }

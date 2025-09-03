@@ -824,33 +824,6 @@ void MacroAssembler::callWithABINoProfiler(const Address& fun, ABIType result) {
 // ===============================================================
 // Move instructions
 
-void MacroAssembler::moveValue(const TypedOrValueRegister& src,
-                               const ValueOperand& dest) {
-  if (src.hasValue()) {
-    moveValue(src.valueReg(), dest);
-    return;
-  }
-
-  MIRType type = src.type();
-  AnyRegister reg = src.typedReg();
-
-  if (!IsFloatingPointType(type)) {
-    if (reg.gpr() != dest.payloadReg()) {
-      movl(reg.gpr(), dest.payloadReg());
-    }
-    mov(ImmWord(MIRTypeToTag(type)), dest.typeReg());
-    return;
-  }
-
-  ScratchDoubleScope scratch(*this);
-  FloatRegister freg = reg.fpu();
-  if (type == MIRType::Float32) {
-    convertFloat32ToDouble(freg, scratch);
-    freg = scratch;
-  }
-  boxDouble(freg, dest, scratch);
-}
-
 void MacroAssembler::moveValue(const ValueOperand& src,
                                const ValueOperand& dest) {
   Register s0 = src.typeReg();
@@ -970,6 +943,7 @@ void MacroAssembler::branchValueIsNurseryCell(Condition cond,
 void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
                                      const Value& rhs, Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
   if (rhs.isGCThing()) {
     cmpPtr(lhs.payloadReg(), ImmGCPtr(rhs.toGCThing()));
   } else {
@@ -988,6 +962,36 @@ void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
     j(NotEqual, label);
 
     cmp32(lhs.typeReg(), Imm32(rhs.toNunboxTag()));
+    j(NotEqual, label);
+  }
+}
+
+void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
+                                        Register temp, Label* label) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+
+  // When testing for NaN, we want to ignore the sign bit.
+  const uint32_t SignBit = mozilla::FloatingPoint<double>::kSignBit >> 32;
+  movl(val.typeReg(), temp);
+  andl(Imm32(~SignBit), temp);
+
+  // Compare against a NaN with sign bit 0.
+  static_assert(JS::detail::CanonicalizedNaNSignBit == 0);
+  Value expected = DoubleValue(JS::GenericNaN());
+  cmpPtr(val.payloadReg(), ImmWord(expected.toNunboxPayload()));
+
+  if (cond == Equal) {
+    Label done;
+    j(NotEqual, &done);
+    {
+      cmp32(temp, Imm32(expected.toNunboxTag()));
+      j(Equal, label);
+    }
+    bind(&done);
+  } else {
+    j(NotEqual, label);
+
+    cmp32(temp, Imm32(expected.toNunboxTag()));
     j(NotEqual, label);
   }
 }
@@ -1704,14 +1708,14 @@ void MacroAssembler::atomicFetchOp64(Synchronization, AtomicOp op,
 // ========================================================================
 // Convert floating point.
 
-bool MacroAssembler::convertUInt64ToDoubleNeedsTemp() { return HasSSE3(); }
+bool MacroAssembler::convertUInt64ToDoubleNeedsTemp() { return false; }
 
 void MacroAssembler::convertUInt64ToDouble(Register64 src, FloatRegister dest,
                                            Register temp) {
+  MOZ_ASSERT(temp == Register::Invalid());
+
   // SUBPD needs SSE2, HADDPD needs SSE3.
   if (!HasSSE3()) {
-    MOZ_ASSERT(temp == Register::Invalid());
-
     // Zero the dest register to break dependencies, see convertInt32ToDouble.
     zeroDouble(dest);
 

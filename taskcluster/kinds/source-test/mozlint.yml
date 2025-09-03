@@ -20,6 +20,7 @@ task-defaults:
               path: /builds/worker/mozlint.json
     run:
         using: mach
+        use-caches: [checkout, pip, uv]
     when:
         files-changed:
             # Other misc lint related files.
@@ -38,7 +39,6 @@ codespell:
     when:
         files-changed:
             - '**/*.js'
-            - '**/*.jsm'
             - '**/*.jxs'
             - '**/*.mjs'
             - '**/*.xml'
@@ -67,7 +67,6 @@ rejected-words:
     when:
         files-changed:
             - '**/*.js'
-            - '**/*.jsm'
             - '**/*.jxs'
             - '**/*.mjs'
             - '**/*.xml'
@@ -94,6 +93,7 @@ eslint:
     run:
         using: run-task
         cwd: '{checkout}'
+        use-caches: [checkout, pip, uv, npm]
         command: >
             cp -r $MOZ_FETCHES_DIR/node_modules node_modules &&
             ln -s ../tools/lint/eslint/eslint-plugin-mozilla node_modules &&
@@ -103,7 +103,6 @@ eslint:
         files-changed:
             # Files that are likely audited.
             - '**/*.js'
-            - '**/*.jsm'
             - '**/*.json'
             - '**/*.jsx'
             - '**/*.mjs'
@@ -138,6 +137,7 @@ eslint-build:
     run:
         using: run-task
         cwd: '{checkout}'
+        use-caches: [checkout, pip, uv, npm]
         command: >
             export MOZ_XPT_ARTIFACTS_DIR="$MOZ_FETCHES_DIR/$MOZ_XPT_ARTIFACTS_DIRNAME" &&
             find "$MOZ_XPT_ARTIFACTS_DIR" &&
@@ -205,7 +205,6 @@ license:
             - '**/*.html'
             - '**/*.idl'
             - '**/*.js'
-            - '**/*.jsm'
             - '**/*.jsx'
             - '**/*.kt'
             - '**/*.m'
@@ -241,6 +240,17 @@ lintpref:
             - 'mobile/android/installer/mobile-l10n.js'
             - 'mobile/android/locales/en-US/mobile-l10n.js'
             - 'tools/lint/lintpref.yml'
+
+node-package-names:
+    description: Lint for node package name issues
+    treeherder:
+        symbol: misc(npn)
+    run:
+        mach: lint -v -l node-package-names -f treeherder -f json:/builds/worker/mozlint.json .
+    when:
+        files-changed:
+            - '**/package.json'
+            - 'tools/lint/node-package-names.yml'
 
 mingw-cap:
     description: lint for MinGW Capitalization issues
@@ -311,7 +321,6 @@ py-ruff:
             - 'pyproject.toml'
             - 'tools/lint/ruff.yml'
             - 'tools/lint/python/ruff.py'
-            - 'tools/lint/python/ruff_requirements.txt'
 
 test-manifest:
     description: lint test manifests
@@ -391,7 +400,7 @@ localization:
 
 
 l10n-conflicts:
-    description: l10n tests for strings with errors and conflicts with cross-channel
+    description: l10n tests for strings with errors and conflicts with firefox-l10n-source
     treeherder:
         symbol: l10n(l1nt-conflicts)
     always-target: false
@@ -527,7 +536,6 @@ file-perm:
             - '**/*.html'
             - '**/*.idl'
             - '**/*.js'
-            - '**/*.jsm'
             - '**/*.json'
             - '**/*.jsx'
             - '**/*.m'

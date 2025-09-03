@@ -78,6 +78,8 @@ Register IonIC::scratchRegisterForEntryJump() {
     case CacheKind::LazyConstant:
     case CacheKind::NewArray:
     case CacheKind::NewObject:
+    case CacheKind::Lambda:
+    case CacheKind::GetImport:
       MOZ_CRASH("Unsupported IC");
   }
 
@@ -513,7 +515,8 @@ bool IonOptimizeGetIteratorIC::update(JSContext* cx, HandleScript outerScript,
 
   TryAttachIonStub<OptimizeGetIteratorIRGenerator>(cx, ic, ionScript, value);
 
-  return OptimizeGetIterator(cx, value, result);
+  *result = OptimizeGetIterator(value, cx);
+  return true;
 }
 
 /*  static */

@@ -47,12 +47,18 @@ class BounceTrackingProtectionStorage final : public nsIObserver,
   [[nodiscard]] nsresult Init();
 
   // Getters for mStateGlobal.
-  BounceTrackingStateGlobal* GetOrCreateStateGlobal(
+  RefPtr<BounceTrackingStateGlobal> GetStateGlobal(
       const OriginAttributes& aOriginAttributes);
 
-  BounceTrackingStateGlobal* GetOrCreateStateGlobal(nsIPrincipal* aPrincipal);
+  RefPtr<BounceTrackingStateGlobal> GetStateGlobal(nsIPrincipal* aPrincipal);
 
-  BounceTrackingStateGlobal* GetOrCreateStateGlobal(
+  RefPtr<BounceTrackingStateGlobal> GetOrCreateStateGlobal(
+      const OriginAttributes& aOriginAttributes);
+
+  RefPtr<BounceTrackingStateGlobal> GetOrCreateStateGlobal(
+      nsIPrincipal* aPrincipal);
+
+  RefPtr<BounceTrackingStateGlobal> GetOrCreateStateGlobal(
       BounceTrackingState* aBounceTrackingState);
 
   using StateGlobalMap =
@@ -112,7 +118,9 @@ class BounceTrackingProtectionStorage final : public nsIObserver,
   already_AddRefed<nsIAsyncShutdownClient> GetAsyncShutdownBarrier() const;
 
   // Initialises the DB connection on the worker thread.
-  [[nodiscard]] nsresult CreateDatabaseConnection();
+  // If aShouldRetry is true and the connection fails, the database file will be
+  // reset and the connection will be retried.
+  [[nodiscard]] nsresult CreateDatabaseConnection(bool aShouldRetry = true);
 
   // Creates amd initialises the database table if needed. Worker thread only.
   [[nodiscard]] nsresult EnsureTable();

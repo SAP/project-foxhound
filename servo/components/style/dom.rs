@@ -396,9 +396,6 @@ pub trait TElement:
     /// syntax.
     type TraversalChildrenIterator: Iterator<Item = Self::ConcreteNode>;
 
-    /// Convert an opaque element back into the element.
-    fn unopaque(opaque: OpaqueElement) -> Self;
-
     /// Get this element as a node.
     fn as_node(&self) -> Self::ConcreteNode;
 
@@ -896,6 +893,14 @@ pub trait TElement:
     ) where
         V: Push<ApplicableDeclarationBlock>;
 
+    /// Generate the proper applicable declarations due to view transition dynamic rules, and
+    /// insert them into `rules`.
+    /// https://drafts.csswg.org/css-view-transitions-1/#document-dynamic-view-transition-style-sheet
+    fn synthesize_view_transition_dynamic_rules<V>(&self, _rules: &mut V)
+    where
+        V: Push<ApplicableDeclarationBlock>
+    {}
+
     /// Returns element's local name.
     fn local_name(&self) -> &<SelectorImpl as selectors::parser::SelectorImpl>::BorrowedLocalName;
 
@@ -916,6 +921,14 @@ pub trait TElement:
 
     /// Returns the search direction for relative selector invalidation, if it is on the search path.
     fn relative_selector_search_direction(&self) -> ElementSelectorFlags;
+
+    /// Returns the implicit scope root for given sheet index and host.
+    fn implicit_scope_for_sheet_in_shadow_root(
+        _opaque_host: OpaqueElement,
+        _sheet_index: usize,
+    ) -> Option<ImplicitScopeRoot> {
+        None
+    }
 }
 
 /// TNode and TElement aren't Send because we want to be careful and explicit

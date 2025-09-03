@@ -383,6 +383,7 @@ def use_fetches(config, jobs):
                 sorted(job_fetches, key=lambda x: sorted(x.items())), sort_keys=True
             )
         }
+
         # The path is normalized to an absolute path in run-task
         env.setdefault("MOZ_FETCHES_DIR", "fetches")
 

@@ -12,6 +12,7 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ChannelInfo.h"
 #include "mozilla/dom/PerformanceStorage.h"
+#include "mozilla/glean/DomServiceworkersMetrics.h"
 #include "nsHttpChannel.h"
 #include "nsIHttpHeaderVisitor.h"
 #include "nsIRedirectResultListener.h"
@@ -111,7 +112,7 @@ void InterceptedHttpChannel::AsyncOpenInternal() {
         mChannelCreationTimestamp, mLastStatusReported, 0, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version());
+        mClassOfService.Flags(), mStatus);
   }
 
   // If an error occurs in this file we must ensure mListener callbacks are
@@ -550,7 +551,8 @@ InterceptedHttpChannel::Cancel(nsresult aStatus) {
         mLastStatusReported, TimeStamp::Now(), size, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version(), &mTransactionTimings, std::move(mSource));
+        mClassOfService.Flags(), mStatus, &mTransactionTimings,
+        std::move(mSource));
   }
 
   MOZ_DIAGNOSTIC_ASSERT(NS_FAILED(aStatus));
@@ -767,8 +769,12 @@ InterceptedHttpChannel::ResetInterception(bool aBypass) {
     GetEncodedBodySize(&size);
 
     nsAutoCString contentType;
+    mozilla::Maybe<mozilla::net::HttpVersion> httpVersion = Nothing();
+    mozilla::Maybe<uint32_t> responseStatus = Nothing();
     if (mResponseHead) {
       mResponseHead->ContentType(contentType);
+      httpVersion = Some(mResponseHead->Version());
+      responseStatus = Some(mResponseHead->Status());
     }
 
     RefPtr<HttpBaseChannel> newBaseChannel = do_QueryObject(newChannel);
@@ -779,7 +785,8 @@ InterceptedHttpChannel::ResetInterception(bool aBypass) {
         NetworkLoadType::LOAD_REDIRECT, mLastStatusReported, TimeStamp::Now(),
         size, kCacheUnknown, mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
+        mClassOfService.Flags(), mStatus, &mTransactionTimings,
+        std::move(mSource), httpVersion, responseStatus,
         Some(nsDependentCString(contentType.get())), mURI, flags,
         newBaseChannel->ChannelId());
   }
@@ -1216,15 +1223,20 @@ InterceptedHttpChannel::OnStopRequest(nsIRequest* aRequest, nsresult aStatus) {
     GetEncodedBodySize(&size);
 
     nsAutoCString contentType;
+    mozilla::Maybe<mozilla::net::HttpVersion> httpVersion = Nothing();
+    mozilla::Maybe<uint32_t> responseStatus = Nothing();
     if (mResponseHead) {
       mResponseHead->ContentType(contentType);
+      httpVersion = Some(mResponseHead->Version());
+      responseStatus = Some(mResponseHead->Status());
     }
     profiler_add_network_marker(
         mURI, requestMethod, priority, mChannelId, NetworkLoadType::LOAD_STOP,
         mLastStatusReported, TimeStamp::Now(), size, kCacheUnknown,
         mLoadInfo->GetInnerWindowID(),
         mLoadInfo->GetOriginAttributes().IsPrivateBrowsing(),
-        mRequestHead.Version(), &mTransactionTimings, std::move(mSource),
+        mClassOfService.Flags(), mStatus, &mTransactionTimings,
+        std::move(mSource), httpVersion, responseStatus,
         Some(nsDependentCString(contentType.get())));
   }
 
@@ -1661,52 +1673,41 @@ void InterceptedHttpChannel::InterceptionTimeStamps::GenKeysWithStatus(
 void InterceptedHttpChannel::InterceptionTimeStamps::SaveTimeStamps() {
   MOZ_ASSERT(mStatus != Initialized && mStatus != Created);
 
-  if (mStatus == Synthesized || mStatus == Reset) {
-    Telemetry::HistogramID id =
-        Telemetry::SERVICE_WORKER_FETCH_EVENT_FINISH_SYNTHESIZED_RESPONSE_MS_2;
-    if (mStatus == Reset) {
-      id = Telemetry::SERVICE_WORKER_FETCH_EVENT_CHANNEL_RESET_MS_2;
-    }
-
-    Telemetry::Accumulate(
-        id, mKey,
-        static_cast<uint32_t>(
-            (mInterceptionFinish - mFetchHandlerFinish).ToMilliseconds()));
+  if (mStatus == Reset) {
+    glean::service_worker::fetch_event_channel_reset.Get(mKey)
+        .AccumulateRawDuration(mInterceptionFinish - mFetchHandlerFinish);
     if (!mIsNonSubresourceRequest && !mSubresourceKey.IsEmpty()) {
-      Telemetry::Accumulate(
-          id, mSubresourceKey,
-          static_cast<uint32_t>(
-              (mInterceptionFinish - mFetchHandlerFinish).ToMilliseconds()));
+      glean::service_worker::fetch_event_channel_reset.Get(mSubresourceKey)
+          .AccumulateRawDuration(mInterceptionFinish - mFetchHandlerFinish);
+    }
+  } else if (mStatus == Synthesized) {
+    glean::service_worker::fetch_event_finish_synthesized_response.Get(mKey)
+        .AccumulateRawDuration(mInterceptionFinish - mFetchHandlerFinish);
+    if (!mIsNonSubresourceRequest && !mSubresourceKey.IsEmpty()) {
+      glean::service_worker::fetch_event_finish_synthesized_response
+          .Get(mSubresourceKey)
+          .AccumulateRawDuration(mInterceptionFinish - mFetchHandlerFinish);
     }
   }
 
   if (!mFetchHandlerStart.IsNull()) {
-    Telemetry::Accumulate(
-        Telemetry::SERVICE_WORKER_FETCH_EVENT_DISPATCH_MS_2, mKey,
-        static_cast<uint32_t>(
-            (mFetchHandlerStart - mInterceptionStart).ToMilliseconds()));
+    glean::service_worker::fetch_event_dispatch.Get(mKey).AccumulateRawDuration(
+        mFetchHandlerStart - mInterceptionStart);
 
     if (!mIsNonSubresourceRequest && !mSubresourceKey.IsEmpty()) {
-      Telemetry::Accumulate(
-          Telemetry::SERVICE_WORKER_FETCH_EVENT_DISPATCH_MS_2, mSubresourceKey,
-          static_cast<uint32_t>(
-              (mFetchHandlerStart - mInterceptionStart).ToMilliseconds()));
+      glean::service_worker::fetch_event_dispatch.Get(mSubresourceKey)
+          .AccumulateRawDuration(mFetchHandlerStart - mInterceptionStart);
     }
   }
 
   nsAutoCString key, subresourceKey;
   GenKeysWithStatus(key, subresourceKey);
 
-  Telemetry::Accumulate(
-      Telemetry::SERVICE_WORKER_FETCH_INTERCEPTION_DURATION_MS_2, key,
-      static_cast<uint32_t>(
-          (mInterceptionFinish - mInterceptionStart).ToMilliseconds()));
+  glean::service_worker::fetch_interception_duration.Get(key)
+      .AccumulateRawDuration(mInterceptionFinish - mInterceptionStart);
   if (!mIsNonSubresourceRequest && !mSubresourceKey.IsEmpty()) {
-    Telemetry::Accumulate(
-        Telemetry::SERVICE_WORKER_FETCH_INTERCEPTION_DURATION_MS_2,
-        subresourceKey,
-        static_cast<uint32_t>(
-            (mInterceptionFinish - mInterceptionStart).ToMilliseconds()));
+    glean::service_worker::fetch_interception_duration.Get(subresourceKey)
+        .AccumulateRawDuration(mInterceptionFinish - mInterceptionStart);
   }
 }
 

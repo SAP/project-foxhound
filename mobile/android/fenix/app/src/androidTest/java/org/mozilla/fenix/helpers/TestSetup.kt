@@ -13,13 +13,16 @@ import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
+import org.mozilla.fenix.BuildConfig
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.AppAndSystemHelper.allowOrPreventSystemUIFromReadingTheClipboard
+import org.mozilla.fenix.helpers.AppAndSystemHelper.enableDataSaverSystemSetting
 import org.mozilla.fenix.helpers.AppAndSystemHelper.enableOrDisableBackGestureNavigationOnDevice
+import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.Constants.TAG
+import org.mozilla.fenix.helpers.NetworkConnectionStatusHelper.getNetworkDetails
 import org.mozilla.fenix.helpers.TestHelper.mDevice
-import org.mozilla.fenix.nimbus.FxNimbus
-import org.mozilla.fenix.nimbus.Translations
+import org.mozilla.fenix.helpers.TestHelper.setPortraitDisplayOrientation
 import org.mozilla.fenix.ui.robots.notificationShade
 
 /**
@@ -52,15 +55,7 @@ open class TestSetup {
         // Enable the back gesture from the edge of the screen on the device.
         enableOrDisableBackGestureNavigationOnDevice(backGestureNavigationEnabled = true)
 
-        Log.i(TAG, "TestSetup: Trying to disable the translations prompt")
-        // Prevents translations from opening a popup
-        FxNimbus.features.translations.withInitializer { _, _ ->
-            Translations(
-                mainFlowToolbarEnabled = false,
-                mainFlowBrowserMenuEnabled = false,
-            )
-        }
-        Log.i(TAG, "TestSetup: Disabled the translations prompt")
+        setPortraitDisplayOrientation()
 
         runBlocking {
             // Check and clear the downloads folder, in case the tearDown method is not executed.
@@ -68,12 +63,18 @@ open class TestSetup {
             AppAndSystemHelper.clearDownloadsFolder()
             // Make sure the Wifi and Mobile Data connections are on.
             AppAndSystemHelper.setNetworkEnabled(true)
+            // Make sure that the data saver system setting is disabled.
+            enableDataSaverSystemSetting(enabled = false)
             // Clear bookmarks left after a failed test, before a retry.
             AppAndSystemHelper.deleteBookmarksStorage()
             // Clear history left after a failed test, before a retry.
             AppAndSystemHelper.deleteHistoryStorage()
             // Clear permissions left after a failed test, before a retry.
             AppAndSystemHelper.deletePermissionsStorage()
+            // Get the network connection details, before a retry.
+            runWithCondition(BuildConfig.DEBUG) {
+                getNetworkDetails()
+            }
         }
 
         // Initializing this as part of class construction, below the rule would throw a NPE.
@@ -108,6 +109,10 @@ open class TestSetup {
         runBlocking {
             // Clear the downloads folder after each test even if the test fails.
             AppAndSystemHelper.clearDownloadsFolder()
+        }
+        // Get the network connection details
+        runWithCondition(BuildConfig.DEBUG) {
+            getNetworkDetails()
         }
     }
 }

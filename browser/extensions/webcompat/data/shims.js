@@ -105,6 +105,29 @@ const AVAILABLE_SHIMS = [
     ],
   },
   {
+    id: "EmbedTestShim",
+    platform: "desktop",
+    name: "Test shim for smartblock embed unblocking",
+    bug: "1892175",
+    runFirst: "embed-test-shim.js",
+    // Blank stub file just so we run the script above when the matched script
+    // files get blocked.
+    file: "empty-script.js",
+    matches: [
+      "https://itisatracker.org/browser/browser/extensions/webcompat/tests/browser/embed_test.js",
+    ],
+    // Use instagram logo as an example
+    logos: ["instagram.svg"],
+    needsShimHelpers: [
+      "embedClicked",
+      "smartblockEmbedReplaced",
+      "smartblockGetFluentString",
+    ],
+    isSmartblockEmbedShim: true,
+    onlyIfBlockedByETP: true,
+    unblocksOnOptIn: ["*://itisatracker.org/*"],
+  },
+  {
     id: "AddThis",
     platform: "all",
     name: "AddThis",
@@ -394,6 +417,7 @@ const AVAILABLE_SHIMS = [
           "*://portal.sds.ox.ac.uk/*",
           "*://curate.nd.edu/*",
           "*://kilthub.cmu.edu/*",
+          "*://publications.cispa.de/*",
         ],
         runAt: "document_start",
       },
@@ -668,6 +692,21 @@ const AVAILABLE_SHIMS = [
     onlyIfDFPIActive: true,
   },
   {
+    id: "MessengerLogin",
+    platform: "desktop",
+    name: "Messenger Login",
+    bug: "1934814",
+    needsShimHelpers: ["checkFacebookLoginStatus"],
+    contentScripts: [
+      {
+        js: "messengerLogin.js",
+        matches: ["*://www.messenger.com/*"],
+        runAt: "document_start",
+      },
+    ],
+    onlyIfDFPIActive: true,
+  },
+  {
     id: "MicrosoftLogin",
     platform: "desktop",
     name: "Microsoft Login",
@@ -879,6 +918,20 @@ const AVAILABLE_SHIMS = [
     onlyIfDFPIActive: true,
   },
   {
+    id: "StackOverflowLogin",
+    platform: "all",
+    name: "StackOverflow Login",
+    bug: "1949491",
+    contentScripts: [
+      {
+        js: "stackoverflow-login.js",
+        matches: ["*://stackoverflow.com/*"],
+        runAt: "document_start",
+      },
+    ],
+    onlyIfDFPIActive: true,
+  },
+  {
     id: "emeraude.my.salesforce.com",
     platform: "all",
     name: "Salesforce IndexedDB Script Access",
@@ -897,18 +950,27 @@ const AVAILABLE_SHIMS = [
     platform: "desktop",
     name: "Instagram embed placeholder",
     bug: "1892173",
-    file: "instagram-embed.js",
+    runFirst: "instagram-embed.js",
+    // Blank stub file just so we run the script above when the matched script
+    // files get blocked.
+    file: "empty-script.js",
     matches: [
       "https://www.instagram.com/embed.js",
       "https://platform.instagram.com/*/embeds.js",
     ],
     logos: ["instagram.svg"],
-    needsShimHelpers: ["embedClicked", "smartblockGetFluentString"],
+    webExposedShimHelpers: [],
+    needsShimHelpers: [
+      "embedClicked",
+      "smartblockEmbedReplaced",
+      "smartblockGetFluentString",
+    ],
     isSmartblockEmbedShim: true,
     onlyIfBlockedByETP: true,
     unblocksOnOptIn: [
       "*://www.instagram.com/*",
       "*://platform.instagram.com/*",
+      "*://*.fbcdn.net/*",
     ],
   },
   {
@@ -916,13 +978,30 @@ const AVAILABLE_SHIMS = [
     platform: "desktop",
     name: "Tiktok embed placeholder",
     bug: "1892172",
-    file: "tiktok-embed.js",
+    runFirst: "tiktok-embed.js",
+    // Blank stub file just so we run the script above when the matched script
+    // files get blocked.
+    file: "empty-script.js",
     matches: ["https://www.tiktok.com/embed.js"],
     logos: ["tiktok.svg"],
-    needsShimHelpers: ["embedClicked", "smartblockGetFluentString"],
+    webExposedShimHelpers: [],
+    needsShimHelpers: [
+      "embedClicked",
+      "smartblockEmbedReplaced",
+      "smartblockGetFluentString",
+    ],
     isSmartblockEmbedShim: true,
     onlyIfBlockedByETP: true,
     unblocksOnOptIn: ["*://www.tiktok.com/*"],
+  },
+  {
+    id: "FingerpringJSBotd",
+    platform: "all",
+    name: "FingerprintJS Bot Detection",
+    bug: "1925995",
+    file: "botd.mjs",
+    matches: ["*://openfpcdn.io/botd/v1"],
+    onlyIfBlockedByETP: true,
   },
 ];
 

@@ -59,8 +59,6 @@ skip-if = [
 
 ["browser_ext_activeScript.js"]
 
-["browser_ext_addon_debugging_netmonitor.js"]
-
 ["browser_ext_autocompletepopup.js"]
 disabled = "bug 1438663 # same focus issue as Bug 1438663"
 
@@ -115,6 +113,8 @@ https_first_disabled = true
 
 ["browser_ext_browsingData_history.js"]
 
+["browser_ext_canOpenModalPicker.js"]
+
 ["browser_ext_chrome_settings_overrides_home.js"]
 
 ["browser_ext_commands_execute_browser_action.js"]
@@ -133,6 +133,8 @@ skip-if = [
 ["browser_ext_commands_onChanged.js"]
 
 ["browser_ext_commands_onCommand.js"]
+
+["browser_ext_commands_openShortcutSettings.js"]
 
 ["browser_ext_commands_update.js"]
 
@@ -157,7 +159,11 @@ https_first_disabled = true
 ["browser_ext_contentscript_nontab_connect.js"]
 
 ["browser_ext_contentscript_sender_url.js"]
-skip-if = ["debug"] # The nature of the reduced STR test triggers an unrelated debug assertion in DOM IPC code, see bug 1736590.
+skip-if = [
+  "debug", # The nature of the reduced STR test triggers an unrelated debug assertion in DOM IPC code, see bug 1736590.
+  "os == 'win' && os_version == '11.26100' && processor == 'x86' && opt", # Bug 1933435
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && opt", # Bug 1933435
+]
 tags = "bleedover"
 
 ["browser_ext_contextMenus.js"]
@@ -180,7 +186,10 @@ https_first_disabled = true
 ["browser_ext_contextMenus_srcUrl_redirect.js"]
 
 ["browser_ext_contextMenus_targetUrlPatterns.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+skip-if = [
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
 tags = "bleedover"
 
 ["browser_ext_contextMenus_uninstall.js"]
@@ -281,13 +290,19 @@ https_first_disabled = true
 ["browser_ext_menus_targetElement.js"]
 
 ["browser_ext_menus_targetElement_extension.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+skip-if = [
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
 tags = "bleedover"
 
 ["browser_ext_menus_targetElement_shadow.js"]
 
 ["browser_ext_menus_viewType.js"]
-skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+skip-if = [
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+]
 tags = "bleedover"
 
 ["browser_ext_menus_visible.js"]
@@ -496,6 +511,10 @@ https_first_disabled = true
 https_first_disabled = true
 
 ["browser_ext_tabs_events.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && processor == 'x86' && debug", # Bug 1786601
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1786601
+]
 
 ["browser_ext_tabs_events_order.js"]
 https_first_disabled = true
@@ -542,6 +561,9 @@ https_first_disabled = true
 https_first_disabled = true
 
 ["browser_ext_tabs_move_array_multiple_windows.js"]
+skip-if = [
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov", # Bug 1786601
+]
 
 ["browser_ext_tabs_move_discarded.js"]
 
@@ -609,6 +631,10 @@ skip-if = [
   "os == 'linux' && os_version == '18.04'", # Bug 1651261
   "win11_2009 && asan", # Bug 1797751
   "win11_2009 && debug", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && processor == 'x86' && debug", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && asan", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1797751
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov", # Bug 1797751
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1869793
 ]
 
@@ -643,6 +669,7 @@ skip-if = [
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1565738
   "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1565738
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1565738
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1565738
 ]
 
 ["browser_ext_windows.js"]
@@ -678,6 +705,7 @@ skip-if = [
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
   "os == 'mac' && os_version == '11.20' && arch == 'aarch64'",
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1869793
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",
 ]
 
 ["browser_ext_windows_update.js"]
@@ -701,6 +729,8 @@ skip-if = [
 ["browser_unified_extensions_cui.js"]
 
 ["browser_unified_extensions_doorhangers.js"]
+
+["browser_unified_extensions_item_messagebar.js"]
 
 ["browser_unified_extensions_messages.js"]
 

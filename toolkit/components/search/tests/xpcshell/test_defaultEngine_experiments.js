@@ -55,10 +55,10 @@ const CONFIG = [
 let getVariableStub;
 
 let defaultGetVariable = name => {
-  if (name == "seperatePrivateDefaultUIEnabled") {
+  if (name == "separatePrivateDefaultUIEnabled") {
     return true;
   }
-  if (name == "seperatePrivateDefaultUrlbarResultEnabled") {
+  if (name == "separatePrivateDefaultUrlbarResultEnabled") {
     return false;
   }
   return undefined;
@@ -87,25 +87,24 @@ add_setup(async () => {
 
   SearchTestUtils.setRemoteSettingsConfig(CONFIG);
 
-  let promiseSaved = promiseSaveSettingsData();
+  let promiseSaved = promiseAfterSettings();
   await Services.search.init();
   await promiseSaved;
+
+  registerCleanupFunction(async () => {
+    sinon.restore();
+  });
 });
 
 async function switchExperiment(newExperiment) {
   let promiseReloaded =
     SearchTestUtils.promiseSearchNotification("engines-reloaded");
-  let promiseSaved = promiseSaveSettingsData();
+  let promiseSaved = promiseAfterSettings();
 
-  // Stub getVariable to populate the cache with our expected data
-  getVariableStub.callsFake(name => {
-    if (name == "experiment") {
-      return newExperiment;
-    }
-    return defaultGetVariable(name);
-  });
-  for (let call of NimbusFeatures.searchConfiguration.onUpdate.getCalls()) {
-    call.args[0]();
+  if (newExperiment) {
+    Services.prefs.setStringPref("browser.search.experiment", newExperiment);
+  } else {
+    Services.prefs.clearUserPref("browser.search.experiment");
   }
 
   await promiseReloaded;

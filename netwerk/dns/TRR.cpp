@@ -39,19 +39,21 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_network.h"
+#include "mozilla/glean/NetwerkDnsMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/UniquePtr.h"
 // Put DNSLogging.h at the end to avoid LOG being overwritten by other headers.
 #include "DNSLogging.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/NetwerkMetrics.h"
 
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(TRR, nsIHttpPushListener, nsIInterfaceRequestor,
-                  nsIStreamListener, nsIRunnable, nsITimerCallback)
+NS_IMPL_ISUPPORTS_INHERITED(TRR, Runnable, nsIHttpPushListener,
+                            nsIInterfaceRequestor, nsIStreamListener,
+                            nsITimerCallback)
 
 // when firing off a normal A or AAAA query
 TRR::TRR(AHostResolver* aResolver, nsHostRecord* aRec, enum TrrType aType)
@@ -352,7 +354,7 @@ nsresult TRR::SendHTTPRequest() {
         LOG(("TRR::SendHTTPRequest use conn info:%s\n",
              trrConnInfo->HashKey().get()));
       } else {
-        MOZ_DIAGNOSTIC_ASSERT(false);
+        MOZ_DIAGNOSTIC_CRASH("host not equal to trrConnInfo origin");
       }
     } else {
       TRRService::Get()->InitTRRConnectionInfo();
@@ -992,7 +994,7 @@ void TRR::RecordProcessingTime(nsIChannel* aChannel) {
     return;
   }
 
-  Telemetry::AccumulateTimeDelta(Telemetry::DNS_TRR_PROCESSING_TIME, end);
+  glean::dns::trr_processing_time.AccumulateRawDuration(TimeStamp::Now() - end);
 
   LOG(("Processing DoH response took %f ms",
        (TimeStamp::Now() - end).ToMilliseconds()));

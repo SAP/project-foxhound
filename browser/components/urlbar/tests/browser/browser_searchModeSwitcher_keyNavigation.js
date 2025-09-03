@@ -11,6 +11,120 @@ add_setup(async function setup() {
   });
 });
 
+add_task(
+  async function test_focus_by_tab_with_no_selected_element_with_urlbar_focused_by_key() {
+    for (const shiftKey of [false, true]) {
+      info(`Test for shifrKey:${shiftKey}`);
+
+      info("Focus on urlbar by key");
+      await focusOnURLbar(() => {
+        EventUtils.synthesizeKey("l", { accelKey: true });
+      });
+      Assert.ok(!gURLBar.view.selectedElement);
+
+      let ok = false;
+      for (let i = 0; i < 10; i++) {
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey });
+
+        ok =
+          document.activeElement.id != "urlbar-input" &&
+          document.activeElement.id != "urlbar-searchmode-switcher";
+        if (ok) {
+          break;
+        }
+      }
+
+      Assert.ok(ok, "Focus was moved to a component other than the urlbar");
+      Assert.ok(!gURLBar.view.isOpen);
+    }
+  }
+);
+
+add_task(
+  async function test_focus_by_tab_with_no_selected_element_with_urlbar_focused_by_click() {
+    await SpecialPowers.pushPrefEnv({
+      set: [["browser.urlbar.suggest.topsites", false]],
+    });
+
+    let results = [
+      new UrlbarResult(
+        UrlbarUtils.RESULT_TYPE.URL,
+        UrlbarUtils.RESULT_SOURCE.HISTORY,
+        {
+          url: "https://mozilla.org/a",
+        }
+      ),
+      new UrlbarResult(
+        UrlbarUtils.RESULT_TYPE.URL,
+        UrlbarUtils.RESULT_SOURCE.HISTORY,
+        {
+          url: "https://mozilla.org/b",
+        }
+      ),
+    ];
+
+    let provider = new UrlbarTestUtils.TestProvider({ results, priority: 1 });
+    UrlbarProvidersManager.registerProvider(provider);
+
+    const FOCUS_ORDER_ASSERTIONS = [
+      () =>
+        Assert.equal(
+          gURLBar.view.selectedElement,
+          gURLBar.view.getFirstSelectableElement()
+        ),
+      () =>
+        Assert.equal(
+          gURLBar.view.selectedElement,
+          gURLBar.view.getLastSelectableElement()
+        ),
+      () =>
+        Assert.equal(
+          document.activeElement,
+          document.getElementById("urlbar-searchmode-switcher")
+        ),
+    ];
+
+    for (const shiftKey of [true, false]) {
+      info("Focus on urlbar by click");
+      await focusOnURLbar(() => {
+        EventUtils.synthesizeMouseAtCenter(gURLBar.inputField, {});
+      });
+      Assert.ok(!gURLBar.view.selectedElement);
+
+      await BrowserTestUtils.waitForCondition(async () => {
+        if (UrlbarTestUtils.getResultCount(window) != 2) {
+          return false;
+        }
+        let { result } = await UrlbarTestUtils.getDetailsOfResultAt(window, 0);
+        return result.providerName == provider.name;
+      });
+      Assert.ok(true, "This test needs exact 2 results");
+
+      for (const assert of shiftKey
+        ? [...FOCUS_ORDER_ASSERTIONS].reverse()
+        : FOCUS_ORDER_ASSERTIONS) {
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey });
+        assert();
+      }
+
+      Assert.ok(gURLBar.view.isOpen);
+      gURLBar.view.close();
+      gURLBar.handleRevert();
+    }
+
+    UrlbarProvidersManager.unregisterProvider(provider);
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+async function focusOnURLbar(focus) {
+  gURLBar.focus();
+  gURLBar.blur();
+  await UrlbarTestUtils.promisePopupOpen(window, () => {
+    focus();
+  });
+}
+
 /**
  * Test we can open the SearchModeSwitcher with various keys
  *
@@ -85,18 +199,25 @@ async function test_navigate_switcher(navKey, navTimes, searchMode) {
 }
 
 // TODO: Don't let tests depend on the actual search config.
+let googleSearchMode = {
+  engineName: "Google",
+  entry: "searchbutton",
+  isGeneralPurposeEngine: true,
+  isPreview: false,
+  source: 3,
+};
 let amazonSearchMode = {
   engineName: "Amazon.com",
   entry: "searchbutton",
-  isPreview: false,
   isGeneralPurposeEngine: true,
+  isPreview: false,
 };
 let bingSearchMode = {
   engineName: "Bing",
-  isGeneralPurposeEngine: true,
-  source: 3,
-  isPreview: false,
   entry: "searchbutton",
+  isGeneralPurposeEngine: true,
+  isPreview: false,
+  source: 3,
 };
 
 add_task(async function test_keyboard_nav() {
@@ -108,10 +229,9 @@ add_task(async function test_keyboard_nav() {
   await test_dont_open_switcher("KEY_ArrowUp");
   await test_dont_open_switcher("x");
 
-  await test_navigate_switcher("KEY_Tab", 1, amazonSearchMode);
-  await test_navigate_switcher("KEY_ArrowDown", 1, amazonSearchMode);
-  await test_navigate_switcher("KEY_Tab", 2, bingSearchMode);
-  await test_navigate_switcher("KEY_ArrowDown", 2, bingSearchMode);
+  await test_navigate_switcher("KEY_ArrowDown", 1, googleSearchMode);
+  await test_navigate_switcher("KEY_ArrowDown", 2, amazonSearchMode);
+  await test_navigate_switcher("KEY_ArrowDown", 3, bingSearchMode);
 });
 
 add_task(async function test_focus_on_switcher_by_tab() {
@@ -122,13 +242,13 @@ add_task(async function test_focus_on_switcher_by_tab() {
     value: input,
   });
 
-  info("Focus on Dedicated Search by tab");
+  info("Focus on Unified Search Button by tab");
   EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
-
   await TestUtils.waitForCondition(
     () => document.activeElement.id == "urlbar-searchmode-switcher"
   );
-  Assert.ok(true, "Dedicated Search button gets the focus");
+  Assert.ok(true, "Unified Search Button gets the focus");
+
   let popup = UrlbarTestUtils.searchModeSwitcherPopup(window);
   Assert.equal(popup.state, "closed", "Switcher popup should not be opened");
   Assert.ok(gURLBar.view.isOpen, "Urlbar view panel has been opening");
@@ -143,11 +263,7 @@ add_task(async function test_focus_on_switcher_by_tab() {
     "urlbar-searchmode-switcher",
     "Dedicated Search button loses the focus"
   );
-  Assert.equal(
-    gURLBar.view.panel.hasAttribute("hide-temporarily"),
-    true,
-    "Urlbar view panel is closed"
-  );
+  Assert.equal(gURLBar.view.isOpen, false, "Urlbar view panel is closed");
   Assert.equal(gURLBar.value, input, "Inputted value still be on urlbar");
 
   info("Close the switcher popup by Escape");
@@ -289,7 +405,7 @@ async function test_focus_order_with_no_results({ input, shiftKey }) {
 
 add_task(async function test_focus_order_by_tab_with_no_selected_element() {
   for (const shiftKey of [false, true]) {
-    info(`Test for shifrKey:${shiftKey}`);
+    info(`Test for shiftKey:${shiftKey}`);
 
     info("Open urlbar results");
     await UrlbarTestUtils.promiseAutocompleteResultPopup({
@@ -313,4 +429,113 @@ add_task(async function test_focus_order_by_tab_with_no_selected_element() {
     }
     Assert.ok(ok, "Focus was moved to a component other than the urlbar");
   }
+});
+
+add_task(async function test_urlbar_focus_after_switcher_lost() {
+  info("Open the urlbar");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "abc",
+  });
+  Assert.ok(
+    BrowserTestUtils.isVisible(gURLBar.view.panel),
+    "The UrlbarView is opened"
+  );
+  Assert.ok(
+    gURLBar.hasAttribute("focused"),
+    "The #urlbar element has 'focused' attribute"
+  );
+
+  info("Move the focus to the switcher button");
+  await focusSwitcher();
+
+  info("Move the focus to browser element");
+  // We intentionally turn off this a11y check, because the following click is
+  // purposefully targeting a non-interactive element.
+  AccessibilityUtils.setEnv({ mustHaveAccessibleRule: false });
+  EventUtils.synthesizeMouseAtCenter(document.getElementById("browser"), {});
+  AccessibilityUtils.resetEnv();
+  Assert.ok(
+    !gURLBar.hasAttribute("focused"),
+    "The #urlbar element does not have 'focused' attribute"
+  );
+
+  info("Clean up");
+  gURLBar.handleRevert();
+});
+
+add_task(async function test_esc_on_UnifiedSearchButton() {
+  info("Open urlbar results");
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: "abc",
+  });
+  Assert.equal(document.activeElement.id, "urlbar-input");
+
+  info("Focus on Unified Search Button by tab");
+  EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true });
+  await TestUtils.waitForCondition(
+    () => document.activeElement.id == "urlbar-searchmode-switcher"
+  );
+  Assert.ok(true, "Unified Search Button gets the focus");
+
+  info("Press ESC key");
+  EventUtils.synthesizeKey("KEY_Escape");
+  await TestUtils.waitForCondition(
+    () => document.activeElement.id == "urlbar-input"
+  );
+  Assert.equal(
+    gURLBar.view.isOpen,
+    false,
+    "The urlbar result view should be closed"
+  );
+
+  gURLBar.handleRevert();
+});
+
+add_task(async function test_ctrl_tab() {
+  info("Prepare multiple tabs");
+  let mainTab = gBrowser.selectedTab;
+  let newTab1 = BrowserTestUtils.addTab(gBrowser);
+  let newTab2 = BrowserTestUtils.addTab(gBrowser);
+
+  info("Open urlbar results");
+  const query = "abc";
+  await UrlbarTestUtils.promiseAutocompleteResultPopup({
+    window,
+    value: query,
+  });
+
+  const testData = [
+    {
+      shiftKey: false,
+      expectedOrder: [newTab1, newTab2, mainTab],
+    },
+    {
+      shiftKey: true,
+      expectedOrder: [newTab2, newTab1, mainTab],
+    },
+  ];
+
+  for (let { shiftKey, expectedOrder } of testData) {
+    for (let nextTab of expectedOrder) {
+      EventUtils.synthesizeKey("KEY_Tab", { ctrlKey: true, shiftKey });
+      await BrowserTestUtils.waitForCondition(
+        () => gBrowser.selectedTab == nextTab
+      );
+      Assert.ok(true, "Expected tab is selected");
+      let expectedInput = nextTab == mainTab ? query : "";
+      Assert.equal(gURLBar.value, expectedInput, "Urlbar value is correct");
+      Assert.equal(
+        gURLBar.view.isOpen,
+        !!expectedInput,
+        "Urlbar view is opened as expected"
+      );
+    }
+  }
+
+  gBrowser.removeTab(newTab1);
+  gBrowser.removeTab(newTab2);
+  gURLBar.view.close();
+  gURLBar.handleRevert();
 });

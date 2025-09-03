@@ -211,7 +211,7 @@ add_task(async function test_fog_memory_distribution_works() {
 add_task(async function test_fog_custom_distribution_works() {
   Glean.testOnlyIpc.aCustomDist.accumulateSamples([7, 268435458]);
 
-  let data = Glean.testOnlyIpc.aCustomDist.testGetValue("store1");
+  let data = Glean.testOnlyIpc.aCustomDist.testGetValue("test-ping");
   Assert.equal(2, data.count, "Count of entries is correct");
   Assert.equal(7 + 268435458, data.sum, "Sum's correct");
   for (let [bucket, count] of Object.entries(data.values)) {
@@ -451,7 +451,7 @@ add_task(async function test_fog_url_works() {
   const value = "https://www.example.com/fog";
   Glean.testOnlyIpc.aUrl.set(value);
 
-  Assert.equal(value, Glean.testOnlyIpc.aUrl.testGetValue("store1"));
+  Assert.equal(value, Glean.testOnlyIpc.aUrl.testGetValue("test-ping"));
 });
 
 add_task(async function test_fog_text_works() {
@@ -479,12 +479,6 @@ add_task(async function test_fog_text_works_unusual_character() {
 });
 
 add_task(async function test_fog_object_works() {
-  if (!Glean.testOnly.balloons) {
-    // FIXME(bug 1883857): object metric type not available, e.g. in artifact builds.
-    // Skipping this test.
-    return;
-  }
-
   Assert.equal(
     undefined,
     Glean.testOnly.balloons.testGetValue(),
@@ -535,51 +529,60 @@ add_task(async function test_fog_object_works() {
     { colour: "orange" },
   ];
   Assert.deepEqual(expected, result);
-
-  // These values are coerced to null or removed.
-  balloons = [
-    { colour: "inf", diameter: Infinity },
-    { colour: "negative-inf", diameter: -1 / 0 },
-    { colour: "nan", diameter: NaN },
-    { colour: "undef", diameter: undefined },
-  ];
-  Glean.testOnly.balloons.set(balloons);
-  result = Glean.testOnly.balloons.testGetValue();
-  expected = [
-    { colour: "inf" },
-    { colour: "negative-inf" },
-    { colour: "nan" },
-    { colour: "undef" },
-  ];
-  Assert.deepEqual(expected, result);
-
-  // colour != color.
-  let invalid = [{ color: "orange" }, { color: "red", diameter: "small" }];
-  Glean.testOnly.balloons.set(invalid);
-  Assert.throws(
-    () => Glean.testOnly.balloons.testGetValue(),
-    /invalid_value/,
-    "Should throw because last object was invalid."
-  );
-
-  Services.fog.testResetFOG();
-  // set again to ensure it's stored
-  balloons = [
-    { colour: "red", diameter: 5 },
-    { colour: "blue", diameter: 7 },
-  ];
-  Glean.testOnly.balloons.set(balloons);
-  result = Glean.testOnly.balloons.testGetValue();
-  Assert.deepEqual(balloons, result);
-
-  invalid = [{ colour: "red", diameter: 5, extra: "field" }];
-  Glean.testOnly.balloons.set(invalid);
-  Assert.throws(
-    () => Glean.testOnly.balloons.testGetValue(),
-    /invalid_value/,
-    "Should throw because last object was invalid."
-  );
 });
+
+add_task(
+  // FIXME(bug 1947194): JOG object metrics don't do schema validation yet
+  {
+    skip_if: () =>
+      Services.prefs.getBoolPref("telemetry.fog.artifact_build", false),
+  },
+  async function test_fog_object_verifies_structure() {
+    // These values are coerced to null or removed.
+    let balloons = [
+      { colour: "inf", diameter: Infinity },
+      { colour: "negative-inf", diameter: -1 / 0 },
+      { colour: "nan", diameter: NaN },
+      { colour: "undef", diameter: undefined },
+    ];
+    Glean.testOnly.balloons.set(balloons);
+    let result = Glean.testOnly.balloons.testGetValue();
+    let expected = [
+      { colour: "inf" },
+      { colour: "negative-inf" },
+      { colour: "nan" },
+      { colour: "undef" },
+    ];
+    Assert.deepEqual(expected, result);
+
+    // colour != color.
+    let invalid = [{ color: "orange" }, { color: "red", diameter: "small" }];
+    Glean.testOnly.balloons.set(invalid);
+    Assert.throws(
+      () => Glean.testOnly.balloons.testGetValue(),
+      /invalid_value/,
+      "Should throw because last object was invalid."
+    );
+
+    Services.fog.testResetFOG();
+    // set again to ensure it's stored
+    balloons = [
+      { colour: "red", diameter: 5 },
+      { colour: "blue", diameter: 7 },
+    ];
+    Glean.testOnly.balloons.set(balloons);
+    result = Glean.testOnly.balloons.testGetValue();
+    Assert.deepEqual(balloons, result);
+
+    invalid = [{ colour: "red", diameter: 5, extra: "field" }];
+    Glean.testOnly.balloons.set(invalid);
+    Assert.throws(
+      () => Glean.testOnly.balloons.testGetValue(),
+      /invalid_value/,
+      "Should throw because last object was invalid."
+    );
+  }
+);
 
 add_task(async function test_fog_complex_object_works() {
   if (!Glean.testOnly.crashStack) {
@@ -631,20 +634,23 @@ add_task(async function test_fog_complex_object_works() {
   result = Glean.testOnly.crashStack.testGetValue();
   Assert.deepEqual(stack, result);
 
-  stack = {
-    status: "OK",
-    modules: [],
-  };
-  Glean.testOnly.crashStack.set(stack);
-  result = Glean.testOnly.crashStack.testGetValue();
-  Assert.deepEqual({ status: "OK" }, result);
+  // FIXME(bug 1947194): JOG object metrics don't do schema validation yet
+  if (!Services.prefs.getBoolPref("telemetry.fog.artifact_build", false)) {
+    stack = {
+      status: "OK",
+      modules: [],
+    };
+    Glean.testOnly.crashStack.set(stack);
+    result = Glean.testOnly.crashStack.testGetValue();
+    Assert.deepEqual({ status: "OK" }, result);
 
-  stack = {
-    status: "OK",
-  };
-  Glean.testOnly.crashStack.set(stack);
-  result = Glean.testOnly.crashStack.testGetValue();
-  Assert.deepEqual(stack, result);
+    stack = {
+      status: "OK",
+    };
+    Glean.testOnly.crashStack.set(stack);
+    result = Glean.testOnly.crashStack.testGetValue();
+    Assert.deepEqual(stack, result);
+  }
 });
 
 add_task(
@@ -785,5 +791,48 @@ add_task(async function test_fog_labeled_quantity_works() {
     () => Glean.testOnly.buttonJars.__other__.testGetValue(),
     /DataError/,
     "Should throw because of a recording error."
+  );
+});
+
+add_task(async function test_submit_throws() {
+  GleanPings.onePingOnly.testBeforeNextSubmit(() => {
+    throw new Error("inside callback");
+  });
+
+  Assert.throws(
+    () => GleanPings.onePingOnly.submit(),
+    /inside callback/,
+    "Should throw inside callback"
+  );
+});
+
+add_task(function test_collection_disabled_pings_work() {
+  // This test should work equally for full builds and artifact builds.
+
+  Assert.ok("collectionDisabledPing" in GleanPings);
+
+  // collection-enabled=false pings are disabled by default.
+  // No data is collected for metrics going into that ping.
+  Glean.testOnly.collectionDisabledCounter.add(1);
+  Assert.equal(
+    undefined,
+    Glean.testOnly.collectionDisabledCounter.testGetValue()
+  );
+
+  // After enabling a ping we can record data into it
+  GleanPings.collectionDisabledPing.setEnabled(true);
+  Glean.testOnly.collectionDisabledCounter.add(2);
+  Assert.equal(2, Glean.testOnly.collectionDisabledCounter.testGetValue());
+
+  let submitted = false;
+  GleanPings.collectionDisabledPing.testBeforeNextSubmit(() => {
+    submitted = true;
+    Assert.equal(2, Glean.testOnly.collectionDisabledCounter.testGetValue());
+  });
+  GleanPings.collectionDisabledPing.submit();
+  Assert.ok(submitted, "Ping was submitted, callback was called.");
+  Assert.equal(
+    undefined,
+    Glean.testOnly.collectionDisabledCounter.testGetValue()
   );
 });

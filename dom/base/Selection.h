@@ -16,6 +16,7 @@
 #include "mozilla/WeakPtr.h"
 #include "mozilla/dom/Highlight.h"
 #include "mozilla/dom/StyledRange.h"
+#include "mozilla/intl/BidiEmbeddingLevel.h"
 #include "nsDirection.h"
 #include "nsISelectionController.h"
 #include "nsISelectionListener.h"
@@ -112,14 +113,6 @@ class MOZ_RAII SelectionNodeCache final {
    */
   friend PresShell;
   explicit SelectionNodeCache(PresShell& aOwningPresShell);
-  /**
-   * Collects all nodes from a given list of selections.
-   *
-   * This method assumes that the selections itself won't change during this
-   * object's lifetime. It's not possible to 'update' the cached selected ranges
-   * by calling this method again.
-   */
-  void MaybeCollect(const nsTArray<Selection*>& aSelections);
   /**
    * Iterates all ranges in `aSelection` and collects its fully selected nodes
    * into a hash set, which is also returned.
@@ -357,7 +350,7 @@ class Selection final : public nsSupportsWeakReference,
   // WebIDL methods
   nsINode* GetAnchorNode(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& anchor = AnchorRef();
-    nsINode* anchorNode = anchor.IsSet() ? anchor.Container() : nullptr;
+    nsINode* anchorNode = anchor.IsSet() ? anchor.GetContainer() : nullptr;
     if (!anchorNode || aCallerType == CallerType::System ||
         !anchorNode->ChromeOnlyAccess()) {
       return anchorNode;
@@ -368,7 +361,7 @@ class Selection final : public nsSupportsWeakReference,
   uint32_t AnchorOffset(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& anchor = AnchorRef();
     if (aCallerType != CallerType::System && anchor.IsSet() &&
-        anchor.Container()->ChromeOnlyAccess()) {
+        anchor.GetContainer()->ChromeOnlyAccess()) {
       return 0;
     }
     const Maybe<uint32_t> offset =
@@ -377,7 +370,7 @@ class Selection final : public nsSupportsWeakReference,
   }
   nsINode* GetFocusNode(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& focus = FocusRef();
-    nsINode* focusNode = focus.IsSet() ? focus.Container() : nullptr;
+    nsINode* focusNode = focus.IsSet() ? focus.GetContainer() : nullptr;
     if (!focusNode || aCallerType == CallerType::System ||
         !focusNode->ChromeOnlyAccess()) {
       return focusNode;
@@ -388,7 +381,7 @@ class Selection final : public nsSupportsWeakReference,
   uint32_t FocusOffset(CallerType aCallerType = CallerType::System) const {
     const RangeBoundary& focus = FocusRef();
     if (aCallerType != CallerType::System && focus.IsSet() &&
-        focus.Container()->ChromeOnlyAccess()) {
+        focus.GetContainer()->ChromeOnlyAccess()) {
       return 0;
     }
     const Maybe<uint32_t> offset =
@@ -398,7 +391,7 @@ class Selection final : public nsSupportsWeakReference,
 
   nsINode* GetMayCrossShadowBoundaryAnchorNode() const {
     const RangeBoundary& anchor = AnchorRef(AllowRangeCrossShadowBoundary::Yes);
-    return anchor.IsSet() ? anchor.Container() : nullptr;
+    return anchor.IsSet() ? anchor.GetContainer() : nullptr;
   }
 
   uint32_t MayCrossShadowBoundaryAnchorOffset() const {
@@ -410,7 +403,7 @@ class Selection final : public nsSupportsWeakReference,
 
   nsINode* GetMayCrossShadowBoundaryFocusNode() const {
     const RangeBoundary& focus = FocusRef(AllowRangeCrossShadowBoundary::Yes);
-    return focus.IsSet() ? focus.Container() : nullptr;
+    return focus.IsSet() ? focus.GetContainer() : nullptr;
   }
 
   uint32_t MayCrossShadowBoundaryFocusOffset() const {
@@ -609,7 +602,11 @@ class Selection final : public nsSupportsWeakReference,
    * This includes the highlight name as well as its priority and type.
    */
   void SetHighlightSelectionData(
-      HighlightSelectionData aHighlightSelectionData);
+      dom::HighlightSelectionData aHighlightSelectionData);
+
+  const dom::HighlightSelectionData& HighlightSelectionData() const {
+    return mHighlightData;
+  }
 
   /**
    * See documentation of `GetRangesForInterval` in Selection.webidl.
@@ -790,8 +787,8 @@ class Selection final : public nsSupportsWeakReference,
                              const TextRangeStyle& aTextRangeStyle);
 
   // Methods to manipulate our mFrameSelection's ancestor limiter.
-  nsIContent* GetAncestorLimiter() const;
-  void SetAncestorLimiter(nsIContent* aLimiter);
+  Element* GetAncestorLimiter() const;
+  void SetAncestorLimiter(Element* aLimiter);
 
   /*
    * Frame Offset cache can be used just during calling
@@ -984,19 +981,21 @@ class Selection final : public nsSupportsWeakReference,
 
     /**
      * Binary searches the given sorted array of ranges for the insertion point
-     * for the given node/offset. The given comparator is used, and the index
+     * for the given aBoundary. The given comparator is used, and the index
      * where the point should appear in the array is returned.
 
-     * If there is an item in the array equal to the input point (aPointNode,
-     * aPointOffset), we will return the index of this item.
+     * If there is an item in the array equal to aBoundary, we will return the
+     index of this item.
      *
      * @return the index where the point should appear in the array. In
      *         [0, `aElementArray->Length()`].
      */
+    template <typename PT, typename RT>
     static size_t FindInsertionPoint(
-        const nsTArray<StyledRange>* aElementArray, const nsINode& aPointNode,
-        uint32_t aPointOffset,
-        int32_t (*aComparator)(const nsINode&, uint32_t, const AbstractRange&));
+        const nsTArray<StyledRange>* aElementArray,
+        const RangeBoundaryBase<PT, RT>& aBoundary,
+        int32_t (*aComparator)(const RangeBoundaryBase<PT, RT>&,
+                               const AbstractRange&));
 
     /**
      * Works on the same principle as GetRangesForIntervalArray, however
@@ -1130,7 +1129,7 @@ class Selection final : public nsSupportsWeakReference,
   CachedOffsetForFrame* mCachedOffsetForFrame;
   nsDirection mDirection;
   const SelectionType mSelectionType;
-  HighlightSelectionData mHighlightData;
+  dom::HighlightSelectionData mHighlightData;
   UniquePtr<SelectionCustomColors> mCustomColors;
 
   // Non-zero if we don't want any changes we make to the selection to be

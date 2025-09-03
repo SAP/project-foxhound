@@ -72,7 +72,7 @@ struct glyph_variations_t
                                     const hb_subset_plan_t *plan,
                                     const hb_hashmap_t<hb_codepoint_t, hb_bytes_t>& new_gid_var_data_map)
   {
-    if (unlikely (!glyph_variations.alloc (plan->new_to_old_gid_list.length, true)))
+    if (unlikely (!glyph_variations.alloc_exact (plan->new_to_old_gid_list.length)))
       return false;
 
     auto it = hb_iter (plan->new_to_old_gid_list);
@@ -140,6 +140,7 @@ struct glyph_variations_t
     for (tuple_variations_t& vars: glyph_variations)
       if (!vars.compile_bytes (axes_index_map, axes_old_index_tag_map,
                                true, /* use shared points*/
+                               true,
                                &shared_tuples_idx_map))
         return false;
 

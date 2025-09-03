@@ -306,7 +306,7 @@ class WinUtils {
    * |                         |         TRUE          |         FALSE         |
    + +-----------------+-------+-----------------------+-----------------------+
    * |                 |       |  * an independent top level window            |
-   * |                 | TRUE  |  * a pupup window (WS_POPUP)                  |
+   * |                 | TRUE  |  * a popup window (WS_POPUP)                  |
    * |                 |       |  * an owned top level window (like dialog)    |
    * | aStopIfNotChild +-------+-----------------------+-----------------------+
    * |                 |       |  * independent window | * only an independent |
@@ -376,19 +376,6 @@ class WinUtils {
   static bool IsExtendedScanCode(LPARAM aLParam) {
     return (aLParam & 0x1000000) != 0;
   }
-
-  /**
-   * GetInternalMessage() converts a native message to an internal message.
-   * If there is no internal message for the given native message, returns
-   * the native message itself.
-   */
-  static UINT GetInternalMessage(UINT aNativeMessage);
-
-  /**
-   * GetNativeMessage() converts an internal message to a native message.
-   * If aInternalMessage is a native message, returns the native message itself.
-   */
-  static UINT GetNativeMessage(UINT aInternalMessage);
 
   /**
    * GetMouseInputSource() returns a pointing device information.  The value is
@@ -557,7 +544,9 @@ class WinUtils {
 
   static bool GetClassName(HWND aHwnd, nsAString& aName);
 
+  static bool MicaAvailable();
   static bool MicaEnabled();
+  static bool MicaPopupsEnabled();
 
   static void EnableWindowOcclusion(const bool aEnable);
 

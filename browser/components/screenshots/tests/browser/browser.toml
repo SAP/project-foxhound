@@ -14,7 +14,6 @@ support-files = [
 ]
 
 prefs = [
-  "extensions.screenshots.disabled=false",
   "screenshots.browser.component.enabled=true",
   "sidebar.revamp=false",
 ]
@@ -48,7 +47,10 @@ skip-if = [
 ["browser_screenshots_face_focusable.js"]
 
 ["browser_screenshots_focus_test.js"]
-skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && socketprocess_networking"] # Bug 1803618
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && socketprocess_networking", # Bug 1803618
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan", # Bug 1803618
+]
 
 ["browser_screenshots_overlay_panel_sync.js"]
 
@@ -80,7 +82,11 @@ run-if = ["crashreporter"]
 ["browser_test_element_picker.js"]
 
 ["browser_test_moving_tab_to_new_window.js"]
-skip-if = ["os == 'win' && os_version == '11.2009' && bits == 64"] # Bug 1894797
+skip-if = [
+  "os == 'win' && os_version == '11.2009' && bits == 64", # Bug 1894797
+  "os == 'win' && os_version == '11.26100' && bits == 64 && ccov", # Bug 1894797
+  "os == 'win' && os_version == '11.26100' && bits == 64 && debug", # Bug 1894797
+]
 
 ["browser_test_prevent_events.js"]
 

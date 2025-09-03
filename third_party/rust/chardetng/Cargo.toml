@@ -15,6 +15,7 @@ name = "chardetng"
 version = "0.1.9"
 authors = ["Henri Sivonen <hsivonen@hsivonen.fi>"]
 build = false
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -38,6 +39,9 @@ categories = [
 license = "Apache-2.0 OR MIT"
 repository = "https://github.com/hsivonen/chardetng"
 
+[features]
+testing-only-no-semver-guarantees-do-not-use = []
+
 [lib]
 name = "chardetng"
 path = "src/lib.rs"
@@ -48,6 +52,3 @@ memchr = "2.2.0"
 
 [dev-dependencies]
 detone = "1.0.0"
-
-[features]
-testing-only-no-semver-guarantees-do-not-use = []

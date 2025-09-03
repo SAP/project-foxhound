@@ -10,21 +10,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   OSKeyStore: "resource://gre/modules/OSKeyStore.sys.mjs",
 });
 
-/**
- * To help us classify sections, we want to know what fields can appear
- * multiple times in a row.
- * Such fields, like `address-line{X}`, should not break sections.
- */
-const MULTI_FIELD_NAMES = [
-  "address-level3",
-  "address-level2",
-  "address-level1",
-  "tel",
-  "postal-code",
-  "email",
-  "street-address",
-];
-
 class FormSection {
   static ADDRESS = "address";
   static CREDIT_CARD = "creditCard";
@@ -40,14 +25,19 @@ class FormSection {
 
     fieldDetails.forEach(field => this.addField(field));
 
-    const fieldName = fieldDetails[0].fieldName;
-    if (lazy.FormAutofillUtils.isAddressField(fieldName)) {
-      this.type = FormSection.ADDRESS;
-    } else if (lazy.FormAutofillUtils.isCreditCardField(fieldName)) {
-      this.type = FormSection.CREDIT_CARD;
-    } else {
-      throw new Error("Unknown field type to create a section.");
+    for (const fieldDetail of fieldDetails) {
+      if (lazy.FormAutofillUtils.isAddressField(fieldDetail.fieldName)) {
+        this.type = FormSection.ADDRESS;
+        break;
+      } else if (
+        lazy.FormAutofillUtils.isCreditCardField(fieldDetail.fieldName)
+      ) {
+        this.type = FormSection.CREDIT_CARD;
+        break;
+      }
     }
+
+    this.type ||= FormSection.ADDRESS;
   }
 
   get fieldDetails() {
@@ -155,21 +145,40 @@ export class FormAutofillSection {
    * The result is an array contains the sections with its belonging field details.
    *
    * @param   {Array<FieldDetails>} fieldDetails field detail array to be classified
-   * @param   {boolean} ignoreInvalid
-   *          True to keep invalid section in the return array. Only used by tests now.
+   * @param   {object} options
+   * @param   {boolean} [options.ignoreInvalidSection = false]
+   *          True to keep invalid section in the return array. Only used by tests now
+   * @param   {boolean} [options.ignoreUnknownField = true]
+   *          False to keep unknown field in a section. Only used by developer tools now
    * @returns {Array<FormSection>} The array with the sections.
    */
-  static classifySections(fieldDetails, ignoreInvalid = false) {
-    const addressSections = FormAutofillSection.groupFields(
-      fieldDetails.filter(f =>
-        lazy.FormAutofillUtils.isAddressField(f.fieldName)
-      )
-    );
-    const creditCardSections = FormAutofillSection.groupFields(
-      fieldDetails.filter(f =>
-        lazy.FormAutofillUtils.isCreditCardField(f.fieldName)
-      )
-    );
+  static classifySections(
+    fieldDetails,
+    { ignoreInvalidSection = false, ignoreUnknownField = true } = {}
+  ) {
+    const addressFields = [];
+    const creditCardFields = [];
+
+    // 'current' refers to the last list where an field was added to.
+    // It helps determine the appropriate list for unknown fields, defaulting to the address
+    // field list for simplicity
+    let current = addressFields;
+    for (const fieldDetail of fieldDetails) {
+      if (lazy.FormAutofillUtils.isAddressField(fieldDetail.fieldName)) {
+        current = addressFields;
+      } else if (
+        lazy.FormAutofillUtils.isCreditCardField(fieldDetail.fieldName)
+      ) {
+        current = creditCardFields;
+      } else if (ignoreUnknownField) {
+        continue;
+      }
+      current.push(fieldDetail);
+    }
+
+    const addressSections = FormAutofillSection.groupFields(addressFields);
+    const creditCardSections =
+      FormAutofillSection.groupFields(creditCardFields);
 
     const sections = [...addressSections, ...creditCardSections].sort(
       (a, b) =>
@@ -188,7 +197,7 @@ export class FormAutofillSection {
           ? new FormAutofillAddressSection(section.fieldDetails)
           : new FormAutofillCreditCardSection(section.fieldDetails);
 
-      if (ignoreInvalid && !autofillableSection.isValidSection()) {
+      if (ignoreInvalidSection && !autofillableSection.isValidSection()) {
         continue;
       }
 
@@ -232,42 +241,30 @@ export class FormAutofillSection {
       }
 
       if (candidateSection) {
-        let createNewSection = true;
+        // The field will still be placed in a new section if it is a duplicate of
+        // an existing field, unless it is a duplicate of the previous field. This
+        // allows for fields that might commonly appear twice such as a verification
+        // email field, an invisible field that appears next to the user-visible field,
+        // and simple cases where a page error where a field name is reused twice.
+        let isDuplicate = candidateSection.fieldDetails.find(
+          f => f.fieldName == cur.fieldName && f.isVisible && cur.isVisible
+        );
 
-        // We might create a new section instead of placing the field in the candidate section if
-        // the section already has a field with the same field name.
-        // We also check visibility for both the fields with the same field name because we don't
-        // want to create a new section for an invisible field.
-        if (
-          candidateSection.fieldDetails.find(
-            f => f.fieldName == cur.fieldName && f.isVisible && cur.isVisible
-          )
-        ) {
-          // For some field type, it is common to have multiple fields in one section, for example,
-          // email. In that case, we will not create a new section even when the candidate section
-          // already has a field with the same field name.
+        if (isDuplicate) {
           const [last] = candidateSection.fieldDetails.slice(-1);
           if (last.fieldName == cur.fieldName) {
-            if (
-              MULTI_FIELD_NAMES.includes(cur.fieldName) ||
-              (last.part && last.part + 1 == cur.part)
-            ) {
-              createNewSection = false;
-            }
+            isDuplicate = false;
           }
-        } else {
-          // The field doesn't exist in the candidate section, add it.
-          createNewSection = false;
         }
 
-        if (!createNewSection) {
-          candidateSection.addField(fieldDetails[i]);
+        if (!isDuplicate) {
+          candidateSection.addField(cur);
           continue;
         }
       }
 
       // Create a new section
-      sections.push(new FormSection([fieldDetails[i]]));
+      sections.push(new FormSection([cur]));
     }
 
     return sections;
@@ -350,7 +347,6 @@ export class FormAutofillSection {
       return;
     }
 
-    lazy.AutofillTelemetry.recordDetectedSectionCount(this.fieldDetails);
     lazy.AutofillTelemetry.recordFormInteractionEvent(
       "detected",
       this.flowId,
@@ -388,7 +384,6 @@ export class FormAutofillSection {
   onSubmitted(formFilledData) {
     this.submitted = true;
 
-    lazy.AutofillTelemetry.recordSubmittedSectionCount(this.fieldDetails, 1);
     lazy.AutofillTelemetry.recordFormInteractionEvent(
       "submitted",
       this.flowId,
@@ -614,16 +609,27 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
         "autofill-use-payment-method-os-prompt-windows",
         "autofill-use-payment-method-os-prompt-other"
       );
-      const decrypted = await this.getDecryptedString(
-        profile["cc-number-encrypted"],
-        promptMessage
-      );
-
+      let decrypted;
+      let result;
+      try {
+        decrypted = await this.getDecryptedString(
+          profile["cc-number-encrypted"],
+          promptMessage
+        );
+        result = decrypted ? "success" : "fail_user_canceled";
+      } catch (ex) {
+        result = "fail_error";
+        throw ex;
+      } finally {
+        Glean.formautofill.promptShownOsReauth.record({
+          trigger: "autofill",
+          result,
+        });
+      }
       if (!decrypted) {
         // Early return if the decrypted is empty or undefined
         return false;
       }
-
       profile["cc-number"] = decrypted;
     }
     return true;
@@ -639,13 +645,22 @@ export class FormAutofillCreditCardSection extends FormAutofillSection {
       reauth = false;
     }
     let string;
+    let errorMessage;
     try {
       string = await lazy.OSKeyStore.decrypt(cipherText, reauth);
+      errorMessage = "NO_ERROR";
     } catch (e) {
       if (e.result != Cr.NS_ERROR_ABORT) {
         throw e;
       }
       this.log.warn("User canceled encryption login");
+      errorMessage = e.result;
+    } finally {
+      Glean.creditcard.osKeystoreDecrypt.record({
+        isDecryptSuccess: errorMessage === "NO_ERROR",
+        errorMessage,
+        trigger: "autofill",
+      });
     }
     return string;
   }

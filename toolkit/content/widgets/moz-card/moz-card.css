@@ -30,15 +30,20 @@
 
 :host([type=accordion]) {
   summary {
-    padding-block: var(--card-padding);
+    padding-block: var(--card-padding-block, var(--card-padding));
   }
   #content {
-    padding-block-end: var(--card-padding);
+    padding-block-end: var(--card-padding-block, var(--card-padding));
   }
 }
 :host(:not([type=accordion])) {
   .moz-card {
-    padding-block: var(--card-padding);
+    padding-block: var(--card-padding-block, var(--card-padding));
+  }
+  #moz-card-details {
+    display: flex;
+    flex-direction: column;
+    gap: var(--card-article-gap);
   }
 }
 
@@ -51,9 +56,6 @@
 
 #moz-card-details {
   width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: var(--card-article-gap);
 }
 
 summary {
@@ -65,7 +67,7 @@ summary {
   align-items: center;
   justify-content: flex-start;
   gap: var(--card-gap);
-  padding-inline: var(--card-padding);
+  padding-inline: var(--card-heading-padding-inline, var(--card-padding));
   border-radius: var(--card-border-radius);
 
   .chevron-icon {
@@ -99,14 +101,14 @@ summary {
 
 #content {
   align-self: stretch;
-  padding-inline: var(--card-padding);
+  padding-inline: var(--card-padding-inline, var(--card-padding));
   border-end-start-radius: var(--card-border-radius);
   border-end-end-radius: var(--card-border-radius);
 
   @media (prefers-contrast) {
     :host([type=accordion]) & {
       border-block-start: 0;
-      padding-block-start: var(--card-padding);
+      padding-block-start: var(--card-padding-block, var(--card-padding));
     }
   }
 }
@@ -120,16 +122,13 @@ details  {
     &:hover {
       background-color: var(--button-background-color-hover);
     }
+
+    &:focus-visible {
+      outline: var(--card-focus-outline);
+    }
+
     @media (prefers-contrast) {
       outline: var(--button-border-color) solid var(--border-width);
-
-      &:hover {
-        outline-color: var(--button-border-color-hover);
-      }
-
-      &:active {
-        outline-color: var(--button-border-color-active);
-      }
     }
 
     @media (forced-colors) {
@@ -162,9 +161,5 @@ details  {
         padding-block-start: 0;
       }
     }
-  }
-
-  &:focus-visible {
-    outline: var(--card-focus-outline);
   }
 }

@@ -7,6 +7,8 @@
  * helper functions that are useful to all components of the urlbar.
  */
 
+import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
@@ -30,6 +32,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   UrlbarTokenizer: "resource:///modules/UrlbarTokenizer.sys.mjs",
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
 });
+
+XPCOMUtils.defineLazyServiceGetter(
+  lazy,
+  "parserUtils",
+  "@mozilla.org/parserutils;1",
+  "nsIParserUtils"
+);
 
 export var UrlbarUtils = {
   // Results are categorized into groups to help the muxer compose them.  See
@@ -200,14 +209,7 @@ export var UrlbarUtils = {
   ]),
 
   // The favicon service stores icons for URLs with the following protocols.
-  PROTOCOLS_WITH_ICONS: [
-    "chrome:",
-    "moz-extension:",
-    "about:",
-    "http:",
-    "https:",
-    "ftp:",
-  ],
+  PROTOCOLS_WITH_ICONS: ["about:", "http:", "https:", "file:"],
 
   // Valid URI schemes that are considered safe but don't contain
   // an authority component (e.g host:port). There are many URI schemes
@@ -237,7 +239,7 @@ export var UrlbarUtils = {
       {
         source: UrlbarUtils.RESULT_SOURCE.TABS,
         restrict: lazy.UrlbarTokenizer.RESTRICT.OPENPAGE,
-        icon: "chrome://browser/skin/tab.svg",
+        icon: "chrome://browser/skin/tabs.svg",
         pref: "shortcuts.tabs",
         telemetryLabel: "tabs",
         uiLabel: "urlbar-searchmode-tabs",
@@ -368,7 +370,7 @@ export var UrlbarUtils = {
     let dataStream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
       Ci.nsIStringInputStream
     );
-    dataStream.data = postDataString;
+    dataStream.setByteStringData(postDataString);
 
     let mimeStream = Cc[
       "@mozilla.org/network/mime-input-stream;1"
@@ -796,12 +798,11 @@ export var UrlbarUtils = {
    *   if there is no ref and undefined if url is not well-formed.
    */
   extractRefFromUrl(url) {
-    try {
-      let nsUri = Services.io.newURI(url);
-      return { base: nsUri.specIgnoringRef, ref: nsUri.ref };
-    } catch {
-      return { base: url };
+    let uri = URL.parse(url)?.URI;
+    if (uri) {
+      return { base: uri.specIgnoringRef, ref: uri.ref };
     }
+    return { base: url };
   },
 
   /**
@@ -1198,10 +1199,10 @@ export var UrlbarUtils = {
     if (!lazy.UrlbarTokenizer.REGEXP_PREFIX.test(candidate)) {
       candidate = "http://" + candidate;
     }
-    try {
-      url = new URL(url);
-      candidate = new URL(candidate);
-    } catch (e) {
+
+    url = URL.parse(url);
+    candidate = URL.parse(candidate);
+    if (!url || !candidate) {
       return false;
     }
 
@@ -1234,10 +1235,6 @@ export var UrlbarUtils = {
   /**
    * Extracts a telemetry type from a result, used by scalars and event
    * telemetry.
-   *
-   * Note: New types should be added to Scalars.yaml under the urlbar.picked
-   *       category and documented in the in-tree documentation. A data-review
-   *       is always necessary.
    *
    * @param {UrlbarResult} result The result to analyze.
    * @param {boolean} camelCase Whether the returned telemetry type should be the
@@ -1293,14 +1290,6 @@ export var UrlbarUtils = {
           return "visiturl";
         }
         if (result.providerName == "UrlbarProviderQuickSuggest") {
-          // Don't add any more `urlbar.picked` legacy telemetry if possible!
-          // Return "quicksuggest" here and rely on Glean instead.
-          switch (result.payload.telemetryType) {
-            case "top_picks":
-              return "navigational";
-            case "wikipedia":
-              return camelCase ? "dynamicWikipedia" : "dynamic_wikipedia";
-          }
           return "quicksuggest";
         }
         if (result.providerName == "UrlbarProviderClipboard") {
@@ -1519,6 +1508,7 @@ export var UrlbarUtils = {
           case "UrlbarProviderQuickSuggestContextualOptIn":
             return "fxsuggest_data_sharing_opt_in";
           case "UrlbarProviderGlobalActions":
+          case "UrlbarProviderActionsSearchMode":
             return "action";
         }
         break;
@@ -1630,11 +1620,7 @@ export var UrlbarUtils = {
       // past reporting of weather suggestions.
       return "weather";
     }
-    let source = result.payload.source;
-    if (source == "remote-settings") {
-      source = "rs";
-    }
-    return `${source}_${result.payload.telemetryType}`;
+    return result.payload.source + "_" + result.payload.telemetryType;
   },
 
   /**
@@ -1731,6 +1717,31 @@ ChromeUtils.defineLazyGetter(UrlbarUtils, "strings", () => {
   );
 });
 
+const L10N_SCHEMA = {
+  type: "object",
+  required: ["id"],
+  properties: {
+    id: {
+      type: "string",
+    },
+    args: {
+      type: "object",
+      additionalProperties: true,
+    },
+    // The remaining properties are related to l10n string caching. See
+    // `L10nCache`. All are optional and are false by default.
+    parseMarkup: {
+      type: "boolean",
+    },
+    cacheable: {
+      type: "boolean",
+    },
+    excludeArgsFromCacheKey: {
+      type: "boolean",
+    },
+  },
+};
+
 /**
  * Payload JSON schemas for each result type.  Payloads are validated against
  * these schemas using JsonSchemaValidator.sys.mjs.
@@ -1790,18 +1801,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
   [UrlbarUtils.RESULT_TYPE.SEARCH]: {
     type: "object",
     properties: {
-      blockL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "array",
-          },
-        },
-      },
+      blockL10n: L10N_SCHEMA,
       description: {
         type: "string",
       },
@@ -1880,51 +1880,12 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
     type: "object",
     required: ["url"],
     properties: {
-      // l10n { id, args }
-      blockL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
-      // l10n { id, args }
-      bottomTextL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
+      blockL10n: L10N_SCHEMA,
+      bottomTextL10n: L10N_SCHEMA,
       description: {
         type: "string",
       },
-      // l10n { id, args }
-      descriptionL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
+      descriptionL10n: L10N_SCHEMA,
       displayUrl: {
         type: "string",
       },
@@ -1934,20 +1895,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       fallbackTitle: {
         type: "string",
       },
-      // l10n { id, args }
-      helpL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
+      helpL10n: L10N_SCHEMA,
       helpUrl: {
         type: "string",
       },
@@ -2026,6 +1974,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       title: {
         type: "string",
       },
+      titleL10n: L10N_SCHEMA,
       url: {
         type: "string",
       },
@@ -2065,18 +2014,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
     type: "object",
     required: ["keyword"],
     properties: {
-      blockL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "array",
-          },
-        },
-      },
+      blockL10n: L10N_SCHEMA,
       content: {
         type: "string",
       },
@@ -2128,18 +2066,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
           type: "object",
           required: ["l10n"],
           properties: {
-            l10n: {
-              type: "object",
-              required: ["id"],
-              properties: {
-                id: {
-                  type: "string",
-                },
-                args: {
-                  type: "array",
-                },
-              },
-            },
+            l10n: L10N_SCHEMA,
             url: {
               type: "string",
             },
@@ -2156,20 +2083,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       buttonUrl: {
         type: "string",
       },
-      // l10n { id, args }
-      helpL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
+      helpL10n: L10N_SCHEMA,
       helpUrl: {
         type: "string",
       },
@@ -2181,24 +2095,7 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       text: {
         type: "string",
       },
-      // l10n { id, args }
-      titleL10n: {
-        type: "object",
-        required: ["id"],
-        properties: {
-          id: {
-            type: "string",
-          },
-          args: {
-            type: "object",
-            additionalProperties: true,
-          },
-        },
-      },
-      // `type` is used in the names of keys in the `urlbar.tips` keyed scalar
-      // telemetry (see telemetry.rst).  If you add a new type, then you are
-      // also adding new `urlbar.tips` keys and therefore need an expanded data
-      // collection review.
+      titleL10n: L10N_SCHEMA,
       type: {
         type: "string",
         enum: [
@@ -2235,8 +2132,11 @@ UrlbarUtils.RESULT_PAYLOAD_SCHEMA = {
       keyword: {
         type: "string",
       },
-      l10nRestrictKeyword: {
-        type: "string",
+      l10nRestrictKeywords: {
+        type: "array",
+        items: {
+          type: "string",
+        },
       },
       autofillKeyword: {
         type: "string",
@@ -2661,8 +2561,12 @@ export class UrlbarProvider {
    *    - `index`: The position of the visible result within the original list
    *               visible results.
    *    - `result`: The visible result itself
+   * @param {object|null} _details
+   *    If the impression is due to an engagement, this will be the `details`
+   *    object that's also passed to `onEngagement()`. Otherwise it will be
+   *    null. See `onEngagement()` documentation for info.
    *
-   * onImpression(_state, _queryContext, _controller, _providerVisibleResults)
+   * onImpression(_state, _queryContext, _controller, _providerVisibleResults, _details)
    * {}
    */
 
@@ -3113,6 +3017,147 @@ export class L10nCache {
    */
   size() {
     return this._messagesByKey.size;
+  }
+
+  /**
+   * Sets an element's content or attribute to a cached l10n string. If the
+   * string isn't cached, then this falls back to the usual
+   * `document.l10n.setAttributes()` using the given l10n ID and args, which
+   * means the string will pop in on a later animation frame.
+   *
+   * This also optionally caches the string so that it will be ready the next
+   * time this is called for it. The function returns a promise that will be
+   * resolved when the string has been cached. Typically there's no need to
+   * await it unless you want to be sure the string is cached before continuing.
+   *
+   * @param {Element} element
+   *   The l10n string will be applied to this element.
+   * @param {object} options
+   *   Options object.
+   * @param {string} options.id
+   *   The l10n string ID.
+   * @param {object} options.args
+   *   The l10n string arguments.
+   * @param {string} options.attribute
+   *   If the string applies to an attribute on the element, pass the name of
+   *   the attribute. The string in the Fluent file should define a value for
+   *   the attribute, like ".foo = My value". If the string applies to the
+   *   element's content, leave this undefined.
+   * @param {boolean} options.parseMarkup
+   *   This controls whether the cached string is applied to the element's
+   *   `textContent` or its `innerHTML`. It's not relevant if the string is
+   *   applied to an attribute. Typically it should be set to true when the
+   *   string is expected to contain markup. When true, the cached string is
+   *   essentially assigned to the element's `innerHTML`. When false, it's
+   *   assigned to the element's `textContent`.
+   * @param {boolean} options.cacheable
+   *   Whether the string should be cached in addition to applying it to the
+   *   given element.
+   * @param {boolean} options.excludeArgsFromCacheKey
+   *   This affects how the string is stored in and fetched from the cache and
+   *   is only relevant if the string has arguments. When true, all formatted
+   *   values of the string share the same cache entry regardless of the
+   *   arguments they were formatted with. In other words, only the ID matters.
+   *   When false, formatted values with different arguments have separate cache
+   *   entries. Typically it should be true when the number of possible argument
+   *   values is unbounded and false otherwise. For example, it should be true
+   *   if the argument is a user search string since that could be anything. It
+   *   should be false if the argument is the name of an installed search engine
+   *   since there's a relatively small number of those.
+   *
+   *   If `cacheable` is false but you previously cached the string using
+   *   another function, you should pass the same value you passed for
+   *   `excludeArgsFromCacheKey` when you cached it.
+   * @returns {Promise|null}
+   *   If `cacheable` is true, this returns a promise that's resolved when the
+   *   string has been cached. Otherwise it returns null.
+   */
+  setElementL10n(
+    element,
+    {
+      id,
+      args = undefined,
+      attribute = undefined,
+      parseMarkup = false,
+      cacheable = false,
+      excludeArgsFromCacheKey = false,
+    }
+  ) {
+    let message = this.get({ id, args, excludeArgsFromCacheKey });
+    if (message) {
+      element.removeAttribute("data-l10n-id");
+      element.removeAttribute("data-l10n-attrs");
+      element.removeAttribute("data-l10n-args");
+      if (attribute) {
+        element.setAttribute(attribute, message.attributes[attribute]);
+      } else if (!parseMarkup) {
+        element.textContent = message.value;
+      } else {
+        element.innerHTML = "";
+        element.append(
+          lazy.parserUtils.parseFragment(
+            message.value,
+            Ci.nsIParserUtils.SanitizerDropNonCSSPresentation |
+              Ci.nsIParserUtils.SanitizerDropForms |
+              Ci.nsIParserUtils.SanitizerDropMedia,
+            false,
+            Services.io.newURI(element.ownerDocument.documentURI),
+            element
+          )
+        );
+      }
+    }
+
+    // If the message wasn't cached, set the element's l10n attributes and let
+    // `DOMLocalization` do its asynchronous translation. The element's content
+    // will pop in when translation finishes.
+    //
+    // Also do this if the message was cached but its args aren't part of the
+    // cache key because in that case the cached message may contain outdated
+    // arg values. We just set the element's content to the old message above,
+    // and when `DOMLocalization` finishes translating the new message, it will
+    // set the element's content again. If the old and new args are different,
+    // the new content will pop in. If they're the same, nothing will appear to
+    // change.
+    if (!message || (cacheable && excludeArgsFromCacheKey)) {
+      if (attribute) {
+        element.setAttribute("data-l10n-attrs", attribute);
+      } else {
+        element.removeAttribute("data-l10n-attrs");
+      }
+      element.ownerDocument.l10n.setAttributes(element, id, args);
+    }
+
+    if (cacheable) {
+      // Cache the string. We specifically do not do this first and await it
+      // because the whole point of the l10n cache is to synchronously update
+      // the element's content when possible. Here, we return a promise rather
+      // than making this function async and awaiting so it's clearer to callers
+      // that they probably don't need to wait for caching to finish.
+      return this.ensure({ id, args, excludeArgsFromCacheKey });
+    }
+    return null;
+  }
+
+  /**
+   * Removes content and attributes set by `setElementL10n()`.
+   *
+   * @param {Element} element
+   *   The content and attributes will be removed from this element.
+   * @param {object} options
+   *   Options object.
+   * @param {string} options.attribute
+   *   If you passed an attribute to `setElementL10n()`, pass it here too.
+   */
+  removeElementL10n(element, { attribute = undefined } = {}) {
+    if (attribute) {
+      element.removeAttribute(attribute);
+      element.removeAttribute("data-l10n-attrs");
+    } else {
+      element.textContent = "";
+    }
+    element.removeAttribute("data-l10n-id");
+    element.removeAttribute("data-l10n-args");
   }
 
   /**

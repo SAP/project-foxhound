@@ -65,6 +65,14 @@ def handle_suite_category(config, tasks):
             category_arg = f"--{category}-suite"
 
         if category_arg:
+            resolve_keyed_by(
+                task,
+                "mozharness.extra-options",
+                item_name=task["test-name"],
+                enforce_single_match=False,
+                variant=task["attributes"].get("unittest_variant"),
+            )
+
             task["mozharness"].setdefault("extra-options", [])
             extra = task["mozharness"]["extra-options"]
             if not any(arg.startswith(category_arg) for arg in extra):
@@ -90,6 +98,14 @@ def setup_talos(config, tasks):
         if task["suite"] != "talos":
             yield task
             continue
+
+        resolve_keyed_by(
+            task,
+            "mozharness.extra-options",
+            item_name=task["test-name"],
+            enforce_single_match=False,
+            variant=task["attributes"].get("unittest_variant"),
+        )
 
         extra_options = task.setdefault("mozharness", {}).setdefault(
             "extra-options", []
@@ -207,8 +223,6 @@ def set_treeherder_machine_platform(config, tasks):
             task["treeherder-machine-platform"] = task["test-platform"].replace(
                 ".", "-"
             )
-        elif "-qr" in task["test-platform"]:
-            task["treeherder-machine-platform"] = task["test-platform"]
         elif "android-hw" in task["test-platform"]:
             task["treeherder-machine-platform"] = task["test-platform"]
         elif "android-em-7.0-x86_64" in task["test-platform"]:
@@ -226,6 +240,8 @@ def set_treeherder_machine_platform(config, tasks):
             task["treeherder-machine-platform"] = "linux64/asan"
         elif "linux1804-asan/opt" in task["test-platform"]:
             task["treeherder-machine-platform"] = "linux1804-64/asan"
+        elif "-qr" in task["test-platform"]:
+            task["treeherder-machine-platform"] = task["test-platform"]
         else:
             task["treeherder-machine-platform"] = translation.get(
                 task["build-platform"], task["test-platform"]
@@ -268,6 +284,7 @@ def handle_keyed_by(config, tasks):
         "fetches.toolchain",
         "target",
         "webrender-run-on-projects",
+        "mozharness.extra-options",
         "mozharness.requires-signed-builds",
         "build-signing-label",
         "dependencies",
@@ -318,7 +335,7 @@ def set_target(config, tasks):
             elif build_platform.startswith("win"):
                 target = "target.zip"
             else:
-                target = "target.tar.bz2"
+                target = "target.tar.xz"
 
         if isinstance(target, dict):
             if "index" in target:
@@ -361,7 +378,7 @@ def setup_browsertime(config, tasks):
             "by-test-platform": {
                 "android.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
                 "linux.*": ["browsertime", "linux64-geckodriver", "linux64-node"],
-                "macosx1015.*": [
+                "macosx1470.*": [
                     "browsertime",
                     "macosx64-geckodriver",
                     "macosx64-node",
@@ -389,7 +406,7 @@ def setup_browsertime(config, tasks):
             "by-test-platform": {
                 "android.*": ["linux64-ffmpeg-4.4.1"],
                 "linux.*": ["linux64-ffmpeg-4.4.1"],
-                "macosx1015.*": ["mac64-ffmpeg-4.4.1"],
+                "macosx1470.*": ["mac64-ffmpeg-4.4.1"],
                 "macosx1400.*": ["mac64-ffmpeg-4.4.1"],
                 "windows.*aarch64.*": ["win64-ffmpeg-4.4.1"],
                 "windows.*-32.*": ["win64-ffmpeg-4.4.1"],
@@ -399,32 +416,33 @@ def setup_browsertime(config, tasks):
 
         cd_fetches = {
             "android.*": [
-                "linux64-chromedriver-130",
-                "linux64-chromedriver-131",
+                "linux64-cft-cd-backup",
+                "linux64-cft-cd-stable",
             ],
             "linux.*": [
-                "linux64-chromedriver-130",
-                "linux64-chromedriver-131",
+                "linux64-cft-cd-backup",
+                "linux64-cft-cd-stable",
             ],
-            "macosx1015.*": [
-                "mac64-chromedriver-130",
-                "mac64-chromedriver-131",
+            "macosx1470.*": [
+                "mac-cft-cd-backup",
+                "mac-cft-cd-stable",
             ],
             "macosx1400.*": [
-                "mac-arm-chromedriver-130",
-                "mac-arm-chromedriver-131",
+                "mac-cft-cd-arm-backup",
+                "mac-cft-cd-arm-stable",
             ],
             "windows.*-64.*": [
-                "win64-chromedriver-130",
-                "win64-chromedriver-131",
+                "win64-cft-cd-backup",
+                "win64-cft-cd-stable",
             ],
         }
 
         chromium_fetches = {
-            "linux.*": ["linux64-cft-chromedriver"],
-            "macosx1400.*": ["mac-cft-chromedriver-arm"],
-            "windows.*-64.*": ["win64-cft-chromedriver"],
-            "android.*": ["linux64-cft-chromedriver"],
+            "linux.*": ["linux64-cft-cd-canary"],
+            "macosx1400.*": ["mac-cft-cd-arm-canary"],
+            "macosx1470.*": ["mac-cft-cd-canary"],
+            "windows.*-64.*": ["win64-cft-cd-canary"],
+            "android.*": ["linux64-cft-cd-canary"],
         }
 
         cd_extracted_name = {
@@ -542,6 +560,14 @@ def disable_wpt_timeouts_on_autoland(config, tasks):
             "web-platform-tests" in task["test-name"]
             and config.params["project"] == "autoland"
         ):
+            resolve_keyed_by(
+                task,
+                "mozharness.extra-options",
+                item_name=task["test-name"],
+                enforce_single_match=False,
+                variant=task["attributes"].get("unittest_variant"),
+            )
+
             task["mozharness"].setdefault("extra-options", []).append("--skip-timeout")
         yield task
 
@@ -711,6 +737,14 @@ def handle_tier(config, tasks):
                 "windows11-64-2009-shippable-qr/opt",
                 "windows11-64-2009-devedition-qr/opt",
                 "windows11-64-2009-asan-qr/opt",
+                "windows11-32-24h2/debug",
+                "windows11-32-24h2/opt",
+                "windows11-32-24h2-shippable/opt",
+                "windows11-64-24h2/opt",
+                "windows11-64-24h2/debug",
+                "windows11-64-24h2-shippable/opt",
+                "windows11-64-24h2-devedition/opt",
+                "windows11-64-24h2-asan/opt",
                 "macosx1015-64/opt",
                 "macosx1015-64/debug",
                 "macosx1015-64-shippable/opt",
@@ -719,6 +753,10 @@ def handle_tier(config, tasks):
                 "macosx1015-64-qr/opt",
                 "macosx1015-64-shippable-qr/opt",
                 "macosx1015-64-qr/debug",
+                "macosx1470-64/opt",
+                "macosx1470-64/debug",
+                "macosx1470-64-shippable/opt",
+                "macosx1470-64-devedition/opt",
                 "macosx1100-64-shippable-qr/opt",
                 "macosx1100-64-qr/debug",
                 "macosx1400-64-shippable-qr/opt",
@@ -827,7 +865,6 @@ test_setting_description_schema = Schema(
                 "ccov",
                 "clang-trunk",
                 "devedition",
-                "domstreams",
                 "lite",
                 "mingwclang",
                 "nightlyasrelease",
@@ -931,7 +968,7 @@ def set_test_setting(config, tasks):
 
         else:
             arch = parts.pop(0)
-            if parts[0].isdigit():
+            if parts and (parts[0].isdigit() or parts[0] in ["24h2"]):
                 os_build = parts.pop(0)
 
             if parts and parts[0] == "hw-ref":

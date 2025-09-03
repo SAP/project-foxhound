@@ -12,6 +12,8 @@
   const lazy = {};
 
   ChromeUtils.defineESModuleGetters(lazy, {
+    BrowserSearchTelemetry:
+      "resource:///modules/BrowserSearchTelemetry.sys.mjs",
     BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
     FormHistory: "resource://gre/modules/FormHistory.sys.mjs",
     SearchSuggestionController:
@@ -40,7 +42,7 @@
         <html:input class="searchbar-textbox" is="autocomplete-input" type="search" data-l10n-id="searchbar-input" autocompletepopup="PopupSearchAutoComplete" autocompletesearch="search-autocomplete" autocompletesearchparam="searchbar-history" maxrows="10" completeselectedindex="true" minresultsforpopup="0"/>
         <menupopup class="textbox-contextmenu"></menupopup>
         <hbox class="search-go-container" align="center">
-          <image class="search-go-button urlbar-icon" role="button" keyNav="false" hidden="true" onclick="handleSearchCommand(event);" data-l10n-id="searchbar-submit"></image>
+          <image class="search-go-button urlbar-icon" role="button" keyNav="false" hidden="true" data-l10n-id="searchbar-submit"></image>
         </hbox>
       `;
     }
@@ -128,7 +130,7 @@
               this._textbox.popup.updateHeader();
               // Refresh the display (updating icon, etc)
               this.updateDisplay();
-              BrowserSearch.updateOpenSearchBadge();
+              OpenSearchManager.updateOpenSearchBadge(window);
             })
             .catch(status =>
               console.error(
@@ -156,6 +158,10 @@
           }
         },
         { capture: true, once: true }
+      );
+
+      this.querySelector(".search-go-button").addEventListener("click", event =>
+        this.handleSearchCommand(event)
       );
     }
 
@@ -324,7 +330,7 @@
       let selectedIndex = this.telemetrySelectedIndex;
       let isOneOff = false;
 
-      BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
+      lazy.BrowserSearchTelemetry.recordSearchSuggestionSelectionMethod(
         aEvent,
         "searchbar",
         selectedIndex
@@ -383,7 +389,7 @@
 
       this.telemetrySelectedIndex = -1;
 
-      BrowserSearchTelemetry.recordSearch(
+      lazy.BrowserSearchTelemetry.recordSearch(
         gBrowser.selectedBrowser,
         engine,
         "searchbar",

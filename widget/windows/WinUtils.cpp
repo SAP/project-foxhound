@@ -66,13 +66,9 @@
 
 mozilla::LazyLogModule gWindowsLog("Widget");
 
-#define LOG_E(...) MOZ_LOG(gWindowsLog, LogLevel::Error, (__VA_ARGS__))
-#define LOG_D(...) MOZ_LOG(gWindowsLog, LogLevel::Debug, (__VA_ARGS__))
-
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 #ifdef MOZ_PLACES
 NS_IMPL_ISUPPORTS(myDownloadObserver, nsIDownloadObserver)
@@ -633,38 +629,6 @@ HWND WinUtils::FindOurWindowAtPoint(const POINT& aPointInScreen) {
   // This will enumerate all top-level windows in order from top to bottom.
   EnumWindows(FindOurWindowAtPointCallback, reinterpret_cast<LPARAM>(&info));
   return info.mOutWnd;
-}
-
-/* static */
-UINT WinUtils::GetInternalMessage(UINT aNativeMessage) {
-  switch (aNativeMessage) {
-    case WM_MOUSEWHEEL:
-      return MOZ_WM_MOUSEVWHEEL;
-    case WM_MOUSEHWHEEL:
-      return MOZ_WM_MOUSEHWHEEL;
-    case WM_VSCROLL:
-      return MOZ_WM_VSCROLL;
-    case WM_HSCROLL:
-      return MOZ_WM_HSCROLL;
-    default:
-      return aNativeMessage;
-  }
-}
-
-/* static */
-UINT WinUtils::GetNativeMessage(UINT aInternalMessage) {
-  switch (aInternalMessage) {
-    case MOZ_WM_MOUSEVWHEEL:
-      return WM_MOUSEWHEEL;
-    case MOZ_WM_MOUSEHWHEEL:
-      return WM_MOUSEHWHEEL;
-    case MOZ_WM_VSCROLL:
-      return WM_VSCROLL;
-    case MOZ_WM_HSCROLL:
-      return WM_HSCROLL;
-    default:
-      return aInternalMessage;
-  }
 }
 
 /* static */
@@ -1672,7 +1636,11 @@ PointerCapabilities WinUtils::GetAllPointerCapabilities() {
 
 /* static */
 bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
-  LOG_D("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str());
+  static mozilla::LazyLogModule sNTFSLog("NTFS");
+
+  MOZ_LOG(
+      sNTFSLog, LogLevel::Debug,
+      ("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str()));
 
   wchar_t path[MAX_PATH] = {0};
 
@@ -1681,15 +1649,18 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
 
   if (handle == INVALID_HANDLE_VALUE) {
-    LOG_E("Failed to open file handle to resolve path. GetLastError=%lu",
-          GetLastError());
+    MOZ_LOG(sNTFSLog, LogLevel::Error,
+            ("Failed to open file handle to resolve path. GetLastError=%lu",
+             GetLastError()));
     return false;
   }
 
   DWORD pathLen = GetFinalPathNameByHandleW(
       handle, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
-    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError());
+    MOZ_LOG(
+        sNTFSLog, LogLevel::Error,
+        ("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError()));
     return false;
   }
   aPath = path;
@@ -1703,8 +1674,9 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
     aPath.erase(0, 4);
   }
 
-  LOG_D("ResolveJunctionPointsAndSymLinks: Resolved path to: %S",
-        aPath.c_str());
+  MOZ_LOG(sNTFSLog, LogLevel::Debug,
+          ("ResolveJunctionPointsAndSymLinks: Resolved path to: %S",
+           aPath.c_str()));
   return true;
 }
 
@@ -2032,10 +2004,43 @@ bool WinUtils::GetTimezoneName(wchar_t* aBuffer) {
   return true;
 }
 
+static constexpr nsLiteralCString kMicaPrefs[] = {
+    "widget.windows.mica"_ns,
+    "widget.windows.mica.popups"_ns,
+};
+
+static BOOL CALLBACK UpdateMicaInHwnd(HWND aHwnd, LPARAM aLParam) {
+  if (RefPtr<nsWindow> win = WinUtils::GetNSWindowPtr(aHwnd)) {
+    win->UpdateMicaBackdrop(/* aForce = */ true);
+  }
+  return TRUE;
+}
+
+static void UpdateMicaInAllWindows(const char*, void*) {
+  ::EnumWindows(&UpdateMicaInHwnd, 0);
+  LookAndFeel::NotifyChangedAllWindows(
+      widget::ThemeChangeKind::MediaQueriesOnly);
+}
+
+bool WinUtils::MicaAvailable() {
+  static bool sAvailable = [] {
+    if (!IsWin1122H2OrLater()) {
+      return false;
+    }
+    for (const auto& pref : kMicaPrefs) {
+      Preferences::RegisterCallback(UpdateMicaInAllWindows, pref);
+    }
+    return true;
+  }();
+  return sAvailable;
+}
+
 bool WinUtils::MicaEnabled() {
-  static bool sEnabled =
-      IsWin1122H2OrLater() && StaticPrefs::widget_windows_mica_AtStartup();
-  return sEnabled;
+  return MicaAvailable() && StaticPrefs::widget_windows_mica();
+}
+
+bool WinUtils::MicaPopupsEnabled() {
+  return MicaAvailable() && StaticPrefs::widget_windows_mica_popups();
 }
 
 // There are undocumented APIs to query/change the system DPI settings found by
@@ -2246,5 +2251,4 @@ ScopedRtlShimWindow::~ScopedRtlShimWindow() {
   }
 }
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget

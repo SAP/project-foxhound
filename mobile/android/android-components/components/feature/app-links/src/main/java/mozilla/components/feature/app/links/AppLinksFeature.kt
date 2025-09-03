@@ -116,7 +116,7 @@ class AppLinksFeature(
         }
 
         val dialog = getOrCreateDialog(tab.content.private, url)
-        dialog.onConfirmRedirect = doOpenApp
+        dialog.onConfirmRedirect = { doOpenApp() }
         dialog.onCancelRedirect = doNotOpenApp
 
         if (!isAlreadyADialogCreated()) {
@@ -146,8 +146,6 @@ class AppLinksFeature(
             } else {
                 message
             },
-            positiveButtonText = R.string.mozac_feature_applinks_confirm_dialog_confirm,
-            negativeButtonText = R.string.mozac_feature_applinks_confirm_dialog_deny,
         )
     }
 

@@ -123,6 +123,9 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
     protected open fun initializeTelemetry() {
         components.metrics.initialize(this)
         FactsProcessor.initialize()
+        if (components.settings.isDailyUsagePingEnabled) {
+            components.usageReportingMetricsService.start()
+        }
     }
 
     /**

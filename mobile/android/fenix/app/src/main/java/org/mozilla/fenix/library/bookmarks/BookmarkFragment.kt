@@ -15,7 +15,6 @@ import android.view.MenuItem
 import android.view.View
 import android.view.ViewGroup
 import androidx.appcompat.app.AlertDialog
-import androidx.compose.material.SnackbarDuration
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.ViewCompositionStrategy
 import androidx.core.content.getSystemService
@@ -81,6 +80,7 @@ import org.mozilla.fenix.snackbar.SnackbarBinding
 import org.mozilla.fenix.tabstray.Page
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.utils.allowUndo
+import org.mozilla.fenix.utils.lastSavedFolderCache
 
 /**
  * The screen that displays the user's bookmark list in their Library.
@@ -89,7 +89,7 @@ import org.mozilla.fenix.utils.allowUndo
 class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHandler, MenuProvider {
 
     private lateinit var bookmarkStore: BookmarkFragmentStore
-    private lateinit var bookmarkView: BookmarkView
+    private var bookmarkView: BookmarkView? = null
     private lateinit var bookmarkInteractor: BookmarkFragmentInteractor
 
     private val sharedViewModel: BookmarksSharedViewModel by activityViewModels()
@@ -183,6 +183,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
                                             ),
                                         )
                                     },
+                                    lastSavedFolderCache = context.settings().lastSavedFolderCache,
                                 ),
                             ),
                             lifecycleHolder = lifecycleHolder,
@@ -231,7 +232,9 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
         )
 
         bookmarkView = BookmarkView(binding.bookmarkLayout, bookmarkInteractor, findNavController())
-        bookmarkView.binding.bookmarkFoldersSignIn.visibility = View.GONE
+            .apply {
+                binding.bookmarkFoldersSignIn.visibility = View.GONE
+            }
 
         viewLifecycleOwner.lifecycle.addObserver(
             BookmarkDeselectNavigationListener(
@@ -264,7 +267,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
                 snackBarParentView = it,
                 snackbarState = SnackbarState(
                     message = text,
-                    duration = SnackbarDuration.Long,
+                    duration = SnackbarState.Duration.Preset.Long,
                 ),
             ).show()
         }
@@ -278,13 +281,13 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
 
         val accountManager = requireComponents.backgroundServices.accountManager
         consumeFrom(bookmarkStore) {
-            bookmarkView.update(it)
+            bookmarkView?.update(it)
 
             // Only display the sign-in prompt if we're inside of the virtual "Desktop Bookmarks" node.
             // Don't want to pester user too much with it, and if there are lots of bookmarks present,
             // it'll just get visually lost. Inside of the "Desktop Bookmarks" node, it'll nicely stand-out,
             // since there are always only three other items in there. It's also the right place contextually.
-            bookmarkView.binding.bookmarkFoldersSignIn.isVisible =
+            bookmarkView?.binding?.bookmarkFoldersSignIn?.isVisible =
                 it.tree?.guid == BookmarkRoot.Root.id && accountManager.authenticatedAccount() == null
         }
     }
@@ -417,7 +420,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
             return false
         }
         sharedViewModel.selectedFolder = null
-        return bookmarkView.onBackPressed()
+        return bookmarkView?.onBackPressed() ?: false
     }
 
     private suspend fun loadBookmarkNode(guid: String, recursive: Boolean = false): BookmarkNode? = withContext(IO) {
@@ -535,6 +538,7 @@ class BookmarkFragment : LibraryPageFragment<BookmarkNode>(), UserInteractionHan
 
     override fun onDestroyView() {
         super.onDestroyView()
+        bookmarkView?.onDestroy()
         _binding = null
     }
 

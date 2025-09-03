@@ -18,6 +18,7 @@ class ShoppingSettings extends MozLitElement {
     adsEnabledByUser: { type: Boolean },
     autoOpenEnabled: { type: Boolean },
     autoOpenEnabledByUser: { type: Boolean },
+    autoCloseEnabledByUser: { type: Boolean },
     hostname: { type: String },
   };
 
@@ -27,6 +28,8 @@ class ShoppingSettings extends MozLitElement {
       recommendationsToggleEl: "#shopping-settings-recommendations-toggle",
       autoOpenToggleEl: "#shopping-settings-auto-open-toggle",
       autoOpenToggleDescriptionEl: "#shopping-auto-open-description",
+      autoCloseToggleEl: "#shopping-settings-auto-close-toggle",
+      autoCloseToggleDescriptionEl: "#shopping-auto-close-description",
       dividerEl: ".divider",
       optOutButtonEl: "#shopping-settings-opt-out-button",
       shoppingCardEl: "shopping-card",
@@ -58,6 +61,17 @@ class ShoppingSettings extends MozLitElement {
     }
   }
 
+  onToggleAutoClose() {
+    this.autoCloseEnabledByUser = this.autoCloseToggleEl.pressed;
+    let action = this.autoCloseEnabledByUser ? "enabled" : "disabled";
+    Glean.shopping.surfaceAutoCloseSettingToggled.record({ action });
+
+    RPMSetPref(
+      "browser.shopping.experience2023.autoClose.userEnabled",
+      this.autoCloseEnabledByUser
+    );
+  }
+
   onDisableShopping() {
     window.dispatchEvent(
       new CustomEvent("DisableShopping", { bubbles: true, composed: true })
@@ -85,17 +99,17 @@ class ShoppingSettings extends MozLitElement {
             data-l10n-id="shopping-settings-recommendations-toggle2"
             data-l10n-attrs="label"
             @toggle=${this.onToggleRecommendations}>
+            <span id="shopping-ads-learn-more" data-l10n-id="shopping-settings-recommendations-learn-more3" slot="description">
+              <a
+                id="shopping-ads-learn-more-link"
+                target="_blank"
+                href="${window.RPMGetFormatURLPref(
+                  "app.support.baseURL"
+                )}review-checker-review-quality?utm_campaign=learn-more&utm_medium=inproduct&utm_term=core-sidebar#w_ads_for_relevant_products"
+                data-l10n-name="review-quality-url"
+              ></a>
+            </span>
           </moz-toggle/>
-          <span id="shopping-ads-learn-more" data-l10n-id="shopping-settings-recommendations-learn-more3">
-            <a
-              id="shopping-ads-learn-more-link"
-              target="_blank"
-              href="${window.RPMGetFormatURLPref(
-                "app.support.baseURL"
-              )}review-checker-review-quality?utm_campaign=learn-more&utm_medium=inproduct&utm_term=core-sidebar#w_ads_for_relevant_products"
-              data-l10n-name="review-quality-url"
-            ></a>
-          </span>
         </div>`
       : null;
 
@@ -106,26 +120,35 @@ class ShoppingSettings extends MozLitElement {
      *
      * Only show if `browser.shopping.experience2023.autoOpen.enabled` is true.
      */
-    let autoOpenDescriptionL10nId;
-    let autoOpenDescriptionL10nArgs;
+    let autoOpenDescriptionL10nId =
+      "shopping-settings-auto-open-description-three-sites";
+    let autoOpenDescriptionL10nArgs = {
+      firstSite: "Amazon",
+      secondSite: "Best Buy",
+      thirdSite: "Walmart",
+    };
+    let autoCloseDescriptionL10nId =
+      "shopping-settings-auto-close-description-three-sites";
+    let autoCloseDescriptionL10nArgs = {
+      firstSite: "Amazon",
+      secondSite: "Best Buy",
+      thirdSite: "Walmart",
+    };
 
-    switch (this.hostname) {
-      case "www.amazon.fr":
-      case "www.amazon.de":
-        autoOpenDescriptionL10nId =
-          "shopping-settings-auto-open-description-single-site";
-        autoOpenDescriptionL10nArgs = {
-          currentSite: "Amazon",
-        };
-        break;
-      default:
-        autoOpenDescriptionL10nId =
-          "shopping-settings-auto-open-description-three-sites";
-        autoOpenDescriptionL10nArgs = {
-          firstSite: "Amazon",
-          secondSite: "Best Buy",
-          thirdSite: "Walmart",
-        };
+    if (
+      RPMGetBoolPref("toolkit.shopping.experience2023.defr", false) &&
+      (this.hostname === "www.amazon.fr" || this.hostname === "www.amazon.de")
+    ) {
+      autoOpenDescriptionL10nId =
+        "shopping-settings-auto-open-description-single-site";
+      autoOpenDescriptionL10nArgs = {
+        currentSite: "Amazon",
+      };
+      autoCloseDescriptionL10nId =
+        "shopping-settings-auto-close-description-single-site";
+      autoCloseDescriptionL10nArgs = {
+        currentSite: "Amazon",
+      };
     }
 
     let autoOpenToggleMarkup = this.autoOpenEnabled
@@ -137,14 +160,34 @@ class ShoppingSettings extends MozLitElement {
             data-l10n-attrs="label"
             @toggle=${this.onToggleAutoOpen}
           >
+            <span
+              slot="description"
+              id="shopping-auto-open-description"
+              data-l10n-id=${autoOpenDescriptionL10nId}
+              data-l10n-args=${JSON.stringify(autoOpenDescriptionL10nArgs)}
+            ></span>
           </moz-toggle>
-          <span
-            id="shopping-auto-open-description"
-            data-l10n-id=${autoOpenDescriptionL10nId}
-            data-l10n-args=${JSON.stringify(autoOpenDescriptionL10nArgs)}
-          ></span>
         </div>`
       : null;
+
+    let autoCloseToggleMarkup = html` <div
+      class="shopping-settings-toggle-option-wrapper"
+    >
+      <moz-toggle
+        id="shopping-settings-auto-close-toggle"
+        ?pressed=${this.autoCloseEnabledByUser}
+        data-l10n-id="shopping-settings-auto-close-toggle"
+        data-l10n-attrs="label"
+        @toggle=${this.onToggleAutoClose}
+      >
+        <span
+          slot="description"
+          id="shopping-auto-close-description"
+          data-l10n-id=${autoCloseDescriptionL10nId}
+          data-l10n-args=${JSON.stringify(autoCloseDescriptionL10nArgs)}
+        ></span>
+      </moz-toggle>
+    </div>`;
 
     return html`
       <link
@@ -156,6 +199,7 @@ class ShoppingSettings extends MozLitElement {
         href="chrome://browser/content/shopping/shopping-page.css"
       />
       <shopping-card
+        id="shopping-settings-label"
         data-l10n-id="shopping-settings-label"
         data-l10n-attrs="label"
         type="accordion"
@@ -168,7 +212,7 @@ class ShoppingSettings extends MozLitElement {
           slot="content"
         >
           <section id="shopping-settings-toggles-section">
-            ${autoOpenToggleMarkup} ${adsToggleMarkup}
+            ${autoOpenToggleMarkup} ${autoCloseToggleMarkup} ${adsToggleMarkup}
           </section>
           ${this.autoOpenEnabled
             ? html`<span class="divider" role="separator"></span>`

@@ -1793,6 +1793,27 @@ export function canUseAsRenderTarget(format: GPUTextureFormat) {
   return kTextureFormatInfo[format].colorRender || isDepthOrStencilTextureFormat(format);
 }
 
+export function is16Float(format: GPUTextureFormat) {
+  return format === 'r16float' || format === 'rg16float' || format === 'rgba16float';
+}
+
+export function is32Float(format: GPUTextureFormat) {
+  return format === 'r32float' || format === 'rg32float' || format === 'rgba32float';
+}
+
+/**
+ * Returns true if texture is filterable as `texture_xxx<f32>`
+ *
+ * examples:
+ * * 'rgba8unorm' -> true
+ * * 'depth16unorm' -> false
+ * * 'rgba32float' -> true (you need to enable feature 'float32-filterable')
+ */
+export function isFilterableAsTextureF32(format: GPUTextureFormat) {
+  const info = kTextureFormatInfo[format];
+  return info.color?.type === 'float' || is32Float(format);
+}
+
 export const kCompatModeUnsupportedStorageTextureFormats: readonly GPUTextureFormat[] = [
   'rg32float',
   'rg32sint',
@@ -1817,16 +1838,38 @@ export function isRegularTextureFormat(format: GPUTextureFormat) {
 }
 
 /**
- * Returns true of format is both compressed and a float format, for example 'bc6h-rgb-ufloat'.
+ * Returns true if format is both compressed and a float format, for example 'bc6h-rgb-ufloat'.
  */
 export function isCompressedFloatTextureFormat(format: GPUTextureFormat) {
   return isCompressedTextureFormat(format) && format.includes('float');
 }
 
 /**
+ * Returns true if format is sint or uint
+ */
+export function isSintOrUintFormat(format: GPUTextureFormat) {
+  const info = kTextureFormatInfo[format];
+  const type = info.color?.type ?? info.depth?.type ?? info.stencil?.type;
+  return type === 'sint' || type === 'uint';
+}
+
+/**
  * Returns true of format can be multisampled.
  */
-export function isMultisampledTextureFormat(format: GPUTextureFormat): boolean {
+export const kCompatModeUnsupportedMultisampledTextureFormats: readonly GPUTextureFormat[] = [
+  'rgba16float',
+  'r32float',
+] as const;
+
+export function isMultisampledTextureFormat(
+  format: GPUTextureFormat,
+  isCompatibilityMode: boolean
+): boolean {
+  if (isCompatibilityMode) {
+    if (kCompatModeUnsupportedMultisampledTextureFormats.indexOf(format) >= 0) {
+      return false;
+    }
+  }
   return kAllTextureFormatInfo[format].multisample;
 }
 

@@ -818,6 +818,16 @@ void nsCocoaWindow::Show(bool aState) {
       NS_OBJC_END_TRY_IGNORE_BLOCK;
     }
     SetSupportsNativeFullscreen(savedValueForSupportsNativeFullscreen);
+
+    // If we've previously tried to call MoveToWorkspace but the window wasn't
+    // visible, then we saved the call for later. Now is the time to actually
+    // do it.
+    if (mDeferredWorkspaceID) {
+      NS_OBJC_BEGIN_TRY_IGNORE_BLOCK
+      MoveVisibleWindowToWorkspace(mDeferredWorkspaceID);
+      NS_OBJC_END_TRY_IGNORE_BLOCK
+      mDeferredWorkspaceID = 0;
+    }
   } else {
     // roll up any popups if a top-level window is going away
     if (mWindowType == WindowType::TopLevel ||
@@ -908,7 +918,7 @@ void nsCocoaWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
     return;
   }
 
-  nsIntRect screenBounds;
+  DesktopIntRect screenRect;
 
   int32_t width, height;
 
@@ -926,22 +936,11 @@ void nsCocoaWindow::ConstrainPosition(DesktopIntPoint& aPoint) {
                              getter_AddRefs(screen));
 
     if (screen) {
-      screen->GetRectDisplayPix(&(screenBounds.x), &(screenBounds.y),
-                                &(screenBounds.width), &(screenBounds.height));
+      screenRect = screen->GetRectDisplayPix();
     }
   }
 
-  if (aPoint.x < screenBounds.x) {
-    aPoint.x = screenBounds.x;
-  } else if (aPoint.x >= screenBounds.x + screenBounds.width - width) {
-    aPoint.x = screenBounds.x + screenBounds.width - width;
-  }
-
-  if (aPoint.y < screenBounds.y) {
-    aPoint.y = screenBounds.y;
-  } else if (aPoint.y >= screenBounds.y + screenBounds.height - height) {
-    aPoint.y = screenBounds.y + screenBounds.height - height;
-  }
+  aPoint = ConstrainPositionToBounds(aPoint, {width, height}, screenRect);
 
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
@@ -1145,18 +1144,28 @@ int32_t nsCocoaWindow::GetWorkspaceID() {
 void nsCocoaWindow::MoveToWorkspace(const nsAString& workspaceIDStr) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
-  if ([NSScreen screensHaveSeparateSpaces] && [[NSScreen screens] count] > 1) {
-    // We don't support moving to a workspace when the user has this option
-    // enabled in Mission Control.
-    return;
-  }
-
   nsresult rv = NS_OK;
   int32_t workspaceID = workspaceIDStr.ToInteger(&rv);
   if (NS_FAILED(rv)) {
     return;
   }
 
+  // Calling [NSWindow windowNumber] on a window which doesn't have a window
+  // device will return -1. This happens when a window was created with
+  // defer:YES and has never been visible. During startup, the main app window
+  // won't yet have a window device when session restore tries to move it to its
+  // workspace, so we defer the move until it's actually shown. That's in the
+  // nsCocoaWindow::Show method.
+  if (mWindow.isVisible) {
+    MoveVisibleWindowToWorkspace(workspaceID);
+  } else {
+    mDeferredWorkspaceID = workspaceID;
+  }
+
+  NS_OBJC_END_TRY_IGNORE_BLOCK;
+}
+
+void nsCocoaWindow::MoveVisibleWindowToWorkspace(int32_t workspaceID) {
   CGSConnection cid = _CGSDefaultConnection();
   int32_t currentSpace = GetWorkspaceID();
   // If an empty workspace ID is passed in (not valid on OSX), or when the
@@ -1209,8 +1218,6 @@ void nsCocoaWindow::MoveToWorkspace(const nsAString& workspaceIDStr) {
   RemoveWindowsFromSpaces(cid,
                           (__bridge CFArrayRef) @[ @([mWindow windowNumber]) ],
                           (__bridge CFArrayRef) @[ @(currentSpace) ]);
-
-  NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
 void nsCocoaWindow::SuppressAnimation(bool aSuppress) {
@@ -2156,10 +2163,9 @@ void nsCocoaWindow::SetMenuBar(RefPtr<nsMenuBarX>&& aMenuBar) {
   if (mMenuBar && ((!gSomeMenuBarPainted &&
                     nsMenuUtilsX::GetHiddenWindowMenuBar() == mMenuBar) ||
                    mWindow.isMainWindow)) {
-    // We dispatch this in order to prevent crashes when macOS is actively
+    // We do an async paint in order to prevent crashes when macOS is actively
     // enumerating the menu items in `NSApp.mainMenu`.
-    NS_DispatchToCurrentThread(NS_NewRunnableFunction(
-        "PaintMenuBar", [menuBar = mMenuBar] { menuBar->Paint(); }));
+    mMenuBar->PaintAsync();
   }
 }
 
@@ -2199,7 +2205,7 @@ LayoutDeviceIntPoint nsCocoaWindow::GetClientOffset() {
   NS_OBJC_END_TRY_BLOCK_RETURN(LayoutDeviceIntPoint(0, 0));
 }
 
-LayoutDeviceIntMargin nsCocoaWindow::ClientToWindowMargin() {
+LayoutDeviceIntMargin nsCocoaWindow::NormalSizeModeClientToWindowMargin() {
   NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
 
   if (!mWindow || mWindow.drawsContentsIntoWindowFrame ||
@@ -2464,18 +2470,7 @@ void nsCocoaWindow::SetDrawsTitle(bool aDrawTitle) {
   NS_OBJC_END_TRY_IGNORE_BLOCK;
 }
 
-nsresult nsCocoaWindow::SetNonClientMargins(
-    const LayoutDeviceIntMargin& margins) {
-  NS_OBJC_BEGIN_TRY_BLOCK_RETURN;
-
-  SetDrawsInTitlebar(margins.top == 0);
-
-  return NS_OK;
-
-  NS_OBJC_END_TRY_BLOCK_RETURN(NS_ERROR_FAILURE);
-}
-
-void nsCocoaWindow::SetDrawsInTitlebar(bool aState) {
+void nsCocoaWindow::SetCustomTitlebar(bool aState) {
   NS_OBJC_BEGIN_TRY_IGNORE_BLOCK;
 
   if (mWindow) {
@@ -2646,7 +2641,9 @@ already_AddRefed<nsIWidget> nsIWidget::CreateChildWindow() {
   NS_ASSERTION(geckoWidget, "Window delegate not returning a gecko widget!");
 
   if (nsMenuBarX* geckoMenuBar = geckoWidget->GetMenuBar()) {
-    geckoMenuBar->Paint();
+    // We do an async paint in order to prevent crashes when macOS is actively
+    // enumerating the menu items in `NSApp.mainMenu`.
+    geckoMenuBar->PaintAsync();
   } else {
     // sometimes we don't have a native application menu early in launching
     if (!sApplicationMenu) {
@@ -2895,9 +2892,9 @@ void nsCocoaWindow::CocoaWindowDidResize() {
   RefPtr<nsMenuBarX> hiddenWindowMenuBar =
       nsMenuUtilsX::GetHiddenWindowMenuBar();
   if (hiddenWindowMenuBar) {
-    // printf("painting hidden window menu bar due to window losing main
-    // status\n");
-    hiddenWindowMenuBar->Paint();
+    // We do an async paint in order to prevent crashes when macOS is actively
+    // enumerating the menu items in `NSApp.mainMenu`.
+    hiddenWindowMenuBar->PaintAsync();
   }
 
   NSWindow* window = [aNotification object];

@@ -319,6 +319,7 @@ impl ImageData {
                 let visible_rect = compute_conservative_visible_rect(
                     &visibility.clip_chain,
                     frame_state.current_dirty_region().combined,
+                    frame_state.current_dirty_region().visibility_spatial_node,
                     prim_spatial_node_index,
                     frame_context.spatial_tree,
                 );
@@ -380,6 +381,13 @@ impl ImageData {
             None => {
                 image_instance.src_color = None;
             }
+        }
+
+        if let Some(task_id) = frame_state.image_dependencies.get(&self.key) {
+            frame_state.surface_builder.add_child_render_task(
+                *task_id,
+                frame_state.rg_builder
+            );
         }
 
         if let Some(mut request) = frame_state.gpu_cache.request(&mut common.gpu_cache_handle) {

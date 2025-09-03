@@ -12,6 +12,20 @@ const { EngineProcess } = ChromeUtils.importESModule(
 const { TranslationsPanelShared } = ChromeUtils.importESModule(
   "chrome://browser/content/translations/TranslationsPanelShared.sys.mjs"
 );
+const { TranslationsUtils } = ChromeUtils.importESModule(
+  "chrome://global/content/translations/TranslationsUtils.mjs"
+);
+
+// This is a bit silly, but ml/tests/browser/head.js relies on this function:
+// https://searchfox.org/mozilla-central/rev/14f68f084d6a3bc438a3f973ed81d3a4dbab9629/toolkit/components/ml/tests/browser/head.js#23-25
+//
+// And it also pulls in the entirety of this file.
+// https://searchfox.org/mozilla-central/rev/14f68f084d6a3bc438a3f973ed81d3a4dbab9629/toolkit/components/ml/tests/browser/head.js#41-46
+//
+// So we can't have a naming conflict of a variable defined twice like this.
+// https://bugzilla.mozilla.org/show_bug.cgi?id=1949530
+const { getInferenceProcessInfo: fetchInferenceProcessInfo } =
+  ChromeUtils.importESModule("chrome://global/content/ml/Utils.sys.mjs");
 
 // Avoid about:blank's non-standard behavior.
 const BLANK_PAGE =
@@ -21,24 +35,34 @@ const URL_COM_PREFIX = "https://example.com/browser/";
 const URL_ORG_PREFIX = "https://example.org/browser/";
 const CHROME_URL_PREFIX = "chrome://mochitests/content/browser/";
 const DIR_PATH = "toolkit/components/translations/tests/browser/";
-const ENGLISH_PAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-en.html";
-const SPANISH_PAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-es.html";
-const FRENCH_PAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-fr.html";
-const SPANISH_PAGE_URL_2 =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-es-2.html";
+
+/**
+ * Use a utility function to make this easier to read.
+ *
+ * @param {string} path
+ * @returns {string}
+ */
+function _url(path) {
+  return URL_COM_PREFIX + DIR_PATH + path;
+}
+
+const SPANISH_PAGE_URL = _url("translations-tester-es.html");
+const SPANISH_PAGE_URL_2 = _url("translations-tester-es-2.html");
+const SPANISH_PAGE_SHORT_URL = _url("translations-tester-es-short.html");
+const SPANISH_PAGE_MISMATCH_URL = _url("translations-tester-es-mismatch.html");
+const SPANISH_PAGE_MISMATCH_SHORT_URL = _url("translations-tester-es-mismatch-short.html"); // prettier-ignore
+const SPANISH_PAGE_UNDECLARED_URL = _url("translations-tester-es-undeclared.html"); // prettier-ignore
+const SPANISH_PAGE_UNDECLARED_SHORT_URL = _url("translations-tester-es-undeclared-short.html"); // prettier-ignore
+const ENGLISH_PAGE_URL = _url("translations-tester-en.html");
+const FRENCH_PAGE_URL = _url("translations-tester-fr.html");
+const NO_LANGUAGE_URL = _url("translations-tester-no-tag.html");
+const PDF_TEST_PAGE_URL = _url("translations-tester-pdf-file.pdf");
+const SELECT_TEST_PAGE_URL = _url("translations-tester-select.html");
+const TEXT_CLEANING_URL = _url("translations-text-cleaning.html");
+const SPANISH_BENCHMARK_PAGE_URL = _url("translations-bencher-es.html");
+
 const SPANISH_PAGE_URL_DOT_ORG =
   URL_ORG_PREFIX + DIR_PATH + "translations-tester-es.html";
-const NO_LANGUAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-no-tag.html";
-const PDF_TEST_PAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-pdf-file.pdf";
-const SELECT_TEST_PAGE_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-tester-select.html";
-const TEXT_CLEANING_URL =
-  URL_COM_PREFIX + DIR_PATH + "translations-text-cleaning.html";
 
 const PIVOT_LANGUAGE = "en";
 const LANGUAGE_PAIRS = [
@@ -55,6 +79,26 @@ const ALWAYS_TRANSLATE_LANGS_PREF =
   "browser.translations.alwaysTranslateLanguages";
 const NEVER_TRANSLATE_LANGS_PREF =
   "browser.translations.neverTranslateLanguages";
+const USE_LEXICAL_SHORTLIST_PREF = "browser.translations.useLexicalShortlist";
+
+/**
+ * Generates a sorted list of Translation model file names for the given language pairs.
+ *
+ * @param {Array<{ fromLang: string, toLang: string }>} languagePairs - An array of language pair objects.
+ *
+ * @returns {string[]} A sorted array of translation model file names.
+ */
+function languageModelNames(languagePairs) {
+  return languagePairs
+    .flatMap(({ fromLang, toLang }) => [
+      `model.${fromLang}${toLang}.intgemm.alphas.bin`,
+      `vocab.${fromLang}${toLang}.spm`,
+      ...(Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)
+        ? [`lex.50.50.${fromLang}${toLang}.s2t.bin`]
+        : []),
+    ])
+    .sort();
+}
 
 /**
  * The mochitest runs in the parent process. This function opens up a new tab,
@@ -107,6 +151,7 @@ async function openAboutTranslations({
       ["browser.translations.enable", !disabled],
       ["browser.translations.logLevel", "All"],
       ["browser.translations.mostRecentTargetLanguages", ""],
+      [USE_LEXICAL_SHORTLIST_PREF, false],
       ...(prefs ?? []),
     ],
   });
@@ -152,7 +197,7 @@ async function openAboutTranslations({
   const resolveDownloads = async count => {
     await remoteClients.translationsWasm.resolvePendingDownloads(1);
     await remoteClients.translationModels.resolvePendingDownloads(
-      FILES_PER_LANGUAGE_PAIR * count
+      downloadedFilesPerLanguagePair() * count
     );
   };
 
@@ -162,7 +207,7 @@ async function openAboutTranslations({
   const rejectDownloads = async count => {
     await remoteClients.translationsWasm.rejectPendingDownloads(1);
     await remoteClients.translationModels.rejectPendingDownloads(
-      FILES_PER_LANGUAGE_PAIR * count
+      downloadedFilesPerLanguagePair() * count
     );
   };
 
@@ -453,6 +498,7 @@ async function createTranslationsDoc(html, options) {
     set: [
       ["browser.translations.enable", true],
       ["browser.translations.logLevel", "All"],
+      [USE_LEXICAL_SHORTLIST_PREF, false],
     ],
   });
 
@@ -707,6 +753,7 @@ async function setupActorTest({
       // Enabled by default.
       ["browser.translations.enable", true],
       ["browser.translations.logLevel", "All"],
+      [USE_LEXICAL_SHORTLIST_PREF, false],
       ...(prefs ?? []),
     ],
   });
@@ -758,9 +805,7 @@ async function createAndMockRemoteSettings({
   autoDownloadFromRemoteSettings = false,
 }) {
   if (TranslationsParent.isTranslationsEngineMocked()) {
-    throw new Error(
-      "Attempt to mock the Translations Engine when it is already mocked."
-    );
+    info("Attempt to mock the Translations Engine when it is already mocked.");
   }
 
   const remoteClients = {
@@ -978,6 +1023,9 @@ async function loadTestPage({
   prefs,
   autoOffer,
   permissionsUrls,
+  systemLocales = ["en"],
+  appLocales,
+  webLanguages,
   win = window,
 }) {
   info(`Loading test page starting at url: ${page}`);
@@ -1005,6 +1053,7 @@ async function loadTestPage({
         ["browser.translations.alwaysTranslateLanguages", ""],
         ["browser.translations.neverTranslateLanguages", ""],
         ["browser.translations.mostRecentTargetLanguages", ""],
+        [USE_LEXICAL_SHORTLIST_PREF, false],
         // Bug 1893100 - This is needed to ensure that switching focus
         // with tab works in tests independent of macOS settings that
         // would otherwise disable keyboard navigation at the OS level.
@@ -1042,6 +1091,15 @@ async function loadTestPage({
     TranslationsParent.testAutomaticPopup = true;
   }
 
+  let cleanupLocales;
+  if (systemLocales || appLocales || webLanguages) {
+    cleanupLocales = await mockLocales({
+      systemLocales,
+      appLocales,
+      webLanguages,
+    });
+  }
+
   // Start the tab at a blank page.
   const tab = await BrowserTestUtils.openNewForegroundTab(
     win.gBrowser,
@@ -1075,7 +1133,7 @@ async function loadTestPage({
     async resolveDownloads(count) {
       await remoteClients.translationsWasm.resolvePendingDownloads(1);
       await remoteClients.translationModels.resolvePendingDownloads(
-        FILES_PER_LANGUAGE_PAIR * count
+        downloadedFilesPerLanguagePair() * count
       );
     },
 
@@ -1090,7 +1148,7 @@ async function loadTestPage({
     async rejectDownloads(count) {
       await remoteClients.translationsWasm.rejectPendingDownloads(1);
       await remoteClients.translationModels.rejectPendingDownloads(
-        FILES_PER_LANGUAGE_PAIR * count
+        downloadedFilesPerLanguagePair() * count
       );
     },
 
@@ -1113,7 +1171,7 @@ async function loadTestPage({
         expectedWasmDownloads
       );
       await remoteClients.translationModels.resolvePendingDownloads(
-        FILES_PER_LANGUAGE_PAIR * expectedLanguagePairDownloads
+        downloadedFilesPerLanguagePair() * expectedLanguagePairDownloads
       );
     },
 
@@ -1136,7 +1194,7 @@ async function loadTestPage({
         expectedWasmDownloads
       );
       await remoteClients.translationModels.rejectPendingDownloads(
-        FILES_PER_LANGUAGE_PAIR * expectedLanguagePairDownloads
+        downloadedFilesPerLanguagePair() * expectedLanguagePairDownloads
       );
     },
 
@@ -1148,6 +1206,9 @@ async function loadTestPage({
       await loadBlankPage();
       await EngineProcess.destroyTranslationsEngine();
       await removeMocks();
+      if (cleanupLocales) {
+        await cleanupLocales();
+      }
       restoreA11yUtils();
       Services.fog.testResetFOG();
       TranslationsParent.testAutomaticPopup = false;
@@ -1339,17 +1400,26 @@ function createAttachmentMock(
 }
 
 /**
- * The amount of files that are generated per mocked language pair.
+ * The count of records per mocked language pair in Remote Settings.
  */
-const FILES_PER_LANGUAGE_PAIR = 3;
+const RECORDS_PER_LANGUAGE_PAIR = 3;
+
+/**
+ * The count of files that are downloaded for a mocked language pair in Remote Settings.
+ */
+function downloadedFilesPerLanguagePair() {
+  return Services.prefs.getBoolPref(USE_LEXICAL_SHORTLIST_PREF)
+    ? RECORDS_PER_LANGUAGE_PAIR
+    : RECORDS_PER_LANGUAGE_PAIR - 1;
+}
 
 function createRecordsForLanguagePair(fromLang, toLang) {
   const records = [];
   const lang = fromLang + toLang;
   const models = [
     { fileType: "model", name: `model.${lang}.intgemm.alphas.bin` },
-    { fileType: "lex", name: `lex.50.50.${lang}.s2t.bin` },
     { fileType: "vocab", name: `vocab.${lang}.spm` },
+    { fileType: "lex", name: `lex.50.50.${lang}.s2t.bin` },
   ];
 
   const attachment = {
@@ -1361,7 +1431,7 @@ function createRecordsForLanguagePair(fromLang, toLang) {
     isDownloaded: false,
   };
 
-  if (models.length !== FILES_PER_LANGUAGE_PAIR) {
+  if (models.length !== RECORDS_PER_LANGUAGE_PAIR) {
     throw new Error("Files per language pair was wrong.");
   }
 
@@ -1372,7 +1442,7 @@ function createRecordsForLanguagePair(fromLang, toLang) {
       fromLang,
       toLang,
       fileType,
-      version: TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION + ".0",
+      version: TranslationsParent.LANGUAGE_MODEL_MAJOR_VERSION_MAX + ".0",
       last_modified: Date.now(),
       schema: Date.now(),
       attachment: JSON.parse(JSON.stringify(attachment)), // Making a deep copy.
@@ -1721,6 +1791,7 @@ async function setupAboutPreferences(
       // Enabled by default.
       ["browser.translations.enable", true],
       ["browser.translations.logLevel", "All"],
+      [USE_LEXICAL_SHORTLIST_PREF, false],
       ...prefs,
     ],
   });
@@ -1762,6 +1833,9 @@ async function setupAboutPreferences(
   }
 
   async function cleanup() {
+    Services.prefs.setCharPref(NEVER_TRANSLATE_LANGS_PREF, "");
+    Services.prefs.setCharPref(ALWAYS_TRANSLATE_LANGS_PREF, "");
+    Services.perms.removeAll();
     await closeAllOpenPanelsAndMenus();
     await loadBlankPage();
     await EngineProcess.destroyTranslationsEngine();
@@ -1776,6 +1850,44 @@ async function setupAboutPreferences(
     remoteClients,
     elements,
   };
+}
+
+/**
+ * Tests a callback function with the lexical shortlist preference enabled and disabled.
+ *
+ * @param {Function} callback - An async function to execute, receiving the preference settings as an argument.
+ */
+async function testWithAndWithoutLexicalShortlist(callback) {
+  for (const prefs of [
+    [[USE_LEXICAL_SHORTLIST_PREF, true]],
+    [[USE_LEXICAL_SHORTLIST_PREF, false]],
+  ]) {
+    await callback(prefs);
+  }
+}
+
+/**
+ * Waits for the "translations:model-records-changed" observer event to occur.
+ *
+ * @param {Function} [callback]
+ *   - An optional function to execute before waiting for the "translations:pref-changed" observer event.
+ * @returns {Promise<void>}
+ *   - A promise that resolves when the "translations:model-records-changed" event is observed.
+ */
+async function waitForTranslationModelRecordsChanged(callback) {
+  const { promise, resolve } = Promise.withResolvers();
+
+  function onChange() {
+    Services.obs.removeObserver(onChange, "translations:model-records-changed");
+    resolve();
+  }
+  Services.obs.addObserver(onChange, "translations:model-records-changed");
+
+  if (callback) {
+    await callback();
+  }
+
+  await promise;
 }
 
 function waitForAppLocaleChanged() {
@@ -1886,9 +1998,9 @@ class TestTranslationsTelemetry {
    * @param {object} expectations - The test expectations.
    * @param {number} expectations.expectedEventCount - The expected count of events.
    * @param {boolean} expectations.expectNewFlowId
-   * @param {Record<string, string | boolean | number>} [expectations.assertForAllEvents]
+   * @param {Record<string, string | boolean | number | Function>} [expectations.assertForAllEvents]
    * - A record of key-value pairs to assert against all events in this category.
-   * @param {Record<string, string | boolean | number>} [expectations.assertForMostRecentEvent]
+   * @param {Record<string, string | boolean | number | Function>} [expectations.assertForMostRecentEvent]
    * - A record of key-value pairs to assert against the most recently recorded event in this category.
    */
   static async assertEvent(
@@ -1948,15 +2060,20 @@ class TestTranslationsTelemetry {
         true,
         `Telemetry event ${name} should contain values if assertForMostRecentEvent are specified`
       );
-      for (const [key, expectedEntry] of Object.entries(
-        assertForMostRecentEvent
-      )) {
+      for (const [key, expected] of Object.entries(assertForAllEvents)) {
         for (const event of events) {
-          is(
-            event.extra[key],
-            String(expectedEntry),
-            `Telemetry event ${name} value for ${key} should match the expected entry`
-          );
+          if (typeof expected === "function") {
+            ok(
+              expected(event.extra[key]),
+              `Telemetry event ${name} value for ${key} should match the expected predicate`
+            );
+          } else {
+            is(
+              event.extra[key],
+              String(expected),
+              `Telemetry event ${name} value for ${key} should match the expected entry`
+            );
+          }
         }
       }
     }
@@ -1967,14 +2084,19 @@ class TestTranslationsTelemetry {
         true,
         `Telemetry event ${name} should contain values if assertForMostRecentEvent are specified`
       );
-      for (const [key, expectedEntry] of Object.entries(
-        assertForMostRecentEvent
-      )) {
-        is(
-          events[eventCount - 1].extra[key],
-          String(expectedEntry),
-          `Telemetry event ${name} value for ${key} should match the expected entry`
-        );
+      for (const [key, expected] of Object.entries(assertForMostRecentEvent)) {
+        if (typeof expected === "function") {
+          ok(
+            expected(events[eventCount - 1].extra[key]),
+            `Telemetry event ${name} value for ${key} should match the expected predicate`
+          );
+        } else {
+          is(
+            events[eventCount - 1].extra[key],
+            String(expected),
+            `Telemetry event ${name} value for ${key} should match the expected entry`
+          );
+        }
       }
     }
   }
@@ -2006,6 +2128,41 @@ class TestTranslationsTelemetry {
       denominator,
       expectedDenominator,
       `Telemetry rate ${name} should have expected denominator`
+    );
+  }
+
+  /**
+   * Asserts that all TranslationsEngine performance events are expected and have valid data.
+   *
+   * @param {object} expectations - The test expectations.
+   * @param {number} expectations.expectedEventCount - The expected count of engine performance events.
+   */
+  static async assertTranslationsEnginePerformance({ expectedEventCount }) {
+    info("Destroying the TranslationsEngine.");
+    await EngineProcess.destroyTranslationsEngine();
+
+    const isNotEmptyString = entry => typeof entry === "string" && entry !== "";
+    const isGreaterThanZero = entry => parseFloat(entry) > 0;
+
+    const assertForAllEvents =
+      expectedEventCount === 0
+        ? {}
+        : {
+            from_language: isNotEmptyString,
+            to_language: isNotEmptyString,
+            average_words_per_request: isGreaterThanZero,
+            average_words_per_second: isGreaterThanZero,
+            total_completed_requests: isGreaterThanZero,
+            total_inference_seconds: isGreaterThanZero,
+            total_translated_words: isGreaterThanZero,
+          };
+
+    await TestTranslationsTelemetry.assertEvent(
+      Glean.translations.enginePerformance,
+      {
+        expectedEventCount,
+        assertForAllEvents,
+      }
     );
   }
 }

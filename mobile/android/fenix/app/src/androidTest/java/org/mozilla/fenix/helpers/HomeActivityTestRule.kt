@@ -7,14 +7,20 @@
 package org.mozilla.fenix.helpers
 
 import android.content.Intent
+import android.os.Handler
+import android.os.Looper
+import android.os.StrictMode
 import android.util.Log
 import android.view.ViewConfiguration.getLongPressTimeout
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.intent.rule.IntentsTestRule
 import androidx.test.rule.ActivityTestRule
 import mozilla.components.feature.sitepermissions.SitePermissionsRules
+import mozilla.components.support.base.log.logger.Logger
 import org.junit.rules.TestRule
 import org.mozilla.fenix.HomeActivity
+import org.mozilla.fenix.components.initializeGlean
+import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.FeatureSettingsHelper.Companion.settings
 import org.mozilla.fenix.helpers.TestHelper.appContext
@@ -60,6 +66,9 @@ class HomeActivityTestRule(
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
         isNavigationToolbarEnabled: Boolean = false,
         isMenuRedesignEnabled: Boolean = false,
+        isMenuRedesignCFREnabled: Boolean = false,
+        isNewBookmarksEnabled: Boolean = false,
+        isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         isSetAsDefaultBrowserPromptEnabled: Boolean = settings.setAsDefaultBrowserPromptForExistingUsersEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
@@ -78,6 +87,9 @@ class HomeActivityTestRule(
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
         this.isMenuRedesignEnabled = isMenuRedesignEnabled
+        this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
+        this.isNewBookmarksEnabled = isNewBookmarksEnabled
+        this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.isSetAsDefaultBrowserPromptEnabled = isSetAsDefaultBrowserPromptEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
@@ -141,6 +153,7 @@ class HomeActivityTestRule(
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
+            isPageLoadTranslationsPromptEnabled = false,
         )
     }
 }
@@ -181,6 +194,9 @@ class HomeActivityIntentTestRule internal constructor(
         isLocationPermissionEnabled: SitePermissionsRules.Action = getFeaturePermission(PhoneFeature.LOCATION, settings),
         isNavigationToolbarEnabled: Boolean = false,
         isMenuRedesignEnabled: Boolean = false,
+        isMenuRedesignCFREnabled: Boolean = false,
+        isNewBookmarksEnabled: Boolean = false,
+        isPageLoadTranslationsPromptEnabled: Boolean = false,
         isMicrosurveyEnabled: Boolean = settings.microsurveyFeatureEnabled,
         isSetAsDefaultBrowserPromptEnabled: Boolean = settings.setAsDefaultBrowserPromptForExistingUsersEnabled,
         shouldUseBottomToolbar: Boolean = settings.shouldUseBottomToolbar,
@@ -199,6 +215,9 @@ class HomeActivityIntentTestRule internal constructor(
         this.isLocationPermissionEnabled = isLocationPermissionEnabled
         this.isNavigationToolbarEnabled = isNavigationToolbarEnabled
         this.isMenuRedesignEnabled = isMenuRedesignEnabled
+        this.isMenuRedesignCFREnabled = isMenuRedesignCFREnabled
+        this.isNewBookmarksEnabled = isNewBookmarksEnabled
+        this.enableOrDisablePageLoadTranslationsPrompt(isPageLoadTranslationsPromptEnabled)
         this.isMicrosurveyEnabled = isMicrosurveyEnabled
         this.isSetAsDefaultBrowserPromptEnabled = isSetAsDefaultBrowserPromptEnabled
         this.shouldUseBottomToolbar = shouldUseBottomToolbar
@@ -271,6 +290,8 @@ class HomeActivityIntentTestRule internal constructor(
         isLocationPermissionEnabled = getFeaturePermission(PhoneFeature.LOCATION, settings)
         isNavigationToolbarEnabled = settings.navigationToolbarEnabled
         isMenuRedesignEnabled = settings.enableMenuRedesign
+        isMenuRedesignCFREnabled = settings.shouldShowMenuCFR
+        isNewBookmarksEnabled = settings.useNewBookmarks
         isMicrosurveyEnabled = settings.microsurveyFeatureEnabled
         isSetAsDefaultBrowserPromptEnabled = settings.setAsDefaultBrowserPromptForExistingUsersEnabled
         shouldUseBottomToolbar = settings.shouldUseBottomToolbar
@@ -303,6 +324,7 @@ class HomeActivityIntentTestRule internal constructor(
             // workaround for toolbar at top position by default
             // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
             shouldUseBottomToolbar = true,
+            isPageLoadTranslationsPromptEnabled = false,
         )
     }
 }
@@ -329,5 +351,17 @@ private fun skipOnboardingBeforeLaunch() {
     // this API so it can be fragile.
     Log.i(TAG, "skipOnboardingBeforeLaunch: Trying to skip the onboarding before launching the app")
     FenixOnboarding(appContext).finish()
+    // As we are disabling the onboarding we need to initialize glean manually,
+    // as it runs after the onboarding finishes
+    Handler(Looper.getMainLooper()).post() {
+        appContext.components.strictMode.resetAfter(StrictMode.allowThreadDiskReads()) {
+            initializeGlean(
+                applicationContext = appContext,
+                logger = Logger(),
+                isTelemetryUploadEnabled = appContext.components.settings.isTelemetryEnabled,
+                client = appContext.components.core.client,
+            )
+        }
+    }
     Log.i(TAG, "skipOnboardingBeforeLaunch: Successfully skipped the onboarding before launching the app")
 }

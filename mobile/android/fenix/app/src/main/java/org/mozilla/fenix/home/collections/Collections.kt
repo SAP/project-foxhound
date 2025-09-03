@@ -11,16 +11,17 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableState
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.feature.tab.collections.Tab
 import mozilla.components.feature.tab.collections.TabCollection
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.MenuItem
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -65,17 +66,19 @@ fun Collections(
                 val lastId = collection.tabs.last().id
 
                 for (tab in collection.tabs) {
-                    CollectionItem(
-                        tab = tab,
-                        isLastInCollection = tab.id == lastId,
-                        onClick = { interactor.onCollectionOpenTabClicked(tab) },
-                        onRemove = {
-                            interactor.onCollectionRemoveTab(
-                                collection = collection,
-                                tab = tab,
-                            )
-                        },
-                    )
+                    key(tab.id) {
+                        CollectionItem(
+                            tab = tab,
+                            isLastInCollection = tab.id == lastId,
+                            onClick = { interactor.onCollectionOpenTabClicked(tab) },
+                            onRemove = {
+                                interactor.onCollectionRemoveTab(
+                                    collection = collection,
+                                    tab = tab,
+                                )
+                            },
+                        )
+                    }
                 }
             }
         }

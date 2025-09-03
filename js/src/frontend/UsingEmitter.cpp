@@ -9,7 +9,6 @@
 #include "frontend/IfEmitter.h"
 #include "frontend/TryEmitter.h"
 #include "frontend/WhileEmitter.h"
-#include "vm/CompletionKind.h"
 
 using namespace js;
 using namespace js::frontend;
@@ -128,65 +127,34 @@ bool DisposalEmitter::emitResourcePropertyAccess(TaggedParserAtomIndex prop,
 // Steps 1-2.
 bool DisposalEmitter::prepareForDisposeCapability() {
   MOZ_ASSERT(state_ == State::Start);
-  MOZ_ASSERT(initialCompletion_ != CompletionKind::Return);
 
-  // [stack] # if CompletionKind::Throw
-  // [stack] EXC
-  // [stack] # otherwise (CompletionKind::Normal)
-  // [stack]
+  // [stack] THROWING EXC
+
   if (hasAsyncDisposables_) {
-    // Awaits can cause suspension of the current frame and
-    // the erasure of the frame's return value, thus we preserve
-    // the frame's return value on the value stack.
-    if (!bce_->emit1(JSOp::GetRval)) {
-      // [stack] EXC? RVAL
-      return false;
-    }
-
     // Step 1. Let needsAwait be false.
     if (!bce_->emit1(JSOp::False)) {
-      // [stack] EXC? RVAL NEEDS-AWAIT
+      // [stack] THROWING EXC NEEDS-AWAIT
       return false;
     }
 
     // Step 2. Let hasAwaited be false.
     if (!bce_->emit1(JSOp::False)) {
-      // [stack] EXC? RVAL NEEDS-AWAIT HAS-AWAITED
+      // [stack] THROWING EXC NEEDS-AWAIT HAS-AWAITED
+      return false;
+    }
+
+    if (!bce_->emitPickN(3)) {
+      // [stack] EXC NEEDS-AWAIT HAS-AWAITED THROWING
+      return false;
+    }
+
+    if (!bce_->emitPickN(3)) {
+      // [stack] NEEDS-AWAIT HAS-AWAITED THROWING EXC
       return false;
     }
   }
 
-  // corresponds to completion parameter
-  if (initialCompletion_ == CompletionKind::Throw) {
-    if (!bce_->emit1(JSOp::True)) {
-      // [stack] EXC RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING
-      return false;
-    }
-
-    if (hasAsyncDisposables_) {
-      // [stack] EXC RVAL NEEDS-AWAIT HAS-AWAITED THROWING
-      if (!bce_->emitPickN(4)) {
-        // [stack] RVAL NEEDS-AWAIT HAS-AWAITED THROWING EXC
-        return false;
-      }
-    } else {
-      // [stack] EXC THROWING
-      if (!bce_->emit1(JSOp::Swap)) {
-        // [stack] THROWING EXC
-        return false;
-      }
-    }
-  } else {
-    if (!bce_->emit1(JSOp::False)) {
-      // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING
-      return false;
-    }
-
-    if (!bce_->emit1(JSOp::Undefined)) {
-      // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING UNDEF
-      return false;
-    }
-  }
+  // [stack] NEEDS-AWAIT? HAS-AWAITED? THROWING EXC
 
 #ifdef DEBUG
   state_ = State::DisposeCapability;
@@ -205,9 +173,8 @@ bool DisposalEmitter::prepareForDisposeCapability() {
 // async disposals as necessary in bytecode.
 bool DisposalEmitter::emitEnd(EmitterScope& es) {
   MOZ_ASSERT(state_ == State::DisposeCapability);
-  MOZ_ASSERT(initialCompletion_ != CompletionKind::Return);
 
-  // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES COUNT
+  // [stack] NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES COUNT
 
   // For the purpose of readbility some values are omitted from
   // the stack comments and are assumed to be present,
@@ -254,7 +221,7 @@ bool DisposalEmitter::emitEnd(EmitterScope& es) {
     return false;
   }
 
-  // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES INDEX
+  // [stack] NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES INDEX
 
   if (hasAsyncDisposables_) {
     // [stack] NEEDS-AWAIT HAS-AWAITED THROWING EXC RESOURCES INDEX
@@ -481,8 +448,7 @@ bool DisposalEmitter::emitEnd(EmitterScope& es) {
     return false;
   }
 
-  if (initialCompletion_ == CompletionKind::Throw &&
-      bce_->sc->isSuspendableContext() &&
+  if (bce_->sc->isSuspendableContext() &&
       bce_->sc->asSuspendableContext()->isGenerator()) {
     // [stack] ... THROWING RESOURCES INDEX EXC2 EXC
 
@@ -701,31 +667,18 @@ bool DisposalEmitter::emitEnd(EmitterScope& es) {
     return false;
   }
 
-  if (hasAsyncDisposables_) {
-    // [stack] RVAL EXC THROWING
-
-    if (!bce_->emitPickN(2)) {
-      // [stack] EXC THROWING RVAL
-      return false;
-    }
-
-    if (!bce_->emit1(JSOp::SetRval)) {
-      // [stack] EXC THROWING
-      return false;
-    }
-  }
-
 #ifdef DEBUG
   state_ = State::End;
 #endif
   return true;
 }
 
-bool UsingEmitter::emitDisposeResourcesForEnvironment(
-    EmitterScope& es, CompletionKind initialCompletion) {
-  DisposalEmitter de(bce_, hasAwaitUsing_, initialCompletion);
+bool UsingEmitter::emitDisposeResourcesForEnvironment(EmitterScope& es) {
+  // [stack] THROWING EXC
+
+  DisposalEmitter de(bce_, hasAwaitUsing_);
   if (!de.prepareForDisposeCapability()) {
-    // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING EXC
+    // [stack] NEEDS-AWAIT? HAS-AWAITED? THROWING EXC
     return false;
   }
 
@@ -736,7 +689,7 @@ bool UsingEmitter::emitDisposeResourcesForEnvironment(
   // Step 6. Set disposeCapability.[[DisposableResourceStack]] to a new empty
   // List.
   if (!emitTakeDisposeCapability()) {
-    // [stack] RVAL? NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES COUNT
+    // [stack] NEEDS-AWAIT? HAS-AWAITED? THROWING EXC RESOURCES COUNT
     return false;
   }
 
@@ -756,7 +709,7 @@ bool UsingEmitter::prepareForDisposableScopeBody(BlockKind blockKind) {
   // See ForOfLoopControl::emitEndCodeNeedingIteratorClose.
   if (blockKind != BlockKind::ForOf) {
     tryEmitter_.emplace(bce_, TryEmitter::Kind::TryFinally,
-                        TryEmitter::ControlKind::NonSyntactic);
+                        TryEmitter::ControlKind::Disposal);
     if (!tryEmitter_->emitTry()) {
       return false;
     }
@@ -1060,6 +1013,16 @@ bool ForOfDisposalEmitter::prepareForForOfLoopIteration() {
   EmitterScope* es = bce_->innermostEmitterScopeNoCheck();
   MOZ_ASSERT(es->hasDisposables());
 
+  if (!bce_->emit1(JSOp::False)) {
+    // [stack] THROWING
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::Undefined)) {
+    // [stack] THROWING UNDEF
+    return false;
+  }
+
   if (!emitDisposeResourcesForEnvironment(*es)) {
     // [stack] EXC THROWING
     return false;
@@ -1088,7 +1051,17 @@ bool ForOfDisposalEmitter::emitEnd() {
     return false;
   }
 
-  if (!emitDisposeResourcesForEnvironment(*es, CompletionKind::Throw)) {
+  if (!bce_->emit1(JSOp::True)) {
+    // [stack] STACK EXC THROWING
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::Swap)) {
+    // [stack] STACK THROWING EXC
+    return false;
+  }
+
+  if (!emitDisposeResourcesForEnvironment(*es)) {
     // [stack] STACK EXC THROWING
     return false;
   }
@@ -1109,71 +1082,101 @@ bool ForOfDisposalEmitter::emitEnd() {
   return true;
 }
 
-bool UsingEmitter::emitNonLocalJump(EmitterScope* present) {
-  MOZ_ASSERT(state_ == State::DisposableScopeBody);
-  MOZ_ASSERT(present->hasDisposables());
-
-  if (!emitDisposeResourcesForEnvironment(*present)) {
-    // [stack] EXC THROWING
-    return false;
-  }
-
-  return emitThrowIfException();
-}
-
 bool UsingEmitter::emitEnd() {
   MOZ_ASSERT(state_ == State::DisposableScopeBody);
   EmitterScope* es = bce_->innermostEmitterScopeNoCheck();
   MOZ_ASSERT(es->hasDisposables());
   MOZ_ASSERT(tryEmitter_.isSome());
 
-  // Given that we are using NonSyntactic TryEmitter we do
-  // not have fallthrough behaviour in the normal completion case
-  // see comment on controlInfo_ in TryEmitter.h
-  if (!emitDisposeResourcesForEnvironment(*es)) {
-    //     [stack] EXC THROWING
+  if (!tryEmitter_->emitFinally()) {
+    // [stack] EXC-OR-RESUME STACK THROWING RVAL?
     return false;
+  }
+
+  if (!bce_->emitDupAt(tryEmitter_->shouldUpdateRval() ? 1 : 0)) {
+    // [stack] EXC-OR-RESUME STACK THROWING RVAL? THROWING
+    return false;
+  }
+
+  InternalIfEmitter ifThrowing(bce_);
+
+  if (!ifThrowing.emitThenElse()) {
+    // [stack] EXC STACK THROWING RVAL?
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::True)) {
+    // [stack] EXC STACK THROWING RVAL? THROWING
+    return false;
+  }
+
+  if (!bce_->emitDupAt(tryEmitter_->shouldUpdateRval() ? 4 : 3)) {
+    // [stack] EXC STACK THROWING RVAL? THROWING EXC
+    return false;
+  }
+
+  if (!ifThrowing.emitElse()) {
+    // [stack] RESUME STACK THROWING RVAL?
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::False)) {
+    // [stack] RESUME STACK THROWING RVAL? THROWING
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::Undefined)) {
+    // [stack] RESUME STACK THROWING RVAL? THROWING UNDEF
+    return false;
+  }
+
+  if (!ifThrowing.emitEnd()) {
+    // [stack] EXC-OR-RESUME STACK THROWING RVAL? THROWING EXC-OR-UNDEF
+    return false;
+  }
+
+  if (!emitDisposeResourcesForEnvironment(*es)) {
+    // [stack] EXC-OR-RESUME STACK THROWING RVAL? DISPOSAL-EXC DISPOSAL-THROWING
+    return false;
+  }
+
+  if (bce_->sc->isSuspendableContext() &&
+      bce_->sc->asSuspendableContext()->isGenerator()) {
+    // [stack] ... DISP-EXC DISP-THROWING
+
+    if (!bce_->emit1(JSOp::Swap)) {
+      // [stack] ... DISP-THROWING DISP-EXC
+      return false;
+    }
+
+    if (!bce_->emit1(JSOp::IsGenClosing)) {
+      // [stack] ... DISP-THROWING DISP-EXC GEN-CLOSING
+      return false;
+    }
+
+    if (!bce_->emit1(JSOp::Not)) {
+      // [stack] ... DISP-THROWING DISP-EXC !GEN-CLOSING
+      return false;
+    }
+
+    if (!bce_->emitPickN(2)) {
+      // [stack] ... DISP-EXC !GEN-CLOSING DISP-THROWING
+      return false;
+    }
+
+    if (!bce_->emit1(JSOp::BitAnd)) {
+      // [stack] ... DISP-EXC (DISP-THROWING & !GEN-CLOSING)
+      return false;
+    }
   }
 
   if (!emitThrowIfException()) {
-    //     [stack]
-    return false;
-  }
-
-#ifdef DEBUG
-  // We want to ensure that we have EXC and STACK on the stack
-  // and not RESUME_INDEX, non-existence of control info
-  // confirms the same.
-  MOZ_ASSERT(!tryEmitter_->hasControlInfo());
-#endif
-
-  if (!tryEmitter_->emitFinally()) {
-    //     [stack] EXC STACK THROWING
-    return false;
-  }
-
-  if (!bce_->emitPickN(2)) {
-    //    [stack] STACK THROWING EXC
-    return false;
-  }
-
-  if (!emitDisposeResourcesForEnvironment(*es, CompletionKind::Throw)) {
-    //     [stack] STACK THROWING EXC THROWING
-    return false;
-  }
-
-  if (!bce_->emit1(JSOp::Pop)) {
-    //     [stack] STACK THROWING EXC
-    return false;
-  }
-
-  if (!bce_->emitUnpickN(2)) {
-    //    [stack] EXC STACK THROWING
+    // [stack] EXC-OR-RESUME STACK THROWING RVAL?
     return false;
   }
 
   if (!tryEmitter_->emitEnd()) {
-    //     [stack]
+    // [stack]
     return false;
   }
 
@@ -1203,6 +1206,16 @@ bool NonLocalIteratorCloseUsingEmitter::prepareForIteratorClose(
   setHasAwaitUsing(es.hasAsyncDisposables());
 
   // [stack] ITER
+
+  if (!bce_->emit1(JSOp::False)) {
+    // [stack] THROWING
+    return false;
+  }
+
+  if (!bce_->emit1(JSOp::Undefined)) {
+    // [stack] THROWING UNDEF
+    return false;
+  }
 
   if (!emitDisposeResourcesForEnvironment(es)) {
     // [stack] ITER EXC-DISPOSE DISPOSE-THROWING

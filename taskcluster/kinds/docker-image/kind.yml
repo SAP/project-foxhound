@@ -227,6 +227,12 @@ tasks:
         definition: debian-repackage
         packages:
             - deb12-mercurial
+    debian12-flatpak:
+        symbol: I(deb12-flatpak)
+        parent: debian12-base
+        definition: debian-flatpak
+        packages:
+            - deb12-mercurial
     deb12-toolchain-build:
         symbol: I(deb12-toolchain)
         parent: debian12-base
@@ -254,7 +260,7 @@ tasks:
         symbol: I(pg)
     update-verify:
         symbol: I(uv)
-        parent: ubuntu2004-base
+        parent: debian12-base
     diffoscope:
         symbol: I(diff)
         parent: debian12-base
@@ -303,7 +309,7 @@ tasks:
         definition: snap-coreXX-build
         args:
             SNAP_BASE: core22
-            SNAP_LIST: "core20 gnome-42-2204 gtk-common-themes gnome-42-2204-sdk"
+            SNAP_LIST: "core20 core24 gnome-42-2204 gtk-common-themes gnome-42-2204-sdk"
             EXTRA_PACKAGES: "libavcodec58 libavutil56"
     snap-build-core24:
         symbol: I(snap24-build)

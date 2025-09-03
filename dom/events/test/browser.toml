@@ -1,15 +1,11 @@
 [DEFAULT]
-support-files = [
-  "browser_dragdrop_impl.js",
-  "browser_dragdrop_inner.html",
-  "browser_dragdrop_outer.html",
-]
 
 ["browser_alt_keyup_in_content.js"]
 skip-if = [
   "os == 'mac' && os_version == '11.20' && arch == 'aarch64' && opt",
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929440
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt",
 ]
 
 ["browser_beforeinput_by_execCommand_in_contentscript.js"]
@@ -21,12 +17,40 @@ support-files = [
 ["browser_bug1539497.js"]
 
 ["browser_dragdrop_protected_diff_origin.js"]
+support-files = [
+  "browser_dragdrop_impl.js",
+  "browser_dragdrop_inner.html",
+  "browser_dragdrop_outer.html",
+]
 
 ["browser_dragdrop_protected_same_origin.js"]
+support-files = [
+  "browser_dragdrop_impl.js",
+  "browser_dragdrop_inner.html",
+  "browser_dragdrop_outer.html",
+]
+
+["browser_dragdrop_shadow.js"]
+support-files = [
+  "browser_dragdrop_impl.js",
+  "browser_dragdrop_shadow_inner.html",
+  "browser_dragdrop_shadow_outer.html",
+]
+skip-if = ["true"] # bug 1932955
 
 ["browser_dragdrop_unprotected_diff_origin.js"]
+support-files = [
+  "browser_dragdrop_impl.js",
+  "browser_dragdrop_inner.html",
+  "browser_dragdrop_outer.html",
+]
 
 ["browser_dragdrop_unprotected_same_origin.js"]
+support-files = [
+  "browser_dragdrop_impl.js",
+  "browser_dragdrop_inner.html",
+  "browser_dragdrop_outer.html",
+]
 
 ["browser_dragimage.js"]
 support-files = [
@@ -48,7 +72,5 @@ support-files = ["../../../browser/base/content/test/general/dummy_page.html"]
 fail-if = ["a11y_checks"] # Bug 1854502 clicked tabbrowser-tabpanels may not be accessible
 
 ["browser_mouseout_notification_panel.js"]
-skip-if = ["os == 'win'"] # Bug 1923378 Fails with ScotchBonnet enabled by default.
 
 ["browser_shortcutkey_modifier_conflicts_with_content_accesskey_modifier.js"]
-skip-if = ["os == 'mac'"] # Alt + D is defined only on Linux and Windows

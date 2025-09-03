@@ -4,6 +4,10 @@
 
 /* eslint no-shadow: error, mozilla/no-aArgs: error */
 
+/**
+ * @typedef {import("./OpenSearchLoader.sys.mjs").OpenSearchProperties} OpenSearchProperties
+ */
+
 import {
   EngineURL,
   SearchEngine,
@@ -38,8 +42,6 @@ export class OpenSearchEngine extends SearchEngine {
   _updateInterval = null;
   // The url to check at for a new update
   _updateURL = null;
-  // The url to check for a new icon
-  _iconUpdateURL = null;
 
   /**
    * Creates a OpenSearchEngine.
@@ -51,6 +53,9 @@ export class OpenSearchEngine extends SearchEngine {
    * @param {OpenSearchProperties} [options.engineData]
    *   The engine data for this search engine that will have been loaded via
    *   `OpenSearchLoader`.
+   * @param {string} [options.faviconURL]
+   *   The website favicon, to be used if the engine data hasn't specified an
+   *   icon.
    */
   constructor(options = {}) {
     super({
@@ -61,6 +66,12 @@ export class OpenSearchEngine extends SearchEngine {
           options.engineData.installURL
         ),
     });
+
+    if (options.faviconURL) {
+      this._setIcon(options.faviconURL, undefined, false).catch(e =>
+        lazy.logConsole.error("Error while setting search engine icon:", e)
+      );
+    }
 
     if (options.engineData) {
       this.#setEngineData(options.engineData);
@@ -79,7 +90,6 @@ export class OpenSearchEngine extends SearchEngine {
       this._initWithJSON(options.json);
       this._updateInterval = options.json._updateInterval ?? null;
       this._updateURL = options.json._updateURL ?? null;
-      this._iconUpdateURL = options.json._iconUpdateURL ?? null;
     }
   }
 
@@ -93,7 +103,6 @@ export class OpenSearchEngine extends SearchEngine {
     let json = super.toJSON();
     json._updateInterval = this._updateInterval;
     json._updateURL = this._updateURL;
-    json._iconUpdateURL = this._iconUpdateURL;
     return json;
   }
 
@@ -109,19 +118,19 @@ export class OpenSearchEngine extends SearchEngine {
       lazy.SearchUtils.URL_TYPE.OPENSEARCH,
       "self"
     );
-    return !!(this._updateURL || this._iconUpdateURL || selfURL);
+    return !!(this._updateURL || selfURL);
   }
 
   /**
    * Returns the engine's updateURI if it exists and returns null otherwise
    *
-   * @returns {?string}
+   * @returns {?nsIURI}
    */
   get updateURI() {
     let updateURL = this._getURLOfType(lazy.SearchUtils.URL_TYPE.OPENSEARCH);
     let updateURI =
       updateURL && updateURL._hasRelation("self")
-        ? updateURL.getSubmission("", this).uri
+        ? updateURL.getSubmission("", this.queryCharset).uri
         : lazy.SearchUtils.makeURI(this._updateURL);
     return updateURI;
   }
@@ -170,11 +179,6 @@ export class OpenSearchEngine extends SearchEngine {
       // server requests for future updates.
       this.setAttr("updatelastmodified", new Date().toUTCString());
     }
-
-    if (this._iconUpdateURL) {
-      // Force update of the icon from the icon URL.
-      this._setIcon(this._iconUpdateURL, true);
-    }
   }
 
   /**
@@ -185,13 +189,11 @@ export class OpenSearchEngine extends SearchEngine {
    */
   #setEngineData(data) {
     let name = data.name.trim();
-    if (!this._engineToUpdate) {
-      if (Services.search.getEngineByName(name)) {
-        throw Components.Exception(
-          "Found a duplicate engine",
-          Ci.nsISearchService.ERROR_DUPLICATE_ENGINE
-        );
-      }
+    if (Services.search.getEngineByName(name)) {
+      throw Components.Exception(
+        "Found a duplicate engine",
+        Ci.nsISearchService.ERROR_DUPLICATE_ENGINE
+      );
     }
 
     this._name = name;
@@ -254,7 +256,9 @@ export class OpenSearchEngine extends SearchEngine {
     }
 
     for (let image of data.images) {
-      this._setIcon(image.url, image.isPreferred, image.size);
+      this._setIcon(image.url, image.size).catch(e =>
+        lazy.logConsole.log("Error while setting search engine icon:", e)
+      );
     }
   }
 

@@ -68,6 +68,9 @@ prefs = [
 
 ["test_peerConnection_audioSynchronizationSourcesUnidirectional.html"]
 
+["test_peerConnection_basicAV1Video.html"]
+skip-if = ["os == 'android'"]
+
 ["test_peerConnection_basicAudio.html"]
 
 ["test_peerConnection_basicAudioDynamicPtMissingRtpmap.html"]
@@ -108,6 +111,9 @@ scheme = "http"
 
 ["test_peerConnection_basicAudioRequireEOC.html"]
 
+["test_peerConnection_verifyNonEmptyFmtp.html"]
+skip-if = ["os == 'android'"]
+
 ["test_peerConnection_basicAudioVerifyRtpHeaderExtensions.html"]
 
 ["test_peerConnection_basicAudioVideo.html"]
@@ -138,8 +144,8 @@ skip-if = ["os == 'android' && is_emulator"]  # Bug 1355786, No h264 support on 
 ["test_peerConnection_basicScreenshare.html"]
 skip-if = [
   "os == 'android'", # no screenshare on android
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1929420
-  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt && socketprocess_e10s", # Bug 1929420
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929420
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1929420
 ]
 
 ["test_peerConnection_basicVideo.html"]
@@ -151,6 +157,7 @@ skip-if = [
   "os == 'android'", # no screenshare on android
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1929420
   "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && opt && socketprocess_e10s", # Bug 1929420
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'", # Bug 1929420
 ]
 
 ["test_peerConnection_bug822674.html"]
@@ -236,6 +243,10 @@ scheme = "http"
 ["test_peerConnection_getParameters.html"]
 
 ["test_peerConnection_glean.html"]
+
+["test_peerConnection_iceCandidateSelection.html"]
+skip-if = ["os == 'android'"] # websockets don't work on android (bug 1266217)
+scheme = "http"
 
 ["test_peerConnection_iceFailure.html"]
 skip-if = ["true"] # (Bug 1180388 for win, mac and linux), android(Bug 1189784), Bug 1180388
@@ -369,45 +380,27 @@ skip-if = ["os == 'android'"] # Bug 1614460
 ["test_peerConnection_sillyCodecPriorities.html"]
 
 ["test_peerConnection_simulcastAnswer.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastAnswer_lowResFirst.html"]
-skip-if = [
-  "os == 'android'", # no simulcast support on android
-]
 
 ["test_peerConnection_simulcastAnswer_lowResFirst_oldSetParameters.html"]
-skip-if = [
-  "os == 'android'", # no simulcast support on android
-]
 
 ["test_peerConnection_simulcastAnswer_oldSetParameters.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastOddResolution.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastOddResolution_oldSetParameters.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastOffer.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastOffer_lowResFirst.html"]
-skip-if = [
-  "os == 'android'", # no simulcast support on android
-]
 
 ["test_peerConnection_simulcastOffer_lowResFirst_oldSetParameters.html"]
-skip-if = [
-  "os == 'android'", # no simulcast support on android
-]
 
 ["test_peerConnection_simulcastOffer_oldSetParameters.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
 
 ["test_peerConnection_simulcastOffer_screenshare.html"]
-skip-if = ["os == 'android'"] # no simulcast support on android
+skip-if = ["os == 'android'"] # no screenshare on android
 
 ["test_peerConnection_stats.html"]
 

@@ -9,7 +9,7 @@
 #include "ExtendedValidation.h"
 #include "NSSCertDBTrustDomain.h"
 #include "certdb.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/SecurityCertverifierMetrics.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/Base64.h"
 #include "mozilla/Casting.h"
@@ -153,6 +153,7 @@ nsresult nsNSSCertificateDB::FindCertByDBKey(const nsACString& aDBKey,
   reader += issuerLen;
   MOZ_ASSERT(reader == decoded.EndReading());
 
+  AutoSearchingForClientAuthCertificates _;
   cert.reset(CERT_FindCertByIssuerAndSN(CERT_GetDefaultCertDB(), &issuerSN));
   return NS_OK;
 }
@@ -1196,6 +1197,7 @@ nsNSSCertificateDB::GetCerts(nsTArray<RefPtr<nsIX509Cert>>& _retval) {
   }
 
   nsCOMPtr<nsIInterfaceRequestor> ctx = new PipUIContext();
+  AutoSearchingForClientAuthCertificates _;
   UniqueCERTCertList certList(PK11_ListCerts(PK11CertListUnique, ctx));
   if (!certList) {
     return NS_ERROR_FAILURE;
@@ -1277,8 +1279,28 @@ nsNSSCertificateDB::AsyncHasThirdPartyRoots(nsIAsyncBoolCallback* aCallback) {
       NS_DISPATCH_EVENT_MAY_BLOCK);
 }
 
-nsresult VerifyCertAtTime(nsIX509Cert* aCert,
-                          int64_t /*SECCertificateUsage*/ aUsage,
+static mozilla::Result<VerifyUsage, nsresult> MapX509UsageToVerifierUsage(
+    nsIX509CertDB::VerifyUsage usage) {
+  switch (usage) {
+    case nsIX509CertDB::verifyUsageTLSServer:
+      return VerifyUsage::TLSServer;
+    case nsIX509CertDB::verifyUsageTLSServerCA:
+      return VerifyUsage::TLSServerCA;
+    case nsIX509CertDB::verifyUsageTLSClient:
+      return VerifyUsage::TLSClient;
+    case nsIX509CertDB::verifyUsageTLSClientCA:
+      return VerifyUsage::TLSClientCA;
+    case nsIX509CertDB::verifyUsageEmailSigner:
+      return VerifyUsage::EmailSigner;
+    case nsIX509CertDB::verifyUsageEmailRecipient:
+      return VerifyUsage::EmailRecipient;
+    case nsIX509CertDB::verifyUsageEmailCA:
+      return VerifyUsage::EmailCA;
+  }
+  return Err(NS_ERROR_INVALID_ARG);
+}
+
+nsresult VerifyCertAtTime(nsIX509Cert* aCert, nsIX509CertDB::VerifyUsage aUsage,
                           uint32_t aFlags, const nsACString& aHostname,
                           mozilla::pkix::Time aTime,
                           nsTArray<RefPtr<nsIX509Cert>>& aVerifiedChain,
@@ -1308,7 +1330,7 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
     return nsrv;
   }
 
-  if (!aHostname.IsVoid() && aUsage == certificateUsageSSLServer) {
+  if (!aHostname.IsVoid() && aUsage == nsIX509CertDB::verifyUsageTLSServer) {
     result =
         certVerifier->VerifySSLServerCert(certBytes, aTime,
                                           nullptr,  // Assume no context
@@ -1320,8 +1342,10 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
                                           OriginAttributes(), &evStatus);
   } else {
     const nsCString& flatHostname = PromiseFlatCString(aHostname);
+    VerifyUsage vu;
+    MOZ_TRY_VAR(vu, MapX509UsageToVerifierUsage(aUsage));
     result = certVerifier->VerifyCert(
-        certBytes, aUsage, aTime,
+        certBytes, vu, aTime,
         nullptr,  // Assume no context
         aHostname.IsVoid() ? nullptr : flatHostname.get(), resultChain, aFlags,
         Nothing(),  // extraCertificates
@@ -1348,9 +1372,9 @@ nsresult VerifyCertAtTime(nsIX509Cert* aCert,
 
 class VerifyCertAtTimeTask final : public CryptoTask {
  public:
-  VerifyCertAtTimeTask(nsIX509Cert* aCert, int64_t aUsage, uint32_t aFlags,
-                       const nsACString& aHostname, uint64_t aTime,
-                       nsICertVerificationCallback* aCallback)
+  VerifyCertAtTimeTask(nsIX509Cert* aCert, nsIX509CertDB::VerifyUsage aUsage,
+                       uint32_t aFlags, const nsACString& aHostname,
+                       uint64_t aTime, nsICertVerificationCallback* aCallback)
       : mCert(aCert),
         mUsage(aUsage),
         mFlags(aFlags),
@@ -1384,7 +1408,7 @@ class VerifyCertAtTimeTask final : public CryptoTask {
   }
 
   nsCOMPtr<nsIX509Cert> mCert;
-  int64_t mUsage;
+  nsIX509CertDB::VerifyUsage mUsage;
   uint32_t mFlags;
   nsCString mHostname;
   uint64_t mTime;
@@ -1396,7 +1420,7 @@ class VerifyCertAtTimeTask final : public CryptoTask {
 
 NS_IMETHODIMP
 nsNSSCertificateDB::AsyncVerifyCertAtTime(
-    nsIX509Cert* aCert, int64_t /*SECCertificateUsage*/ aUsage, uint32_t aFlags,
+    nsIX509Cert* aCert, nsIX509CertDB::VerifyUsage aUsage, uint32_t aFlags,
     const nsACString& aHostname, uint64_t aTime,
     nsICertVerificationCallback* aCallback) {
   RefPtr<VerifyCertAtTimeTask> task(new VerifyCertAtTimeTask(

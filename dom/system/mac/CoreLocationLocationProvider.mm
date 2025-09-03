@@ -11,10 +11,9 @@
 #include "CoreLocationLocationProvider.h"
 #include "prtime.h"
 #include "mozilla/FloatingPoint.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/GeolocationPositionErrorBinding.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomGeolocationMetrics.h"
 #include "MLSFallback.h"
 
 #include <CoreLocation/CLError.h>
@@ -116,7 +115,6 @@ MOZ_RUNINIT static const CLLocationAccuracy kDEFAULT_ACCURACY =
   }
 
   mProvider->Update(geoPosition);
-  Telemetry::Accumulate(Telemetry::GEOLOCATION_OSX_SOURCE_IS_MLS, false);
 }
 @end
 
@@ -135,7 +133,6 @@ CoreLocationLocationProvider::MLSUpdate::Update(nsIDOMGeoPosition* position) {
     return NS_ERROR_FAILURE;
   }
   mParentLocationProvider.Update(position);
-  Telemetry::Accumulate(Telemetry::GEOLOCATION_OSX_SOURCE_IS_MLS, true);
   return NS_OK;
 }
 

@@ -299,7 +299,11 @@ class MediaFormatReader final
 
     media::TimeInterval mTime;
     bool mDropTarget;
+    // Whether known waiting for more raw packets, either for the random
+    // access point or dependent frames.
     bool mWaiting;
+    // Whether `MediaTrackDemuxer::Seek()` has found the preceding random
+    // access point.
     bool mHasSeeked;
   };
 
@@ -439,7 +443,7 @@ class MediaFormatReader final
     // Pending seek.
     MozPromiseRequestHolder<MediaTrackDemuxer::SeekPromise> mSeekRequest;
 
-    // Queued demux samples waiting to be decoded.
+    // Queued demuxed samples waiting to be decoded.
     nsTArray<RefPtr<MediaRawData>> mQueuedSamples;
     MozPromiseRequestHolder<MediaTrackDemuxer::SamplesPromise> mDemuxRequest;
     // A WaitingPromise is pending if the demuxer is waiting for data or
@@ -610,6 +614,8 @@ class MediaFormatReader final
       }
     }
 
+    // Return whether an InternalSeek() has been requested but has not yet
+    // seeked to the random access point preceding that target.
     bool HasInternalSeekPending() const {
       return mTimeThreshold && !mTimeThreshold.ref().mHasSeeked;
     }
@@ -773,7 +779,7 @@ class MediaFormatReader final
   // delta there.
   uint64_t mLastReportedNumDecodedFrames;
 
-  // Timestamp of the previous decoded keyframe, in microseconds.
+  // Timestamp of the previous decoded video keyframe, in microseconds.
   int64_t mPreviousDecodedKeyframeTime_us;
   // Default mLastDecodedKeyframeTime_us value, must be bigger than anything.
   static const int64_t sNoPreviousDecodedKeyframe = INT64_MAX;

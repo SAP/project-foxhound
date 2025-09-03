@@ -34,7 +34,6 @@ import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -62,8 +61,10 @@ import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.home.bookmarks.Bookmark
+import org.mozilla.fenix.home.mars.MARSUseCases
 import org.mozilla.fenix.home.recenttabs.RecentTab
 import org.mozilla.fenix.home.sessioncontrol.DefaultSessionControlController
 import org.mozilla.fenix.messaging.MessageController
@@ -82,7 +83,7 @@ class DefaultSessionControlControllerTest {
     val coroutinesTestRule = MainCoroutineRule()
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     private val activity: HomeActivity = mockk(relaxed = true)
     private val filesDir: File = mockk(relaxed = true)
@@ -95,6 +96,7 @@ class DefaultSessionControlControllerTest {
     private val reloadUrlUseCase: SessionUseCases = mockk(relaxed = true)
     private val selectTabUseCase: TabsUseCases = mockk(relaxed = true)
     private val topSitesUseCases: TopSitesUseCases = mockk(relaxed = true)
+    private val marsUseCases: MARSUseCases = mockk(relaxed = true)
     private val settings: Settings = mockk(relaxed = true)
     private val analytics: Analytics = mockk(relaxed = true)
     private val scope = coroutinesTestRule.scope
@@ -579,7 +581,7 @@ class DefaultSessionControlControllerTest {
                 startLoading = true,
             )
         }
-        verify { controller.submitTopSitesImpressionPing(topSite, position) }
+        verify { controller.recordTopSitesClickTelemetry(topSite, position) }
         verify { navController.navigate(R.id.browserFragment) }
     }
 
@@ -985,7 +987,7 @@ class DefaultSessionControlControllerTest {
                 startLoading = true,
             )
         }
-        verify { controller.submitTopSitesImpressionPing(topSite, position) }
+        verify { controller.recordTopSitesClickTelemetry(topSite, position) }
         verify { navController.navigate(R.id.browserFragment) }
     }
 
@@ -1018,7 +1020,7 @@ class DefaultSessionControlControllerTest {
             topSiteImpressionPinged = true
         }
 
-        controller.submitTopSitesImpressionPing(topSite, position)
+        controller.recordTopSitesClickTelemetry(topSite, position)
 
         assertNotNull(TopSites.contileClick.testGetValue())
 
@@ -1031,6 +1033,137 @@ class DefaultSessionControlControllerTest {
         assertEquals("newtab", event[0].extra!!["source"])
 
         assertTrue(topSiteImpressionPinged)
+    }
+
+    @Test
+    fun `GIVEN MARS API integration is enabled WHEN the provided top site is clicked THEN send a click callback request`() {
+        val controller = spyk(createController())
+        val topSite = TopSite.Provided(
+            id = 3,
+            title = "Mozilla",
+            url = "https://mozilla.com",
+            clickUrl = "https://mozilla.com/click",
+            imageUrl = "https://test.com/image2.jpg",
+            impressionUrl = "https://mozilla.com/impression",
+            createdAt = 3,
+        )
+        val position = 0
+
+        every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
+        every { settings.marsAPIEnabled } returns true
+
+        assertNull(TopSites.contileImpression.testGetValue())
+
+        var topSiteImpressionPinged = false
+        Pings.topsitesImpression.testBeforeNextSubmit {
+            assertEquals(3L, TopSites.contileTileId.testGetValue())
+            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
+            assertNull(TopSites.contileReportingUrl.testGetValue())
+
+            topSiteImpressionPinged = true
+        }
+
+        controller.handleSelectTopSite(topSite, position)
+
+        verify { marsUseCases.recordInteraction(topSite.clickUrl) }
+
+        val event = TopSites.contileClick.testGetValue()!!
+
+        assertEquals(1, event.size)
+        assertEquals("top_sites", event[0].category)
+        assertEquals("contile_click", event[0].name)
+        assertEquals("1", event[0].extra!!["position"])
+        assertEquals("newtab", event[0].extra!!["source"])
+
+        assertTrue(topSiteImpressionPinged)
+    }
+
+    @Test
+    fun `GIVEN MARS API integration is enabled WHEN the provided top site is seen THEN send a impression callback request`() {
+        val controller = spyk(createController())
+        val topSite = TopSite.Provided(
+            id = 3,
+            title = "Mozilla",
+            url = "https://mozilla.com",
+            clickUrl = "https://mozilla.com/click",
+            imageUrl = "https://test.com/image2.jpg",
+            impressionUrl = "https://mozilla.com/impression",
+            createdAt = 3,
+        )
+        val position = 0
+
+        every { controller.getAvailableSearchEngines() } returns listOf(searchEngine)
+        every { settings.marsAPIEnabled } returns true
+
+        assertNull(TopSites.contileImpression.testGetValue())
+
+        var topSiteImpressionSubmitted = false
+        Pings.topsitesImpression.testBeforeNextSubmit {
+            assertEquals(3L, TopSites.contileTileId.testGetValue())
+            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
+            assertNull(TopSites.contileReportingUrl.testGetValue())
+
+            topSiteImpressionSubmitted = true
+        }
+
+        controller.handleTopSiteImpression(topSite, position)
+
+        verify { marsUseCases.recordInteraction(topSite.impressionUrl) }
+
+        val event = TopSites.contileImpression.testGetValue()!!
+
+        assertEquals(1, event.size)
+        assertEquals("top_sites", event[0].category)
+        assertEquals("contile_impression", event[0].name)
+        assertEquals("1", event[0].extra!!["position"])
+        assertEquals("newtab", event[0].extra!!["source"])
+
+        assertTrue(topSiteImpressionSubmitted)
+    }
+
+    @Test
+    fun `GIVEN a provided top site WHEN the provided top site has an impression THEN submit a top site impression ping`() {
+        val controller = spyk(createController())
+        val topSite = TopSite.Provided(
+            id = 3,
+            title = "Mozilla",
+            url = "https://mozilla.com",
+            clickUrl = "https://mozilla.com/click",
+            imageUrl = "https://test.com/image2.jpg",
+            impressionUrl = "https://example.com",
+            createdAt = 3,
+        )
+        val position = 0
+
+        assertNull(TopSites.contileImpression.testGetValue())
+
+        var topSiteImpressionSubmitted = false
+        Pings.topsitesImpression.testBeforeNextSubmit {
+            assertNotNull(TopSites.contileTileId.testGetValue())
+            assertEquals(3L, TopSites.contileTileId.testGetValue())
+
+            assertNotNull(TopSites.contileAdvertiser.testGetValue())
+            assertEquals("mozilla", TopSites.contileAdvertiser.testGetValue())
+
+            assertNotNull(TopSites.contileReportingUrl.testGetValue())
+            assertEquals(topSite.impressionUrl, TopSites.contileReportingUrl.testGetValue())
+
+            topSiteImpressionSubmitted = true
+        }
+
+        controller.handleTopSiteImpression(topSite, position)
+
+        assertNotNull(TopSites.contileImpression.testGetValue())
+
+        val event = TopSites.contileImpression.testGetValue()!!
+
+        assertEquals(1, event.size)
+        assertEquals("top_sites", event[0].category)
+        assertEquals("contile_impression", event[0].name)
+        assertEquals("1", event[0].extra!!["position"])
+        assertEquals("newtab", event[0].extra!!["source"])
+
+        assertTrue(topSiteImpressionSubmitted)
     }
 
     @Test
@@ -1407,6 +1540,7 @@ class DefaultSessionControlControllerTest {
             selectTabUseCase = selectTabUseCase.selectTab,
             reloadUrlUseCase = reloadUrlUseCase.reload,
             topSitesUseCases = topSitesUseCases,
+            marsUseCases = marsUseCases,
             appStore = appStore,
             navController = navController,
             viewLifecycleScope = scope,

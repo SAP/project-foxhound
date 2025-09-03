@@ -32,10 +32,6 @@
 #include "vm/JSObject-inl.h"
 #include "vm/PlainObject-inl.h"
 #include "vm/StringType-inl.h"
-#ifdef ENABLE_RECORD_TUPLE
-#  include "vm/TupleType.h"
-#endif
-
 using namespace js;
 using namespace js::gc;
 
@@ -195,6 +191,7 @@ JS::BigInt* TenuringTracer::promoteOrForward(JS::BigInt* bi) {
   return promoteBigInt(bi);
 }
 
+// Ignore edges to cell kinds that are not allocated in the nursery.
 void TenuringTracer::onSymbolEdge(JS::Symbol** symp, const char* name) {}
 void TenuringTracer::onScriptEdge(BaseScript** scriptp, const char* name) {}
 void TenuringTracer::onShapeEdge(Shape** shapep, const char* name) {}
@@ -205,6 +202,8 @@ void TenuringTracer::onGetterSetterEdge(GetterSetter** gsp, const char* name) {}
 void TenuringTracer::onPropMapEdge(PropMap** mapp, const char* name) {}
 void TenuringTracer::onJitCodeEdge(jit::JitCode** codep, const char* name) {}
 void TenuringTracer::onScopeEdge(Scope** scopep, const char* name) {}
+void TenuringTracer::onSmallBufferEdge(SmallBuffer** sizedp, const char* name) {
+}
 
 void TenuringTracer::traverse(JS::Value* thingp) {
   MOZ_ASSERT(!nursery().inCollectedRegion(thingp));
@@ -240,14 +239,6 @@ void TenuringTracer::traverse(JS::Value* thingp) {
     *thingp = JS::ObjectValue(*obj);
     return;
   }
-#ifdef ENABLE_RECORD_TUPLE
-  if (value.isExtendedPrimitive()) {
-    JSObject* obj = promoteObject(&value.toExtendedPrimitive());
-    MOZ_ASSERT(obj != &value.toExtendedPrimitive());
-    *thingp = JS::ExtendedPrimitiveValue(*obj);
-    return;
-  }
-#endif
   if (value.isString()) {
     JSString* str = promoteString(value.toString());
     MOZ_ASSERT(str != value.toString());
@@ -884,8 +875,8 @@ size_t js::gc::TenuringTracer::moveSlots(NativeObject* dst, NativeObject* src) {
   size_t allocSize = ObjectSlots::allocSize(count);
 
   ObjectSlots* header = src->getSlotsHeader();
-  Nursery::WasBufferMoved result = nursery().maybeMoveBufferOnPromotion(
-      &header, dst, allocSize, MemoryUse::ObjectSlots);
+  Nursery::WasBufferMoved result =
+      nursery().maybeMoveBufferOnPromotion(&header, dst, allocSize);
   if (result == Nursery::BufferNotMoved) {
     return 0;
   }
@@ -926,8 +917,8 @@ size_t js::gc::TenuringTracer::moveElements(NativeObject* dst,
 
   /* TODO Bug 874151: Prefer to put element data inline if we have space. */
 
-  Nursery::WasBufferMoved result = nursery().maybeMoveBufferOnPromotion(
-      &unshiftedHeader, dst, allocSize, MemoryUse::ObjectElements);
+  Nursery::WasBufferMoved result =
+      nursery().maybeMoveBufferOnPromotion(&unshiftedHeader, dst, allocSize);
   if (result == Nursery::BufferNotMoved) {
     return 0;
   }
@@ -1197,8 +1188,9 @@ size_t js::gc::TenuringTracer::moveBigInt(JS::BigInt* dst, JS::BigInt* src,
   size_t length = dst->digitLength();
   size_t nbytes = length * sizeof(JS::BigInt::Digit);
 
-  Nursery::WasBufferMoved result = nursery().maybeMoveBufferOnPromotion(
-      &dst->heapDigits_, dst, nbytes, MemoryUse::BigIntDigits);
+  Nursery::WasBufferMoved result =
+      nursery().maybeMoveNurseryOrMallocBufferOnPromotion(
+          &dst->heapDigits_, dst, nbytes, MemoryUse::BigIntDigits);
   if (result == Nursery::BufferMoved) {
     nursery().setDirectForwardingPointer(src->heapDigits_, dst->heapDigits_);
     size += nbytes;

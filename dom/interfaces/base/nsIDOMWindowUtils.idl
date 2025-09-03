@@ -693,16 +693,17 @@ interface nsIDOMWindowUtils : nsISupports {
    *
    * Widget support: Windows 8.0+, Winrt/Win32. Other widgets will throw.
    *
-   * NOTE: The synthesized native event will be fired asynchronously, and upon
-   * completion the observer, if provided, will be notified with a "touchpoint"
-   * topic.
-   *
    * @param aPointerId The touch point id to create or update.
    * @param aTouchState one or more of the touch states listed above
    * @param aScreenX, aScreenY screen coords of this event
    * @param aPressure 0.0 -> 1.0 float val indicating pressure
    * @param aOrientation 0 -> 359 degree value indicating the
    * orientation of the pointer. Use 90 for normal taps.
+   * @param aObserver The synthesized native event will be fired asynchronously,
+   * and upon completion the observer, if provided, will be notified with a
+   * "touchpoint" topic.
+   * @param aElement If the touch point needs to happen on a popup window,
+   * aElement inside the popup window needs to be specified.
    */
   void sendNativeTouchPoint(in unsigned long aPointerId,
                             in unsigned long aTouchState,
@@ -710,7 +711,8 @@ interface nsIDOMWindowUtils : nsISupports {
                             in long aScreenY,
                             in double aPressure,
                             in unsigned long aOrientation,
-                            [optional] in nsIObserver aObserver);
+                            [optional] in nsIObserver aObserver,
+                            [optional] in Element aElement);
   /**
    * These values indicate touchpad pinch phase states :
    * PHASE_BEGIN
@@ -788,7 +790,8 @@ interface nsIDOMWindowUtils : nsISupports {
                           in long aTiltX,
                           in long aTiltY,
                           in long aButton,
-                          [optional] in nsIObserver aObserver);
+                          [optional] in nsIObserver aObserver,
+                          [optional] in Element aElement);
 
   /**
    * Cancel any existing touch points or long tap delays. Calling this is safe
@@ -839,12 +842,12 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Clears the SharedStyleSheetCache.
    */
-  void clearSharedStyleSheetCache();
+  void clearStyleSheetCache();
 
   /**
    * Clears the SharedScriptCache.
    */
-  void clearSharedScriptCache();
+  void clearScriptCache();
 
   /**
    * Returns the number of stylesheets that have been parsed on this document.
@@ -1070,6 +1073,9 @@ interface nsIDOMWindowUtils : nsISupports {
    * Returns the given element's bounds without flushing pending layout changes.
    */
   DOMRect getBoundsWithoutFlushing(in Element aElement);
+
+  /** Returns the opaque region, for testing */
+  Array<DOMRect> getWidgetOpaqueRegion();
 
   /**
    * Scroll the visual viewport to the given coordinates, relative to the
@@ -1711,8 +1717,11 @@ interface nsIDOMWindowUtils : nsISupports {
    * the observer service once the flush is complete. If the function returns
    * false, an error occurred or a flush is not needed, and the notification
    * will not fire. This is intended to be used by test code only!
+   *
+   * @param aElement if you want to do the flush inside popup windows, you need to
+   *        the element inside the poup window.
    */
-  boolean flushApzRepaints();
+  boolean flushApzRepaints([optional] in Element aElement);
 
   /**
    * Sets a flag on the element to forcibly disable APZ on it. This affects
@@ -1996,9 +2005,28 @@ interface nsIDOMWindowUtils : nsISupports {
   /**
    * Get the content- and compositor-side APZ test data instances.
    * The return values are of type APZTestData (see APZTestData.webidl).
+   *
+   * |aElement| is an optional argument for popup window where APZ is enabled.
+   * |aElement| would be a popup element for popup
    */
-  [implicit_jscontext] jsval getContentAPZTestData();
-  [implicit_jscontext] jsval getCompositorAPZTestData();
+  [implicit_jscontext] jsval getContentAPZTestData([optional] in Element aElement);
+
+  /*
+   * |aElement| is an optional argument for popup window where APZ is enabled.
+   * |aElement| would be a popup element for popup
+   */
+  [implicit_jscontext] jsval getCompositorAPZTestData([optional] in Element aElement);
+
+  /**
+   * Send a MozMouseHittest event hit on the given (x, y) on this window.
+   * The event is sent to the corresponding APZCTreeManager and the manager
+   * performs a hit testing in APZ. The hit testing result can be via obtained
+   * by above getCompositorAPZTestData().
+   * |aElement| is an optional argument for popup window where APZ is enabled.
+   * |aElement| would be a popup element for popup
+   */
+  [can_run_script]
+  void sendMozMouseHitTestEvent(in float aX, in float aY, [optional] in Element aElement);
 
   /**
    * Posts an RestyleHint::RESTYLE_SELF restyle event for the given element.
@@ -2053,14 +2081,11 @@ interface nsIDOMWindowUtils : nsISupports {
   readonly attribute boolean refreshDriverHasPendingTick;
 
   /**
-   * Controls the amount of chrome that should be visible on each side of
-   * the window. Works like the chromemargin xul:window attribute.
+   * Controls whether we paint to the titlebar of the window.
+   * Works like the customtitlebar xul:window attribute.
    * This should only be used with non-XUL windows.
    */
-  void setChromeMargin(in int32_t aTop,
-                       in int32_t aRight,
-                       in int32_t aBottom,
-                       in int32_t aLeft);
+  void setCustomTitlebar(in boolean aCustomTitlebar);
 
   /**
    * Controls the amount of space on each edge of the window that can be
@@ -2303,7 +2328,9 @@ interface nsIDOMWindowUtils : nsISupports {
 
   void syncFlushCompositor();
 
-  unsigned long long getLayersId();
+  // |aElement| is an optional argument for popup window where APZ is enabled.
+  // |aElement| would be a popup element for popup.
+  unsigned long long getLayersId([optional] in Element aElement);
 
   // Returns true if we are effectively throttling frame requests.
   readonly attribute boolean effectivelyThrottlesFrameRequests;

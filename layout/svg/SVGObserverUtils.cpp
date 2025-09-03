@@ -133,7 +133,7 @@ static already_AddRefed<nsIURI> GetBaseURLForLocalRef(nsIContent* content,
 }
 
 static already_AddRefed<URLAndReferrerInfo> ResolveURLUsingLocalRef(
-    nsIFrame* aFrame, const StyleComputedImageUrl& aURL) {
+    nsIFrame* aFrame, const StyleComputedUrl& aURL) {
   MOZ_ASSERT(aFrame);
 
   nsCOMPtr<nsIURI> uri = aURL.GetURI();
@@ -321,8 +321,11 @@ void SVGRenderingObserver::ContentInserted(nsIContent* aChild) {
   OnRenderingChange();
 }
 
-void SVGRenderingObserver::ContentRemoved(nsIContent* aChild,
-                                          nsIContent* aPreviousSibling) {
+void SVGRenderingObserver::ContentWillBeRemoved(
+    nsIContent* aChild, const BatchRemovalState* aState) {
+  if (aState && !aState->mIsFirst) {
+    return;
+  }
   OnRenderingChange();
 }
 
@@ -346,7 +349,7 @@ class SVGIDRenderingObserver : public SVGRenderingObserver {
       URLAndReferrerInfo* aURI, nsIContent* aObservingContent,
       bool aReferenceImage,
       uint32_t aCallbacks = kAttributeChanged | kContentAppended |
-                            kContentInserted | kContentRemoved,
+                            kContentInserted | kContentWillBeRemoved,
       TargetIsValidCallback aTargetIsValidCallback = nullptr);
 
   void Traverse(nsCycleCollectionTraversalCallback* aCB);
@@ -484,7 +487,7 @@ class SVGRenderingObserverProperty : public SVGIDRenderingObserver {
   SVGRenderingObserverProperty(
       URLAndReferrerInfo* aURI, nsIFrame* aFrame, bool aReferenceImage,
       uint32_t aCallbacks = kAttributeChanged | kContentAppended |
-                            kContentInserted | kContentRemoved,
+                            kContentInserted | kContentWillBeRemoved,
       TargetIsValidCallback aTargetIsValidCallback = nullptr)
       : SVGIDRenderingObserver(aURI, aFrame->GetContent(), aReferenceImage,
                                aCallbacks, aTargetIsValidCallback),
@@ -606,7 +609,8 @@ class SVGMarkerObserver final : public SVGRenderingObserverProperty {
                     bool aReferenceImage)
       : SVGRenderingObserverProperty(aURI, aFrame, aReferenceImage,
                                      kAttributeChanged | kContentAppended |
-                                         kContentInserted | kContentRemoved) {}
+                                         kContentInserted |
+                                         kContentWillBeRemoved) {}
 
  protected:
   void OnRenderingChange() override;
@@ -753,7 +757,7 @@ class SVGFilterObserver final : public SVGIDRenderingObserver {
                     SVGFilterObserverList* aFilterChainObserver)
       : SVGIDRenderingObserver(aURI, aObservingContent, false,
                                kAttributeChanged | kContentAppended |
-                                   kContentInserted | kContentRemoved,
+                                   kContentInserted | kContentWillBeRemoved,
                                IsSVGFilterElement),
         mFilterObserverList(aFilterChainObserver) {}
 
@@ -1012,7 +1016,7 @@ SVGMaskObserverList::SVGMaskObserverList(nsIFrame* aFrame) : mFrame(aFrame) {
   const nsStyleSVGReset* svgReset = aFrame->StyleSVGReset();
 
   for (uint32_t i = 0; i < svgReset->mMask.mImageCount; i++) {
-    const StyleComputedImageUrl* data =
+    const StyleComputedUrl* data =
         svgReset->mMask.mLayers[i].mImage.GetImageRequestURLValue();
     RefPtr<URLAndReferrerInfo> maskUri;
     if (data) {
@@ -1065,7 +1069,7 @@ class SVGTemplateElementObserver : public SVGIDRenderingObserver {
                              bool aReferenceImage)
       : SVGIDRenderingObserver(aURI, aFrame->GetContent(), aReferenceImage,
                                kAttributeChanged | kContentAppended |
-                                   kContentInserted | kContentRemoved),
+                                   kContentInserted | kContentWillBeRemoved),
         mFrameReference(aFrame) {}
 
  protected:
@@ -1283,7 +1287,7 @@ static SVGPaintingProperty* GetPaintingProperty(
 }
 
 static already_AddRefed<URLAndReferrerInfo> GetMarkerURI(
-    nsIFrame* aFrame, const StyleUrlOrNone nsStyleSVG::*aMarker) {
+    nsIFrame* aFrame, const StyleUrlOrNone nsStyleSVG::* aMarker) {
   const StyleUrlOrNone& url = aFrame->StyleSVG()->*aMarker;
   if (url.IsNone()) {
     return nullptr;
@@ -1702,7 +1706,7 @@ Element* SVGObserverUtils::GetAndObserveBackgroundClip(nsIFrame* aFrame) {
 }
 
 SVGPaintServerFrame* SVGObserverUtils::GetAndObservePaintServer(
-    nsIFrame* aPaintedFrame, StyleSVGPaint nsStyleSVG::*aPaint) {
+    nsIFrame* aPaintedFrame, StyleSVGPaint nsStyleSVG::* aPaint) {
   // If we're looking at a frame within SVG text, then we need to look up
   // to find the right frame to get the painting property off.  We should at
   // least look up past a text frame, and if the text frame's parent is the
@@ -1863,9 +1867,11 @@ void SVGObserverUtils::InvalidateRenderingObservers(nsIFrame* aFrame) {
 
 void SVGObserverUtils::InvalidateDirectRenderingObservers(
     Element* aElement, uint32_t aFlags /* = 0 */) {
-  if (nsIFrame* frame = aElement->GetPrimaryFrame()) {
-    // If the rendering has changed, the bounds may well have changed too:
-    frame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
+  if (!(aFlags & INVALIDATE_DESTROY)) {
+    if (nsIFrame* frame = aElement->GetPrimaryFrame()) {
+      // If the rendering has changed, the bounds may well have changed too:
+      frame->RemoveProperty(SVGUtils::ObjectBoundingBoxProperty());
+    }
   }
 
   if (aElement->HasDirectRenderingObservers()) {

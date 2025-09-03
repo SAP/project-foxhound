@@ -7,6 +7,7 @@
 #ifndef mozilla_dom_GetFilesHelper_h
 #define mozilla_dom_GetFilesHelper_h
 
+#include "mozilla/MozPromise.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/RefPtr.h"
 #include "nsCycleCollectionTraversalCallback.h"
@@ -61,6 +62,7 @@ class GetFilesHelperBase {
 // helper class to do it just once.
 class GetFilesHelper : public Runnable, public GetFilesHelperBase {
   friend class GetFilesHelperParent;
+  class ReleaseRunnable;
 
  public:
   static already_AddRefed<GetFilesHelper> Create(
@@ -71,6 +73,10 @@ class GetFilesHelper : public Runnable, public GetFilesHelperBase {
 
   void AddCallback(GetFilesCallback* aCallback);
 
+  using MozPromiseType =
+      MozPromise<nsTArray<RefPtr<File>>, nsresult, true>::Private;
+  void AddMozPromise(MozPromiseType* aPromise, nsIGlobalObject* aGlobal);
+
   // CC methods
   void Unlink();
   void Traverse(nsCycleCollectionTraversalCallback& cb);
@@ -80,8 +86,8 @@ class GetFilesHelper : public Runnable, public GetFilesHelperBase {
 
   virtual ~GetFilesHelper();
 
-  void SetDirectoryPath(const nsAString& aDirectoryPath) {
-    mDirectoryPath = aDirectoryPath;
+  void SetDirectoryPaths(nsTArray<nsString>&& aDirectoryPaths) {
+    mDirectoryPaths = std::move(aDirectoryPaths);
   }
 
   virtual bool IsCanceled() override {
@@ -100,17 +106,42 @@ class GetFilesHelper : public Runnable, public GetFilesHelperBase {
 
   void OperationCompleted();
 
-  void ResolveOrRejectPromise(Promise* aPromise);
+  struct MozPromiseAndGlobal {
+    RefPtr<MozPromiseType> mMozPromise;
+    RefPtr<nsIGlobalObject> mGlobal;
+  };
+
+  class PromiseAdapter {
+   public:
+    explicit PromiseAdapter(MozPromiseAndGlobal&& aMozPromise);
+    explicit PromiseAdapter(Promise* aDomPromise);
+    ~PromiseAdapter();
+
+    void Clear();
+    void Traverse(nsCycleCollectionTraversalCallback& cb);
+
+    nsIGlobalObject* GetGlobalObject();
+    void Resolve(nsTArray<RefPtr<File>>&& aFiles);
+    void Reject(nsresult aError);
+
+   private:
+    using PromiseVariant = Variant<RefPtr<Promise>, MozPromiseAndGlobal>;
+    PromiseVariant mPromise;
+  };
+
+  void AddPromiseInternal(PromiseAdapter&& aPromise);
+  void ResolveOrRejectPromise(PromiseAdapter&& aPromise);
 
   void RunCallback(GetFilesCallback* aCallback);
 
   bool mListingCompleted;
-  nsString mDirectoryPath;
+  nsTArray<nsString> mDirectoryPaths;
 
   // Error code to propagate.
   nsresult mErrorResult;
 
-  nsTArray<RefPtr<Promise>> mPromises;
+  nsTArray<PromiseAdapter> mPromises;
+
   nsTArray<RefPtr<GetFilesCallback>> mCallbacks;
 
   Mutex mMutex MOZ_UNANNOTATED;
@@ -144,8 +175,8 @@ class GetFilesHelperParent final : public GetFilesHelper {
 
  public:
   static already_AddRefed<GetFilesHelperParent> Create(
-      const nsID& aUUID, const nsAString& aDirectoryPath, bool aRecursiveFlag,
-      ContentParent* aContentParent, ErrorResult& aRv);
+      const nsID& aUUID, nsTArray<nsString>&& aDirectoryPaths,
+      bool aRecursiveFlag, ContentParent* aContentParent, ErrorResult& aRv);
 
  private:
   GetFilesHelperParent(const nsID& aUUID, ContentParent* aContentParent,

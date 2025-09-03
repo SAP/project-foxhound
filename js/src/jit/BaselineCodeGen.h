@@ -18,6 +18,8 @@ namespace js {
 
 namespace jit {
 
+class BaselineSnapshot;
+
 enum class ScriptGCThingType {
   Atom,
   String,
@@ -38,7 +40,7 @@ class BaselineCodeGen {
   Handler handler;
 
   CompileRuntime* runtime;
-  StackMacroAssembler masm;
+  MacroAssembler& masm;
 
   typename Handler::FrameInfoT& frame;
 
@@ -67,8 +69,8 @@ class BaselineCodeGen {
 #endif
 
   template <typename... HandlerArgs>
-  explicit BaselineCodeGen(JSContext* cx, TempAllocator& alloc,
-                           HandlerArgs&&... args);
+  explicit BaselineCodeGen(TempAllocator& alloc, MacroAssembler& masmArg,
+                           CompileRuntime* runtimeArg, HandlerArgs&&... args);
 
   template <typename T>
   void pushArg(const T& t) {
@@ -271,6 +273,7 @@ class BaselineCodeGen {
 };
 
 using RetAddrEntryVector = js::Vector<RetAddrEntry, 16, SystemAllocPolicy>;
+using AllocSiteIndexVector = js::Vector<uint32_t, 16, SystemAllocPolicy>;
 
 // Interface used by BaselineCodeGen for BaselineCompiler.
 class BaselineCompilerHandler {
@@ -282,6 +285,7 @@ class BaselineCompilerHandler {
 #endif
   FixedList<Label> labels_;
   RetAddrEntryVector retAddrEntries_;
+  AllocSiteIndexVector allocSiteIndices_;
 
   // Native code offsets for OSR at JSOp::LoopHead ops.
   using OSREntryVector =
@@ -302,12 +306,13 @@ class BaselineCompilerHandler {
   bool compileDebugInstrumentation_;
   bool ionCompileable_;
 
+  bool compilingOffThread_ = false;
+
  public:
   using FrameInfoT = CompilerFrameInfo;
 
   BaselineCompilerHandler(MacroAssembler& masm, TempAllocator& alloc,
-                          JSScript* script, JSObject* globalLexical,
-                          JSObject* globalThis, uint32_t baseWarmUpThreshold);
+                          BaselineSnapshot* snapshot);
 
   [[nodiscard]] bool init();
 
@@ -336,7 +341,6 @@ class BaselineCompilerHandler {
 
   ModuleObject* module() const { return script_->module(); }
 
-  void setCompileDebugInstrumentation() { compileDebugInstrumentation_ = true; }
   bool compileDebugInstrumentation() const {
     return compileDebugInstrumentation_;
   }
@@ -370,6 +374,16 @@ class BaselineCompilerHandler {
   JSObject* globalThis() const { return globalThis_; }
 
   uint32_t baseWarmUpThreshold() const { return baseWarmUpThreshold_; }
+
+  void maybeDisableIon();
+
+  [[nodiscard]] bool addAllocSiteIndex(uint32_t entryIndex) {
+    return allocSiteIndices_.append(entryIndex);
+  }
+  void createAllocSites();
+
+  bool compilingOffThread() const { return compilingOffThread_; }
+  void setCompilingOffThread() { compilingOffThread_ = true; }
 };
 
 using BaselineCompilerCodeGen = BaselineCodeGen<BaselineCompilerHandler>;
@@ -389,22 +403,25 @@ class BaselineCompiler final : private BaselineCompilerCodeGen {
   BaselinePerfSpewer perfSpewer_;
 
  public:
-  BaselineCompiler(JSContext* cx, TempAllocator& alloc, JSScript* script,
-                   JSObject* globalLexical, JSObject* globalThis,
-                   uint32_t baseWarmUpThreshold);
+  BaselineCompiler(TempAllocator& alloc, CompileRuntime* runtime,
+                   MacroAssembler& masm, BaselineSnapshot* snapshot);
   [[nodiscard]] bool init();
 
+  static bool PrepareToCompile(JSContext* cx, Handle<JSScript*> script,
+                               bool compileDebugInstrumentation);
+
   MethodStatus compile(JSContext* cx);
+  MethodStatus compileOffThread();
+
+  bool finishCompile(JSContext* cx);
 
   bool compileDebugInstrumentation() const {
     return handler.compileDebugInstrumentation();
   }
-  void setCompileDebugInstrumentation() {
-    handler.setCompileDebugInstrumentation();
-  }
-  void setIonCompileable(bool value) { handler.setIonCompileable(value); }
 
  private:
+  bool compileImpl();
+
   bool emitBody();
 
   [[nodiscard]] bool emitDebugTrap();
@@ -522,7 +539,8 @@ class BaselineInterpreterGenerator final : private BaselineInterpreterCodeGen {
   BaselineInterpreterPerfSpewer perfSpewer_;
 
  public:
-  explicit BaselineInterpreterGenerator(JSContext* cx, TempAllocator& alloc);
+  explicit BaselineInterpreterGenerator(JSContext* cx, TempAllocator& alloc,
+                                        MacroAssembler& masm);
 
   [[nodiscard]] bool generate(JSContext* cx, BaselineInterpreter& interpreter);
 

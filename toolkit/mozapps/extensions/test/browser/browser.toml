@@ -74,6 +74,8 @@ https_first_disabled = true
 
 ["browser_html_detail_permissions.js"]
 
+["browser_html_detail_permissions_userScripts.js"]
+
 ["browser_html_detail_view.js"]
 
 ["browser_html_discover_view.js"]
@@ -134,6 +136,8 @@ https_first_disabled = true
 
 ["browser_permission_prompt.js"]
 
+["browser_permission_prompt_userScripts.js"]
+
 ["browser_reinstall.js"]
 
 ["browser_shortcuts_duplicate_check.js"]
@@ -149,6 +153,8 @@ https_first_disabled = true
 ["browser_subframe_install.js"]
 
 ["browser_task_next_test.js"]
+
+["browser_theme_undo.js"]
 
 ["browser_updateid.js"]
 

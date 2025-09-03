@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
+
+use arrayvec::ArrayVec;
+use thiserror::Error;
 
 use crate::{
     binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
@@ -7,10 +10,14 @@ use crate::{
     resource::{Labeled, ResourceErrorIdent},
 };
 
-use arrayvec::ArrayVec;
-use thiserror::Error;
-
 mod compat {
+    use alloc::{
+        string::{String, ToString as _},
+        sync::{Arc, Weak},
+        vec::Vec,
+    };
+    use core::{num::NonZeroU32, ops::Range};
+
     use arrayvec::ArrayVec;
     use thiserror::Error;
     use wgt::{BindingType, ShaderStages};
@@ -19,11 +26,6 @@ mod compat {
         binding_model::BindGroupLayout,
         error::MultiError,
         resource::{Labeled, ParentDevice, ResourceErrorIdent},
-    };
-    use std::{
-        num::NonZeroU32,
-        ops::Range,
-        sync::{Arc, Weak},
     };
 
     pub(crate) enum Error {
@@ -403,7 +405,7 @@ impl Binder {
         &self.payloads[bind_range]
     }
 
-    pub(super) fn list_active<'a>(&'a self) -> impl Iterator<Item = &'a Arc<BindGroup>> + '_ {
+    pub(super) fn list_active<'a>(&'a self) -> impl Iterator<Item = &'a Arc<BindGroup>> + 'a {
         let payloads = &self.payloads;
         self.manager
             .list_active()
@@ -411,7 +413,7 @@ impl Binder {
     }
 
     #[cfg(feature = "indirect-validation")]
-    pub(super) fn list_valid<'a>(&'a self) -> impl Iterator<Item = (usize, &'a EntryPayload)> + '_ {
+    pub(super) fn list_valid<'a>(&'a self) -> impl Iterator<Item = (usize, &'a EntryPayload)> + 'a {
         self.payloads
             .iter()
             .take(self.manager.num_valid_entries())

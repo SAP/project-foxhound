@@ -130,6 +130,10 @@ class RecommendedAd extends MozLitElement {
     this.revokeImageUrl();
     this.imageUrl = URL.createObjectURL(this.product.image_blob);
 
+    const hasPrice =
+      this.product.price &&
+      SUPPORTED_CURRENCY_SYMBOLS.has(this.product.currency);
+
     return html`
       <link
         rel="stylesheet"
@@ -141,21 +145,18 @@ class RecommendedAd extends MozLitElement {
       >
         <a id="recommended-ad-wrapper" slot="content" href=${
           this.product.url
-        } target="_blank" title="${this.product.name}" @click=${
-      this.handleClick
-    } @auxclick=${this.handleClick}>
+        } target="_blank" title=${this.product.name} @click=${
+          this.handleClick
+        } @auxclick=${this.handleClick}>
           <div id="ad-content">
             <img id="ad-preview-image" src=${this.imageUrl}></img>
-            <span id="ad-title" lang="en">${this.product.name}</span>
-            <letter-grade letter="${this.product.grade}"></letter-grade>
+            <div id="ad-letter-wrapper">
+              <span id="ad-title" lang="en">${this.product.name}</span>
+              <letter-grade letter=${this.product.grade}></letter-grade>
+            </div>
           </div>
-          <div id="footer">
-            ${
-              this.product.price &&
-              SUPPORTED_CURRENCY_SYMBOLS.has(this.product.currency)
-                ? this.priceTemplate()
-                : null
-            }
+          <div id="footer" class=${hasPrice ? "has-price" : ""}>
+            ${hasPrice ? this.priceTemplate() : null}
             <moz-five-star rating=${
               this.product.adjusted_rating
             }></moz-five-star>

@@ -230,10 +230,6 @@ class nsCSPBaseSrc {
   virtual bool isNonce() const { return false; }
   virtual bool isKeyword(CSPKeyword aKeyword) const { return false; }
   virtual bool isTrustedTypesDirectivePolicyName() const { return false; }
-  virtual bool isRequiresTrustedTypesForSinkGroup(
-      const nsAString& aSinkGroup) const {
-    return false;
-  }
 };
 
 /* =============== nsCSPSchemeSrc ============ */
@@ -418,9 +414,6 @@ class nsCSPRequireTrustedTypesForDirectiveValue : public nsCSPBaseSrc {
 
   bool visit(nsCSPSrcVisitor* aVisitor) const override;
   void toString(nsAString& aOutStr) const override;
-
-  bool isRequiresTrustedTypesForSinkGroup(
-      const nsAString& aSinkGroup) const override;
 
  private:
   const nsString mValue;
@@ -713,6 +706,10 @@ class nsCSPPolicy {
     return mDeliveredViaMetaTag;
   }
 
+  inline bool hasRequireTrustedTypesForDirective() const {
+    return mHasRequireTrustedTypesForDirective;
+  }
+
   inline void setReportOnlyFlag(bool aFlag) { mReportOnly = aFlag; }
 
   // Related to https://w3c.github.io/webappsec-csp/#policy-disposition.
@@ -737,6 +734,8 @@ class nsCSPPolicy {
   uint32_t getSandboxFlags() const;
 
   inline uint32_t getNumDirectives() const { return mDirectives.Length(); }
+
+  void getDirectiveNames(nsTArray<nsString>& outDirectives) const;
 
   bool visitDirectiveSrcs(CSPDirective aDir, nsCSPSrcVisitor* aVisitor) const;
 

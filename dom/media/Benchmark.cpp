@@ -19,7 +19,6 @@
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_media.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/gfx/gfxVars.h"
 #include "nsGkAtoms.h"
@@ -216,7 +215,7 @@ void BenchmarkPlayback::DemuxNextSample() {
   promise->Then(
       Thread(), __func__,
       [this, ref](RefPtr<MediaTrackDemuxer::SamplesHolder> aHolder) {
-        mSamples.AppendElements(std::move(aHolder->GetMovableSamples()));
+        mSamples.AppendElements(aHolder->GetMovableSamples());
         if (ref->mParameters.mStopAtFrame &&
             mSamples.Length() == ref->mParameters.mStopAtFrame.ref()) {
           InitDecoder(mTrackDemuxer->GetInfo());

@@ -518,6 +518,25 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   // tried to start a drag.
   void StopTrackingDragGesture(bool aClearInChildProcesses);
 
+  /**
+   * Return the last "mouseover" (or next "mouseout"), the last deepest
+   * "mouseenter" (or next deepest "mouseleave") targets.
+   */
+  const OverOutElementsWrapper* GetExtantMouseBoundaryEventTarget() const {
+    return mMouseEnterLeaveHelper;
+  }
+
+  nsIContent* GetTrackingDragGestureContent() const {
+    return mGestureDownContent;
+  }
+
+  // If the current frame is for the current gesture down content (being
+  // dragged), when it's destroyed, we should continue the gesture on its
+  // parent.
+  void NotifyDestroyingFrameForGesture(nsIFrame* aFrame);
+
+  bool IsTrackingDragGesture() const { return mGestureDownContent != nullptr; }
+
  protected:
   /*
    * If aTargetFrame's widget has a cached cursor value, resets the cursor
@@ -1048,6 +1067,7 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
   void DoScrollText(ScrollContainerFrame* aScrollContainerFrame,
                     WidgetWheelEvent* aEvent);
 
+  MOZ_CAN_RUN_SCRIPT
   void DoScrollHistory(int32_t direction);
   void DoScrollZoom(nsIFrame* aTargetFrame, int32_t adjustment);
   void ChangeZoom(bool aIncrease);
@@ -1206,7 +1226,6 @@ class EventStateManager : public nsSupportsWeakReference, public nsIObserver {
       dom::RemoteDragStartData* aDragStartData, nsIPrincipal* aPrincipal,
       nsIContentSecurityPolicy* aCsp, nsICookieJarSettings* aCookieJarSettings);
 
-  bool IsTrackingDragGesture() const { return mGestureDownContent != nullptr; }
   /**
    * Set the fields of aEvent to reflect the mouse position and modifier keys
    * that were set when the user first pressed the mouse button (stored by

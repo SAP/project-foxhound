@@ -399,6 +399,36 @@ void CanvasTranslator::GetDataSurface(uint64_t aSurfaceRef) {
   }
 }
 
+already_AddRefed<gfx::DataSourceSurface> CanvasTranslator::WaitForSurface(
+    uintptr_t aId) {
+  // If it's not safe to flush the event queue, then don't try to wait.
+  if (!gfx::gfxVars::UseAcceleratedCanvas2D() ||
+      !UsePendingCanvasTranslatorEvents() || !IsInTaskQueue()) {
+    return nullptr;
+  }
+  ReferencePtr idRef(aId);
+  if (!HasSourceSurface(idRef)) {
+    if (!HasPendingEvent()) {
+      return nullptr;
+    }
+
+    // If the surface doesn't exist yet, that may be because the events
+    // that produce it still need to be processed. Flush out any events
+    // currently in the queue, that by now should have been placed in
+    // the queue but for which processing has not yet occurred..
+    mFlushCheckpoint = mHeader->eventCount;
+    HandleCanvasTranslatorEvents();
+    mFlushCheckpoint = 0;
+    // If there is still no surface, then it is unlikely to be produced
+    // now, so give up.
+    if (!HasSourceSurface(idRef)) {
+      return nullptr;
+    }
+  }
+  // The surface exists, so get its data.
+  return LookupSourceSurface(idRef)->GetDataSurface();
+}
+
 void CanvasTranslator::RecycleBuffer() {
   mCanvasShmems.emplace(std::move(mCurrentShmem));
   NextBuffer();
@@ -567,14 +597,16 @@ bool CanvasTranslator::HasPendingEvent() {
 bool CanvasTranslator::ReadPendingEvent(EventType& aEventType) {
   ReadElementConstrained(mCurrentMemReader, aEventType,
                          EventType::DRAWTARGETCREATION, LAST_CANVAS_EVENT_TYPE);
-  return mCurrentMemReader.good();
+  if (!mCurrentMemReader.good()) {
+    mHeader->readerState = State::Failed;
+    return false;
+  }
+
+  return true;
 }
 
 bool CanvasTranslator::ReadNextEvent(EventType& aEventType) {
-  if (mHeader->readerState == State::Paused) {
-    Flush();
-    return false;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(mHeader->readerState == State::Processing);
 
   uint32_t spinCount = mMaxSpinCount;
   do {
@@ -621,6 +653,11 @@ bool CanvasTranslator::ReadNextEvent(EventType& aEventType) {
 
 bool CanvasTranslator::TranslateRecording() {
   MOZ_ASSERT(IsInTaskQueue());
+  MOZ_DIAGNOSTIC_ASSERT_IF(mFlushCheckpoint, HasPendingEvent());
+
+  if (mHeader->readerState == State::Failed) {
+    return false;
+  }
 
   if (mSharedContext && EnsureSharedContextWebgl()) {
     mSharedContext->EnterTlsScope();
@@ -648,7 +685,6 @@ bool CanvasTranslator::TranslateRecording() {
               gfxCriticalNote << "Failed to read event type: "
                               << recordedEvent->GetType();
             }
-            mHeader->readerState = State::Failed;
             return false;
           }
 
@@ -657,6 +693,7 @@ bool CanvasTranslator::TranslateRecording() {
 
     // Check the stream is good here or we will log the issue twice.
     if (!mCurrentMemReader.good()) {
+      mHeader->readerState = State::Failed;
       return false;
     }
 
@@ -668,19 +705,38 @@ bool CanvasTranslator::TranslateRecording() {
       } else {
         gfxCriticalNote << "Failed to play canvas event type: " << eventType;
       }
-      mHeader->readerState = State::Failed;
+
+      if (!mCurrentMemReader.good()) {
+        mHeader->readerState = State::Failed;
+        return false;
+      }
     }
 
     mHeader->processedCount++;
 
-    const auto maxDurationMs = 100;
-    const auto now = TimeStamp::Now();
-    const auto waitDurationMs =
-        static_cast<uint32_t>((now - start).ToMilliseconds());
+    if (mHeader->readerState == State::Paused) {
+      // We're waiting for an IPDL message return false, because we will resume
+      // translation after it is received.
+      Flush();
+      return false;
+    }
 
-    if (UsePendingCanvasTranslatorEvents() && waitDurationMs > maxDurationMs &&
-        mHeader->readerState != State::Paused) {
-      return true;
+    if (mFlushCheckpoint) {
+      // If we processed past the checkpoint return true to ensure translation
+      // after the checkpoint resumes later.
+      if (mHeader->processedCount >= mFlushCheckpoint) {
+        return true;
+      }
+    } else {
+      if (UsePendingCanvasTranslatorEvents()) {
+        const auto maxDurationMs = 100;
+        const auto now = TimeStamp::Now();
+        const auto waitDurationMs =
+            static_cast<uint32_t>((now - start).ToMilliseconds());
+        if (waitDurationMs > maxDurationMs) {
+          return true;
+        }
+      }
     }
   }
 

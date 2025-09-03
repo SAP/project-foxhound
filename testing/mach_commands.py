@@ -7,8 +7,10 @@ import logging
 import os
 import sys
 from datetime import date, timedelta
+from typing import List, Optional
 
 import requests
+from clean_skipfails import CleanSkipfails
 from mach.decorators import Command, CommandArgument, SubCommand
 from mozbuild.base import BuildEnvironmentNotFoundException
 from mozbuild.base import MachCommandConditions as conditions
@@ -72,17 +74,15 @@ ADD_TEST_SUPPORTED_SUITES = [
     "mochitest-chrome",
     "mochitest-plain",
     "mochitest-browser-chrome",
-    "web-platform-tests-privatebrowsing",
-    "web-platform-tests-testharness",
+    "web-platform-tests",
     "web-platform-tests-reftest",
     "xpcshell",
 ]
 ADD_TEST_SUPPORTED_DOCS = ["js", "html", "xhtml", "xul"]
 
 SUITE_SYNONYMS = {
-    "wpt": "web-platform-tests-testharness",
-    "wpt-privatebrowsing": "web-platform-tests-privatebrowsing",
-    "wpt-testharness": "web-platform-tests-testharness",
+    "wpt": "web-platform-tests",
+    "wpt-testharness": "web-platform-tests",
     "wpt-reftest": "web-platform-tests-reftest",
 }
 
@@ -297,7 +297,7 @@ def guess_suite(abs_test):
     )
 
     if in_wpt_folder:
-        guessed_suite = "web-platform-tests-testharness"
+        guessed_suite = "web-platform-tests"
         if "/css/" in abs_test:
             guessed_suite = "web-platform-tests-reftest"
     elif (
@@ -836,6 +836,10 @@ def test_info_tests(
 )
 @CommandArgument("--output-file", help="Path to report file.")
 @CommandArgument("--runcounts-input-file", help="Optional path to report file.")
+@CommandArgument(
+    "--config-matrix-output-file",
+    help="Path to report the config matrix for each manifest.",
+)
 @CommandArgument("--verbose", action="store_true", help="Enable debug logging.")
 @CommandArgument(
     "--start",
@@ -864,6 +868,7 @@ def test_report(
     end,
     show_testruns,
     runcounts_input_file,
+    config_matrix_output_file,
 ):
     import testinfo
     from mozbuild import build_commands
@@ -892,6 +897,7 @@ def test_report(
         end,
         show_testruns,
         runcounts_input_file,
+        config_matrix_output_file,
     )
 
 
@@ -1307,3 +1313,46 @@ def skipfails(
         use_failures,
         max_failures,
     )
+
+
+@SubCommand(
+    "manifest",
+    "clean-skip-fails",
+    description="Update manifests to remove skip-if conditions for a specific platform. Only works for TOML manifests.",
+)
+@CommandArgument(
+    "manifest_search_path",
+    nargs=1,
+    help="Path to the folder containing the manifests to update, or the path to a single manifest",
+)
+@CommandArgument(
+    "-o",
+    "--os",
+    default=None,
+    dest="os_name",
+    help="OS to remove (linux, mac, win)",
+)
+@CommandArgument(
+    "-s",
+    "--os_version",
+    default=None,
+    dest="os_version",
+    help="Version of the OS to remove (eg: 18.04 for linux)",
+)
+@CommandArgument(
+    "-p",
+    "--processor",
+    default=None,
+    dest="processor",
+    help="Type of processor architecture to remove (eg: x86)",
+)
+def clean_skipfails(
+    command_context,
+    manifest_search_path: List[str],
+    os_name: Optional[str] = None,
+    os_version: Optional[str] = None,
+    processor: Optional[str] = None,
+):
+    CleanSkipfails(
+        command_context, manifest_search_path[0], os_name, os_version, processor
+    ).run()

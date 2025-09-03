@@ -15,17 +15,26 @@ import androidx.compose.material.Button
 import androidx.compose.material.ContentAlpha
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.navigation.NavController
 import mozilla.components.browser.state.helper.Target
 import mozilla.components.compose.browser.awesomebar.AwesomeBar
 import mozilla.components.compose.browser.toolbar.BrowserToolbar
+import mozilla.components.compose.browser.toolbar.concept.Action.ActionButton
+import mozilla.components.compose.browser.toolbar.concept.Action.CustomAction
+import mozilla.components.compose.browser.toolbar.store.BrowserEditToolbarAction
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarAction
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarState
+import mozilla.components.compose.browser.toolbar.store.BrowserToolbarStore
+import mozilla.components.compose.browser.toolbar.store.DisplayState
 import mozilla.components.compose.engine.WebContent
 import mozilla.components.compose.tabstray.TabCounterButton
 import mozilla.components.compose.tabstray.TabList
@@ -38,12 +47,15 @@ import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.lib.state.Store
 import mozilla.components.lib.state.ext.composableStore
 import mozilla.components.lib.state.ext.observeAsComposableState
+import mozilla.components.lib.state.ext.observeAsState
+import mozilla.components.ui.icons.R
 import org.mozilla.samples.compose.browser.BrowserComposeActivity.Companion.ROUTE_SETTINGS
 import org.mozilla.samples.compose.browser.components
 
 /**
  * The main browser screen.
  */
+@Suppress("LongMethod")
 @Composable
 fun BrowserScreen(navController: NavController) {
     val target = Target.SelectedTab
@@ -51,40 +63,58 @@ fun BrowserScreen(navController: NavController) {
     val store = composableStore<BrowserScreenState, BrowserScreenAction> { restoredState ->
         BrowserScreenStore(restoredState ?: BrowserScreenState())
     }
+    val toolbarStore = remember {
+        BrowserToolbarStore(
+            initialState = BrowserToolbarState(
+                displayState = DisplayState(
+                    hint = "Search or enter address",
+                    browserActions = listOf(
+                        CustomAction(
+                            content = {
+                                TabCounterButton(
+                                    store = components().store,
+                                    onClicked = { store.dispatch(BrowserScreenAction.ShowTabs) },
+                                )
+                            },
+                        ),
+                        ActionButton(
+                            icon = R.drawable.mozac_ic_ellipsis_vertical_24,
+                            contentDescription = null,
+                            tint = Color.Black.toArgb(),
+                            onClick = {
+                                navController.navigate(ROUTE_SETTINGS)
+                            },
+                        ),
+                    ),
+                ),
+            ),
+        )
+    }
 
-    val editState = store.observeAsComposableState { state -> state.editMode }
-    val editUrl = store.observeAsComposableState { state -> state.editText }
-    val loadUrl = components().sessionUseCases.loadUrl
+    val toolbarState by toolbarStore.observeAsState(initialValue = toolbarStore.state) { it }
     val showTabs = store.observeAsComposableState { state -> state.showTabs }
 
-    BackHandler(enabled = editState.value == true) {
-        store.dispatch(BrowserScreenAction.ToggleEditMode(false))
+    val loadUrl = components().sessionUseCases.loadUrl
+
+    BackHandler(enabled = toolbarState.isEditMode()) {
+        toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(false))
     }
 
     Box {
         Column {
             BrowserToolbar(
-                components().store,
-                target,
-                editMode = editState.value!!,
-                onDisplayMenuClicked = {
-                    navController.navigate(ROUTE_SETTINGS)
-                },
+                store = toolbarStore,
+                browserStore = components().store,
+                target = target,
                 onTextCommit = { text ->
-                    store.dispatch(BrowserScreenAction.ToggleEditMode(false))
+                    toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(false))
                     loadUrl(text)
                 },
-                onTextEdit = { text -> store.dispatch(BrowserScreenAction.UpdateEditText(text)) },
-                onDisplayToolbarClick = {
-                    store.dispatch(BrowserScreenAction.ToggleEditMode(true))
+                onTextEdit = { text ->
+                    toolbarStore.dispatch(BrowserEditToolbarAction.UpdateEditText(text))
                 },
-                editText = editUrl.value,
-                hint = "Search or enter address",
-                browserActions = {
-                    TabCounterButton(
-                        components().store,
-                        onClicked = { store.dispatch(BrowserScreenAction.ShowTabs) },
-                    )
+                onDisplayToolbarClick = {
+                    toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(true))
                 },
             )
 
@@ -95,16 +125,16 @@ fun BrowserScreen(navController: NavController) {
                     Target.SelectedTab,
                 )
 
-                val url = editUrl.value
-                if (editState.value == true && url != null) {
+                val url = toolbarState.editState.editText
+                if (toolbarState.isEditMode() && url != null) {
                     Suggestions(
                         url,
                         onSuggestionClicked = { suggestion ->
-                            store.dispatch(BrowserScreenAction.ToggleEditMode(false))
+                            toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(false))
                             suggestion.onSuggestionClicked?.invoke()
                         },
                         onAutoComplete = { suggestion ->
-                            store.dispatch(BrowserScreenAction.UpdateEditText(suggestion.editSuggestion!!))
+                            toolbarStore.dispatch(BrowserEditToolbarAction.UpdateEditText(suggestion.editSuggestion!!))
                         },
                     )
                 }
@@ -112,7 +142,10 @@ fun BrowserScreen(navController: NavController) {
         }
 
         if (showTabs.value == true) {
-            TabsTray(store)
+            TabsTray(
+                store = store,
+                toolbarStore = toolbarStore,
+            )
         }
     }
 }
@@ -123,6 +156,7 @@ fun BrowserScreen(navController: NavController) {
 @Composable
 fun TabsTray(
     store: Store<BrowserScreenState, BrowserScreenAction>,
+    toolbarStore: BrowserToolbarStore,
 ) {
     val components = components()
 
@@ -160,7 +194,7 @@ fun TabsTray(
                         selectTab = true,
                     )
                     store.dispatch(BrowserScreenAction.HideTabs)
-                    store.dispatch(BrowserScreenAction.ToggleEditMode(true))
+                    toolbarStore.dispatch(BrowserToolbarAction.ToggleEditMode(true))
                 },
             ) {
                 Text("+")

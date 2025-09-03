@@ -62,19 +62,35 @@ fx-view-discoverability-subtitle = Find and reopen it quickly here. We keep a hi
 fx-view-discoverability-primary-button-label = Open { -firefoxview-brand-name }
 fx-view-discoverability-secondary-button-label = Dismiss
 
-## Split Dismiss Button Labels
-
-# Blocks the message from showing again
-split-dismiss-button-dont-show-option-label = Don’t show this recommendation again
-# Dismisses message and reduces frequency of message
-split-dismiss-button-show-fewer-option-label = Show fewer recommendations
-# Opens about:preferences#general-cfrfeatures
-split-dismiss-button-manage-settings-option-label = Manage settings
-
 ## Sidebar Strings
 
 sidebar-button-callout-title = Show tab titles in the sidebar
 sidebar-button-callout-subtitle = Use the sidebar button to expand the sidebar, so you can see tab titles.
+sidebar-button-callout-vertical-tabs = To show your tabs, select the sidebar button in the toolbar.
+
+## Sidebar Vertical Tabs Strings
+
+vertical-tabs-callout-1-title = Overwhelmed by too many tabs?
+vertical-tabs-callout-1-subtitle = Try our new vertical tabs layout to quickly scan your list of tabs. Early testers report this layout helps them feel more organized. Switch anytime.
+vertical-tabs-callout-1-cta-button = Try vertical tabs
+vertical-tabs-callout-2-cta-button = Try now
+vertical-tabs-callout-2-title = Keep a lot of tabs open? Try vertical tabs.
+vertical-tabs-callout-2-subtitle = This layout makes it easy to quickly scan your list of tabs. Plus, you can adjust the width to see more or less of your tab titles.
+
+## Sidebar Vertical Tabs Pinning Strings
+
+sidebar-pins-callout-title = Losing track of your important tabs?
+sidebar-pins-callout-subtitle = Try pinning them, which keeps them at the top of your list of tabs. Right-click on a tab you want to pin, then choose Pin Tab.
+sidebar-pins-callout-cta-button = Pin tab
+
+## Sidebar Onboarding Strings
+
+sidebar-customization-callout-1-title = Sidebar: your spot for tools and tabs
+sidebar-customization-callout-1-subtitle = The { -brand-product-name } sidebar gives you quick access to your browsing history, tabs from other devices, and an AI chatbot — all without leaving your main view.
+sidebar-customization-callout-callout-button = Customize sidebar
+sidebar-customization-callout-dismiss-button = Hide sidebar
+sidebar-customization-callout-2-title = Make the { -brand-product-name } sidebar your own
+sidebar-customization-callout-2-subtitle = Add and remove tools. Place your tabs in the sidebar. Give an AI chatbot a try. How you customize your sidebar is up to you.
 
 ## Sidebar Callout Survey Strings
 
@@ -108,3 +124,36 @@ sidebar-genai-survey-satisfaction-question = How satisfied are you with having a
 sidebar-genai-survey-productive-question =
     To what extent do you agree or disagree with this statement:<br/>
     “The AI chatbot in the sidebar helps me be more productive”?
+
+# Unified Search Button callout strings
+
+unified-search-callout-title = Switch between search engines
+unified-search-callout-subtitle = Choose what works best for your specific search.
+unified-search-callout-primary-label = Next
+unified-search-callout-secondary-label = Dismiss
+
+unified-search-engines-callout-title = Search with a shortcut
+unified-search-engines-callout-subtitle = Type “@” followed by a keyword to search your history, bookmarks, tabs, or with another search engine.
+unified-search-engines-callout-primary-label = Got it
+
+actions-callout-title = Complete common tasks or access basic settings
+# The user can type "print" and "clear" and a button will appear in the
+# search bar (e.g. Print page) the user can click to initiate the action.
+# These example text inputs correlate to the the following strings
+# (either matching the whole string, or the first word of the string).
+# "print" - quickactions-cmd-print
+# "clear" - quickactions-cmd-clearhistory
+# When localizing, ensure the translations match to ensure the action button appears as expected.
+actions-callout-subtitle = Try typing an action like “print” to print a page, or “clear” to clear your history.
+
+## Split Dismiss Button Labels
+
+# Blocks the message from showing again
+split-dismiss-button-dont-show-option =
+    .label = Don’t show this recommendation again
+# Dismisses message and reduces frequency of message
+split-dismiss-button-show-fewer-option =
+    .label = Show fewer recommendations
+# Opens about:preferences#general-cfrfeatures
+split-dismiss-button-manage-settings-option =
+    .label = Manage settings

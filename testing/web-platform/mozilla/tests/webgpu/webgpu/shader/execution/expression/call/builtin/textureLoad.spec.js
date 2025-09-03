@@ -17,25 +17,18 @@ If an out of bounds access occurs, the built-in function returns one of:
  * A vector (0,0,0,0) or (0,0,0,1) of the appropriate type for non-depth textures
  * 0.0 for depth textures
 
-TODO: Test textureLoad with depth textures as texture_2d, etc...
-TODO: Test textureLoad with multisampled stencil8 format
-TODO: Test un-encodable formats.
-TODO: Test stencil8 format.
 `;import { makeTestGroup } from '../../../../../../common/framework/test_group.js';
 import {
-  canUseAsRenderTarget,
   isCompressedFloatTextureFormat,
   isDepthTextureFormat,
-  isEncodableTextureFormat,
   isMultisampledTextureFormat,
   isStencilTextureFormat,
-  kCompressedTextureFormats,
   kDepthStencilFormats,
-  kEncodableTextureFormats,
+  kAllTextureFormats,
   kTextureFormatInfo,
   textureDimensionAndFormatCompatible } from
 '../../../../../format_info.js';
-import { GPUTest } from '../../../../../gpu_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../../../../gpu_test.js';
 import { maxMipLevelCount, virtualMipSize } from '../../../../../util/texture/base.js';
 import { TexelFormats } from '../../../../types.js';
 
@@ -55,10 +48,10 @@ import {
   generateTextureBuiltinInputs2D,
   generateTextureBuiltinInputs3D,
 
-  createVideoFrameWithRandomDataAndGetTexels } from
-'./texture_utils.js';
+  createVideoFrameWithRandomDataAndGetTexels,
 
-const kTestableColorFormats = [...kEncodableTextureFormats, ...kCompressedTextureFormats];
+  isFillable } from
+'./texture_utils.js';
 
 export function normalizedCoordToTexelLoadTestCoord(
 descriptor,
@@ -73,7 +66,20 @@ v)
   });
 }
 
-export const g = makeTestGroup(GPUTest);
+function skipIfStorageTexturesNotSupportedInStage(t, stage) {
+  if (t.isCompatibility) {
+    t.skipIf(
+      stage === 'f' && !(t.device.limits.maxStorageTexturesInFragmentStage > 0),
+      'device does not support storage textures in fragment shaders'
+    );
+    t.skipIf(
+      stage === 'v' && !(t.device.limits.maxStorageTexturesInVertexStage > 0),
+      'device does not support storage textures in vertex shaders'
+    );
+  }
+}
+
+export const g = makeTestGroup(AllFeaturesMaxLimitsGPUTest);
 
 g.test('sampled_1d').
 specURL('https://www.w3.org/TR/WGSL/#textureload').
@@ -92,7 +98,7 @@ Parameters:
 params((u) =>
 u.
 combine('stage', kShortShaderStages).
-combine('format', kTestableColorFormats).
+combine('format', kAllTextureFormats).
 filter((t) => textureDimensionAndFormatCompatible('1d', t.format))
 // 1d textures can't have a height !== 1
 .filter((t) => kTextureFormatInfo[t.format].blockHeight === 1).
@@ -179,7 +185,7 @@ Parameters:
 params((u) =>
 u.
 combine('stage', kShortShaderStages).
-combine('format', kTestableColorFormats).
+combine('format', kAllTextureFormats).
 filter((t) => !isCompressedFloatTextureFormat(t.format)).
 beginSubcases().
 combine('samplePoints', kSamplePointMethods).
@@ -208,6 +214,7 @@ fn(async (t) => {
   const calls = generateTextureBuiltinInputs2D(50, {
     method: samplePoints,
     descriptor,
+    mipLevel: { num: texture.mipLevelCount, type: L },
     hashInputs: [stage, format, samplePoints, C, L]
   }).map(({ coords, mipLevel }) => {
     return {
@@ -261,7 +268,7 @@ Parameters:
 params((u) =>
 u.
 combine('stage', kShortShaderStages).
-combine('format', kTestableColorFormats).
+combine('format', kAllTextureFormats).
 filter((t) => textureDimensionAndFormatCompatible('3d', t.format)).
 beginSubcases().
 combine('samplePoints', kSamplePointMethods).
@@ -351,8 +358,8 @@ combine('texture_type', [
 'texture_multisampled_2d',
 'texture_depth_multisampled_2d']
 ).
-combine('format', kTestableColorFormats).
-filter((t) => isMultisampledTextureFormat(t.format)).
+combine('format', kAllTextureFormats).
+filter((t) => isMultisampledTextureFormat(t.format, false)).
 filter((t) => !isStencilTextureFormat(t.format))
 // Filter out texture_depth_multisampled_2d with non-depth formats
 .filter(
@@ -365,10 +372,10 @@ combine('C', ['i32', 'u32']).
 combine('S', ['i32', 'u32'])
 ).
 beforeAllSubcases((t) => {
-  const { format } = t.params;
+  const { format, texture_type } = t.params;
   t.skipIfTextureFormatNotSupported(format);
-  t.skipIfTextureLoadNotSupportedForTextureType(t.params.texture_type);
-  t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
+  t.skipIfTextureLoadNotSupportedForTextureType(texture_type);
+  t.skipIfMultisampleNotSupportedForFormat(format);
 }).
 fn(async (t) => {
   const { texture_type, format, stage, samplePoints, C, S } = t.params;
@@ -377,10 +384,7 @@ fn(async (t) => {
   const descriptor = {
     format,
     size: [8, 8],
-    usage:
-    GPUTextureUsage.COPY_DST |
-    GPUTextureUsage.TEXTURE_BINDING |
-    GPUTextureUsage.RENDER_ATTACHMENT,
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
     sampleCount
   };
   const { texels, texture } = await createTextureWithRandomDataAndGetTexels(t, descriptor);
@@ -444,9 +448,7 @@ u.
 combine('stage', kShortShaderStages).
 combine('format', kDepthStencilFormats)
 // filter out stencil only formats
-.filter((t) => isDepthTextureFormat(t.format))
-// MAINTENANCE_TODO: Remove when support for depth24plus, depth24plus-stencil8, and depth32float-stencil8 is added.
-.filter((t) => isEncodableTextureFormat(t.format)).
+.filter((t) => isDepthTextureFormat(t.format)).
 beginSubcases().
 combine('samplePoints', kSamplePointMethods).
 combine('C', ['i32', 'u32']).
@@ -454,6 +456,7 @@ combine('L', ['i32', 'u32'])
 ).
 beforeAllSubcases((t) => {
   t.skipIfTextureLoadNotSupportedForTextureType('texture_depth_2d');
+  t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
 }).
 fn(async (t) => {
   const { format, stage, samplePoints, C, L } = t.params;
@@ -604,9 +607,8 @@ Parameters:
 params((u) =>
 u.
 combine('stage', kShortShaderStages).
-combine('format', kTestableColorFormats)
-// MAINTENANCE_TODO: Update createTextureFromTexelViews to support stencil8 and remove this filter.
-.filter((t) => t.format !== 'stencil8' && !isCompressedFloatTextureFormat(t.format)).
+combine('format', kAllTextureFormats).
+filter((t) => isFillable(t.format)).
 combine('texture_type', ['texture_2d_array', 'texture_depth_2d_array']).
 filter(
   (t) => !(t.texture_type === 'texture_depth_2d_array' && !isDepthTextureFormat(t.format))
@@ -618,28 +620,27 @@ combineWithParams([
 { C: 'u32', A: 'u32', L: 'u32' },
 { C: 'u32', A: 'i32', L: 'u32' },
 { C: 'u32', A: 'u32', L: 'i32' }]
-)
+).
+combine('depthOrArrayLayers', [1, 8])
 ).
 beforeAllSubcases((t) => {
-  const { format } = t.params;
+  const { format, texture_type } = t.params;
   t.skipIfTextureFormatNotSupported(format);
-  t.skipIfTextureLoadNotSupportedForTextureType(t.params.texture_type);
-  t.selectDeviceForTextureFormatOrSkipTestCase(t.params.format);
+  t.skipIfTextureLoadNotSupportedForTextureType(texture_type);
+  t.selectDeviceForTextureFormatOrSkipTestCase(format);
 }).
 fn(async (t) => {
-  const { texture_type, format, stage, samplePoints, C, A, L } = t.params;
+  const { texture_type, format, stage, samplePoints, C, A, L, depthOrArrayLayers } = t.params;
 
   // We want at least 4 blocks or something wide enough for 3 mip levels.
-  const size = chooseTextureSize({ minSize: 8, minBlocks: 4, format, viewDimension: '3d' });
-
+  const [width, height] = chooseTextureSize({ minSize: 8, minBlocks: 4, format });
+  const size = { width, height, depthOrArrayLayers };
   const descriptor = {
     format,
     size,
-    usage:
-    GPUTextureUsage.COPY_DST |
-    GPUTextureUsage.TEXTURE_BINDING | (
-    canUseAsRenderTarget(format) ? GPUTextureUsage.RENDER_ATTACHMENT : 0),
-    mipLevelCount: maxMipLevelCount({ size })
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.TEXTURE_BINDING,
+    mipLevelCount: maxMipLevelCount({ size }),
+    ...(t.isCompatibility && { textureBindingViewDimension: '2d-array' })
   };
   const { texels, texture } = await createTextureWithRandomDataAndGetTexels(t, descriptor);
 
@@ -661,7 +662,7 @@ fn(async (t) => {
     };
   });
   const textureType = appendComponentTypeForFormatToTextureType(texture_type, texture.format);
-  const viewDescriptor = {};
+  const viewDescriptor = { dimension: '2d-array' };
   const sampler = undefined;
   const results = await doTextureCalls(
     t,
@@ -716,6 +717,8 @@ beforeAllSubcases((t) => {
 }).
 fn(async (t) => {
   const { format, stage, samplePoints, C } = t.params;
+
+  skipIfStorageTexturesNotSupportedInStage(t, stage);
 
   // We want at least 3 blocks or something wide enough for 3 mip levels.
   const [width] = chooseTextureSize({ minSize: 8, minBlocks: 4, format });
@@ -796,6 +799,8 @@ beforeAllSubcases((t) => {
 fn(async (t) => {
   const { format, stage, samplePoints, C } = t.params;
 
+  skipIfStorageTexturesNotSupportedInStage(t, stage);
+
   // We want at least 3 blocks or something wide enough for 3 mip levels.
   const size = chooseTextureSize({ minSize: 8, minBlocks: 3, format });
   const descriptor = {
@@ -863,7 +868,8 @@ combineWithParams([...TexelFormats, { format: 'bgra8unorm' }]).
 beginSubcases().
 combine('samplePoints', kSamplePointMethods).
 combine('C', ['i32', 'u32']).
-combine('A', ['i32', 'u32'])
+combine('A', ['i32', 'u32']).
+combine('depthOrArrayLayers', [1, 8])
 ).
 beforeAllSubcases((t) => {
   t.skipIf(!t.hasLanguageFeature('readonly_and_readwrite_storage_textures'));
@@ -874,14 +880,18 @@ beforeAllSubcases((t) => {
   }
 }).
 fn(async (t) => {
-  const { format, stage, samplePoints, C, A } = t.params;
+  const { format, stage, samplePoints, C, A, depthOrArrayLayers } = t.params;
+
+  skipIfStorageTexturesNotSupportedInStage(t, stage);
 
   // We want at least 3 blocks or something wide enough for 3 mip levels.
-  const size = chooseTextureSize({ minSize: 8, minBlocks: 4, format, viewDimension: '3d' });
+  const [width, height] = chooseTextureSize({ minSize: 8, minBlocks: 4, format });
+  const size = { width, height, depthOrArrayLayers };
   const descriptor = {
     format,
     size,
-    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.STORAGE_BINDING
+    usage: GPUTextureUsage.COPY_DST | GPUTextureUsage.STORAGE_BINDING,
+    ...(t.isCompatibility && { textureBindingViewDimension: '2d-array' })
   };
   const { texels, texture } = await createTextureWithRandomDataAndGetTexels(t, descriptor);
 
@@ -957,6 +967,8 @@ beforeAllSubcases((t) => {
 }).
 fn(async (t) => {
   const { format, stage, samplePoints, C } = t.params;
+
+  skipIfStorageTexturesNotSupportedInStage(t, stage);
 
   // We want at least 3 blocks or something wide enough for 3 mip levels.
   const size = chooseTextureSize({ minSize: 8, minBlocks: 4, format, viewDimension: '3d' });

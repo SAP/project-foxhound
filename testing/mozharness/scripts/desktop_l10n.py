@@ -85,8 +85,6 @@ class DesktopSingleLocale(LocalesMixin, AutomationMixin, VCSMixin, BaseScript):
                 "ignore_locales": ["en-US"],
                 "locales_dir": "browser/locales",
                 "log_name": "single_locale",
-                "hg_l10n_base": "https://hg.mozilla.org/l10n-central",
-                # If set, takes precedence over `hg_l10n_base`
                 "git_repository": "https://github.com/mozilla-l10n/firefox-l10n",
             },
         }
@@ -337,6 +335,7 @@ class DesktopSingleLocale(LocalesMixin, AutomationMixin, VCSMixin, BaseScript):
             )
             targets_exts = [
                 "tar.bz2",
+                "tar.xz",
                 "dmg",
                 "langpack.xpi",
                 "checksums",

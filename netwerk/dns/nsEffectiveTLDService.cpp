@@ -10,6 +10,7 @@
 
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/Components.h"
+#include "mozilla/ClearOnShutdown.h"
 #include "mozilla/HashFunctions.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/ResultExtensions.h"
@@ -21,7 +22,6 @@
 #include "nsCRT.h"
 #include "nsEffectiveTLDService.h"
 #include "nsIFile.h"
-#include "nsIObserverService.h"
 #include "nsIURI.h"
 #include "nsNetCID.h"
 #include "nsNetUtil.h"
@@ -38,84 +38,44 @@ namespace etld_dafsa {
 using namespace mozilla;
 
 NS_IMPL_ISUPPORTS(nsEffectiveTLDService, nsIEffectiveTLDService,
-                  nsIMemoryReporter, nsIObserver)
+                  nsIMemoryReporter)
 
 // ----------------------------------------------------------------------
 
-static nsEffectiveTLDService* gService = nullptr;
+static StaticRefPtr<nsEffectiveTLDService> gService;
 
-nsEffectiveTLDService::nsEffectiveTLDService()
-    : mGraphLock("nsEffectiveTLDService::mGraph") {
-  mGraph.emplace(etld_dafsa::kDafsa);
-}
+nsEffectiveTLDService::nsEffectiveTLDService() : mGraph(etld_dafsa::kDafsa) {}
 
 nsresult nsEffectiveTLDService::Init() {
   MOZ_ASSERT(NS_IsMainThread());
-  nsCOMPtr<nsIObserverService> obs = mozilla::services::GetObserverService();
-  obs->AddObserver(this, "public-suffix-list-updated", false);
 
   if (gService) {
     return NS_ERROR_ALREADY_INITIALIZED;
   }
 
-  gService = this;
   RegisterWeakMemoryReporter(this);
 
   return NS_OK;
 }
 
-NS_IMETHODIMP nsEffectiveTLDService::Observe(nsISupports* aSubject,
-                                             const char* aTopic,
-                                             const char16_t* aData) {
-  /**
-   * Signal sent from netwerk/dns/PublicSuffixList.sys.mjs
-   * aSubject is the nsIFile object for dafsa.bin
-   * aData is the absolute path to the dafsa.bin file (not used)
-   */
-  if (aSubject && (nsCRT::strcmp(aTopic, "public-suffix-list-updated") == 0)) {
-    nsCOMPtr<nsIFile> mDafsaBinFile(do_QueryInterface(aSubject));
-    NS_ENSURE_TRUE(mDafsaBinFile, NS_ERROR_ILLEGAL_VALUE);
-
-    AutoWriteLock lock(mGraphLock);
-    // Reset mGraph with kDafsa in case reassigning to mDafsaMap fails
-    mGraph.reset();
-    mGraph.emplace(etld_dafsa::kDafsa);
-
-    mDafsaMap.reset();
-    mMruTable.Clear();
-
-    MOZ_TRY(mDafsaMap.init(mDafsaBinFile));
-
-    size_t size = mDafsaMap.size();
-    const uint8_t* remoteDafsaPtr = mDafsaMap.get<uint8_t>().get();
-
-    auto remoteDafsa = mozilla::Span(remoteDafsaPtr, size);
-
-    mGraph.reset();
-    mGraph.emplace(remoteDafsa);
-  }
-  return NS_OK;
-}
-
 nsEffectiveTLDService::~nsEffectiveTLDService() {
   UnregisterWeakMemoryReporter(this);
-  gService = nullptr;
 }
 
 // static
-nsEffectiveTLDService* nsEffectiveTLDService::GetInstance() {
+already_AddRefed<nsIEffectiveTLDService>
+nsEffectiveTLDService::GetXPCOMSingleton() {
   if (gService) {
-    return gService;
+    return do_AddRef(gService);
   }
-  nsCOMPtr<nsIEffectiveTLDService> tldService;
-  tldService = mozilla::components::EffectiveTLD::Service();
-  if (!tldService) {
+  RefPtr<nsEffectiveTLDService> instance = new nsEffectiveTLDService();
+  nsresult rv = instance->Init();
+  if (NS_FAILED(rv)) {
     return nullptr;
   }
-  MOZ_ASSERT(
-      gService,
-      "gService must have been initialized in nsEffectiveTLDService::Init");
-  return gService;
+  gService = instance;
+  ClearOnShutdown(&gService);
+  return instance.forget();
 }
 
 MOZ_DEFINE_MALLOC_SIZE_OF(EffectiveTLDServiceMallocSizeOf)
@@ -399,12 +359,9 @@ nsresult nsEffectiveTLDService::GetBaseDomainInternal(
       return NS_ERROR_INVALID_ARG;
     }
 
-    int result;
-    {
-      AutoReadLock lock(mGraphLock);
-      // Perform the lookup.
-      result = mGraph->Lookup(Substring(currDomain, end));
-    }
+    // Perform the lookup.
+    const int result = mGraph.Lookup(Substring(currDomain, end));
+
     if (result != Dafsa::kKeyNotFound) {
       hasKnownPublicSuffix = true;
       if (result == kWildcardRule && prevDomain) {
@@ -537,8 +494,6 @@ nsEffectiveTLDService::HasKnownPublicSuffixFromHost(const nsACString& aHostname,
     hostname.Truncate(hostname.Length() - 1);
   }
 
-  AutoReadLock lock(mGraphLock);
-
   // Check if we can find a suffix on the PSL. Start with the top level domain
   // (for example "com" in "example.com"). If that isn't on the PSL, continue to
   // add domain segments from the end (for example for "example.co.za", "za" is
@@ -551,7 +506,7 @@ nsEffectiveTLDService::HasKnownPublicSuffixFromHost(const nsACString& aHostname,
     const nsACString& suffix = Substring(
         hostname, dotBeforeSuffix == kNotFound ? 0 : dotBeforeSuffix + 1);
 
-    if (mGraph->Lookup(suffix) != Dafsa::kKeyNotFound) {
+    if (mGraph.Lookup(suffix) != Dafsa::kKeyNotFound) {
       *aResult = true;
       return NS_OK;
     }

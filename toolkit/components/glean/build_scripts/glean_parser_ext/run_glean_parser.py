@@ -13,7 +13,9 @@ import cpp
 import jinja2
 import jog
 import rust
+from buildconfig import topsrcdir
 from glean_parser import lint, metrics, parser, translate, util
+from metrics_header_names import convert_yaml_path_to_header_name
 from mozbuild.util import FileAvoidWrite, memoize
 from util import generate_metric_ids
 
@@ -44,6 +46,8 @@ GIFFT_TYPES = {
         "labeled_memory_distribution",
         "timing_distribution",
         "labeled_timing_distribution",
+        "counter",
+        "labeled_counter",
     ],
     "Scalar": [
         "boolean",
@@ -63,24 +67,34 @@ GIFFT_TYPES = {
 }
 
 
-def get_parser_options(moz_app_version):
+def get_parser_options(moz_app_version, is_local_build):
     app_version_major = moz_app_version.split(".", 1)[0]
     return {
         "allow_reserved": False,
         "expire_by_version": int(app_version_major),
+        "is_local_build": is_local_build,
     }
 
 
-def parse(args):
+def parse(args, interesting_yamls=None):
     """
     Parse and lint the input files,
     then return the parsed objects for further processing.
+
+    :param interesting_yamls: If set, the "opt-in" list of metrics to actually
+      collect. Other metrics not listed in files in this list will be marked
+      disabled and thus not collected (only built).
     """
 
-    if all(arg.endswith(".cached") for arg in args[:-1]):
+    fast_rebuild = args[-1] == "--fast-rebuild"
+    if fast_rebuild:
+        args = args[:-1]
+
+    yaml_array = args[:-1]
+    if all(arg.endswith(".cached") for arg in yaml_array):
         objects = dict()
         options = None
-        for cache_file in args[:-1]:
+        for cache_file in yaml_array:
             with open(cache_file, "rb") as cache:
                 cached_objects, cached_options = pickle.load(cache)
                 objects.update(cached_objects)
@@ -92,12 +106,15 @@ def parse(args):
 
     # Unfortunately, GeneratedFile appends `flags` directly after `inputs`
     # instead of listifying either, so we need to pull stuff from a *args.
-    yaml_array = args[:-1]
     moz_app_version = args[-1]
-
     input_files = [Path(x) for x in yaml_array]
 
-    options = get_parser_options(moz_app_version)
+    options = get_parser_options(moz_app_version, fast_rebuild)
+    if interesting_yamls:
+        # We need to make these paths absolute here. They are used from at least
+        # two different contexts.
+        interesting = [Path(os.path.join(topsrcdir, x)) for x in interesting_yamls]
+        options.update({"interesting": interesting})
 
     return parse_with_options(input_files, options)
 
@@ -127,6 +144,67 @@ def main(cpp_fd, *args):
     def open_output(filename):
         return FileAvoidWrite(os.path.join(os.path.dirname(cpp_fd.name), filename))
 
+    all_objs, options = parse(args)
+    all_metric_header_files = {}
+
+    for category_name in all_objs.keys():
+        if category_name in ["pings", "tags"]:
+            continue
+        for name, metric in all_objs[category_name].items():
+            filepath = metric.defined_in["filepath"].replace("\\", "/")
+            if not (filepath.startswith(topsrcdir) and filepath.endswith(".yaml")):
+                raise ParserError("Unexpected path" + filepath)
+
+            filename = convert_yaml_path_to_header_name(filepath[len(topsrcdir) + 1 :])
+            if not filename in all_metric_header_files:
+                all_metric_header_files[filename] = {}
+            if not category_name in all_metric_header_files[filename]:
+                all_metric_header_files[filename][category_name] = {}
+            all_metric_header_files[filename][category_name][name] = metric
+
+    get_metric_id = generate_metric_ids(all_objs, options)
+    for header_name, objs in all_metric_header_files.items():
+        cpp.output_cpp(
+            objs,
+            (
+                cpp_fd
+                if header_name == "GleanMetrics"
+                else open_output(header_name + ".h")
+            ),
+            {"header_name": header_name, "get_metric_id": get_metric_id},
+        )
+
+    return get_deps()
+
+
+def js_metrics(js_cpp_fd, *args):
+    def open_output(filename):
+        return FileAvoidWrite(os.path.join(os.path.dirname(js_cpp_fd.name), filename))
+
+    js_h_path = args[-1]
+    args = args[:-1]
+    all_objs, options = parse(args)
+
+    with open_output(js_h_path) as js_fd:
+        js.output_js(all_objs, js_fd, js_cpp_fd, options)
+
+    return get_deps()
+
+
+def rust_metrics(rust_fd, *args):
+    all_objs, options = parse(args)
+
+    # We only need this info if we're dealing with pings.
+    ping_names_by_app_id = {}
+    rust.output_rust(all_objs, rust_fd, ping_names_by_app_id, options)
+
+    return get_deps()
+
+
+def pings(cpp_fd, *args):
+    def open_output(filename):
+        return FileAvoidWrite(os.path.join(os.path.dirname(cpp_fd.name), filename))
+
     [js_h_path, js_cpp_path, rust_path] = args[-3:]
     args = args[:-3]
     all_objs, options = parse(args)
@@ -137,21 +215,16 @@ def main(cpp_fd, *args):
         with open_output(js_cpp_path) as js_cpp_fd:
             js.output_js(all_objs, js_fd, js_cpp_fd, options)
 
-    # We only need this info if we're dealing with pings.
     ping_names_by_app_id = {}
-    if "pings" in all_objs:
-        import sys
-        from os import path
+    from os import path
 
-        from buildconfig import topsrcdir
+    sys.path.append(path.join(path.dirname(__file__), path.pardir, path.pardir))
+    from metrics_index import pings_by_app_or_lib_id
 
-        sys.path.append(path.join(path.dirname(__file__), path.pardir, path.pardir))
-        from metrics_index import pings_by_app_id
-
-        for app_id, ping_yamls in pings_by_app_id.items():
-            input_files = [Path(path.join(topsrcdir, x)) for x in ping_yamls]
-            ping_objs, _ = parse_with_options(input_files, options)
-            ping_names_by_app_id[app_id] = ping_objs["pings"].keys()
+    for app_id, ping_yamls in pings_by_app_or_lib_id.items():
+        input_files = [Path(path.join(topsrcdir, x)) for x in ping_yamls]
+        ping_objs, _ = parse_with_options(input_files, options)
+        ping_names_by_app_id[app_id] = sorted(ping_objs["pings"].keys())
 
     with open_output(rust_path) as rust_fd:
         rust.output_rust(all_objs, rust_fd, ping_names_by_app_id, options)
@@ -170,15 +243,15 @@ def gifft_map(output_fd, *args):
     if probe_type == "Event":
         output_path = Path(os.path.dirname(output_fd.name))
         with FileAvoidWrite(output_path / "EventExtraGIFFTMaps.cpp") as cpp_fd:
-            output_gifft_map(output_fd, probe_type, all_objs, cpp_fd)
+            output_gifft_map(output_fd, probe_type, all_objs, cpp_fd, options)
     else:
-        output_gifft_map(output_fd, probe_type, all_objs, None)
+        output_gifft_map(output_fd, probe_type, all_objs, None, options)
 
     return get_deps()
 
 
-def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
-    get_metric_id = generate_metric_ids(all_objs)
+def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd, options):
+    get_metric_id = generate_metric_ids(all_objs, options)
     ids_to_probes = {}
     for category_name, objs in all_objs.items():
         for metric in objs.values():
@@ -186,7 +259,20 @@ def output_gifft_map(output_fd, probe_type, all_objs, cpp_fd):
                 hasattr(metric, "telemetry_mirror")
                 and metric.telemetry_mirror is not None
             ):
-                info = (metric.telemetry_mirror, f"{category_name}.{metric.name}")
+                if metric.type in ["counter", "labeled_counter"]:
+                    # These types map to Scalars... unless prefixed with `h#`,
+                    # then they map to Histograms.
+                    if (
+                        probe_type == "Histogram"
+                        and not metric.telemetry_mirror.startswith("h#")
+                        or probe_type != "Histogram"
+                        and metric.telemetry_mirror.startswith("h#")
+                    ):
+                        continue
+                info = (
+                    metric.telemetry_mirror.split("#")[-1],
+                    f"{category_name}.{metric.name}",
+                )
                 if metric.type in GIFFT_TYPES[probe_type]:
                     if any(
                         metric.telemetry_mirror == value[0]

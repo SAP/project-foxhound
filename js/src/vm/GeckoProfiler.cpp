@@ -30,7 +30,11 @@ GeckoProfilerThread::GeckoProfilerThread()
     : profilingStack_(nullptr), profilingStackIfEnabled_(nullptr) {}
 
 GeckoProfilerRuntime::GeckoProfilerRuntime(JSRuntime* rt)
-    : rt(rt), slowAssertions(false), enabled_(false), eventMarker_(nullptr) {
+    : rt(rt),
+      slowAssertions(false),
+      enabled_(false),
+      eventMarker_(nullptr),
+      intervalMarker_(nullptr) {
   MOZ_ASSERT(rt != nullptr);
 }
 
@@ -40,9 +44,15 @@ void GeckoProfilerThread::setProfilingStack(ProfilingStack* profilingStack,
   profilingStackIfEnabled_ = enabled ? profilingStack : nullptr;
 }
 
-void GeckoProfilerRuntime::setEventMarker(void (*fn)(const char*,
+void GeckoProfilerRuntime::setEventMarker(void (*fn)(mozilla::MarkerCategory,
+                                                     const char*,
                                                      const char*)) {
   eventMarker_ = fn;
+}
+
+void GeckoProfilerRuntime::setIntervalMarker(void (*fn)(
+    mozilla::MarkerCategory, const char*, mozilla::TimeStamp, const char*)) {
+  intervalMarker_ = fn;
 }
 
 // Get a pointer to the top-most profiling frame, given the exit frame pointer.
@@ -180,11 +190,27 @@ void GeckoProfilerRuntime::onScriptFinalized(BaseScript* script) {
   }
 }
 
-void GeckoProfilerRuntime::markEvent(const char* event, const char* details) {
+void GeckoProfilerRuntime::markEvent(const char* event, const char* details,
+                                     JS::ProfilingCategoryPair jsPair) {
   MOZ_ASSERT(enabled());
   if (eventMarker_) {
     JS::AutoSuppressGCAnalysis nogc;
-    eventMarker_(event, details);
+    mozilla::MarkerCategory category(
+        static_cast<mozilla::baseprofiler::ProfilingCategoryPair>(jsPair));
+    eventMarker_(category, event, details);
+  }
+}
+
+void GeckoProfilerRuntime::markInterval(const char* event,
+                                        mozilla::TimeStamp start,
+                                        const char* details,
+                                        JS::ProfilingCategoryPair jsPair) {
+  MOZ_ASSERT(enabled());
+  if (intervalMarker_) {
+    JS::AutoSuppressGCAnalysis nogc;
+    mozilla::MarkerCategory category(
+        static_cast<mozilla::baseprofiler::ProfilingCategoryPair>(jsPair));
+    intervalMarker_(category, event, start, details);
   }
 }
 
@@ -485,9 +511,13 @@ JS_PUBLIC_API void js::EnableContextProfilingStack(JSContext* cx,
 }
 
 JS_PUBLIC_API void js::RegisterContextProfilingEventMarker(
-    JSContext* cx, void (*fn)(const char*, const char*)) {
+    JSContext* cx,
+    void (*mark)(mozilla::MarkerCategory, const char*, const char*),
+    void (*interval)(mozilla::MarkerCategory, const char*, mozilla::TimeStamp,
+                     const char*)) {
   MOZ_ASSERT(cx->runtime()->geckoProfiler().enabled());
-  cx->runtime()->geckoProfiler().setEventMarker(fn);
+  cx->runtime()->geckoProfiler().setEventMarker(mark);
+  cx->runtime()->geckoProfiler().setIntervalMarker(interval);
 }
 
 AutoSuppressProfilerSampling::AutoSuppressProfilerSampling(JSContext* cx)

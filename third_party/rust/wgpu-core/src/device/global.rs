@@ -1,3 +1,6 @@
+use alloc::{borrow::Cow, boxed::Box, string::String, sync::Arc, vec::Vec};
+use core::{ptr::NonNull, sync::atomic::Ordering};
+
 #[cfg(feature = "trace")]
 use crate::device::trace;
 use crate::{
@@ -8,7 +11,7 @@ use crate::{
     },
     command::{self, CommandBuffer},
     conv,
-    device::{bgl, life::WaitIdleError, DeviceError, DeviceLostClosure, DeviceLostReason},
+    device::{bgl, life::WaitIdleError, DeviceError, DeviceLostClosure},
     global::Global,
     hal_api::HalApi,
     id::{self, AdapterId, DeviceId, QueueId, SurfaceId},
@@ -27,12 +30,6 @@ use crate::{
 };
 
 use wgt::{BufferAddress, TextureFormat};
-
-use std::{
-    borrow::Cow,
-    ptr::NonNull,
-    sync::{atomic::Ordering, Arc},
-};
 
 use super::{ImplicitPipelineIds, UserClosures};
 
@@ -112,7 +109,7 @@ impl Global {
             #[cfg(feature = "trace")]
             if let Some(ref mut trace) = *device.trace.lock() {
                 let mut desc = desc.clone();
-                let mapped_at_creation = std::mem::replace(&mut desc.mapped_at_creation, false);
+                let mapped_at_creation = core::mem::replace(&mut desc.mapped_at_creation, false);
                 if mapped_at_creation && !desc.usage.contains(wgt::BufferUsages::MAP_WRITE) {
                     desc.usage |= wgt::BufferUsages::COPY_DST;
                 }
@@ -219,9 +216,11 @@ impl Global {
         device.check_is_valid()?;
         buffer.check_usage(wgt::BufferUsages::MAP_WRITE)?;
 
-        let last_submission = device
-            .lock_life()
-            .get_buffer_latest_submission_index(&buffer);
+        let last_submission = device.get_queue().and_then(|queue| {
+            queue
+                .lock_life()
+                .get_buffer_latest_submission_index(&buffer)
+        });
 
         if let Some(last_submission) = last_submission {
             device.wait_for_submit(last_submission)?;
@@ -237,7 +236,7 @@ impl Global {
         }
         .map_err(|e| device.handle_hal_error(e))?;
 
-        unsafe { std::ptr::copy_nonoverlapping(data.as_ptr(), mapping.ptr.as_ptr(), data.len()) };
+        unsafe { core::ptr::copy_nonoverlapping(data.as_ptr(), mapping.ptr.as_ptr(), data.len()) };
 
         if !mapping.is_coherent {
             #[allow(clippy::single_range_in_vec_init)]
@@ -329,8 +328,6 @@ impl Global {
             return (id, None);
         };
 
-        log::error!("Device::create_texture error: {error}");
-
         let id = fid.assign(Fallible::Invalid(Arc::new(desc.label.to_string())));
         (id, Some(error))
     }
@@ -373,8 +370,6 @@ impl Global {
 
             return (id, None);
         };
-
-        log::error!("Device::create_texture error: {error}");
 
         let id = fid.assign(Fallible::Invalid(Arc::new(desc.label.to_string())));
         (id, Some(error))
@@ -485,7 +480,6 @@ impl Global {
             return (id, None);
         };
 
-        log::error!("Texture::create_view({texture_id:?}) error: {error}");
         let id = fid.assign(Fallible::Invalid(Arc::new(desc.label.to_string())));
         (id, Some(error))
     }
@@ -732,11 +726,12 @@ impl Global {
                 buffer_storage: &Storage<Fallible<resource::Buffer>>,
                 sampler_storage: &Storage<Fallible<resource::Sampler>>,
                 texture_view_storage: &Storage<Fallible<resource::TextureView>>,
+                tlas_storage: &Storage<Fallible<resource::Tlas>>,
             ) -> Result<ResolvedBindGroupEntry<'a>, binding_model::CreateBindGroupError>
             {
                 let resolve_buffer = |bb: &BufferBinding| {
                     buffer_storage
-                        .get(bb.buffer_id)
+                        .get(bb.buffer)
                         .get()
                         .map(|buffer| ResolvedBufferBinding {
                             buffer,
@@ -753,6 +748,12 @@ impl Global {
                 };
                 let resolve_view = |id: &id::TextureViewId| {
                     texture_view_storage
+                        .get(*id)
+                        .get()
+                        .map_err(binding_model::CreateBindGroupError::from)
+                };
+                let resolve_tlas = |id: &id::TlasId| {
+                    tlas_storage
                         .get(*id)
                         .get()
                         .map_err(binding_model::CreateBindGroupError::from)
@@ -788,6 +789,9 @@ impl Global {
                             .collect::<Result<Vec<_>, _>>()?;
                         ResolvedBindingResource::TextureViewArray(Cow::Owned(views))
                     }
+                    BindingResource::AccelerationStructure(ref tlas) => {
+                        ResolvedBindingResource::AccelerationStructure(resolve_tlas(tlas)?)
+                    }
                 };
                 Ok(ResolvedBindGroupEntry {
                     binding: e.binding,
@@ -799,9 +803,18 @@ impl Global {
                 let buffer_guard = hub.buffers.read();
                 let texture_view_guard = hub.texture_views.read();
                 let sampler_guard = hub.samplers.read();
+                let tlas_guard = hub.tlas_s.read();
                 desc.entries
                     .iter()
-                    .map(|e| resolve_entry(e, &buffer_guard, &sampler_guard, &texture_view_guard))
+                    .map(|e| {
+                        resolve_entry(
+                            e,
+                            &buffer_guard,
+                            &sampler_guard,
+                            &texture_view_guard,
+                            &tlas_guard,
+                        )
+                    })
                     .collect::<Result<Vec<_>, _>>()
             };
             let entries = match entries {
@@ -921,8 +934,6 @@ impl Global {
             return (id, None);
         };
 
-        log::error!("Device::create_shader_module error: {error}");
-
         let id = fid.assign(Fallible::Invalid(Arc::new(desc.label.to_string())));
         (id, Some(error))
     }
@@ -954,7 +965,7 @@ impl Global {
             #[cfg(feature = "trace")]
             if let Some(ref mut trace) = *device.trace.lock() {
                 let data = trace.make_binary("spv", unsafe {
-                    std::slice::from_raw_parts(source.as_ptr().cast::<u8>(), source.len() * 4)
+                    core::slice::from_raw_parts(source.as_ptr().cast::<u8>(), source.len() * 4)
                 });
                 trace.add(trace::Action::CreateShaderModule {
                     id: fid.id(),
@@ -971,8 +982,6 @@ impl Global {
             api_log!("Device::create_shader_module_spirv -> {id:?}");
             return (id, None);
         };
-
-        log::error!("Device::create_shader_module_spirv error: {error}");
 
         let id = fid.assign(Fallible::Invalid(Arc::new(desc.label.to_string())));
         (id, Some(error))
@@ -1353,8 +1362,6 @@ impl Global {
                 bgl_guard.insert(bgl_id, Fallible::Invalid(Arc::new(String::new())));
             }
         }
-
-        log::error!("Device::create_render_pipeline error: {error}");
 
         (id, Some(error))
     }
@@ -1799,7 +1806,7 @@ impl Global {
                     Err(_) => break 'error E::UnsupportedQueueFamily,
                 };
 
-                let mut hal_view_formats = vec![];
+                let mut hal_view_formats = Vec::new();
                 for format in config.view_formats.iter() {
                     if *format == config.format {
                         continue;
@@ -1838,7 +1845,13 @@ impl Global {
                         height: config.height,
                         depth_or_array_layers: 1,
                     },
-                    usage: conv::map_texture_usage(config.usage, hal::FormatAspects::COLOR),
+                    usage: conv::map_texture_usage(
+                        config.usage,
+                        hal::FormatAspects::COLOR,
+                        wgt::TextureFormatFeatureFlags::STORAGE_READ_ONLY
+                            | wgt::TextureFormatFeatureFlags::STORAGE_WRITE_ONLY
+                            | wgt::TextureFormatFeatureFlags::STORAGE_READ_WRITE,
+                    ),
                     view_formats: hal_view_formats,
                 };
 
@@ -1853,9 +1866,21 @@ impl Global {
                 // Wait for all work to finish before configuring the surface.
                 let snatch_guard = device.snatchable_lock.read();
                 let fence = device.fence.read();
-                match device.maintain(fence, wgt::Maintain::Wait, snatch_guard) {
-                    Ok((closures, _)) => {
-                        user_callbacks = closures;
+
+                let maintain_result;
+                (user_callbacks, maintain_result) =
+                    device.maintain(fence, wgt::PollType::Wait, snatch_guard);
+
+                match maintain_result {
+                    // We're happy
+                    Ok(wgt::PollStatus::QueueEmpty) => {}
+                    Ok(wgt::PollStatus::WaitSucceeded) => {
+                        // After the wait, the queue should be empty. It can only be non-empty
+                        // if another thread is submitting at the same time.
+                        break 'error E::GpuWaitTimeout;
+                    }
+                    Ok(wgt::PollStatus::Poll) => {
+                        unreachable!("Cannot get a Poll result from a Wait action.")
                     }
                     Err(e) => {
                         break 'error e.into();
@@ -1915,38 +1940,32 @@ impl Global {
     pub fn device_poll(
         &self,
         device_id: DeviceId,
-        maintain: wgt::Maintain<crate::SubmissionIndex>,
-    ) -> Result<bool, WaitIdleError> {
-        api_log!("Device::poll {maintain:?}");
+        poll_type: wgt::PollType<crate::SubmissionIndex>,
+    ) -> Result<wgt::PollStatus, WaitIdleError> {
+        api_log!("Device::poll {poll_type:?}");
 
         let device = self.hub.devices.get(device_id);
 
-        let DevicePoll {
-            closures,
-            queue_empty,
-        } = Self::poll_single_device(&device, maintain)?;
+        let (closures, result) = Self::poll_single_device(&device, poll_type);
 
         closures.fire();
 
-        Ok(queue_empty)
+        result
     }
 
     fn poll_single_device(
         device: &crate::device::Device,
-        maintain: wgt::Maintain<crate::SubmissionIndex>,
-    ) -> Result<DevicePoll, WaitIdleError> {
+        poll_type: wgt::PollType<crate::SubmissionIndex>,
+    ) -> (UserClosures, Result<wgt::PollStatus, WaitIdleError>) {
         let snatch_guard = device.snatchable_lock.read();
         let fence = device.fence.read();
-        let (closures, queue_empty) = device.maintain(fence, maintain, snatch_guard)?;
+        let maintain_result = device.maintain(fence, poll_type, snatch_guard);
 
         // Some deferred destroys are scheduled in maintain so run this right after
         // to avoid holding on to them until the next device poll.
         device.deferred_resource_destruction();
 
-        Ok(DevicePoll {
-            closures,
-            queue_empty,
-        })
+        maintain_result
     }
 
     /// Poll all devices belonging to the specified backend.
@@ -1958,7 +1977,7 @@ impl Global {
     fn poll_all_devices_of_api(
         &self,
         force_wait: bool,
-        closures: &mut UserClosures,
+        closure_list: &mut UserClosures,
     ) -> Result<bool, WaitIdleError> {
         profiling::scope!("poll_device");
 
@@ -1968,20 +1987,19 @@ impl Global {
             let device_guard = hub.devices.read();
 
             for (_id, device) in device_guard.iter() {
-                let maintain = if force_wait {
-                    wgt::Maintain::Wait
+                let poll_type = if force_wait {
+                    wgt::PollType::Wait
                 } else {
-                    wgt::Maintain::Poll
+                    wgt::PollType::Poll
                 };
 
-                let DevicePoll {
-                    closures: cbs,
-                    queue_empty,
-                } = Self::poll_single_device(device, maintain)?;
+                let (closures, result) = Self::poll_single_device(device, poll_type);
 
-                all_queue_empty &= queue_empty;
+                let is_queue_empty = matches!(result, Ok(wgt::PollStatus::QueueEmpty));
 
-                closures.extend(cbs);
+                all_queue_empty &= is_queue_empty;
+
+                closure_list.extend(closures);
             }
         }
 
@@ -2059,24 +2077,10 @@ impl Global {
         profiling::scope!("Device::drop");
         api_log!("Device::drop {device_id:?}");
 
-        let device = self.hub.devices.remove(device_id);
-        let device_lost_closure = device.lock_life().device_lost_closure.take();
-        if let Some(closure) = device_lost_closure {
-            closure.call(DeviceLostReason::Dropped, String::from("Device dropped."));
-        }
-
-        // The things `Device::prepare_to_die` takes care are mostly
-        // unnecessary here. We know our queue is empty, so we don't
-        // need to wait for submissions or triage them. We know we were
-        // just polled, so `life_tracker.free_resources` is empty.
-        debug_assert!(device.lock_life().queue_empty());
-        device.pending_writes.lock().deactivate();
-
-        drop(device);
+        self.hub.devices.remove(device_id);
     }
 
-    // This closure will be called exactly once during "lose the device",
-    // or when it is replaced.
+    /// `device_lost_closure` might never be called.
     pub fn device_set_device_lost_closure(
         &self,
         device_id: DeviceId,
@@ -2084,14 +2088,10 @@ impl Global {
     ) {
         let device = self.hub.devices.get(device_id);
 
-        let mut life_tracker = device.lock_life();
-        if let Some(existing_closure) = life_tracker.device_lost_closure.take() {
-            // It's important to not hold the lock while calling the closure.
-            drop(life_tracker);
-            existing_closure.call(DeviceLostReason::ReplacedCallback, "".to_string());
-            life_tracker = device.lock_life();
-        }
-        life_tracker.device_lost_closure = Some(device_lost_closure);
+        device
+            .device_lost_closure
+            .lock()
+            .replace(device_lost_closure);
     }
 
     pub fn device_destroy(&self, device_id: DeviceId) {
@@ -2141,6 +2141,7 @@ impl Global {
         self.hub.queues.remove(queue_id);
     }
 
+    /// `op.callback` is guaranteed to be called.
     pub fn buffer_map_async(
         &self,
         buffer_id: id::BufferId,
@@ -2162,9 +2163,8 @@ impl Global {
             Ok(submission_index) => Ok(submission_index),
             Err((mut operation, err)) => {
                 if let Some(callback) = operation.callback.take() {
-                    callback.call(Err(err.clone()));
+                    callback(Err(err.clone()));
                 }
-                log::error!("Buffer::map_async error: {err}");
                 Err(err)
             }
         }
@@ -2266,9 +2266,4 @@ impl Global {
             buffer_id,
         )
     }
-}
-
-struct DevicePoll {
-    closures: UserClosures,
-    queue_empty: bool,
 }

@@ -80,7 +80,7 @@ nsresult nsXMLPrettyPrinter::PrettyPrint(Document* aDocument,
   }
 
   RefPtr<DocumentFragment> resultFragment =
-      transformer->TransformToFragment(*aDocument, *aDocument, err);
+      transformer->TransformToFragment(*aDocument, false, *aDocument, err);
   if (NS_WARN_IF(err.Failed())) {
     return err.StealNSResult();
   }
@@ -172,8 +172,8 @@ void nsXMLPrettyPrinter::ContentInserted(nsIContent* aChild) {
   MaybeUnhook(aChild->GetParent());
 }
 
-void nsXMLPrettyPrinter::ContentRemoved(nsIContent* aChild,
-                                        nsIContent* aPreviousSibling) {
+void nsXMLPrettyPrinter::ContentWillBeRemoved(nsIContent* aChild,
+                                              const BatchRemovalState*) {
   MaybeUnhook(aChild->GetParent());
 }
 

@@ -12,11 +12,14 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  ExperimentAPI: "resource://nimbus/ExperimentAPI.sys.mjs",
   ExperimentStore: "resource://nimbus/lib/ExperimentStore.sys.mjs",
   FirstStartup: "resource://gre/modules/FirstStartup.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   NormandyUtils: "resource://normandy/lib/NormandyUtils.sys.mjs",
   PrefUtils: "resource://normandy/lib/PrefUtils.sys.mjs",
+  EnrollmentsContext:
+    "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
   Sampling: "resource://gre/modules/components-utils/Sampling.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetryEvents: "resource://normandy/lib/TelemetryEvents.sys.mjs",
@@ -85,6 +88,7 @@ export class _ExperimentManager {
     this.id = id;
     this.store = store || new lazy.ExperimentStore();
     this.sessions = new Map();
+    this.optInRecipes = [];
     // By default, no extra context.
     this.extraContext = {};
     Services.prefs.addObserver(UPLOAD_ENABLED_PREF, this);
@@ -211,13 +215,28 @@ export class _ExperimentManager {
 
     this._prefFlips.init();
 
-    this.observe();
+    if (!this.studiesEnabled) {
+      this._handleStudiesOptOut();
+    }
 
     lazy.NimbusFeatures.nimbusTelemetry.onUpdate(() => {
-      const cfg =
+      // Providing default values ensure we disable metrics when unenrolling.
+      const cfg = {
+        metrics_enabled: {
+          "nimbus_targeting_environment.targeting_context_value": false,
+          "nimbus_events.enrollment_status": false,
+        },
+      };
+
+      const overrides =
         lazy.NimbusFeatures.nimbusTelemetry.getVariable(
           "gleanMetricConfiguration"
         ) ?? {};
+
+      for (const [key, value] of Object.entries(overrides)) {
+        cfg[key] = { ...(cfg[key] ?? {}), ...value };
+      }
+
       Services.fog.applyServerKnobsConfig(JSON.stringify(cfg));
     });
   }
@@ -226,27 +245,40 @@ export class _ExperimentManager {
    * Runs every time a Recipe is updated or seen for the first time.
    * @param {RecipeArgs} recipe
    * @param {string} source
+   * @param {boolean} isTargetingMatch
    */
-  async onRecipe(recipe, source) {
-    const { slug, isEnrollmentPaused } = recipe;
+  async onRecipe(recipe, source, isTargetingMatch) {
+    const { slug, isEnrollmentPaused, isFirefoxLabsOptIn } = recipe;
 
     if (!source) {
       throw new Error("When calling onRecipe, you must specify a source.");
     }
 
-    if (!this.sessions.has(source)) {
-      this.sessions.set(source, new Set());
+    if (isFirefoxLabsOptIn) {
+      this.optInRecipes.push(recipe);
     }
-    this.sessions.get(source).add(slug);
 
-    if (this.store.has(slug)) {
-      await this.updateEnrollment(recipe, source);
-    } else if (isEnrollmentPaused) {
-      lazy.log.debug(`Enrollment is paused for "${slug}"`);
-    } else if (!(await this.isInBucketAllocation(recipe.bucketConfig))) {
-      lazy.log.debug("Client was not enrolled because of the bucket sampling");
-    } else {
-      await this.enroll(recipe, source);
+    if (isTargetingMatch) {
+      if (!this.sessions.has(source)) {
+        this.sessions.set(source, new Set());
+      }
+      this.sessions.get(source).add(slug);
+
+      if (this.store.has(slug)) {
+        await this.updateEnrollment(recipe, source);
+      } else if (!isFirefoxLabsOptIn) {
+        // Firefox Labs opt-ins cannot be paused and we do not enroll in them
+        // directly.
+        if (isEnrollmentPaused) {
+          lazy.log.debug(`Enrollment is paused for "${slug}"`);
+        } else if (!(await this.isInBucketAllocation(recipe.bucketConfig))) {
+          lazy.log.debug(
+            "Client was not enrolled because of the bucket sampling"
+          );
+        } else {
+          await this.enroll(recipe, source);
+        }
+      }
     }
   }
 
@@ -435,6 +467,60 @@ export class _ExperimentManager {
   }
 
   /**
+   * Get all of the opt-in recipes that match targeting and bucketing.
+   *
+   * @returns opt in recipes
+   */
+  async getAllOptInRecipes() {
+    const enrollmentsCtx = new lazy.EnrollmentsContext(this, null, {
+      validationEnabled: false,
+    });
+
+    // RemoteSettingsExperimentLoader could be in a middle of updating recipes
+    // so let's wait for the update to finish and this promise to resolve.
+    await lazy.ExperimentAPI._rsLoader.finishedUpdating();
+
+    // RemoteSettingsExperimentLoader should have finished updating at least
+    // once. Prevent concurrent updates while we filter through the list of
+    // available opt-in recipes.
+    return lazy.ExperimentAPI._rsLoader.withUpdateLock(
+      async () => {
+        const filtered = [];
+
+        for (const recipe of this.optInRecipes) {
+          if (
+            (await enrollmentsCtx.checkTargeting(recipe)) &&
+            (await this.isInBucketAllocation(recipe.bucketConfig))
+          ) {
+            filtered.push(recipe);
+          }
+        }
+
+        return filtered;
+      },
+      { mode: "shared" }
+    );
+  }
+
+  /**
+   * Get a single opt in recipe given its slug.
+   *
+   * @returns a single opt in recipe or undefined if not found.
+   */
+  async getSingleOptInRecipe(slug) {
+    if (!slug) {
+      throw new Error("Slug required for .getSingleOptInRecipe");
+    }
+
+    // RemoteSettingsExperimentLoader could be in a middle of updating recipes
+    // so let's wait for the update to finish and this promise to resolve.
+    await lazy.ExperimentAPI._rsLoader.finishedUpdating();
+
+    // We don't need to hold the RSEL lock here because we are not doing any async work.
+    return this.optInRecipes.find(recipe => recipe.slug === slug);
+  }
+
+  /**
    * Determine if this client falls into the bucketing specified in bucketConfig
    *
    * @param {object} bucketConfig
@@ -477,22 +563,34 @@ export class _ExperimentManager {
   /**
    * Start a new experiment by enrolling the users
    *
-   * @param {RecipeArgs} recipe
+   * @param {object} recipe
+   *                 The recipe to enroll in.
    * @param {string} source
+   *                 The source of the experiment (e.g., "rs-loader" for recipes
+   *                 from Remote Settings).
    * @param {object} options
-   * @param {boolean} options.reenroll - Allow re-enrollment. Only allowed for rollouts.
-   * @returns {Promise<Enrollment>} The experiment object stored in the data store
-   * @rejects {Error}
-   * @memberof _ExperimentManager
+   * @param {boolean} options.reenroll
+   *                  Allow re-enrollment. Only supported for rollouts.
+   * @param {string} options.branchSlug
+   *                 If enrolling in a Firefox Labs opt-in experiment, this
+   *                 option is required and will dictate which branch to enroll
+   *                 in.
+   *
+   * @returns {Promise<Enrollment>}
+   *          The experiment object stored in the data store.
+   *
+   * @throws {Error} If a recipe already exists in the store with the same slug
+   *                 as `recipe` and re-enrollment is prevented.
    */
-  async enroll(recipe, source, { reenroll = false } = {}) {
-    let { slug, branches, bucketConfig } = recipe;
+  async enroll(recipe, source, { reenroll = false, branchSlug } = {}) {
+    let { slug, branches, bucketConfig, isFirefoxLabsOptIn } = recipe;
 
     const enrollment = this.store.get(slug);
 
     if (
       enrollment &&
-      (enrollment.active || !enrollment.isRollout || !reenroll)
+      (enrollment.active ||
+        (!isFirefoxLabsOptIn && (!enrollment.isRollout || !reenroll)))
     ) {
       this.sendFailureTelemetry("enrollFailed", slug, "name-conflict");
       throw new Error(`An experiment with the slug "${slug}" already exists.`);
@@ -502,7 +600,32 @@ export class _ExperimentManager {
       ? this.store.getRolloutForFeature.bind(this.store)
       : this.store.hasExperimentForFeature.bind(this.store);
     const userId = await this.getUserId(bucketConfig);
-    const branch = await this.chooseBranch(slug, branches, userId);
+
+    let branch;
+
+    if (isFirefoxLabsOptIn) {
+      if (typeof branchSlug === "undefined") {
+        throw new TypeError(
+          `Branch slug not provided for Firefox Labs opt in recipe: "${slug}"`
+        );
+      } else {
+        branch = branches.find(branch => branch.slug === branchSlug);
+
+        if (!branch) {
+          throw new Error(
+            `Invalid branch slug provided for Firefox Labs opt in recipe: "${slug}"`
+          );
+        }
+      }
+    } else if (typeof branchSlug !== "undefined") {
+      throw new TypeError(
+        "branchSlug only supported for recipes with isFirefoxLabsOptIn = true"
+      );
+    } else {
+      // recipe is not an opt in recipe hence use a ratio sampled branch
+      branch = await this.chooseBranch(slug, branches, userId);
+    }
+
     const features = featuresCompat(branch);
     for (let feature of features) {
       if (storeLookupByFeature(feature?.featureId)) {
@@ -532,6 +655,9 @@ export class _ExperimentManager {
       isFirefoxLabsOptIn,
       firefoxLabsTitle,
       firefoxLabsDescription,
+      firefoxLabsDescriptionLinks = null,
+      firefoxLabsGroup,
+      requiresRestart = false,
     },
     branch,
     source,
@@ -588,6 +714,9 @@ export class _ExperimentManager {
         isFirefoxLabsOptIn,
         firefoxLabsTitle,
         firefoxLabsDescription,
+        firefoxLabsDescriptionLinks,
+        firefoxLabsGroup,
+        requiresRestart,
       });
     }
 
@@ -690,7 +819,8 @@ export class _ExperimentManager {
         return false;
       } else if (
         !enrollment.active &&
-        enrollment.unenrollReason !== "individual-opt-out"
+        enrollment.unenrollReason !== "individual-opt-out" &&
+        !enrollment.isFirefoxLabsOptIn
       ) {
         lazy.log.debug(`Re-enrolling in rollout "${recipe.slug}`);
         return !!(await this.enroll(recipe, source, { reenroll: true }));
@@ -825,20 +955,26 @@ export class _ExperimentManager {
     lazy.log.debug(`Recipe unenrolled: ${slug}`);
   }
 
-  /**
-   * Unenroll from all active studies if user opts out.
-   */
   observe() {
     if (!this.studiesEnabled) {
-      for (const { slug } of this.store.getAllActiveExperiments()) {
-        this.unenroll(slug, "studies-opt-out");
-      }
-      for (const { slug } of this.store.getAllActiveRollouts()) {
-        this.unenroll(slug, "studies-opt-out");
-      }
+      this._handleStudiesOptOut();
     }
 
     Services.obs.notifyObservers(null, STUDIES_ENABLED_CHANGED);
+  }
+
+  /**
+   * Unenroll from all active studies if user opts out.
+   */
+  _handleStudiesOptOut() {
+    for (const { slug } of this.store.getAllActiveExperiments()) {
+      this.unenroll(slug, "studies-opt-out");
+    }
+    for (const { slug } of this.store.getAllActiveRollouts()) {
+      this.unenroll(slug, "studies-opt-out");
+    }
+
+    this.optInRecipes = [];
   }
 
   /**

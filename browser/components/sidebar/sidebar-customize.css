@@ -14,6 +14,18 @@
   }
 }
 
+.setting-message {
+  /* Pull the message-bar over the input box's border */
+  margin-block-end: calc(-1 * var(--sidebar-box-border-width));
+  margin-inline: calc(-1 * var(--space-medium) - var(--sidebar-box-border-width));
+  /* Remove the top radius, match the bottom radius to the input box's radius */
+  --message-bar-border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
+}
+
+.medium-top-margin {
+  margin-block-start: var(--space-medium);
+}
+
 .customize-header {
   display: flex;
   justify-content: space-between;
@@ -61,7 +73,6 @@
   font-weight: var(--font-weight-bold);
 }
 
-moz-radio-group,
 moz-fieldset {
   display: block;
 
@@ -75,7 +86,6 @@ moz-fieldset {
   }
 }
 
-moz-radio,
 moz-checkbox {
   padding-block: var(--space-medium);
 
@@ -83,14 +93,26 @@ moz-checkbox {
     border-bottom: 0.5px solid var(--panel-separator-color);
   }
 
+  > moz-checkbox:last-of-type {
+    padding-block: 0;
+  }
+
+  &[disabled]::part(label) {
+    opacity: 0.5;
+  }
+}
+
+.no-label::part(label) {
+  display: none;
 }
 
 #manage-settings {
   display: flex;
   align-items: center;
-  gap: var(--space-large);
+  gap: var(--space-small);
+  padding-inline-start: var(--space-medium);
 }
 
-.customize-group {
+.customize-group:not(.no-end-margin) {
   margin-block-end: var(--space-xlarge);
 }

@@ -93,12 +93,17 @@ const kIntTypes =
     ['uint4', 'int4', 'uint8', 'int8', 'uint32', 'int32', 'uint64', 'int64'];
 const kFloatTypes = ['float16', 'float32'];
 
-const findCompatibleType = (dataType, supportedTypes) => {
+const findCompatibleType = (dataType, supportedTypes, castOpSupportLimits) => {
+  if (!castOpSupportLimits.input.dataTypes.includes(dataType)) {
+    // Cannot cast from `dataType` to any other type.
+    return null;
+  }
+
   for (let supportedType of supportedTypes) {
-    if (kIntTypes.includes(dataType)) {
-      if (kIntTypes.indexOf(supportedType) > kIntTypes.indexOf(dataType)) {
-        return supportedType;
-      }
+    if (kIntTypes.includes(dataType) &&
+        castOpSupportLimits.output.dataTypes.includes(dataType) &&
+        kIntTypes.indexOf(supportedType) > kIntTypes.indexOf(dataType)) {
+      return supportedType;
     }
 
     if (kFloatTypes.includes(dataType)) {
@@ -330,6 +335,33 @@ const assert_array_approx_equals_ulp = (actual, expected, nulp, dataType, descri
 };
 
 /**
+ * This function converts a Float16 stored as the bits of a Uint16 into a
+ * JavaScript Number.
+ * @param {Number} uint16 - a Float16 stored as the bits of a Uint16
+ * @returns An emulated Float16 number.
+ */
+function float16AsUint16ToNumber(uint16) {
+  const sign = (uint16 >> 15) & 0x1;
+  const exponent = (uint16 >> 10) & 0x1F;
+  const mantissa = uint16 & 0x3FF;
+  let float16;
+
+  if (exponent === 0) {
+    // Subnormal number
+    float16 = (mantissa / 1024) * Math.pow(2, -14);
+  } else if (exponent === 0x1F) {
+    // NaN or Infinity
+    float16 = mantissa ? NaN : Infinity;
+  } else {
+    // Normalized number
+    float16 = (1 + mantissa / 1024) * Math.pow(2, exponent - 15);
+  }
+
+  // Apply the sign
+  return sign ? -float16 : float16;
+}
+
+/**
  * Assert actual results with expected results.
  * @param {String} operatorName
  * @param {(Number[]|Number)} actual
@@ -351,8 +383,17 @@ const doAssert =
         assert_array_approx_equals_ulp(
             actual, expected, toleranceValue, dataType, description);
       } else if (metricType === 'ATOL') {
+        let actualData;
+        if (dataType === 'float16') {
+          // workaround for float16
+          actualData = new Array(actual.length);
+          actual.forEach(
+              (x, index) => actualData[index] = float16AsUint16ToNumber(x));
+        } else {
+          actualData = actual;
+        }
         assert_array_approx_equals(
-            actual, expected, toleranceValue, description);
+            actualData, expected, toleranceValue, description);
       } else {
         throw new AssertionError(
             `Tolerance Metric type '${metricType}' is not supported`);
@@ -362,8 +403,8 @@ const doAssert =
 /**
  * Assert computed results be equal to expected data.
  * @param {Object} toleranceFunc
- * @param {Object.<MLNamedArrayBufferViews> |
- *     Array[Object.<MLNamedArrayBufferViews>]} actual
+ * @param {Map<String, ArrayBufferView> |
+ *     Array[Map<String, ArrayBufferView>]} actual
  * @param {Object} graphResources - Resources used for building a graph
  */
 const assertResultsEquals =
@@ -440,11 +481,15 @@ const createOperand = (context, builder, operandName, resources) => {
   const descriptor = resources.descriptor;
   const dataType = descriptor.dataType;
 
+  const supportedDataTypes = resources.constant ?
+      context.opSupportLimits().constant.dataTypes :
+      context.opSupportLimits().input.dataTypes;
+
   // If input data type is not supported on current platform, attempt to use
   // a supported type to pass the data, then cast back to original type.
-  if (!context.opSupportLimits().input.dataTypes.includes(dataType)) {
-    const compatibleType =
-        findCompatibleType(dataType, context.opSupportLimits().input.dataTypes);
+  if (!supportedDataTypes.includes(dataType)) {
+    const compatibleType = findCompatibleType(
+        dataType, supportedDataTypes, context.opSupportLimits().cast);
     if (compatibleType) {
       descriptor.castedType = compatibleType;
       descriptor.dataType = compatibleType;
@@ -523,6 +568,132 @@ async function prepareOutputsForGraph(context, resources) {
   outputOperandNameArray.forEach(
       (name, index) => outputs[name] = tensors[index]);
   return outputs;
+}
+
+function getInputName(operatorArguments, operandName) {
+  for (let argument of operatorArguments) {
+    const name = Object.keys(argument)[0];
+    if (name === operandName) {
+      return argument[operandName];
+    } else if (name === 'options') {
+      if (Object.keys(argument[name]).includes(operandName)) {
+        return argument[name][operandName];
+      }
+    }
+  }
+  return null;
+}
+
+// This assert() function is to check whether configurations of test case are
+// set correctly.
+function assert(condition, message) {
+  if (!condition) {
+    throw new Error(`Wrong test case, ${message}`);
+  }
+}
+
+function validateContextSupportsGraph(context, graph) {
+  const supportLimits = context.opSupportLimits();
+  const inputDataTypes = supportLimits.input.dataTypes;
+  const constantDataTypes = supportLimits.constant.dataTypes;
+  const outputDataTypes = supportLimits.output.dataTypes;
+
+  function validateInputOrConstantDataType(
+      inputName, operatorSupportLimits, operand) {
+    const inputDataType = graph.inputs[inputName].descriptor.dataType;
+    if (graph.inputs[inputName].constant) {
+      if (!constantDataTypes.includes(inputDataType)) {
+        throw new TypeError(
+            `Unsupported data type, constant '${operand}' data type ${
+                inputDataType} must be one of [${constantDataTypes}].`);
+      }
+    } else {
+      if (!inputDataTypes.includes(inputDataType)) {
+        throw new TypeError(
+            `Unsupported data type, input '${operand}' data type ${
+                inputDataType} must be one of [${inputDataTypes}].`);
+      }
+    }
+
+    if (!operatorSupportLimits[operand].dataTypes.includes(inputDataType)) {
+      throw new TypeError(`Unsupported data type, input '${
+          operand}' data type ${inputDataType} must be one of [${
+          operatorSupportLimits[operand].dataTypes}].`);
+    }
+  }
+
+  function validateOutputDataType(outputName, operatorSupportLimits, operand) {
+    const outputDataType =
+        graph.expectedOutputs[outputName].descriptor.dataType;
+    if (!outputDataTypes.includes(outputDataType)) {
+      throw new TypeError(
+          `Unsupported data type, output '${operand}' data type ${
+              outputDataType} must be one of [${outputDataTypes}].`);
+    }
+
+    if (!operatorSupportLimits[operand].dataTypes.includes(outputDataType)) {
+      throw new TypeError(`Unsupported data type, output '${
+          operand}' data type ${outputDataType} must be one of [${
+          operatorSupportLimits[operand].dataTypes}].`);
+    }
+  }
+
+  for (let operator of graph.operators) {
+    const operatorName = operator.name;
+    const operatorSupportLimits = supportLimits[operatorName];
+    for (let operand of Object.keys(operatorSupportLimits)) {
+      if (operand === 'output') {
+        // single output operand
+        assert(
+            typeof operator.outputs === 'string',
+            `the outputs of ${operatorName} should be a string.`);
+        if (!graph.expectedOutputs[operator.outputs]) {
+          // intermediate output
+          continue;
+        }
+        validateOutputDataType(
+            operator.outputs, operatorSupportLimits, 'output');
+      } else if (operand === 'outputs') {
+        // multiples output operands
+        assert(
+            Array.isArray(operator.outputs),
+            `the outputs of ${operatorName} should be a string array.`);
+        for (const outputName of operator.outputs) {
+          assert(
+              typeof outputName === 'string',
+              `the outputs' item of ${operatorName} should be a string.`);
+          if (!graph.expectedOutputs[outputName]) {
+            // intermediate output
+            continue;
+          }
+          validateOutputDataType(outputName, operatorSupportLimits, 'outputs');
+        }
+      } else {
+        // input operand(s)
+        if (operatorName === 'concat') {
+          const inputNameArray = operator.arguments[0][operand];
+          assert(
+              Array.isArray(inputNameArray),
+              `the inputs of ${operatorName} should be a string array.`);
+          for (const inputName of inputNameArray) {
+            assert(
+                typeof inputName === 'string',
+                `the inputs' item of ${operatorName} should be a string.`);
+            validateInputOrConstantDataType(
+                inputName, operatorSupportLimits, 'inputs');
+          }
+        } else {
+          const inputName = getInputName(operator.arguments, operand);
+          if (inputName === null || !graph.inputs[inputName]) {
+            // default options argument or intermediate input
+            continue;
+          }
+          validateInputOrConstantDataType(
+              inputName, operatorSupportLimits, operand);
+        }
+      }
+    }
+  }
 }
 
 /**
@@ -655,7 +826,8 @@ const buildAndExecuteGraph = async (context, builder, graphResources) => {
             expectedDescriptor.dataType)) {
       const compatibleType = findCompatibleType(
           expectedDescriptor.dataType,
-          context.opSupportLimits().output.dataTypes);
+          context.opSupportLimits().output.dataTypes,
+          context.opSupportLimits().cast);
       outputOperands[i] = builder.cast(outputOperands[i], compatibleType);
       expectedDescriptor.castedType = compatibleType;
     }
@@ -822,10 +994,14 @@ const getReducedElementCount =
           sizes.reduce(
               (accumulator, currentValue) => accumulator * currentValue) :
           1;
-    }
+    };
 
+// `cast_to_supported_type` will check if the graph input/output is
+// supported by current context, if not, it will try to find a compatible
+// type that's supported and use that type, then cast back to original type.
 const webnn_conformance_test =
-    (buildAndExecuteGraphFunc, toleranceFunc, testResources) => {
+    (buildAndExecuteGraphFunc, toleranceFunc, testResources,
+     cast_to_supported_type = false) => {
       promise_test(async () => {
         let context;
         try {
@@ -833,6 +1009,9 @@ const webnn_conformance_test =
         } catch (e) {
           throw new AssertionError(
               `Unable to create context for ${variant} variant. ${e}`);
+        }
+        if (!cast_to_supported_type) {
+          validateContextSupportsGraph(context, testResources.graph);
         }
         const builder = new MLGraphBuilder(context);
         const {result, intermediateOperands} = await buildAndExecuteGraphFunc(

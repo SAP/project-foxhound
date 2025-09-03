@@ -14,12 +14,6 @@ const {
   DescriptorMixin,
 } = require("resource://devtools/client/fronts/descriptors/descriptor-mixin.js");
 const DESCRIPTOR_TYPES = require("resource://devtools/client/fronts/descriptors/descriptor-types.js");
-loader.lazyRequireGetter(
-  this,
-  "WindowGlobalTargetFront",
-  "resource://devtools/client/fronts/targets/window-global.js",
-  true
-);
 
 class WebExtensionDescriptorFront extends DescriptorMixin(
   FrontClassWithSpec(webExtensionDescriptorSpec)
@@ -104,11 +98,8 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
   }
 
   isServerTargetSwitchingEnabled() {
-    // @backward-compat { version 133 } Firefox 133 started supporting server targets by default.
-    // Once this is the only supported version, we can remove the traits and consider this true,
-    // but keep this method as some other descriptor still return false.
-    // At least the browser toolbox doesn't support server target switching.
-    return this.traits.isServerTargetSwitchingEnabled;
+    // Since Firefox 133, this is always true for webextension toolboxes.
+    return true;
   }
 
   getWatcher() {
@@ -117,16 +108,9 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
     });
   }
 
-  _createWebExtensionTarget(form) {
-    const front = new WindowGlobalTargetFront(this.conn, null, this);
-    front.form(form);
-    this.manage(front);
-    return front;
-  }
-
   /**
-   * Retrieve the WindowGlobalTargetFront representing a
-   * WebExtensionTargetActor if this addon is a webextension.
+   * Retrieve the WindowGlobalTargetFront for the top level WindowGlobal
+   * currently active related to the Web Extension.
    *
    * WebExtensionDescriptors will be created for any type of addon type
    * (webextension, search plugin, themes). Only webextensions can be targets.
@@ -147,25 +131,9 @@ class WebExtensionDescriptorFront extends DescriptorMixin(
       return this._targetFront;
     }
 
-    if (this._targetFrontPromise) {
-      return this._targetFrontPromise;
-    }
-
-    this._targetFrontPromise = (async () => {
-      let targetFront = null;
-      try {
-        const targetForm = await super.getTarget();
-        targetFront = this._createWebExtensionTarget(targetForm);
-      } catch (e) {
-        console.log(
-          `Request to connect to WebExtensionDescriptor "${this.id}" failed: ${e}`
-        );
-      }
-      this._targetFront = targetFront;
-      this._targetFrontPromise = null;
-      return targetFront;
-    })();
-    return this._targetFrontPromise;
+    throw new Error(
+      "Missing webextension target actor front. TargetCommand did not notify it (yet?) to the descriptor"
+    );
   }
 }
 

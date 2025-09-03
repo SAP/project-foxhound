@@ -177,6 +177,14 @@ class nsFlexContainerFrame final : public nsContainerFrame,
       const ReflowInput& aChildRI,
       mozilla::LogicalAxis aLogicalAxis) const override;
 
+  // Return aFlexItem's used 'align-self' value and the associated flags
+  // (safe/unsafe).
+  //
+  // Note: This method guarantees not to return StyleAlignFlags::NORMAL because
+  // it converts NORMAL to STRETCH.
+  std::pair<mozilla::StyleAlignFlags, mozilla::StyleAlignFlags>
+  UsedAlignSelfAndFlagsForItem(const nsIFrame* aFlexItem) const;
+
   /**
    * Helper function to calculate packing space and initial offset of alignment
    * subjects in MainAxisPositionTracker() and CrossAxisPositionTracker() for
@@ -426,6 +434,25 @@ class nsFlexContainerFrame final : public nsContainerFrame,
   void ResolveAutoFlexBasisAndMinSize(FlexItem& aFlexItem,
                                       const ReflowInput& aItemReflowInput,
                                       const FlexboxAxisTracker& aAxisTracker);
+
+  /**
+   * Partially resolves "min-[width|height]:auto" and returns the resulting
+   * value. By "partially", I mean we don't consider the min-content size (but
+   * we do consider the main-size and main max-size properties, and the
+   * preferred aspect ratio). The caller is responsible for computing &
+   * considering the min-content size in combination with the partially-resolved
+   * value that this function returns.
+   *
+   * Basically, this function gets the specified size suggestion; if not, the
+   * transferred size suggestion; if both sizes do not exist, return
+   * nscoord_MAX.
+   *
+   * Spec reference: https://drafts.csswg.org/css-flexbox-1/#min-size-auto
+   * (Helper for ResolveAutoFlexBasisAndMinSize().)
+   */
+  nscoord PartiallyResolveAutoMinSize(
+      const FlexItem& aFlexItem, const ReflowInput& aItemReflowInput,
+      const FlexboxAxisTracker& aAxisTracker) const;
 
   /**
    * This method:

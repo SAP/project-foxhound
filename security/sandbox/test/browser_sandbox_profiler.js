@@ -3,15 +3,9 @@
 
 "use strict";
 
-/* import-globals-from /tools/profiler/tests/shared-head.js */
-
-Services.scriptloader.loadSubScript(
-  "chrome://mochitests/content/browser/tools/profiler/tests/browser/shared-head.js",
-  this
+const { ProfilerTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/ProfilerTestUtils.sys.mjs"
 );
-
-// Test verifies absence of data by relying on timeout
-requestLongerTimeout(2);
 
 async function addTab() {
   const tab = BrowserTestUtils.addTab(gBrowser, "https://example.com/browser", {
@@ -72,8 +66,8 @@ async function waitForMaybeSandboxProfilerData(
         return !!intercepted.length;
       },
       `Wait for some samples from ${threadName}`,
-      /* interval*/ 250,
-      /* maxTries */ 75
+      /* interval*/ 100,
+      /* maxTries */ 25
     );
     Assert.greater(
       intercepted.length,
@@ -115,7 +109,7 @@ async function waitForMaybeSandboxProfilerData(
 }
 
 add_task(async () => {
-  await startProfiler(sandboxSettingsEnabled);
+  await ProfilerTestUtils.startProfiler(sandboxSettingsEnabled);
   await waitForMaybeSandboxProfilerData(
     "SandboxProfilerEmitterSyscalls",
     ["id", "init"],
@@ -126,7 +120,7 @@ add_task(async () => {
 });
 
 add_task(async () => {
-  await startProfiler(sandboxSettingsEnabled);
+  await ProfilerTestUtils.startProfiler(sandboxSettingsEnabled);
   await waitForMaybeSandboxProfilerData(
     "SandboxProfilerEmitterLogs",
     ["log"],
@@ -137,7 +131,7 @@ add_task(async () => {
 });
 
 add_task(async () => {
-  await startProfiler(sandboxSettingsDisabled);
+  await ProfilerTestUtils.startProfiler(sandboxSettingsDisabled);
   await waitForMaybeSandboxProfilerData(
     "SandboxProfilerEmitterSyscalls",
     ["id", "init"],
@@ -148,7 +142,7 @@ add_task(async () => {
 });
 
 add_task(async () => {
-  await startProfiler(sandboxSettingsEnabled);
+  await ProfilerTestUtils.startProfiler(sandboxSettingsEnabled);
   await waitForMaybeSandboxProfilerData(
     "SandboxProfilerEmitterLogs",
     ["log"],

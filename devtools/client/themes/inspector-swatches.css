@@ -37,6 +37,10 @@
   stroke: var(--theme-icon-color);
   /* Prevent line break when copy/pasting an entire rule */
   user-select: auto;
+
+  &:hover {
+    stroke: var(--theme-icon-alternate-hover-color);
+  }
 }
 
 :is(
@@ -44,7 +48,8 @@
   .inspector-grid,
   .inspector-shapeswatch
 )[aria-pressed="true"] {
-  stroke: var(--theme-icon-checked-color);
+  background-color: var(--theme-toolbarbutton-checked-background);
+  stroke: var(--theme-toolbarbutton-checked-color);
 }
 
 .inspector-flex {
@@ -73,6 +78,7 @@
 .inspector-shape-point.active,
 .inspector-shapeswatch[aria-pressed="true"] + .inspector-shape > .inspector-shape-point:hover {
   background-color: var(--inspector-highlight-background-color);
+  color: var(--inspector-highlight-color);
   /* Add an outline so when the property is highlighted because of search,
      the active point still stands out */
   outline: 1px solid var(--theme-contrast-border);
@@ -87,6 +93,17 @@
 .inspector-swatch {
   background-size: var(--swatch-size);
   border-radius: 50%;
+  box-shadow: 0 0 0 1px light-dark(#c4c4c4, #818181);
+
+  :root[forced-colors-active] &:not(:focus-visible) {
+    /* The box-shadow isn't rendered in High Contrast Mode, and we do want to have a "border"
+       for those without impacting the size of the elements */
+    outline: 1px solid var(--theme-icon-color);
+
+    &:hover {
+      outline-color: var(--theme-icon-hover-color);
+    }
+  }
 }
 
 /* Create a stacking context for the color swatch so its before pseudo element can be
@@ -129,16 +146,46 @@
 
 .inspector-bezierswatch {
   background-image: url("chrome://devtools/skin/images/cubic-bezier-swatch.svg");
+  -moz-context-properties: stroke, fill;
+  fill: #fff;
+  stroke: #808080;
 }
 
 .inspector-filterswatch {
   background-image: url("chrome://devtools/skin/images/filter-swatch.svg");
+  -moz-context-properties: stroke, fill;
+  fill: #fff;
+  stroke: #aeb0b1;
 }
 
 .inspector-angleswatch {
   background-image: url("chrome://devtools/skin/images/angle-swatch.svg");
+  -moz-context-properties: stroke, fill;
+  fill: #fff;
+  stroke: #aeb0b1;
 }
 
 .inspector-lineareasingswatch {
   background-image: url("chrome://devtools/skin/images/linear-easing-swatch.svg");
+  -moz-context-properties: stroke, fill;
+  fill: #fff;
+  stroke: #808080;
+}
+
+:root[forced-colors-active] :is(
+  .inspector-bezierswatch,
+  .inspector-lineareasingswatch,
+  .inspector-filterswatch,
+  .inspector-angleswatch
+) {
+  fill: ButtonFace;
+  stroke: var(--theme-icon-color);
+  /* For some icons, the outline can conflate with the background image in a weird way
+     on low-dpi screens. Adjust the offset a bit so there's a clear separation between
+     the icon and the outline for a cleaner look */
+  outline-offset: 1px;
+
+  &:hover {
+    stroke: var(--theme-icon-hover-color);
+  }
 }

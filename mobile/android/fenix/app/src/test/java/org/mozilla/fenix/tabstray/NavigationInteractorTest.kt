@@ -21,7 +21,6 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.service.fxa.manager.FxaAccountManager
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -30,10 +29,10 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.RuleChain
 import org.junit.runner.RunWith
-import org.mockito.ArgumentMatchers.anyString
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.TabsTray
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import mozilla.components.browser.state.state.createTab as createStateTab
 
@@ -45,7 +44,7 @@ class NavigationInteractorTest {
     private val accountManager: FxaAccountManager = mockk(relaxed = true)
 
     val coroutinesTestRule: MainCoroutineRule = MainCoroutineRule()
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @get:Rule
     val chain: RuleChain = RuleChain.outerRule(gleanTestRule).around(coroutinesTestRule)
@@ -147,7 +146,7 @@ class NavigationInteractorTest {
         )
         try {
             mockkStatic("mozilla.components.browser.state.selector.SelectorsKt")
-            every { mockedStore.state.findTab(anyString()) } returns tab
+            every { mockedStore.state.findTab(any<String>()) } returns tab
             every { mockedStore.state.getNormalOrPrivateTabs(any()) } returns listOf(tab)
 
             controller.onCloseAllTabsClicked(true)

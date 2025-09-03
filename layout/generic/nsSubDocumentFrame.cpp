@@ -314,14 +314,14 @@ mozilla::PresShell* nsSubDocumentFrame::GetSubdocumentPresShellForPainting(
   return presShell;
 }
 
-nsRect nsSubDocumentFrame::GetDestRect() {
-  nsRect rect = GetContent()->IsHTMLElement(nsGkAtoms::frame)
-                    ? GetRectRelativeToSelf()
-                    : GetContentRectRelativeToSelf();
+nsRect nsSubDocumentFrame::GetDestRect() const {
+  const nsRect rect = GetContent()->IsHTMLElement(nsGkAtoms::frame)
+                          ? GetRectRelativeToSelf()
+                          : GetContentRectRelativeToSelf();
   return GetDestRect(rect);
 }
 
-nsRect nsSubDocumentFrame::GetDestRect(const nsRect& aConstraintRect) {
+nsRect nsSubDocumentFrame::GetDestRect(const nsRect& aConstraintRect) const {
   // Adjust subdocument size, according to 'object-fit' and the subdocument's
   // intrinsic size and ratio.
   return nsLayoutUtils::ComputeObjectDestRect(
@@ -329,21 +329,24 @@ nsRect nsSubDocumentFrame::GetDestRect(const nsRect& aConstraintRect) {
       GetIntrinsicRatio(), StylePosition());
 }
 
-LayoutDeviceIntSize nsSubDocumentFrame::GetSubdocumentSize() {
-  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
-    if (RefPtr<nsFrameLoader> frameloader = FrameLoader()) {
-      nsIFrame* detachedFrame = frameloader->GetDetachedSubdocFrame();
-      if (nsView* view = detachedFrame ? detachedFrame->GetView() : nullptr) {
-        nsSize size = view->GetBounds().Size();
-        nsPresContext* presContext = detachedFrame->PresContext();
-        return LayoutDeviceIntSize(
-            presContext->AppUnitsToDevPixels(size.width),
-            presContext->AppUnitsToDevPixels(size.height));
-      }
+LayoutDeviceIntSize nsSubDocumentFrame::GetInitialSubdocumentSize() const {
+  if (RefPtr<nsFrameLoader> frameloader = FrameLoader()) {
+    nsIFrame* detachedFrame = frameloader->GetDetachedSubdocFrame();
+    if (nsView* view = detachedFrame ? detachedFrame->GetView() : nullptr) {
+      nsSize size = view->GetBounds().Size();
+      nsPresContext* presContext = detachedFrame->PresContext();
+      return LayoutDeviceIntSize(presContext->AppUnitsToDevPixels(size.width),
+                                 presContext->AppUnitsToDevPixels(size.height));
     }
-    // Pick some default size for now.  Using 10x10 because that's what the
-    // code used to do.
-    return LayoutDeviceIntSize(10, 10);
+  }
+  // Pick some default size for now.  Using 10x10 because that's what the
+  // code used to do.
+  return LayoutDeviceIntSize(10, 10);
+}
+
+LayoutDeviceIntSize nsSubDocumentFrame::GetSubdocumentSize() const {
+  if (HasAnyStateBits(NS_FRAME_FIRST_REFLOW)) {
+    return GetInitialSubdocumentSize();
   }
 
   nsSize docSizeAppUnits = GetDestRect().Size();
@@ -1280,21 +1283,19 @@ bool nsSubDocumentFrame::ContentReactsToPointerEvents() const {
   return true;
 }
 
-// Return true iff |aManager| is a "temporary layer manager".  They're
-// used for small software rendering tasks, like drawWindow.  That's
-// currently implemented by a BasicLayerManager without a backing
-// widget, and hence in non-retained mode.
 nsDisplayRemote::nsDisplayRemote(nsDisplayListBuilder* aBuilder,
                                  nsSubDocumentFrame* aFrame)
     : nsPaintedDisplayItem(aBuilder, aFrame),
       mEventRegionsOverride(EventRegionsOverride::NoOverride) {
-  if (aBuilder->IsInsidePointerEventsNoneDoc() ||
-      !aFrame->ContentReactsToPointerEvents()) {
-    mEventRegionsOverride |= EventRegionsOverride::ForceEmptyHitRegion;
-  }
-  if (nsLayoutUtils::HasDocumentLevelListenersForApzAwareEvents(
-          aFrame->PresShell())) {
-    mEventRegionsOverride |= EventRegionsOverride::ForceDispatchToContent;
+  if (aBuilder->BuildCompositorHitTestInfo()) {
+    if (aBuilder->IsInsidePointerEventsNoneDoc() ||
+        !aFrame->ContentReactsToPointerEvents()) {
+      mEventRegionsOverride |= EventRegionsOverride::ForceEmptyHitRegion;
+    }
+    if (nsLayoutUtils::HasDocumentLevelListenersForApzAwareEvents(
+            aFrame->PresShell())) {
+      mEventRegionsOverride |= EventRegionsOverride::ForceDispatchToContent;
+    }
   }
 
   mPaintData = aFrame->GetRemotePaintData();

@@ -334,13 +334,18 @@ skip-if = ["(verify && debug && (os == 'linux' || os == 'mac'))"]
 
 ["browser_remove_customized_specials.js"]
 
+["browser_remove_sidebar_button_and_sidebar.js"]
+
 ["browser_reset_builtin_widget_currentArea.js"]
 
 ["browser_reset_dom_events.js"]
 
 ["browser_screenshot_button_disabled.js"]
+skip-if = ["true"] # TODO: Fix this test (bug 1925823 comment 4)
 
 ["browser_searchbar_removal.js"]
+
+["browser_sidebar_button_reset.js"]
 
 ["browser_sidebar_toggle.js"]
 skip-if = ["verify"]
@@ -361,6 +366,8 @@ skip-if = [
 ]
 
 ["browser_unified_extensions_reset.js"]
+
+["browser_vertical_tabs_customize_navbar.js"]
 
 ["browser_widget_animation.js"]
 

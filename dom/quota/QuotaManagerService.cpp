@@ -513,7 +513,7 @@ void QuotaManagerService::RemoveIdleObserver() {
 NS_IMPL_ADDREF(QuotaManagerService)
 NS_IMPL_RELEASE_WITH_DESTROY(QuotaManagerService, Destroy())
 NS_IMPL_QUERY_INTERFACE(QuotaManagerService, nsIQuotaManagerService,
-                        nsIObserver)
+                        nsIQuotaManagerServiceInternal, nsIObserver)
 
 NS_IMETHODIMP
 QuotaManagerService::StorageName(nsIQuotaRequest** _retval) {
@@ -1574,16 +1574,13 @@ NS_IMETHODIMP
 QuotaManagerService::ListOrigins(nsIQuotaRequest** _retval) {
   MOZ_ASSERT(NS_IsMainThread());
 
-  RefPtr<Request> request = new Request();
+  QM_TRY(MOZ_TO_RESULT(EnsureBackgroundActor()));
 
-  ListOriginsParams params;
+  auto request = MakeRefPtr<Request>();
 
-  RequestInfo info(request, params);
-
-  nsresult rv = InitiateRequest(info);
-  if (NS_WARN_IF(NS_FAILED(rv))) {
-    return rv;
-  }
+  mBackgroundActor->SendListOrigins()->Then(
+      GetCurrentSerialEventTarget(), __func__,
+      CStringArrayResponsePromiseResolveOrRejectCallback(request));
 
   request.forget(_retval);
   return NS_OK;
@@ -1602,6 +1599,19 @@ QuotaManagerService::ListCachedOrigins(nsIQuotaRequest** _retval) {
       CStringArrayResponsePromiseResolveOrRejectCallback(request));
 
   request.forget(_retval);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+QuotaManagerService::SetThumbnailPrivateIdentityId(
+    uint32_t aThumbnailPrivateIdentityId) {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  QM_TRY(MOZ_TO_RESULT(EnsureBackgroundActor()));
+
+  mBackgroundActor->SendSetThumbnailPrivateIdentityId(
+      aThumbnailPrivateIdentityId);
+
   return NS_OK;
 }
 

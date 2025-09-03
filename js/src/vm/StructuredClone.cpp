@@ -75,12 +75,12 @@
 #include "vm/ArrayObject-inl.h"
 #include "vm/Compartment-inl.h"
 #include "vm/ErrorObject-inl.h"
-#include "vm/InlineCharBuffer-inl.h"
 #include "vm/JSContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/Realm-inl.h"
+#include "vm/StringType-inl.h"
 
 using namespace js;
 
@@ -2193,13 +2193,6 @@ bool JSStructuredCloneWriter::startWrite(HandleValue v) {
     case ESClass::Arguments:
     case ESClass::Function:
       break;
-
-#ifdef ENABLE_RECORD_TUPLE
-    case ESClass::Record:
-    case ESClass::Tuple:
-      MOZ_CRASH("Record and Tuple are not supported");
-#endif
-
     case ESClass::Other: {
       if (obj->canUnwrapAs<TypedArrayObject>()) {
         return writeTypedArray(obj);
@@ -2560,17 +2553,23 @@ JSStructuredCloneReader::JSStructuredCloneReader(
 template <typename CharT>
 JSString* JSStructuredCloneReader::readStringImpl(
     uint32_t nchars, ShouldAtomizeStrings atomize) {
-  InlineCharBuffer<CharT> chars;
-  if (!chars.maybeAlloc(context(), nchars) ||
-      !in.readChars(chars.get(), nchars)) {
-    return nullptr;
-  }
-
   if (atomize) {
+    AtomStringChars<CharT> chars;
+    if (!chars.maybeAlloc(context(), nchars) ||
+        !in.readChars(chars.data(), nchars)) {
+      return nullptr;
+    }
     return chars.toAtom(context(), nchars);
   }
 
-  return chars.toStringDontDeflate(context(), nchars, gcHeap);
+  // Uses `StringChars::unsafeData()` because `readChars` can report an error,
+  // which can trigger a GC.
+  StringChars<CharT> chars(context());
+  if (!chars.maybeAlloc(context(), nchars, gcHeap) ||
+      !in.readChars(chars.unsafeData(), nchars)) {
+    return nullptr;
+  }
+  return chars.template toStringDontDeflate<CanGC>(context(), nchars, gcHeap);
 }
 
 JSString* JSStructuredCloneReader::readString(uint32_t data,

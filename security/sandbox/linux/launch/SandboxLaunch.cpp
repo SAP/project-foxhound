@@ -306,7 +306,8 @@ bool SandboxLaunch::Configure(GeckoProcessType aType, SandboxingKind aKind,
   // At this point, we know we'll be using sandboxing; generic
   // sandboxing support goes here.
   PreloadSandboxLib(&aOptions->env_map);
-  if (!AttachSandboxReporter(aExtraOpts)) {
+  if (aType != GeckoProcessType_ForkServer &&
+      !AttachSandboxReporter(aExtraOpts)) {
     return false;
   }
 
@@ -437,7 +438,7 @@ static void RestoreSignals(const sigset_t* aOldSigs) {
 }
 
 static bool IsSignalIgnored(int aSig) {
-  struct sigaction sa {};
+  struct sigaction sa{};
 
   if (sigaction(aSig, nullptr, &sa) != 0) {
     if (errno != EINVAL) {
@@ -468,7 +469,7 @@ namespace {
  */
 
 #  if !defined(CHECK_EQ)
-#    define CHECK_EQ(a, b) MOZ_ASSERT((a) == (b))
+#    define CHECK_EQ(a, b) MOZ_RELEASE_ASSERT((a) == (b))
 #  endif
 
 // for sys_gettid()
@@ -541,11 +542,15 @@ static pid_t ForkWithFlags(int aFlags) {
   if (setjmp(ctx) == 0) {
     // In the parent and just called setjmp:
     ret = DoClone(aFlags | SIGCHLD, &ctx);
+    // ret is >0 on success (a valid tid) or -1 on error
+    MOZ_DIAGNOSTIC_ASSERT(ret != 0);
   }
+  // The child longjmps to here, with ret = 0.
   RestoreSignals(&oldSigs);
-  // In the child and have longjmp'ed:
 #if defined(LIBC_GLIBC)
-  MaybeUpdateGlibcTidCache();
+  if (ret == 0) {
+    MaybeUpdateGlibcTidCache();
+  }
 #endif
   return ret;
 }
@@ -688,7 +693,7 @@ void SandboxLaunch::StartChrootServer() {
   caps.Effective(CAP_SYS_CHROOT) = true;
   if (!caps.SetCurrent()) {
     SANDBOX_LOG_ERRNO("capset (chroot helper)");
-    MOZ_DIAGNOSTIC_ASSERT(false);
+    MOZ_DIAGNOSTIC_CRASH("caps.SetCurrent() failed");
   }
 
   base::CloseSuperfluousFds(this, [](void* aCtx, int aFd) {

@@ -178,10 +178,6 @@ pub trait MetricType {
     /// This depends on the metrics own state, as determined by its metadata,
     /// and whether upload is enabled on the Glean object.
     fn should_record(&self, glean: &Glean) -> bool {
-        if !glean.is_upload_enabled() {
-            return false;
-        }
-
         // Technically nothing prevents multiple calls to should_record() to run in parallel,
         // meaning both are reading self.meta().disabled and later writing it. In between it can
         // also read remote_settings_config, which also could be modified in between those 2 reads.
@@ -233,6 +229,25 @@ pub trait MetricType {
 
         // Return a boolean indicating whether or not the metric should be recorded
         current_disabled == 0
+    }
+}
+
+/// A [`MetricIdentifier`] describes an interface for retrieving an
+/// identifier (category, name, label) for a metric
+pub trait MetricIdentifier<'a> {
+    /// Retrieve the category, name and (maybe) label of the metric
+    fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>);
+}
+
+// Provide a blanket implementation for MetricIdentifier for all the types
+// that implement MetricType.
+impl<'a, T> MetricIdentifier<'a> for T
+where
+    T: MetricType,
+{
+    fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>) {
+        let meta = &self.meta().inner;
+        (&meta.category, &meta.name, meta.dynamic_label.as_deref())
     }
 }
 

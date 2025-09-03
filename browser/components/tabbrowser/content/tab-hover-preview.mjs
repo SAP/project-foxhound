@@ -61,7 +61,9 @@ export default class TabHoverPreviewPanel {
 
     this._panelOpener = new TabPreviewPanelTimedFunction(
       () => {
-        this._panel.openPopup(this._tab, this.#popupOptions);
+        if (!this._isDisabled()) {
+          this._panel.openPopup(this._tab, this.#popupOptions);
+        }
       },
       this._prefPreviewDelay,
       ZERO_DELAY_ACTIVATION_TIME,
@@ -85,30 +87,30 @@ export default class TabHoverPreviewPanel {
       return {
         position: "topleft topright",
         x: 0,
-        y: 4,
+        y: 3,
       };
     }
     return {
       position: "topright topleft",
       x: 0,
-      y: 4,
+      y: 3,
     };
   }
 
   getPrettyURI(uri) {
-    try {
-      let url = new URL(uri);
-      if (url.protocol == "about:" && url.pathname == "reader") {
-        url = new URL(url.searchParams.get("url"));
-      }
-
-      if (url.protocol === "about:") {
-        return url.href;
-      }
-      return `${url.hostname}`.replace(/^w{3}\./, "");
-    } catch {
+    let url = URL.parse(uri);
+    if (!url) {
       return uri;
     }
+
+    if (url.protocol == "about:" && url.pathname == "reader") {
+      url = URL.parse(url.searchParams.get("url"));
+    }
+
+    if (url?.protocol === "about:") {
+      return url.href;
+    }
+    return url ? url.hostname.replace(/^w{3}\./, "") : uri;
   }
 
   _hasValidWireframeState(tab) {

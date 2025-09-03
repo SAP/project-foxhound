@@ -25,6 +25,8 @@ const IGNORED_EXTENSIONS = ["css", "svg", "png"];
 import { isPretty, getRawSourceURL } from "../utils/source";
 import { prefs } from "../utils/prefs";
 
+import TargetCommand from "resource://devtools/shared/commands/target/target-command.js";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
@@ -77,25 +79,10 @@ export function initialSourcesTreeState({ isWebExtension } = {}) {
 export default function update(state = initialSourcesTreeState(), action) {
   switch (action.type) {
     case "SHOW_CONTENT_SCRIPTS": {
-      prefs.showContentScripts = action.shouldShow;
-      if (action.shouldShow) {
-        const threadItems = [...state.threadItems];
-        let changed = false;
-        for (const { source, sourceActor } of state.mutableExtensionSources) {
-          changed |= addSource(threadItems, source, sourceActor);
-        }
-        if (changed) {
-          return {
-            ...state,
-            showContentScripts: true,
-            threadItems,
-          };
-        }
-      } else {
-        return removeSources(
-          { ...state, showContentScripts: false },
-          state.mutableExtensionSources.map(({ source }) => source)
-        );
+      const { shouldShow } = action;
+      if (shouldShow !== state.showExtensionSources) {
+        prefs.showContentScripts = shouldShow;
+        return { ...state, showContentScripts: shouldShow };
       }
       return state;
     }
@@ -266,35 +253,6 @@ function addThread(state, thread) {
     state.threadItems.splice(state.threadItems.indexOf(threadItem), 1);
     addSortedItem(state.threadItems, threadItem, sortThreadItems);
   }
-}
-
-function removeSources(state, sources) {
-  let changed = false;
-  const threadItems = [...state.threadItems];
-
-  for (const source of sources) {
-    for (const threadItem of threadItems) {
-      const sourceTreeItem = findSourceInThreadItem(source, threadItem);
-      if (sourceTreeItem) {
-        changed = true;
-        // Remove this tree item from its parent
-        const { children } = sourceTreeItem.parent;
-        children.splice(children.indexOf(sourceTreeItem), 1);
-
-        // Now, recursively check all the parent tree to remove possibly empty parent folders
-        let item = sourceTreeItem.parent;
-        while (!item.children.length) {
-          item.parent.children.splice(item.parent.children.indexOf(item), 1);
-          item = item.parent;
-        }
-      }
-    }
-  }
-
-  if (changed) {
-    return { ...state, threadItems };
-  }
-  return state;
 }
 
 function updateBlackbox(state, sources, shouldBlackBox) {
@@ -481,58 +439,62 @@ function sortItems(a, b) {
   return 0;
 }
 
-function sortThreadItems(a, b) {
+const { TYPES } = TargetCommand;
+const TARGET_TYPE_ORDER = [
+  TYPES.PROCESS,
+  TYPES.FRAME,
+  TYPES.CONTENT_SCRIPT,
+  TYPES.SERVICE_WORKER,
+  TYPES.SHARED_WORKER,
+  TYPES.WORKER,
+];
+function sortThreadItems(threadItemA, threadItemB) {
   // Jest tests aren't emitting the necessary actions to populate the thread attributes.
   // Ignore sorting for them.
-  if (!a.thread || !b.thread) {
+  if (!threadItemA.thread || !threadItemB.thread) {
     return 0;
   }
-
+  return sortThreads(threadItemA.thread, threadItemB.thread);
+}
+export function sortThreads(a, b) {
   // Top level target is always listed first
-  if (a.thread.isTopLevel) {
+  if (a.isTopLevel) {
     return -1;
-  } else if (b.thread.isTopLevel) {
+  } else if (b.isTopLevel) {
     return 1;
   }
 
-  // Process targets should come next and after that frame targets
-  if (a.thread.targetType == "process" && b.thread.targetType == "frame") {
-    return -1;
-  } else if (
-    a.thread.targetType == "frame" &&
-    b.thread.targetType == "process"
-  ) {
+  // Order frame and content script per Window Global ID.
+  // It should order them by creation date.
+  if (a.innerWindowId > b.innerWindowId) {
     return 1;
+  } else if (a.innerWindowId < b.innerWindowId) {
+    return -1;
   }
 
-  // And we display the worker targets last.
-  if (
-    a.thread.targetType.endsWith("worker") &&
-    !b.thread.targetType.endsWith("worker")
-  ) {
-    return 1;
-  } else if (
-    !a.thread.targetType.endsWith("worker") &&
-    b.thread.targetType.endsWith("worker")
-  ) {
-    return -1;
+  // If the two target have a different type, order by type
+  if (a.targetType !== b.targetType) {
+    const idxA = TARGET_TYPE_ORDER.indexOf(a.targetType);
+    const idxB = TARGET_TYPE_ORDER.indexOf(b.targetType);
+    return idxA < idxB ? -1 : 1;
   }
 
   // Order the process targets by their process ids
-  if (a.thread.processID > b.thread.processID) {
-    return 1;
-  } else if (a.thread.processID < b.thread.processID) {
-    return -1;
+  if (a.processID && b.processID) {
+    if (a.processID > b.processID) {
+      return 1;
+    } else if (a.processID < b.processID) {
+      return -1;
+    }
   }
 
-  // Order the frame targets and the worker targets by their target name
-  if (a.thread.targetType == "frame" && b.thread.targetType == "frame") {
-    return a.thread.name.localeCompare(b.thread.name);
-  } else if (
-    a.thread.targetType.endsWith("worker") &&
-    b.thread.targetType.endsWith("worker")
+  // Order the frame, worker and content script targets by their target name
+  if (
+    (a.targetType == "frame" && b.targetType == "frame") ||
+    (a.targetType.endsWith("worker") && b.targetType.endsWith("worker")) ||
+    (a.targetType == "content_script" && b.targetType == "content_script")
   ) {
-    return a.thread.name.localeCompare(b.thread.name);
+    return a.name.localeCompare(b.name);
   }
 
   return 0;

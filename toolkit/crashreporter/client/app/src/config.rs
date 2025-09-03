@@ -19,6 +19,10 @@ pub mod test {
     pub const MINIDUMP_PRUNE_SAVE_COUNT: usize = super::MINIDUMP_PRUNE_SAVE_COUNT;
 }
 
+mod buildid_section {
+    include!(concat!(env!("OUT_DIR"), "/buildid_section.rs"));
+}
+
 const VENDOR_KEY: &str = "Vendor";
 const PRODUCT_KEY: &str = "ProductName";
 const DEFAULT_VENDOR: &str = "Mozilla";
@@ -32,6 +36,8 @@ pub struct Config {
     pub dump_all_threads: bool,
     /// Whether to delete the dump files after submission.
     pub delete_dump: bool,
+    /// Whether to run memtest while ui is shown
+    pub run_memtest: bool,
     /// The data directory.
     pub data_dir: Option<PathBuf>,
     /// The events directory.
@@ -68,10 +74,7 @@ impl<'a> ConfigStringBuilder<'a> {
 
     /// Get the localized string.
     pub fn get(self) -> String {
-        self.0
-            .get()
-            .context("failed to get localized string")
-            .unwrap()
+        self.0.get()
     }
 }
 
@@ -83,14 +86,17 @@ impl Config {
 
     /// Load a configuration from the application environment.
     #[cfg_attr(mock, allow(unused))]
-    pub fn read_from_environment(&mut self) -> anyhow::Result<()> {
+    pub fn read_from_environment(&mut self) {
         self.auto_submit = env_bool(ekey!("AUTO_SUBMIT"));
         self.dump_all_threads = env_bool(ekey!("DUMP_ALL_THREADS"));
         self.delete_dump = !env_bool(ekey!("NO_DELETE_DUMP"));
+        self.run_memtest = env_bool(ekey!("RUN_MEMTEST"));
         self.data_dir = env_path(ekey!("DATA_DIRECTORY"));
         self.events_dir = env_path(ekey!("EVENTS_DIRECTORY"));
         self.ping_dir = env_path(ekey!("PING_DIRECTORY"));
         self.app_file = std::env::var_os(ekey!("RESTART_XUL_APP_FILE"));
+
+        self.update_log_file();
 
         // Only support `MOZ_APP_LAUNCHER` on linux and macos.
         if cfg!(not(target_os = "windows")) {
@@ -122,9 +128,7 @@ impl Config {
             log::warn!("ignoring extraneous argument: {}", arg.to_string_lossy());
         }
 
-        self.strings = Some(lang::load().context("failed to load localized strings")?);
-
-        Ok(())
+        self.strings = Some(lang::load());
     }
 
     /// Get the localized string for the given index.
@@ -182,6 +186,7 @@ impl Config {
             let vendor = extra[VENDOR_KEY].as_str().unwrap_or(DEFAULT_VENDOR);
             let product = extra[PRODUCT_KEY].as_str().unwrap_or(DEFAULT_PRODUCT);
             self.data_dir = Some(self.get_data_dir(vendor, product)?);
+            self.update_log_file();
         }
 
         // Clear the restart command if WER handled the crash. This prevents restarting the
@@ -213,14 +218,12 @@ impl Config {
 
         self.profile_dir = Some(profile_dir);
 
-        // Update the localization, if applicable.
-        match lang::load_langpack(
-            self.profile_dir.as_deref().unwrap(),
-            extra.get("useragent_locale").and_then(|v| v.as_str()),
-        ) {
-            Ok(Some(strings)) => self.strings = Some(strings),
-            Ok(None) => (),
-            Err(e) => {
+        // Update the localization information.
+        if let Some(strings) = self.strings.as_mut() {
+            if let Err(e) = strings.add_langpack(
+                self.profile_dir.as_deref().unwrap(),
+                extra.get("useragent_locale").and_then(|v| v.as_str()),
+            ) {
                 log::warn!("failed to read localization information from profile: {e:#}")
             }
         }
@@ -418,6 +421,13 @@ impl Config {
         installation_path().join(p)
     }
 
+    /// Update the log file based on the current configured data_dir.
+    fn update_log_file(&self) {
+        if let (Some(log_target), Some(data_dir)) = (&self.log_target, &self.data_dir) {
+            log_target.set_file(&data_dir.join("submit.log"));
+        }
+    }
+
     cfg_if::cfg_if! {
         if #[cfg(mock)] {
             fn get_data_dir(&self, vendor: &str, product: &str) -> anyhow::Result<PathBuf> {
@@ -557,6 +567,37 @@ pub fn installation_path() -> &'static Path {
         dir_path
     });
     &*PATH
+}
+
+/// Read the buildid from the installation.
+///
+/// This may fail if installation files are not found.
+pub fn buildid() -> Option<&'static str> {
+    static BUILDID: Lazy<Option<String>> = Lazy::new(|| {
+        let section_name = buildid_section::MOZ_BUILDID_SECTION_NAME.to_str().ok()?;
+        let xul_path = installation_path().join(if cfg!(target_os = "macos") {
+            "XUL"
+        } else if cfg!(target_os = "windows") {
+            "xul.dll"
+        } else {
+            "libxul.so"
+        });
+        #[cfg(mock)]
+        let xul_path = xul_path.as_ref();
+        match buildid_reader::BuildIdReader::new(&xul_path)
+            .and_then(|mut reader| reader.read_string_build_id(section_name))
+        {
+            Ok(s) => {
+                log::info!("read build id from XUL: {s}");
+                Some(s)
+            }
+            Err(e) => {
+                log::warn!("failed to read build id from XUL: {e}");
+                None
+            }
+        }
+    });
+    BUILDID.as_deref()
 }
 
 fn self_path() -> &'static Path {

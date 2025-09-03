@@ -14,7 +14,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mozilla.fenix.R
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsAction
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsMiddleware
 import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsState
@@ -37,7 +36,7 @@ class GleanDebugToolsStoreTest {
 
     @Test
     fun `WHEN there is no debug view tag THEN the debug view tag related buttons should be disabled`() {
-        val initialState = GleanDebugToolsState(
+        val initialState = initializeGleanDebugToolsState(
             debugViewTag = "",
         )
         assertFalse(initialState.isDebugTagButtonEnabled)
@@ -45,7 +44,7 @@ class GleanDebugToolsStoreTest {
 
     @Test
     fun `WHEN the debug view tag length is larger than the limit THEN the debug view tag related buttons should be disabled`() {
-        val initialState = GleanDebugToolsState(
+        val initialState = initializeGleanDebugToolsState(
             debugViewTag = "123456789123456789123",
         )
         assertFalse(initialState.isDebugTagButtonEnabled)
@@ -53,7 +52,7 @@ class GleanDebugToolsStoreTest {
 
     @Test
     fun `WHEN the the debug view tag length is smaller than the limit and it is not empty THEN the debug view tag related buttons should be enabled`() {
-        val initialState = GleanDebugToolsState(
+        val initialState = initializeGleanDebugToolsState(
             debugViewTag = "test",
         )
         assertTrue(initialState.isDebugTagButtonEnabled)
@@ -63,7 +62,7 @@ class GleanDebugToolsStoreTest {
     fun `GIVEN the log pings to console preference is off WHEN said preference is toggled THEN the preference should be enabled`() {
         gleanDebugToolsStorage = FakeGleanDebugToolsStorage(isSetLogPingsEnabled = false)
         val store = GleanDebugToolsStore(
-            initialState = GleanDebugToolsState(
+            initialState = initializeGleanDebugToolsState(
                 logPingsToConsoleEnabled = false,
             ),
             middlewares = listOf(
@@ -83,7 +82,7 @@ class GleanDebugToolsStoreTest {
     fun `GIVEN the log pings to console preference is on WHEN said preference is toggled THEN the preference should be enabled`() {
         gleanDebugToolsStorage = FakeGleanDebugToolsStorage(isSetLogPingsEnabled = true)
         val store = GleanDebugToolsStore(
-            initialState = GleanDebugToolsState(
+            initialState = initializeGleanDebugToolsState(
                 logPingsToConsoleEnabled = true,
             ),
             middlewares = listOf(
@@ -104,7 +103,7 @@ class GleanDebugToolsStoreTest {
         val initialDebugViewTag = ""
         val newDebugViewTag = "Test"
         val store = GleanDebugToolsStore(
-            initialState = GleanDebugToolsState(
+            initialState = initializeGleanDebugToolsState(
                 debugViewTag = initialDebugViewTag,
             ),
         )
@@ -118,7 +117,7 @@ class GleanDebugToolsStoreTest {
         val initialDebugViewTag = ""
         val newDebugViewTag = "123456789123456789123"
         val store = GleanDebugToolsStore(
-            initialState = GleanDebugToolsState(
+            initialState = initializeGleanDebugToolsState(
                 debugViewTag = initialDebugViewTag,
             ),
         )
@@ -128,8 +127,8 @@ class GleanDebugToolsStoreTest {
     }
 
     @Test
-    fun `WHEN the send baseline ping action is dispatched THEN a baseline ping should be sent`() {
-        val initialState = GleanDebugToolsState()
+    fun `WHEN the send ping action is dispatched THEN the corresponding ping should be sent`() {
+        val initialState = initializeGleanDebugToolsState()
         val store = GleanDebugToolsStore(
             initialState = initialState,
             middlewares = listOf(
@@ -139,111 +138,29 @@ class GleanDebugToolsStoreTest {
             ),
         )
         assertEquals(initialState, store.state)
-        assertFalse(gleanDebugToolsStorage.baselinePingSent)
-        store.dispatch(GleanDebugToolsAction.SendBaselinePing)
+        assertFalse(gleanDebugToolsStorage.pingSent)
+        store.dispatch(GleanDebugToolsAction.SendPing)
         assertEquals(initialState, store.state)
-        assertTrue(gleanDebugToolsStorage.baselinePingSent)
+        assertTrue(gleanDebugToolsStorage.pingSent)
     }
 
     @Test
-    fun `WHEN the send baseline ping action is dispatched THEN a toast is shown`() {
+    fun `WHEN the send ping action is dispatched THEN a toast is shown`() {
         var toastShown = false
         val store = GleanDebugToolsStore(
+            initialState = initializeGleanDebugToolsState(),
             middlewares = listOf(
                 createMiddleware(
                     gleanDebugToolsStorage = gleanDebugToolsStorage,
-                    showToast = { resId ->
-                        assertEquals(
-                            R.string.glean_debug_tools_send_baseline_ping_toast_message,
-                            resId,
-                        )
+                    showToast = { pingType ->
+                        assertEquals("metrics", pingType)
                         toastShown = true
                     },
                 ),
             ),
         )
         assertFalse(toastShown)
-        store.dispatch(GleanDebugToolsAction.SendBaselinePing)
-        assertTrue(toastShown)
-    }
-
-    @Test
-    fun `WHEN the send metrics ping action is dispatched THEN a metrics ping should be sent`() {
-        val initialState = GleanDebugToolsState()
-        val store = GleanDebugToolsStore(
-            initialState = initialState,
-            middlewares = listOf(
-                createMiddleware(
-                    gleanDebugToolsStorage = gleanDebugToolsStorage,
-                ),
-            ),
-        )
-        assertEquals(initialState, store.state)
-        assertFalse(gleanDebugToolsStorage.metricsPingSent)
-        store.dispatch(GleanDebugToolsAction.SendMetricsPing)
-        assertEquals(initialState, store.state)
-        assertTrue(gleanDebugToolsStorage.metricsPingSent)
-    }
-
-    @Test
-    fun `WHEN the send metrics ping action is dispatched THEN a toast is shown`() {
-        var toastShown = false
-        val store = GleanDebugToolsStore(
-            middlewares = listOf(
-                createMiddleware(
-                    gleanDebugToolsStorage = gleanDebugToolsStorage,
-                    showToast = { resId ->
-                        assertEquals(
-                            R.string.glean_debug_tools_send_metrics_ping_toast_message,
-                            resId,
-                        )
-                        toastShown = true
-                    },
-                ),
-            ),
-        )
-        assertFalse(toastShown)
-        store.dispatch(GleanDebugToolsAction.SendMetricsPing)
-        assertTrue(toastShown)
-    }
-
-    @Test
-    fun `WHEN the send pending event ping action is dispatched THEN a pending event ping should be sent`() {
-        val initialState = GleanDebugToolsState()
-        val store = GleanDebugToolsStore(
-            initialState = initialState,
-            middlewares = listOf(
-                createMiddleware(
-                    gleanDebugToolsStorage = gleanDebugToolsStorage,
-                ),
-            ),
-        )
-        assertEquals(initialState, store.state)
-        assertFalse(gleanDebugToolsStorage.pendingEventPingSent)
-        store.dispatch(GleanDebugToolsAction.SendPendingEventPing)
-        assertEquals(initialState, store.state)
-        assertTrue(gleanDebugToolsStorage.pendingEventPingSent)
-    }
-
-    @Test
-    fun `WHEN the send pending event ping action is dispatched THEN a toast is shown`() {
-        var toastShown = false
-        val store = GleanDebugToolsStore(
-            middlewares = listOf(
-                createMiddleware(
-                    gleanDebugToolsStorage = gleanDebugToolsStorage,
-                    showToast = { resId ->
-                        assertEquals(
-                            R.string.glean_debug_tools_send_baseline_ping_toast_message,
-                            resId,
-                        )
-                        toastShown = true
-                    },
-                ),
-            ),
-        )
-        assertFalse(toastShown)
-        store.dispatch(GleanDebugToolsAction.SendBaselinePing)
+        store.dispatch(GleanDebugToolsAction.SendPing)
         assertTrue(toastShown)
     }
 
@@ -252,7 +169,7 @@ class GleanDebugToolsStoreTest {
         var openDebugViewInvoked = false
         val debugViewTag = "test"
         val expectedDebugViewLink = "${PING_PREVIEW_URL}pings/$debugViewTag"
-        val initialState = GleanDebugToolsState(
+        val initialState = initializeGleanDebugToolsState(
             debugViewTag = debugViewTag,
         )
         val store = GleanDebugToolsStore(
@@ -276,7 +193,7 @@ class GleanDebugToolsStoreTest {
 
     @Test
     fun `GIVEN the debug view tag should not be used WHEN the open debug view action is dispatched THEN the appropriate lambda is called with the default debug view URL`() {
-        val initialState = GleanDebugToolsState()
+        val initialState = initializeGleanDebugToolsState()
         var openDebugViewInvoked = false
         val store = GleanDebugToolsStore(
             initialState = initialState,
@@ -302,7 +219,7 @@ class GleanDebugToolsStoreTest {
         val debugViewTag = "test"
         val expectedDebugViewLink = "${PING_PREVIEW_URL}pings/$debugViewTag"
         clipboardHandler.text = null
-        val initialState = GleanDebugToolsState(
+        val initialState = initializeGleanDebugToolsState(
             debugViewTag = debugViewTag,
         )
         val store = GleanDebugToolsStore(
@@ -322,7 +239,7 @@ class GleanDebugToolsStoreTest {
 
     @Test
     fun `GIVEN the debug view tag should not be used WHEN the copy debug view action is dispatched THEN the state should remain the same`() {
-        val initialState = GleanDebugToolsState()
+        val initialState = initializeGleanDebugToolsState()
         clipboardHandler.text = null
         val store = GleanDebugToolsStore(
             initialState = initialState,
@@ -342,7 +259,7 @@ class GleanDebugToolsStoreTest {
     private fun createMiddleware(
         gleanDebugToolsStorage: GleanDebugToolsStorage,
         openDebugView: (String) -> Unit = { _ -> },
-        showToast: (Int) -> Unit = { _ -> },
+        showToast: (String) -> Unit = { _ -> },
     ) = GleanDebugToolsMiddleware(
         gleanDebugToolsStorage = gleanDebugToolsStorage,
         clipboardHandler = clipboardHandler,
@@ -350,28 +267,28 @@ class GleanDebugToolsStoreTest {
         showToast = showToast,
     )
 
+    private fun initializeGleanDebugToolsState(
+        logPingsToConsoleEnabled: Boolean? = null,
+        pingType: String = "metrics",
+        debugViewTag: String? = null,
+    ) = GleanDebugToolsState(
+        logPingsToConsoleEnabled = logPingsToConsoleEnabled ?: false,
+        pingType = pingType,
+        debugViewTag = debugViewTag ?: "",
+    )
+
     class FakeGleanDebugToolsStorage(
         var isSetLogPingsEnabled: Boolean = false,
     ) : GleanDebugToolsStorage {
 
-        var baselinePingSent = false
-        var metricsPingSent = false
-        var pendingEventPingSent = false
+        var pingSent = false
 
         override fun setLogPings(enabled: Boolean) {
             isSetLogPingsEnabled = enabled
         }
 
-        override fun sendBaselinePing(debugViewTag: String) {
-            baselinePingSent = true
-        }
-
-        override fun sendMetricsPing(debugViewTag: String) {
-            metricsPingSent = true
-        }
-
-        override fun sendPendingEventPing(debugViewTag: String) {
-            pendingEventPingSent = true
+        override fun sendPing(pingType: String, debugViewTag: String) {
+            pingSent = true
         }
     }
 }

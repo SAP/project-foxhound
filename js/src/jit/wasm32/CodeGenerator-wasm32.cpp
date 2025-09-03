@@ -10,14 +10,6 @@
 
 using namespace js::jit;
 
-void CodeGenerator::visitWasmReinterpret(LWasmReinterpret* lir) { MOZ_CRASH(); }
-void CodeGenerator::visitWasmReinterpretFromI64(LWasmReinterpretFromI64* lir) {
-  MOZ_CRASH();
-}
-void CodeGenerator::visitWasmReinterpretToI64(LWasmReinterpretToI64* lir) {
-  MOZ_CRASH();
-}
-void CodeGenerator::visitRotateI64(LRotateI64* lir) { MOZ_CRASH(); }
 void CodeGenerator::visitTestDAndBranch(LTestDAndBranch* test) { MOZ_CRASH(); }
 void CodeGenerator::visitTestFAndBranch(LTestFAndBranch* test) { MOZ_CRASH(); }
 void CodeGenerator::visitCompareD(LCompareD* comp) { MOZ_CRASH(); }

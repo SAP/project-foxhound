@@ -32,7 +32,7 @@ function setClipboardHTMLData(htmlString) {
   Services.clipboard.setData(trans, null, Ci.nsIClipboard.kGlobalClipboard);
 }
 
-async function testClipboardWithContentAnalysis(allowPaste) {
+async function testClipboardWithContentAnalysis(allowPaste, plainTextOnly) {
   mockCA.setupForTest(allowPaste);
   let tab = BrowserTestUtils.addTab(gBrowser);
   let browser = gBrowser.getBrowserForTab(tab);
@@ -147,12 +147,30 @@ async function testClipboardWithContentAnalysis(allowPaste) {
   await pastePromise;
   // Check that the number of calls matches the number of
   // kKnownClipboardTypes on the clipboard.
-  is(mockCA.calls.length, 2, "Correct number of calls to Content Analysis");
-  assertContentAnalysisRequest(mockCA.calls[0], "t Bold");
-  assertContentAnalysisRequest(
-    mockCA.calls[1],
-    htmlPrefix + "t <b>Bold</b>" + htmlPostfix
+  is(
+    mockCA.calls.length,
+    plainTextOnly ? 1 : 2,
+    "Correct number of calls to Content Analysis"
   );
+  assertContentAnalysisRequest(
+    mockCA.calls[0],
+    "t Bold",
+    mockCA.calls[0].userActionId,
+    plainTextOnly ? 1 : 2
+  );
+  if (!plainTextOnly) {
+    assertContentAnalysisRequest(
+      mockCA.calls[1],
+      htmlPrefix + "t <b>Bold</b>" + htmlPostfix,
+      mockCA.calls[0].userActionId,
+      2
+    );
+    is(
+      mockCA.agentCancelCalls,
+      allowPaste ? 0 : 1,
+      "Response cancels other requests only if it is BLOCK"
+    );
+  }
   mockCA.clearCalls();
 
   let copyPromise = SpecialPowers.spawn(browser, [allowPaste], allowPaste => {
@@ -250,12 +268,25 @@ async function testClipboardWithContentAnalysis(allowPaste) {
   await sendKey("v");
   await pastePromise;
   // 2 calls because there are two formats on the clipboard
-  is(mockCA.calls.length, 2, "Correct number of calls to Content Analysis");
-  assertContentAnalysisRequest(mockCA.calls[0], "Some text");
-  assertContentAnalysisRequest(
-    mockCA.calls[1],
-    htmlPrefix + "<i>Italic</i> " + htmlPostfix
+  is(
+    mockCA.calls.length,
+    plainTextOnly ? 1 : 2,
+    "Correct number of calls to Content Analysis"
   );
+  assertContentAnalysisRequest(
+    mockCA.calls[0],
+    "Some text",
+    mockCA.calls[0].userActionId,
+    plainTextOnly ? 1 : 2
+  );
+  if (!plainTextOnly) {
+    assertContentAnalysisRequest(
+      mockCA.calls[1],
+      htmlPrefix + "<i>Italic</i> " + htmlPostfix,
+      mockCA.calls[0].userActionId,
+      2
+    );
+  }
   mockCA.clearCalls();
 
   await SpecialPowers.spawn(browser, [allowPaste], allowPaste => {
@@ -279,8 +310,8 @@ async function testClipboardWithContentAnalysis(allowPaste) {
 
   pastePromise = SpecialPowers.spawn(
     browser,
-    [htmlPrefix, htmlPostfix, allowPaste],
-    (htmlPrefixChild, htmlPostfixChild, allowPaste) => {
+    [htmlPrefix, htmlPostfix, allowPaste, plainTextOnly],
+    (htmlPrefixChild, htmlPostfixChild, allowPaste, plainTextOnly) => {
       var doc = content.document;
       var main = doc.getElementById("main");
       main.focus();
@@ -294,7 +325,7 @@ async function testClipboardWithContentAnalysis(allowPaste) {
             // DataTransfer doesn't support the image types yet, so only text/html
             // will be present.
             let clipboardText = clipboardData.getData("text/html");
-            if (allowPaste) {
+            if (allowPaste || plainTextOnly) {
               if (
                 clipboardText !==
                 htmlPrefixChild +
@@ -320,33 +351,57 @@ async function testClipboardWithContentAnalysis(allowPaste) {
   await SpecialPowers.spawn(browser, [], () => {});
   await sendKey("v");
   await pastePromise;
-  is(mockCA.calls.length, 1, "Correct number of calls to Content Analysis");
-  assertContentAnalysisRequest(
-    mockCA.calls[0],
-    htmlPrefix +
-      '<img id="img" tabindex="1" src="http://example.org/browser/browser/base/content/test/general/moz.png">' +
-      htmlPostfix
+  is(
+    mockCA.calls.length,
+    plainTextOnly ? 0 : 1,
+    "Correct number of calls to Content Analysis"
   );
+  if (!plainTextOnly) {
+    assertContentAnalysisRequest(
+      mockCA.calls[0],
+      htmlPrefix +
+        '<img id="img" tabindex="1" src="http://example.org/browser/browser/base/content/test/general/moz.png">' +
+        htmlPostfix,
+      mockCA.calls[0].userActionId,
+      1
+    );
+  }
   mockCA.clearCalls();
 
   // The new content should now include an image.
-  await SpecialPowers.spawn(browser, [allowPaste], allowPaste => {
-    var main = content.document.getElementById("main");
-    Assert.equal(
-      main.innerHTML,
-      allowPaste
-        ? '<i>Italic</i> <img id="img" tabindex="1" ' +
+  await SpecialPowers.spawn(
+    browser,
+    [allowPaste, plainTextOnly],
+    (allowPaste, plainTextOnly) => {
+      var main = content.document.getElementById("main");
+      let expectedContents;
+      if (allowPaste) {
+        expectedContents =
+          '<i>Italic</i> <img id="img" tabindex="1" ' +
+          'src="http://example.org/browser/browser/base/content/test/general/moz.png">' +
+          "Test <b>Bold</b> After<b></b>";
+      } else {
+        // If plainTextOnly then no CA call will have been made, so
+        // the content will be allowed. (but the earlier "<i>Italic</i>" part was not)
+        expectedContents = plainTextOnly
+          ? '<img id="img" tabindex="1" ' +
             'src="http://example.org/browser/browser/base/content/test/general/moz.png">' +
-            "Test <b>Bold</b> After<b></b>"
-        : "Test <b>Bold</b>",
-      "Paste after copy image"
-    );
-  });
+            "Test <b>Bold</b>"
+          : "Test <b>Bold</b>";
+      }
+      Assert.equal(main.innerHTML, expectedContents, "Paste after copy image");
+    }
+  );
 
   gBrowser.removeCurrentTab();
 }
 
-function assertContentAnalysisRequest(request, expectedText) {
+function assertContentAnalysisRequest(
+  request,
+  expectedText,
+  expectedUserActionId,
+  expectedRequestsCount
+) {
   // This page is loaded via a data: URL which has a null principal,
   // so the URL will reflect this.
   ok(
@@ -359,6 +414,11 @@ function assertContentAnalysisRequest(request, expectedText) {
     "request has correct analysisType"
   );
   is(
+    request.reason,
+    Ci.nsIContentAnalysisRequest.eClipboardPaste,
+    "request has correct reason"
+  );
+  is(
     request.operationTypeForDisplay,
     Ci.nsIContentAnalysisRequest.eClipboard,
     "request has correct operationTypeForDisplay"
@@ -367,14 +427,71 @@ function assertContentAnalysisRequest(request, expectedText) {
   if (expectedText !== null) {
     is(request.textContent, expectedText, "request textContent should match");
   }
+  is(
+    request.userActionRequestsCount,
+    expectedRequestsCount,
+    "request userActionRequestsCount should match"
+  );
+  is(
+    request.userActionId,
+    expectedUserActionId,
+    "request userActionId should match"
+  );
+  ok(request.userActionId.length, "request userActionId should not be empty");
   is(request.printDataHandle, 0, "request printDataHandle should not be 0");
   is(request.printDataSize, 0, "request printDataSize should not be 0");
   ok(!!request.requestToken.length, "request requestToken should not be empty");
 }
-add_task(async function testClipboardWithContentAnalysisAllow() {
-  await testClipboardWithContentAnalysis(true);
+add_task(async function testClipboardWithContentAnalysisCheckPlainTextOnly() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+        true,
+      ],
+    ],
+  });
+  await testClipboardWithContentAnalysis(true, true);
+  await SpecialPowers.popPrefEnv();
 });
 
-add_task(async function testClipboardWithContentAnalysisBlock() {
-  await testClipboardWithContentAnalysis(false);
+add_task(async function testClipboardWithContentAnalysisCheckAllFormats() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+        false,
+      ],
+    ],
+  });
+  await testClipboardWithContentAnalysis(true, false);
+  await SpecialPowers.popPrefEnv();
+});
+
+add_task(
+  async function testClipboardWithContentAnalysisBlockCheckPlainTextOnly() {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+          true,
+        ],
+      ],
+    });
+    await testClipboardWithContentAnalysis(false, true);
+    await SpecialPowers.popPrefEnv();
+  }
+);
+
+add_task(async function testClipboardWithContentAnalysisBlockCheckAllFormats() {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "browser.contentanalysis.interception_point.clipboard.plain_text_only",
+        false,
+      ],
+    ],
+  });
+  await testClipboardWithContentAnalysis(false, false);
+  await SpecialPowers.popPrefEnv();
 });

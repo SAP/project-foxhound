@@ -61,6 +61,7 @@ specific_include_rules = {
   ],
   "payload_type_picker\.cc": [
     "+media/base/codec.h",
+    "+media/base/codec_comparators.h",
     "+media/base/media_constants.h",
   ],
   "payload_type_picker_unittest\.cc": [
@@ -68,6 +69,9 @@ specific_include_rules = {
     "+media/base/media_constants.h",
   ],
   "call\.cc": [
+    "+media/base/codec.h",
+  ],
+  "fake_payload_type_suggester": [
     "+media/base/codec.h",
   ]
 }

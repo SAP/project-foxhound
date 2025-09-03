@@ -21,6 +21,7 @@
 #include "mozilla/layers/CanvasDrawEventRecorder.h"
 #include "mozilla/layers/ImageDataSerializer.h"
 #include "mozilla/layers/SourceSurfaceSharedData.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "nsIObserverService.h"
@@ -66,7 +67,7 @@ class RecorderHelpers final : public CanvasDrawEventRecorder::Helpers {
     if (!mCanvasChild) {
       return false;
     }
-    return !mCanvasChild->CanSend() || ipc::ProcessChild::ExpectingShutdown();
+    return !mCanvasChild->CanSend() || AppShutdown::IsShutdownImpending();
   }
 
   bool RestartReader() override {
@@ -148,6 +149,13 @@ class SourceSurfaceCanvasRecording final : public gfx::SourceSurface {
   already_AddRefed<gfx::SourceSurface> ExtractSubrect(
       const gfx::IntRect& aRect) final {
     return mRecordedSurface->ExtractSubrect(aRect);
+  }
+
+  bool GetSurfaceDescriptor(SurfaceDescriptor& aDesc) const final {
+    aDesc = SurfaceDescriptorCanvasSurface(
+        static_cast<gfx::CanvasManagerChild*>(mCanvasChild->Manager())->Id(),
+        uintptr_t(gfx::ReferencePtr(this)));
+    return true;
   }
 
  private:

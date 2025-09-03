@@ -184,7 +184,16 @@ static void GenPrint(DebugChannel channel, MacroAssembler& masm,
   {
     MOZ_ASSERT(MaybeGetJitContext(),
                "codegen debug checks require a jit context");
+#  ifdef JS_CODEGEN_ARM64
+    if (IsCompilingWasm()) {
+      masm.setupWasmABICall();
+    } else {
+      // JS ARM64 has an extra stack pointer which is not managed in WASM.
+      masm.setupUnalignedABICall(temp);
+    }
+#  else
     masm.setupUnalignedABICall(temp);
+#  endif
     passArgAndCall(IsCompilingWasm(), temp);
   }
 
@@ -597,7 +606,7 @@ static void CallFuncExport(MacroAssembler& masm, const FuncExport& fe,
   if (funcPtr) {
     masm.call(*funcPtr);
   } else {
-    masm.call(CallSiteDesc(CallSiteDesc::Func), fe.funcIndex());
+    masm.call(CallSiteDesc(CallSiteKind::Func), fe.funcIndex());
   }
 }
 
@@ -754,7 +763,7 @@ static bool GenerateInterpEntry(MacroAssembler& masm, const FuncExport& fe,
   // Copy parameters out of argv and into the wasm ABI registers/stack-slots.
   SetupABIArguments(masm, fe, funcType, argv, scratch);
 
-  masm.loadWasmPinnedRegsFromInstance();
+  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   masm.storePtr(InstanceReg, Address(masm.getStackPointer(),
                                      WasmCalleeInstanceOffsetBeforeCall));
@@ -851,12 +860,10 @@ static void GenerateJitEntryLoadInstance(MacroAssembler& masm) {
 // JSJit frame iteration.
 //
 // Note: the caller must ensure InstanceReg is valid.
-static void GenerateJitEntryThrow(MacroAssembler& masm, unsigned frameSize) {
+static void GenerateJitEntryThrow(MacroAssembler& masm) {
   AssertExpectedSP(masm);
 
-  MOZ_ASSERT(masm.framePushed() == frameSize);
-
-  masm.freeStack(frameSize);
+  MOZ_ASSERT(masm.framePushed() == 0);
   MoveSPForJitABI(masm);
 
   masm.loadPtr(Address(InstanceReg, Instance::offsetOfCx()), ScratchIonEntry);
@@ -888,6 +895,8 @@ static void GenerateBigIntInitialization(MacroAssembler& masm,
   MOZ_ASSERT(input.reg != scratch);
 #endif
 
+  MOZ_ASSERT(masm.framePushed() == 0);
+
   // We need to avoid clobbering other argument registers and the input.
   AllocatableRegisterSet regs(RegisterSet::Volatile());
   LiveRegisterSet save(regs.asLiveSet());
@@ -909,7 +918,7 @@ static void GenerateBigIntInitialization(MacroAssembler& masm,
   ignore.add(scratch);
   masm.PopRegsInMaskIgnore(save, ignore);
 
-  masm.branchTest32(Assembler::Zero, scratch, scratch, fail);
+  masm.branchTestPtr(Assembler::Zero, scratch, scratch, fail);
   masm.initializeBigInt64(Scalar::BigInt64, scratch, input);
 }
 
@@ -944,6 +953,14 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
 
   MOZ_ASSERT(masm.framePushed() == 0);
 
+  if (funcType.hasUnexposableArgOrRet()) {
+    GenerateJitEntryLoadInstance(masm);
+    CallSymbolicAddress(masm, !fe.hasEagerStubs(),
+                        SymbolicAddress::ReportV128JSCall);
+    GenerateJitEntryThrow(masm);
+    return FinishOffsets(masm, offsets);
+  }
+
   // Avoid overlapping aligned stack arguments area with ExitFooterFrame.
   const unsigned AlignedExitFooterFrameSize =
       AlignBytes(ExitFooterFrame::Size(), WasmStackAlignment);
@@ -976,13 +993,6 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
                 Address(FramePointer, -int32_t(ExitFooterFrame::Size())));
 
   GenerateJitEntryLoadInstance(masm);
-
-  if (funcType.hasUnexposableArgOrRet()) {
-    CallSymbolicAddress(masm, !fe.hasEagerStubs(),
-                        SymbolicAddress::ReportV128JSCall);
-    GenerateJitEntryThrow(masm, frameSize);
-    return FinishOffsets(masm, offsets);
-  }
 
   FloatRegister scratchF = ABINonArgDoubleReg;
   Register scratchG = ScratchIonEntry;
@@ -1094,7 +1104,9 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
 
         // +null is 0.
         masm.bind(&isNull);
-        { masm.storeValue(DoubleValue(0.), jitArgAddr); }
+        {
+          masm.storeValue(DoubleValue(0.), jitArgAddr);
+        }
         break;
       }
       case ValType::Ref: {
@@ -1206,7 +1218,7 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
   GenPrintf(DebugChannel::Function, masm, "\n");
 
   // Setup wasm register state.
-  masm.loadWasmPinnedRegsFromInstance();
+  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   masm.storePtr(InstanceReg, Address(masm.getStackPointer(),
                                      WasmCalleeInstanceOffsetBeforeCall));
@@ -1219,6 +1231,10 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
   GenPrintf(DebugChannel::Function, masm, "wasm-function[%d]; returns ",
             fe.funcIndex());
 
+  // Pop frame.
+  masm.moveToStackPtr(FramePointer);
+  masm.setFramePushed(0);
+
   // Store the return value in the JSReturnOperand.
   Label exception;
   const ValTypeVector& results = funcType.results();
@@ -1230,7 +1246,9 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
     switch (results[0].kind()) {
       case ValType::I32:
         GenPrintIsize(DebugChannel::Function, masm, ReturnReg);
-        // No widening is required, as the value is boxed.
+#ifdef JS_64BIT
+        masm.widenInt32(ReturnReg);
+#endif
         masm.boxNonDouble(JSVAL_TYPE_INT32, ReturnReg, JSReturnOperand);
         break;
       case ValType::F32: {
@@ -1250,7 +1268,7 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
       }
       case ValType::I64: {
         GenPrintI64(DebugChannel::Function, masm, ReturnReg64);
-        MOZ_ASSERT(masm.framePushed() == frameSize);
+        MOZ_ASSERT(masm.framePushed() == 0);
         GenerateBigIntInitialization(masm, 0, ReturnReg64, scratchG, fe,
                                      &exception);
         masm.boxNonDouble(JSVAL_TYPE_BIGINT, scratchG, JSReturnOperand);
@@ -1267,10 +1285,6 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
       }
     }
   }
-
-  // Pop frame.
-  masm.moveToStackPtr(FramePointer);
-  masm.setFramePushed(0);
 
   GenPrintf(DebugChannel::Function, masm, "\n");
 
@@ -1327,13 +1341,14 @@ static bool GenerateJitEntry(MacroAssembler& masm, size_t funcExportIndex,
                       &rejoinBeforeCall);
 
     MOZ_ASSERT(masm.framePushed() == frameSize);
+    masm.freeStack(frameSize);
     hasFallThroughForException = true;
   }
 
   if (exception.used() || hasFallThroughForException) {
     masm.bind(&exception);
-    masm.setFramePushed(frameSize);
-    GenerateJitEntryThrow(masm, frameSize);
+    MOZ_ASSERT(masm.framePushed() == 0);
+    GenerateJitEntryThrow(masm);
   }
 
   return FinishOffsets(masm, offsets);
@@ -1498,7 +1513,7 @@ void wasm::GenerateDirectCallFromJit(MacroAssembler& masm, const FuncExport& fe,
   masm.movePtr(ImmPtr(&inst), InstanceReg);
   masm.storePtr(InstanceReg, Address(masm.getStackPointer(),
                                      WasmCalleeInstanceOffsetBeforeCall));
-  masm.loadWasmPinnedRegsFromInstance();
+  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   // Actual call.
   const CodeBlock& codeBlock = inst.code().funcCodeBlock(fe.funcIndex());
@@ -1858,7 +1873,7 @@ static bool AddStackCheckForImportFunctionEntry(jit::MacroAssembler& masm,
                                                 const FuncType& funcType,
                                                 StackMaps* stackMaps) {
   std::pair<CodeOffset, uint32_t> pair =
-      masm.wasmReserveStackChecked(reserve, BytecodeOffset(0));
+      masm.wasmReserveStackChecked(reserve, TrapSiteDesc());
 
   // Attempt to create stack maps for masm.wasmReserveStackChecked.
   ArgTypeVector argTypes(funcType);
@@ -1947,7 +1962,7 @@ static bool GenerateImportFunction(jit::MacroAssembler& masm,
   }
 
   // Call the import exit stub.
-  CallSiteDesc desc(CallSiteDesc::Import);
+  CallSiteDesc desc(CallSiteKind::Import);
   MoveSPForJitABI(masm);
   masm.wasmCallImport(desc, CalleeDesc::import(funcImportInstanceOffset));
 
@@ -1955,7 +1970,7 @@ static bool GenerateImportFunction(jit::MacroAssembler& masm,
   masm.loadPtr(
       Address(masm.getStackPointer(), framePushed - sizeOfInstanceSlot),
       InstanceReg);
-  masm.loadWasmPinnedRegsFromInstance();
+  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
 
   // Restore cx->realm.
   masm.switchToWasmInstanceRealm(ABINonArgReturnReg0, ABINonArgReturnReg1);
@@ -2723,7 +2738,7 @@ void wasm::GenerateJumpToCatchHandler(MacroAssembler& masm, Register rfe,
                                       Register scratch1, Register scratch2) {
   masm.loadPtr(Address(rfe, ResumeFromException::offsetOfInstance()),
                InstanceReg);
-  masm.loadWasmPinnedRegsFromInstance();
+  masm.loadWasmPinnedRegsFromInstance(mozilla::Nothing());
   masm.switchToWasmInstanceRealm(scratch1, scratch2);
   masm.loadPtr(Address(rfe, ResumeFromException::offsetOfTarget()), scratch1);
   masm.loadPtr(Address(rfe, ResumeFromException::offsetOfFramePointer()),

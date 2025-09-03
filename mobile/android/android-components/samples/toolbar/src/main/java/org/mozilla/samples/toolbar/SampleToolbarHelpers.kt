@@ -31,6 +31,8 @@ enum class ToolbarConfiguration(val label: String) {
     PRIVATE_MODE("Private Mode"),
     FENIX("Fenix"),
     FENIX_CUSTOMTAB("Fenix (Custom Tab)"),
+    COMPOSE_TOOLBAR("Compose Toolbar"),
+    COMPOSE_CUSTOMTAB("Compose Custom Tab"),
 }
 
 class ConfigurationAdapter(

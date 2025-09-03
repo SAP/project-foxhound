@@ -83,4 +83,48 @@ class TrustedRecursiveResolverTest : BaseSessionTest() {
             `is`(exampleValue),
         )
     }
+
+    @Test fun defaultRecursiveResolverUrl() {
+        val settings = sessionRule.runtime.settings
+        val defaultRecursiveResolverUriPerf = "network.trr.default_provider_uri"
+
+        val exampleValue = "https://mozilla.cloudflare-dns.com/dns-query"
+        settings.setDefaultRecursiveResolverUri(exampleValue)
+        val prefValue = (sessionRule.getPrefs(defaultRecursiveResolverUriPerf)[0] as String)
+        assertThat(
+            "Setting custom default TRR Uri should work",
+            prefValue,
+            `is`(exampleValue),
+        )
+    }
+
+    @Test fun excludedDomains() {
+        val settings = sessionRule.runtime.settings
+        val excludedDomainsPref = "network.trr.excluded-domains"
+
+        var prefValue = (sessionRule.getPrefs(excludedDomainsPref)[0] as String)
+        assertThat(
+            "Initial pref should be empty",
+            prefValue,
+            `is`(""),
+        )
+
+        val domains = listOf("example.com", "test.org", "domain.net")
+        settings.setTrustedRecursiveResolverExcludedDomains(domains)
+
+        val expectedValue = "example.com,test.org,domain.net"
+        prefValue = (sessionRule.getPrefs(excludedDomainsPref)[0] as String)
+        assertThat(
+            "Setting custom excluded domains should work",
+            prefValue,
+            `is`(expectedValue),
+        )
+
+        val retrievedDomains = settings.getTrustedRecursiveResolverExcludedDomains()
+        assertThat(
+            "Retrieving excluded domains should return the correct list",
+            retrievedDomains,
+            `is`(domains),
+        )
+    }
 }

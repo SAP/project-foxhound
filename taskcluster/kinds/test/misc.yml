@@ -61,8 +61,6 @@ test-verify:
                 by-test-platform:
                     # do not run on ccov or asan or shippable or wayland
                     .*(-ccov|-asan|-shippable|-wayland).*: []
-                    # we prefer -qr platforms with fis, no need to run on both
-                    (?!.*(-ccov|-asan|-shippable))(?!.*-qr).*: []
                     # do not run on mozilla-central, beta or release: usually just confirms earlier results
                     android.*: ['integration']
                     default: []
@@ -70,8 +68,6 @@ test-verify:
                 by-test-platform:
                     # do not run on ccov or asan or shippable or wayland
                     .*(-ccov|-asan|-shippable|-wayland).*: []
-                    # we prefer -qr platforms with fis, no need to run on both
-                    (?!.*(-ccov|-asan|-shippable))(?!.*-qr).*: []
                     # do not run on mozilla-central, beta or release: usually just confirms earlier results
                     android.*: []
                     default: ['integration']
@@ -95,6 +91,7 @@ test-verify:
                     - android/android-x86_64.py
                 linux.*:
                     - unittests/linux_unittest.py
+                    - unittests/linux_dbus-python.py
                     - remove_executables.py
                 macosx.*:
                     - unittests/mac_unittest.py
@@ -105,10 +102,18 @@ test-verify:
     fetches:
         toolchain:
             by-test-platform:
-                linux.*:
+                linux1804.*:
                     - linux64-node
                     - linux64-minidump-stackwalk
                     - linux64-fix-stacks
+                    - linux-python-dbusmock
+                    - linux64-1804-dbus-python
+                linux2204.*:
+                    - linux64-node
+                    - linux64-minidump-stackwalk
+                    - linux64-fix-stacks
+                    - linux-python-dbusmock
+                    - linux64-2204-dbus-python
                 macosx.*:
                     - macosx64-node
                     - macosx64-minidump-stackwalk
@@ -133,6 +138,10 @@ test-verify:
             - ort.wasm
             - ort-training.wasm
             - ort.jsep.wasm
+            - translations.inference
+            - translations.esen.lex
+            - translations.esen.model
+            - translations.esen.vocab
 
     worker-type:
         by-test-platform:

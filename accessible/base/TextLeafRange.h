@@ -329,19 +329,26 @@ class TextLeafRange final {
 
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(uint32_t aScrollType) const;
 
+  /**
+   * Returns sub-ranges for all the lines in this range visible within the given
+   * container Accessible.
+   */
+  nsTArray<TextLeafRange> VisibleLines(Accessible* aContainer) const;
+
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
 
   /*
    * Walk all of the lines within the TextLeafRange. This function invokes the
-   * given callback with each line-bounding rectangle. The bounds are inclusive
-   * of all characters in each line. Each rectangle is screen-relative. The
-   * function returns true if it walks any lines, and false if it could not walk
-   * any rects, which could happen if the start and end points are improperly
-   * positioned.
+   * given callback with the sub-range for each line and the line's bounding
+   * rectangle. The bounds are inclusive of all characters in each line. Each
+   * rectangle is screen-relative. The function returns true if it walks any
+   * lines, and false if it could not walk any rects, which could happen if the
+   * start and end points are improperly positioned.
    */
-  using LineRectCallback = FunctionRef<void(LayoutDeviceIntRect)>;
+  using LineRectCallback =
+      FunctionRef<void(TextLeafRange, LayoutDeviceIntRect)>;
   bool WalkLineRects(LineRectCallback aCallback) const;
 
  public:

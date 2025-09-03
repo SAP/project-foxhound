@@ -5,6 +5,9 @@
 
 #include "EventQueue.h"
 
+#include "mozilla/PerfStats.h"
+#include "mozilla/ProfilerMarkers.h"
+
 #include "LocalAccessible-inl.h"
 #include "nsEventShell.h"
 #include "DocAccessibleChild.h"
@@ -161,6 +164,11 @@ bool EventQueue::PushNameOrDescriptionChange(AccEvent* aOrigEvent) {
 // EventQueue: private
 
 void EventQueue::CoalesceEvents() {
+  AUTO_PROFILER_MARKER_TEXT("EventQueue::CoalesceEvents", A11Y, {}, ""_ns);
+  PerfStats::AutoMetricRecording<PerfStats::Metric::A11Y_CoalesceEvents>
+      autoRecording;
+  // DO NOT ADD CODE ABOVE THIS BLOCK: THIS CODE IS MEASURING TIMINGS.
+
   NS_ASSERTION(mEvents.Length(), "There should be at least one pending event!");
   uint32_t tail = mEvents.Length() - 1;
   AccEvent* tailEvent = mEvents[tail];
@@ -458,6 +466,20 @@ void EventQueue::ProcessEventQueue() {
 
     if (!mDocument) {
       return;
+    }
+
+    // Some mutation events may be queued incidentally by this function. Send
+    // them immediately so they stay in order. This can happen due to code in
+    // DoInitialUpdate and TextUpdater that calls FireDelayedEvent for mutation
+    // events, rather than QueueMutationEvent. DoInitialUpdate can do this with
+    // reorder events, and TextUpdater can do this with text inserted/removed
+    // events. Process these events now to avoid sending them out-of-order.
+    if (eventType == nsIAccessibleEvent::EVENT_REORDER ||
+        eventType == nsIAccessibleEvent::EVENT_TEXT_INSERTED ||
+        eventType == nsIAccessibleEvent::EVENT_TEXT_REMOVED) {
+      if (auto* ipcDoc = mDocument->IPCDoc()) {
+        ipcDoc->SendQueuedMutationEvents();
+      }
     }
   }
 

@@ -276,6 +276,10 @@ features:
         description: The maximum amount of time in milliseconds the splashscreen will be visible while waiting for initialization calls to complete.
         type: Int
         default: 0
+      off-train-onboarding:
+        description: "If true, the fetched data will be applied and used during the session."
+        type: Boolean
+        default: false
 
   alternative-app-launcher-icon:
     description: A feature that changes the app launcher icon background color.
@@ -291,28 +295,6 @@ features:
         type: Boolean
         default: false
 
-  shopping-experience:
-    description: A feature that shows product review quality information.
-    variables:
-      enabled:
-        description: if true, the shopping experience feature is shown to the user.
-        type: Boolean
-        default: false
-      product-recommendations:
-        description: if true, recommended products feature is enabled to be shown to the user based on their preference.
-        type: Boolean
-        default: false
-      product-recommendations-exposure:
-        description: if true, we want to record recommended products inventory for opted-in users, even if product recommendations are disabled.
-        type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-          product-recommendations: true
-          product-recommendations-exposure: true
-
   print:
     description: A feature for printing from the share or browser menu.
     variables:
@@ -324,6 +306,33 @@ features:
         description: If true, a print button from the browser menu is available.
         type: Boolean
         default: true
+
+  sent-from-firefox:
+    description: A feature that allows the user to add a download firefox footer to a shared link.
+    variables:
+      enabled:
+        description: If true, the feature is available for the user.
+        type: Boolean
+        default: false
+      template-message:
+        description: A template for the shared message, supporting three placeholders. A shared link, the brand name and a store download link.
+        type: Text
+        default: ""
+      download-link:
+        description: A store download link.
+        type: Text
+        default: ""
+      show-snackbar:
+        description: If true, the user will see the snackbar after sharing a link, allowing quick navigation to settings.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+          template-message: sent_from_firefox_template
+          download-link: "[Download Link]"
+          show-snackbar: true
 
   search-extra-params:
     description: A feature that provides additional args for search.
@@ -556,6 +565,33 @@ features:
         value:
           report-site-issue: false
 
+  mars:
+    description: Mozilla Ad Routing Service (MARS) unified ads service.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable MARS endpoint to serve sponsored top sites and stories.
+        type: Boolean
+        default: false
+
+  merino-recommendations:
+    description: Sets the recommendations provider service to Merino.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable Merino endpoint to serve recommendations.
+        type: Boolean
+        default: false
+
+  compose-homepage:
+    description: Turns on compose homepage.
+    variables:
+      enabled:
+        description: >
+          Whether or not to turn on the compose homepage.
+        type: Boolean
+        default: false
+
   microsurveys:
     description: Feature for microsurveys.
     variables:
@@ -564,6 +600,33 @@ features:
           When the feature is enabled then microsurveys can be used.
         type: Boolean
         default: true
+
+  trending-searches:
+    description: Enables trending searches.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable trending searches.
+        type: Boolean
+        default: false
+
+  recent-searches:
+    description: Enables recent searches.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable recent searches.
+        type: Boolean
+        default: false
+
+  search-suggestions-on-homepage:
+    description: Enables search suggestions on homepage.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable search suggestions on homepage.
+        type: Boolean
+        default: false
 
   set-as-default-prompt:
     description: >
@@ -617,6 +680,24 @@ features:
         type: Boolean
         default: true
 
+  pki:
+    description: Certificate verification configuration
+    variables:
+      certificateTransparencyMode:
+        description: >
+          What mode Certificate Transparency is in (0=disable, 1=telemetry only, 2=enforce).
+        type: Int
+        default: 0
+
+  pqcrypto:
+    description: Control the use of post-quantum key exchange mechanisms in TLS and HTTP/3.
+    variables:
+      postQuantumKeyExchangeEnabled:
+        description: >
+          Toggles the security.tls.enable_kyber and network.http.http3.enable_kyber preferences.
+        type: Boolean
+        default: false
+
   javascript:
     description: Enables Javascript Engine (Spidermonkey) features
     variables:
@@ -625,6 +706,18 @@ features:
           Enables or disables javascript.options.mem.gc_parallel_marking preference.
         type: Boolean
         default: false
+
+  encourage-search-cfr:
+    description: A feature that shows a CFR on first launch to encourage users to make a search
+    variables:
+      enabled:
+        description: When true, the CFR will show
+        type: Boolean
+        default: false
+      cfrText:
+        description: The text to show in the CFR
+        type: Text
+        default: ""
 
 types:
   objects: {}

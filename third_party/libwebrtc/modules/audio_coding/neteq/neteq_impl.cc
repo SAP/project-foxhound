@@ -16,18 +16,28 @@
 #include <list>
 #include <map>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
+#include "api/array_view.h"
 #include "api/audio_codecs/audio_decoder.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/environment/environment.h"
+#include "api/neteq/neteq.h"
 #include "api/neteq/neteq_controller.h"
+#include "api/neteq/neteq_controller_factory.h"
 #include "api/neteq/tick_timer.h"
-#include "common_audio/signal_processing/include/signal_processing_library.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_packet_info.h"
+#include "api/rtp_packet_infos.h"
+#include "api/scoped_refptr.h"
+#include "api/units/time_delta.h"
 #include "modules/audio_coding/codecs/cng/webrtc_cng.h"
 #include "modules/audio_coding/neteq/accelerate.h"
 #include "modules/audio_coding/neteq/background_noise.h"
 #include "modules/audio_coding/neteq/comfort_noise.h"
-#include "modules/audio_coding/neteq/decision_logic.h"
 #include "modules/audio_coding/neteq/decoder_database.h"
 #include "modules/audio_coding/neteq/dtmf_buffer.h"
 #include "modules/audio_coding/neteq/dtmf_tone_generator.h"
@@ -48,6 +58,7 @@
 #include "rtc_base/numerics/safe_conversions.h"
 #include "rtc_base/sanitizer.h"
 #include "rtc_base/strings/audio_format_to_string.h"
+#include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/trace_event.h"
 #include "system_wrappers/include/clock.h"
 
@@ -96,7 +107,7 @@ NetEqImpl::Dependencies::Dependencies(
     const NetEqControllerFactory& controller_factory)
     : env(env),
       tick_timer(new TickTimer),
-      stats(new StatisticsCalculator),
+      stats(std::make_unique<StatisticsCalculator>(tick_timer.get())),
       decoder_database(
           std::make_unique<DecoderDatabase>(env,
                                             std::move(decoder_factory),
@@ -148,12 +159,6 @@ NetEqImpl::NetEqImpl(const NetEq::Config& config,
       enable_fast_accelerate_(config.enable_fast_accelerate),
       nack_enabled_(false),
       enable_muted_state_(config.enable_muted_state),
-      expand_uma_logger_("WebRTC.Audio.ExpandRatePercent",
-                         10,  // Report once every 10 s.
-                         tick_timer_.get()),
-      speech_expand_uma_logger_("WebRTC.Audio.SpeechExpandRatePercent",
-                                10,  // Report once every 10 s.
-                                tick_timer_.get()),
       no_time_stretching_(config.for_test_no_time_stretching) {
   RTC_LOG(LS_INFO) << "NetEq config: " << config.ToString();
   int fs = config.sample_rate_hz;
@@ -179,11 +184,11 @@ NetEqImpl::~NetEqImpl() = default;
 
 int NetEqImpl::InsertPacket(const RTPHeader& rtp_header,
                             rtc::ArrayView<const uint8_t> payload,
-                            Timestamp receive_time) {
+                            const RtpPacketInfo& packet_info) {
   rtc::MsanCheckInitialized(payload);
   TRACE_EVENT0("webrtc", "NetEqImpl::InsertPacket");
   MutexLock lock(&mutex_);
-  if (InsertPacketInternal(rtp_header, payload, receive_time) != 0) {
+  if (InsertPacketInternal(rtp_header, payload, packet_info) != 0) {
     return kFail;
   }
   return kOK;
@@ -207,6 +212,7 @@ int NetEqImpl::GetAudio(AudioFrame* audio_frame,
   if (GetAudioInternal(audio_frame, action_override) != 0) {
     return kFail;
   }
+  stats_->IncreaseCounter(output_size_samples_, fs_hz_);
   RTC_DCHECK_EQ(
       audio_frame->sample_rate_hz_,
       rtc::dchecked_cast<int>(audio_frame->samples_per_channel_ * 100));
@@ -449,7 +455,7 @@ NetEq::Operation NetEqImpl::last_operation_for_test() const {
 
 int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
                                     rtc::ArrayView<const uint8_t> payload,
-                                    Timestamp receive_time) {
+                                    const RtpPacketInfo& packet_info) {
   if (payload.empty()) {
     RTC_LOG_F(LS_ERROR) << "payload is empty";
     return kInvalidPointer;
@@ -590,8 +596,8 @@ int NetEqImpl::InsertPacketInternal(const RTPHeader& rtp_header,
         new_packet.priority.codec_level = result.priority;
         new_packet.priority.red_level = original_priority.red_level;
         // Only associate the header information with the primary packet.
-        if (new_packet.timestamp == rtp_header.timestamp) {
-          new_packet.packet_info = RtpPacketInfo(rtp_header, receive_time);
+        if (new_packet.timestamp == packet_info.rtp_timestamp()) {
+          new_packet.packet_info = packet_info;
         }
         new_packet.frame = std::move(result.frame);
         return new_packet;
@@ -739,14 +745,6 @@ int NetEqImpl::GetAudioInternal(AudioFrame* audio_frame,
   bool play_dtmf;
   last_decoded_packet_infos_.clear();
   tick_timer_->Increment();
-  stats_->IncreaseCounter(output_size_samples_, fs_hz_);
-  const auto lifetime_stats = stats_->GetLifetimeStatistics();
-  expand_uma_logger_.UpdateSampleCounter(lifetime_stats.concealed_samples,
-                                         fs_hz_);
-  speech_expand_uma_logger_.UpdateSampleCounter(
-      lifetime_stats.concealed_samples -
-          lifetime_stats.silent_concealed_samples,
-      fs_hz_);
 
   // Check for muted state.
   if (enable_muted_state_ && expand_->Muted() && packet_buffer_->Empty()) {

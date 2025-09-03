@@ -3,8 +3,6 @@
  * You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 const FXA_ENABLED_PREF = "identity.fxaccounts.enabled";
-const DISTRIBUTION_ID_PREF = "distribution.id";
-const DISTRIBUTION_ID_CHINA_REPACK = "MozillaOnline";
 const TOPIC_SELECTION_MODAL_LAST_DISPLAYED_PREF =
   "browser.newtabpage.activity-stream.discoverystream.topicSelection.onboarding.lastDisplayed";
 const NOTIFICATION_INTERVAL_AFTER_TOPIC_MODAL_MS = 60000; // Assuming avoid notification up to 1 minute after newtab Topic Notification Modal
@@ -44,6 +42,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ASRouterPreferences:
     "resource:///modules/asrouter/ASRouterPreferences.sys.mjs",
   AttributionCode: "resource:///modules/AttributionCode.sys.mjs",
+  BrowserUtils: "resource://gre/modules/BrowserUtils.sys.mjs",
   BrowserWindowTracker: "resource:///modules/BrowserWindowTracker.sys.mjs",
   ClientEnvironment: "resource://normandy/lib/ClientEnvironment.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
@@ -53,6 +52,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   // eslint-disable-next-line mozilla/no-browser-refs-in-toolkit
   SelectableProfileService:
     "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+  SessionStore: "resource:///modules/sessionstore/SessionStore.sys.mjs",
   TargetingContext: "resource://messaging-system/targeting/Targeting.sys.mjs",
   TelemetryEnvironment: "resource://gre/modules/TelemetryEnvironment.sys.mjs",
   TelemetrySession: "resource://gre/modules/TelemetrySession.sys.mjs",
@@ -198,7 +198,6 @@ const FXA_USERNAME_PREF = "services.sync.username";
 
 const { activityStreamProvider: asProvider } = NewTabUtils;
 
-const FXA_ATTACHED_CLIENTS_UPDATE_INTERVAL = 4 * 60 * 60 * 1000; // Four hours
 const FRECENT_SITES_UPDATE_INTERVAL = 6 * 60 * 60 * 1000; // Six hours
 const FRECENT_SITES_IGNORE_BLOCKED = false;
 const FRECENT_SITES_NUM_ITEMS = 25;
@@ -231,32 +230,6 @@ export function CachedTargetingGetter(
       const now = Date.now();
       if (now - this._lastUpdated >= updateInterval) {
         this._value = await getter[property](options);
-        this._lastUpdated = now;
-      }
-      return this._value;
-    },
-  };
-}
-
-function CacheListAttachedOAuthClients() {
-  return {
-    _lastUpdated: 0,
-    _value: null,
-    expire() {
-      this._lastUpdated = 0;
-      this._value = null;
-    },
-    get() {
-      const now = Date.now();
-      if (now - this._lastUpdated >= FXA_ATTACHED_CLIENTS_UPDATE_INTERVAL) {
-        this._value = new Promise(resolve => {
-          lazy.fxAccounts
-            .listAttachedOAuthClients()
-            .then(clients => {
-              resolve(clients);
-            })
-            .catch(() => resolve([]));
-        });
         this._lastUpdated = now;
       }
       return this._value;
@@ -363,7 +336,6 @@ export const QueryCache = {
     TotalBookmarksCount: new CachedTargetingGetter("getTotalBookmarksCount"),
     CheckBrowserNeedsUpdate: new CheckBrowserNeedsUpdate(),
     RecentBookmarks: new CachedTargetingGetter("getRecentBookmarks"),
-    ListAttachedOAuthClients: new CacheListAttachedOAuthClients(),
     UserMonthlyActivity: new CachedTargetingGetter("getUserMonthlyActivity"),
     UnhandledCampaignAction: new CacheUnhandledCampaignAction(),
   },
@@ -776,6 +748,18 @@ const TargetingGetters = {
   get needsUpdate() {
     return QueryCache.queries.CheckBrowserNeedsUpdate.get();
   },
+  get savedTabGroups() {
+    return lazy.SessionStore.getSavedTabGroups().length;
+  },
+  get currentTabGroups() {
+    let win = lazy.BrowserWindowTracker.getTopWindow();
+    // If there's no window, there can't be any current tab groups.
+    if (!win) {
+      return 0;
+    }
+    let totalTabGroups = win.gBrowser.getAllTabGroups().length;
+    return totalTabGroups;
+  },
   get hasPinnedTabs() {
     for (let win of Services.wm.getEnumerator("navigator:browser")) {
       if (win.closed || !win.ownerGlobal.gBrowser) {
@@ -829,19 +813,19 @@ const TargetingGetters = {
   },
   get attachedFxAOAuthClients() {
     return this.usesFirefoxSync
-      ? QueryCache.queries.ListAttachedOAuthClients.get()
+      ? new Promise(resolve =>
+          lazy.fxAccounts
+            .listAttachedOAuthClients()
+            .then(clients => resolve(clients))
+            .catch(() => resolve([]))
+        )
       : [];
   },
   get platformName() {
     return AppConstants.platform;
   },
   get isChinaRepack() {
-    return (
-      Services.prefs
-        .getDefaultBranch(null)
-        .getCharPref(DISTRIBUTION_ID_PREF, "default") ===
-      DISTRIBUTION_ID_CHINA_REPACK
-    );
+    return lazy.BrowserUtils.isChinaRepack();
   },
   get userId() {
     return lazy.ClientEnvironment.userId;
@@ -906,7 +890,7 @@ const TargetingGetters = {
     if (
       window.gURLBar?.view.isOpen ||
       window.gNotificationBox?.currentNotification ||
-      window.gBrowser.getNotificationBox()?.currentNotification ||
+      window.gBrowser.readNotificationBox()?.currentNotification ||
       // Avoid showing messages if the newtab Topic selection modal was shown in
       // the past 1 minute
       duration <= NOTIFICATION_INTERVAL_AFTER_TOPIC_MODAL_MS
@@ -1012,6 +996,11 @@ const TargetingGetters = {
    */
   get fxViewButtonAreaType() {
     let button = lazy.CustomizableUI.getWidget("firefox-view-button");
+    return button.areaType;
+  },
+
+  get alltabsButtonAreaType() {
+    let button = lazy.CustomizableUI.getWidget("alltabs-button");
     return button.areaType;
   },
 

@@ -1793,6 +1793,27 @@ export function canUseAsRenderTarget(format) {
   return kTextureFormatInfo[format].colorRender || isDepthOrStencilTextureFormat(format);
 }
 
+export function is16Float(format) {
+  return format === 'r16float' || format === 'rg16float' || format === 'rgba16float';
+}
+
+export function is32Float(format) {
+  return format === 'r32float' || format === 'rg32float' || format === 'rgba32float';
+}
+
+/**
+ * Returns true if texture is filterable as `texture_xxx<f32>`
+ *
+ * examples:
+ * * 'rgba8unorm' -> true
+ * * 'depth16unorm' -> false
+ * * 'rgba32float' -> true (you need to enable feature 'float32-filterable')
+ */
+export function isFilterableAsTextureF32(format) {
+  const info = kTextureFormatInfo[format];
+  return info.color?.type === 'float' || is32Float(format);
+}
+
 export const kCompatModeUnsupportedStorageTextureFormats = [
 'rg32float',
 'rg32sint',
@@ -1817,16 +1838,38 @@ export function isRegularTextureFormat(format) {
 }
 
 /**
- * Returns true of format is both compressed and a float format, for example 'bc6h-rgb-ufloat'.
+ * Returns true if format is both compressed and a float format, for example 'bc6h-rgb-ufloat'.
  */
 export function isCompressedFloatTextureFormat(format) {
   return isCompressedTextureFormat(format) && format.includes('float');
 }
 
 /**
+ * Returns true if format is sint or uint
+ */
+export function isSintOrUintFormat(format) {
+  const info = kTextureFormatInfo[format];
+  const type = info.color?.type ?? info.depth?.type ?? info.stencil?.type;
+  return type === 'sint' || type === 'uint';
+}
+
+/**
  * Returns true of format can be multisampled.
  */
-export function isMultisampledTextureFormat(format) {
+export const kCompatModeUnsupportedMultisampledTextureFormats = [
+'rgba16float',
+'r32float'];
+
+
+export function isMultisampledTextureFormat(
+format,
+isCompatibilityMode)
+{
+  if (isCompatibilityMode) {
+    if (kCompatModeUnsupportedMultisampledTextureFormats.indexOf(format) >= 0) {
+      return false;
+    }
+  }
   return kAllTextureFormatInfo[format].multisample;
 }
 

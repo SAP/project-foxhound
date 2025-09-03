@@ -113,6 +113,39 @@ function is_html_template(node) {
       node.namespaceURI == "http://www.w3.org/1999/xhtml";
 }
 
+function create_element(name, maybe_namespace) {
+  // `For the HTML namespace, the namespace designator is the empty string,
+  // i.e. there's no prefix. For the SVG namespace, the namespace designator is
+  // "svg ". For the MathML namespace, the namespace designator is "math ".
+  if (maybe_namespace == "svg ") {
+    return document.createElementNS("http://www.w3.org/2000/svg", name);
+  } else if (maybe_namespace == "math ") {
+    return document.createElementNS("http://www.w3.org/1998/Math/MathML", name);
+  } else if (!maybe_namespace) {
+    return document.createElement(name);
+  } else {
+    assert_unreached(`Invalid element name: "${maybe_namespace}${name}"`);
+  }
+}
+
+function set_attribute(node, name, maybe_namespace, value) {
+  // `The attribute name string is the local name prefixed by a namespace
+  // designator. For no namespace, the namespace designator is the empty string,
+  // i.e. there's no prefix. For the XLink namespace, the namespace designator
+  // is "xlink " [Likewise, "xml " and "xmlns ".]
+  if (maybe_namespace == "xlink ") {
+    node.setAttributeNS("http://www.w3.org/1999/xlink", name, value);
+  } else if (maybe_namespace == "xml ") {
+    node.setAttributeNS("http://www.w3.org/XML/1998/namespace", name, value);
+  } else if (maybe_namespace == "xmlns ") {
+    node.setAttributeNS("http://www.w3.org/2000/xmlns/", name, value);
+  } else if (!maybe_namespace) {
+    node.setAttribute(name, value);
+  } else {
+    assert_unreached(`Invalid attribute name: "${maybe_namespace}${name}"`);
+  }
+}
+
 function build_node_tree(root, docstr) {
   // Format described here:
   // https://github.com/html5lib/html5lib-tests/blob/master/tree-construction/README.md
@@ -125,16 +158,16 @@ function build_node_tree(root, docstr) {
   for (const line of docstr.split("\n")) {
     const [_, indent, remainder] = line.match(/^\| ( *)(.*)/);
     const level = indent.length / 2;
-    if (match = remainder.match(/^<([a-z]*)>$/)) {
+    if (match = remainder.match(/^<([a-z]* )?([a-zA-Z0-9_-]*)>$/)) {
       // `Element nodes must be represented by a "<, the tag name string, ">".`
-      append_child_at(root, level, document.createElement(match[1]));
+      append_child_at(root, level, create_element(match[2], match[1]));
     } else if (match = remainder.match(/^"([^"]*)"$/)) {
       // `Text nodes must be the string, in double quotes.`
       append_child_at(root, level, document.createTextNode(match[1]));
-    } else if (match = remainder.match(/^(.*)="(.*)"$/)) {
+    } else if (match = remainder.match(/^([a-z]* )?(.*)="(.*)"$/)) {
       // `Attribute nodes must have the attribute name string, then an "=" sign,
       // then the attribute value in double quotes (").`
-      get_child_at(root, level).setAttribute(match[1], match[2]);
+      set_attribute(get_child_at(root, level), match[2], match[1], match[3]);
     } else if (match = remainder.match(/^<!--(.*)-->$/)) {
       // `Comments must be "<" then "!-- " then the data then " -->".`
       append_child_at(root, level, document.createComment(match[1]));
@@ -173,11 +206,13 @@ function assert_subtree_equals(node1, node2) {
     current1 = tree1.nextNode();
     current2 = tree2.nextNode();
 
+    if (!current1) break;
+
     // Conceptually, we only want to check whether a.isEqualNode(b). But that
     // yields terrible error messages ("expected true but got false"). With
     // this being a test suite and all, let's invest a bit of effort into nice
     // error messages.
-    if (current1 && !current1.isEqualNode(current2)) {
+    if (!current1.isEqualNode(current2)) {
       let breadcrumbs = "";
       let current = current1;
       while (current) {
@@ -189,10 +224,16 @@ function assert_subtree_equals(node1, node2) {
       assert_true(current1.isEqualNode(current2),
           `${current1}.isEqual(${current2}) fails. Path: ${breadcrumbs}.`);
     }
-   } while (current1);
+
+    // NodeIterator does not recurse into template contents. So we need to do
+    // this manually.
+    if (is_html_template(current1) && is_html_template(current2)) {
+      assert_subtree_equals(current1.content, current2.content);
+    }
+  } while (current1);
 
   // Ensure that both iterators have come to an end.
-  assert_false(!!current2, "Additional nodes at the of node2.");
+  assert_false(!!current2, "Additional nodes at the of node2.\n");
 }
 
 function assert_testcase(node, testcase) {

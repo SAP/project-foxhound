@@ -12,6 +12,7 @@
 #include "nsIChannel.h"
 #include "mozilla/dom/Document.h"
 #include "nsThreadUtils.h"
+#include "mozilla/FlowMarkers.h"
 
 namespace mozilla {
 namespace net {
@@ -61,7 +62,7 @@ void ChannelEventQueue::FlushQueue() {
     if (NS_WARN_IF(NS_FAILED(rv))) {
       // Simply run this event on current thread if we are not sure about it
       // in release channel, or assert in Aurora/Nightly channel.
-      MOZ_DIAGNOSTIC_ASSERT(false);
+      MOZ_DIAGNOSTIC_CRASH("IsOnCurrentThread failed");
       isCurrentThread = true;
     }
 
@@ -79,6 +80,8 @@ void ChannelEventQueue::FlushQueue() {
     }
     {
       MutexAutoUnlock unlock(mMutex);
+      AUTO_PROFILER_TERMINATING_FLOW_MARKER("ChannelEvent", NETWORK,
+                                            Flow::FromPointer(event.get()));
       event->Run();
     }
   }  // end of while(true)

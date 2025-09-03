@@ -10,6 +10,7 @@
 #include "GeckoProfiler.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/FileUtils.h"
+#include "mozilla/GeckoTrace.h"
 #include "mozilla/LateWriteChecks.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticPtr.h"
@@ -596,7 +597,7 @@ class LogModuleManager {
 
     auto [out, size] = fmt::vformat_to_n(buff, kBuffSize - 1, aFmt, aArgs);
     *out = '\0';
-    charsWritten = size + 1;
+    charsWritten = size;
 
     // We may have maxed out, allocate a buffer and re-format
     if (charsWritten > kBuffSize) {
@@ -605,9 +606,9 @@ class LogModuleManager {
           fmt::vformat_to_n(allocatedBuff.get(), charsWritten, aFmt, aArgs);
       MOZ_ASSERT(size == charsWritten);
       *out = '\0';
-      charsWritten++;
       buffToWrite = allocatedBuff.get();
     }
+    ++charsWritten;  // + final \0
     ActuallyLog(aName, aLevel, aStart, aPrepend, buffToWrite, charsWritten);
   }
 
@@ -893,6 +894,13 @@ void LogModule::SetLevel(LogLevel level) {
   // to Gecko.
   if (strstr(mName, "::")) {
     set_rust_log_level(mName, static_cast<uint8_t>(level));
+  }
+
+  // The following enables the propagation of runtime-set log levels (for
+  // example configured via `about:logging`) from the Mozilla logging system to
+  // OpenTelemetry's internal logging mechanism.
+  if (strcmp(mName, "opentelemetry") == 0) {
+    gecko_trace::SetOpenTelemetryInternalLogLevel(level);
   }
 }
 

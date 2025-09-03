@@ -43,17 +43,33 @@ CertVerifier::CertificateTransparencyMode GetCertificateTransparencyMode();
 }  // namespace psm
 }  // namespace mozilla
 
-#define NS_NSSCOMPONENT_CID                          \
-  {                                                  \
-    0x4cb64dfd, 0xca98, 0x4e24, {                    \
-      0xbe, 0xfd, 0x0d, 0x92, 0x85, 0xa3, 0x3b, 0xcb \
-    }                                                \
-  }
+#define NS_NSSCOMPONENT_CID \
+  {0x4cb64dfd, 0xca98, 0x4e24, {0xbe, 0xfd, 0x0d, 0x92, 0x85, 0xa3, 0x3b, 0xcb}}
 
 bool EnsureNSSInitializedChromeOrContent();
 bool HandleTLSPrefChange(const nsCString& aPref);
 void SetValidationOptionsCommon();
 void PrepareForShutdownInSocketProcess();
+
+// RAII helper class to indicate that gecko is searching for client auth
+// certificates. Will automatically stop indicating that a search is happening
+// when it goes out of scope.
+// osclientcerts (or ipcclientcerts, in the socket process) will call
+// IsGeckoSearchingForClientAuthCertificates() to determine if gecko is
+// searching for client auth certificates. If so, the module knows to refresh
+// its list of certificates and keys (which can be costly).
+// In theory, two separate threads could both create a
+// AutoSearchingForClientAuthCertificates at overlapping times. If one goes out
+// of scope sooner than the other, IsGeckoSearchingForClientAuthCertificates()
+// could potentially incorrectly return false for the slower thread. However,
+// as long as the faster thread has ensured that osclientcerts/ipcclientcerts
+// has updated its list of known certificates, a second search would be
+// redundant anyway, so it doesn't matter.
+class AutoSearchingForClientAuthCertificates {
+ public:
+  AutoSearchingForClientAuthCertificates();
+  ~AutoSearchingForClientAuthCertificates();
+};
 
 // Implementation of the PSM component interface.
 class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
@@ -94,8 +110,7 @@ class nsNSSComponent final : public nsINSSComponent, public nsIObserver {
   nsresult InitializeNSS();
   void PrepareForShutdown();
 
-  void setValidationOptions(bool isInitialSetting,
-                            const mozilla::MutexAutoLock& proofOfLock);
+  void setValidationOptions(const mozilla::MutexAutoLock& proofOfLock);
   void GetRevocationBehaviorFromPrefs(
       /*out*/ mozilla::psm::CertVerifier::OcspDownloadConfig* odc,
       /*out*/ mozilla::psm::CertVerifier::OcspStrictConfig* osc,

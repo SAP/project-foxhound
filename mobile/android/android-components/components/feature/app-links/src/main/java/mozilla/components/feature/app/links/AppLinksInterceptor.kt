@@ -11,7 +11,7 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.annotation.VisibleForTesting
 import androidx.fragment.app.FragmentManager
-import mozilla.components.browser.state.selector.findTab
+import mozilla.components.browser.state.selector.findTabOrCustomTab
 import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineSession
@@ -27,6 +27,11 @@ private const val WWW = "www."
 private const val M = "m."
 private const val MOBILE = "mobile."
 private const val MAPS = "maps."
+
+// List of URL schemes that are allowed to open an external application in subframe.
+private val ALLOWED_SCHEMES_IN_SUBFRAME: List<String> = listOf(
+    "msteams", // Microsoft Teams
+)
 
 /**
  * This feature implements use cases for detecting and handling redirects to external apps. The user
@@ -55,9 +60,12 @@ private const val MAPS = "maps."
  * have registered to open.
  * @param launchFromInterceptor If {true} then the interceptor will prompt and launch the link in
  * third-party apps if available.  Do not use this in conjunction with [AppLinksFeature]
+ * @param showCheckbox if {true} then the checkbox will be visible on normal tabs within [SimpleRedirectDialogFragment]
  * @param store [BrowserStore] containing the information about the currently open tabs.
  * @param shouldPrompt If {true} then we should prompt the user before redirect.
  * @param failedToLaunchAction Action to perform when failing to launch in third party app.
+ * @param checkboxCheckedAction Action to perform when checkbox is ticked and positive button is clicked
+ * on redirect prompt.
  */
 class AppLinksInterceptor(
     private val context: Context,
@@ -71,9 +79,11 @@ class AppLinksInterceptor(
         alwaysDeniedSchemes = alwaysDeniedSchemes,
     ),
     private val launchFromInterceptor: Boolean = false,
+    private val showCheckbox: Boolean = false,
     private val store: BrowserStore? = null,
     private val shouldPrompt: () -> Boolean = { true },
     private val failedToLaunchAction: (fallbackUrl: String?) -> Unit = {},
+    private val checkboxCheckedAction: () -> Unit = {},
 ) : RequestInterceptor {
     private var fragmentManager: FragmentManager? = null
     private val dialog: RedirectDialogFragment? = null
@@ -110,12 +120,13 @@ class AppLinksInterceptor(
         val uriScheme = encodedUri.scheme
         val engineSupportsScheme = engineSupportedSchemes.contains(uriScheme)
         val isAllowedRedirect = (isRedirect && !isSubframeRequest)
-        val tabSessionState = store?.state?.findTab(engineSession)
+        val tabSessionState = store?.state?.findTabOrCustomTab(engineSession)
 
         val doNotIntercept = when {
             uriScheme == null -> true
-            // A subframe request not triggered by the user should not go to an external app.
-            (!hasUserGesture && isSubframeRequest) -> true
+            // A subframe request not triggered by the user and not in allow list should not go to
+            // an external app.
+            (!hasUserGesture && isSubframeRequest && !isSubframeAllowed(uriScheme)) -> true
             // If request not from an user gesture, allowed redirect and direct navigation
             // or if we're already on the site then let's not go to an external app.
             (
@@ -274,7 +285,12 @@ class AppLinksInterceptor(
 
         if (!fragmentManager.isStateSaved) {
             getOrCreateDialog(isPrivate, url).apply {
-                onConfirmRedirect = doOpenApp
+                onConfirmRedirect = { isCheckboxTicked ->
+                    if (isCheckboxTicked) {
+                        checkboxCheckedAction()
+                    }
+                    doOpenApp()
+                }
                 onCancelRedirect = doNotOpenApp
             }.showNow(fragmentManager, FRAGMENT_TAG)
         }
@@ -304,8 +320,8 @@ class AppLinksInterceptor(
         return SimpleRedirectDialogFragment.newInstance(
             dialogTitleText = dialogTitle,
             dialogMessageString = dialogMessage,
-            positiveButtonText = R.string.mozac_feature_applinks_confirm_dialog_confirm,
-            negativeButtonText = R.string.mozac_feature_applinks_confirm_dialog_deny,
+            showCheckbox = if (isPrivate) false else showCheckbox,
+            maxSuccessiveDialogMillisLimit = MAX_SUCCESSIVE_DIALOG_MILLIS_LIMIT,
         )
     }
 
@@ -372,10 +388,18 @@ class AppLinksInterceptor(
             }
         }
 
+        @VisibleForTesting
+        internal fun isSubframeAllowed(uriScheme: String): Boolean {
+            return ALLOWED_SCHEMES_IN_SUBFRAME.contains(uriScheme)
+        }
+
         @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
         internal const val APP_LINKS_DO_NOT_OPEN_CACHE_INTERVAL = 60 * 60 * 1000L // 1 hour
 
         @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
         internal const val APP_LINKS_DO_NOT_INTERCEPT_INTERVAL = 2000L // 2 second
+
+        // Minimum time for dialog to settle before accepting user interactions.
+        internal const val MAX_SUCCESSIVE_DIALOG_MILLIS_LIMIT: Int = 500 // 0.5 seconds
     }
 }

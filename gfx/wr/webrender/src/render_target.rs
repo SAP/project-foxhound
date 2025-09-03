@@ -287,6 +287,8 @@ impl RenderTarget {
                     }
                     if let Some(clear_color) = pic_task.clear_color {
                         self.clears.push((target_rect, clear_color));
+                    } else if self.cached {
+                        self.clears.push((target_rect, ColorF::TRANSPARENT));
                     }
 
                     // TODO(gw): The type names of AlphaBatchBuilder and BatchBuilder
@@ -983,10 +985,15 @@ fn build_mask_tasks(
 
         let (clip_address, fast_path) = match clip_node.item.kind {
             ClipItemKind::RoundedRectangle { rect, radius, mode } => {
-                let (fast_path, clip_address) = if radius.is_uniform().is_some() {
+                let (fast_path, clip_address) = if radius.can_use_fast_path_in(&rect) {
                     let mut writer = gpu_buffer_builder.f32.write_blocks(3);
                     writer.push_one(rect);
-                    writer.push_one([radius.top_left.width, 0.0, 0.0, 0.0]);
+                    writer.push_one([
+                        radius.bottom_right.width,
+                        radius.top_right.width,
+                        radius.bottom_left.width,
+                        radius.top_left.width,
+                    ]);
                     writer.push_one([mode as i32 as f32, 0.0, 0.0, 0.0]);
                     let clip_address = writer.finish();
 

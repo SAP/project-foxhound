@@ -3,7 +3,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 import {
-  classMap,
   html,
   ifDefined,
   when,
@@ -142,23 +141,22 @@ export class SyncedTabsTabRow extends FxviewTabRowBase {
   secondaryButtonTemplate() {
     return html`${when(
       this.secondaryL10nId && this.secondaryActionHandler,
-      () => html`<moz-button
-        type="icon ghost"
-        class=${classMap({
-          "fxview-tab-row-button": true,
-          [this.secondaryActionClass]: this.secondaryActionClass,
-        })}
-        ?disabled=${this.closeRequested}
-        id="fxview-tab-row-secondary-button"
-        data-l10n-id=${this.secondaryL10nId}
-        data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
-        aria-haspopup=${ifDefined(this.hasPopup)}
-        @click=${this.secondaryActionHandler}
-        tabindex="${this.active &&
-        this.currentActiveElementId === "fxview-tab-row-secondary-button"
-          ? "0"
-          : "-1"}"
-      ></moz-button>`
+      () =>
+        html`<moz-button
+          type="icon ghost"
+          class="fxview-tab-row-button"
+          iconSrc=${this.getIconSrc(this.secondaryActionClass)}
+          ?disabled=${this.closeRequested}
+          id="fxview-tab-row-secondary-button"
+          data-l10n-id=${this.secondaryL10nId}
+          data-l10n-args=${ifDefined(this.secondaryL10nArgs)}
+          aria-haspopup=${ifDefined(this.hasPopup)}
+          @click=${this.secondaryActionHandler}
+          tabindex=${this.active &&
+          this.currentActiveElementId === "fxview-tab-row-secondary-button"
+            ? "0"
+            : "-1"}
+        ></moz-button>`
     )}`;
   }
 
@@ -183,8 +181,9 @@ export class SyncedTabsTabRow extends FxviewTabRowBase {
         ${this.faviconTemplate()} ${this.titleTemplate()}
         ${when(
           !this.compact,
-          () => html`${this.urlTemplate()} ${this.dateTemplate()}
-          ${this.timeTemplate()}`
+          () =>
+            html`${this.urlTemplate()} ${this.dateTemplate()}
+            ${this.timeTemplate()}`
         )}
       </a>
       ${this.secondaryButtonTemplate()} ${this.tertiaryButtonTemplate()}

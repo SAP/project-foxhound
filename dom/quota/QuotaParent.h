@@ -107,6 +107,9 @@ class Quota final : public PQuotaParent {
       const PrincipalInfo& aPrincipalInfo,
       GetCachedOriginUsageResolver&& aResolve) override;
 
+  virtual mozilla::ipc::IPCResult RecvListOrigins(
+      ListOriginsResolver&& aResolver) override;
+
   virtual mozilla::ipc::IPCResult RecvListCachedOrigins(
       ListCachedOriginsResolver&& aResolver) override;
 
@@ -154,6 +157,9 @@ class Quota final : public PQuotaParent {
 
   virtual mozilla::ipc::IPCResult RecvAbortOperationsForProcess(
       const ContentParentId& aContentParentId) override;
+
+  virtual mozilla::ipc::IPCResult RecvSetThumbnailPrivateIdentityId(
+      const uint32_t& aThumbnailPrivateIdentityId) override;
 };
 
 already_AddRefed<PQuotaParent> AllocPQuotaParent();

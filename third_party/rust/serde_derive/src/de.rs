@@ -1,5 +1,6 @@
 use crate::fragment::{Expr, Fragment, Match, Stmts};
 use crate::internals::ast::{Container, Data, Field, Style, Variant};
+use crate::internals::name::Name;
 use crate::internals::{attr, replace_receiver, ungroup, Ctxt, Derive};
 use crate::{bound, dummy, pretend, this};
 use proc_macro2::{Literal, Span, TokenStream};
@@ -32,6 +33,7 @@ pub fn expand_derive_deserialize(input: &mut syn::DeriveInput) -> syn::Result<To
         let vis = &input.vis;
         let used = pretend::pretend_used(&cont, params.is_packed);
         quote! {
+            #[automatically_derived]
             impl #de_impl_generics #ident #ty_generics #where_clause {
                 #vis fn deserialize<__D>(__deserializer: __D) -> #serde::__private::Result<#remote #ty_generics, __D::Error>
                 where
@@ -423,6 +425,7 @@ fn deserialize_unit_struct(params: &Parameters, cattrs: &attr::Container) -> Fra
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __Visitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -558,6 +561,7 @@ fn deserialize_tuple(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __Visitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -657,6 +661,7 @@ fn deserialize_tuple_in_place(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #in_place_impl_generics _serde::de::Visitor<#delife> for __Visitor #in_place_ty_generics #where_clause {
             type Value = ();
 
@@ -1019,6 +1024,7 @@ fn deserialize_struct(
 
     let visitor_seed = match form {
         StructForm::ExternallyTagged(..) if has_flatten => Some(quote! {
+            #[automatically_derived]
             impl #de_impl_generics _serde::de::DeserializeSeed<#delife> for __Visitor #de_ty_generics #where_clause {
                 type Value = #this_type #ty_generics;
 
@@ -1083,6 +1089,7 @@ fn deserialize_struct(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __Visitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -1164,6 +1171,7 @@ fn deserialize_struct_in_place(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #in_place_impl_generics _serde::de::Visitor<#delife> for __Visitor #in_place_ty_generics #where_clause {
             type Value = ();
 
@@ -1337,6 +1345,7 @@ fn deserialize_externally_tagged_enum(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __Visitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -1598,6 +1607,7 @@ fn deserialize_adjacently_tagged_enum(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::DeserializeSeed<#delife> for __Seed #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -1617,6 +1627,7 @@ fn deserialize_adjacently_tagged_enum(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __Visitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -2002,7 +2013,7 @@ fn deserialize_untagged_newtype_variant(
 
 struct FieldWithAliases<'a> {
     ident: Ident,
-    aliases: &'a BTreeSet<String>,
+    aliases: &'a BTreeSet<Name>,
 }
 
 fn deserialize_generated_identifier(
@@ -2045,12 +2056,14 @@ fn deserialize_generated_identifier(
         #[doc(hidden)]
         struct __FieldVisitor;
 
+        #[automatically_derived]
         impl<'de> _serde::de::Visitor<'de> for __FieldVisitor {
             type Value = __Field #lifetime;
 
             #visitor_impl
         }
 
+        #[automatically_derived]
         impl<'de> _serde::Deserialize<'de> for __Field #lifetime {
             #[inline]
             fn deserialize<__D>(__deserializer: __D) -> _serde::__private::Result<Self, __D::Error>
@@ -2189,6 +2202,7 @@ fn deserialize_custom_identifier(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::de::Visitor<#delife> for __FieldVisitor #de_ty_generics #where_clause {
             type Value = #this_type #ty_generics;
 
@@ -2216,7 +2230,11 @@ fn deserialize_identifier(
         let ident = &field.ident;
         let aliases = field.aliases;
         // `aliases` also contains a main name
-        quote!(#(#aliases)|* => _serde::__private::Ok(#this_value::#ident))
+        quote! {
+            #(
+                #aliases => _serde::__private::Ok(#this_value::#ident),
+            )*
+        }
     });
     let bytes_mapping = deserialized_fields.iter().map(|field| {
         let ident = &field.ident;
@@ -2224,8 +2242,12 @@ fn deserialize_identifier(
         let aliases = field
             .aliases
             .iter()
-            .map(|alias| Literal::byte_string(alias.as_bytes()));
-        quote!(#(#aliases)|* => _serde::__private::Ok(#this_value::#ident))
+            .map(|alias| Literal::byte_string(alias.value.as_bytes()));
+        quote! {
+            #(
+                #aliases => _serde::__private::Ok(#this_value::#ident),
+            )*
+        }
     });
 
     let expecting = expecting.unwrap_or(if is_variant {
@@ -2423,7 +2445,7 @@ fn deserialize_identifier(
                 __E: _serde::de::Error,
             {
                 match __value {
-                    #(#str_mapping,)*
+                    #(#str_mapping)*
                     _ => {
                         #value_as_borrowed_str_content
                         #fallthrough_borrowed_arm
@@ -2436,7 +2458,7 @@ fn deserialize_identifier(
                 __E: _serde::de::Error,
             {
                 match __value {
-                    #(#bytes_mapping,)*
+                    #(#bytes_mapping)*
                     _ => {
                         #bytes_to_str
                         #value_as_borrowed_bytes_content
@@ -2461,7 +2483,7 @@ fn deserialize_identifier(
             __E: _serde::de::Error,
         {
             match __value {
-                #(#str_mapping,)*
+                #(#str_mapping)*
                 _ => {
                     #value_as_str_content
                     #fallthrough_arm
@@ -2474,7 +2496,7 @@ fn deserialize_identifier(
             __E: _serde::de::Error,
         {
             match __value {
-                #(#bytes_mapping,)*
+                #(#bytes_mapping)*
                 _ => {
                     #bytes_to_str
                     #value_as_bytes_content
@@ -2900,6 +2922,7 @@ fn wrap_deserialize_with(
             lifetime: _serde::__private::PhantomData<&#delife ()>,
         }
 
+        #[automatically_derived]
         impl #de_impl_generics _serde::Deserialize<#delife> for __DeserializeWith #de_ty_generics #where_clause {
             fn deserialize<__D>(#deserializer_var: __D) -> _serde::__private::Result<Self, __D::Error>
             where

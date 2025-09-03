@@ -104,7 +104,7 @@ const SANITIZE_ON_SHUTDOWN_PREFS_ONLY = [
 ];
 
 const SANITIZE_ON_SHUTDOWN_PREFS_ONLY_V2 = [
-  "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+  "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
   "privacy.clearOnShutdown_v2.siteSettings",
 ];
 
@@ -177,7 +177,7 @@ Preferences.addAll([
   { id: "privacy.clearOnShutdown.offlineApps", type: "bool" },
   { id: "privacy.clearOnShutdown.history", type: "bool" },
   {
-    id: "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+    id: "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
     type: "bool",
   },
   { id: "privacy.clearOnShutdown.downloads", type: "bool" },
@@ -268,8 +268,6 @@ Preferences.addAll([
   { id: "network.trr.uri", type: "string" },
   { id: "network.trr.default_provider_uri", type: "string" },
   { id: "network.trr.custom_uri", type: "string" },
-  { id: "network.trr_ui.show_fallback_warning_option", type: "bool" },
-  { id: "network.trr.display_fallback_warning", type: "bool" },
   { id: "doh-rollout.disable-heuristics", type: "bool" },
 ]);
 
@@ -280,6 +278,7 @@ if (AppConstants.MOZ_DATA_REPORTING) {
     { id: PREF_OPT_OUT_STUDIES_ENABLED, type: "bool" },
     { id: PREF_ADDON_RECOMMENDATIONS_ENABLED, type: "bool" },
     { id: PREF_UPLOAD_ENABLED, type: "bool" },
+    { id: "datareporting.usage.uploadEnabled", type: "bool" },
     { id: "dom.private-attribution.submission.enabled", type: "bool" },
   ]);
 }
@@ -511,15 +510,6 @@ var gPrivacyPane = {
     let httpsOnlyExceptionButton = document.getElementById(
       "httpsOnlyExceptionButton"
     );
-    let httpsOnlyRadioEnabled = document.getElementById(
-      "httpsOnlyRadioEnabled"
-    );
-    let httpsOnlyRadioEnabledPBM = document.getElementById(
-      "httpsOnlyRadioEnabledPBM"
-    );
-    let httpsOnlyRadioDisabled = document.getElementById(
-      "httpsOnlyRadioDisabled"
-    );
 
     if (httpsOnlyOnPref) {
       httpsOnlyRadioGroup.value = "enabled";
@@ -541,23 +531,6 @@ var gPrivacyPane = {
     ) {
       httpsOnlyRadioGroup.disabled = true;
     }
-
-    document.l10n.setAttributes(
-      httpsOnlyRadioEnabled,
-      httpsFirstOnPref ? "httpsonly-radio-enabled2" : "httpsonly-radio-enabled"
-    );
-    document.l10n.setAttributes(
-      httpsOnlyRadioEnabledPBM,
-      httpsFirstOnPref
-        ? "httpsonly-radio-enabled-pbm2"
-        : "httpsonly-radio-enabled-pbm"
-    );
-    document.l10n.setAttributes(
-      httpsOnlyRadioDisabled,
-      httpsFirstOnPref
-        ? "httpsonly-radio-disabled2"
-        : "httpsonly-radio-disabled"
-    );
   },
 
   syncToHttpsOnlyPref() {
@@ -581,11 +554,7 @@ var gPrivacyPane = {
 
     // Create event listener for when the user clicks
     // on one of the radio buttons
-    setEventListener(
-      "httpsOnlyRadioGroup",
-      "command",
-      this.syncToHttpsOnlyPref
-    );
+    setEventListener("httpsOnlyRadioGroup", "change", this.syncToHttpsOnlyPref);
     // Update radio-value when the pref changes
     Preferences.get("dom.security.https_only_mode").on("change", () =>
       this.syncFromHttpsOnlyPref()
@@ -708,10 +677,8 @@ var gPrivacyPane = {
 
   async updateDoHStatus() {
     let trrURI = Services.dns.currentTrrURI;
-    let hostname = "";
-    try {
-      hostname = new URL(trrURI).hostname;
-    } catch (e) {
+    let hostname = URL.parse(trrURI)?.hostname;
+    if (!hostname) {
       hostname = await document.l10n.formatValue("preferences-doh-bad-url");
     }
 
@@ -903,15 +870,6 @@ var gPrivacyPane = {
     setEventListener("dohStrictRadio", "command", modeButtonPressed);
     setEventListener("dohOffRadio", "command", modeButtonPressed);
 
-    function warnCheckboxClicked(e) {
-      Glean.securityDohSettings.warnCheckboxCheckbox.record({
-        value: e.target.checked,
-      });
-    }
-
-    setEventListener("dohWarnCheckbox1", "command", warnCheckboxClicked);
-    setEventListener("dohWarnCheckbox2", "command", warnCheckboxClicked);
-
     this.populateDoHResolverList("dohEnabled");
     this.populateDoHResolverList("dohStrict");
 
@@ -937,11 +895,6 @@ var gPrivacyPane = {
       Services.obs.removeObserver(this, "network:trr-confirmation");
     };
     window.addEventListener("unload", unload, { once: true });
-
-    if (Preferences.get("network.trr_ui.show_fallback_warning_option").value) {
-      document.getElementById("dohWarningBox1").hidden = false;
-      document.getElementById("dohWarningBox2").hidden = false;
-    }
 
     let uriPref = Services.prefs.getStringPref("network.trr.uri");
     // If the value isn't one of the providers, we need to update the
@@ -1212,7 +1165,7 @@ var gPrivacyPane = {
 
     let onNimbus = () => this._updateFirefoxSuggestToggle();
     NimbusFeatures.urlbar.onUpdate(onNimbus);
-    this._updateFirefoxSuggestToggle(true);
+    this._updateFirefoxSuggestToggle();
     window.addEventListener("unload", () => {
       NimbusFeatures.urlbar.offUpdate(onNimbus);
     });
@@ -1549,12 +1502,10 @@ var gPrivacyPane = {
 
       // Hide all cookie options first, until we learn which one should be showing.
       document.querySelector(selector + " .all-cookies-option").hidden = true;
-      document.querySelector(
-        selector + " .unvisited-cookies-option"
-      ).hidden = true;
-      document.querySelector(
-        selector + " .cross-site-cookies-option"
-      ).hidden = true;
+      document.querySelector(selector + " .unvisited-cookies-option").hidden =
+        true;
+      document.querySelector(selector + " .cross-site-cookies-option").hidden =
+        true;
       document.querySelector(
         selector + " .third-party-tracking-cookies-option"
       ).hidden = true;
@@ -1570,24 +1521,20 @@ var gPrivacyPane = {
         // Note "cookieBehavior0", will result in no UI changes, so is not listed here.
         switch (item) {
           case "tp":
-            document.querySelector(
-              selector + " .trackers-option"
-            ).hidden = false;
+            document.querySelector(selector + " .trackers-option").hidden =
+              false;
             break;
           case "-tp":
-            document.querySelector(
-              selector + " .trackers-option"
-            ).hidden = true;
+            document.querySelector(selector + " .trackers-option").hidden =
+              true;
             break;
           case "tpPrivate":
-            document.querySelector(
-              selector + " .pb-trackers-option"
-            ).hidden = false;
+            document.querySelector(selector + " .pb-trackers-option").hidden =
+              false;
             break;
           case "-tpPrivate":
-            document.querySelector(
-              selector + " .pb-trackers-option"
-            ).hidden = true;
+            document.querySelector(selector + " .pb-trackers-option").hidden =
+              true;
             break;
           case "fp":
             document.querySelector(
@@ -1600,16 +1547,14 @@ var gPrivacyPane = {
             ).hidden = true;
             break;
           case "cm":
-            document.querySelector(
-              selector + " .cryptominers-option"
-            ).hidden = false;
+            document.querySelector(selector + " .cryptominers-option").hidden =
+              false;
             break;
           case "-cm":
-            document.querySelector(
-              selector + " .cryptominers-option"
-            ).hidden = true;
+            document.querySelector(selector + " .cryptominers-option").hidden =
+              true;
             break;
-          case "stp":
+          case "stp": {
             // Store social tracking cookies pref
             const STP_COOKIES_PREF =
               "privacy.socialtracking.block_cookies.enabled";
@@ -1620,11 +1565,11 @@ var gPrivacyPane = {
               ).hidden = false;
             }
             break;
+          }
           case "-stp":
             // Store social tracking cookies pref
-            document.querySelector(
-              selector + " .social-media-option"
-            ).hidden = true;
+            document.querySelector(selector + " .social-media-option").hidden =
+              true;
             break;
           case "cookieBehavior1":
             document.querySelector(
@@ -1632,9 +1577,8 @@ var gPrivacyPane = {
             ).hidden = false;
             break;
           case "cookieBehavior2":
-            document.querySelector(
-              selector + " .all-cookies-option"
-            ).hidden = false;
+            document.querySelector(selector + " .all-cookies-option").hidden =
+              false;
             break;
           case "cookieBehavior3":
             document.querySelector(
@@ -2715,21 +2659,14 @@ var gPrivacyPane = {
   /**
    * Updates the visibility of the Firefox Suggest Privacy Container
    * based on the user's Quick Suggest settings.
-   *
-   * @param {boolean} [onInit]
-   *   Pass true when calling this when initializing the pane.
    */
-  _updateFirefoxSuggestToggle(onInit = false) {
-    let container = document.getElementById("firefoxSuggestPrivacyContainer");
-
-    if (
-      UrlbarPrefs.get("quickSuggestEnabled") &&
-      !UrlbarPrefs.get("quickSuggestHideSettingsUI")
-    ) {
-      container.removeAttribute("hidden");
-    } else if (!onInit) {
-      container.setAttribute("hidden", "true");
-    }
+  _updateFirefoxSuggestToggle() {
+    document.getElementById(
+      "firefoxSuggestDataCollectionPrivacyToggle"
+    ).hidden =
+      !UrlbarPrefs.get("quickSuggestEnabled") ||
+      UrlbarPrefs.get("quickSuggestSettingsUi") !=
+        QuickSuggest.SETTINGS_UI.FULL;
   },
 
   // GEOLOCATION
@@ -2994,12 +2931,23 @@ var gPrivacyPane = {
         },
       ]);
       let win = Services.wm.getMostRecentBrowserWindow();
+
+      // Note on Glean collection: because OSKeyStore.ensureLoggedIn() is not wrapped in
+      // verifyOSAuth(), it will be documenting "success" for unsupported platforms
+      // and won't record "fail_error", only "fail_user_canceled"
       let loggedIn = await OSKeyStore.ensureLoggedIn(
         messageText.value,
         captionText.value,
         win,
         false
       );
+
+      const result = loggedIn.authenticated ? "success" : "fail_user_canceled";
+      Glean.pwmgr.promptShownOsReauth.record({
+        trigger: "toggle_pref_primary_password",
+        result,
+      });
+
       if (!loggedIn.authenticated) {
         return;
       }
@@ -3021,10 +2969,22 @@ var gPrivacyPane = {
       "privacy.globalprivacycontrol.functionality.enabled",
       false
     );
-    document.getElementById("globalPrivacyControlBox").hidden =
-      !gpcEnabledPrefValue;
-    document.getElementById("doNotTrackBox").hidden = !gpcEnabledPrefValue;
-    document.getElementById("legacyDoNotTrackBox").hidden = gpcEnabledPrefValue;
+    let dntEnabledPrefValue = Services.prefs.getBoolPref(
+      "privacy.donottrackheader.enabled",
+      false
+    );
+    document.getElementById("doNotTrackBox").hidden = !dntEnabledPrefValue;
+    // We can't rely on the hidden attribute for groupboxes because the pane
+    // hiding/showing code can interfere (and fires after this).
+    if (gpcEnabledPrefValue) {
+      document
+        .getElementById("nonTechnicalPrivacyGroup")
+        .removeAttribute("style");
+    } else {
+      document
+        .getElementById("nonTechnicalPrivacyGroup")
+        .setAttribute("style", "display: none !important");
+    }
   },
 
   /**
@@ -3089,10 +3049,20 @@ var gPrivacyPane = {
       osReauthCheckbox.ownerGlobal.docShell.chromeEventHandler.ownerGlobal;
 
     // Calling OSKeyStore.ensureLoggedIn() instead of LoginHelper.verifyOSAuth()
-    // since we want to authenticate user each time this stting is changed.
+    // since we want to authenticate user each time this setting is changed.
+
+    // Note on Glean collection: because OSKeyStore.ensureLoggedIn() is not wrapped in
+    // verifyOSAuth(), it will be documenting "success" for unsupported platforms
+    // and won't record "fail_error", only "fail_user_canceled"
     let isAuthorized = (
       await OSKeyStore.ensureLoggedIn(messageText, captionText, win, false)
     ).authenticated;
+
+    Glean.pwmgr.promptShownOsReauth.record({
+      trigger: "toggle_pref_os_auth",
+      result: isAuthorized ? "success" : "fail_user_canceled",
+    });
+
     if (!isAuthorized) {
       osReauthCheckbox.checked = !osReauthCheckbox.checked;
       return;
@@ -3103,6 +3073,10 @@ var gPrivacyPane = {
       LoginHelper.OS_AUTH_FOR_PASSWORDS_PREF,
       osReauthCheckbox.checked
     );
+
+    Glean.pwmgr.requireOsReauthToggle.record({
+      toggle_state: osReauthCheckbox.checked,
+    });
   },
 
   _initOSAuthentication() {

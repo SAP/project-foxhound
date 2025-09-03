@@ -27,6 +27,11 @@ const mockSendingContext = {
   eventTarget: {},
 };
 
+add_setup(function setup() {
+  // The profile service requires the directory service to have been initialized.
+  Cc["@mozilla.org/xre/directory-provider;1"].getService(Ci.nsIXREDirProvider);
+});
+
 add_test(function () {
   validationHelper(undefined, "Error: Missing configuration options");
 
@@ -342,6 +347,10 @@ add_test(function test_can_link_account_message() {
     helpers: {
       shouldAllowRelink(email) {
         Assert.equal(email, "testuser@testuser.com");
+        run_next_test();
+      },
+      promptProfileSyncWarningIfNeeded(acctName) {
+        Assert.equal(acctName, "testuser@testuser.com");
         run_next_test();
       },
     },

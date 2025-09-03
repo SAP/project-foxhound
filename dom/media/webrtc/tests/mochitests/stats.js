@@ -9,6 +9,7 @@ const statsExpectedByType = {
     expected: [
       "trackIdentifier",
       "id",
+      "mid",
       "timestamp",
       "type",
       "ssrc",
@@ -75,6 +76,7 @@ const statsExpectedByType = {
   "outbound-rtp": {
     expected: [
       "id",
+      "mid",
       "timestamp",
       "type",
       "ssrc",
@@ -88,7 +90,7 @@ const statsExpectedByType = {
       "retransmittedPacketsSent",
       "retransmittedBytesSent",
     ],
-    optional: ["nackCount", "qpSum"],
+    optional: ["nackCount", "qpSum", "rid"],
     localAudioOnly: [],
     localVideoOnly: [
       "framesEncoded",
@@ -183,9 +185,8 @@ const statsExpectedByType = {
       "transportId",
       "mimeType",
       "clockRate",
-      "sdpFmtpLine",
     ],
-    optional: ["codecType", "channels"],
+    optional: ["codecType", "channels", "sdpFmtpLine"],
     unimplemented: [],
     deprecated: [],
   },
@@ -517,6 +518,25 @@ function pedanticChecks(report) {
       // trackIdentifier
       is(typeof stat.trackIdentifier, "string");
       isnot(stat.trackIdentifier, "");
+
+      // mid
+      ok(
+        parseInt(stat.mid) >= 0,
+        `${stat.type}.mid is a positive integer. value=${stat.mid}`
+      );
+      let inboundRtpMids = [];
+      report.forEach(r => {
+        if (r.type == "inbound-rtp") {
+          inboundRtpMids.push(r.mid);
+        }
+      });
+      is(
+        inboundRtpMids.filter(mid => mid == stat.mid).length,
+        1,
+        `${stat.type}.mid is distinct. value=${
+          stat.mid
+        }, others=${JSON.stringify(inboundRtpMids)}`
+      );
 
       // packetsReceived
       ok(
@@ -853,6 +873,12 @@ function pedanticChecks(report) {
       // Required fields
       //
 
+      // mid
+      ok(
+        parseInt(stat.mid) >= 0,
+        `${stat.type}.mid a positive integer. value=${stat.mid}`
+      );
+
       // packetsSent
       ok(
         stat.packetsSent > 0 && stat.packetsSent < 10000,
@@ -900,11 +926,43 @@ function pedanticChecks(report) {
       // Optional fields
       //
 
+      // rid
+      if (stat.kind == "audio") {
+        ok(
+          stat.rid === undefined,
+          `${stat.type}.rid" MUST NOT exist for audio. value=${stat.rid}`
+        );
+      } else {
+        let numSendVideoStreamsForMid = 0;
+        report.forEach(r => {
+          if (
+            r.type == "outbound-rtp" &&
+            r.kind == "video" &&
+            r.mid == stat.mid
+          ) {
+            numSendVideoStreamsForMid += 1;
+          }
+        });
+        if (numSendVideoStreamsForMid == 1) {
+          is(
+            stat.rid,
+            undefined,
+            `${stat.type}.rid" does not exist for singlecast video. value=${stat.rid}`
+          );
+        } else {
+          isnot(
+            stat.rid,
+            undefined,
+            `${stat.type}.rid" does exist for simulcast video. value=${stat.rid}`
+          );
+        }
+      }
+
       // qpSum
-      // This is supported for all of our vpx codecs (on the encode side, see
-      // bug 1519590)
+      // This is supported for all of our vpx codecs and AV1 (on the encode
+      // side, see bug 1519590)
       const mimeType = report.get(stat.codecId).mimeType;
-      if (mimeType.includes("VP")) {
+      if (mimeType.includes("VP") || mimeType.includes("AV1")) {
         ok(
           stat.qpSum >= 0,
           `${stat.type}.qpSum is a sane number (${stat.kind}) ` +
@@ -1127,6 +1185,9 @@ function pedanticChecks(report) {
             `codec.payloadType for H264 was ${stat.payloadType}, exp. 97, 126, 103, or 105`
           );
           break;
+        case "video/AV1":
+          is(stat.payloadType, 99, "codec.payloadType for AV1");
+          break;
         default:
           ok(
             false,
@@ -1149,7 +1210,10 @@ function pedanticChecks(report) {
 
       // sdpFmtpLine
       // (not technically mandated by spec, but expected here)
-      ok(stat.sdpFmtpLine, "codec.sdpFmtpLine is set");
+      // AV1 has no required parameters, so don't require sdpFmtpLine for it.
+      if (stat.mimeType != "video/AV1") {
+        ok(stat.sdpFmtpLine, "codec.sdp FmtpLine is set");
+      }
       const opusParams = [
         "maxplaybackrate",
         "maxaveragebitrate",
@@ -1172,9 +1236,21 @@ function pedanticChecks(report) {
         "max-br",
         "max-mbps",
       ];
-      for (const param of stat.sdpFmtpLine.split(";")) {
+      // AV1 parameters:
+      //  https://aomediacodec.github.io/av1-rtp-spec/#721-mapping-of-media-subtype-parameters-to-sdp
+      const av1Params = ["profile", "level-idx", "tier"];
+      // Check that the parameters are as expected. AV1 may have no parameters.
+      for (const param of (stat.sdpFmtpLine || "").split(";")) {
         const [key, value] = param.split("=");
-        if (stat.payloadType == 109) {
+        if (stat.payloadType == 99) {
+          // AV1 might not have any parameters, if it does make sure they are as expected.
+          if (key) {
+            ok(
+              av1Params.includes(key),
+              `codec.sdpFmtpLine param ${key}=${value} for AV1`
+            );
+          }
+        } else if (stat.payloadType == 109) {
           ok(
             opusParams.includes(key),
             `codec.sdpFmtpLine param ${key}=${value} for opus`
@@ -1575,6 +1651,18 @@ async function waitForSyncedRtcp(pc) {
   );
 }
 
+function checkSendCodecsMimeType(senderStats, mimeType, sdpFmtpLine = null) {
+  const codecReports = senderStats.values().filter(s => s.type == "codec");
+  isnot(codecReports.length, 0, "Should have send codecs");
+  for (const c of codecReports) {
+    is(c.codecType, "encode", "Send codec is always encode");
+    is(c.mimeType, mimeType, "Mime type as expected");
+    if (sdpFmtpLine) {
+      is(c.sdpFmtpLine, sdpFmtpLine, "Sdp fmtp line as expected");
+    }
+  }
+}
+
 function checkSenderStats(senderStats, streamCount) {
   const outboundRtpReports = [];
   const remoteInboundRtpReports = [];
@@ -1601,6 +1689,18 @@ function checkSenderStats(senderStats, streamCount) {
       1,
       "Simulcast send track SSRCs are distinct"
     );
+    is(
+      outboundRtpReports.filter(r => r.mid == outboundRtpReport.mid).length,
+      streamCount,
+      "Simulcast send track MIDs are identical"
+    );
+    if (outboundRtpReport.kind == "video" && streamCount > 1) {
+      is(
+        outboundRtpReports.filter(r => r.rid == outboundRtpReport.rid).length,
+        1,
+        "Simulcast send track RIDs are distinct"
+      );
+    }
     const remoteReports = remoteInboundRtpReports.filter(
       r => r.id == outboundRtpReport.remoteId
     );

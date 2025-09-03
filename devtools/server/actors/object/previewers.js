@@ -42,6 +42,7 @@ const ERROR_CLASSNAMES = new Set([
   "LinkError",
   "RuntimeError",
   "Exception", // This related to Components.Exception()
+  "SuppressedError",
 ]);
 const ARRAY_LIKE_CLASSNAMES = new Set([
   "DOMStringList",
@@ -222,6 +223,69 @@ const previewers = {
       grip.preview = {
         timestamp: objectActor.createValueGrip(time, depth),
       };
+      return true;
+    },
+  ],
+
+  "Temporal.Instant": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.Instant, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainDate": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainDate, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainDateTime": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainDateTime, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainDate": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainDate, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainMonthDay": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainMonthDay, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainTime": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainTime, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.PlainYearMonth": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.PlainYearMonth, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.ZonedDateTime": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.ZonedDateTime, objectActor, grip);
+      return true;
+    },
+  ],
+
+  "Temporal.Duration": [
+    function(objectActor, grip, depth) {
+      temporalPreviewer(Temporal.Duration, objectActor, grip);
       return true;
     },
   ],
@@ -717,6 +781,26 @@ function wrappedPrimitivePreviewer(
     depth
   );
   return true;
+}
+
+/**
+ * Previewer for Temporal objects
+ *
+ * @param cls
+ *        The class of the object we're previewing (e.g. `Temporal.Instant`)
+ * @param ObjectActor objectActor
+ *        The object actor
+ * @param Object grip
+ *        The result grip to fill in
+ */
+function temporalPreviewer(cls, objectActor, grip) {
+  grip.preview = {
+    kind: "ObjectWithText",
+    text: cls.prototype.toString.call(
+      // In worker objectActor.safeRawObj is considered unsafe and is null
+      objectActor.safeRawObj || objectActor.rawObj
+    )
+  }
 }
 
 /**

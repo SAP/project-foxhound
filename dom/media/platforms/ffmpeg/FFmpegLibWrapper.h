@@ -19,8 +19,8 @@ struct AVDictionary;
 struct AVCodecParserContext;
 struct PRLibrary;
 struct AVChannelLayout;
-#ifdef MOZ_WIDGET_GTK
 struct AVCodecHWConfig;
+#ifdef MOZ_WIDGET_GTK
 struct AVVAAPIHWConfig;
 struct AVHWFramesConstraints;
 #endif
@@ -43,7 +43,7 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
                    UnknownFutureFFMpegVersion, UnknownOlderFFMpegVersion,
                    MissingFFMpegFunction, MissingLibAVFunction));
 
-  // Examine mAVCodecLib, mAVUtilLib and mVALib, and attempt to resolve
+  // Examine mAVCodecLib and mAVUtilLib, and attempt to resolve
   // all symbols.
   // Upon failure, the entire object will be reset and any attached libraries
   // will be unlinked.
@@ -53,9 +53,8 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   void Unlink();
 
 #ifdef MOZ_WIDGET_GTK
-  // Check if mVALib are available and we can use HW decode.
+  // Check if libva and libva-drm are available and we can use HW decode.
   bool IsVAAPIAvailable();
-  void LinkVAAPILibs();
 #endif
 
   // indicate the version of libavcodec linked to.
@@ -157,31 +156,28 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
   int (*av_frame_get_colorspace)(const AVFrame* frame);
   int (*av_frame_get_color_range)(const AVFrame* frame);
 
-#ifdef MOZ_WIDGET_GTK
+  // libavcodec > 58
   const AVCodecHWConfig* (*avcodec_get_hw_config)(const AVCodec* codec,
                                                   int index);
+  // libavutil >= 58
   AVBufferRef* (*av_hwdevice_ctx_alloc)(int);
   int (*av_hwdevice_ctx_init)(AVBufferRef* ref);
+  AVBufferRef* (*av_hwframe_ctx_alloc)(AVBufferRef* device_ctx);
+  int (*av_hwframe_ctx_init)(AVBufferRef* ref);
+  AVBufferRef* (*av_buffer_ref)(AVBufferRef* buf);
+  void (*av_buffer_unref)(AVBufferRef** buf);
+
+#ifdef MOZ_WIDGET_GTK
   AVVAAPIHWConfig* (*av_hwdevice_hwconfig_alloc)(AVBufferRef* device_ctx);
   AVHWFramesConstraints* (*av_hwdevice_get_hwframe_constraints)(
       AVBufferRef* ref, const void* hwconfig);
   void (*av_hwframe_constraints_free)(AVHWFramesConstraints** constraints);
-
-  AVBufferRef* (*av_buffer_ref)(AVBufferRef* buf);
-  void (*av_buffer_unref)(AVBufferRef** buf);
   int (*av_hwframe_transfer_get_formats)(AVBufferRef* hwframe_ctx, int dir,
                                          int** formats, int flags);
   int (*av_hwdevice_ctx_create_derived)(AVBufferRef** dst_ctx, int type,
                                         AVBufferRef* src_ctx, int flags);
-  AVBufferRef* (*av_hwframe_ctx_alloc)(AVBufferRef* device_ctx);
   const char* (*avcodec_get_name)(int id);
   char* (*av_get_pix_fmt_string)(char* buf, int buf_size, int pix_fmt);
-
-  int (*vaExportSurfaceHandle)(void*, unsigned int, uint32_t, uint32_t, void*);
-  int (*vaSyncSurface)(void*, unsigned int);
-  int (*vaInitialize)(void* dpy, int* major_version, int* minor_version);
-  int (*vaTerminate)(void* dpy);
-  void* (*vaGetDisplayDRM)(int fd);
 #endif
 
   // Only ever used with ffvpx
@@ -190,10 +186,6 @@ struct MOZ_ONLY_USED_TO_AVOID_STATIC_CONSTRUCTORS FFmpegLibWrapper {
 
   PRLibrary* mAVCodecLib;
   PRLibrary* mAVUtilLib;
-#ifdef MOZ_WIDGET_GTK
-  PRLibrary* mVALib;
-  PRLibrary* mVALibDrm;
-#endif
 };
 
 }  // namespace mozilla

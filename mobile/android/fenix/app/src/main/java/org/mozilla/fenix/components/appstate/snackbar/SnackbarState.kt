@@ -72,6 +72,11 @@ sealed class SnackbarState {
     data object ShareToAppFailed : SnackbarState()
 
     /**
+     * Display a snackbar after sharing to whatsapp for the first time
+     */
+    data object ShareToWhatsApp : SnackbarState()
+
+    /**
      * Display a snackbar when sharing tabs was successful.
      *
      * @property destination List of device IDs with which tabs were shared.
@@ -97,4 +102,14 @@ sealed class SnackbarState {
      * Display a snackbar when copying a link to the clipboard.
      */
     data object CopyLinkToClipboard : SnackbarState()
+
+    /**
+     * Display a snackbar when the WebCompat report has been successfully submitted.
+     */
+    data object WebCompatReportSent : SnackbarState()
+
+    /**
+     * Display a snackbar when the current site's data has been deleted.
+     */
+    data object SiteDataCleared : SnackbarState()
 }

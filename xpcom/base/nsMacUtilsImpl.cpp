@@ -122,8 +122,7 @@ bool nsMacUtilsImpl::GetAppPath(nsCString& aAppPath) {
   }
 
   nsCOMPtr<nsIFile> app;
-  nsresult rv =
-      NS_NewLocalFile(NS_ConvertUTF8toUTF16(appPath), getter_AddRefs(app));
+  nsresult rv = NS_NewNativeLocalFile(appPath, getter_AddRefs(app));
   if (NS_FAILED(rv)) {
     return false;
   }
@@ -170,10 +169,8 @@ nsresult nsMacUtilsImpl::GetBloatLogDir(nsCString& aDirectoryPath) {
 nsresult nsMacUtilsImpl::GetDirectoryPath(const char* aPath,
                                           nsCString& aDirectoryPath) {
   nsresult rv = NS_OK;
-  nsCOMPtr<nsIFile> file = do_CreateInstance(NS_LOCAL_FILE_CONTRACTID, &rv);
-  NS_ENSURE_SUCCESS(rv, rv);
-
-  rv = file->InitWithNativePath(nsDependentCString(aPath));
+  nsCOMPtr<nsIFile> file;
+  rv = NS_NewNativeLocalFile(nsDependentCString(aPath), getter_AddRefs(file));
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIFile> directoryFile;
@@ -326,7 +323,7 @@ static nsresult GetDirFromBundlePlist(const nsAString& aKey, nsIFile** aDir) {
   NS_ENSURE_SUCCESS(rv, rv);
 
   nsCOMPtr<nsIFile> dir;
-  rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(dirPath), getter_AddRefs(dir));
+  rv = NS_NewNativeLocalFile(dirPath, getter_AddRefs(dir));
   NS_ENSURE_SUCCESS(rv, rv);
 
   rv = dir->Normalize();

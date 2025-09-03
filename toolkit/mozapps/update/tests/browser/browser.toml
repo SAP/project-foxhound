@@ -11,6 +11,7 @@ support-files = [
 prefs = [
   "app.update.BITS.enabled=false",
   "app.update.langpack.enabled=true",
+  "app.update.multiSessionInstallLockout.enabled=false",
 ]
 run-if = ["!msix"] # Updater is disabled in MSIX builds
 
@@ -172,6 +173,9 @@ tags = "os_integration"
 
 ["browser_doorhanger_bc_multiUpdate.js"]
 tags = "os_integration"
+skip-if = [
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && a11y_checks", # Bug 1909498
+]
 
 ["browser_doorhanger_bc_multiUpdate_promptWaitTime.js"]
 

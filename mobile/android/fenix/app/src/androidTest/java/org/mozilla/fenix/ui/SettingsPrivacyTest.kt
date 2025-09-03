@@ -10,7 +10,6 @@ import org.mozilla.fenix.helpers.HomeActivityTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestSetup
-import org.mozilla.fenix.settings.DataChoicesFragment
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.notificationShade
@@ -53,33 +52,35 @@ class SettingsPrivacyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243362
     @Test
     fun verifyDataCollectionSettingsTest() {
-        DataChoicesFragment.SHOULD_EXIT_APP_AFTER_TURNING_OFF_STUDIES = false
         homeScreen {}.openThreeDotMenu {}.openSettings {}.openSettingsSubMenuDataCollection {
             // Studies depends on the telemetry switch,  if telemetry is off studies will be
             // turned off as well, and will require the app to be restarted.
+            // Daily usage ping should default to telemetry pref value
             verifyDataCollectionView(
-                true,
-                "On",
+                isUsageAndTechnicalDataEnabled = true,
+                isDailyUsagePingEnabled = true,
+                studiesSummary = "On",
             )
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(false)
+            verifyDailyUsagePingToggle(true)
+
             // Automatically turned off as telemetry was turned off.
             verifyDataCollectionView(
-                false,
-                "Off",
+                isUsageAndTechnicalDataEnabled = false,
+                isDailyUsagePingEnabled = true,
+                studiesSummary = "Off",
             )
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(true)
+            verifyDailyUsagePingToggle(true)
 
             clickStudiesOption()
-            verifyStudiesToggle(false)
-            // Turning to true
+            verifyStudiesToggle(true)
+            // Turning to false
             clickStudiesToggle()
-            verifyStudiesDialog()
-            clickStudiesDialogCancelButton()
             verifyStudiesToggle(false)
         }
-        DataChoicesFragment.SHOULD_EXIT_APP_AFTER_TURNING_OFF_STUDIES = true
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1024594

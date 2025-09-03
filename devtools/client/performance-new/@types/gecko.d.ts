@@ -18,7 +18,7 @@
  */
 declare namespace MockedExports {
   /**
-   * This interface teaches ChromeUtils.import how to find modules.
+   * This interface teaches ChromeUtils.importESModule how to find modules.
    */
   interface KnownModules {
     Services: typeof import("Services");
@@ -41,16 +41,14 @@ declare namespace MockedExports {
      * This function reads the KnownModules and resolves which import to use.
      * If you are getting the TS2345 error:
      *
-     *  Argument of type '"resource:///.../file.jsm"' is not assignable to parameter
-     *  of type
+     *  Argument of type '"resource:///.../file.sys.mjs"' is not assignable to
+     *  parameter of type
      *
      * Then add the file path to the KnownModules above.
      */
-    import: <S extends keyof KnownModules>(module: S) => KnownModules[S];
     importESModule: <S extends keyof KnownModules>(
       module: S
     ) => KnownModules[S];
-    defineModuleGetter: (target: any, variable: string, path: string) => void;
     defineESModuleGetters: (target: any, mappings: any) => void;
   }
 
@@ -69,6 +67,7 @@ declare namespace MockedExports {
     selectedBrowser?: ChromeBrowser;
     messageManager: MessageManager;
     ownerDocument?: ChromeDocument;
+    tabs: BrowserTab[];
   }
 
   // This is a tab in a browser, defined in
@@ -86,6 +85,7 @@ declare namespace MockedExports {
   // This is linked to BrowserTab.
   interface ChromeBrowser {
     browsingContext?: BrowsingContext;
+    browserId: number;
   }
 
   interface BrowsingContext {
@@ -286,16 +286,6 @@ declare namespace MockedExports {
   }
 
   interface Cu {
-    /**
-     * This function reads the KnownModules and resolves which import to use.
-     * If you are getting the TS2345 error:
-     *
-     *  Argument of type '"resource:///.../file.jsm"' is not assignable to parameter
-     *  of type
-     *
-     * Then add the file path to the KnownModules above.
-     */
-    import: <S extends keyof KnownModules>(module: S) => KnownModules[S];
     exportFunction: (fn: Function, scope: object, options?: object) => void;
     cloneInto: (value: any, scope: object, options?: object) => void;
     isInAutomation: boolean;

@@ -94,13 +94,12 @@ class SheetLoadData final
   NotNull<const Encoding*> DetermineNonBOMEncoding(const nsACString& aSegment,
                                                    nsIChannel*) const;
 
+  void OnStartRequest(nsIRequest*);
+
   // The caller may have the bytes for the stylesheet split across two strings,
   // so aBytes1 and aBytes2 refer to those pieces.
   nsresult VerifySheetReadyToParse(nsresult aStatus, const nsACString& aBytes1,
-                                   const nsACString& aBytes2,
-                                   nsIChannel* aChannel,
-                                   nsIURI* aFinalChannelURI,
-                                   nsIPrincipal* aPrincipal);
+                                   const nsACString& aBytes2, nsIChannel*);
 
   NS_DECL_ISUPPORTS
 
@@ -133,6 +132,10 @@ class SheetLoadData final
   // The expiration time of the channel that has loaded this data, if
   // applicable.
   CacheExpirationTime mExpirationTime = CacheExpirationTime::Never();
+
+  // The load tainting of the request. Needed to be able to pass it around off
+  // the main thread for SRI checks.
+  LoadTainting mTainting{LoadTainting::Basic};
 
   // Number of sheets we @import-ed that are still loading
   uint32_t mPendingChildren;

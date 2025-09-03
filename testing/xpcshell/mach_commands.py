@@ -279,6 +279,37 @@ def run_xpcshell_test(command_context, test_objects=None, **params):
         xpcshell = command_context._spawn(XPCShellRunner)
     xpcshell.cwd = command_context._mach_context.cwd
 
+    if sys.platform == "linux":
+        install_portal_test_dependencies = False
+        if "manifest" in params and params["manifest"]:
+            # When run from "mach test", the manifest is available now.
+            try:
+                tags = " ".join(params["manifest"].get("tags")).split(" ")
+            except KeyError:
+                # .get("tags") may raise KeyError.
+                tags = []
+            if "webextensions" in tags and "portal" in tags:
+                install_portal_test_dependencies = True
+        else:
+            # When run from "mach xpcshell-test", the manifest is not available
+            # yet. We could default to True to force the initialization of the
+            # virtualenv, but that would force this dependency on every use of
+            # "mach xpcshell-test". So for now, force it to False.
+            # If a dev wants to run the test, they can run "mach test" instead.
+            install_portal_test_dependencies = False
+
+        if install_portal_test_dependencies:
+            dir_relpath = params["manifest"].get("dir_relpath")[0]
+            # Only Linux Native Messaging Portal xpcshell tests need this.
+            req = os.path.join(
+                dir_relpath,
+                "linux_native-messaging-portal_requirements.txt",
+            )
+            command_context.virtualenv_manager.activate()
+            command_context.virtualenv_manager.install_pip_requirements(
+                req, require_hashes=False
+            )
+
     try:
         return xpcshell.run_test(**params)
     except InvalidTestPathError as e:

@@ -217,6 +217,9 @@ class SharedSubResourceCache {
   // Inserts a value into the cache.
   void Insert(LoadingValue&);
 
+  // Evict the specific cache.
+  void Evict(const Key&);
+
   // Puts a load into the "pending" set.
   void DeferLoad(const Key&, LoadingValue&);
 
@@ -236,7 +239,8 @@ class SharedSubResourceCache {
   // to be called when the document goes away, or when its principal changes.
   void UnregisterLoader(Loader&);
 
-  void ClearInProcess(const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
+  void ClearInProcess(const Maybe<bool>& aChrome,
+                      const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
                       const Maybe<nsCString>& aSchemelessSite,
                       const Maybe<OriginAttributesPattern>& aPattern);
 
@@ -266,19 +270,31 @@ class SharedSubResourceCache {
 
 template <typename Traits, typename Derived>
 void SharedSubResourceCache<Traits, Derived>::ClearInProcess(
-    const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
+    const Maybe<bool>& aChrome, const Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
     const Maybe<nsCString>& aSchemelessSite,
     const Maybe<OriginAttributesPattern>& aPattern) {
   MOZ_ASSERT(aSchemelessSite.isSome() == aPattern.isSome(),
              "Must pass both site and OA pattern.");
 
-  if (!aPrincipal && !aSchemelessSite) {
+  if (!aChrome && !aPrincipal && !aSchemelessSite) {
     mComplete.Clear();
     return;
   }
 
   for (auto iter = mComplete.Iter(); !iter.Done(); iter.Next()) {
     const bool shouldRemove = [&] {
+      if (aChrome.isSome()) {
+        nsIURI* uri = iter.Key().URI();
+        bool isChrome = uri->SchemeIs("chrome") || uri->SchemeIs("resource");
+        if (*aChrome != isChrome) {
+          return false;
+        }
+
+        if (!aPrincipal && !aSchemelessSite) {
+          return true;
+        }
+      }
+
       if (aPrincipal && iter.Key().Principal()->Equals(aPrincipal.ref())) {
         return true;
       }
@@ -471,6 +487,11 @@ void SharedSubResourceCache<Traits, Derived>::Insert(LoadingValue& aValue) {
 #endif
 
   mComplete.InsertOrUpdate(key, CompleteSubResource(aValue));
+}
+
+template <typename Traits, typename Derived>
+void SharedSubResourceCache<Traits, Derived>::Evict(const Key& aKey) {
+  (void)mComplete.Remove(aKey);
 }
 
 template <typename Traits, typename Derived>

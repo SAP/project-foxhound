@@ -37,7 +37,7 @@
 #include "mozilla/StaticPrefs_webgl.h"
 #include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/Telemetry.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/IntegerPrintfMacros.h"
@@ -556,6 +556,10 @@ static void WebRenderDebugPrefChangeCallback(const char* aPrefName, void*) {
   GFX_WEBRENDER_DEBUG(".restrict-blob-size", wr::DebugFlags::RESTRICT_BLOB_SIZE)
   GFX_WEBRENDER_DEBUG(".surface-promotion-logging",
                       wr::DebugFlags::SURFACE_PROMOTION_LOGGING)
+  GFX_WEBRENDER_DEBUG(".missing-snapshot-panic",
+                      wr::DebugFlags::MISSING_SNAPSHOT_PANIC)
+  GFX_WEBRENDER_DEBUG(".missing-snapshot-pink",
+                      wr::DebugFlags::MISSING_SNAPSHOT_PINK)
 #undef GFX_WEBRENDER_DEBUG
   gfx::gfxVars::SetWebRenderDebugFlags(flags._0);
 
@@ -1039,6 +1043,13 @@ void gfxPlatform::Init() {
   if (obs) {
     obs->NotifyObservers(nullptr, "gfx-features-ready", nullptr);
   }
+}
+
+void gfxPlatform::InitMemoryReportersForGPUProcess() {
+  MOZ_RELEASE_ASSERT(XRE_IsGPUProcess());
+
+  RegisterStrongMemoryReporter(new GfxMemoryImageReporter());
+  RegisterStrongMemoryReporter(new SkMemoryReporter());
 }
 
 void gfxPlatform::ReportTelemetry() {
@@ -2244,10 +2255,9 @@ void gfxPlatform::FlushFontAndWordCaches() {
 }
 
 /* static */
-void gfxPlatform::ForceGlobalReflow(NeedsReframe aNeedsReframe,
-                                    BroadcastToChildren aBroadcastToChildren) {
+void gfxPlatform::ForceGlobalReflow(GlobalReflowFlags aFlags) {
   MOZ_ASSERT(NS_IsMainThread());
-  const bool reframe = aNeedsReframe == NeedsReframe::Yes;
+  bool reframe = !!(aFlags & GlobalReflowFlags::NeedsReframe);
   // Send a notification that will be observed by PresShells in this process
   // only.
   if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
@@ -2255,11 +2265,11 @@ void gfxPlatform::ForceGlobalReflow(NeedsReframe aNeedsReframe,
     obs->NotifyObservers(nullptr, "font-info-updated", needsReframe);
   }
   if (XRE_IsParentProcess() &&
-      aBroadcastToChildren == BroadcastToChildren::Yes) {
+      aFlags & GlobalReflowFlags::BroadcastToChildren) {
     // Propagate the change to child processes.
     for (auto* process :
          dom::ContentParent::AllProcesses(dom::ContentParent::eLive)) {
-      Unused << process->SendForceGlobalReflow(reframe);
+      Unused << process->SendForceGlobalReflow(aFlags);
     }
   }
 }
@@ -2451,8 +2461,7 @@ void gfxPlatform::InitAcceleration() {
     sLayersSupportsHardwareVideoDecoding =
         gfxPlatformGtk::GetPlatform()->InitVAAPIConfig(
             StaticPrefs::
-                media_hardware_video_decoding_force_enabled_AtStartup() ||
-            StaticPrefs::media_ffmpeg_vaapi_enabled_AtStartup());
+                media_hardware_video_decoding_force_enabled_AtStartup());
 #else
     if (
 #  ifdef XP_WIN
@@ -3009,7 +3018,7 @@ void gfxPlatform::InitHardwareVideoConfig() {
   }
   gfxVars::SetUseVP9HwDecode(featureVP9.IsEnabled());
 
-  // H264_HW_DECODE/AV1_HW_DECODE is used on Linux only right now.
+  // H264/AV1/HEVC_HW_DECODE are used on Linux only right now.
 #ifdef MOZ_WIDGET_GTK
   FeatureState& featureH264 = gfxConfig::GetFeature(Feature::H264_HW_DECODE);
   featureH264.EnableByDefault();
@@ -3028,6 +3037,15 @@ void gfxPlatform::InitHardwareVideoConfig() {
     featureAV1.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
   }
   gfxVars::SetUseAV1HwDecode(featureAV1.IsEnabled());
+
+  FeatureState& featureHEVC = gfxConfig::GetFeature(Feature::HEVC_HW_DECODE);
+  featureHEVC.EnableByDefault();
+
+  if (!IsGfxInfoStatusOkay(nsIGfxInfo::FEATURE_HEVC_HW_DECODE, &message,
+                           failureId)) {
+    featureHEVC.Disable(FeatureStatus::Blocklisted, message.get(), failureId);
+  }
+  gfxVars::SetUseHEVCHwDecode(featureHEVC.IsEnabled());
 #endif
 }
 

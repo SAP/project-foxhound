@@ -15,6 +15,14 @@ const { RemoteSettings } = ChromeUtils.importESModule(
   "resource://services-settings/remote-settings.sys.mjs"
 );
 
+const { OSKeyStoreTestUtils } = ChromeUtils.importESModule(
+  "resource://testing-common/OSKeyStoreTestUtils.sys.mjs"
+);
+
+const { OSKeyStore } = ChromeUtils.importESModule(
+  "resource://gre/modules/OSKeyStore.sys.mjs"
+);
+
 const nsLoginInfo = new Components.Constructor(
   "@mozilla.org/login-manager/loginInfo;1",
   Ci.nsILoginInfo,
@@ -119,7 +127,7 @@ async function addBreach() {
 
 async function openPasswordsSidebar() {
   info("Open Passwords sidebar");
-  await SidebarController.show("viewMegalistSidebar");
+  await SidebarController.show("viewCPMSidebar");
   const sidebar = document.getElementById("sidebar");
   const megalist =
     sidebar.contentDocument.querySelector("megalist-alpha").shadowRoot;
@@ -145,4 +153,131 @@ async function addLocalOriginLogin() {
     password: "pass4",
     origin: "about:preferences#privacy",
   });
+}
+
+function waitForNotification(megalist, notificationId) {
+  info(`Wait for notification with id ${notificationId}.`);
+  const notifcationPromise = BrowserTestUtils.waitForCondition(() => {
+    const notifMsgBars = Array.from(
+      megalist.querySelectorAll("notification-message-bar")
+    );
+    return notifMsgBars?.find(
+      notifMsgBar => notifMsgBar.notification.id === notificationId
+    );
+  }, `Notification with id ${notificationId} did not render.`);
+  return notifcationPromise;
+}
+
+async function checkNotificationAndTelemetry(
+  megalist,
+  notificationId,
+  eventIndex = 0
+) {
+  const notificationMessageBar = await waitForNotification(
+    megalist,
+    notificationId
+  );
+  const events = Glean.contextualManager.notificationShown.testGetValue();
+  assertCPMGleanEvent(events[eventIndex], {
+    notification_detail: notificationId.replaceAll("-", "_"),
+  });
+  return notificationMessageBar;
+}
+
+async function checkNotificationInteractionTelemetry(
+  notifMsgBar,
+  buttonId,
+  expectedEvent,
+  eventIndex = 0
+) {
+  info(`Click on ${buttonId} button and test telemetry.`);
+  const mozMessageBar = notifMsgBar.shadowRoot.querySelector("moz-message-bar");
+  const element = mozMessageBar.querySelector(`#${buttonId}`);
+  element.click();
+  const events = Glean.contextualManager.notificationInteraction.testGetValue();
+  assertCPMGleanEvent(events[eventIndex], expectedEvent);
+}
+
+function setInputValue(loginForm, fieldElement, value) {
+  info(`Filling ${fieldElement} with value '${value}'.`);
+  const field = loginForm.shadowRoot.querySelector(fieldElement);
+  field.input.value = value;
+  field.input.dispatchEvent(
+    new InputEvent("input", {
+      composed: true,
+      bubbles: true,
+    })
+  );
+}
+
+function getMegalistParent() {
+  const megalistChromeWindow = gBrowser.ownerGlobal[0];
+  return megalistChromeWindow.browsingContext.currentWindowGlobal.getActor(
+    "Megalist"
+  );
+}
+
+async function waitForReauth(callBackFn) {
+  const authExpirationTime = getMegalistParent().authExpirationTime();
+  let reauthObserved = Promise.resolve();
+
+  if (OSKeyStore.canReauth() && Date.now() > authExpirationTime) {
+    reauthObserved = OSKeyStoreTestUtils.waitForOSKeyStoreLogin(true);
+  }
+  await callBackFn();
+  return reauthObserved;
+}
+
+function waitForPasswordReveal(passwordLine) {
+  const revealBtnPromise = BrowserTestUtils.waitForMutationCondition(
+    passwordLine.loginLine,
+    {
+      attributeFilter: ["inputtype"],
+    },
+    () => passwordLine.loginLine.getAttribute("inputtype") === "text"
+  );
+  info("click on reveal button");
+  passwordLine.revealBtn.click();
+  return revealBtnPromise;
+}
+
+function waitForSnapshots() {
+  info("Wait for headers.");
+  const sidebar = document.getElementById("sidebar");
+  const megalistComponent =
+    sidebar.contentDocument.querySelector("megalist-alpha");
+  return BrowserTestUtils.waitForCondition(
+    () => megalistComponent.header,
+    "Megalist header loaded."
+  );
+}
+
+async function checkEmptyState(selector, megalist) {
+  return await BrowserTestUtils.waitForCondition(() => {
+    const emptyStateCard = megalist.querySelector(".empty-state-card");
+    return !!emptyStateCard?.querySelector(selector);
+  }, "Empty state card failed to render");
+}
+
+function assertCPMGleanEvent(actualEvent, expectedEvent) {
+  info("Asserting CPM Glean event");
+
+  for (let key of Object.keys(expectedEvent)) {
+    Assert.equal(
+      actualEvent.extra[key],
+      expectedEvent[key],
+      `${actualEvent.extra[key]} is the recorded ${key}.
+        Expected: '${expectedEvent[key]}'.`
+    );
+  }
+}
+
+async function resetTelemetryIfKeyStoreTestable() {
+  if (!OSKeyStoreTestUtils.canTestOSKeyStoreLogin()) {
+    ok(true, "Cannot test OSAuth.");
+    return false;
+  }
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
+  return true;
 }

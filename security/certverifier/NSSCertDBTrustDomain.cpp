@@ -29,7 +29,7 @@
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/SecurityCertverifierMetrics.h"
 #include "mozpkix/Result.h"
 #include "mozpkix/pkix.h"
 #include "mozpkix/pkixcheck.h"
@@ -702,34 +702,7 @@ Result BuildCRLiteTimestampArray(
   return Success;
 }
 
-Result NSSCertDBTrustDomain::CheckCRLiteStash(
-    const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
-    const nsTArray<uint8_t>& serialNumberBytes) {
-  // This information is deterministic and has already been validated by our
-  // infrastructure (it comes from signed CRLs), so if the stash says a
-  // certificate is revoked, it is.
-  bool isRevokedByStash = false;
-  nsresult rv = mCertStorage->IsCertRevokedByStash(
-      issuerSubjectPublicKeyInfoBytes, serialNumberBytes, &isRevokedByStash);
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("NSSCertDBTrustDomain::CheckCRLiteStash: IsCertRevokedByStash "
-             "failed"));
-    return Result::FATAL_ERROR_LIBRARY_FAILURE;
-  }
-  if (isRevokedByStash) {
-    MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
-            ("NSSCertDBTrustDomain::CheckCRLiteStash: IsCertRevokedByStash "
-             "returned true"));
-    mozilla::glean::cert_verifier::crlite_status.Get("revoked_in_stash"_ns)
-        .Add(1);
-    return Result::ERROR_REVOKED_CERTIFICATE;
-  }
-  return Success;
-}
-
 Result NSSCertDBTrustDomain::CheckCRLite(
-    const nsTArray<uint8_t>& issuerBytes,
     const nsTArray<uint8_t>& issuerSubjectPublicKeyInfoBytes,
     const nsTArray<uint8_t>& serialNumberBytes,
     const nsTArray<RefPtr<nsICRLiteTimestamp>>& timestamps,
@@ -737,8 +710,8 @@ Result NSSCertDBTrustDomain::CheckCRLite(
   filterCoversCertificate = false;
   int16_t crliteRevocationState;
   nsresult rv = mCertStorage->GetCRLiteRevocationState(
-      issuerBytes, issuerSubjectPublicKeyInfoBytes, serialNumberBytes,
-      timestamps, &crliteRevocationState);
+      issuerSubjectPublicKeyInfoBytes, serialNumberBytes, timestamps,
+      &crliteRevocationState);
   if (NS_FAILED(rv)) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
             ("NSSCertDBTrustDomain::CheckCRLite: CRLite call failed"));
@@ -885,29 +858,17 @@ Result NSSCertDBTrustDomain::CheckRevocationByCRLite(
   nsTArray<uint8_t> serialNumberBytes;
   serialNumberBytes.AppendElements(certID.serialNumber.UnsafeGetData(),
                                    certID.serialNumber.GetLength());
-  // The CRLite stash is essentially a subset of a collection of CRLs, so if
-  // it says a certificate is revoked, it is.
-  Result rv =
-      CheckCRLiteStash(issuerSubjectPublicKeyInfoBytes, serialNumberBytes);
-  if (rv != Success) {
-    crliteCoversCertificate = (rv == Result::ERROR_REVOKED_CERTIFICATE);
-    return rv;
-  }
-
-  nsTArray<uint8_t> issuerBytes;
-  issuerBytes.AppendElements(certID.issuer.UnsafeGetData(),
-                             certID.issuer.GetLength());
 
   nsTArray<RefPtr<nsICRLiteTimestamp>> timestamps;
-  rv = BuildCRLiteTimestampArray(sctExtension, timestamps);
+  Result rv = BuildCRLiteTimestampArray(sctExtension, timestamps);
   if (rv != Success) {
     MOZ_LOG(gCertVerifierLog, LogLevel::Debug,
             ("decoding SCT extension failed - CRLite will be not be "
              "consulted"));
     return Success;
   }
-  return CheckCRLite(issuerBytes, issuerSubjectPublicKeyInfoBytes,
-                     serialNumberBytes, timestamps, crliteCoversCertificate);
+  return CheckCRLite(issuerSubjectPublicKeyInfoBytes, serialNumberBytes,
+                     timestamps, crliteCoversCertificate);
 }
 
 Result NSSCertDBTrustDomain::CheckRevocationByOCSP(
@@ -1789,15 +1750,41 @@ bool LoadUserModuleAt(const char* moduleName, const char* libraryName,
   return true;
 }
 
-bool LoadIPCClientCertsModule(const nsCString& dir) {
+bool LoadUserModuleFromXul(const char* moduleName,
+                           CK_C_GetFunctionList fentry) {
+  // If a module exists with the same name, make a best effort attempt to delete
+  // it. Note that it isn't possible to delete the internal module, so checking
+  // the return value would be detrimental in that case.
+  int unusedModType;
+  Unused << SECMOD_DeleteModule(moduleName, &unusedModType);
+
+  UniqueSECMODModule userModule(
+      SECMOD_LoadUserModuleWithFunction(moduleName, fentry));
+  if (!userModule) {
+    return false;
+  }
+
+  if (!userModule->loaded) {
+    return false;
+  }
+
+  return true;
+}
+
+extern "C" {
+// Extern function to call ipcclientcerts module C_GetFunctionList.
+// NSS calls it to obtain the list of functions comprising this module.
+// ppFunctionList must be a valid pointer.
+CK_RV IPCCC_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR ppFunctionList);
+}  // extern "C"
+
+bool LoadIPCClientCertsModule() {
   // The IPC client certs module needs to be able to call back into gecko to be
   // able to communicate with the parent process over IPC. This is achieved by
-  // serializing the addresses of the relevant functions and passing them as an
-  // extra string parameter that will be available when C_Initialize is called
-  // on IPC client certs.
-  nsPrintfCString addrs("%p,%p", DoFindObjects, DoSign);
-  if (!LoadUserModuleAt(kIPCClientCertsModuleName.get(), "ipcclientcerts", dir,
-                        addrs.get())) {
+  // calling the external to Rust module functions DoSign and DoFindObjects.
+
+  if (!LoadUserModuleFromXul(kIPCClientCertsModuleName.get(),
+                             IPCCC_GetFunctionList)) {
     return false;
   }
   RunOnShutdown(
@@ -1812,16 +1799,42 @@ bool LoadIPCClientCertsModule(const nsCString& dir) {
   return true;
 }
 
-bool LoadOSClientCertsModule(const nsCString& dir) {
-  nsLiteralCString params =
-      StaticPrefs::security_osclientcerts_assume_rsa_pss_support()
-          ? "RSA-PSS"_ns
-          : ""_ns;
-  return LoadUserModuleAt(kOSClientCertsModuleName.get(), "osclientcerts", dir,
-                          params.get());
+extern "C" {
+// Extern function to call osclientcerts module C_GetFunctionList.
+// NSS calls it to obtain the list of functions comprising this module.
+// ppFunctionList must be a valid pointer.
+CK_RV OSClientCerts_C_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR ppFunctionList);
+}  // extern "C"
+
+bool LoadOSClientCertsModule() {
+// Corresponds to Rust cfg(any(
+//  target_os = "macos",
+//  target_os = "ios",
+//  all(target_os = "windows", not(target_arch = "aarch64"))))]
+#if defined(__APPLE__) || (defined WIN32 && !defined(__aarch64__))
+  return LoadUserModuleFromXul(kOSClientCertsModuleName.get(),
+                               OSClientCerts_C_GetFunctionList);
+#else
+  return false;
+#endif
 }
 
+#ifdef MOZ_SYSTEM_NSS
 bool LoadLoadableRoots(const nsCString& dir) {
+  int unusedModType;
+  Unused << SECMOD_DeleteModule("Root Certs", &unusedModType);
+  return LoadUserModuleAt(kRootModuleName.get(), "nssckbi", dir, nullptr);
+}
+#endif  // MOZ_SYSTEM_NSS
+
+extern "C" {
+// Extern function to call trust-anchors module C_GetFunctionList.
+// NSS calls it to obtain the list of functions comprising this module.
+// ppFunctionList must be a valid pointer.
+CK_RV TRUST_ANCHORS_GetFunctionList(CK_FUNCTION_LIST_PTR_PTR ppFunctionList);
+}  // extern "C"
+
+bool LoadLoadableRootsFromXul() {
   // Some NSS command-line utilities will load a roots module under the name
   // "Root Certs" if there happens to be a `MOZ_DLL_PREFIX "nssckbi"
   // MOZ_DLL_SUFFIX` file in the directory being operated on. In some cases this
@@ -1829,7 +1842,12 @@ bool LoadLoadableRoots(const nsCString& dir) {
   // "Root Certs" module allows us to load the correct one. See bug 1406396.
   int unusedModType;
   Unused << SECMOD_DeleteModule("Root Certs", &unusedModType);
-  return LoadUserModuleAt(kRootModuleName.get(), "nssckbi", dir, nullptr);
+
+  if (!LoadUserModuleFromXul(kRootModuleName.get(),
+                             TRUST_ANCHORS_GetFunctionList)) {
+    return false;
+  }
+  return true;
 }
 
 nsresult DefaultServerNicknameForCert(const CERTCertificate* cert,

@@ -25,7 +25,6 @@
 #include "mozilla/dom/Element.h"
 #include "nsIFrame.h"
 #include "nsCSSProps.h"
-#include "nsCSSPseudoElements.h"
 #include "nsDisplayList.h"
 #include "nsRFPService.h"
 #include "nsStyleChangeList.h"
@@ -38,10 +37,9 @@ using mozilla::dom::KeyframeEffect;
 using namespace mozilla;
 using namespace mozilla::css;
 
-bool nsTransitionManager::UpdateTransitions(dom::Element* aElement,
-                                            PseudoStyleType aPseudoType,
-                                            const ComputedStyle& aOldStyle,
-                                            const ComputedStyle& aNewStyle) {
+bool nsTransitionManager::UpdateTransitions(
+    dom::Element* aElement, const PseudoStyleRequest& aPseudoRequest,
+    const ComputedStyle& aOldStyle, const ComputedStyle& aNewStyle) {
   if (mPresContext->Medium() == nsGkAtoms::print) {
     // For print or print preview, ignore transitions.
     return false;
@@ -49,13 +47,13 @@ bool nsTransitionManager::UpdateTransitions(dom::Element* aElement,
 
   MOZ_ASSERT(mPresContext->IsDynamic());
   if (aNewStyle.StyleDisplay()->mDisplay == StyleDisplay::None) {
-    StopAnimationsForElement(aElement, aPseudoType);
+    StopAnimationsForElement(aElement, aPseudoRequest);
     return false;
   }
 
-  auto* collection = CSSTransitionCollection::Get(aElement, aPseudoType);
-  return DoUpdateTransitions(*aNewStyle.StyleUIReset(), aElement, aPseudoType,
-                             collection, aOldStyle, aNewStyle);
+  auto* collection = CSSTransitionCollection::Get(aElement, aPseudoRequest);
+  return DoUpdateTransitions(*aNewStyle.StyleUIReset(), aElement,
+                             aPseudoRequest, collection, aOldStyle, aNewStyle);
 }
 
 // This function expands the shorthands and "all" keyword specified in
@@ -91,7 +89,8 @@ static void ExpandTransitionProperty(const StyleTransitionProperty& aProperty,
 
 bool nsTransitionManager::DoUpdateTransitions(
     const nsStyleUIReset& aStyle, dom::Element* aElement,
-    PseudoStyleType aPseudoType, CSSTransitionCollection*& aElementTransitions,
+    const PseudoStyleRequest& aPseudoRequest,
+    CSSTransitionCollection*& aElementTransitions,
     const ComputedStyle& aOldStyle, const ComputedStyle& aNewStyle) {
   MOZ_ASSERT(!aElementTransitions || &aElementTransitions->mElement == aElement,
              "Element mismatch");
@@ -124,7 +123,7 @@ bool nsTransitionManager::DoUpdateTransitions(
                                // are animatable.
                                startedAny |= ConsiderInitiatingTransition(
                                    aProperty, aStyle, i, delay, duration,
-                                   behavior, aElement, aPseudoType,
+                                   behavior, aElement, aPseudoRequest,
                                    aElementTransitions, aOldStyle, aNewStyle,
                                    propertiesChecked);
                              });
@@ -168,7 +167,7 @@ bool nsTransitionManager::DoUpdateTransitions(
           !Servo_ComputedValues_TransitionValueMatches(
               &aNewStyle, &property, anim->ToValue().mServo.get())) {
         // Stop the transition.
-        DoCancelTransition(aElement, aPseudoType, aElementTransitions, i);
+        DoCancelTransition(aElement, aPseudoRequest, aElementTransitions, i);
       }
     } while (i != 0);
   }
@@ -259,7 +258,8 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
     const AnimatedPropertyID& aProperty, const nsStyleUIReset& aStyle,
     uint32_t aTransitionIndex, float aDelay, float aDuration,
     mozilla::StyleTransitionBehavior aBehavior, dom::Element* aElement,
-    PseudoStyleType aPseudoType, CSSTransitionCollection*& aElementTransitions,
+    const PseudoStyleRequest& aPseudoRequest,
+    CSSTransitionCollection*& aElementTransitions,
     const ComputedStyle& aOldStyle, const ComputedStyle& aNewStyle,
     AnimatedPropertyIDSet& aPropertiesChecked) {
   // IsShorthand itself will assert if aProperty is not a property.
@@ -379,7 +379,7 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
       // in-progress value (which is particularly easy to cause when we're
       // currently in the 'transition-delay').  It also might happen because we
       // just got a style change to a value that can't be interpolated.
-      DoCancelTransition(aElement, aPseudoType, aElementTransitions,
+      DoCancelTransition(aElement, aPseudoRequest, aElementTransitions,
                          currentIndex);
     }
     return false;
@@ -439,7 +439,7 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
   }
 
   RefPtr<CSSTransition> transition = DoCreateTransition(
-      property, aElement, aPseudoType, aNewStyle, aElementTransitions,
+      property, aElement, aPseudoRequest, aNewStyle, aElementTransitions,
       std::move(timing), std::move(startValue), std::move(endValue),
       std::move(startForReversingTest), reversePortion);
   if (!transition) {
@@ -469,7 +469,7 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
     transitions.AppendElement(transition);
   }
 
-  if (auto* effectSet = EffectSet::Get(aElement, aPseudoType)) {
+  if (auto* effectSet = EffectSet::Get(aElement, aPseudoRequest)) {
     effectSet->UpdateAnimationGeneration(mPresContext);
   }
 
@@ -478,14 +478,15 @@ bool nsTransitionManager::ConsiderInitiatingTransition(
 
 already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
     const AnimatedPropertyID& aProperty, dom::Element* aElement,
-    PseudoStyleType aPseudoType, const mozilla::ComputedStyle& aNewStyle,
+    const PseudoStyleRequest& aPseudoRequest,
+    const mozilla::ComputedStyle& aNewStyle,
     CSSTransitionCollection*& aElementTransitions, TimingParams&& aTiming,
     AnimationValue&& aStartValue, AnimationValue&& aEndValue,
     AnimationValue&& aStartForReversingTest, double aReversePortion) {
   dom::DocumentTimeline* timeline = aElement->OwnerDoc()->Timeline();
   KeyframeEffectParams effectOptions;
   auto keyframeEffect = MakeRefPtr<KeyframeEffect>(
-      aElement->OwnerDoc(), OwningAnimationTarget(aElement, aPseudoType),
+      aElement->OwnerDoc(), OwningAnimationTarget(aElement, aPseudoRequest),
       std::move(aTiming), effectOptions);
 
   keyframeEffect->SetKeyframes(
@@ -499,7 +500,7 @@ already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
 
   auto animation = MakeRefPtr<CSSTransition>(
       mPresContext->Document()->GetScopeObject(), aProperty);
-  animation->SetOwningElement(OwningElementRef(*aElement, aPseudoType));
+  animation->SetOwningElement(OwningElementRef(*aElement, aPseudoRequest));
   animation->SetTimelineNoUpdate(timeline);
   animation->SetCreationSequence(
       mPresContext->RestyleManager()->GetAnimationGeneration());
@@ -511,7 +512,7 @@ already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
   if (!aElementTransitions) {
     aElementTransitions =
         &aElement->EnsureAnimationData().EnsureTransitionCollection(
-            *aElement, aPseudoType);
+            *aElement, aPseudoRequest);
     if (!aElementTransitions->isInList()) {
       AddElementCollection(aElementTransitions);
     }
@@ -520,14 +521,14 @@ already_AddRefed<CSSTransition> nsTransitionManager::DoCreateTransition(
 }
 
 void nsTransitionManager::DoCancelTransition(
-    dom::Element* aElement, PseudoStyleType aPseudoType,
+    dom::Element* aElement, const PseudoStyleRequest& aPseudoRequest,
     CSSTransitionCollection*& aElementTransitions, size_t aIndex) {
   MOZ_ASSERT(aElementTransitions);
   OwningCSSTransitionPtrArray& transitions = aElementTransitions->mAnimations;
   CSSTransition* transition = transitions[aIndex];
 
   if (transition->HasCurrentEffect()) {
-    if (auto* effectSet = EffectSet::Get(aElement, aPseudoType)) {
+    if (auto* effectSet = EffectSet::Get(aElement, aPseudoRequest)) {
       effectSet->UpdateAnimationGeneration(mPresContext);
     }
   }

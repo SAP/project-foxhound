@@ -700,8 +700,9 @@ enum ReactionRecordSlots {
   ReactionRecordSlot_Resolve,
   ReactionRecordSlot_Reject,
 
-  // The incumbent global for this reaction record. Can be null.
-  ReactionRecordSlot_IncumbentGlobalObject,
+  // The host defined data for this reaction record. Can be null.
+  // See step 5 in https://html.spec.whatwg.org/#hostmakejobcallback
+  ReactionRecordSlot_HostDefinedData,
 
   // Bitmask of the REACTION_FLAG values.
   ReactionRecordSlot_Flags,
@@ -901,10 +902,10 @@ class PromiseReactionRecord : public NativeObject {
     return getFixedSlot(handlerArgSlot());
   }
 
-  JSObject* getAndClearIncumbentGlobalObject() {
+  JSObject* getAndClearHostDefinedData() {
     JSObject* obj =
-        getFixedSlot(ReactionRecordSlot_IncumbentGlobalObject).toObjectOrNull();
-    setFixedSlot(ReactionRecordSlot_IncumbentGlobalObject, UndefinedValue());
+        getFixedSlot(ReactionRecordSlot_HostDefinedData).toObjectOrNull();
+    setFixedSlot(ReactionRecordSlot_HostDefinedData, UndefinedValue());
     return obj;
   }
 
@@ -1214,6 +1215,79 @@ static bool Promise_then_impl(JSContext* cx, HandleValue promiseVal,
                               HandleValue onFulfilled, HandleValue onRejected,
                               MutableHandleValue rval, bool rvalExplicitlyUsed);
 
+// This is used to get the 'then' property off of an object, and report some
+// information back for telemetry purposes. When we no longer need this
+// telemetry this function can be removed and replaced with GetProperty (just
+// back this patch out).
+bool GetThenValue(JSContext* cx, JS::Handle<JSObject*> obj,
+                  JS::Handle<JS::Value> reciever,
+                  JS::MutableHandle<Value> thenVal, bool* isOnProto,
+                  bool* isOnStandardProto) {
+  MOZ_ASSERT(isOnProto && *isOnProto == false);
+  MOZ_ASSERT(isOnStandardProto && *isOnStandardProto == false);
+
+  NativeObject* holder;
+  PropertyResult prop;
+
+  // LookupProperty would be observable unforunately. If we can do the lookup,
+  // then we can produce information, but otherwise we're left blind.
+  // Fortunately, since this is purely for the purposes of telemetry, let's just
+  // use Pure.
+  RootedId thenId(cx, NameToId(cx->names().then));
+
+  // If we're doing the lookup on the original promise prototype we want to only
+  // report telemetry if the value is not the original Promise.prototype.then
+  //
+  // We then need to defer until after the lookup to decide this.
+  bool maybeOnPromiseProto = false;
+  do {
+    if (LookupPropertyPure(cx, obj, thenId, &holder, &prop)) {
+      if (prop.isNotFound()) {
+        break;
+      }
+
+      if (holder != obj) {
+        *isOnProto = true;
+
+        auto key = JS::IdentifyStandardPrototype(holder);
+        if (key != JSProto_Null) {
+          if (key == JSProto_Promise) {
+            maybeOnPromiseProto = true;
+          } else {
+            *isOnStandardProto = true;
+          }
+        }
+      }
+    }
+  } while (false);
+
+  if (!GetProperty(cx, obj, reciever, cx->names().then, thenVal)) {
+    return false;
+  }
+
+  if (maybeOnPromiseProto) {
+    *isOnStandardProto = !IsNativeFunction(thenVal, Promise_then);
+  }
+
+  return true;
+}
+
+void ReportThenable(JSContext* cx, bool isOnProto, bool isOnStandardProto) {
+  cx->runtime()->setUseCounter(cx->global(), JSUseCounter::THENABLE_USE);
+
+  if (isOnProto) {
+    cx->runtime()->setUseCounter(cx->global(),
+                                 JSUseCounter::THENABLE_USE_PROTO);
+    JS_LOG(thenable, Debug, "Thenable on proto");
+  }
+
+  if (isOnStandardProto) {
+    cx->runtime()->setUseCounter(cx->global(),
+                                 JSUseCounter::THENABLE_USE_STANDARD_PROTO);
+    JS_LOG(thenable, Info, "Thenable on standard proto");
+  }
+}
+
 /**
  * ES2022 draft rev d03c1ec6e235a5180fa772b6178727c17974cb14
  *
@@ -1254,8 +1328,10 @@ static bool Promise_then_impl(JSContext* cx, HandleValue promiseVal,
 
   // Step 9. Let then be Get(resolution, "then").
   RootedValue thenVal(cx);
-  bool status =
-      GetProperty(cx, resolution, resolution, cx->names().then, &thenVal);
+  bool isOnProto = false;
+  bool isOnStandardProto = false;
+  bool status = GetThenValue(cx, resolution, resolutionVal, &thenVal,
+                             &isOnProto, &isOnStandardProto);
 
   RootedValue error(cx);
   Rooted<SavedFrame*> errorStack(cx);
@@ -1313,6 +1389,8 @@ static bool Promise_then_impl(JSContext* cx, HandleValue promiseVal,
   }
 
   if (!isBuiltinThen) {
+    ReportThenable(cx, isOnProto, isOnStandardProto);
+
     RootedValue promiseVal(cx, ObjectValue(*promise));
     if (!EnqueuePromiseResolveThenableJob(cx, promiseVal, resolutionVal,
                                           thenVal)) {
@@ -1545,26 +1623,21 @@ static bool PromiseReactionJob(JSContext* cx, unsigned argc, Value* vp);
     }
   }
 
-  // Using objectFromIncumbentGlobal, we can derive the incumbent global by
-  // unwrapping and then getting the global. This is very convoluted, but
-  // much better than having to store the original global as a private value
-  // because we couldn't wrap it to store it as a normal JS value.
-  Rooted<GlobalObject*> global(cx);
-  if (JSObject* objectFromIncumbentGlobal =
-          reaction->getAndClearIncumbentGlobalObject()) {
-    objectFromIncumbentGlobal = CheckedUnwrapStatic(objectFromIncumbentGlobal);
-    MOZ_ASSERT(objectFromIncumbentGlobal);
-    global = &objectFromIncumbentGlobal->nonCCWGlobal();
+  JS::Rooted<JSObject*> hostDefinedData(cx);
+  if (JSObject* hostDefined = reaction->getAndClearHostDefinedData()) {
+    hostDefined = CheckedUnwrapStatic(hostDefined);
+    MOZ_ASSERT(hostDefined);
+    // If the hostDefined object becomes a dead wrapper here, the target
+    // global has already gone, and the job queue won't run the promise job
+    // anyway.
+    if (JS_IsDeadWrapper(hostDefined)) {
+      return true;
+    }
+    hostDefinedData = hostDefined;
   }
 
   // HostEnqueuePromiseJob(job.[[Job]], job.[[Realm]]).
-  //
-  // Note: the global we pass here might be from a different compartment
-  // than job and promise. While it's somewhat unusual to pass objects
-  // from multiple compartments, in this case we specifically need the
-  // global to be unwrapped because wrapping and unwrapping aren't
-  // necessarily symmetric for globals.
-  return cx->runtime()->enqueuePromiseJob(cx, job, promise, global);
+  return cx->runtime()->enqueuePromiseJob(cx, job, promise, hostDefinedData);
 }
 
 [[nodiscard]] static bool TriggerPromiseReactions(JSContext* cx,
@@ -2500,11 +2573,13 @@ static bool PromiseResolveBuiltinThenableJob(JSContext* cx, unsigned argc,
   // compartment.
   RootedObject promise(cx, &promiseToResolve.toObject());
 
-  Rooted<GlobalObject*> incumbentGlobal(cx,
-                                        cx->runtime()->getIncumbentGlobal(cx));
+  Rooted<JSObject*> hostDefinedData(cx);
+  if (!cx->runtime()->getHostDefinedData(cx, &hostDefinedData)) {
+    return false;
+  }
 
   // Step X. HostEnqueuePromiseJob(job.[[Job]], job.[[Realm]]).
-  return cx->runtime()->enqueuePromiseJob(cx, job, promise, incumbentGlobal);
+  return cx->runtime()->enqueuePromiseJob(cx, job, promise, hostDefinedData);
 }
 
 /**
@@ -2546,12 +2621,14 @@ static bool PromiseResolveBuiltinThenableJob(JSContext* cx, unsigned argc,
   job->setExtendedSlot(ThenableJobSlot_Promise, ObjectValue(*promiseToResolve));
   job->setExtendedSlot(ThenableJobSlot_Thenable, ObjectValue(*thenable));
 
-  Rooted<GlobalObject*> incumbentGlobal(cx,
-                                        cx->runtime()->getIncumbentGlobal(cx));
+  Rooted<JSObject*> hostDefinedData(cx);
+  if (!cx->runtime()->getHostDefinedData(cx, &hostDefinedData)) {
+    return false;
+  }
 
   // HostEnqueuePromiseJob(job.[[Job]], job.[[Realm]]).
   return cx->runtime()->enqueuePromiseJob(cx, job, promiseToResolve,
-                                          incumbentGlobal);
+                                          hostDefinedData);
 }
 
 [[nodiscard]] static bool AddDummyPromiseReactionForDebugger(
@@ -3658,12 +3735,14 @@ template <typename T>
     }
 
     bool isBuiltinThen;
+    bool isOnProto = false;
+    bool isOnStandardProto = false;
     if (getThen) {
       // We don't use the Promise lookup cache here, because this code
       // is only called when we had a lookup cache miss, so it's likely
       // we'd get another cache miss when trying to use the cache here.
-      if (!GetProperty(cx, nextPromiseObj, nextPromise, cx->names().then,
-                       &thenVal)) {
+      if (!GetThenValue(cx, nextPromiseObj, nextPromise, &thenVal, &isOnProto,
+                        &isOnStandardProto)) {
         return false;
       }
 
@@ -3734,7 +3813,8 @@ template <typename T>
         return false;
       }
     } else {
-      // Optimization failed, do the normal call.
+      ReportThenable(cx, isOnProto, isOnStandardProto);
+
       RootedValue& ignored = thenVal;
       if (!Call(cx, thenVal, nextPromise, resolveFunVal, rejectFunVal,
                 &ignored)) {
@@ -5057,12 +5137,12 @@ bool js::Promise_static_species(JSContext* cx, unsigned argc, Value* vp) {
   return true;
 }
 
-enum class IncumbentGlobalObject {
-  // Do not use the incumbent global, this is a special case used by the
+enum class HostDefinedDataObject {
+  // Do not use the host defined data object, this is a special case used by the
   // debugger.
   No,
 
-  // Use incumbent global, this is the normal operation.
+  // Use host defined data object, this is the normal operation.
   Yes
 };
 
@@ -5079,10 +5159,10 @@ enum class IncumbentGlobalObject {
 static PromiseReactionRecord* NewReactionRecord(
     JSContext* cx, Handle<PromiseCapability> resultCapability,
     HandleValue onFulfilled, HandleValue onRejected,
-    IncumbentGlobalObject incumbentGlobalObjectOption) {
+    HostDefinedDataObject hostDefinedDataObjectOption) {
 #ifdef DEBUG
   if (resultCapability.promise()) {
-    if (incumbentGlobalObjectOption == IncumbentGlobalObject::Yes) {
+    if (hostDefinedDataObjectOption == HostDefinedDataObject::Yes) {
       if (resultCapability.promise()->is<PromiseObject>()) {
         // If `resultCapability.promise` is a Promise object,
         // `resultCapability.{resolve,reject}` may be optimized out,
@@ -5120,7 +5200,7 @@ static PromiseReactionRecord* NewReactionRecord(
     // In any case, other fields are also not used.
     MOZ_ASSERT(!resultCapability.resolve());
     MOZ_ASSERT(!resultCapability.reject());
-    MOZ_ASSERT(incumbentGlobalObjectOption == IncumbentGlobalObject::Yes);
+    MOZ_ASSERT(hostDefinedDataObjectOption == HostDefinedDataObject::Yes);
   }
 #endif
 
@@ -5141,9 +5221,9 @@ static PromiseReactionRecord* NewReactionRecord(
   // Handlers must either both be present or both be absent.
   MOZ_ASSERT(onFulfilled.isNull() == onRejected.isNull());
 
-  RootedObject incumbentGlobalObject(cx);
-  if (incumbentGlobalObjectOption == IncumbentGlobalObject::Yes) {
-    if (!GetObjectFromIncumbentGlobal(cx, &incumbentGlobalObject)) {
+  RootedObject hostDefinedData(cx);
+  if (hostDefinedDataObjectOption == HostDefinedDataObject::Yes) {
+    if (!GetObjectFromHostDefinedData(cx, &hostDefinedData)) {
       return nullptr;
     }
   }
@@ -5159,7 +5239,7 @@ static PromiseReactionRecord* NewReactionRecord(
   cx->check(onRejected);
   cx->check(resultCapability.resolve());
   cx->check(resultCapability.reject());
-  cx->check(incumbentGlobalObject);
+  cx->check(hostDefinedData);
 
   // Step 7. Let fulfillReaction be the PromiseReaction
   //         { [[Capability]]: resultCapability, [[Type]]: Fulfill,
@@ -5181,8 +5261,8 @@ static PromiseReactionRecord* NewReactionRecord(
                          ObjectOrNullValue(resultCapability.resolve()));
   reaction->setFixedSlot(ReactionRecordSlot_Reject,
                          ObjectOrNullValue(resultCapability.reject()));
-  reaction->setFixedSlot(ReactionRecordSlot_IncumbentGlobalObject,
-                         ObjectOrNullValue(incumbentGlobalObject));
+  reaction->setFixedSlot(ReactionRecordSlot_HostDefinedData,
+                         ObjectOrNullValue(hostDefinedData));
 
   return reaction;
 }
@@ -5351,7 +5431,7 @@ static bool PromiseThenNewPromiseCapability(
 
   Rooted<PromiseReactionRecord*> reaction(
       cx, NewReactionRecord(cx, resultCapability, onFulfilled, onRejected,
-                            IncumbentGlobalObject::Yes));
+                            HostDefinedDataObject::Yes));
   if (!reaction) {
     return false;
   }
@@ -5604,7 +5684,7 @@ template <typename T>
   resultCapability.promise().set(resultPromise);
   Rooted<PromiseReactionRecord*> reaction(
       cx, NewReactionRecord(cx, resultCapability, onFulfilledValue,
-                            onRejectedValue, IncumbentGlobalObject::Yes));
+                            onRejectedValue, HostDefinedDataObject::Yes));
   if (!reaction) {
     return false;
   }
@@ -5917,7 +5997,14 @@ static bool Promise_catch_impl(JSContext* cx, unsigned argc, Value* vp,
 
   // Step 2. Return ? Invoke(promise, "then", « undefined, onRejected »).
   RootedValue thenVal(cx);
-  if (!GetProperty(cx, thisVal, cx->names().then, &thenVal)) {
+  RootedObject thisObj(cx, ToObject(cx, thisVal));
+  bool isOnProto = false;
+  bool isOnStandardProto = false;
+  if (!thisObj) {
+    return false;
+  }
+  if (!GetThenValue(cx, thisObj, thisVal, &thenVal, &isOnProto,
+                    &isOnStandardProto)) {
     return false;
   }
 
@@ -5927,6 +6014,7 @@ static bool Promise_catch_impl(JSContext* cx, unsigned argc, Value* vp,
                              rvalExplicitlyUsed);
   }
 
+  ReportThenable(cx, isOnProto, isOnStandardProto);
   return Call(cx, thenVal, thisVal, UndefinedHandleValue, onRejected,
               args.rval());
 }
@@ -6094,7 +6182,7 @@ bool js::Promise_then(JSContext* cx, unsigned argc, Value* vp) {
   // NOTE: We use single object for both reactions.
   Rooted<PromiseReactionRecord*> reaction(
       cx, NewReactionRecord(cx, resultCapability, onFulfilled, onRejected,
-                            IncumbentGlobalObject::Yes));
+                            HostDefinedDataObject::Yes));
   if (!reaction) {
     return false;
   }
@@ -6134,7 +6222,7 @@ bool js::Promise_then(JSContext* cx, unsigned argc, Value* vp) {
   //           [[Handler]]: onRejectedJobCallback }.
   Rooted<PromiseReactionRecord*> reaction(
       cx, NewReactionRecord(cx, resultCapability, onFulfilled, onRejected,
-                            IncumbentGlobalObject::Yes));
+                            HostDefinedDataObject::Yes));
   if (!reaction) {
     return false;
   }
@@ -6323,7 +6411,7 @@ bool js::Promise_then(JSContext* cx, unsigned argc, Value* vp) {
 
   Rooted<PromiseReactionRecord*> reaction(
       cx, NewReactionRecord(cx, capability, NullHandleValue, NullHandleValue,
-                            IncumbentGlobalObject::No));
+                            HostDefinedDataObject::No));
   if (!reaction) {
     return false;
   }
@@ -6715,9 +6803,8 @@ void PromiseReactionRecord::dumpOwnFields(js::JSONPrinter& json) const {
   }
 
   {
-    js::GenericPrinter& out = json.beginStringProperty("incumbentGlobal");
-    getFixedSlot(ReactionRecordSlot_IncumbentGlobalObject)
-        .dumpStringContent(out);
+    js::GenericPrinter& out = json.beginStringProperty("hostDefinedData");
+    getFixedSlot(ReactionRecordSlot_HostDefinedData).dumpStringContent(out);
     json.endStringProperty();
   }
 

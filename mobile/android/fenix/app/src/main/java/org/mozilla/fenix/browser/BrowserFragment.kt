@@ -10,7 +10,6 @@ import android.view.View
 import android.view.ViewGroup
 import androidx.annotation.VisibleForTesting
 import androidx.appcompat.content.res.AppCompatResources
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Observer
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
@@ -22,6 +21,7 @@ import mozilla.components.browser.state.state.SessionState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.thumbnails.BrowserThumbnails
 import mozilla.components.browser.toolbar.BrowserToolbar
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import mozilla.components.concept.engine.permission.SitePermissions
 import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.feature.app.links.AppLinksUseCases
@@ -34,20 +34,16 @@ import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import mozilla.components.support.utils.ext.isLandscape
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.AddressToolbar
-import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.ReaderMode
-import org.mozilla.fenix.GleanMetrics.Shopping
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
 import org.mozilla.fenix.components.TabCollectionStorage
-import org.mozilla.fenix.components.appstate.AppAction.ShoppingAction
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
 import org.mozilla.fenix.components.toolbar.BrowserToolbarView
 import org.mozilla.fenix.components.toolbar.ToolbarMenu
 import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.components.toolbar.ui.createShareBrowserAction
-import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.components
@@ -59,10 +55,7 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.HomeFragment
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.settings.quicksettings.protections.cookiebanners.getCookieBannerUIMode
-import org.mozilla.fenix.shopping.DefaultShoppingExperienceFeature
-import org.mozilla.fenix.shopping.ReviewQualityCheckFeature
 import org.mozilla.fenix.shortcut.PwaOnboardingObserver
-import org.mozilla.fenix.theme.AcornWindowSize
 import org.mozilla.fenix.theme.ThemeManager
 
 /**
@@ -72,11 +65,9 @@ import org.mozilla.fenix.theme.ThemeManager
 class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
     private val windowFeature = ViewBoundFeatureWrapper<WindowFeature>()
     private val openInAppOnboardingObserver = ViewBoundFeatureWrapper<OpenInAppOnboardingObserver>()
-    private val reviewQualityCheckFeature = ViewBoundFeatureWrapper<ReviewQualityCheckFeature>()
     private val translationsBinding = ViewBoundFeatureWrapper<TranslationsBinding>()
 
     private var readerModeAvailable = false
-    private var reviewQualityCheckAvailable = false
     private var translationsAvailable = false
 
     private var pwaOnboardingObserver: PwaOnboardingObserver? = null
@@ -125,7 +116,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
 
         initReaderMode(context, view)
         initTranslationsAction(context, view)
-        initReviewQualityCheck(context, view)
         initSharePageAction(context)
         initReloadAction(context)
 
@@ -295,7 +285,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
             contentDescription = context.getString(R.string.browser_menu_read),
             contentDescriptionSelected = context.getString(R.string.browser_menu_read_close),
             visible = {
-                readerModeAvailable && !reviewQualityCheckAvailable
+                readerModeAvailable
             },
             weight = { READER_MODE_WEIGHT },
             selected = getSafeCurrentTab()?.let {
@@ -323,62 +313,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                     safeInvalidateBrowserToolbarView()
                 }
             },
-            owner = this,
-            view = view,
-        )
-    }
-
-    private fun initReviewQualityCheck(context: Context, view: View) {
-        val reviewQualityCheck =
-            BrowserToolbar.ToggleButton(
-                image = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.mozac_ic_shopping_24,
-                )!!.apply {
-                    setTint(ContextCompat.getColor(context, R.color.fx_mobile_text_color_primary))
-                },
-                imageSelected = AppCompatResources.getDrawable(
-                    context,
-                    R.drawable.ic_shopping_selected,
-                )!!,
-                contentDescription = context.getString(R.string.review_quality_check_open_handle_content_description),
-                contentDescriptionSelected =
-                context.getString(R.string.review_quality_check_close_handle_content_description),
-                visible = { reviewQualityCheckAvailable },
-                weight = { REVIEW_QUALITY_CHECK_WEIGHT },
-                listener = { _ ->
-                    requireComponents.appStore.dispatch(
-                        ShoppingAction.ShoppingSheetStateUpdated(expanded = true),
-                    )
-
-                    findNavController().navigate(
-                        BrowserFragmentDirections.actionBrowserFragmentToReviewQualityCheckDialogFragment(),
-                    )
-                    Shopping.addressBarIconClicked.record()
-                },
-            )
-
-        browserToolbarView.view.addPageAction(reviewQualityCheck)
-
-        reviewQualityCheckFeature.set(
-            feature = ReviewQualityCheckFeature(
-                appStore = requireComponents.appStore,
-                browserStore = context.components.core.store,
-                shoppingExperienceFeature = DefaultShoppingExperienceFeature(),
-                onIconVisibilityChange = {
-                    if (!reviewQualityCheckAvailable && it) {
-                        Shopping.addressBarIconDisplayed.record()
-                    }
-                    reviewQualityCheckAvailable = it
-                    safeInvalidateBrowserToolbarView()
-                },
-                onBottomSheetStateChange = {
-                    reviewQualityCheck.setSelected(selected = it, notifyListener = false)
-                },
-                onProductPageDetected = {
-                    Shopping.productPageVisits.add()
-                },
-            ),
             owner = this,
             view = view,
         )
@@ -559,19 +493,13 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 secondaryImageTintResource = disableTint,
                 disableInSecondaryState = true,
                 longClickListener = {
-                    if (!this.isTablet) {
-                        NavigationBar.browserBackLongTapped.record(NoExtras())
-                    }
                     browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = true),
+                        ToolbarMenu.Item.Back(viewHistory = true, isOnToolbar = true),
                     )
                 },
                 listener = {
-                    if (!this.isTablet) {
-                        NavigationBar.browserBackTapped.record(NoExtras())
-                    }
                     browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Back(viewHistory = false),
+                        ToolbarMenu.Item.Back(viewHistory = false, isOnToolbar = true),
                     )
                 },
             ).also {
@@ -591,19 +519,13 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                 secondaryImageTintResource = disableTint,
                 disableInSecondaryState = true,
                 longClickListener = {
-                    if (!this.isTablet) {
-                        NavigationBar.browserForwardLongTapped.record(NoExtras())
-                    }
                     browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = true),
+                        ToolbarMenu.Item.Forward(viewHistory = true, isOnToolbar = true),
                     )
                 },
                 listener = {
-                    if (!this.isTablet) {
-                        NavigationBar.browserForwardTapped.record(NoExtras())
-                    }
                     browserToolbarInteractor.onBrowserToolbarMenuItemTapped(
-                        ToolbarMenu.Item.Forward(viewHistory = false),
+                        ToolbarMenu.Item.Forward(viewHistory = false, isOnToolbar = true),
                     )
                 },
             ).also {
@@ -752,7 +674,19 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                     runIfFragmentIsAttached {
                         val isTrackingProtectionEnabled =
                             tab.trackingProtection.enabled && !hasTrackingProtectionException
-                        val directions =
+                        val directions = if (requireContext().settings().enableUnifiedTrustPanel) {
+                            BrowserFragmentDirections.actionBrowserFragmentToTrustPanelFragment(
+                                sessionId = tab.id,
+                                url = tab.content.url,
+                                title = tab.content.title,
+                                isSecured = tab.content.securityInfo.secure,
+                                sitePermissions = sitePermissions,
+                                certificateName = tab.content.securityInfo.issuer,
+                                permissionHighlights = tab.content.permissionHighlights,
+                                isTrackingProtectionEnabled = isTrackingProtectionEnabled,
+                                cookieBannerUIMode = cookieBannerUIMode,
+                            )
+                        } else {
                             BrowserFragmentDirections.actionBrowserFragmentToQuickSettingsSheetDialogFragment(
                                 sessionId = tab.id,
                                 url = tab.content.url,
@@ -765,6 +699,7 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                                 isTrackingProtectionEnabled = isTrackingProtectionEnabled,
                                 cookieBannerUIMode = cookieBannerUIMode,
                             )
+                        }
                         nav(R.id.browserFragment, directions)
                     }
                 }
@@ -805,17 +740,6 @@ class BrowserFragment : BaseBrowserFragment(), UserInteractionHandler {
                     snackBarParentView = binding.dynamicSnackbarContainer,
                     snackbarState = SnackbarState(
                         message = getString(messageStringRes),
-                        action = Action(
-                            label = getString(R.string.create_collection_view),
-                            onClick = {
-                                findNavController().navigate(
-                                    BrowserFragmentDirections.actionGlobalHome(
-                                        focusOnAddressBar = false,
-                                        scrollToCollection = true,
-                                    ),
-                                )
-                            },
-                        ),
                     ),
                 ).show()
             }

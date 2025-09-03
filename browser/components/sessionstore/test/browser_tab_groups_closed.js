@@ -25,7 +25,7 @@ add_task(async function test_closingTabGroupAddsClosedGroup() {
     "Window state starts with no closed groups"
   );
 
-  win.gBrowser.removeTabGroup(group);
+  await win.gBrowser.removeTabGroup(group);
 
   windowState = ss.getWindowState(win).windows[0];
   Assert.equal(
@@ -40,6 +40,7 @@ add_task(async function test_closingTabGroupAddsClosedGroup() {
   );
 
   await BrowserTestUtils.closeWindow(win);
+  forgetClosedWindows();
   await SessionStoreTestUtils.promiseBrowserState(ORIG_STATE);
 });
 
@@ -65,7 +66,7 @@ add_task(async function test_closedTabGroupSkipsNotWorthSavingTabs() {
     "Window state starts with no closed groups"
   );
 
-  win.gBrowser.removeTabGroup(group);
+  await win.gBrowser.removeTabGroup(group);
 
   windowState = ss.getWindowState(win).windows[0];
   Assert.equal(
@@ -80,6 +81,7 @@ add_task(async function test_closedTabGroupSkipsNotWorthSavingTabs() {
   );
 
   await BrowserTestUtils.closeWindow(win);
+  forgetClosedWindows();
   await SessionStoreTestUtils.promiseBrowserState(ORIG_STATE);
 });
 
@@ -155,6 +157,7 @@ add_task(async function test_closedTabCountsRespectTabGroups() {
     "Session store correctly reports closed tab count for closed windows"
   );
 
+  forgetClosedWindows();
   await SessionStoreTestUtils.promiseBrowserState(ORIG_STATE);
 });
 
@@ -166,7 +169,7 @@ add_task(async function test_purgingSessionHistoryClearsClosedTabGroups() {
   await TabStateFlusher.flush(tab.linkedBrowser);
 
   let group = win.gBrowser.addTabGroup([tab]);
-  win.gBrowser.removeTabGroup(group);
+  await win.gBrowser.removeTabGroup(group);
 
   let windowState = ss.getWindowState(win).windows[0];
   Assert.equal(
@@ -185,5 +188,6 @@ add_task(async function test_purgingSessionHistoryClearsClosedTabGroups() {
   );
 
   await BrowserTestUtils.closeWindow(win);
+  forgetClosedWindows();
   await SessionStoreTestUtils.promiseBrowserState(ORIG_STATE);
 });

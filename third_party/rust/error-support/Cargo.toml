@@ -16,6 +16,7 @@ version = "0.1.0"
 authors = ["Thom Chiovoloni <tchiovoloni@mozilla.com>"]
 build = "build.rs"
 exclude = ["/android"]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -49,3 +50,6 @@ version = "0.28.2"
 [build-dependencies.uniffi]
 version = "0.28.2"
 features = ["build"]
+
+[lints.clippy]
+empty-line-after-doc-comments = "allow"

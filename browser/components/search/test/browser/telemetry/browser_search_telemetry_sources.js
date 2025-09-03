@@ -11,6 +11,10 @@
 
 "use strict";
 
+ChromeUtils.defineESModuleGetters(this, {
+  SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
+});
+
 const TEST_PROVIDER_INFO = [
   {
     telemetryId: "example",
@@ -294,7 +298,7 @@ add_task(async function test_source_searchbar() {
     async () => {
       tab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
 
-      let sb = BrowserSearch.searchBar;
+      let sb = document.getElementById("searchbar");
       // Write the search query in the searchbar.
       sb.focus();
       sb.value = "searchSuggestion";
@@ -332,7 +336,8 @@ add_task(async function test_source_system() {
 
       // This is not quite the same as calling from the commandline, but close
       // enough for this test.
-      BrowserSearch.loadSearchFromCommandLine(
+      SearchUIUtils.loadSearchFromCommandLine(
+        window,
         "searchSuggestion",
         false,
         Services.scriptSecurityManager.getSystemPrincipal(),

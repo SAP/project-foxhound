@@ -29,26 +29,27 @@ perftest_browser_xhtml_dom.js
 **Measures the size of the DOM**
 
 
-dom/media/webcodecs/test/performance
-------------------------------------
-Performance tests running through Mochitest for WebCodecs
+browser/components/translations/tests/browser
+---------------------------------------------
+Performance tests for Translations models on Firefox Desktop
 
-test_encode_from_canvas.html
-============================
+browser_translations_perf_es_en.js
+==================================
 
-:owner: Media Team
-:name: WebCodecs Video Encoding
+:owner: Translations Team
+:name: Full-Page Translation (Spanish to English)
 :Default options:
 
 ::
 
  --perfherder
- --perfherder-metrics name:realtime - frame-to-frame mean (key),unit:ms,shouldAlert:True, name:realtime - frame-to-frame stddev (key),unit:ms,shouldAlert:True, name:realtime - frame-dropping rate (key),unit:ratio,shouldAlert:True, name:realtime - frame-to-frame mean (non key),unit:ms,shouldAlert:True, name:realtime - frame-to-frame stddev (non key),unit:ms,shouldAlert:True, name:realtime - frame-dropping rate (non key),unit:ratio,shouldAlert:True, name:quality - first encode to last output,unit:ms,shouldAlert:True
+ --perfherder-metrics name:engine-init-time,unit:ms,shouldAlert:True,lowerIsBetter:True, name:words-per-second,unit:WPS,shouldAlert:True,lowerIsBetter:False, name:tokens-per-second,unit:TPS,shouldAlert:True,lowerIsBetter:False, name:peak-memory-usage,unit:MiB,shouldAlert:True,lowerIsBetter:True, name:stabilized-memory-usage,unit:MiB,shouldAlert:True,lowerIsBetter:True, name:total-translation-time,unit:s,shouldAlert:True,lowerIsBetter:True
  --verbose
  --manifest perftest.toml
- --manifest-flavor plain
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
 
-**Test webcodecs video encoding performance**
+**Tests the speed of Full Page Translations using the Spanish-to-English model.**
 
 
 dom/serviceworkers/test/performance
@@ -203,7 +204,7 @@ perftest_http3_cloudflareblog.js
 :owner: Network Team
 :name: cloudflare
 
-**User-journey live site test for cloudflare blog.**
+**User-journey live site test for Cloudflare blog.**
 
 perftest_http3_controlled.js
 ============================
@@ -338,16 +339,6 @@ perftest_youtube_link.js
 
 **Measures time to load YouTube video**
 
-perftest_android_startup.js
-===========================
-
-:owner: Performance Team
-:name: android-startup
-
-**Measures android startup times**
-
-This test consists of 2 main tests, cold main first frame(cmff) and cold view nav start(cvns). cold main first frame is the measurement from when you click the app icon & get duration to first frame from 'am start -W'. cold view nav start is the measurement from when you send a VIEW intent & get duration from logcat: START proc to PageStart.
-
 perftest_pageload.js
 ====================
 
@@ -391,6 +382,60 @@ toolkit/components/ml/tests/browser
 -----------------------------------
 Performance tests running through Mochitest for ML Models
 
+browser_ml_autofill_perf.js
+===========================
+
+:owner: GenAI Team
+:name: ML Autofill Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:AUTOFILL-pipeline-ready-latency,unit:ms,shouldAlert:True, name:AUTOFILL-initialization-latency,unit:ms,shouldAlert:True, name:AUTOFILL-model-run-latency,unit:ms,shouldAlert:True, name:AUTOFILL-total-memory-usage,unit:MiB,shouldAlert:True, name:tokenSpeed,unit:tokens/s,shouldAlert:True,lowerIsBetter:False, name:charactersSpeed,unit:chars/s,shouldAlert:True,lowerIsBetter:False
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for latency for ML Autofill model**
+
+browser_ml_smart_tab_perf.js
+============================
+
+:owner: GenAI Team
+:name: ML Smart Tab Model
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:latency,unit:ms,shouldAlert:True, name:memory,unit:MiB,shouldAlert:True, name:tokenSpeed,unit:tokens/s,shouldAlert:True,lowerIsBetter:False, name:charactersSpeed,unit:chars/s,shouldAlert:True,lowerIsBetter:False
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Testing Smart Tab Models**
+
+browser_ml_suggest_feature_perf.js
+==================================
+
+:owner: GenAI Team
+:name: ML Suggest Feature
+:Default options:
+
+::
+
+ --perfherder
+ --perfherder-metrics name:latency,unit:ms,shouldAlert:True, name:memory,unit:MiB,shouldAlert:True
+ --verbose
+ --manifest perftest.toml
+ --manifest-flavor browser-chrome
+ --try-platform linux, mac, win
+
+**Template test for latency for ML suggest Feature**
+
 browser_ml_suggest_inference.js
 ===============================
 
@@ -401,7 +446,7 @@ browser_ml_suggest_inference.js
 ::
 
  --perfherder
- --perfherder-metrics name:inference-pipeline-ready-latency,unit:ms,shouldAlert:True, name:inference-initialization-latency,unit:ms,shouldAlert:True, name:inference-model-run-latency,unit:ms,shouldAlert:True, name:inference-pipeline-ready-memory,unit:MB,shouldAlert:True, name:inference-initialization-memory,unit:MB,shouldAlert:True, name:inference-model-run-memory,unit:MB,shouldAlert:True
+ --perfherder-metrics name:inference-pipeline-ready-latency,unit:ms,shouldAlert:True, name:inference-initialization-latency,unit:ms,shouldAlert:True, name:inference-model-run-latency,unit:ms,shouldAlert:True, name:inference-total-memory-usage,unit:ms,shouldAlert:True
  --verbose
  --manifest perftest.toml
  --manifest-flavor browser-chrome
@@ -409,41 +454,23 @@ browser_ml_suggest_inference.js
 
 **Template test for ML suggest Inference Model**
 
-browser_ml_suggest_intent_perf.js
-=================================
+browser_ml_summarizer_perf.js
+=============================
 
 :owner: GenAI Team
-:name: ML Suggest Intent Model
+:name: ML Summarizer Model
 :Default options:
 
 ::
 
  --perfherder
- --perfherder-metrics name:intent-pipeline-ready-latency,unit:ms,shouldAlert:True, name:intent-initialization-latency,unit:ms,shouldAlert:True, name:intent-model-run-latency,unit:ms,shouldAlert:True, name:intent-pipeline-ready-memory,unit:MB,shouldAlert:True, name:intent-initialization-memory,unit:MB,shouldAlert:True, name:intent-model-run-memory,unit:MB,shouldAlert:True, name:intent-total-memory-usage,unit:MB,shouldAlert:True
+ --perfherder-metrics name:latency,unit:ms,shouldAlert:True, name:memory,unit:MiB,shouldAlert:True, name:tokenSpeed,unit:tokens/s,shouldAlert:True,lowerIsBetter:False, name:charactersSpeed,unit:chars/s,shouldAlert:True,lowerIsBetter:False
  --verbose
  --manifest perftest.toml
  --manifest-flavor browser-chrome
  --try-platform linux, mac, win
 
-**Template test for latency for ML suggest Intent Model**
-
-browser_ml_suggest_ner_perf.js
-==============================
-
-:owner: GenAI Team
-:name: ML Suggest NER Model
-:Default options:
-
-::
-
- --perfherder
- --perfherder-metrics name:NER-pipeline-ready-latency,unit:ms,shouldAlert:True, name:NER-initialization-latency,unit:ms,shouldAlert:True, name:NER-model-run-latency,unit:ms,shouldAlert:True, name:NER-pipeline-ready-memory,unit:MB,shouldAlert:True, name:NER-initialization-memory,unit:MB,shouldAlert:True, name:NER-model-run-memory,unit:MB,shouldAlert:True, name:NER-total-memory-usage,unit:MB,shouldAlert:True
- --verbose
- --manifest perftest.toml
- --manifest-flavor browser-chrome
- --try-platform linux, mac, win
-
-**Template test for latency for ML suggest NER model**
+**Template test for latency for Summarizer model**
 
 browser_ml_engine_perf.js
 =========================
@@ -455,7 +482,7 @@ browser_ml_engine_perf.js
 ::
 
  --perfherder
- --perfherder-metrics name:EXAMPLE-cold-start-pipeline-ready-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-initialization-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-model-run-latency,unit:ms,shouldAlert:True, name:EXAMPLE-cold-start-pipeline-ready-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-initialization-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-model-run-memory,unit:MB,shouldAlert:True, name:EXAMPLE-cold-start-total-memory-usage,unit:MB,shouldAlert:True, name:EXAMPLE-pipeline-ready-latency,unit:ms,shouldAlert:True, name:EXAMPLE-initialization-latency,unit:ms,shouldAlert:True, name:EXAMPLE-model-run-latency,unit:ms,shouldAlert:True, name:EXAMPLE-pipeline-ready-memory,unit:MB,shouldAlert:True, name:EXAMPLE-initialization-memory,unit:MB,shouldAlert:True, name:EXAMPLE-model-run-memory,unit:MB,shouldAlert:True, name:EXAMPLE-total-memory-usage,unit:MB,shouldAlert:True
+ --perfherder-metrics name:latency,unit:ms,shouldAlert:True, name:memory,unit:MiB,shouldAlert:True, name:tokenSpeed,unit:tokens/s,shouldAlert:True,lowerIsBetter:False, name:charactersSpeed,unit:chars/s,shouldAlert:True,lowerIsBetter:False
  --verbose
  --manifest perftest.toml
  --manifest-flavor browser-chrome
@@ -473,13 +500,13 @@ browser_ml_engine_multi_perf.js
 ::
 
  --perfherder
- --perfherder-metrics name:intent-pipeline-ready-latency,unit:ms,shouldAlert:True, name:intent-initialization-latency,unit:ms,shouldAlert:True, name:intent-model-run-latency,unit:ms,shouldAlert:True, name:intent-pipeline-ready-memory,unit:MB,shouldAlert:True, name:intent-initialization-memory,unit:MB,shouldAlert:True, name:intent-model-run-memory,unit:MB,shouldAlert:True, name:intent-total-memory-usage,unit:MB,shouldAlert:True, name:suggest-pipeline-ready-latency,unit:ms,shouldAlert:True, name:suggest-initialization-latency,unit:ms,shouldAlert:True, name:suggest-model-run-latency,unit:ms,shouldAlert:True, name:suggest-pipeline-ready-memory,unit:MB,shouldAlert:True, name:suggest-initialization-memory,unit:MB,shouldAlert:True, name:suggest-model-run-memory,unit:MB,shouldAlert:True, name:suggest-total-memory-usage,unit:MB,shouldAlert:True, name:engine3-pipeline-ready-latency,unit:ms,shouldAlert:True, name:engine3-initialization-latency,unit:ms,shouldAlert:True, name:engine3-model-run-latency,unit:ms,shouldAlert:True, name:engine3-pipeline-ready-memory,unit:MB,shouldAlert:True, name:engine3-initialization-memory,unit:MB,shouldAlert:True, name:engine3-model-run-memory,unit:MB,shouldAlert:True, name:engine3-total-memory-usage,unit:MB,shouldAlert:True, name:engine4-pipeline-ready-latency,unit:ms,shouldAlert:True, name:engine4-initialization-latency,unit:ms,shouldAlert:True, name:engine4-model-run-latency,unit:ms,shouldAlert:True, name:engine4-pipeline-ready-memory,unit:MB,shouldAlert:True, name:engine4-initialization-memory,unit:MB,shouldAlert:True, name:engine4-model-run-memory,unit:MB,shouldAlert:True, name:engine4-total-memory-usage,unit:MB,shouldAlert:True
+ --perfherder-metrics name:latency,unit:ms,shouldAlert:True, name:memory,unit:MiB,shouldAlert:True
  --verbose
  --manifest perftest.toml
  --manifest-flavor browser-chrome
  --try-platform linux, mac, win
 
-**Testing model execution concurrenty**
+**Testing model execution concurrently**
 
 
 If you have any questions, please see this `wiki page <https://wiki.mozilla.org/TestEngineering/Performance#Where_to_find_us>`_.

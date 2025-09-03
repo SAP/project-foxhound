@@ -42,6 +42,10 @@ export class MegalistViewModel {
     MegalistViewModel.#aggregator.attachViewModel(this);
   }
 
+  get authExpirationTime() {
+    return this.#authExpirationTime;
+  }
+
   willDestroy() {
     MegalistViewModel.#aggregator.detachViewModel(this);
   }
@@ -51,18 +55,13 @@ export class MegalistViewModel {
   }
 
   refreshSingleLineOnScreen(line) {
-    if (this.#searchText) {
-      // TODO: we should be throttling search input
-      this.#rebuildSnapshots();
-    } else {
-      const snapshotIndex = this.#snapshots.indexOf(line);
-      if (snapshotIndex >= 0) {
-        const snapshot = this.#processSnapshotView(line, snapshotIndex);
-        this.#messageToView("Snapshot", {
-          snapshotId: snapshotIndex,
-          snapshot,
-        });
-      }
+    const snapshotIndex = this.#snapshots.indexOf(line);
+    if (snapshotIndex >= 0) {
+      const snapshot = this.#processSnapshotView(line, snapshotIndex);
+      this.#messageToView("Snapshot", {
+        snapshotId: snapshotIndex,
+        snapshot,
+      });
     }
   }
 
@@ -97,8 +96,20 @@ export class MegalistViewModel {
       snapshot.breached = snapshotData.breached;
     }
 
+    if ("breachedNotification" in snapshotData) {
+      snapshot.breachedNotification = snapshotData.breachedNotification;
+    }
+
     if ("vulnerable" in snapshotData) {
       snapshot.vulnerable = snapshotData.vulnerable;
+    }
+
+    if ("vulnerableNotification" in snapshotData) {
+      snapshot.vulnerableNotification = snapshotData.vulnerableNotification;
+    }
+
+    if ("noUsernameNotification" in snapshotData) {
+      snapshot.noUsernameNotification = snapshotData.noUsernameNotification;
     }
 
     if ("toggleTooltip" in snapshotData) {
@@ -147,13 +158,20 @@ export class MegalistViewModel {
   receiveUpdateFilter({ searchText } = { searchText: "" }) {
     if (this.#searchText != searchText) {
       this.#searchText = searchText;
-      this.#messageToView("MegalistUpdateFilter", { searchText });
       this.#rebuildSnapshots();
     }
   }
 
   setNotification(notification) {
     this.#messageToView("SetNotification", notification);
+  }
+
+  setDisplayMode(displayMode) {
+    this.#messageToView("SetDisplayMode", displayMode);
+  }
+
+  discardChangesConfirmed() {
+    this.#messageToView("DiscardChangesConfirmed");
   }
 
   async receiveCommand({ commandId, snapshotId, value } = {}) {
@@ -183,12 +201,21 @@ export class MegalistViewModel {
   }
 
   async #promptForReauth(command) {
+    // used for recording telemetry
+    const reasonMap = {
+      Copy: "copy_cpm",
+      Reveal: "reveal_cpm",
+      Edit: "edit_cpm",
+    };
+    const reason = reasonMap[command.id];
+
     const { isAuthorized } = await lazy.LoginHelper.requestReauth(
       lazy.BrowserWindowTracker.getTopWindow().gBrowser,
       this.getOSAuthEnabled(),
       this.#authExpirationTime,
       command.OSAuthPromptMessage,
-      command.OSAuthCaptionMessage
+      command.OSAuthCaptionMessage,
+      reason
     );
 
     if (isAuthorized) {

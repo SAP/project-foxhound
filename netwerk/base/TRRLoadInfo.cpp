@@ -54,6 +54,16 @@ TRRLoadInfo::SetPrincipalToInherit(nsIPrincipal* aPrincipalToInherit) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
+NS_IMETHODIMP
+TRRLoadInfo::GetUserNavigationInvolvement(uint8_t* aUserNavigationInvolvement) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetUserNavigationInvolvement(uint8_t aUserNavigationInvolvement) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
 nsIPrincipal* TRRLoadInfo::PrincipalToInherit() { return nullptr; }
 
 nsIPrincipal* TRRLoadInfo::FindPrincipalToInherit(nsIChannel* aChannel) {
@@ -162,6 +172,16 @@ TRRLoadInfo::SetIsThirdPartyContextToTopWindow(
 }
 
 NS_IMETHODIMP
+TRRLoadInfo::GetIsOn3PCBExceptionList(bool* aIsOn3PCBExceptionList) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
+TRRLoadInfo::SetIsOn3PCBExceptionList(bool aIsOn3PCBExceptionList) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+NS_IMETHODIMP
 TRRLoadInfo::GetCookiePolicy(uint32_t* aResult) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
@@ -188,11 +208,11 @@ TRRLoadInfo::SetStoragePermission(
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 
-const Maybe<RFPTarget>& TRRLoadInfo::GetOverriddenFingerprintingSettings() {
+const Maybe<RFPTargetSet>& TRRLoadInfo::GetOverriddenFingerprintingSettings() {
   return mOverriddenFingerprintingSettings;
 }
 
-void TRRLoadInfo::SetOverriddenFingerprintingSettings(RFPTarget aTargets) {}
+void TRRLoadInfo::SetOverriddenFingerprintingSettings(RFPTargetSet aTargets) {}
 
 NS_IMETHODIMP
 TRRLoadInfo::GetIsMetaRefresh(bool* aResult) {
@@ -629,12 +649,6 @@ TRRLoadInfo::SetIsFromObjectOrEmbed(bool aIsFromObjectOrEmbed) {
 
 NS_IMETHODIMP
 TRRLoadInfo::GetIsFromObjectOrEmbed(bool* aIsFromObjectOrEmbed) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP
-TRRLoadInfo::GetShouldSkipCheckForBrokenURLOrZeroSized(
-    bool* aShouldSkipCheckForBrokenURLOrZeroSized) {
   return NS_ERROR_NOT_IMPLEMENTED;
 }
 

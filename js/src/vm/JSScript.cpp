@@ -33,8 +33,8 @@
 #include "Taint.h"
 
 #include "frontend/BytecodeSection.h"
-#include "frontend/CompilationStencil.h"  // frontend::CompilationStencil
-#include "frontend/FrontendContext.h"     // AutoReportFrontendContext
+#include "frontend/CompilationStencil.h"  // frontend::CompilationStencil, frontend::InitialStencilAndDelazifications
+#include "frontend/FrontendContext.h"  // AutoReportFrontendContext
 #include "frontend/ParseContext.h"
 #include "frontend/SourceNotes.h"  // SrcNote, SrcNoteType, SrcNoteIterator
 #include "frontend/Stencil.h"  // DumpFunctionFlagsItems, DumpImmutableScriptFlags
@@ -697,6 +697,8 @@ void ScriptSourceObject::finalize(JS::GCContext* gcx, JSObject* obj) {
 
   // Clear the private value, calling the release hook if necessary.
   sso->setPrivate(gcx->runtime(), UndefinedValue());
+
+  sso->clearStencils();
 }
 
 static const JSClassOps ScriptSourceObjectClassOps = {
@@ -733,6 +735,8 @@ ScriptSourceObject* ScriptSourceObject::create(JSContext* cx,
   // them.
   obj->initReservedSlot(ELEMENT_PROPERTY_SLOT, MagicValue(JS_GENERIC_MAGIC));
   obj->initReservedSlot(INTRODUCTION_SCRIPT_SLOT, MagicValue(JS_GENERIC_MAGIC));
+
+  obj->initReservedSlot(STENCILS_SLOT, UndefinedValue());
 
   return obj;
 }
@@ -1273,9 +1277,11 @@ ScriptSource::PinnedUnits<Unit>::PinnedUnits(
     : PinnedUnitsBase(source) {
   MOZ_ASSERT(source->hasSourceType<Unit>(), "must pin units of source's type");
 
+  addReader();
+
   units_ = source->units<Unit>(cx, holder, begin, len);
-  if (units_) {
-    addReader();
+  if (!units_) {
+    removeReader<Unit>();
   }
 }
 
@@ -1288,9 +1294,11 @@ ScriptSource::PinnedUnitsIfUncompressed<Unit>::PinnedUnitsIfUncompressed(
     : PinnedUnitsBase(source) {
   MOZ_ASSERT(source->hasSourceType<Unit>(), "must pin units of source's type");
 
+  addReader();
+
   units_ = source->uncompressedUnits<Unit>(begin, len);
-  if (units_) {
-    addReader();
+  if (!units_) {
+    removeReader<Unit>();
   }
 }
 
@@ -1811,102 +1819,87 @@ void ScriptSource::addSizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf,
   info->numScripts++;
 }
 
-bool ScriptSource::startIncrementalEncoding(
-    JSContext* cx, UniquePtr<frontend::ExtensibleCompilationStencil>&& initial,
-    bool& alreadyStarted) {
-  // We don't support asm.js in XDR.
-  // Encoding failures are reported by the xdrFinalizeEncoder function.
-  if (initial->asmJS) {
-    alreadyStarted = false;
-    return true;
+frontend::InitialStencilAndDelazifications*
+ScriptSourceObject::maybeGetStencils() {
+  Value stencilsVal = getReservedSlot(STENCILS_SLOT);
+  if (stencilsVal.isUndefined()) {
+    return nullptr;
   }
 
-  if (xdrEncoder_.hasEncoder()) {
-    alreadyStarted = true;
-    return true;
-  }
-  alreadyStarted = false;
-
-  // Remove the reference to the source, to avoid the circular reference.
-  initial->source = nullptr;
-
-  AutoIncrementalTimer timer(cx->realm()->timers.xdrEncodingTime);
-  auto failureCase = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
-
-  if (!xdrEncoder_.setInitial(
-          cx, std::forward<UniquePtr<frontend::ExtensibleCompilationStencil>>(
-                  initial))) {
-    // On encoding failure, let failureCase destroy encoder and return true
-    // to avoid failing any currently executing script.
-    return false;
-  }
-
-  failureCase.release();
-  return true;
+  return reinterpret_cast<frontend::InitialStencilAndDelazifications*>(
+      uintptr_t(stencilsVal.toPrivate()) & ~STENCILS_MASK);
 }
 
-bool ScriptSource::addDelazificationToIncrementalEncoding(
-    JSContext* cx, const frontend::CompilationStencil& stencil) {
-  MOZ_ASSERT(hasEncoder());
-  AutoIncrementalTimer timer(cx->realm()->timers.xdrEncodingTime);
-  auto failureCase = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
-
-  if (!xdrEncoder_.addDelazification(cx, stencil)) {
-    // On encoding failure, let failureCase destroy encoder and return true
-    // to avoid failing any currently executing script.
-    return false;
+void ScriptSourceObject::clearStencils() {
+  auto* stencils = maybeGetStencils();
+  if (!stencils) {
+    return;
   }
 
-  failureCase.release();
-  return true;
+  stencils->Release();
+  setReservedSlot(STENCILS_SLOT, UndefinedValue());
 }
 
-bool ScriptSource::xdrFinalizeEncoder(JSContext* cx,
-                                      JS::TranscodeBuffer& buffer) {
-  if (!hasEncoder()) {
-    JS_ReportErrorASCII(cx, "XDR encoding failure");
-    return false;
-  }
-
-  auto cleanup = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
-
-  AutoReportFrontendContext fc(cx);
-  XDRStencilEncoder encoder(&fc, buffer);
-
-  frontend::BorrowingCompilationStencil borrowingStencil(
-      xdrEncoder_.merger_->getResult());
-  XDRResult res = encoder.codeStencil(this, borrowingStencil);
-  if (res.isErr()) {
-    if (JS::IsTranscodeFailureResult(res.unwrapErr())) {
-      fc.clearAutoReport();
-      JS_ReportErrorASCII(cx, "XDR encoding failure");
-    }
-    return false;
-  }
-  return true;
+template <uintptr_t flag>
+void ScriptSourceObject::setStencilsFlag() {
+  JS::Value stencilsVal = getReservedSlot(STENCILS_SLOT);
+  MOZ_ASSERT(!stencilsVal.isUndefined(),
+             "This should be called after setStencils");
+  uintptr_t raw = uintptr_t(stencilsVal.toPrivate());
+  MOZ_ASSERT((raw & flag) == 0);
+  raw |= flag;
+  setReservedSlot(STENCILS_SLOT, PrivateValue(raw));
 }
 
-bool ScriptSource::xdrFinalizeEncoder(JSContext* cx, JS::Stencil** stencilOut) {
-  if (!hasEncoder()) {
-    JS_ReportErrorASCII(cx, "XDR encoding failure");
-    return false;
+template <uintptr_t flag>
+void ScriptSourceObject::unsetStencilsFlag() {
+  JS::Value stencilsVal = getReservedSlot(STENCILS_SLOT);
+  MOZ_ASSERT(!stencilsVal.isUndefined(),
+             "This should be called after setStencils");
+  uintptr_t raw = uintptr_t(stencilsVal.toPrivate());
+  raw &= ~flag;
+  if (raw & STENCILS_MASK) {
+    setReservedSlot(STENCILS_SLOT, PrivateValue(raw));
+  } else {
+    clearStencils();
   }
-
-  auto cleanup = mozilla::MakeScopeExit([&] { xdrEncoder_.reset(); });
-
-  UniquePtr<frontend::ExtensibleCompilationStencil> extensibleStencil =
-      xdrEncoder_.merger_->takeResult();
-  extensibleStencil->source = this;
-  RefPtr<frontend::CompilationStencil> stencil =
-      cx->new_<frontend::CompilationStencil>(std::move(extensibleStencil));
-  if (!stencil) {
-    return false;
-  }
-  stencil.forget(stencilOut);
-  return true;
 }
 
-void ScriptSource::xdrAbortEncoder() { xdrEncoder_.reset(); }
+template <uintptr_t flag>
+bool ScriptSourceObject::isStencilsFlagSet() const {
+  JS::Value stencilsVal = getReservedSlot(STENCILS_SLOT);
+  if (stencilsVal.isUndefined()) {
+    return false;
+  }
+  uintptr_t raw = uintptr_t(stencilsVal.toPrivate());
+  return bool(raw & flag);
+}
+
+void ScriptSourceObject::setStencils(
+    already_AddRefed<frontend::InitialStencilAndDelazifications> stencils) {
+  MOZ_ASSERT(!maybeGetStencils());
+  setReservedSlot(STENCILS_SLOT, PrivateValue(stencils.take()));
+}
+
+void ScriptSourceObject::setCollectingDelazifications() {
+  setStencilsFlag<STENCILS_COLLECTING_DELAZIFICATIONS_FLAG>();
+}
+
+void ScriptSourceObject::unsetCollectingDelazifications() {
+  unsetStencilsFlag<STENCILS_COLLECTING_DELAZIFICATIONS_FLAG>();
+}
+
+bool ScriptSourceObject::isCollectingDelazifications() const {
+  return isStencilsFlagSet<STENCILS_COLLECTING_DELAZIFICATIONS_FLAG>();
+}
+
+void ScriptSourceObject::setSharingDelazifications() {
+  setStencilsFlag<STENCILS_SHARING_DELAZIFICATIONS_FLAG>();
+}
+
+bool ScriptSourceObject::isSharingDelazifications() const {
+  return isStencilsFlagSet<STENCILS_SHARING_DELAZIFICATIONS_FLAG>();
+}
 
 template <typename Unit>
 [[nodiscard]] bool ScriptSource::initializeUnretrievableUncompressedSource(
@@ -2221,6 +2214,8 @@ void JSScript::relazify(JSRuntime* rt) {
   // Any JIT compiles should have been released, so we already point to the
   // interpreter trampoline which supports lazy scripts.
   MOZ_ASSERT_IF(jit::HasJitBackend(), isUsingInterpreterTrampoline(rt));
+
+  realm()->removeFromCompileQueue(this);
 
   // Without bytecode, the script counts are invalid so destroy them if they
   // still exist.

@@ -108,11 +108,20 @@ class Options:
                 "geckoview",
                 "fenix",
                 "refbrow",
+                "focus",
             ],
             "help": (
                 "Shorthand name of application that is being tested. "
                 "Used in perfherder data, and other layers such as the "
                 "BinarySetup layer for getting the binary path, and version."
+            ),
+        },
+        "--gecko-profile": {
+            "action": "store_true",
+            "default": False,
+            "help": (
+                "Run tests with gecko profiling enabled (assumes test layer "
+                "has implemented it)."
             ),
         },
     }

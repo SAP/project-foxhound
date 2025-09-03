@@ -39,28 +39,6 @@ function redefine(object, prop, value) {
  */
 export var XPCOMUtils = {
   /**
-   * DEPRECATED!
-   *
-   * Use ChromeUtils.defineLazyGetter instead.
-   *
-   * Defines a getter on a specified object that will be created upon first use.
-   *
-   * @param {object} aObject
-   *        The object to define the lazy getter on.
-   * @param {string} aName
-   *        The name of the getter to define on aObject.
-   * @param {Function} aLambda
-   *        A function that returns what the getter should return.  This will
-   *        only ever be called once.
-   */
-  defineLazyGetter(aObject, aName, aLambda) {
-    console.warn(
-      "Please use ChromeUtils.defineLazyGetter instead of XPCOMUtils.defineLazyGetter. XPCOMUtils.defineLazyGetter will be removed soon."
-    );
-    ChromeUtils.defineLazyGetter(aObject, aName, aLambda);
-  },
-
-  /**
    * Defines a getter on a specified object for a script.  The script will not
    * be loaded until first use.
    *
@@ -109,7 +87,7 @@ export var XPCOMUtils = {
   /**
    * Defines a getter property on the given object for each of the given
    * global names as accepted by Cu.importGlobalProperties. These
-   * properties are imported into the shared JSM module global, and then
+   * properties are imported into the shared system global, and then
    * copied onto the given object, no matter which global the object
    * belongs to.
    *
@@ -177,23 +155,6 @@ export var XPCOMUtils = {
         service[0],
         service[1] || null
       );
-    }
-  },
-
-  /**
-   * Defines a lazy module getter on a specified object for each
-   * property in the given object.
-   *
-   * @param {object} aObject
-   *        The object to define the lazy getter on.
-   * @param {object} aModules
-   *        An object with a property for each module property to be
-   *        imported, where the property name is the name of the
-   *        imported symbol and the value is the module URI.
-   */
-  defineLazyModuleGetters(aObject, aModules) {
-    for (let [name, module] of Object.entries(aModules)) {
-      ChromeUtils.defineModuleGetter(aObject, name, module);
     }
   },
 

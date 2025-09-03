@@ -247,7 +247,6 @@ nsPresContext::nsPresContext(dom::Document* aDocument, nsPresContextType aType)
       mCurAppUnitsPerDevPixel(0),
       mDynamicToolbarMaxHeight(0),
       mDynamicToolbarHeight(0),
-      mKeyboardHeight(0),
       mPageSize(-1, -1),
       mPageScale(0.0),
       mPPScale(1.0f),
@@ -722,8 +721,6 @@ nsresult nsPresContext::Init(nsDeviceContext* aDeviceContext) {
 #if defined(MOZ_WIDGET_ANDROID)
   if (IsRootContentDocumentCrossProcess()) {
     if (BrowserChild* browserChild = BrowserChild::GetFrom(GetDocShell())) {
-      mKeyboardHeight = browserChild->GetKeyboardHeight();
-
       if (MOZ_LIKELY(!Preferences::HasUserValue(
               "layout.dynamic-toolbar-max-height"))) {
         mDynamicToolbarMaxHeight = browserChild->GetDynamicToolbarMaxHeight();
@@ -847,8 +844,8 @@ bool nsPresContext::UpdateFontVisibility() {
   }
 
   // Clamp result to the valid range of levels.
-  level = std::max(std::min(level, int32_t(FontVisibility::User)),
-                   int32_t(FontVisibility::Base));
+  level = std::clamp(level, int32_t(FontVisibility::Base),
+                     int32_t(FontVisibility::User));
 
   mFontVisibility = FontVisibility(level);
   return mFontVisibility != oldValue;
@@ -1124,7 +1121,7 @@ bool nsPresContext::UpdateContainerQueryStyles() {
   }
 
   AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Container Query Styles Update", LAYOUT);
-  AUTO_PROFILER_MARKER_TEXT("UpdateContainerQueryStyles", LAYOUT, {}, ""_ns);
+  AUTO_PROFILER_MARKER_UNTYPED("UpdateContainerQueryStyles", LAYOUT, {});
 
   PresShell()->DoFlushLayout(/* aInterruptible = */ false);
 
@@ -1606,11 +1603,12 @@ static bool CheckOverflow(const ComputedStyle* aComputedStyle,
 // properly when we insert a body element and there is a previous one, for
 // example).
 static Element* GetPropagatedScrollStylesForViewport(
-    nsPresContext* aPresContext, ScrollStyles* aStyles) {
+    nsPresContext* aPresContext, const Element* aRemovedChild,
+    ScrollStyles* aStyles) {
   Document* document = aPresContext->Document();
   Element* docElement = document->GetRootElement();
   // docElement might be null if we're doing this after removing it.
-  if (!docElement) {
+  if (!docElement || docElement == aRemovedChild) {
     return nullptr;
   }
 
@@ -1630,17 +1628,15 @@ static Element* GetPropagatedScrollStylesForViewport(
   // XXX this should be earlier; we shouldn't even look at the document root
   // for non-HTML documents. Fix this once we support explicit CSS styling
   // of the viewport
-  if (!document->IsHTMLOrXHTML() || !docElement->IsHTMLElement()) {
+  if (!document->IsHTMLOrXHTML() ||
+      !docElement->IsHTMLElement(nsGkAtoms::html)) {
     return nullptr;
   }
 
-  Element* bodyElement = document->AsHTMLDocument()->GetBodyElement();
+  Element* bodyElement = document->GetBodyElement(aRemovedChild);
   if (!bodyElement) {
     return nullptr;
   }
-
-  MOZ_ASSERT(bodyElement->IsHTMLElement(nsGkAtoms::body),
-             "GetBodyElement returned something bogus");
 
   const auto* bodyStyle = Servo_Element_GetMaybeOutOfDateStyle(bodyElement);
   if (bodyStyle && bodyStyle->StyleDisplay()->IsContainAny()) {
@@ -1655,7 +1651,8 @@ static Element* GetPropagatedScrollStylesForViewport(
   return nullptr;
 }
 
-Element* nsPresContext::UpdateViewportScrollStylesOverride() {
+Element* nsPresContext::UpdateViewportScrollStylesOverride(
+    const Element* aRemovedChild) {
   ScrollStyles oldViewportScrollStyles = mViewportScrollStyles;
 
   // Start off with our default styles, and then update them as needed.
@@ -1664,8 +1661,8 @@ Element* nsPresContext::UpdateViewportScrollStylesOverride() {
   mViewportScrollOverrideElement = nullptr;
   // Don't propagate the scrollbar state in printing or print preview.
   if (!IsPaginated()) {
-    mViewportScrollOverrideElement =
-        GetPropagatedScrollStylesForViewport(this, &mViewportScrollStyles);
+    mViewportScrollOverrideElement = GetPropagatedScrollStylesForViewport(
+        this, aRemovedChild, &mViewportScrollStyles);
   }
 
   dom::Document* document = Document();
@@ -1705,7 +1702,8 @@ bool nsPresContext::ElementWouldPropagateScrollStyles(const Element& aElement) {
   // in practice we will make this call quite rarely, because we checked for all
   // the common cases above.
   ScrollStyles dummy(StyleOverflow::Auto, StyleOverflow::Auto);
-  return GetPropagatedScrollStylesForViewport(this, &dummy) == &aElement;
+  return GetPropagatedScrollStylesForViewport(this, nullptr, &dummy) ==
+         &aElement;
 }
 
 nsISupports* nsPresContext::GetContainerWeak() const {
@@ -1775,7 +1773,7 @@ void nsPresContext::RecordInteractionTime(InteractionType aType,
 
   // Array of references to the member variable of each time stamp
   // for the different interaction types, keyed by InteractionType.
-  TimeStamp nsPresContext::*interactionTimes[] = {
+  TimeStamp nsPresContext::* interactionTimes[] = {
       &nsPresContext::mFirstClickTime, &nsPresContext::mFirstKeyTime,
       &nsPresContext::mFirstMouseMoveTime, &nsPresContext::mFirstScrollTime};
 
@@ -1811,7 +1809,7 @@ void nsPresContext::RecordInteractionTime(InteractionType aType,
 
   // Check if we are recording the first of any of the interaction types.
   bool isFirstInteraction = true;
-  for (TimeStamp nsPresContext::*memberPtr : interactionTimes) {
+  for (TimeStamp nsPresContext::* memberPtr : interactionTimes) {
     TimeStamp& timeStamp = this->*(memberPtr);
     if (!timeStamp.IsNull()) {
       isFirstInteraction = false;
@@ -3128,7 +3126,7 @@ void nsPresContext::UpdateDynamicToolbarOffset(ScreenIntCoord aOffset) {
 
   dom::InteractiveWidget interactiveWidget = mDocument->InteractiveWidget();
   if (interactiveWidget == InteractiveWidget::OverlaysContent &&
-      mKeyboardHeight > 0) {
+      GetKeyboardHeight() > 0) {
     // On overlays-content mode, the toolbar offset change should NOT affect
     // the visual viewport while the software keyboard is being shown since
     // the toolbar will be positioned somewhere in the middle of the visual
@@ -3162,8 +3160,6 @@ void nsPresContext::UpdateDynamicToolbarOffset(ScreenIntCoord aOffset) {
 
 void nsPresContext::UpdateKeyboardHeight(ScreenIntCoord aHeight) {
   MOZ_ASSERT(IsRootContentDocumentCrossProcess());
-  mKeyboardHeight = aHeight;
-
   if (!mPresShell) {
     return;
   }
@@ -3174,8 +3170,13 @@ void nsPresContext::UpdateKeyboardHeight(ScreenIntCoord aHeight) {
   }
 }
 
+ScreenIntCoord nsPresContext::GetKeyboardHeight() const {
+  MobileViewportManager* mvm = mPresShell->GetMobileViewportManager();
+  return mvm ? mvm->GetKeyboardHeight() : ScreenIntCoord(0);
+}
+
 bool nsPresContext::IsKeyboardHiddenOrResizesContentMode() const {
-  return mKeyboardHeight == 0 ||
+  return GetKeyboardHeight() == 0 ||
          mDocument->InteractiveWidget() == InteractiveWidget::ResizesContent;
 }
 

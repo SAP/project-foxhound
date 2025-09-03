@@ -26,9 +26,9 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.components.components
 import org.mozilla.fenix.compose.ComposeViewHolder
 import org.mozilla.fenix.compose.home.HomeSectionHeader
+import org.mozilla.fenix.home.fake.FakeHomepagePreview
 import org.mozilla.fenix.home.pocket.interactor.PocketStoriesInteractor
 import org.mozilla.fenix.home.pocket.ui.PocketStories
-import org.mozilla.fenix.home.pocket.ui.getFakePocketStories
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.wallpapers.WallpaperState
 
@@ -76,9 +76,7 @@ class PocketStoriesViewHolder(
             // We should report back when a certain story is actually being displayed.
             // Cannot do it reliably so for now we'll just mass report everything as being displayed.
             stories?.let {
-                // Only report here the impressions for recommended stories.
-                // Sponsored stories use a different API for more accurate tracking.
-                interactor.onStoriesShown(it.filterIsInstance<PocketRecommendedStory>())
+                interactor.onStoriesShown(storiesShown = it)
             }
         }
 
@@ -96,6 +94,7 @@ class PocketStoriesViewHolder(
                 stories = stories ?: emptyList(),
                 contentPadding = horizontalPadding,
                 backgroundColor = wallpaperState.cardBackgroundColor,
+                showPlaceholderStory = !components.settings.showContentRecommendations,
                 onStoryShown = interactor::onStoryShown,
                 onStoryClicked = interactor::onStoryClicked,
                 onDiscoverMoreClicked = interactor::onDiscoverMoreClicked,
@@ -117,7 +116,7 @@ fun PocketStoriesViewHolderPreview() {
 
             @Suppress("MagicNumber")
             PocketStories(
-                stories = getFakePocketStories(8),
+                stories = FakeHomepagePreview.pocketStories(limit = 8),
                 contentPadding = 0.dp,
                 backgroundColor = FirefoxTheme.colors.layer2,
                 onStoryShown = { _, _ -> },

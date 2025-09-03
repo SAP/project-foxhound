@@ -90,6 +90,13 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
       const nsAString& aTag, const nsAString& aIcon, const nsAString& aData,
       const nsAString& aServiceWorkerRegistrationScope);
 
+  /**
+   * Used when retrieving notification objects from the parent process.
+   */
+  static Result<already_AddRefed<Notification>, QMResult> ConstructFromIPC(
+      nsIGlobalObject* aGlobal, const IPCNotification& aIPCNotification,
+      const nsAString& aServiceWorkerRegistrationScope);
+
   void GetID(nsAString& aRetval) { aRetval = mID; }
 
   void GetTitle(nsAString& aRetval) { aRetval = mTitle; }
@@ -170,8 +177,7 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
                NotificationDirection aDir, const nsAString& aLang,
                const nsAString& aTag, const nsAString& aIconUrl,
                bool aRequireInteraction, bool aSilent,
-               nsTArray<uint32_t>&& aVibrate,
-               const NotificationBehavior& aBehavior);
+               nsTArray<uint32_t>&& aVibrate);
 
   static already_AddRefed<Notification> CreateInternal(
       nsIGlobalObject* aGlobal, const nsAString& aID, const nsAString& aTitle,
@@ -190,6 +196,8 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
 
   WeakPtr<notification::NotificationChild> mActor;
 
+  // An existing ID loaded from NotificationDB. Leave it empty if we are
+  // creating a new notification.
   const nsString mID;
   const nsString mTitle;
   const nsString mBody;
@@ -201,7 +209,6 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
   const bool mSilent;
   nsTArray<uint32_t> mVibrate;
   nsString mDataAsBase64;
-  const NotificationBehavior mBehavior;
 
   // It's null until GetData is first called
   JS::Heap<JS::Value> mData;
@@ -228,9 +235,7 @@ class Notification : public DOMEventTargetHelper, public SupportsWeakPtr {
   bool CreateActor();
   bool SendShow(Promise* aPromise);
 
-  static nsresult ResolveIconAndSoundURL(nsIGlobalObject* aGlobal,
-                                         nsString& aIconURL,
-                                         nsString& aSoundURL);
+  static nsresult ResolveIconURL(nsIGlobalObject* aGlobal, nsString& aIconURL);
 };
 
 }  // namespace mozilla::dom

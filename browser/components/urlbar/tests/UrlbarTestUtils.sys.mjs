@@ -30,11 +30,11 @@ ChromeUtils.defineESModuleGetters(lazy, {
 
 export var UrlbarTestUtils = {
   /**
-   * This maps the categories used by the FX_URLBAR_SELECTED_RESULT_METHOD and
-   * FX_SEARCHBAR_SELECTED_RESULT_METHOD histograms to their indexes in the
-   * `labels` array.  This only needs to be used by tests that need to map from
-   * category names to indexes in histogram snapshots.  Actual app code can use
-   * these category names directly when they add to a histogram.
+   * This maps the categories used by the FX_SEARCHBAR_SELECTED_RESULT_METHOD
+   * histogram to its indexes in the `labels` array. This only needs to be
+   * used by tests that need to map from category names to indexes in histogram
+   * snapshots. Actual app code can use these category names directly when
+   * they add to a histogram.
    */
   SELECTED_RESULT_METHODS: {
     enter: 0,
@@ -1248,9 +1248,6 @@ export var UrlbarTestUtils = {
   /**
    * Enrolls in a mock Nimbus feature.
    *
-   * If you call UrlbarPrefs.updateFirefoxSuggestScenario() from an xpcshell
-   * test, you must call this first to intialize the Nimbus urlbar feature.
-   *
    * @param {object} value
    *   Define any desired Nimbus variables in this object.
    * @param {string} [feature]
@@ -1378,9 +1375,9 @@ export var UrlbarTestUtils = {
 
   async openSearchModeSwitcher(win) {
     let popup = this.searchModeSwitcherPopup(win);
-    let promiseMenuOpen = lazy.BrowserTestUtils.waitForEvent(
+    let promiseMenuOpen = lazy.BrowserTestUtils.waitForPopupEvent(
       popup,
-      "popupshown"
+      "shown"
     );
     let button = win.document.getElementById("urlbar-searchmode-switcher");
     this.Assert.ok(lazy.BrowserTestUtils.isVisible(button));
@@ -1391,10 +1388,29 @@ export var UrlbarTestUtils = {
   },
 
   searchModeSwitcherPopupClosed(win) {
-    return lazy.BrowserTestUtils.waitForEvent(
+    return lazy.BrowserTestUtils.waitForPopupEvent(
       this.searchModeSwitcherPopup(win),
-      "popuphidden"
+      "hidden"
     );
+  },
+
+  async selectMenuItem(menupopup, targetSelector) {
+    let target = menupopup.querySelector(targetSelector);
+    let selected;
+    for (let i = 0; i < menupopup.children.length; i++) {
+      this.EventUtils.synthesizeKey("KEY_ArrowDown", {}, menupopup.ownerGlobal);
+      await lazy.BrowserTestUtils.waitForCondition(() => {
+        let current = menupopup.querySelector("[_moz-menuactive]");
+        if (selected != current) {
+          selected = current;
+          return true;
+        }
+        return false;
+      });
+      if (selected == target) {
+        break;
+      }
+    }
   },
 };
 
@@ -1496,7 +1512,7 @@ class TestProvider extends UrlbarProvider {
    *
    * @param {object} options
    *   Constructor options
-   * @param {Array} options.results
+   * @param {Array} [options.results]
    *   An array of UrlbarResult objects that will be the provider's results.
    * @param {string} [options.name]
    *   The provider's name.  Provider names should be unique.
@@ -1528,7 +1544,7 @@ class TestProvider extends UrlbarProvider {
    *   If given, we'll await on this before returning results.
    */
   constructor({
-    results,
+    results = [],
     name = "TestProvider" + Services.uuid.generateUUID(),
     type = UrlbarUtils.PROVIDER_TYPE.PROFILE,
     priority = 0,

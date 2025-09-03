@@ -7,10 +7,15 @@
 #ifndef builtin_temporal_PlainMonthDay_h
 #define builtin_temporal_PlainMonthDay_h
 
+#include "mozilla/Assertions.h"
+#include "mozilla/Attributes.h"
+
 #include <stdint.h>
 
+#include "jstypes.h"
+
 #include "builtin/temporal/Calendar.h"
-#include "builtin/temporal/PlainDateTime.h"
+#include "builtin/temporal/PlainDate.h"
 #include "builtin/temporal/TemporalTypes.h"
 #include "js/RootingAPI.h"
 #include "js/TypeDecls.h"
@@ -30,17 +35,17 @@ class PlainMonthDayObject : public NativeObject {
   static const JSClass class_;
   static const JSClass& protoClass_;
 
-  static constexpr uint32_t ISO_YEAR_SLOT = 0;
-  static constexpr uint32_t ISO_MONTH_SLOT = 1;
-  static constexpr uint32_t ISO_DAY_SLOT = 2;
-  static constexpr uint32_t CALENDAR_SLOT = 3;
-  static constexpr uint32_t SLOT_COUNT = 4;
+  static constexpr uint32_t PACKED_DATE_SLOT = 0;
+  static constexpr uint32_t CALENDAR_SLOT = 1;
+  static constexpr uint32_t SLOT_COUNT = 2;
 
-  int32_t isoYear() const { return getFixedSlot(ISO_YEAR_SLOT).toInt32(); }
-
-  int32_t isoMonth() const { return getFixedSlot(ISO_MONTH_SLOT).toInt32(); }
-
-  int32_t isoDay() const { return getFixedSlot(ISO_DAY_SLOT).toInt32(); }
+  /**
+   * Extract the date fields from this PlainDate object.
+   */
+  ISODate date() const {
+    auto packed = PackedDate{getFixedSlot(PACKED_DATE_SLOT).toPrivateUint32()};
+    return PackedDate::unpack(packed);
+  }
 
   CalendarValue calendar() const {
     return CalendarValue(getFixedSlot(CALENDAR_SLOT));
@@ -50,24 +55,26 @@ class PlainMonthDayObject : public NativeObject {
   static const ClassSpec classSpec_;
 };
 
-class MOZ_STACK_CLASS PlainMonthDayWithCalendar final {
-  PlainDate date_;
+class MOZ_STACK_CLASS PlainMonthDay final {
+  ISODate date_;
   CalendarValue calendar_;
 
  public:
-  PlainMonthDayWithCalendar() = default;
+  PlainMonthDay() = default;
 
-  PlainMonthDayWithCalendar(const PlainDate& date,
-                            const CalendarValue& calendar)
+  PlainMonthDay(const ISODate& date, const CalendarValue& calendar)
       : date_(date), calendar_(calendar) {
-    MOZ_ASSERT(ISODateTimeWithinLimits(date));
+    MOZ_ASSERT(ISODateWithinLimits(date));
   }
+
+  explicit PlainMonthDay(const PlainMonthDayObject* monthDay)
+      : PlainMonthDay(monthDay->date(), monthDay->calendar()) {}
 
   const auto& date() const { return date_; }
   const auto& calendar() const { return calendar_; }
 
-  // Allow implicit conversion to a calendar-less PlainDate.
-  operator const PlainDate&() const { return date(); }
+  // Allow implicit conversion to an ISODate.
+  operator const ISODate&() const { return date(); }
 
   void trace(JSTracer* trc) { calendar_.trace(trc); }
 
@@ -75,33 +82,24 @@ class MOZ_STACK_CLASS PlainMonthDayWithCalendar final {
 };
 
 /**
- * Extract the date fields from the PlainMonthDay object.
+ * CreateTemporalMonthDay ( isoDate, calendar [ , newTarget ] )
  */
-inline PlainDate ToPlainDate(const PlainMonthDayObject* monthDay) {
-  return {monthDay->isoYear(), monthDay->isoMonth(), monthDay->isoDay()};
-}
+PlainMonthDayObject* CreateTemporalMonthDay(JSContext* cx,
+                                            JS::Handle<PlainMonthDay> monthDay);
 
 /**
- * CreateTemporalMonthDay ( isoMonth, isoDay, calendar, referenceISOYear [ ,
- * newTarget ] )
+ * CreateTemporalMonthDay ( isoDate, calendar [ , newTarget ] )
  */
-PlainMonthDayObject* CreateTemporalMonthDay(
-    JSContext* cx, JS::Handle<PlainMonthDayWithCalendar> monthDay);
-
-/**
- * CreateTemporalMonthDay ( isoMonth, isoDay, calendar, referenceISOYear [ ,
- * newTarget ] )
- */
-bool CreateTemporalMonthDay(
-    JSContext* cx, const PlainDate& date, JS::Handle<CalendarValue> calendar,
-    JS::MutableHandle<PlainMonthDayWithCalendar> result);
+bool CreateTemporalMonthDay(JSContext* cx, const ISODate& isoDate,
+                            JS::Handle<CalendarValue> calendar,
+                            JS::MutableHandle<PlainMonthDay> result);
 
 } /* namespace js::temporal */
 
 namespace js {
 
 template <typename Wrapper>
-class WrappedPtrOperations<temporal::PlainMonthDayWithCalendar, Wrapper> {
+class WrappedPtrOperations<temporal::PlainMonthDay, Wrapper> {
   const auto& container() const {
     return static_cast<const Wrapper*>(this)->get();
   }
@@ -114,8 +112,8 @@ class WrappedPtrOperations<temporal::PlainMonthDayWithCalendar, Wrapper> {
         container().calendarDoNotUse());
   }
 
-  // Allow implicit conversion to a calendar-less PlainDate.
-  operator const temporal::PlainDate&() const { return date(); }
+  // Allow implicit conversion to an ISODate.
+  operator const temporal::ISODate&() const { return date(); }
 };
 
 }  // namespace js

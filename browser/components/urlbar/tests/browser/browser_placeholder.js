@@ -126,87 +126,55 @@ add_task(async function test_change_default_engine_updates_placeholder() {
 });
 
 add_task(async function test_delayed_update_placeholder() {
-  // We remove the change of engine listener here as that is set so that
-  // if the engine is changed by the user then the placeholder is always updated
-  // straight away. As we want to test the delay update here, we remove the
-  // listener and call the placeholder update manually with the delay flag.
-  Services.obs.removeObserver(BrowserSearch, "browser-search-engine-modified");
+  await doDelayedUpdatePlaceholderTest({ defaultEngine: extraEngine });
+  await doDelayedUpdatePlaceholderTest({ defaultEngine: appDefaultEngine });
+});
 
-  // Since we can't easily test for startup changes, we'll at least test the delay
-  // of update for the placeholder works.
-  let urlTab = await BrowserTestUtils.openNewForegroundTab(
-    gBrowser,
-    "about:mozilla"
-  );
-  tabs.push(urlTab);
-
-  // Open a tab with a blank URL bar.
-  let blankTab = await BrowserTestUtils.openNewForegroundTab(gBrowser);
-  tabs.push(blankTab);
-
+async function doDelayedUpdatePlaceholderTest({ defaultEngine }) {
+  info("Set default search engine");
   await Services.search.setDefault(
-    extraEngine,
+    defaultEngine,
     Ci.nsISearchService.CHANGE_REASON_UNKNOWN
   );
-  // Pretend we've "initialized".
-  BrowserSearch._updateURLBarPlaceholder(extraEngine.name, false, true);
+
+  info("Clear placeholder cache");
+  Services.prefs.clearUserPref("browser.urlbar.placeholderName");
+
+  info("Open a new window");
+  let newWin = await BrowserTestUtils.openNewBrowserWindow();
 
   Assert.equal(
-    gURLBar.placeholder,
-    expectedString,
-    "Placeholder should be unchanged."
-  );
-
-  // Now switch to a tab with something in the URL Bar.
-  await BrowserTestUtils.switchTab(gBrowser, urlTab);
-
-  await TestUtils.waitForCondition(
-    () => gURLBar.placeholder == noEngineString,
-    "The placeholder should have updated in the background."
-  );
-
-  // Do it the other way to check both named engine and fallback code paths.
-  await BrowserTestUtils.switchTab(gBrowser, blankTab);
-
-  await Services.search.setDefault(
-    appDefaultEngine,
-    Ci.nsISearchService.CHANGE_REASON_UNKNOWN
-  );
-  BrowserSearch._updateURLBarPlaceholder(appDefaultEngine.name, false, true);
-
-  Assert.equal(
-    gURLBar.placeholder,
+    newWin.gURLBar.placeholder,
     noEngineString,
     "Placeholder should be unchanged."
   );
   Assert.deepEqual(
-    document.l10n.getAttributes(gURLBar.inputField),
+    newWin.document.l10n.getAttributes(newWin.gURLBar.inputField),
     { id: "urlbar-placeholder", args: null },
     "Placeholder data should be unchanged."
   );
 
-  await BrowserTestUtils.switchTab(gBrowser, urlTab);
+  info("Simulate user interaction");
+  let urlTab = await BrowserTestUtils.addTab(newWin.gBrowser, "about:mozilla");
+  await BrowserTestUtils.switchTab(newWin.gBrowser, urlTab);
+  if (defaultEngine.isAppProvided) {
+    await TestUtils.waitForCondition(
+      () => newWin.gURLBar.placeholder == expectedString,
+      "The placeholder should include the engine name for built-in engines."
+    );
+    Assert.ok(true, "Placeholder should be updated");
+  } else {
+    // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+    await new Promise(r => setTimeout(r, 1000));
+    Assert.equal(
+      newWin.gURLBar.placeholder,
+      noEngineString,
+      "Placeholder should be unchanged."
+    );
+  }
 
-  await TestUtils.waitForCondition(
-    () => gURLBar.placeholder == expectedString,
-    "The placeholder should include the engine name for built-in engines."
-  );
-
-  // Now check when we have a URL displayed, the placeholder is updated straight away.
-  BrowserSearch._updateURLBarPlaceholder(extraEngine.name, false);
-
-  await TestUtils.waitForCondition(
-    () => gURLBar.placeholder == noEngineString,
-    "The placeholder should go back to the default"
-  );
-  Assert.equal(
-    gURLBar.placeholder,
-    noEngineString,
-    "Placeholder should be the default."
-  );
-
-  Services.obs.addObserver(BrowserSearch, "browser-search-engine-modified");
-});
+  await BrowserTestUtils.closeWindow(newWin);
+}
 
 add_task(async function test_private_window_no_separate_engine() {
   const win = await BrowserTestUtils.openNewBrowserWindow({ private: true });
@@ -370,16 +338,22 @@ add_task(async function test_change_default_engine_updates_placeholder() {
 
   // Simulate the placeholder not having changed due to the delayed update
   // on startup.
-  BrowserSearch._setURLBarPlaceholder("");
+  gURLBar._setPlaceholder("");
   await TestUtils.waitForCondition(
     () => gURLBar.placeholder == noEngineString,
     "The placeholder should have been reset."
   );
 
   info("Show search engine removal info bar");
-  await BrowserSearch.removalOfSearchEngineNotificationBox(
+  BrowserUtils.callModulesFromCategory(
+    { categoryName: "search-service-notification" },
+    "search-engine-removal",
     extraEngine.name,
     appDefaultEngine.name
+  );
+  await TestUtils.waitForCondition(
+    () => gNotificationBox.getNotificationWithValue("search-engine-removal"),
+    "Waiting for message to be displayed"
   );
   const notificationBox = gNotificationBox.getNotificationWithValue(
     "search-engine-removal"

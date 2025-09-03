@@ -11,8 +11,6 @@ const consoleAPIListenerModule = isWorker
   : "devtools/server/actors/webconsole/listeners/console-api";
 const { ConsoleAPIListener } = require(consoleAPIListenerModule);
 
-const { isArray } = require("devtools/server/actors/object/utils");
-
 const {
   makeDebuggeeValue,
   createValueGripForTarget,
@@ -22,9 +20,19 @@ const {
   getActorIdForInternalSourceId,
 } = require("devtools/server/actors/utils/dbg-source");
 
-const {
-  isSupportedByConsoleTable,
-} = require("devtools/shared/webconsole/messages");
+loader.lazyRequireGetter(
+  this,
+  "isArray",
+  "resource://devtools/server/actors/object/utils.js",
+  true
+);
+
+loader.lazyRequireGetter(
+  this,
+  "isSupportedByConsoleTable",
+  "resource://devtools/shared/webconsole/messages.js",
+  true
+);
 
 /**
  * Start watching for all console messages related to a given Target Actor.
@@ -55,13 +63,9 @@ class ConsoleMessageWatcher {
     // But ParentProcess should be ignored as we want all messages emitted directly from
     // that process (window and window-less).
     // To do that we pass a null window and ConsoleAPIListener will catch everything.
-    // And also ignore WebExtension as we will filter out only by addonId, which is
-    // passed via consoleAPIListenerOptions. WebExtension may have multiple windows/documents
-    // but all of them will be flagged with the same addon ID.
     const messagesShouldMatchWindow =
       targetActor.targetType === Targets.TYPES.FRAME &&
-      targetActor.typeName != "parentProcessTarget" &&
-      targetActor.typeName != "webExtensionTarget";
+      targetActor.typeName != "parentProcessTarget";
     const window = messagesShouldMatchWindow ? targetActor.window : null;
 
     // If we should match messages for a given window but for some reason, targetActor.window
@@ -75,7 +79,10 @@ class ConsoleMessageWatcher {
     const listener = new ConsoleAPIListener(window, onConsoleAPICall, {
       excludeMessagesBoundToWindow: isTargetActorContentProcess,
       matchExactWindow: targetActor.ignoreSubFrames,
-      ...(targetActor.consoleAPIListenerOptions || {}),
+      addonId:
+        targetActor.targetType === Targets.TYPES.CONTENT_SCRIPT
+          ? targetActor.addonId
+          : null,
     });
     this.listener = listener;
     listener.init();

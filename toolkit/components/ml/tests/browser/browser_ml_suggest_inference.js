@@ -7,9 +7,7 @@ const METRICS = [
   `${PREFIX}-${PIPELINE_READY_LATENCY}`,
   `${PREFIX}-${INITIALIZATION_LATENCY}`,
   `${PREFIX}-${MODEL_RUN_LATENCY}`,
-  `${PREFIX}-${PIPELINE_READY_MEMORY}`,
-  `${PREFIX}-${INITIALIZATION_MEMORY}`,
-  `${PREFIX}-${MODEL_RUN_MEMORY}`,
+  `${PREFIX}-${TOTAL_MEMORY_USAGE}`,
 ];
 const journal = {};
 for (let metric of METRICS) {
@@ -35,17 +33,7 @@ const perfMetadata = {
           shouldAlert: true,
         },
         { name: "inference-model-run-latency", unit: "ms", shouldAlert: true },
-        {
-          name: "inference-pipeline-ready-memory",
-          unit: "MB",
-          shouldAlert: true,
-        },
-        {
-          name: "inference-initialization-memory",
-          unit: "MB",
-          shouldAlert: true,
-        },
-        { name: "inference-model-run-memory", unit: "MB", shouldAlert: true },
+        { name: "inference-total-memory-usage", unit: "ms", shouldAlert: true },
       ],
       verbose: true,
       manifest: "perftest.toml",
@@ -61,20 +49,24 @@ const CUSTOM_INTENT_OPTIONS = {
   taskName: "text-classification",
   featureId: "suggest-intent-classification",
   engineId: "ml-suggest-intent",
-  timeoutMS: -1,
   modelId: "Mozilla/mobilebert-uncased-finetuned-LoRA-intent-classifier",
+  modelHubUrlTemplate: "{model}/{revision}",
   dtype: "q8",
   modelRevision: "main",
+  numThreads: 2,
+  timeoutMS: -1,
 };
 
 const CUSTOM_NER_OPTIONS = {
   taskName: "token-classification",
   featureId: "suggest-NER",
   engineId: "ml-suggest-ner",
-  timeoutMS: -1,
   modelId: "Mozilla/distilbert-uncased-NER-LoRA",
+  modelHubUrlTemplate: "{model}/{revision}",
   dtype: "q8",
   modelRevision: "main",
+  numThreads: 2,
+  timeoutMS: -1,
 };
 
 const ROOT_URL =
@@ -128,27 +120,18 @@ async function writeResultsToFile(results, type) {
 async function perform_inference(queries, type) {
   // Ensure MLSuggest is initialized
   await MLSuggest.initialize();
-
-  const batchSize = 32;
   const results = [];
-
-  // Process in batches of 32
-  for (let i = 0; i < queries.length; i += batchSize) {
-    const batchQueries = queries.slice(i, i + batchSize);
-    const batchResults = await Promise.all(
-      batchQueries.map(async query => {
-        const suggestion = await MLSuggest.makeSuggestions(query);
-        const res = {
-          query,
-          intent: suggestion.intent,
-          city: suggestion.location.city,
-          state: suggestion.location.state,
-        };
-        return res;
-      })
-    );
-    results.push(...batchResults);
+  for (const query of queries) {
+    const suggestion = await MLSuggest.makeSuggestions(query);
+    const res = {
+      query,
+      intent: suggestion.intent,
+      city: suggestion.location.city,
+      state: suggestion.location.state,
+    };
+    results.push(res);
   }
+
   Assert.ok(
     results.length === queries.length,
     "results size should be equal to queries size."
@@ -166,11 +149,12 @@ const runInference2 = async () => {
   MLSuggest.INTENT_OPTIONS = CUSTOM_INTENT_OPTIONS;
   MLSuggest.NER_OPTIONS = CUSTOM_NER_OPTIONS;
 
-  const modelDirectory = normalizePathForOS(
-    `${Services.env.get("MOZ_FETCHES_DIR")}/onnx-models`
-  );
-  info(`Model Directory: ${modelDirectory}`);
-  const { baseUrl: modelHubRootUrl } = startHttpServer(modelDirectory);
+  const modelHubRootUrl = Services.env.get("MOZ_MODELS_HUB");
+  if (!modelHubRootUrl) {
+    throw new Error(
+      "MOZ_MODELS_HUB is not set, you need to run with --hooks toolkit/components/ml/tests/tools/hook_local_hub.py"
+    );
+  }
   info(`ModelHubRootUrl: ${modelHubRootUrl}`);
   const { cleanup } = await perfSetup({
     prefs: [

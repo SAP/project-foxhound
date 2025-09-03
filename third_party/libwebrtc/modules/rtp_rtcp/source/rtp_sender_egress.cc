@@ -50,15 +50,6 @@ constexpr uint32_t kTimestampTicksPerMs = 90;
 constexpr TimeDelta kBitrateStatisticsWindow = TimeDelta::Seconds(1);
 constexpr size_t kRtpSequenceNumberMapMaxEntries = 1 << 13;
 constexpr TimeDelta kUpdateInterval = kBitrateStatisticsWindow;
-
-bool GetUseNtpTimeForAbsoluteSendTime(const FieldTrialsView* field_trials) {
-  if (field_trials != nullptr &&
-      field_trials->IsDisabled("WebRTC-UseNtpTimeAbsoluteSendTime")) {
-    return false;
-  }
-  return true;
-}
-
 }  // namespace
 
 RtpSenderEgress::NonPacedPacketSender::NonPacedPacketSender(
@@ -138,8 +129,8 @@ RtpSenderEgress::RtpSenderEgress(const Environment& env,
                                    ? std::make_unique<RtpSequenceNumberMap>(
                                          kRtpSequenceNumberMapMaxEntries)
                                    : nullptr),
-      use_ntp_time_for_absolute_send_time_(
-          GetUseNtpTimeForAbsoluteSendTime(config.field_trials)) {
+      use_ntp_time_for_absolute_send_time_(!env_.field_trials().IsDisabled(
+          "WebRTC-UseNtpTimeAbsoluteSendTime")) {
   RTC_DCHECK(worker_queue_);
   RTC_DCHECK(config.transport_feedback_callback == nullptr)
       << "transport_feedback_callback is no longer used and will soon be "
@@ -283,15 +274,11 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
   RTC_DCHECK_RUN_ON(worker_queue_);
   auto& [packet, pacing_info, now] = compound_packet;
   RTC_CHECK(packet);
-  const bool is_media = packet->packet_type() == RtpPacketMediaType::kAudio ||
-                        packet->packet_type() == RtpPacketMediaType::kVideo;
 
   PacketOptions options;
   options.included_in_allocation = force_part_of_allocation_;
-
-  // Downstream code actually uses this flag to distinguish between media and
-  // everything else.
-  options.is_retransmit = !is_media;
+  options.is_media = packet->packet_type() == RtpPacketMediaType::kAudio ||
+                     packet->packet_type() == RtpPacketMediaType::kVideo;
 
   // Set Packet id from transport sequence number header extension if it is
   // used. The source of the header extension is
@@ -315,13 +302,14 @@ void RtpSenderEgress::CompleteSendPacket(const Packet& compound_packet,
     send_packet_observer_->OnSendPacket(packet_id, packet->capture_time(),
                                         packet->Ssrc());
   }
+  options.send_as_ect1 = packet->send_as_ect1();
   options.batchable = enable_send_packet_batching_ && !is_audio_;
   options.last_packet_in_batch = last_in_batch;
   const bool send_success = SendPacketToNetwork(*packet, options, pacing_info);
 
   // Put packet in retransmission history or update pending status even if
   // actual sending fails.
-  if (is_media && packet->allow_retransmission()) {
+  if (options.is_media && packet->allow_retransmission()) {
     packet_history_->PutRtpPacket(std::make_unique<RtpPacketToSend>(*packet),
                                   now);
   } else if (packet->retransmitted_sequence_number()) {

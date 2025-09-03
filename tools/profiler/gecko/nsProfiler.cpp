@@ -37,7 +37,7 @@
 #include "nsString.h"
 #include "nsThreadUtils.h"
 #include "platform.h"
-#include "shared-libraries.h"
+#include "SharedLibraries.h"
 #include "zlib.h"
 
 #ifndef ANDROID

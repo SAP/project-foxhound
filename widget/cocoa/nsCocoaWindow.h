@@ -212,7 +212,7 @@ class nsCocoaWindow final : public nsBaseWidget {
   void SetFocus(Raise, mozilla::dom::CallerType aCallerType) override;
   LayoutDeviceIntPoint WidgetToScreenOffset() override;
   LayoutDeviceIntPoint GetClientOffset() override;
-  LayoutDeviceIntMargin ClientToWindowMargin() override;
+  LayoutDeviceIntMargin NormalSizeModeClientToWindowMargin() override;
 
   void* GetNativeData(uint32_t aDataType) override;
 
@@ -283,8 +283,7 @@ class nsCocoaWindow final : public nsBaseWidget {
   void SetSupportsNativeFullscreen(bool aShow) override;
   void SetWindowAnimationType(WindowAnimationType aType) override;
   void SetDrawsTitle(bool aDrawTitle) override;
-  nsresult SetNonClientMargins(const LayoutDeviceIntMargin&) override;
-  void SetDrawsInTitlebar(bool aState);
+  void SetCustomTitlebar(bool) override;
   void UpdateThemeGeometries(
       const nsTArray<ThemeGeometry>& aThemeGeometries) override;
   nsresult SynthesizeNativeMouseEvent(LayoutDeviceIntPoint aPoint,
@@ -367,6 +366,7 @@ class nsCocoaWindow final : public nsBaseWidget {
   void DestroyNativeWindow();
   void UpdateBounds();
   int32_t GetWorkspaceID();
+  void MoveVisibleWindowToWorkspace(int32_t workspaceID);
 
   void DoResize(double aX, double aY, double aWidth, double aHeight,
                 bool aRepaint, bool aConstrainToCurrentScreen);
@@ -464,6 +464,11 @@ class nsCocoaWindow final : public nsBaseWidget {
   bool mWasShown = false;
 
   int32_t mNumModalDescendants = 0;
+
+  // The workspaceID to move to once the window becomes visible. A value of 0
+  // is a no-op.
+  int32_t mDeferredWorkspaceID = 0;
+
   InputContext mInputContext;
   NSWindowAnimationBehavior mWindowAnimationBehavior;
 

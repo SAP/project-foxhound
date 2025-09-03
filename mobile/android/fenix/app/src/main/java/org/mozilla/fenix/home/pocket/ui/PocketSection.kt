@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.dimensionResource
@@ -42,6 +43,14 @@ fun PocketSection(
     interactor: PocketStoriesInteractor,
     horizontalPadding: Dp = dimensionResource(R.dimen.home_item_horizontal_margin),
 ) {
+    LaunchedEffect(state.stories) {
+        // We should report back when a certain story is actually being displayed.
+        // Cannot do it reliably so for now we'll just mass report everything as being displayed.
+        state.stories.let {
+            interactor.onStoriesShown(storiesShown = it)
+        }
+    }
+
     Column(modifier = Modifier.padding(top = 72.dp)) {
         // Simple wrapper to add horizontal padding to just the header while the stories have none.
         Box(modifier = Modifier.padding(horizontal = horizontalPadding)) {
@@ -56,38 +65,41 @@ fun PocketSection(
             stories = state.stories,
             contentPadding = horizontalPadding,
             backgroundColor = cardBackgroundColor,
+            showPlaceholderStory = !state.showContentRecommendations,
             onStoryShown = interactor::onStoryShown,
             onStoryClicked = interactor::onStoryClicked,
             onDiscoverMoreClicked = interactor::onDiscoverMoreClicked,
         )
 
         if (!state.showContentRecommendations) {
-            Spacer(Modifier.height(24.dp))
+            Column(modifier = Modifier.padding(horizontal = horizontalPadding)) {
+                Spacer(Modifier.height(24.dp))
 
-            HomeSectionHeader(
-                headerText = stringResource(R.string.pocket_stories_categories_header),
-            )
+                HomeSectionHeader(
+                    headerText = stringResource(R.string.pocket_stories_categories_header),
+                )
 
-            Spacer(Modifier.height(16.dp))
+                Spacer(Modifier.height(16.dp))
 
-            if (state.categories.isNotEmpty()) {
-                PocketStoriesCategories(
-                    categories = state.categories,
-                    selections = state.categoriesSelections,
+                if (state.categories.isNotEmpty()) {
+                    PocketStoriesCategories(
+                        categories = state.categories,
+                        selections = state.categoriesSelections,
+                        modifier = Modifier.fillMaxWidth(),
+                        categoryColors = state.categoryColors,
+                        onCategoryClick = interactor::onCategoryClicked,
+                    )
+                }
+
+                Spacer(Modifier.height(24.dp))
+
+                PoweredByPocketHeader(
+                    onLearnMoreClicked = interactor::onLearnMoreClicked,
                     modifier = Modifier.fillMaxWidth(),
-                    categoryColors = state.categoryColors,
-                    onCategoryClick = interactor::onCategoryClicked,
+                    textColor = state.textColor,
+                    linkTextColor = state.linkTextColor,
                 )
             }
-
-            Spacer(Modifier.height(24.dp))
-
-            PoweredByPocketHeader(
-                onLearnMoreClicked = interactor::onLearnMoreClicked,
-                modifier = Modifier.fillMaxWidth(),
-                textColor = state.textColor,
-                linkTextColor = state.linkTextColor,
-            )
         }
     }
 }

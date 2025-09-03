@@ -27,6 +27,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.AlertDialog
 import androidx.compose.material.ButtonDefaults
@@ -45,10 +47,20 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.CollectionInfo
+import androidx.compose.ui.semantics.CollectionItemInfo
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.collectionInfo
+import androidx.compose.ui.semantics.collectionItemInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -58,14 +70,12 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import kotlinx.coroutines.launch
 import mozilla.appservices.places.BookmarkRoot
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
 import mozilla.components.lib.state.ext.observeAsState
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.MenuItem
-import org.mozilla.fenix.compose.TextField
-import org.mozilla.fenix.compose.TextFieldColors
-import org.mozilla.fenix.compose.annotation.FlexibleWindowLightDarkPreview
 import org.mozilla.fenix.compose.button.FloatingActionButton
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.list.IconListItem
@@ -74,8 +84,15 @@ import org.mozilla.fenix.compose.list.SelectableIconListItem
 import org.mozilla.fenix.compose.snackbar.AcornSnackbarHostState
 import org.mozilla.fenix.compose.snackbar.SnackbarHost
 import org.mozilla.fenix.compose.snackbar.SnackbarState
+import org.mozilla.fenix.compose.textfield.TextField
+import org.mozilla.fenix.compose.textfield.TextFieldColors
+import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.addBookmarkFolderNameTextField
+import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.editBookmarkedItemTileTextField
+import org.mozilla.fenix.library.bookmarks.BookmarksTestTag.editBookmarkedItemURLTextField
 import org.mozilla.fenix.theme.FirefoxTheme
 import mozilla.components.ui.icons.R as iconsR
+
+private val IconButtonHeight = 48.dp
 
 /**
  * The UI host for the Bookmarks list screen and related subscreens.
@@ -233,12 +250,15 @@ private fun BookmarksList(
         LazyColumn(
             modifier = Modifier
                 .padding(paddingValues)
-                .padding(vertical = 16.dp),
+                .padding(vertical = 16.dp)
+                .semantics {
+                    collectionInfo = CollectionInfo(rowCount = state.bookmarkItems.size, columnCount = 1)
+                },
         ) {
-            items(state.bookmarkItems) { item ->
+            itemsIndexed(state.bookmarkItems) { index, item ->
                 var showMenu by remember { mutableStateOf(false) }
                 if (state.isGuidMarkedForDeletion(item.guid)) {
-                    return@items
+                    return@itemsIndexed
                 }
 
                 when (item) {
@@ -250,6 +270,14 @@ private fun BookmarksList(
                             description = item.url,
                             onClick = { store.dispatch(BookmarkClicked(item)) },
                             onLongClick = { store.dispatch(BookmarkLongClicked(item)) },
+                            modifier = Modifier.semantics {
+                                collectionItemInfo = CollectionItemInfo(
+                                    rowIndex = index,
+                                    rowSpan = 1,
+                                    columnSpan = 1,
+                                    columnIndex = 0,
+                                )
+                            },
                         ) {
                             Box {
                                 IconButton(
@@ -284,6 +312,14 @@ private fun BookmarksList(
                                     isSelected = item in state.selectedItems,
                                     onClick = { store.dispatch(FolderClicked(item)) },
                                     beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                                    modifier = Modifier.semantics {
+                                        collectionItemInfo = CollectionItemInfo(
+                                            rowIndex = index,
+                                            rowSpan = 1,
+                                            columnSpan = 1,
+                                            columnIndex = 0,
+                                        )
+                                    },
                                 )
                             } else {
                                 SelectableIconListItem(
@@ -292,6 +328,14 @@ private fun BookmarksList(
                                     onClick = { store.dispatch(FolderClicked(item)) },
                                     onLongClick = { store.dispatch(FolderLongClicked(item)) },
                                     beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
+                                    modifier = Modifier.semantics {
+                                        collectionItemInfo = CollectionItemInfo(
+                                            rowIndex = index,
+                                            rowSpan = 1,
+                                            columnSpan = 1,
+                                            columnIndex = 0,
+                                        )
+                                    },
                                 ) {
                                     Box {
                                         IconButton(
@@ -603,12 +647,18 @@ private fun SelectFolderScreen(
                         )
                     }
                 } else {
+                    val isSelected = folder.guid == state?.selectedGuid
                     SelectableIconListItem(
                         label = folder.title,
-                        isSelected = folder.guid == state?.selectedGuid,
-                        onClick = { store.dispatch(SelectFolderAction.ItemClicked(folder)) },
+                        isSelected = isSelected,
                         beforeIconPainter = painterResource(R.drawable.mozac_ic_folder_24),
-                        modifier = Modifier.padding(start = (40 * folder.indentation).dp),
+                        modifier = Modifier
+                            .padding(start = (40 * folder.indentation).dp)
+                            .toggleable(
+                                value = isSelected,
+                                role = Role.RadioButton,
+                                onValueChange = { _ -> store.dispatch(SelectFolderAction.ItemClicked(folder)) },
+                            ),
                     )
                 }
             }
@@ -949,6 +999,7 @@ private fun EditFolderTopBar(
     )
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun AddFolderScreen(
     store: BookmarksStore,
@@ -964,11 +1015,17 @@ private fun AddFolderScreen(
                 onValueChange = { newText -> store.dispatch(AddFolderAction.TitleChanged(newText)) },
                 placeholder = "",
                 errorText = "",
-                modifier = Modifier.padding(
-                    start = 16.dp,
-                    end = 16.dp,
-                    top = 32.dp,
-                ),
+                modifier =
+                Modifier
+                    .padding(
+                        start = 16.dp,
+                        end = 16.dp,
+                        top = 32.dp,
+                    )
+                    .semantics {
+                        testTagsAsResourceId = true
+                        testTag = addBookmarkFolderNameTextField
+                    },
                 label = stringResource(R.string.bookmark_name_label_normal_case),
             )
 
@@ -1050,6 +1107,7 @@ private fun EditBookmarkScreen(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 private fun BookmarkEditor(
     bookmarkItem: BookmarkItem.Bookmark,
@@ -1062,11 +1120,21 @@ private fun BookmarkEditor(
     ) {
         Favicon(url = bookmarkItem.previewImageUrl, size = 64.dp)
 
-        Column {
+        Column(
+            Modifier
+                .semantics {
+                    testTagsAsResourceId = true
+                },
+        ) {
             ClearableTextField(
                 value = bookmarkItem.title,
                 onValueChange = onTitleChanged,
                 placeholder = stringResource(R.string.bookmark_name_label_normal_case),
+                modifier =
+                Modifier
+                    .semantics {
+                        testTag = editBookmarkedItemTileTextField
+                    },
             )
 
             Spacer(modifier = Modifier.height(16.dp))
@@ -1075,6 +1143,11 @@ private fun BookmarkEditor(
                 value = bookmarkItem.url,
                 onValueChange = onURLChanged,
                 placeholder = stringResource(R.string.bookmark_url_label),
+                modifier =
+                Modifier
+                    .semantics {
+                        testTag = editBookmarkedItemURLTextField
+                    },
             )
         }
     }
@@ -1132,18 +1205,12 @@ private fun ClearableTextField(
             .onFocusChanged { isFocused = it.isFocused }
             .padding(0.dp)
             .paddingFromBaseline(0.dp),
-        trailingIcon = {
+        minHeight = IconButtonHeight,
+        trailingIcons = {
             if (isFocused && value.isNotEmpty()) {
-                IconButton(onClick = { onValueChange("") }) {
-                    Icon(
-                        painter = painterResource(id = iconsR.drawable.mozac_ic_cross_circle_fill_24),
-                        contentDescription = null,
-                        tint = FirefoxTheme.colors.textPrimary,
-                    )
-                }
+                CrossTextFieldButton { onValueChange("") }
             }
         },
-        trailingIconHeight = 48.dp,
         colors = TextFieldColors.default(
             placeholderColor = FirefoxTheme.colors.textPrimary,
         ),

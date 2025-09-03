@@ -31,15 +31,13 @@ EXCLUSION_FILES = [
 
 def setup(root, **setupargs):
     if setupargs.get("substs", {}).get("MOZ_BUILD_APP") != "mobile/android":
-        return 1
+        return -1
 
     if "topobjdir" not in setupargs:
-        print(
-            "Skipping {}: a configured Android build is required!".format(
-                setupargs["name"]
-            )
+        setupargs["log"].debug(
+            f"Skipping {setupargs['name']}: a configured Android build is required!"
         )
-        return 1
+        return -1
 
     return 0
 
@@ -90,7 +88,7 @@ def gradle(log, topsrcdir=None, topobjdir=None, tasks=[], extra_args=[], verbose
         return proc.returncode
 
 
-def gradlew(log, topsrcdir=None, topobjdir=None, tasks=[], cwd=None):
+def gradlew(log, topsrcdir=None, topobjdir=None, tasks=[], cwd=None, java_home=None):
     sys.path.insert(0, os.path.join(topsrcdir, "mobile", "android"))
     from gradle import gradle_lock
 
@@ -98,14 +96,24 @@ def gradlew(log, topsrcdir=None, topobjdir=None, tasks=[], cwd=None):
         # The android-lint parameter can be used by gradle tasks to run special
         # logic when they are run for a lint using
         #   project.hasProperty('android-lint')
-        cmd_args = ["./gradlew"] + tasks
+        gradlew_path = os.path.join(".", "gradlew")
+        if sys.platform == "win32":
+            gradlew_path = gradlew_path + ".bat"
+
+        cmd_args = [
+            gradlew_path,
+        ] + tasks
 
         cmd = " ".join(shlex.quote(arg) for arg in cmd_args)
         log.debug(cmd)
 
+        env = os.environ.copy()
+        if java_home:
+            env["JAVA_HOME"] = java_home
+
         # Gradle and mozprocess do not get along well, so we use subprocess
         # directly.
-        proc = subprocess.Popen(cmd_args, cwd=cwd)
+        proc = subprocess.Popen(cmd_args, cwd=cwd, env=env)
         status = None
         # Leave it to the subprocess to handle Ctrl+C. If it terminates as a result
         # of Ctrl+C, proc.wait() will return a status code, and, we get out of the
@@ -223,6 +231,7 @@ def focus_format(config, fix=None, **lintargs):
 def report_gradlew(config, fix, subdir, **lintargs):
     topsrcdir = lintargs["root"]
     topobjdir = lintargs["topobjdir"]
+    java_home = os.path.dirname(os.path.dirname(lintargs["substs"]["JAVA"]))
 
     if fix:
         tasks = ["ktlintFormat", "detekt"]
@@ -236,6 +245,7 @@ def report_gradlew(config, fix, subdir, **lintargs):
             topobjdir=topobjdir,
             tasks=[task],
             cwd=os.path.join(topsrcdir, subdir),
+            java_home=java_home,
         )
 
     reports = os.path.join(topsrcdir, subdir, "build", "reports")

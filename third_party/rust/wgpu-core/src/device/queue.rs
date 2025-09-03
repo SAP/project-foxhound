@@ -1,57 +1,130 @@
+use alloc::{boxed::Box, sync::Arc, vec, vec::Vec};
+use core::{
+    iter,
+    mem::{self, ManuallyDrop},
+    ptr::NonNull,
+    sync::atomic::Ordering,
+};
+
+use smallvec::SmallVec;
+use thiserror::Error;
+
+use super::{life::LifetimeTracker, Device};
 #[cfg(feature = "trace")]
 use crate::device::trace::Action;
+use crate::scratch::ScratchBuffer;
 use crate::{
     api_log,
     command::{
         extract_texture_selector, validate_linear_texture_data, validate_texture_copy_range,
         ClearError, CommandAllocator, CommandBuffer, CommandEncoderError, CopySide,
-        ImageCopyTexture, TransferError,
+        TexelCopyTextureInfo, TransferError,
     },
     conv,
     device::{DeviceError, WaitIdleError},
     get_lowest_common_denom,
     global::Global,
-    hal_label,
     id::{self, QueueId},
     init_tracker::{has_copy_partial_init_tracker_coverage, TextureInitRange},
-    lock::RwLockWriteGuard,
+    lock::{rank, Mutex, MutexGuard, RwLockWriteGuard},
     resource::{
         Buffer, BufferAccessError, BufferMapState, DestroyedBuffer, DestroyedResourceError,
         DestroyedTexture, Fallible, FlushedStagingBuffer, InvalidResourceError, Labeled,
         ParentDevice, ResourceErrorIdent, StagingBuffer, Texture, TextureInner, Trackable,
     },
     resource_log,
+    snatch::SnatchGuard,
     track::{self, Tracker, TrackerIndex},
     FastHashMap, SubmissionIndex,
 };
 
-use smallvec::SmallVec;
-
-use std::{
-    iter,
-    mem::{self, ManuallyDrop},
-    ptr::NonNull,
-    sync::{atomic::Ordering, Arc},
-};
-use thiserror::Error;
-
-use super::Device;
-
 pub struct Queue {
-    raw: ManuallyDrop<Box<dyn hal::DynQueue>>,
+    raw: Box<dyn hal::DynQueue>,
+    pub(crate) pending_writes: Mutex<PendingWrites>,
+    life_tracker: Mutex<LifetimeTracker>,
+    // The device needs to be dropped last (`Device.zero_buffer` might be referenced by the encoder in pending writes).
     pub(crate) device: Arc<Device>,
 }
 
 impl Queue {
-    pub(crate) fn new(device: Arc<Device>, raw: Box<dyn hal::DynQueue>) -> Self {
-        Queue {
-            raw: ManuallyDrop::new(raw),
-            device,
+    pub(crate) fn new(
+        device: Arc<Device>,
+        raw: Box<dyn hal::DynQueue>,
+    ) -> Result<Self, DeviceError> {
+        let pending_encoder = device
+            .command_allocator
+            .acquire_encoder(device.raw(), raw.as_ref())
+            .map_err(DeviceError::from_hal);
+
+        let pending_encoder = match pending_encoder {
+            Ok(pending_encoder) => pending_encoder,
+            Err(e) => {
+                return Err(e);
+            }
+        };
+
+        let mut pending_writes = PendingWrites::new(pending_encoder);
+
+        let zero_buffer = device.zero_buffer.as_ref();
+        pending_writes.activate();
+        unsafe {
+            pending_writes
+                .command_encoder
+                .transition_buffers(&[hal::BufferBarrier {
+                    buffer: zero_buffer,
+                    usage: hal::StateTransition {
+                        from: wgt::BufferUses::empty(),
+                        to: wgt::BufferUses::COPY_DST,
+                    },
+                }]);
+            pending_writes
+                .command_encoder
+                .clear_buffer(zero_buffer, 0..super::ZERO_BUFFER_SIZE);
+            pending_writes
+                .command_encoder
+                .transition_buffers(&[hal::BufferBarrier {
+                    buffer: zero_buffer,
+                    usage: hal::StateTransition {
+                        from: wgt::BufferUses::COPY_DST,
+                        to: wgt::BufferUses::COPY_SRC,
+                    },
+                }]);
         }
+
+        Ok(Queue {
+            raw,
+            device,
+            pending_writes: Mutex::new(rank::QUEUE_PENDING_WRITES, pending_writes),
+            life_tracker: Mutex::new(rank::QUEUE_LIFE_TRACKER, LifetimeTracker::new()),
+        })
     }
 
     pub(crate) fn raw(&self) -> &dyn hal::DynQueue {
         self.raw.as_ref()
+    }
+
+    #[track_caller]
+    pub(crate) fn lock_life<'a>(&'a self) -> MutexGuard<'a, LifetimeTracker> {
+        self.life_tracker.lock()
+    }
+
+    pub(crate) fn maintain(
+        &self,
+        submission_index: u64,
+        snatch_guard: &SnatchGuard,
+    ) -> (
+        SmallVec<[SubmittedWorkDoneClosure; 1]>,
+        Vec<super::BufferMapPendingClosure>,
+        bool,
+    ) {
+        let mut life_tracker = self.lock_life();
+        let submission_closures = life_tracker.triage_submissions(submission_index);
+
+        let mapping_closures = life_tracker.handle_mapping(snatch_guard);
+
+        let queue_empty = life_tracker.queue_empty();
+
+        (submission_closures, mapping_closures, queue_empty)
     }
 }
 
@@ -68,67 +141,104 @@ crate::impl_storage_item!(Queue);
 impl Drop for Queue {
     fn drop(&mut self) {
         resource_log!("Drop {}", self.error_ident());
-        // SAFETY: we never access `self.raw` beyond this point.
-        let queue = unsafe { ManuallyDrop::take(&mut self.raw) };
-        self.device.release_queue(queue);
+
+        let last_successful_submission_index = self
+            .device
+            .last_successful_submission_index
+            .load(Ordering::Acquire);
+
+        let fence = self.device.fence.read();
+
+        // Try waiting on the last submission using the following sequence of timeouts
+        let timeouts_in_ms = [100, 200, 400, 800, 1600, 3200];
+
+        for (i, timeout_ms) in timeouts_in_ms.into_iter().enumerate() {
+            let is_last_iter = i == timeouts_in_ms.len() - 1;
+
+            api_log!(
+                "Waiting on last submission. try: {}/{}. timeout: {}ms",
+                i + 1,
+                timeouts_in_ms.len(),
+                timeout_ms
+            );
+
+            let wait_res = unsafe {
+                self.device.raw().wait(
+                    fence.as_ref(),
+                    last_successful_submission_index,
+                    #[cfg(not(target_arch = "wasm32"))]
+                    timeout_ms,
+                    #[cfg(target_arch = "wasm32")]
+                    0, // WebKit and Chromium don't support a non-0 timeout
+                )
+            };
+            // Note: If we don't panic below we are in UB land (destroying resources while they are still in use by the GPU).
+            match wait_res {
+                Ok(true) => break,
+                Ok(false) => {
+                    // It's fine that we timed out on WebGL; GL objects can be deleted early as they
+                    // will be kept around by the driver if GPU work hasn't finished.
+                    // Moreover, the way we emulate read mappings on WebGL allows us to execute map_buffer earlier than on other
+                    // backends since getBufferSubData is synchronous with respect to the other previously enqueued GL commands.
+                    // Relying on this behavior breaks the clean abstraction wgpu-hal tries to maintain and
+                    // we should find ways to improve this. See https://github.com/gfx-rs/wgpu/issues/6538.
+                    #[cfg(target_arch = "wasm32")]
+                    {
+                        break;
+                    }
+                    #[cfg(not(target_arch = "wasm32"))]
+                    {
+                        if is_last_iter {
+                            panic!(
+                                "We timed out while waiting on the last successful submission to complete!"
+                            );
+                        }
+                    }
+                }
+                Err(e) => match e {
+                    hal::DeviceError::OutOfMemory => {
+                        if is_last_iter {
+                            panic!(
+                                "We ran into an OOM error while waiting on the last successful submission to complete!"
+                            );
+                        }
+                    }
+                    hal::DeviceError::Lost => {
+                        self.device.handle_hal_error(e); // will lose the device
+                        break;
+                    }
+                    hal::DeviceError::ResourceCreationFailed => unreachable!(),
+                    hal::DeviceError::Unexpected => {
+                        panic!(
+                            "We ran into an unexpected error while waiting on the last successful submission to complete!"
+                        );
+                    }
+                },
+            }
+        }
+        drop(fence);
+
+        let snatch_guard = self.device.snatchable_lock.read();
+        let (submission_closures, mapping_closures, queue_empty) =
+            self.maintain(last_successful_submission_index, &snatch_guard);
+        drop(snatch_guard);
+
+        assert!(queue_empty);
+
+        let closures = crate::device::UserClosures {
+            mappings: mapping_closures,
+            submissions: submission_closures,
+            device_lost_invocations: SmallVec::new(),
+        };
+
+        closures.fire();
     }
 }
 
-#[repr(C)]
-pub struct SubmittedWorkDoneClosureC {
-    pub callback: unsafe extern "C" fn(user_data: *mut u8),
-    pub user_data: *mut u8,
-}
-
 #[cfg(send_sync)]
-unsafe impl Send for SubmittedWorkDoneClosureC {}
-
-pub struct SubmittedWorkDoneClosure {
-    // We wrap this so creating the enum in the C variant can be unsafe,
-    // allowing our call function to be safe.
-    inner: SubmittedWorkDoneClosureInner,
-}
-
-#[cfg(send_sync)]
-type SubmittedWorkDoneCallback = Box<dyn FnOnce() + Send + 'static>;
+pub type SubmittedWorkDoneClosure = Box<dyn FnOnce() + Send + 'static>;
 #[cfg(not(send_sync))]
-type SubmittedWorkDoneCallback = Box<dyn FnOnce() + 'static>;
-
-enum SubmittedWorkDoneClosureInner {
-    Rust { callback: SubmittedWorkDoneCallback },
-    C { inner: SubmittedWorkDoneClosureC },
-}
-
-impl SubmittedWorkDoneClosure {
-    pub fn from_rust(callback: SubmittedWorkDoneCallback) -> Self {
-        Self {
-            inner: SubmittedWorkDoneClosureInner::Rust { callback },
-        }
-    }
-
-    /// # Safety
-    ///
-    /// - The callback pointer must be valid to call with the provided `user_data`
-    ///   pointer.
-    ///
-    /// - Both pointers must point to `'static` data, as the callback may happen at
-    ///   an unspecified time.
-    pub unsafe fn from_c(inner: SubmittedWorkDoneClosureC) -> Self {
-        Self {
-            inner: SubmittedWorkDoneClosureInner::C { inner },
-        }
-    }
-
-    pub(crate) fn call(self) {
-        match self.inner {
-            SubmittedWorkDoneClosureInner::Rust { callback } => callback(),
-            // SAFETY: the contract of the call to from_c says that this unsafe is sound.
-            SubmittedWorkDoneClosureInner::C { inner } => unsafe {
-                (inner.callback)(inner.user_data)
-            },
-        }
-    }
-}
+pub type SubmittedWorkDoneClosure = Box<dyn FnOnce() + 'static>;
 
 /// A texture or buffer to be freed soon.
 ///
@@ -143,6 +253,7 @@ impl SubmittedWorkDoneClosure {
 #[derive(Debug)]
 pub enum TempResource {
     StagingBuffer(FlushedStagingBuffer),
+    ScratchBuffer(ScratchBuffer),
     DestroyedBuffer(DestroyedBuffer),
     DestroyedTexture(DestroyedTexture),
 }
@@ -153,33 +264,14 @@ pub enum TempResource {
 /// [`CommandBuffer`]: hal::Api::CommandBuffer
 /// [`wgpu_hal::CommandEncoder`]: hal::CommandEncoder
 pub(crate) struct EncoderInFlight {
-    raw: Box<dyn hal::DynCommandEncoder>,
-    cmd_buffers: Vec<Box<dyn hal::DynCommandBuffer>>,
+    inner: crate::command::CommandEncoder,
     pub(crate) trackers: Tracker,
+    pub(crate) temp_resources: Vec<TempResource>,
 
     /// These are the buffers that have been tracked by `PendingWrites`.
     pub(crate) pending_buffers: FastHashMap<TrackerIndex, Arc<Buffer>>,
     /// These are the textures that have been tracked by `PendingWrites`.
     pub(crate) pending_textures: FastHashMap<TrackerIndex, Arc<Texture>>,
-}
-
-impl EncoderInFlight {
-    /// Free all of our command buffers.
-    ///
-    /// Return the command encoder, fully reset and ready to be
-    /// reused.
-    pub(crate) unsafe fn land(mut self) -> Box<dyn hal::DynCommandEncoder> {
-        unsafe { self.raw.reset_all(self.cmd_buffers) };
-        {
-            // This involves actually decrementing the ref count of all command buffer
-            // resources, so can be _very_ expensive.
-            profiling::scope!("drop command buffer trackers");
-            drop(self.trackers);
-            drop(self.pending_buffers);
-            drop(self.pending_textures);
-        }
-        self.raw
-    }
 }
 
 /// A private command encoder for writes made directly on the device
@@ -204,6 +296,7 @@ impl EncoderInFlight {
 /// All uses of [`StagingBuffer`]s end up here.
 #[derive(Debug)]
 pub(crate) struct PendingWrites {
+    // The command encoder needs to be destroyed before any other resource in pending writes.
     pub command_encoder: Box<dyn hal::DynCommandEncoder>,
 
     /// True if `command_encoder` is in the "recording" state, as
@@ -227,17 +320,6 @@ impl PendingWrites {
             dst_buffers: FastHashMap::default(),
             dst_textures: FastHashMap::default(),
         }
-    }
-
-    pub fn dispose(mut self, device: &dyn hal::DynDevice) {
-        unsafe {
-            if self.is_recording {
-                self.command_encoder.discard_encoding();
-            }
-            device.destroy_command_encoder(self.command_encoder);
-        }
-
-        self.temp_resources.clear();
     }
 
     pub fn insert_buffer(&mut self, buffer: &Arc<Buffer>) {
@@ -270,7 +352,7 @@ impl PendingWrites {
     fn pre_submit(
         &mut self,
         command_allocator: &CommandAllocator,
-        device: &Device,
+        device: &Arc<Device>,
         queue: &Queue,
     ) -> Result<Option<EncoderInFlight>, DeviceError> {
         if self.is_recording {
@@ -286,9 +368,15 @@ impl PendingWrites {
                 .map_err(|e| device.handle_hal_error(e))?;
 
             let encoder = EncoderInFlight {
-                raw: mem::replace(&mut self.command_encoder, new_encoder),
-                cmd_buffers: vec![cmd_buf],
+                inner: crate::command::CommandEncoder {
+                    raw: ManuallyDrop::new(mem::replace(&mut self.command_encoder, new_encoder)),
+                    list: vec![cmd_buf],
+                    device: device.clone(),
+                    is_open: false,
+                    hal_label: None,
+                },
                 trackers: Tracker::new(),
+                temp_resources: mem::take(&mut self.temp_resources),
                 pending_buffers,
                 pending_textures,
             };
@@ -311,13 +399,14 @@ impl PendingWrites {
         }
         self.command_encoder.as_mut()
     }
+}
 
-    pub fn deactivate(&mut self) {
-        if self.is_recording {
-            unsafe {
+impl Drop for PendingWrites {
+    fn drop(&mut self) {
+        unsafe {
+            if self.is_recording {
                 self.command_encoder.discard_encoding();
             }
-            self.is_recording = false;
         }
     }
 }
@@ -348,16 +437,14 @@ pub enum QueueSubmitError {
     Unmap(#[from] BufferAccessError),
     #[error("{0} is still mapped")]
     BufferStillMapped(ResourceErrorIdent),
-    #[error("Surface output was dropped before the command buffer got submitted")]
-    SurfaceOutputDropped,
-    #[error("Surface was unconfigured before the command buffer got submitted")]
-    SurfaceUnconfigured,
-    #[error("GPU got stuck :(")]
-    StuckGpu,
     #[error(transparent)]
     InvalidResource(#[from] InvalidResourceError),
     #[error(transparent)]
     CommandEncoder(#[from] CommandEncoderError),
+    #[error(transparent)]
+    ValidateBlasActionsError(#[from] crate::ray_tracing::ValidateBlasActionsError),
+    #[error(transparent)]
+    ValidateTlasActionsError(#[from] crate::ray_tracing::ValidateTlasActionsError),
 }
 
 //TODO: move out common parts of write_xxx.
@@ -389,7 +476,7 @@ impl Queue {
         // freed, even if an error occurs. All paths from here must call
         // `device.pending_writes.consume`.
         let mut staging_buffer = StagingBuffer::new(&self.device, data_size)?;
-        let mut pending_writes = self.device.pending_writes.lock();
+        let mut pending_writes = self.pending_writes.lock();
 
         let staging_buffer = {
             profiling::scope!("copy");
@@ -431,7 +518,7 @@ impl Queue {
 
         let buffer = buffer.get()?;
 
-        let mut pending_writes = self.device.pending_writes.lock();
+        let mut pending_writes = self.pending_writes.lock();
 
         // At this point, we have taken ownership of the staging_buffer from the
         // user. Platform validation requires that the staging buffer always
@@ -501,7 +588,7 @@ impl Queue {
             let mut trackers = self.device.trackers.lock();
             trackers
                 .buffers
-                .set_single(&buffer, hal::BufferUses::COPY_DST)
+                .set_single(&buffer, wgt::BufferUses::COPY_DST)
         };
 
         let snatch_guard = self.device.snatchable_lock.read();
@@ -518,7 +605,10 @@ impl Queue {
         };
         let barriers = iter::once(hal::BufferBarrier {
             buffer: staging_buffer.raw(),
-            usage: hal::BufferUses::MAP_WRITE..hal::BufferUses::COPY_SRC,
+            usage: hal::StateTransition {
+                from: wgt::BufferUses::MAP_WRITE,
+                to: wgt::BufferUses::COPY_SRC,
+            },
         })
         .chain(transition.map(|pending| pending.into_hal(&buffer, &snatch_guard)))
         .collect::<Vec<_>>();
@@ -544,9 +634,9 @@ impl Queue {
 
     pub fn write_texture(
         &self,
-        destination: wgt::ImageCopyTexture<Fallible<Texture>>,
+        destination: wgt::TexelCopyTextureInfo<Fallible<Texture>>,
         data: &[u8],
-        data_layout: &wgt::ImageDataLayout,
+        data_layout: &wgt::TexelCopyBufferLayout,
         size: &wgt::Extent3d,
     ) -> Result<(), QueueWriteError> {
         profiling::scope!("Queue::write_texture");
@@ -558,7 +648,7 @@ impl Queue {
         }
 
         let dst = destination.texture.get()?;
-        let destination = wgt::ImageCopyTexture {
+        let destination = wgt::TexelCopyTextureInfo {
             texture: (),
             mip_level: destination.mip_level,
             origin: destination.origin,
@@ -607,7 +697,9 @@ impl Queue {
                 .map_err(TransferError::from)?;
         }
 
-        let mut pending_writes = self.device.pending_writes.lock();
+        let snatch_guard = self.device.snatchable_lock.read();
+
+        let mut pending_writes = self.pending_writes.lock();
         let encoder = pending_writes.activate();
 
         // If the copy does not fully cover the layers, we need to initialize to
@@ -629,7 +721,7 @@ impl Queue {
             if has_copy_partial_init_tracker_coverage(size, destination.mip_level, &dst.desc) {
                 for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
                     .drain(init_layer_range)
-                    .collect::<Vec<std::ops::Range<u32>>>()
+                    .collect::<Vec<core::ops::Range<u32>>>()
                 {
                     let mut trackers = self.device.trackers.lock();
                     crate::command::clear_texture(
@@ -642,7 +734,7 @@ impl Queue {
                         &mut trackers.textures,
                         &self.device.alignments,
                         self.device.zero_buffer.as_ref(),
-                        &self.device.snatchable_lock.read(),
+                        &snatch_guard,
                     )
                     .map_err(QueueWriteError::from)?;
                 }
@@ -651,8 +743,6 @@ impl Queue {
                     .drain(init_layer_range);
             }
         }
-
-        let snatch_guard = self.device.snatchable_lock.read();
 
         let dst_raw = dst.try_raw(&snatch_guard)?;
 
@@ -721,7 +811,7 @@ impl Queue {
                 let mut texture_base = dst_base.clone();
                 texture_base.array_layer += array_layer_offset;
                 hal::BufferTextureCopy {
-                    buffer_layout: wgt::ImageDataLayout {
+                    buffer_layout: wgt::TexelCopyBufferLayout {
                         offset: array_layer_offset as u64
                             * rows_per_image as u64
                             * stage_bytes_per_row as u64,
@@ -737,14 +827,17 @@ impl Queue {
         {
             let buffer_barrier = hal::BufferBarrier {
                 buffer: staging_buffer.raw(),
-                usage: hal::BufferUses::MAP_WRITE..hal::BufferUses::COPY_SRC,
+                usage: hal::StateTransition {
+                    from: wgt::BufferUses::MAP_WRITE,
+                    to: wgt::BufferUses::COPY_SRC,
+                },
             };
 
             let mut trackers = self.device.trackers.lock();
             let transition =
                 trackers
                     .textures
-                    .set_single(&dst, selector, hal::TextureUses::COPY_DST);
+                    .set_single(&dst, selector, wgt::TextureUses::COPY_DST);
             let texture_barriers = transition
                 .map(|pending| pending.into_hal(dst_raw))
                 .collect::<Vec<_>>();
@@ -765,8 +858,8 @@ impl Queue {
     #[cfg(webgl)]
     pub fn copy_external_image_to_texture(
         &self,
-        source: &wgt::ImageCopyExternalImage,
-        destination: wgt::ImageCopyTextureTagged<Fallible<Texture>>,
+        source: &wgt::CopyExternalImageSourceInfo,
+        destination: wgt::CopyExternalImageDestInfo<Fallible<Texture>>,
         size: wgt::Extent3d,
     ) -> Result<(), QueueWriteError> {
         profiling::scope!("Queue::copy_external_image_to_texture");
@@ -797,7 +890,7 @@ impl Queue {
 
         let dst = destination.texture.get()?;
         let premultiplied_alpha = destination.premultiplied_alpha;
-        let destination = wgt::ImageCopyTexture {
+        let destination = wgt::TexelCopyTextureInfo {
             texture: (),
             mip_level: destination.mip_level,
             origin: destination.origin,
@@ -859,7 +952,7 @@ impl Queue {
 
         let (selector, dst_base) = extract_texture_selector(&destination, &size, &dst)?;
 
-        let mut pending_writes = self.device.pending_writes.lock();
+        let mut pending_writes = self.pending_writes.lock();
         let encoder = pending_writes.activate();
 
         // If the copy does not fully cover the layers, we need to initialize to
@@ -881,7 +974,7 @@ impl Queue {
             if has_copy_partial_init_tracker_coverage(&size, destination.mip_level, &dst.desc) {
                 for layer_range in dst_initialization_status.mips[destination.mip_level as usize]
                     .drain(init_layer_range)
-                    .collect::<Vec<std::ops::Range<u32>>>()
+                    .collect::<Vec<core::ops::Range<u32>>>()
                 {
                     let mut trackers = self.device.trackers.lock();
                     crate::command::clear_texture(
@@ -921,7 +1014,7 @@ impl Queue {
         let mut trackers = self.device.trackers.lock();
         let transitions = trackers
             .textures
-            .set_single(&dst, selector, hal::TextureUses::COPY_DST);
+            .set_single(&dst, selector, wgt::TextureUses::COPY_DST);
 
         // `copy_external_image_to_texture` is exclusive to the WebGL backend.
         // Don't go through the `DynCommandEncoder` abstraction and directly to the WebGL backend.
@@ -1004,7 +1097,7 @@ impl Queue {
                         // Note that we are required to invalidate all command buffers in both the success and failure paths.
                         // This is why we `continue` and don't early return via `?`.
                         #[allow(unused_mut)]
-                        let mut cmd_buf_data = command_buffer.try_take();
+                        let mut cmd_buf_data = command_buffer.take_finished();
 
                         #[cfg(feature = "trace")]
                         if let Some(ref mut trace) = *self.device.trace.lock() {
@@ -1014,6 +1107,10 @@ impl Queue {
                                     cmd_buf_data.commands.take().unwrap(),
                                 ));
                             }
+                        }
+
+                        if first_error.is_some() {
+                            continue;
                         }
 
                         let mut baked = match cmd_buf_data {
@@ -1028,7 +1125,6 @@ impl Queue {
                                 );
                                 if let Err(err) = res {
                                     first_error.get_or_insert(err);
-                                    cmd_buf_data.destroy(&command_buffer.device);
                                     continue;
                                 }
                                 cmd_buf_data.into_baked_commands()
@@ -1039,19 +1135,8 @@ impl Queue {
                             }
                         };
 
-                        if first_error.is_some() {
-                            continue;
-                        }
-
                         // execute resource transitions
-                        if let Err(e) = unsafe {
-                            baked.encoder.begin_encoding(hal_label(
-                                Some("(wgpu internal) Transit"),
-                                self.device.instance_flags,
-                            ))
-                        }
-                        .map_err(|e| self.device.handle_hal_error(e))
-                        {
+                        if let Err(e) = baked.encoder.open_pass(Some("(wgpu internal) Transit")) {
                             break 'error Err(e.into());
                         }
 
@@ -1072,26 +1157,21 @@ impl Queue {
                         //Note: stateless trackers are not merged:
                         // device already knows these resources exist.
                         CommandBuffer::insert_barriers_from_device_tracker(
-                            baked.encoder.as_mut(),
+                            baked.encoder.raw.as_mut(),
                             &mut trackers,
                             &baked.trackers,
                             &snatch_guard,
                         );
 
-                        let transit = unsafe { baked.encoder.end_encoding().unwrap() };
-                        baked.list.insert(0, transit);
+                        if let Err(e) = baked.encoder.close_and_push_front() {
+                            break 'error Err(e.into());
+                        }
 
                         // Transition surface textures into `Present` state.
                         // Note: we could technically do it after all of the command buffers,
                         // but here we have a command encoder by hand, so it's easier to use it.
                         if !used_surface_textures.is_empty() {
-                            if let Err(e) = unsafe {
-                                baked.encoder.begin_encoding(hal_label(
-                                    Some("(wgpu internal) Present"),
-                                    self.device.instance_flags,
-                                ))
-                            }
-                            .map_err(|e| self.device.handle_hal_error(e))
+                            if let Err(e) = baked.encoder.open_pass(Some("(wgpu internal) Present"))
                             {
                                 break 'error Err(e.into());
                             }
@@ -1102,19 +1182,20 @@ impl Queue {
                                     &snatch_guard,
                                 )
                                 .collect::<Vec<_>>();
-                            let present = unsafe {
-                                baked.encoder.transition_textures(&texture_barriers);
-                                baked.encoder.end_encoding().unwrap()
+                            unsafe {
+                                baked.encoder.raw.transition_textures(&texture_barriers);
                             };
-                            baked.list.push(present);
+                            if let Err(e) = baked.encoder.close() {
+                                break 'error Err(e.into());
+                            }
                             used_surface_textures = track::TextureUsageScope::default();
                         }
 
                         // done
                         active_executions.push(EncoderInFlight {
-                            raw: baked.encoder,
-                            cmd_buffers: baked.list,
+                            inner: baked.encoder,
                             trackers: baked.trackers,
+                            temp_resources: baked.temp_resources,
                             pending_buffers: FastHashMap::default(),
                             pending_textures: FastHashMap::default(),
                         });
@@ -1126,7 +1207,7 @@ impl Queue {
                 }
             }
 
-            let mut pending_writes = self.device.pending_writes.lock();
+            let mut pending_writes = self.pending_writes.lock();
 
             {
                 used_surface_textures.set_size(self.device.tracker_indices.textures.size());
@@ -1140,7 +1221,7 @@ impl Queue {
 
                             unsafe {
                                 used_surface_textures
-                                    .merge_single(texture, None, hal::TextureUses::PRESENT)
+                                    .merge_single(texture, None, wgt::TextureUses::PRESENT)
                                     .unwrap()
                             };
                         }
@@ -1175,7 +1256,7 @@ impl Queue {
             }
             let hal_command_buffers = active_executions
                 .iter()
-                .flat_map(|e| e.cmd_buffers.iter().map(|b| b.as_ref()))
+                .flat_map(|e| e.inner.list.iter().map(|b| b.as_ref()))
                 .collect::<Vec<_>>();
 
             {
@@ -1213,28 +1294,29 @@ impl Queue {
             profiling::scope!("cleanup");
 
             // this will register the new submission to the life time tracker
-            self.device.lock_life().track_submission(
-                submit_index,
-                pending_writes.temp_resources.drain(..),
-                active_executions,
-            );
+            self.lock_life()
+                .track_submission(submit_index, active_executions);
             drop(pending_writes);
 
             // This will schedule destruction of all resources that are no longer needed
             // by the user but used in the command stream, among other things.
             let fence_guard = RwLockWriteGuard::downgrade(fence);
-            let (closures, _) =
-                match self
-                    .device
-                    .maintain(fence_guard, wgt::Maintain::Poll, snatch_guard)
-                {
-                    Ok(closures) => closures,
-                    Err(WaitIdleError::Device(err)) => {
-                        break 'error Err(QueueSubmitError::Queue(err))
-                    }
-                    Err(WaitIdleError::StuckGpu) => break 'error Err(QueueSubmitError::StuckGpu),
-                    Err(WaitIdleError::WrongSubmissionIndex(..)) => unreachable!(),
-                };
+            let (closures, result) =
+                self.device
+                    .maintain(fence_guard, wgt::PollType::Poll, snatch_guard);
+            match result {
+                Ok(status) => {
+                    debug_assert!(matches!(
+                        status,
+                        wgt::PollStatus::QueueEmpty | wgt::PollStatus::Poll
+                    ));
+                }
+                Err(WaitIdleError::Device(err)) => break 'error Err(QueueSubmitError::Queue(err)),
+                Err(WaitIdleError::WrongSubmissionIndex(..)) => {
+                    unreachable!("Cannot get WrongSubmissionIndex from Poll")
+                }
+                Err(WaitIdleError::Timeout) => unreachable!("Cannot get Timeout from Poll"),
+            };
 
             Ok(closures)
         };
@@ -1256,13 +1338,14 @@ impl Queue {
         unsafe { self.raw().get_timestamp_period() }
     }
 
+    /// `closure` is guaranteed to be called.
     pub fn on_submitted_work_done(
         &self,
         closure: SubmittedWorkDoneClosure,
     ) -> Option<SubmissionIndex> {
         api_log!("Queue::on_submitted_work_done");
         //TODO: flush pending writes
-        self.device.lock_life().add_work_done_closure(closure)
+        self.lock_life().add_work_done_closure(closure)
     }
 }
 
@@ -1334,9 +1417,9 @@ impl Global {
     pub fn queue_write_texture(
         &self,
         queue_id: QueueId,
-        destination: &ImageCopyTexture,
+        destination: &TexelCopyTextureInfo,
         data: &[u8],
-        data_layout: &wgt::ImageDataLayout,
+        data_layout: &wgt::TexelCopyBufferLayout,
         size: &wgt::Extent3d,
     ) -> Result<(), QueueWriteError> {
         let queue = self.hub.queues.get(queue_id);
@@ -1352,7 +1435,7 @@ impl Global {
             });
         }
 
-        let destination = wgt::ImageCopyTexture {
+        let destination = wgt::TexelCopyTextureInfo {
             texture: self.hub.textures.get(destination.texture),
             mip_level: destination.mip_level,
             origin: destination.origin,
@@ -1365,12 +1448,12 @@ impl Global {
     pub fn queue_copy_external_image_to_texture(
         &self,
         queue_id: QueueId,
-        source: &wgt::ImageCopyExternalImage,
-        destination: crate::command::ImageCopyTextureTagged,
+        source: &wgt::CopyExternalImageSourceInfo,
+        destination: crate::command::CopyExternalImageDestInfo,
         size: wgt::Extent3d,
     ) -> Result<(), QueueWriteError> {
         let queue = self.hub.queues.get(queue_id);
-        let destination = wgt::ImageCopyTextureTagged {
+        let destination = wgt::CopyExternalImageDestInfo {
             texture: self.hub.textures.get(destination.texture),
             mip_level: destination.mip_level,
             origin: destination.origin,
@@ -1419,12 +1502,11 @@ fn validate_command_buffer(
     command_buffer: &CommandBuffer,
     queue: &Queue,
     cmd_buf_data: &crate::command::CommandBufferMutable,
-    snatch_guard: &crate::snatch::SnatchGuard<'_>,
+    snatch_guard: &SnatchGuard,
     submit_surface_textures_owned: &mut FastHashMap<*const Texture, Arc<Texture>>,
     used_surface_textures: &mut track::TextureUsageScope,
 ) -> Result<(), QueueSubmitError> {
     command_buffer.same_device_as(queue)?;
-    cmd_buf_data.check_finished()?;
 
     {
         profiling::scope!("check resource state");
@@ -1447,8 +1529,7 @@ fn validate_command_buffer(
                     TextureInner::Native { .. } => false,
                     TextureInner::Surface { .. } => {
                         // Compare the Arcs by pointer as Textures don't implement Eq.
-                        submit_surface_textures_owned
-                            .insert(Arc::as_ptr(&texture), texture.clone());
+                        submit_surface_textures_owned.insert(Arc::as_ptr(texture), texture.clone());
 
                         true
                     }
@@ -1456,11 +1537,18 @@ fn validate_command_buffer(
                 if should_extend {
                     unsafe {
                         used_surface_textures
-                            .merge_single(&texture, None, hal::TextureUses::PRESENT)
+                            .merge_single(texture, None, wgt::TextureUses::PRESENT)
                             .unwrap();
                     };
                 }
             }
+        }
+
+        if let Err(e) = cmd_buf_data.validate_blas_actions() {
+            return Err(e.into());
+        }
+        if let Err(e) = cmd_buf_data.validate_tlas_actions(snatch_guard) {
+            return Err(e.into());
         }
     }
     Ok(())

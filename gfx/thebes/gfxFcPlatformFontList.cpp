@@ -17,7 +17,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_gfx.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "nsGkAtoms.h"
 #include "nsIConsoleService.h"
@@ -72,6 +72,9 @@ using namespace mozilla::intl;
 #endif
 #ifndef FC_VARIABLE
 #  define FC_VARIABLE "variable" /* Bool */
+#endif
+#ifndef FC_NAMED_INSTANCE
+#  define FC_NAMED_INSTANCE "namedinstance" /* Bool */
 #endif
 
 #define PRINTING_FC_PROPERTY "gfx.printing"
@@ -900,7 +903,7 @@ gfxFont* gfxFontconfigFontEntry::CreateFontInstance(
 
   // will synthetic oblique be applied using a transform?
   if (IsUpright() && !aFontStyle->style.IsNormal() &&
-      aFontStyle->allowSyntheticStyle) {
+      aFontStyle->synthesisStyle != StyleFontSynthesisStyle::None) {
     // disable embedded bitmaps (mimics behavior in 90-synthetic.conf)
     FcPatternDel(renderPattern, FC_EMBEDDED_BITMAP);
     FcPatternAddBool(renderPattern, FC_EMBEDDED_BITMAP, FcFalse);
@@ -1439,6 +1442,27 @@ void gfxFcPlatformFontList::AddFontSetFamilies(FcFontSet* aFontSet,
   }
 }
 
+// Check whether a pattern refers to a non-variable font, or a specific named
+// instance of a variable font. Only such patterns are eligible for src:local()
+// name lookups, as local() is defined to reference a specific face.
+static bool IsNonVariableOrNamedInstance(FcPattern* aPattern) {
+  FcBool value;
+  if (FcPatternGetBool(aPattern, FC_VARIABLE, 0, &value) == FcResultMatch &&
+      value) {
+    // It's a variable font resource; check if this is a named instance.
+    if (FcPatternGetBool(aPattern, FC_NAMED_INSTANCE, 0, &value) ==
+            FcResultMatch &&
+        value) {
+      // Yes, named instance: ok to use.
+      return true;
+    }
+    // It's a variable font; we don't want it.
+    return false;
+  }
+  // Non-variable: no problem.
+  return true;
+}
+
 void gfxFcPlatformFontList::AddPatternToFontList(
     FcPattern* aFont, FcChar8*& aLastFamilyName, nsACString& aFamilyName,
     RefPtr<gfxFontconfigFontFamily>& aFontFamily, bool aAppFonts) {
@@ -1502,21 +1526,23 @@ void gfxFcPlatformFontList::AddPatternToFontList(
   MOZ_ASSERT(aFontFamily, "font must belong to a font family");
   aFontFamily->AddFontPattern(aFont, singleName);
 
-  // map the psname, fullname ==> font family for local font lookups
-  nsAutoCString psname, fullname;
-  GetFaceNames(aFont, aFamilyName, psname, fullname);
-  if (!psname.IsEmpty()) {
-    ToLowerCase(psname);
-    mLocalNames.InsertOrUpdate(psname, RefPtr{aFont});
-  }
-  if (!fullname.IsEmpty()) {
-    ToLowerCase(fullname);
-    mLocalNames.WithEntryHandle(fullname, [&](auto&& entry) {
-      if (entry && !singleName) {
-        return;
-      }
-      entry.InsertOrUpdate(RefPtr{aFont});
-    });
+  if (IsNonVariableOrNamedInstance(aFont)) {
+    // map the psname, fullname ==> font family for local font lookups
+    nsAutoCString psname, fullname;
+    GetFaceNames(aFont, aFamilyName, psname, fullname);
+    if (!psname.IsEmpty()) {
+      ToLowerCase(psname);
+      mLocalNames.InsertOrUpdate(psname, RefPtr{aFont});
+    }
+    if (!fullname.IsEmpty()) {
+      ToLowerCase(fullname);
+      mLocalNames.WithEntryHandle(fullname, [&](auto&& entry) {
+        if (entry && !singleName) {
+          return;
+        }
+        entry.InsertOrUpdate(RefPtr{aFont});
+      });
+    }
   }
 }
 
@@ -1732,11 +1758,10 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
 
 #ifdef MOZ_BUNDLED_FONTS
   if (StaticPrefs::gfx_bundled_fonts_activate_AtStartup() != 0) {
-    TimeStamp start = TimeStamp::Now();
+    auto timerId = glean::fontlist::bundledfonts_activate.Start();
     ActivateBundledFonts();
-    TimeStamp end = TimeStamp::Now();
-    Telemetry::Accumulate(Telemetry::FONTLIST_BUNDLEDFONTS_ACTIVATE,
-                          (end - start).ToMilliseconds());
+    glean::fontlist::bundledfonts_activate.StopAndAccumulate(
+        std::move(timerId));
   }
 #endif
 
@@ -1857,28 +1882,30 @@ void gfxFcPlatformFontList::InitSharedFontListForPlatform() {
     const bool singleName = n == 1;
     faceList->Add(std::move(initData), singleName);
 
-    // map the psname, fullname ==> font family for local font lookups
-    nsAutoCString psname, fullname;
-    GetFaceNames(aPattern, aFamilyName, psname, fullname);
-    MOZ_PUSH_IGNORE_THREAD_SAFETY
-    if (!psname.IsEmpty()) {
-      ToLowerCase(psname);
-      MaybeAddToLocalNameTable(
-          psname, fontlist::LocalFaceRec::InitData(keyName, descriptor));
-    }
-    if (!fullname.IsEmpty()) {
-      ToLowerCase(fullname);
-      if (fullname != psname) {
-        // We only consider overriding an existing entry if this is the only
-        // way to name this family. This prevents dubious aliases from
-        // clobbering the local name table.
-        if (singleName || !mLocalNameTable.Contains(fullname)) {
-          MaybeAddToLocalNameTable(
-              fullname, fontlist::LocalFaceRec::InitData(keyName, descriptor));
+    if (IsNonVariableOrNamedInstance(aPattern)) {
+      // map the psname, fullname ==> font family for local font lookups
+      nsAutoCString psname, fullname;
+      GetFaceNames(aPattern, aFamilyName, psname, fullname);
+      MOZ_PUSH_IGNORE_THREAD_SAFETY
+      if (!psname.IsEmpty()) {
+        ToLowerCase(psname);
+        MaybeAddToLocalNameTable(
+            psname, fontlist::LocalFaceRec::InitData(keyName, descriptor));
+      }
+      if (!fullname.IsEmpty()) {
+        ToLowerCase(fullname);
+        if (fullname != psname) {
+          // We only consider overriding an existing entry if this is the only
+          // way to name this family. This prevents dubious aliases from
+          // clobbering the local name table.
+          if (singleName || !mLocalNameTable.Contains(fullname)) {
+            MaybeAddToLocalNameTable(fullname, fontlist::LocalFaceRec::InitData(
+                                                   keyName, descriptor));
+          }
         }
       }
+      MOZ_POP_THREAD_SAFETY
     }
-    MOZ_POP_THREAD_SAFETY
 
     return visibility == FontVisibility::Base;
   };
@@ -2710,8 +2737,11 @@ void gfxFcPlatformFontList::CheckFontUpdates(nsITimer* aTimer, void* aThis) {
   FcConfig* current = FcConfigGetCurrent();
   if (current != pfl->GetLastConfig()) {
     pfl->UpdateFontList();
-
-    gfxPlatform::ForceGlobalReflow(gfxPlatform::NeedsReframe::Yes);
+    gfxPlatform::GlobalReflowFlags flags =
+        gfxPlatform::GlobalReflowFlags::NeedsReframe |
+        gfxPlatform::GlobalReflowFlags::FontsChanged |
+        gfxPlatform::GlobalReflowFlags::BroadcastToChildren;
+    gfxPlatform::ForceGlobalReflow(flags);
     mozilla::dom::ContentParent::NotifyUpdatedFonts(true);
   }
 }

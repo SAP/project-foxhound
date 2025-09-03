@@ -123,6 +123,7 @@ export const GenAI = {
           "genai-onboarding-claude-analyze",
           "genai-onboarding-claude-price",
         ],
+        iconUrl: "chrome://browser/content/genai/assets/brands/claude.svg",
         id: "claude",
         learnId: "genai-onboarding-claude-learn",
         learnLink: "https://www.anthropic.com/claude",
@@ -133,8 +134,8 @@ export const GenAI = {
         link3:
           "https://www.anthropic.com/legal/archive/628feec9-7df9-4d38-bc69-fbf104df47b0",
         linksId: "genai-settings-chat-claude-links",
-        name: "Anthropic Claude",
         maxLength: 15020,
+        name: "Anthropic Claude",
         tooltipId: "genai-onboarding-claude-tooltip",
       },
     ],
@@ -146,14 +147,15 @@ export const GenAI = {
           "genai-onboarding-chatgpt-analyze",
           "genai-onboarding-chatgpt-price",
         ],
+        iconUrl: "chrome://browser/content/genai/assets/brands/chatgpt.svg",
         id: "chatgpt",
         learnId: "genai-onboarding-chatgpt-learn",
         learnLink: "https://help.openai.com/articles/6783457-what-is-chatgpt",
         link1: "https://openai.com/terms",
         link2: "https://openai.com/privacy",
         linksId: "genai-settings-chat-chatgpt-links",
-        name: "ChatGPT",
         maxLength: 14140,
+        name: "ChatGPT",
         tooltipId: "genai-onboarding-chatgpt-tooltip",
       },
     ],
@@ -165,14 +167,15 @@ export const GenAI = {
           "genai-onboarding-copilot-analyze",
           "genai-onboarding-copilot-price",
         ],
+        iconUrl: "chrome://browser/content/genai/assets/brands/copilot.svg",
         id: "copilot",
         learnId: "genai-onboarding-copilot-learn",
         learnLink: "https://www.microsoft.com/microsoft-copilot/learn/",
         link1: "https://www.bing.com/new/termsofuse",
         link2: "https://go.microsoft.com/fwlink/?LinkId=521839",
         linksId: "genai-settings-chat-copilot-links",
-        name: "Copilot",
         maxLength: 3260,
+        name: "Copilot",
         tooltipId: "genai-onboarding-copilot-tooltip",
       },
     ],
@@ -185,6 +188,7 @@ export const GenAI = {
           "genai-onboarding-gemini-price",
         ],
         header: "X-Firefox-Gemini",
+        iconUrl: "chrome://browser/content/genai/assets/brands/gemini.svg",
         id: "gemini",
         learnId: "genai-onboarding-gemini-learn",
         learnLink: "https://gemini.google.com/faq",
@@ -192,10 +196,10 @@ export const GenAI = {
         link2: "https://policies.google.com/terms/generative-ai/use-policy",
         link3: "https://support.google.com/gemini?p=privacy_notice",
         linksId: "genai-settings-chat-gemini-links",
-        name: "Google Gemini",
         // Max header length is around 55000, but spaces are encoded with %20
         // for header instead of + for query parameter
         maxLength: 45000,
+        name: "Google Gemini",
         tooltipId: "genai-onboarding-gemini-tooltip",
       },
     ],
@@ -207,14 +211,15 @@ export const GenAI = {
           "genai-onboarding-huggingchat-switch",
           "genai-onboarding-huggingchat-price-2",
         ],
+        iconUrl: "chrome://browser/content/genai/assets/brands/huggingchat.svg",
         id: "huggingchat",
         learnId: "genai-onboarding-huggingchat-learn",
         learnLink: "https://huggingface.co/chat/privacy/",
         link1: "https://huggingface.co/chat/privacy",
         link2: "https://huggingface.co/privacy",
         linksId: "genai-settings-chat-huggingchat-links",
-        name: "HuggingChat",
         maxLength: 8192,
+        name: "HuggingChat",
         tooltipId: "genai-onboarding-huggingchat-tooltip",
       },
     ],
@@ -225,14 +230,15 @@ export const GenAI = {
           "genai-onboarding-lechat-generate",
           "genai-onboarding-lechat-price",
         ],
+        iconUrl: "chrome://browser/content/genai/assets/brands/lechat.svg",
         id: "lechat",
         learnId: "genai-onboarding-lechat-learn",
         learnLink: "https://help.mistral.ai/collections/272960-le-chat",
         link1: "https://mistral.ai/terms/#terms-of-service-le-chat",
         link2: "https://mistral.ai/terms/#privacy-policy",
         linksId: "genai-settings-chat-lechat-links",
-        name: "Le Chat Mistral",
         maxLength: 3680,
+        name: "Le Chat Mistral",
         tooltipId: "genai-onboarding-lechat-tooltip",
       },
     ],
@@ -242,11 +248,26 @@ export const GenAI = {
         id: "localhost",
         link1: "https://llamafile.ai",
         linksId: "genai-settings-chat-localhost-links",
-        name: "localhost",
         maxLength: 8192,
+        name: "localhost",
       },
     ],
   ]),
+
+  /**
+   * Retrieves the current chat provider information based on the
+   * preference setting
+   *
+   * @returns {object} An object containing the current chat provider's
+   *                   information, such as name, iconUrl, etc. If no
+   *                   provider is set, returns an empty object.
+   */
+  get currentChatProviderInfo() {
+    return {
+      iconUrl: "chrome://global/skin/icons/highlights.svg",
+      ...this.chatProviders.get(lazy.chatProvider),
+    };
+  },
 
   /**
    * Determine if chat entrypoints can be shown
@@ -372,7 +393,7 @@ export const GenAI = {
       ...extraContext,
       entry,
       provider: lazy.chatProvider,
-      tabTitle: (tab._labelIsContentTitle && tab.label) || "",
+      tabTitle: (tab?._labelIsContentTitle && tab?.label) || "",
       url: uri.asciiHost + uri.filePath,
       window,
     };
@@ -386,32 +407,99 @@ export const GenAI = {
     );
     return context;
   },
-
   /**
    * Handle messages from content to show or hide shortcuts.
    *
    * @param {string} name of message
-   * @param {object} data for the message
+   * @param {{
+      inputType: string,
+      selection: string,
+      delay: number,
+      x: number,
+      y: number,
+   }} data for the message
    * @param {MozBrowser} browser that provided the message
    */
   handleShortcutsMessage(name, data, browser) {
-    if (!lazy.chatEnabled || !lazy.chatShortcuts || lazy.chatProvider == "") {
-      return;
-    }
-    const stack = browser?.closest(".browserStack");
-    if (!stack) {
+    const isInBrowserStack = browser?.closest(".browserStack");
+
+    if (
+      !isInBrowserStack ||
+      !browser ||
+      this.ignoredInputs.has(data.inputType) ||
+      !lazy.chatShortcuts ||
+      !this.canShowChatEntrypoint
+    ) {
       return;
     }
 
-    let shortcuts = stack.querySelector(".content-shortcuts");
     const window = browser.ownerGlobal;
-    const { document } = window;
-    const popup = document.getElementById("ask-chat-shortcuts");
+    const { document, devicePixelRatio } = window;
+
+    // Get Panel elements
+    const chatShortcutsOptionsPanel = document.getElementById(
+      "chat-shortcuts-options-panel"
+    );
+    const selectionShortcutActionPanel = document.getElementById(
+      "selection-shortcut-action-panel"
+    );
+
+    if (!chatShortcutsOptionsPanel || !selectionShortcutActionPanel) {
+      return;
+    }
+
+    const aiActionButton =
+      selectionShortcutActionPanel.querySelector("#ai-action-button");
+    aiActionButton.iconSrc = "chrome://global/skin/icons/highlights.svg";
+    const buttonActiveState = "icon";
+    const buttonDefaultState = "icon ghost";
+
+    // Hide shortcuts and panel
     const hide = () => {
-      if (shortcuts) {
-        shortcuts.removeAttribute("shown");
-      }
-      popup.hidePopup();
+      aiActionButton.setAttribute("type", buttonDefaultState);
+      aiActionButton.removeEventListener("mouseover", aiActionButton.listener);
+      aiActionButton.listener = null;
+      chatShortcutsOptionsPanel.hidePopup();
+      selectionShortcutActionPanel.hidePopup();
+    };
+
+    const roundDownToNearestHundred = number => {
+      return Math.floor(number / 100) * 100;
+    };
+
+    /**
+    * Create a warning message bar.
+    *
+    * @param {{
+      name: string,
+      maxLength: number,
+    }} chatProvider attributes for the warning
+    * @returns { mozMessageBarEl } MozMessageBar warning message bar
+    */
+    const createMessageBarWarning = chatProvider => {
+      const mozMessageBarEl = document.createElement("moz-message-bar");
+
+      // Create MozMessageBar
+      mozMessageBarEl.dataset.l10nAttrs = "heading,message";
+      mozMessageBarEl.setAttribute("type", "warning");
+      mozMessageBarEl.className = "ask-chat-shortcut-warning";
+
+      // If provider is not defined, use generic warning message
+      const translationId = chatProvider?.name
+        ? "genai-shortcuts-selected-warning"
+        : "genai-shortcuts-selected-warning-generic";
+
+      document.l10n.setAttributes(mozMessageBarEl, translationId, {
+        provider: chatProvider?.name,
+        maxLength: roundDownToNearestHundred(
+          this.estimateSelectionLimit(chatProvider?.maxLength)
+        ),
+        selectionLength: roundDownToNearestHundred(
+          aiActionButton.data.selection.length
+        ),
+      });
+
+      return mozMessageBarEl;
     };
 
     switch (name) {
@@ -419,112 +507,121 @@ export const GenAI = {
         hide();
         break;
       case "GenAI:ShowShortcuts": {
-        // Ignore some input field selection to avoid showing shortcuts
-        if (
-          this.ignoredInputs.has(data.inputType) ||
-          !this.canShowChatEntrypoint
-        ) {
-          return;
-        }
+        aiActionButton.setAttribute("type", buttonDefaultState);
 
-        // Add shortcuts to the current tab's brower stack if it doesn't exist
-        if (!shortcuts) {
-          shortcuts = stack.appendChild(document.createElement("div"));
-          shortcuts.className = "content-shortcuts";
+        // Detect hover to build and open the popup
+        aiActionButton.listener = async () => {
+          if (aiActionButton.hasAttribute("active")) {
+            return;
+          }
 
-          // Detect hover to build and open the popup
-          shortcuts.addEventListener("mouseover", async () => {
-            if (!shortcuts.hasAttribute("active")) {
-              shortcuts.toggleAttribute("active");
-              const vbox = popup.querySelector("vbox");
-              vbox.innerHTML = "";
+          aiActionButton.toggleAttribute("active");
+          aiActionButton.setAttribute("type", buttonActiveState);
+          const vbox = chatShortcutsOptionsPanel.querySelector("vbox");
+          vbox.innerHTML = "";
 
-              const addItem = () => {
-                const button = vbox.appendChild(
-                  document.createXULElement("toolbarbutton")
-                );
-                button.className = "subviewbutton";
-                button.setAttribute("tabindex", "0");
-                return button;
-              };
+          const chatProvider = this.chatProviders.get(lazy.chatProvider);
+          const selectionLength = aiActionButton.data.selection.length;
+          const showWarning =
+            this.estimateSelectionLimit(chatProvider?.maxLength) <
+            selectionLength;
 
-              const context = await this.addAskChatItems(
-                browser,
-                shortcuts.data,
-                promptObj => {
-                  const button = addItem();
-                  button.textContent = promptObj.label;
-                  return button;
-                },
-                "shortcuts",
-                hide
-              );
+          // Show warning if selection is too long
+          if (showWarning) {
+            vbox.appendChild(createMessageBarWarning(chatProvider));
+          }
 
-              // Add custom input box if configured
-              if (lazy.chatShortcutsCustom) {
-                const input = vbox.appendChild(
-                  document.createElement("textarea")
-                );
-                const provider = this.chatProviders.get(
-                  lazy.chatProvider
-                )?.name;
-                document.l10n.setAttributes(
-                  input,
-                  provider
-                    ? "genai-input-ask-provider"
-                    : "genai-input-ask-generic",
-                  { provider }
-                );
-                input.style.margin = "var(--arrowpanel-menuitem-margin)";
-                input.style.marginTop = "5px";
-                input.addEventListener("mouseover", () => input.focus());
-                input.addEventListener("keydown", event => {
-                  if (event.key == "Enter" && !event.shiftKey) {
-                    this.handleAskChat({ value: input.value }, context);
-                    hide();
-                  }
-                });
-                const updateHeight = () => {
-                  input.style.height = "auto";
-                  input.style.height = input.scrollHeight + "px";
-                };
-                input.addEventListener("input", updateHeight);
-                popup.addEventListener("popupshown", updateHeight, {
-                  once: true,
-                });
+          const addItem = () => {
+            const button = vbox.appendChild(
+              document.createXULElement("toolbarbutton")
+            );
+            button.className = "subviewbutton";
+            button.setAttribute("tabindex", "0");
+            return button;
+          };
+
+          const context = await this.addAskChatItems(
+            browser,
+            aiActionButton.data,
+            promptObj => {
+              const button = addItem();
+              button.textContent = promptObj.label;
+              return button;
+            },
+            "shortcuts",
+            hide
+          );
+
+          // Add custom textarea box if configured
+          if (lazy.chatShortcutsCustom) {
+            const textAreaEl = vbox.appendChild(
+              document.createElement("textarea")
+            );
+            document.l10n.setAttributes(
+              textAreaEl,
+              chatProvider?.name
+                ? "genai-input-ask-provider"
+                : "genai-input-ask-generic",
+              { provider: chatProvider?.name }
+            );
+
+            textAreaEl.className = "ask-chat-shortcuts-custom-prompt";
+            textAreaEl.addEventListener("mouseover", () => textAreaEl.focus());
+            textAreaEl.addEventListener("keydown", event => {
+              if (event.key == "Enter" && !event.shiftKey) {
+                this.handleAskChat({ value: textAreaEl.value }, context);
+                hide();
               }
+            });
 
-              // Allow hiding these shortcuts
-              vbox.appendChild(document.createXULElement("toolbarseparator"));
-              const hider = addItem();
-              document.l10n.setAttributes(hider, "genai-shortcuts-hide");
-              hider.addEventListener("command", () => {
-                Services.prefs.setBoolPref("browser.ml.chat.shortcuts", false);
-                Glean.genaiChatbot.shortcutsHideClick.record({
-                  selection: shortcuts.data.selection.length,
-                });
-              });
+            const resetHeight = () => {
+              textAreaEl.style.height = "auto";
+              textAreaEl.style.height = textAreaEl.scrollHeight + "px";
+            };
 
-              popup.openPopup(shortcuts);
-              popup.addEventListener(
-                "popuphidden",
-                () => shortcuts.removeAttribute("active"),
-                { once: true }
-              );
-              Glean.genaiChatbot.shortcutsExpanded.record({
-                selection: shortcuts.data.selection.length,
-              });
-            }
+            textAreaEl.addEventListener("input", resetHeight);
+            chatShortcutsOptionsPanel.addEventListener(
+              "popupshown",
+              resetHeight,
+              {
+                once: true,
+              }
+            );
+          }
+
+          // Allow hiding these shortcuts
+          vbox.appendChild(document.createXULElement("toolbarseparator"));
+          const hider = addItem();
+          document.l10n.setAttributes(hider, "genai-shortcuts-hide");
+          hider.addEventListener("command", () => {
+            Services.prefs.setBoolPref("browser.ml.chat.shortcuts", false);
+            Glean.genaiChatbot.shortcutsHideClick.record({
+              selection: aiActionButton.data.selection.length,
+            });
           });
-        }
+
+          chatShortcutsOptionsPanel.openPopup(
+            selectionShortcutActionPanel,
+            "after_start",
+            0,
+            10
+          );
+          chatShortcutsOptionsPanel.addEventListener(
+            "popuphidden",
+            () => aiActionButton.removeAttribute("active"),
+            { once: true }
+          );
+          Glean.genaiChatbot.shortcutsExpanded.record({
+            selection: aiActionButton.data.selection.length,
+            provider: this.getProviderId(),
+            warning: showWarning,
+          });
+        };
+        aiActionButton.addEventListener("mouseover", aiActionButton.listener);
 
         // Save the latest selection so it can be used by popup
-        shortcuts.data = data;
-        if (shortcuts.hasAttribute("shown")) {
-          return;
-        }
+        aiActionButton.data = data;
 
-        shortcuts.toggleAttribute("shown");
         Glean.genaiChatbot.shortcutsDisplayed.record({
           delay: data.delay,
           inputType: data.inputType,
@@ -532,14 +629,18 @@ export const GenAI = {
         });
 
         // Position the shortcuts relative to the browser's top-left corner
-        const rect = browser.getBoundingClientRect();
-        shortcuts.style.setProperty(
-          "--shortcuts-x",
-          data.x - window.screenX - rect.x + "px"
-        );
-        shortcuts.style.setProperty(
-          "--shortcuts-y",
-          data.y - window.screenY - rect.y + "px"
+        const screenYBase = data.screenYDevPx / devicePixelRatio;
+        const safeSpace = window.outerHeight - 40;
+        // Remove padding if the popup would be offscreen
+        const bottomPadding = screenYBase > safeSpace ? 0 : 40;
+        const screenX = data.screenXDevPx / devicePixelRatio;
+        const screenY = screenYBase + bottomPadding;
+
+        selectionShortcutActionPanel.openPopup(
+          browser,
+          "before_start",
+          screenX - browser.screenX,
+          screenY - browser.screenY
         );
         break;
       }
@@ -558,7 +659,8 @@ export const GenAI = {
       return;
     }
     const provider = this.chatProviders.get(lazy.chatProvider)?.name;
-    menu.ownerDocument.l10n.setAttributes(
+    const doc = menu.ownerDocument;
+    doc.l10n.setAttributes(
       menu,
       provider ? "genai-menu-ask-provider" : "genai-menu-ask-generic",
       { provider }
@@ -570,7 +672,26 @@ export const GenAI = {
       promptObj => menu.appendItem(promptObj.label),
       "menu"
     );
-    nsContextMenu.showItem(menu, menu.itemCount > 0);
+
+    // Add separator and remove provider option
+    const hasPrompts = menu.itemCount > 0;
+    if (hasPrompts) {
+      menu.menupopup.appendChild(doc.createXULElement("menuseparator"));
+      const removeItem = menu.appendItem("");
+      doc.l10n.setAttributes(
+        removeItem,
+        provider ? "genai-menu-remove-provider" : "genai-menu-remove-generic",
+        { provider }
+      );
+      removeItem.addEventListener("command", () => {
+        Glean.genaiChatbot.contextmenuRemove.record({
+          provider: this.getProviderId(),
+        });
+        Services.prefs.clearUserPref("browser.ml.chat.provider");
+      });
+    }
+
+    nsContextMenu.showItem(menu, hasPrompts);
   },
 
   /**
@@ -686,7 +807,7 @@ export const GenAI = {
       (placeholder, key, options) =>
         // Currently only supporting numeric options for slice with `undefined`
         // resulting in whole string
-        context[key]?.slice(0, options) ?? placeholder
+        `<${key}>${context[key]?.slice(0, options) ?? placeholder}</${key}>`
     );
   },
 
@@ -711,7 +832,8 @@ export const GenAI = {
     const prompt = this.buildChatPrompt(promptObj, context);
 
     // Pass the prompt via GET url ?q= param or request header
-    const { header } = this.chatProviders.get(lazy.chatProvider) ?? {};
+    const { header, queryParam = "q" } =
+      this.chatProviders.get(lazy.chatProvider) ?? {};
     const url = new URL(lazy.chatProvider);
     const options = {
       inBackground: false,
@@ -724,9 +846,11 @@ export const GenAI = {
       options.headers = Cc[
         "@mozilla.org/io/string-input-stream;1"
       ].createInstance(Ci.nsIStringInputStream);
-      options.headers.data = `${header}: ${encodeURIComponent(prompt)}\r\n`;
+      options.headers.setByteStringData(
+        `${header}: ${encodeURIComponent(prompt)}\r\n`
+      );
     } else {
-      url.searchParams.set("q", prompt);
+      url.searchParams.set(queryParam, prompt);
     }
 
     // Get the desired browser to handle the prompt url request
@@ -899,6 +1023,11 @@ function onChatProviderChange(value) {
 
   // Recalculate query limit on provider change
   GenAI.chatLastPrefix = null;
+
+  // Refreshes the sidebar icon and label for all open windows
+  lazy.EveryWindow.readyWindows.forEach(window => {
+    window.SidebarController.addOrUpdateExtension("viewGenaiChatSidebar", {});
+  });
 }
 
 /**
@@ -908,11 +1037,13 @@ function onChatProviderChange(value) {
  */
 function onChatShortcutsChange(value) {
   if (!value) {
-    lazy.EveryWindow.readyWindows.forEach(window =>
-      window.document
-        .querySelectorAll(".content-shortcuts")
-        .forEach(shortcuts => shortcuts.removeAttribute("shown"))
-    );
+    lazy.EveryWindow.readyWindows.forEach(window => {
+      const selectionShortcutActionPanel = window.document.getElementById(
+        "selection-shortcut-action-panel"
+      );
+
+      selectionShortcutActionPanel.hidePopup();
+    });
   }
 }
 

@@ -167,7 +167,7 @@ export class GeckoViewNavigation extends GeckoViewModule {
       case "GeckoView:GotoHistoryIndex":
         this.browser.gotoIndex(aData.index);
         break;
-      case "GeckoView:LoadUri":
+      case "GeckoView:LoadUri": {
         const {
           uri,
           referrerUri,
@@ -175,6 +175,7 @@ export class GeckoViewNavigation extends GeckoViewModule {
           flags,
           headers,
           headerFilter,
+          originalInput,
         } = aData;
 
         let navFlags = convertFlags(flags);
@@ -243,6 +244,15 @@ export class GeckoViewNavigation extends GeckoViewModule {
           }
         }
 
+        let schemelessInput = 0;
+        if (originalInput) {
+          schemelessInput =
+            !originalInput.toLowerCase().startsWith("http://") &&
+            uri.toLowerCase().startsWith("http://")
+              ? Ci.nsILoadInfo.SchemelessInputTypeSchemeless
+              : Ci.nsILoadInfo.SchemelessInputTypeSchemeful;
+        }
+
         // For any navigation here, we should have an appropriate triggeringPrincipal:
         //
         // 1) If we have a referring session, triggeringPrincipal is the contentPrincipal from the
@@ -265,8 +275,10 @@ export class GeckoViewNavigation extends GeckoViewModule {
           triggeringPrincipal,
           headers: additionalHeaders,
           csp,
+          schemelessInput,
         });
         break;
+      }
       case "GeckoView:Reload":
         // At the moment, GeckoView only supports one reload, which uses
         // nsIWebNavigation.LOAD_FLAGS_NONE flag, and the telemetry doesn't
@@ -286,49 +298,6 @@ export class GeckoViewNavigation extends GeckoViewModule {
         printActor.clearStaticClone();
         break;
     }
-  }
-
-  waitAndSetupWindow(aSessionId, aOpenWindowInfo, aName) {
-    if (!aSessionId) {
-      return Promise.reject();
-    }
-
-    return new Promise((resolve, reject) => {
-      const handler = {
-        observe(aSubject, aTopic) {
-          if (
-            aTopic === "geckoview-window-created" &&
-            aSubject.name === aSessionId
-          ) {
-            // This value will be read by nsFrameLoader while it is being initialized.
-            aSubject.browser.openWindowInfo = aOpenWindowInfo;
-
-            // Gecko will use this attribute to set the name of the opened window.
-            if (aName) {
-              aSubject.browser.setAttribute("name", aName);
-            }
-
-            if (
-              !aOpenWindowInfo.isRemote &&
-              aSubject.browser.hasAttribute("remote")
-            ) {
-              // We cannot start in remote mode when we have an opener.
-              aSubject.browser.setAttribute("remote", "false");
-              aSubject.browser.removeAttribute("remoteType");
-            }
-            Services.obs.removeObserver(handler, "geckoview-window-created");
-            if (!aSubject) {
-              reject();
-              return;
-            }
-            resolve(aSubject);
-          }
-        },
-      };
-
-      // This event is emitted from createBrowser() in geckoview.js
-      Services.obs.addObserver(handler, "geckoview-window-created");
-    });
   }
 
   handleNewSession(aUri, aOpenWindowInfo, aWhere, aFlags, aName) {
@@ -354,7 +323,7 @@ export class GeckoViewNavigation extends GeckoViewModule {
 
     // Wait indefinitely for app to respond with a browser or null
     Services.tm.spinEventLoopUntil(
-      "GeckoViewNavigation.jsm:handleNewSession",
+      "GeckoViewNavigation.sys.mjs:handleNewSession",
       () => this.window.closed || browser !== undefined
     );
     return browser || null;
@@ -390,7 +359,7 @@ export class GeckoViewNavigation extends GeckoViewModule {
 
     // The window might be already open by the time we get the response from
     // the Java layer, so we need to start waiting before sending the message.
-    const setupPromise = this.waitAndSetupWindow(
+    const setupPromise = lazy.GeckoViewUtils.waitAndSetupWindow(
       newSessionId,
       aOpenWindowInfo,
       aName

@@ -161,10 +161,10 @@ class ArrayBufferDataStream {
       return bytes
     }
 
-    writeBytes(uint8Array) {
-      this.writeUint32(uint8Array.length);
+    writeBytes(value) {
+      this.writeUint32(value.length);
       value.forEach((elt) => {
-        dataStream.writeUint8(elt);
+        this.writeUint8(elt);
       })
     }
 
@@ -246,6 +246,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -265,7 +296,7 @@ export class FfiConverterU32 extends FfiConverter {
             throw new UniFFITypeError(`${value} exceeds the U32 bounds`);
         }
     }
-    static computeSize() {
+    static computeSize(_value) {
         return 4;
     }
     static lift(value) {
@@ -283,8 +314,36 @@ export class FfiConverterU32 extends FfiConverter {
 }
 
 // Export the FFIConverter object to make external types work.
+export class FfiConverterU64 extends FfiConverter {
+    static checkType(value) {
+        super.checkType(value);
+        if (!Number.isSafeInteger(value)) {
+            throw new UniFFITypeError(`${value} exceeds the safe integer bounds`);
+        }
+        if (value < 0) {
+            throw new UniFFITypeError(`${value} exceeds the U64 bounds`);
+        }
+    }
+    static computeSize(_value) {
+        return 8;
+    }
+    static lift(value) {
+        return value;
+    }
+    static lower(value) {
+        return value;
+    }
+    static write(dataStream, value) {
+        dataStream.writeUint64(value)
+    }
+    static read(dataStream) {
+        return dataStream.readUint64()
+    }
+}
+
+// Export the FFIConverter object to make external types work.
 export class FfiConverterF64 extends FfiConverter {
-    static computeSize() {
+    static computeSize(_value) {
         return 8;
     }
     static lift(value) {
@@ -303,7 +362,7 @@ export class FfiConverterF64 extends FfiConverter {
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterBool extends FfiConverter {
-    static computeSize() {
+    static computeSize(_value) {
         return 1;
     }
     static lift(value) {
@@ -368,7 +427,7 @@ export class RelevancyStore {
             throw new UniFFIError("Attempting to construct an object using the JavaScript constructor directly" +
             "Please use a UDL defined constructor, or the init function for the primary constructor")
         }
-        if (!opts[constructUniffiObject] instanceof UniFFIPointer) {
+        if (!(opts[constructUniffiObject] instanceof UniFFIPointer)) {
             throw new UniFFIError("Attempting to create a UniFFI object with a pointer that is not an instance of UniFFIPointer")
         }
         this[uniffiObjectPtr] = opts[constructUniffiObject];
@@ -392,7 +451,7 @@ export class RelevancyStore {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                11, // relevancy:uniffi_relevancy_fn_constructor_relevancystore_new
+                12, // relevancy:uniffi_relevancy_fn_constructor_relevancystore_new
                 FfiConverterString.lower(dbPath),
             )
         }
@@ -577,6 +636,44 @@ export class RelevancyStore {
     }
 
     /**
+     * Retrieves the data for a specific bandit and arm.
+     * @returns {BanditData}
+     */
+    getBanditData(bandit,arm) {
+        const liftResult = (result) => FfiConverterTypeBanditData.lift(result);
+        const liftError = (data) => FfiConverterTypeRelevancyApiError.lift(data);
+        const functionCall = () => {
+            try {
+                FfiConverterString.checkType(bandit)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("bandit");
+                }
+                throw e;
+            }
+            try {
+                FfiConverterString.checkType(arm)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("arm");
+                }
+                throw e;
+            }
+            return UniFFIScaffolding.callAsyncWrapper(
+                8, // relevancy:uniffi_relevancy_fn_method_relevancystore_get_bandit_data
+                FfiConverterTypeRelevancyStore.lower(this),
+                FfiConverterString.lower(bandit),
+                FfiConverterString.lower(arm),
+            )
+        }
+        try {
+            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
+        }  catch (error) {
+            return Promise.reject(error)
+        }
+    }
+
+    /**
      * Ingest top URLs to build the user's interest vector.
      *
      * Consumer should pass a list of the user's top URLs by frecency to this method.  It will
@@ -603,7 +700,7 @@ export class RelevancyStore {
                 throw e;
             }
             return UniFFIScaffolding.callAsyncWrapper(
-                8, // relevancy:uniffi_relevancy_fn_method_relevancystore_ingest
+                9, // relevancy:uniffi_relevancy_fn_method_relevancystore_ingest
                 FfiConverterTypeRelevancyStore.lower(this),
                 FfiConverterSequencestring.lower(topUrlsByFrecency),
             )
@@ -623,7 +720,7 @@ export class RelevancyStore {
         const liftError = null;
         const functionCall = () => {
             return UniFFIScaffolding.callSync(
-                9, // relevancy:uniffi_relevancy_fn_method_relevancystore_interrupt
+                10, // relevancy:uniffi_relevancy_fn_method_relevancystore_interrupt
                 FfiConverterTypeRelevancyStore.lower(this),
             )
         }
@@ -642,7 +739,7 @@ export class RelevancyStore {
         const liftError = (data) => FfiConverterTypeRelevancyApiError.lift(data);
         const functionCall = () => {
             return UniFFIScaffolding.callAsyncWrapper(
-                10, // relevancy:uniffi_relevancy_fn_method_relevancystore_user_interest_vector
+                11, // relevancy:uniffi_relevancy_fn_method_relevancystore_user_interest_vector
                 FfiConverterTypeRelevancyStore.lower(this),
             )
         }
@@ -685,6 +782,185 @@ export class FfiConverterTypeRelevancyStore extends FfiConverter {
 }
 
 /**
+ * BanditData
+ */
+export class BanditData {
+    constructor({ bandit, arm, impressions, clicks, alpha, beta }) {
+        try {
+            FfiConverterString.checkType(bandit)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("bandit");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterString.checkType(arm)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("arm");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(impressions)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("impressions");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(clicks)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("clicks");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(alpha)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("alpha");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(beta)
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart("beta");
+            }
+            throw e;
+        }
+        /**
+         * @type {string}
+         */
+        this.bandit = bandit;
+        /**
+         * @type {string}
+         */
+        this.arm = arm;
+        /**
+         * @type {number}
+         */
+        this.impressions = impressions;
+        /**
+         * @type {number}
+         */
+        this.clicks = clicks;
+        /**
+         * @type {number}
+         */
+        this.alpha = alpha;
+        /**
+         * @type {number}
+         */
+        this.beta = beta;
+    }
+
+    equals(other) {
+        return (
+            this.bandit == other.bandit &&
+            this.arm == other.arm &&
+            this.impressions == other.impressions &&
+            this.clicks == other.clicks &&
+            this.alpha == other.alpha &&
+            this.beta == other.beta
+        )
+    }
+}
+
+// Export the FFIConverter object to make external types work.
+export class FfiConverterTypeBanditData extends FfiConverterArrayBuffer {
+    static read(dataStream) {
+        return new BanditData({
+            bandit: FfiConverterString.read(dataStream),
+            arm: FfiConverterString.read(dataStream),
+            impressions: FfiConverterU64.read(dataStream),
+            clicks: FfiConverterU64.read(dataStream),
+            alpha: FfiConverterU64.read(dataStream),
+            beta: FfiConverterU64.read(dataStream),
+        });
+    }
+    static write(dataStream, value) {
+        FfiConverterString.write(dataStream, value.bandit);
+        FfiConverterString.write(dataStream, value.arm);
+        FfiConverterU64.write(dataStream, value.impressions);
+        FfiConverterU64.write(dataStream, value.clicks);
+        FfiConverterU64.write(dataStream, value.alpha);
+        FfiConverterU64.write(dataStream, value.beta);
+    }
+
+    static computeSize(value) {
+        let totalSize = 0;
+        totalSize += FfiConverterString.computeSize(value.bandit);
+        totalSize += FfiConverterString.computeSize(value.arm);
+        totalSize += FfiConverterU64.computeSize(value.impressions);
+        totalSize += FfiConverterU64.computeSize(value.clicks);
+        totalSize += FfiConverterU64.computeSize(value.alpha);
+        totalSize += FfiConverterU64.computeSize(value.beta);
+        return totalSize
+    }
+
+    static checkType(value) {
+        super.checkType(value);
+        if (!(value instanceof BanditData)) {
+            throw new UniFFITypeError(`Expected 'BanditData', found '${typeof value}'`);
+        }
+        try {
+            FfiConverterString.checkType(value.bandit);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".bandit");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterString.checkType(value.arm);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".arm");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(value.impressions);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".impressions");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(value.clicks);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".clicks");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(value.alpha);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".alpha");
+            }
+            throw e;
+        }
+        try {
+            FfiConverterU64.checkType(value.beta);
+        } catch (e) {
+            if (e instanceof UniFFITypeError) {
+                e.addItemDescriptionPart(".beta");
+            }
+            throw e;
+        }
+    }
+}
+
+/**
  * Interest metrics that we want to send to Glean as part of the validation process.  These contain
  * the cosine similarity when comparing the user's interest against various interest vectors that
  * consumers may use.
@@ -697,7 +973,7 @@ export class FfiConverterTypeRelevancyStore extends FfiConverter {
  * rounding.  This is to make them compatible with Glean's distribution metrics.
  */
 export class InterestMetrics {
-    constructor({ topSingleInterestSimilarity, top2interestSimilarity, top3interestSimilarity } = {}) {
+    constructor({ topSingleInterestSimilarity, top2interestSimilarity, top3interestSimilarity }) {
         try {
             FfiConverterU32.checkType(topSingleInterestSimilarity)
         } catch (e) {
@@ -816,7 +1092,7 @@ export class FfiConverterTypeInterestMetrics extends FfiConverterArrayBuffer {
  * number of elements.
  */
 export class InterestVector {
-    constructor({ inconclusive, animals, arts, autos, business, career, education, fashion, finance, food, government, hobbies, home, news, realEstate, society, sports, tech, travel } = {}) {
+    constructor({ inconclusive, animals, arts, autos, business, career, education, fashion, finance, food, government, hobbies, home, news, realEstate, society, sports, tech, travel }) {
         try {
             FfiConverterU32.checkType(inconclusive)
         } catch (e) {
@@ -1687,11 +1963,11 @@ export class FfiConverterSequenceTypeInterest extends FfiConverterArrayBuffer {
  * - The score ranges from 0.0 to 1.0
  * - The score is monotonically increasing for the accumulated interest count
  *
- * Params:
+ * # Params:
  * - `interest_vector`: a user interest vector that can be fetched via
  * `RelevancyStore::user_interest_vector()`.
  * - `content_categories`: a list of categories (interests) of the give content.
- * Return:
+ * # Return:
  * - A score ranges in [0, 1].
  * @returns {number}
  */

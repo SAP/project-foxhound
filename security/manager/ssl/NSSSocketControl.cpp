@@ -12,7 +12,9 @@
 #include "secerr.h"
 #include "mozilla/Base64.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "nsNSSCallbacks.h"
+#include "nsNSSComponent.h"
 #include "nsProxyRelease.h"
 
 using namespace mozilla;
@@ -89,32 +91,27 @@ void NSSSocketControl::NoteTimeUntilReady() {
   }
   mNotedTimeUntilReady = true;
 
-  auto timestampNow = TimeStamp::Now();
+  auto duration = TimeStamp::Now() - mSocketCreationTimestamp;
   if (!(mProviderFlags & nsISocketProvider::IS_RETRY)) {
-    Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY_FIRST_TRY,
-                                   mSocketCreationTimestamp, timestampNow);
+    glean::ssl::time_until_ready_first_try.AccumulateRawDuration(duration);
   }
 
   if (mProviderFlags & nsISocketProvider::BE_CONSERVATIVE) {
-    Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY_CONSERVATIVE,
-                                   mSocketCreationTimestamp, timestampNow);
+    glean::ssl::time_until_ready_conservative.AccumulateRawDuration(duration);
   }
 
   switch (GetEchExtensionStatus()) {
     case EchExtensionStatus::kGREASE:
-      Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY_ECH_GREASE,
-                                     mSocketCreationTimestamp, timestampNow);
+      glean::ssl::time_until_ready_ech_grease.AccumulateRawDuration(duration);
       break;
     case EchExtensionStatus::kReal:
-      Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY_ECH,
-                                     mSocketCreationTimestamp, timestampNow);
+      glean::ssl::time_until_ready_ech.AccumulateRawDuration(duration);
       break;
     default:
       break;
   }
   // This will include TCP and proxy tunnel wait time
-  Telemetry::AccumulateTimeDelta(Telemetry::SSL_TIME_UNTIL_READY,
-                                 mSocketCreationTimestamp, timestampNow);
+  glean::ssl::time_until_ready.AccumulateRawDuration(duration);
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("[%p] NSSSocketControl::NoteTimeUntilReady\n", mFd));
@@ -137,16 +134,17 @@ void NSSSocketControl::SetHandshakeCompleted() {
                                       : NotAllowedToFalseStart;
     // This will include TCP and proxy tunnel wait time
     if (mKeaGroupName.isSome()) {
-      Telemetry::AccumulateTimeDelta(
-          Telemetry::SSL_TIME_UNTIL_HANDSHAKE_FINISHED_KEYED_BY_KA,
-          *mKeaGroupName, mSocketCreationTimestamp, TimeStamp::Now());
+      glean::ssl::time_until_handshake_finished_keyed_by_ka.Get(*mKeaGroupName)
+          .AccumulateRawDuration(TimeStamp::Now() - mSocketCreationTimestamp);
     }
 
     // If the handshake is completed for the first time from just 1 callback
     // that means that TLS session resumption must have been used.
-    Telemetry::Accumulate(Telemetry::SSL_RESUMED_SESSION,
-                          handshakeType == Resumption);
-    Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_TYPE, handshakeType);
+    glean::ssl::resumed_session
+        .EnumGet(static_cast<glean::ssl::ResumedSessionLabel>(handshakeType ==
+                                                              Resumption))
+        .Add();
+    glean::ssl_handshake::completed.AccumulateSingleSample(handshakeType);
   }
 
   // Remove the plaintext layer as it is not needed anymore.
@@ -435,8 +433,8 @@ void NSSSocketControl::SetCertVerificationResult(PRErrorCode errorCode) {
   }
 
   if (mPlaintextBytesRead && !errorCode) {
-    Telemetry::Accumulate(Telemetry::SSL_BYTES_BEFORE_CERT_CALLBACK,
-                          AssertedCast<uint32_t>(mPlaintextBytesRead));
+    glean::ssl::bytes_before_cert_callback.Accumulate(
+        AssertedCast<uint32_t>(mPlaintextBytesRead));
   }
 
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
@@ -463,6 +461,9 @@ void NSSSocketControl::ClientAuthCertificateSelected(
       const_cast<uint8_t*>(certBytes.Elements()),
       static_cast<unsigned int>(certBytes.Length()),
   };
+  // Ensure that osclientcerts (or ipcclientcerts, in the socket process) will
+  // populate its list of certificates and keys.
+  AutoSearchingForClientAuthCertificates _;
   UniqueCERTCertificate cert(CERT_NewTempCertificate(
       CERT_GetDefaultCertDB(), &certItem, nullptr, false, true));
   UniqueSECKEYPrivateKey key;

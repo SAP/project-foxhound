@@ -402,6 +402,9 @@ if CONFIG["ENABLE_TESTS"]:
         "test/rdd_process_xpcom",
     ]
 
+if CONFIG["MOZ_SYSTEM_AV1"]:
+    CXXFLAGS += CONFIG["MOZ_SYSTEM_LIBAOM_CFLAGS"]
+
 include("/ipc/chromium/chromium-config.mozbuild")
 
 LOCAL_INCLUDES += CONFIG["SKIA_INCLUDES"]
@@ -417,3 +420,5 @@ if CONFIG["CC_TYPE"] in ("clang", "gcc"):
 CXXFLAGS += ["-Werror=switch"]
 
 FINAL_LIBRARY = "xul"
+
+SPHINX_TREES["/media"] = "docs"

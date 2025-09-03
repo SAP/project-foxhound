@@ -22,6 +22,7 @@
 
 #include "absl/base/attributes.h"
 #include "absl/base/config.h"
+#include "absl/base/nullability.h"
 #include "absl/container/inlined_vector.h"
 #include "absl/strings/cord.h"
 #include "absl/strings/string_view.h"
@@ -37,9 +38,9 @@ ABSL_NAMESPACE_BEGIN
 // TODO(b/176172494): ABSL_MUST_USE_RESULT should expand to the more strict
 // [[nodiscard]]. For now, just use [[nodiscard]] directly when it is available.
 #if ABSL_HAVE_CPP_ATTRIBUTE(nodiscard)
-class [[nodiscard]] Status;
+class [[nodiscard]] ABSL_ATTRIBUTE_TRIVIAL_ABI Status;
 #else
-class ABSL_MUST_USE_RESULT Status;
+class ABSL_MUST_USE_RESULT ABSL_ATTRIBUTE_TRIVIAL_ABI Status;
 #endif
 ABSL_NAMESPACE_END
 }  // namespace absl
@@ -99,7 +100,7 @@ class StatusRep {
   // Returns an equivalent heap allocated StatusRep with refcount 1.
   //
   // `this` is not safe to be used after calling as it may have been deleted.
-  StatusRep* CloneAndUnref() const;
+  absl::Nonnull<StatusRep*> CloneAndUnref() const;
 
  private:
   mutable std::atomic<int32_t> ref_;
@@ -118,8 +119,10 @@ absl::StatusCode MapToLocalCode(int value);
 // suitable for output as an error message in assertion/`CHECK()` failures.
 //
 // This is an internal implementation detail for Abseil logging.
-std::string* MakeCheckFailString(const absl::Status* status,
-                                 const char* prefix);
+ABSL_ATTRIBUTE_PURE_FUNCTION
+absl::Nonnull<std::string*> MakeCheckFailString(
+    absl::Nonnull<const absl::Status*> status,
+    absl::Nonnull<const char*> prefix);
 
 }  // namespace status_internal
 

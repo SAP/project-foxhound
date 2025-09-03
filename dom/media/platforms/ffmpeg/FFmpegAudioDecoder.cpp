@@ -17,7 +17,6 @@
 #  include "libavutil/channel_layout.h"
 #endif
 #include "mozilla/StaticPrefs_media.h"
-#include "mozilla/Telemetry.h"
 
 namespace mozilla {
 
@@ -110,7 +109,7 @@ RefPtr<MediaDataDecoder::InitPromise> FFmpegAudioDecoder<LIBAV_VER>::Init() {
     }
   }
 
-  MediaResult rv = InitDecoder(&options);
+  MediaResult rv = InitSWDecoder(&options);
 
   mLib->av_dict_free(&options);
 

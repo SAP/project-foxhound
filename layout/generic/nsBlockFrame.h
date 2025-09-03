@@ -265,9 +265,9 @@ class nsBlockFrame : public nsContainerFrame {
 
   nsRect ComputePaddingInflatedScrollableOverflow(
       const nsRect& aInFlowChildBounds) const;
-  Maybe<nsRect> GetLineFrameInFlowBounds(const nsLineBox& aLine,
-                                         const nsIFrame& aLineChildFrame,
-                                         bool aConsiderMargins = true) const;
+  Maybe<nsRect> GetLineFrameInFlowBounds(
+      const nsLineBox& aLine, const nsIFrame& aLineChildFrame,
+      bool aConsiderPositiveMargins = true) const;
 
   template <typename LineIteratorType>
   Maybe<nscoord> GetBaselineBOffset(LineIteratorType aStart,
@@ -733,7 +733,7 @@ class nsBlockFrame : public nsContainerFrame {
    * Find any trailing BR clear from the last line of this block (or from its
    * prev-in-flows).
    */
-  mozilla::StyleClear FindTrailingClear();
+  mozilla::UsedClear FindTrailingClear();
 
   /**
    * Remove a float from our float list.

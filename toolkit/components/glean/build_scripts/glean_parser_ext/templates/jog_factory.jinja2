@@ -23,7 +23,7 @@ CommonMetricData {
 {%- endmacro -%}
 
 {% macro metric_ctor(metric_type_name, metric_type, ctor='new') %}
-{{ metric_type_name|Camelize if not metric_type_name.startswith('labeled_') else "Labeled"}}Metric::{% if metric_type_name == 'event' %}with_runtime_extra_keys{% else %}{{ ctor }}{% endif %}(metric_id.into(), meta
+{{ metric_type_name|Camelize if not metric_type_name.startswith('labeled_') else "Labeled"}}Metric::{% if metric_type_name == 'event' %}with_runtime_extra_keys{% else %}{{ ctor }}{% endif %}(MetricId(metric_id), meta
 {%- for arg_name in metric_type.args if not metric_type_name.startswith('labeled_') and arg_name not in common_metric_data_args -%}
     , {{ arg_name }}.unwrap()
 {%- endfor -%}
@@ -43,20 +43,34 @@ use crate::private::{
     TimeUnit,
     Ping,
     LabeledMetric,
+    MetricId,
 {% for metric_type_name in metric_types.keys() if not metric_type_name.startswith('labeled_') %}
-    {% if metric_type_name != "object" %}{# TODO(bug 1883857): Add JOG support #}
     {{ metric_type_name|Camelize }}Metric,
-    {% endif %}
 {% endfor %}};
 use crate::private::traits::HistogramType;
 
 pub(crate) static DYNAMIC_METRIC_BIT: u32 = {{runtime_metric_bit}};
 // 2**DYNAMIC_METRIC_BIT + 1 (+1 because we reserve the 0 metric id)
 static NEXT_METRIC_ID: AtomicU32 = AtomicU32::new({{2**runtime_metric_bit + 1}});
+// Needed for the reset.
+const FIRST_METRIC_ID: u32 = {{2**runtime_metric_bit + 1}};
 #[cfg(feature = "with_gecko")] // only used in submit_ping_by_id, which is gecko-only.
 pub(crate) static DYNAMIC_PING_BIT: u32 = {{runtime_ping_bit}};
 // 2**DYNAMIC_PING_BIT + 1 (+1 because we reserve the 0 ping id)
 static NEXT_PING_ID: AtomicU32 = AtomicU32::new({{2**runtime_ping_bit + 1}});
+// Needed for the reset.
+const FIRST_PING_ID: u32 = {{2**runtime_ping_bit + 1}};
+
+#[inline(always)]
+pub fn id_and_map_reset() {
+  NEXT_METRIC_ID.store(FIRST_METRIC_ID, Ordering::SeqCst);
+{% for metric_type_name, metric_type in metric_types.items() %}
+  __jog_metric_maps::{{metric_type_name.upper()}}_MAP.write().unwrap().clear();
+{% endfor %}
+
+  NEXT_PING_ID.store(FIRST_PING_ID, Ordering::SeqCst);
+  __jog_metric_maps::PING_MAP.write().unwrap().clear();
+}
 
 pub(crate) mod __jog_metric_maps {
     use crate::metrics::DynamicLabel;
@@ -65,6 +79,7 @@ pub(crate) mod __jog_metric_maps {
         Ping,
         LabeledMetric,
         NoExtraKeys,
+        RuntimeObject,
     {% for metric_type_name in metric_types.keys() %}
         {{ metric_type_name|Camelize }}Metric,
     {% endfor %}
@@ -91,8 +106,7 @@ pub(crate) mod __jog_metric_maps {
     pub static EVENT_MAP: Lazy<Arc<RwLock<HashMap<MetricId, EventMetric<NoExtraKeys>>>>> =
         Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 {# Object metrics are special because they're ObjectMetric<K> #}
-    #[allow(dead_code)]
-    pub static OBJECT_MAP: Lazy<Arc<RwLock<HashMap<MetricId, ObjectMetric<()>>>>> =
+    pub static OBJECT_MAP: Lazy<Arc<RwLock<HashMap<MetricId, ObjectMetric<RuntimeObject>>>>> =
         Lazy::new(|| Arc::new(RwLock::new(HashMap::new())));
 }
 
@@ -133,9 +147,6 @@ map of argument name to argument type. I may regret this if I need it again. #}
     let metric32 = match metric_type {
 {% for metric_type_name, metric_type in metric_types.items() %}
         "{{ metric_type_name }}" => {
-            {% if metric_type_name == "object" %}{# TODO(bug 1883857): Add JOG support #}
-            return Err(Box::new(MetricTypeNotFoundError(metric_type.to_string())));
-            {% else %}
             let meta ={{" "}}
                 {%- if metric_type_name == "labeled_custom_distribution" -%}
                 LabeledMetricData::CustomDistribution {
@@ -176,11 +187,10 @@ map of argument name to argument type. I may regret this if I need it again. #}
             {% endif %}
             let metric32: u32 = ({{metric_type.id}} << {{ID_BITS}}) | metric_id;
             assert!(
-                __jog_metric_maps::{{metric_type_name.upper()}}_MAP.write()?.insert(metric_id.into(), metric).is_none(),
+                __jog_metric_maps::{{metric_type_name.upper()}}_MAP.write()?.insert(MetricId(metric_id), metric).is_none(),
                 "We should never insert a runtime metric with an already-used id."
             );
             metric32
-            {% endif %}
         }
 {% endfor %}
         _ => return Err(Box::new(MetricTypeNotFoundError(metric_type.to_string())))
@@ -198,9 +208,10 @@ pub fn create_and_register_ping(
     enabled: bool,
     schedules_pings: Vec<String>,
     reason_codes: Vec<String>,
+    follows_collection_enabled: bool,
 ) -> Result<u32, Box<dyn std::error::Error>> {
     let ping_id = NEXT_PING_ID.fetch_add(1, Ordering::SeqCst);
-    let ping = Ping::new(ping_name, include_client_id, send_if_empty, precise_timestamps, include_info_sections, enabled, schedules_pings, reason_codes);
+    let ping = Ping::new(ping_name, include_client_id, send_if_empty, precise_timestamps, include_info_sections, enabled, schedules_pings, reason_codes, follows_collection_enabled);
     assert!(
         __jog_metric_maps::PING_MAP.write()?.insert(ping_id.into(), ping).is_none(),
         "We should never insert a runtime ping with an already-used id."

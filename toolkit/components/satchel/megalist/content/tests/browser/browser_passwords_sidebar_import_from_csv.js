@@ -38,7 +38,20 @@ const waitForOpenFilePicker = destFile => {
 const getShadowBtn = (el, selector) =>
   el.querySelector(selector).shadowRoot.querySelector("button");
 
-const clickImportFromCsvMenu = async (passwordsSidebar, linesInFile) => {
+const clickImportFileMenuItem = async passwordsSidebar => {
+  const menu = passwordsSidebar.querySelector("panel-list");
+  const menuButton = passwordsSidebar.querySelector("#more-options-menubutton");
+  menuButton.click();
+  await BrowserTestUtils.waitForEvent(menu, "shown");
+  const importMenuItem = getShadowBtn(menu, "[action='import-from-file']");
+  importMenuItem.click();
+};
+
+const clickImportFromCsv = async (
+  passwordsSidebar,
+  linesInFile,
+  isFromMenuDropdown = true
+) => {
   MockFilePicker.init(window.browsingContext);
   MockFilePicker.returnValue = MockFilePicker.returnOK;
   const csvFile = await LoginTestUtils.file.setupCsvFileWithLines(linesInFile);
@@ -46,12 +59,15 @@ const clickImportFromCsvMenu = async (passwordsSidebar, linesInFile) => {
     () => passwordsSidebar.querySelector(".second-row"),
     "Second row failed to render"
   );
-  const menu = passwordsSidebar.querySelector("panel-list");
-  const menuButton = passwordsSidebar.querySelector("#more-options-menubutton");
-  menuButton.click();
-  await BrowserTestUtils.waitForEvent(menu, "shown");
-  const importMenuItem = getShadowBtn(menu, "[action='import-from-file']");
-  importMenuItem.click();
+
+  if (isFromMenuDropdown) {
+    clickImportFileMenuItem(passwordsSidebar);
+  } else {
+    const importButton = passwordsSidebar.querySelector(
+      ".empty-state-import-from-file"
+    );
+    importButton.click();
+  }
 
   async function waitForFilePicker() {
     let filePickerPromise = waitForOpenFilePicker(csvFile);
@@ -63,18 +79,80 @@ const clickImportFromCsvMenu = async (passwordsSidebar, linesInFile) => {
   await waitForFilePicker();
 };
 
-const waitForImportToComplete = async passwordsSidebar => {
-  info("Waiting for the import to complete");
-  await BrowserTestUtils.waitForCondition(
-    () => passwordsSidebar.querySelector("notification-message-bar"),
-    "Notification Message Bar failed to render"
-  );
-};
-
 add_task(async function test_import_from_file_summary() {
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
+
   const passwordsSidebar = await openPasswordsSidebar();
-  await clickImportFromCsvMenu(passwordsSidebar, VALID_CSV_LINES);
-  await waitForImportToComplete(passwordsSidebar);
+  await clickImportFromCsv(passwordsSidebar, VALID_CSV_LINES);
+
+  let events = Glean.contextualManager.toolbarAction.testGetValue();
+  assertCPMGleanEvent(events[0], {
+    trigger: "toolbar",
+    option_name: "import_file",
+  });
+
+  const notifMsgBar = await checkNotificationAndTelemetry(
+    passwordsSidebar,
+    "import-success"
+  );
+  const mozMessageBar = notifMsgBar.shadowRoot.querySelector("moz-message-bar");
+  const summary = mozMessageBar.messageL10nArgs;
+  is(summary.added, 1, "Import added one item");
+  checkNotificationInteractionTelemetry(notifMsgBar, "primary-action", {
+    notification_detail: "import_success",
+    action_type: "dismiss",
+  });
+
+  LoginTestUtils.clearData();
+  info("Closing the sidebar");
+  SidebarController.hide();
+});
+
+add_task(async function test_import_from_invalid_file() {
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
+
+  const passwordsSidebar = await openPasswordsSidebar();
+  await clickImportFromCsv(passwordsSidebar, ["invalid csv"]);
+  const notifMsgBar = await checkNotificationAndTelemetry(
+    passwordsSidebar,
+    "import-error"
+  );
+  checkNotificationInteractionTelemetry(notifMsgBar, "primary-action", {
+    notification_detail: "import_error",
+    action_type: "import",
+  });
+  checkNotificationInteractionTelemetry(
+    notifMsgBar,
+    "secondary-action",
+    {
+      notification_detail: "import_error",
+      action_type: "dismiss",
+    },
+    1
+  );
+
+  LoginTestUtils.clearData();
+  info("Closing the sidebar");
+  SidebarController.hide();
+});
+
+add_task(async function test_import_empty_state() {
+  Services.fog.testResetFOG();
+  await Services.fog.testFlushAllChildren();
+
+  const passwordsSidebar = await openPasswordsSidebar();
+  await checkEmptyState(".no-logins-card-content", passwordsSidebar);
+  await clickImportFromCsv(passwordsSidebar, VALID_CSV_LINES, false);
+
+  let events = Glean.contextualManager.toolbarAction.testGetValue();
+  assertCPMGleanEvent(events[0], {
+    trigger: "empty_state_card",
+    option_name: "import_file",
+  });
+
+  await checkNotificationAndTelemetry(passwordsSidebar, "import-success");
 
   const mozMessageBar = passwordsSidebar
     .querySelector("notification-message-bar")
@@ -84,20 +162,11 @@ add_task(async function test_import_from_file_summary() {
   const summary = mozMessageBar.messageL10nArgs;
   is(summary.added, 1, "Import added one item");
 
-  LoginTestUtils.clearData();
-  info("Closing the sidebar");
-  SidebarController.hide();
-});
-
-add_task(async function test_import_from_invalid_file() {
-  const passwordsSidebar = await openPasswordsSidebar();
-  await clickImportFromCsvMenu(passwordsSidebar, ["invalid csv"]);
-  await waitForImportToComplete(passwordsSidebar);
-
-  const mozMessageBar = passwordsSidebar
-    .querySelector("notification-message-bar")
-    .shadowRoot.querySelector("moz-message-bar");
-  is(mozMessageBar.type, "error", "Import failed");
+  let updateEvents = Glean.contextualManager.recordsUpdate.testGetValue();
+  Assert.equal(updateEvents.length, 1, "Recorded import passwords once.");
+  assertCPMGleanEvent(updateEvents[0], {
+    change_type: "import",
+  });
 
   info("Closing the sidebar");
   SidebarController.hide();

@@ -342,11 +342,14 @@ const nsTHashSet<const nsINode*>& SelectionNodeCache::MaybeCollect(
       const RangeBoundary& endRef = range->MayCrossShadowBoundaryEndRef();
 
       const nsINode* startContainer =
-          startRef.IsStartOfContainer() ? nullptr : startRef.Container();
+          startRef.IsStartOfContainer() ? nullptr : startRef.GetContainer();
       const nsINode* endContainer =
-          endRef.IsEndOfContainer() ? nullptr : endRef.Container();
+          endRef.IsEndOfContainer() ? nullptr : endRef.GetContainer();
       UnsafePreContentIterator iter;
-      iter.Init(range);
+      nsresult rv = iter.Init(range);
+      if (NS_FAILED(rv)) {
+        continue;
+      }
       for (; !iter.IsDone(); iter.Next()) {
         if (const nsINode* node = iter.GetCurrentNode()) {
           // Only collect start and end container if they are fully
@@ -887,16 +890,17 @@ void Selection::SetAnchorFocusRange(size_t aIndex) {
   mAnchorFocusRange = anchorFocusRange->AsDynamicRange();
 }
 
-static int32_t CompareToRangeStart(const nsINode& aCompareNode,
-                                   uint32_t aCompareOffset,
-                                   const AbstractRange& aRange,
-                                   nsContentUtils::NodeIndexCache* aCache) {
+template <typename PT, typename RT>
+static int32_t CompareToRangeStart(
+    const RangeBoundaryBase<PT, RT>& aCompareBoundary,
+    const AbstractRange& aRange, nsContentUtils::NodeIndexCache* aCache) {
+  MOZ_ASSERT(aCompareBoundary.IsSet());
   MOZ_ASSERT(aRange.GetMayCrossShadowBoundaryStartContainer());
-  nsINode* start = aRange.GetMayCrossShadowBoundaryStartContainer();
   // If the nodes that we're comparing are not in the same document, assume that
   // aCompareNode will fall at the end of the ranges.
-  if (aCompareNode.GetComposedDoc() != start->GetComposedDoc() ||
-      !start->GetComposedDoc()) {
+  if (aCompareBoundary.GetComposedDoc() !=
+          aRange.MayCrossShadowBoundaryStartRef().GetComposedDoc() ||
+      !aRange.MayCrossShadowBoundaryStartRef().IsSetAndInComposedDoc()) {
     NS_WARNING(
         "`CompareToRangeStart` couldn't compare nodes, pretending some order.");
     return 1;
@@ -904,41 +908,44 @@ static int32_t CompareToRangeStart(const nsINode& aCompareNode,
 
   // The points are in the same subtree, hence there has to be an order.
   return *nsContentUtils::ComparePoints(
-      &aCompareNode, aCompareOffset, start,
-      aRange.MayCrossShadowBoundaryStartOffset(), aCache);
+      aCompareBoundary, aRange.MayCrossShadowBoundaryStartRef(), aCache);
 }
 
-static int32_t CompareToRangeStart(const nsINode& aCompareNode,
-                                   uint32_t aCompareOffset,
-                                   const AbstractRange& aRange) {
-  return CompareToRangeStart(aCompareNode, aCompareOffset, aRange, nullptr);
+template <typename PT, typename RT>
+static int32_t CompareToRangeStart(
+    const RangeBoundaryBase<PT, RT>& aCompareBoundary,
+    const AbstractRange& aRange) {
+  return CompareToRangeStart(aCompareBoundary, aRange, nullptr);
 }
 
-static int32_t CompareToRangeEnd(const nsINode& aCompareNode,
-                                 uint32_t aCompareOffset,
-                                 const AbstractRange& aRange) {
+template <typename PT, typename RT>
+static int32_t CompareToRangeEnd(
+    const RangeBoundaryBase<PT, RT>& aCompareBoundary,
+    const AbstractRange& aRange) {
+  MOZ_ASSERT(aCompareBoundary.IsSet());
   MOZ_ASSERT(aRange.IsPositioned());
-  nsINode* end = aRange.GetMayCrossShadowBoundaryEndContainer();
   // If the nodes that we're comparing are not in the same document or in the
   // same subtree, assume that aCompareNode will fall at the end of the ranges.
-  if (aCompareNode.GetComposedDoc() != end->GetComposedDoc() ||
-      !end->GetComposedDoc()) {
+  if (aCompareBoundary.GetComposedDoc() !=
+          aRange.MayCrossShadowBoundaryEndRef().GetComposedDoc() ||
+      !aRange.MayCrossShadowBoundaryEndRef().IsSetAndInComposedDoc()) {
     NS_WARNING(
         "`CompareToRangeEnd` couldn't compare nodes, pretending some order.");
     return 1;
   }
 
   // The points are in the same subtree, hence there has to be an order.
-  return *nsContentUtils::ComparePoints(
-      &aCompareNode, aCompareOffset, end,
-      aRange.MayCrossShadowBoundaryEndOffset());
+  return *nsContentUtils::ComparePoints(aCompareBoundary,
+                                        aRange.MayCrossShadowBoundaryEndRef());
 }
 
 // static
+template <typename PT, typename RT>
 size_t Selection::StyledRanges::FindInsertionPoint(
-    const nsTArray<StyledRange>* aElementArray, const nsINode& aPointNode,
-    uint32_t aPointOffset,
-    int32_t (*aComparator)(const nsINode&, uint32_t, const AbstractRange&)) {
+    const nsTArray<StyledRange>* aElementArray,
+    const RangeBoundaryBase<PT, RT>& aBoundary,
+    int32_t (*aComparator)(const RangeBoundaryBase<PT, RT>&,
+                           const AbstractRange&)) {
   int32_t beginSearch = 0;
   int32_t endSearch = aElementArray->Length();  // one beyond what to check
 
@@ -947,7 +954,7 @@ size_t Selection::StyledRanges::FindInsertionPoint(
     do {
       const AbstractRange* range = (*aElementArray)[center].mRange;
 
-      int32_t cmp{aComparator(aPointNode, aPointOffset, *range)};
+      int32_t cmp{aComparator(aBoundary, *range)};
 
       if (cmp < 0) {  // point < cur
         endSearch = center;
@@ -988,12 +995,10 @@ nsresult Selection::StyledRanges::SubtractRange(
   }
 
   // First we want to compare to the range start
-  int32_t cmp{CompareToRangeStart(*range->GetStartContainer(),
-                                  range->StartOffset(), aSubtract)};
+  int32_t cmp{CompareToRangeStart(range->StartRef(), aSubtract)};
 
   // Also, make a comparison to the range end
-  int32_t cmp2{CompareToRangeEnd(*range->GetEndContainer(), range->EndOffset(),
-                                 aSubtract)};
+  int32_t cmp2{CompareToRangeEnd(range->EndRef(), aSubtract)};
 
   // If the existing range left overlaps the new range (aSubtract) then
   // cmp < 0, and cmp2 < 0
@@ -1362,9 +1367,8 @@ nsresult Selection::StyledRanges::MaybeAddRangeAndTruncateOverlaps(
 
   // Insert the new element into our "leftovers" array
   // `aRange` is positioned, so it has to have a start container.
-  size_t insertionPoint{FindInsertionPoint(&temp, *aRange->GetStartContainer(),
-                                           aRange->StartOffset(),
-                                           CompareToRangeStart)};
+  size_t insertionPoint{
+      FindInsertionPoint(&temp, aRange->StartRef(), CompareToRangeStart)};
 
   temp.InsertElementAt(insertionPoint, StyledRange(aRange));
 
@@ -1588,22 +1592,17 @@ void Selection::StyledRanges::ReorderRangesIfNecessary() {
     // the cache, which is reused by the sort call).
     nsContentUtils::NodeIndexCache cache;
     bool rangeOrderHasChanged = false;
-    const nsINode* prevStartContainer = nullptr;
-    uint32_t prevStartOffset = 0;
+    RawRangeBoundary previousStartRef;
     for (const StyledRange& range : mRanges) {
-      const nsINode* startContainer = range.mRange->GetStartContainer();
-      uint32_t startOffset = range.mRange->StartOffset();
-      if (!prevStartContainer) {
-        prevStartContainer = startContainer;
-        prevStartOffset = startOffset;
+      if (!previousStartRef.IsSet()) {
+        previousStartRef = range.mRange->StartRef().AsRaw();
         continue;
       }
       // Calling ComparePoints here saves one call of
       // AbstractRange::StartOffset() per iteration (which is surprisingly
       // expensive).
       const Maybe<int32_t> compareResult = nsContentUtils::ComparePoints(
-          startContainer, startOffset, prevStartContainer, prevStartOffset,
-          &cache);
+          range.mRange->StartRef(), previousStartRef, &cache);
       // If the nodes are in different subtrees, the Maybe is empty.
       // Since CompareToRangeStart pretends ranges to be ordered, this aligns
       // to that behavior.
@@ -1611,13 +1610,11 @@ void Selection::StyledRanges::ReorderRangesIfNecessary() {
         rangeOrderHasChanged = true;
         break;
       }
-      prevStartContainer = startContainer;
-      prevStartOffset = startOffset;
+      previousStartRef = range.mRange->StartRef().AsRaw();
     }
     if (rangeOrderHasChanged) {
       mRanges.Sort([&cache](const StyledRange& a, const StyledRange& b) -> int {
-        return CompareToRangeStart(*a.mRange->GetStartContainer(),
-                                   a.mRange->StartOffset(), *b.mRange, &cache);
+        return CompareToRangeStart(a.mRange->StartRef(), *b.mRange, &cache);
       });
     }
     mDocumentGeneration = currentDocumentGeneration;
@@ -1651,8 +1648,11 @@ nsresult Selection::StyledRanges::GetIndicesForInterval(
 
   // Ranges that end before the given interval and begin after the given
   // interval can be discarded
-  size_t endsBeforeIndex{FindInsertionPoint(&mRanges, *aEndNode, aEndOffset,
-                                            &CompareToRangeStart)};
+  size_t endsBeforeIndex{FindInsertionPoint(
+      &mRanges,
+      ConstRawRangeBoundary(aEndNode, aEndOffset,
+                            RangeBoundaryIsMutationObserved::No),
+      &CompareToRangeStart)};
 
   if (endsBeforeIndex == 0) {
     const AbstractRange* endRange = mRanges[endsBeforeIndex].mRange;
@@ -1673,8 +1673,11 @@ nsresult Selection::StyledRanges::GetIndicesForInterval(
   }
   aEndIndex.emplace(endsBeforeIndex);
 
-  size_t beginsAfterIndex{FindInsertionPoint(&mRanges, *aBeginNode,
-                                             aBeginOffset, &CompareToRangeEnd)};
+  size_t beginsAfterIndex{FindInsertionPoint(
+      &mRanges,
+      ConstRawRangeBoundary(aBeginNode, aBeginOffset,
+                            RangeBoundaryIsMutationObserved::No),
+      &CompareToRangeEnd)};
 
   if (beginsAfterIndex == mRanges.Length()) {
     return NS_OK;  // optimization: all ranges are strictly before us
@@ -1944,7 +1947,10 @@ nsresult Selection::SelectFrames(nsPresContext* aPresContext,
   }
 
   ContentSubtreeIterator subtreeIter;
-  subtreeIter.InitWithAllowCrossShadowBoundary(&aRange);
+  nsresult rv = subtreeIter.InitWithAllowCrossShadowBoundary(&aRange);
+  if (NS_FAILED(rv)) {
+    return rv;
+  }
   if (isFirstContentTextNode && !subtreeIter.IsDone() &&
       subtreeIter.GetCurrentNode() == startContent) {
     subtreeIter.Next();  // first content has already been handled.
@@ -2179,7 +2185,7 @@ nsresult Selection::GetCachedFrameOffset(nsIFrame* aFrame, int32_t inOffset,
   return rv;
 }
 
-nsIContent* Selection::GetAncestorLimiter() const {
+Element* Selection::GetAncestorLimiter() const {
   MOZ_ASSERT(mSelectionType == SelectionType::eNormal);
 
   if (mFrameSelection) {
@@ -2188,7 +2194,7 @@ nsIContent* Selection::GetAncestorLimiter() const {
   return nullptr;
 }
 
-void Selection::SetAncestorLimiter(nsIContent* aLimiter) {
+void Selection::SetAncestorLimiter(Element* aLimiter) {
   if (NeedsToLogSelectionAPI(*this)) {
     LogSelectionAPI(this, __FUNCTION__, "aLimiter", aLimiter);
     LogStackForSelectionAPI();
@@ -2683,7 +2689,7 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
     return;
   }
 
-  if (aPoint.Container()->NodeType() == nsINode::DOCUMENT_TYPE_NODE) {
+  if (aPoint.GetContainer()->NodeType() == nsINode::DOCUMENT_TYPE_NODE) {
     aRv.ThrowInvalidNodeTypeError(kNoDocumentTypeNodeError);
     return;
   }
@@ -2697,7 +2703,7 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
     return;
   }
 
-  if (!HasSameRootOrSameComposedDoc(*aPoint.Container())) {
+  if (!HasSameRootOrSameComposedDoc(*aPoint.GetContainer())) {
     // Return with no error
     return;
   }
@@ -2705,7 +2711,7 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
   RefPtr<nsFrameSelection> frameSelection = mFrameSelection;
   frameSelection->InvalidateDesiredCaretPos();
   if (aInLimiter == InLimiter::eYes &&
-      !frameSelection->IsValidSelectionPoint(aPoint.Container())) {
+      !frameSelection->NodeIsInLimiters(aPoint.GetContainer())) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -2713,7 +2719,7 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
 
   RefPtr<nsPresContext> presContext = GetPresContext();
   if (!presContext ||
-      presContext->Document() != aPoint.Container()->OwnerDoc()) {
+      presContext->Document() != aPoint.GetContainer()->OwnerDoc()) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -2725,35 +2731,10 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
   frameSelection->ClearTableCellSelection();
 
   // Hack to display the caret on the right line (bug 1237236).
-  if (frameSelection->GetHint() == CaretAssociationHint::Before &&
-      aPoint.Container()->IsContent()) {
-    const nsCaret::CaretPosition pos{
-        aPoint.Container(),
-        int32_t(*aPoint.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets)),
-        frameSelection->GetHint(), frameSelection->GetCaretBidiLevel()};
-    CaretFrameData frameData = nsCaret::GetFrameAndOffset(pos);
-    if (frameData.mFrame) {
-      frameSelection->SetHint(frameData.mHint);
-    }
-    nsTextFrame* f = do_QueryFrame(frameData.mFrame);
-    if (f && f->IsAtEndOfLine() && f->HasSignificantTerminalNewline()) {
-      // RawRangeBounary::Offset() causes computing offset if it's not been
-      // done yet.  However, it's called only when the container is a text
-      // node.  In such case, offset has always been set since it cannot have
-      // any children.  So, this doesn't cause computing offset with expensive
-      // method, nsINode::ComputeIndexOf().
-      if ((aPoint.Container()->AsContent() == f->GetContent() &&
-           f->GetContentEnd() ==
-               static_cast<int32_t>(*aPoint.Offset(
-                   RawRangeBoundary::OffsetFilter::kValidOffsets))) ||
-          (aPoint.Container() == f->GetContent()->GetParentNode() &&
-           f->GetContent() == aPoint.GetPreviousSiblingOfChildAtOffset())) {
-        frameSelection->SetHint(CaretAssociationHint::After);
-      }
-    }
-  }
+  frameSelection->SetHint(ComputeCaretAssociationHint(
+      frameSelection->GetHint(), frameSelection->GetCaretBidiLevel(), aPoint));
 
-  RefPtr<nsRange> range = nsRange::Create(aPoint.Container());
+  RefPtr<nsRange> range = nsRange::Create(aPoint.GetContainer());
   result = range->CollapseTo(aPoint);
   if (NS_FAILED(result)) {
     aRv.Throw(result);
@@ -2761,8 +2742,8 @@ void Selection::CollapseInternal(InLimiter aInLimiter,
   }
 
 #ifdef DEBUG_SELECTION
-  nsCOMPtr<nsIContent> content = do_QueryInterface(aPoint.Container());
-  nsCOMPtr<Document> doc = do_QueryInterface(aPoint.Container());
+  nsCOMPtr<nsIContent> content = do_QueryInterface(aPoint.GetContainer());
+  nsCOMPtr<Document> doc = do_QueryInterface(aPoint.GetContainer());
   printf("Sel. Collapse to %p %s %d\n", container.get(),
          content ? nsAtomCString(content->NodeInfo()->NameAtom()).get()
                  : (doc ? "DOCUMENT" : "???"),
@@ -3074,7 +3055,7 @@ void Selection::Extend(nsINode& aContainer, uint32_t aOffset,
   }
 
   nsresult res;
-  if (!mFrameSelection->IsValidSelectionPoint(&aContainer)) {
+  if (!mFrameSelection->NodeIsInLimiters(&aContainer)) {
     aRv.Throw(NS_ERROR_FAILURE);
     return;
   }
@@ -3101,14 +3082,17 @@ void Selection::Extend(nsINode& aContainer, uint32_t aOffset,
   const uint32_t endOffset = range->MayCrossShadowBoundaryEndOffset();
 
   bool shouldClearRange = false;
-  const Maybe<int32_t> anchorOldFocusOrder = nsContentUtils::ComparePoints(
-      anchorNode, anchorOffset, focusNode, focusOffset);
+  const Maybe<int32_t> anchorOldFocusOrder =
+      nsContentUtils::ComparePointsWithIndices(anchorNode, anchorOffset,
+                                               focusNode, focusOffset);
   shouldClearRange |= !anchorOldFocusOrder;
-  const Maybe<int32_t> oldFocusNewFocusOrder = nsContentUtils::ComparePoints(
-      focusNode, focusOffset, &aContainer, aOffset);
+  const Maybe<int32_t> oldFocusNewFocusOrder =
+      nsContentUtils::ComparePointsWithIndices(focusNode, focusOffset,
+                                               &aContainer, aOffset);
   shouldClearRange |= !oldFocusNewFocusOrder;
-  const Maybe<int32_t> anchorNewFocusOrder = nsContentUtils::ComparePoints(
-      anchorNode, anchorOffset, &aContainer, aOffset);
+  const Maybe<int32_t> anchorNewFocusOrder =
+      nsContentUtils::ComparePointsWithIndices(anchorNode, anchorOffset,
+                                               &aContainer, aOffset);
   shouldClearRange |= !anchorNewFocusOrder;
 
   // If the points are disconnected, the range will be collapsed below,
@@ -4181,8 +4165,8 @@ void Selection::SetBaseAndExtentInternal(InLimiter aInLimiter,
     return;
   }
 
-  if (!HasSameRootOrSameComposedDoc(*aAnchorRef.Container()) ||
-      !HasSameRootOrSameComposedDoc(*aFocusRef.Container())) {
+  if (!HasSameRootOrSameComposedDoc(*aAnchorRef.GetContainer()) ||
+      !HasSameRootOrSameComposedDoc(*aFocusRef.GetContainer())) {
     // Return with no error
     return;
   }
@@ -4267,12 +4251,12 @@ void Selection::SetStartAndEndInternal(InLimiter aInLimiter,
 
   if (aInLimiter == InLimiter::eYes) {
     if (!mFrameSelection ||
-        !mFrameSelection->IsValidSelectionPoint(aStartRef.Container())) {
+        !mFrameSelection->NodeIsInLimiters(aStartRef.GetContainer())) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
-    if (aStartRef.Container() != aEndRef.Container() &&
-        !mFrameSelection->IsValidSelectionPoint(aEndRef.Container())) {
+    if (aStartRef.GetContainer() != aEndRef.GetContainer() &&
+        !mFrameSelection->NodeIsInLimiters(aEndRef.GetContainer())) {
       aRv.Throw(NS_ERROR_FAILURE);
       return;
     }
@@ -4464,7 +4448,7 @@ void Selection::SetColors(const nsAString& aForegroundColor,
 void Selection::ResetColors() { mCustomColors = nullptr; }
 
 void Selection::SetHighlightSelectionData(
-    HighlightSelectionData aHighlightSelectionData) {
+    dom::HighlightSelectionData aHighlightSelectionData) {
   MOZ_ASSERT(mSelectionType == SelectionType::eHighlight);
   mHighlightData = std::move(aHighlightSelectionData);
 }
@@ -4477,8 +4461,7 @@ JSObject* Selection::WrapObject(JSContext* aCx,
 // AutoHideSelectionChanges
 AutoHideSelectionChanges::AutoHideSelectionChanges(
     const nsFrameSelection* aFrame)
-    : AutoHideSelectionChanges(
-          aFrame ? aFrame->GetSelection(SelectionType::eNormal) : nullptr) {}
+    : AutoHideSelectionChanges(aFrame ? &aFrame->NormalSelection() : nullptr) {}
 
 bool Selection::HasSameRootOrSameComposedDoc(const nsINode& aNode) {
   nsINode* root = aNode.SubtreeRoot();

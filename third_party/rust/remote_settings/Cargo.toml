@@ -22,6 +22,7 @@ exclude = [
     "/android",
     "/ios",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -29,6 +30,14 @@ autobenches = false
 description = "A Remote Settings client intended for application layer platforms."
 readme = false
 license = "MPL-2.0"
+
+[features]
+default = []
+jexl = ["dep:jexl-eval"]
+signatures = [
+    "dep:canonical_json",
+    "dep:rc_crypto",
+]
 
 [lib]
 name = "remote_settings"
@@ -41,8 +50,13 @@ log = "0.4"
 parking_lot = "0.12"
 regex = "1.9"
 serde_json = "1"
+sha2 = "^0.10"
 thiserror = "1.0"
-url = "2.1"
+url = "2"
+
+[dependencies.canonical_json]
+version = "0.5"
+optional = true
 
 [dependencies.error-support]
 path = "../support/error"
@@ -54,6 +68,10 @@ path = "../support/firefox-versioning"
 version = "0.3.0"
 optional = true
 
+[dependencies.rc_crypto]
+path = "../support/rc_crypto"
+optional = true
+
 [dependencies.rusqlite]
 version = "0.31.0"
 features = ["bundled"]
@@ -61,6 +79,9 @@ features = ["bundled"]
 [dependencies.serde]
 version = "1"
 features = ["derive"]
+
+[dependencies.sql-support]
+path = "../support/sql"
 
 [dependencies.uniffi]
 version = "0.28.2"
@@ -83,7 +104,3 @@ path = "../support/viaduct-reqwest"
 [build-dependencies.uniffi]
 version = "0.28.2"
 features = ["build"]
-
-[features]
-default = []
-jexl = ["dep:jexl-eval"]

@@ -7,23 +7,25 @@
 #include "builtin/temporal/PlainDateTime.h"
 
 #include "mozilla/Assertions.h"
+#include "mozilla/Casting.h"
+#include "mozilla/EnumSet.h"
 
 #include <algorithm>
-#include <type_traits>
 #include <utility>
 
-#include "jsnum.h"
 #include "jspubtd.h"
 #include "NamespaceImports.h"
 
+#include "builtin/intl/DateTimeFormat.h"
 #include "builtin/temporal/Calendar.h"
+#include "builtin/temporal/CalendarFields.h"
 #include "builtin/temporal/Duration.h"
+#include "builtin/temporal/Instant.h"
 #include "builtin/temporal/PlainDate.h"
 #include "builtin/temporal/PlainMonthDay.h"
 #include "builtin/temporal/PlainTime.h"
 #include "builtin/temporal/PlainYearMonth.h"
 #include "builtin/temporal/Temporal.h"
-#include "builtin/temporal/TemporalFields.h"
 #include "builtin/temporal/TemporalParser.h"
 #include "builtin/temporal/TemporalRoundingMode.h"
 #include "builtin/temporal/TemporalTypes.h"
@@ -31,17 +33,14 @@
 #include "builtin/temporal/TimeZone.h"
 #include "builtin/temporal/ToString.h"
 #include "builtin/temporal/ZonedDateTime.h"
-#include "ds/IdValuePair.h"
 #include "gc/AllocKind.h"
 #include "gc/Barrier.h"
-#include "js/AllocPolicy.h"
+#include "gc/GCEnum.h"
 #include "js/CallArgs.h"
 #include "js/CallNonGenericMethod.h"
 #include "js/Class.h"
 #include "js/ErrorReport.h"
 #include "js/friend/ErrorMessages.h"
-#include "js/GCVector.h"
-#include "js/Id.h"
 #include "js/PropertyDescriptor.h"
 #include "js/PropertySpec.h"
 #include "js/RootingAPI.h"
@@ -52,7 +51,6 @@
 #include "vm/JSAtomState.h"
 #include "vm/JSContext.h"
 #include "vm/JSObject.h"
-#include "vm/ObjectOperations.h"
 #include "vm/PlainObject.h"
 #include "vm/StringType.h"
 
@@ -68,421 +66,151 @@ static inline bool IsPlainDateTime(Handle<Value> v) {
 
 #ifdef DEBUG
 /**
- * IsValidISODateTime ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond )
+ * IsValidISODate ( year, month, day )
+ * IsValidTime ( hour, minute, second, millisecond, microsecond, nanosecond )
  */
-bool js::temporal::IsValidISODateTime(const PlainDateTime& dateTime) {
-  return IsValidISODate(dateTime.date) && IsValidTime(dateTime.time);
+bool js::temporal::IsValidISODateTime(const ISODateTime& isoDateTime) {
+  return IsValidISODate(isoDateTime.date) && IsValidTime(isoDateTime.time);
 }
 #endif
 
 /**
- * IsValidISODateTime ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond )
+ * ISODateTimeWithinLimits ( isoDateTime )
  */
-static bool ThrowIfInvalidISODateTime(JSContext* cx,
-                                      const PlainDateTime& dateTime) {
-  return ThrowIfInvalidISODate(cx, dateTime.date) &&
-         ThrowIfInvalidTime(cx, dateTime.time);
-}
+bool js::temporal::ISODateTimeWithinLimits(const ISODateTime& isoDateTime) {
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
-/**
- * ISODateTimeWithinLimits ( year, month, day, hour, minute, second,
- * millisecond, microsecond, nanosecond )
- */
-template <typename T>
-static bool ISODateTimeWithinLimits(T year, T month, T day, T hour, T minute,
-                                    T second, T millisecond, T microsecond,
-                                    T nanosecond) {
-  static_assert(std::is_same_v<T, int32_t> || std::is_same_v<T, double>);
+  constexpr auto min = ISODate::min();
+  constexpr auto max = ISODate::max();
 
-  // Step 1.
-  MOZ_ASSERT(IsInteger(year));
-  MOZ_ASSERT(IsInteger(month));
-  MOZ_ASSERT(IsInteger(day));
-  MOZ_ASSERT(IsInteger(hour));
-  MOZ_ASSERT(IsInteger(minute));
-  MOZ_ASSERT(IsInteger(second));
-  MOZ_ASSERT(IsInteger(millisecond));
-  MOZ_ASSERT(IsInteger(microsecond));
-  MOZ_ASSERT(IsInteger(nanosecond));
+  const auto& year = isoDateTime.date.year;
 
-  MOZ_ASSERT(IsValidISODate(year, month, day));
-  MOZ_ASSERT(
-      IsValidTime(hour, minute, second, millisecond, microsecond, nanosecond));
-
-  // js> new Date(-8_64000_00000_00000).toISOString()
-  // "-271821-04-20T00:00:00.000Z"
-  //
-  // js> new Date(+8_64000_00000_00000).toISOString()
-  // "+275760-09-13T00:00:00.000Z"
-
-  constexpr int32_t minYear = -271821;
-  constexpr int32_t maxYear = 275760;
-
-  // Definitely in range.
-  if (minYear < year && year < maxYear) {
+  // Fast-path when the input is definitely in range.
+  if (min.year < year && year < max.year) {
     return true;
   }
 
-  // -271821 April, 20
+  // Check |isoDateTime| is within the valid limits.
   if (year < 0) {
-    if (year != minYear) {
-      return false;
+    if (isoDateTime.date != min) {
+      return isoDateTime.date > min;
     }
-    if (month != 4) {
-      return month > 4;
-    }
-    if (day != (20 - 1)) {
-      return day > (20 - 1);
-    }
-    // Needs to be past midnight on April, 19.
-    return !(hour == 0 && minute == 0 && second == 0 && millisecond == 0 &&
-             microsecond == 0 && nanosecond == 0);
-  }
 
-  // 275760 September, 13
-  if (year != maxYear) {
-    return false;
+    // Needs to be past midnight.
+    return isoDateTime.time != Time{};
   }
-  if (month != 9) {
-    return month < 9;
-  }
-  if (day > 13) {
-    return false;
-  }
-  return true;
+  return isoDateTime.date <= max;
 }
 
 /**
- * ISODateTimeWithinLimits ( year, month, day, hour, minute, second,
- * millisecond, microsecond, nanosecond )
- */
-template <typename T>
-static bool ISODateTimeWithinLimits(T year, T month, T day) {
-  static_assert(std::is_same_v<T, int32_t> || std::is_same_v<T, double>);
-
-  MOZ_ASSERT(IsValidISODate(year, month, day));
-
-  // js> new Date(-8_64000_00000_00000).toISOString()
-  // "-271821-04-20T00:00:00.000Z"
-  //
-  // js> new Date(+8_64000_00000_00000).toISOString()
-  // "+275760-09-13T00:00:00.000Z"
-
-  constexpr int32_t minYear = -271821;
-  constexpr int32_t maxYear = 275760;
-
-  // ISODateTimeWithinLimits is called with hour=12 and the remaining time
-  // components set to zero. That means the maximum value is exclusive, whereas
-  // the minimum value is inclusive.
-
-  // Definitely in range.
-  if (minYear < year && year < maxYear) {
-    return true;
-  }
-
-  // -271821 April, 20
-  if (year < 0) {
-    if (year != minYear) {
-      return false;
-    }
-    if (month != 4) {
-      return month > 4;
-    }
-    if (day < (20 - 1)) {
-      return false;
-    }
-    return true;
-  }
-
-  // 275760 September, 13
-  if (year != maxYear) {
-    return false;
-  }
-  if (month != 9) {
-    return month < 9;
-  }
-  if (day > 13) {
-    return false;
-  }
-  return true;
-}
-
-/**
- * ISODateTimeWithinLimits ( year, month, day, hour, minute, second,
- * millisecond, microsecond, nanosecond )
- */
-bool js::temporal::ISODateTimeWithinLimits(double year, double month,
-                                           double day) {
-  return ::ISODateTimeWithinLimits(year, month, day);
-}
-
-/**
- * ISODateTimeWithinLimits ( year, month, day, hour, minute, second,
- * millisecond, microsecond, nanosecond )
- */
-bool js::temporal::ISODateTimeWithinLimits(const PlainDateTime& dateTime) {
-  const auto& [date, time] = dateTime;
-  return ::ISODateTimeWithinLimits(date.year, date.month, date.day, time.hour,
-                                   time.minute, time.second, time.millisecond,
-                                   time.microsecond, time.nanosecond);
-}
-
-/**
- * ISODateTimeWithinLimits ( year, month, day, hour, minute, second,
- * millisecond, microsecond, nanosecond )
- */
-bool js::temporal::ISODateTimeWithinLimits(const PlainDate& date) {
-  return ::ISODateTimeWithinLimits(date.year, date.month, date.day);
-}
-
-/**
- * CreateTemporalDateTime ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar [ , newTarget ] )
+ * CreateTemporalDateTime ( isoDateTime, calendar [ , newTarget ] )
  */
 static PlainDateTimeObject* CreateTemporalDateTime(
-    JSContext* cx, const CallArgs& args, double isoYear, double isoMonth,
-    double isoDay, double hour, double minute, double second,
-    double millisecond, double microsecond, double nanosecond,
+    JSContext* cx, const CallArgs& args, const ISODateTime& isoDateTime,
     Handle<CalendarValue> calendar) {
-  MOZ_ASSERT(IsInteger(isoYear));
-  MOZ_ASSERT(IsInteger(isoMonth));
-  MOZ_ASSERT(IsInteger(isoDay));
-  MOZ_ASSERT(IsInteger(hour));
-  MOZ_ASSERT(IsInteger(minute));
-  MOZ_ASSERT(IsInteger(second));
-  MOZ_ASSERT(IsInteger(millisecond));
-  MOZ_ASSERT(IsInteger(microsecond));
-  MOZ_ASSERT(IsInteger(nanosecond));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
   // Step 1.
-  if (!ThrowIfInvalidISODate(cx, isoYear, isoMonth, isoDay)) {
-    return nullptr;
-  }
-
-  // Step 2.
-  if (!ThrowIfInvalidTime(cx, hour, minute, second, millisecond, microsecond,
-                          nanosecond)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  if (!ISODateTimeWithinLimits(isoYear, isoMonth, isoDay, hour, minute, second,
-                               millisecond, microsecond, nanosecond)) {
+  if (!ISODateTimeWithinLimits(isoDateTime)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
     return nullptr;
   }
 
-  // Steps 4-5.
+  // Steps 2-3.
   Rooted<JSObject*> proto(cx);
   if (!GetPrototypeFromBuiltinConstructor(cx, args, JSProto_PlainDateTime,
                                           &proto)) {
     return nullptr;
   }
 
-  auto* dateTime = NewObjectWithClassProto<PlainDateTimeObject>(cx, proto);
-  if (!dateTime) {
+  auto* object = NewObjectWithClassProto<PlainDateTimeObject>(cx, proto);
+  if (!object) {
     return nullptr;
   }
 
+  // Step 4.
+  auto packedDate = PackedDate::pack(isoDateTime.date);
+  auto packedTime = PackedTime::pack(isoDateTime.time);
+  object->setFixedSlot(PlainDateTimeObject::PACKED_DATE_SLOT,
+                       PrivateUint32Value(packedDate.value));
+  object->setFixedSlot(
+      PlainDateTimeObject::PACKED_TIME_SLOT,
+      DoubleValue(mozilla::BitwiseCast<double>(packedTime.value)));
+
+  // Step 5.
+  object->setFixedSlot(PlainDateTimeObject::CALENDAR_SLOT,
+                       calendar.toSlotValue());
+
   // Step 6.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_YEAR_SLOT,
-                         Int32Value(int32_t(isoYear)));
-
-  // Step 7.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_MONTH_SLOT,
-                         Int32Value(int32_t(isoMonth)));
-
-  // Step 8.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_DAY_SLOT,
-                         Int32Value(int32_t(isoDay)));
-
-  // Step 9.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_HOUR_SLOT,
-                         Int32Value(int32_t(hour)));
-
-  // Step 10.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_MINUTE_SLOT,
-                         Int32Value(int32_t(minute)));
-
-  // Step 11.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_SECOND_SLOT,
-                         Int32Value(int32_t(second)));
-
-  // Step 12.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_MILLISECOND_SLOT,
-                         Int32Value(int32_t(millisecond)));
-
-  // Step 13.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_MICROSECOND_SLOT,
-                         Int32Value(int32_t(microsecond)));
-
-  // Step 14.
-  dateTime->setFixedSlot(PlainDateTimeObject::ISO_NANOSECOND_SLOT,
-                         Int32Value(int32_t(nanosecond)));
-
-  // Step 15.
-  dateTime->setFixedSlot(PlainDateTimeObject::CALENDAR_SLOT,
-                         calendar.toSlotValue());
-
-  // Step 16.
-  return dateTime;
+  return object;
 }
 
 /**
- * CreateTemporalDateTime ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar [ , newTarget ] )
+ * CreateTemporalDateTime ( isoDateTime, calendar [ , newTarget ] )
  */
 PlainDateTimeObject* js::temporal::CreateTemporalDateTime(
-    JSContext* cx, const PlainDateTime& dateTime,
+    JSContext* cx, const ISODateTime& isoDateTime,
     Handle<CalendarValue> calendar) {
-  const auto& [date, time] = dateTime;
-  const auto& [isoYear, isoMonth, isoDay] = date;
-  const auto& [hour, minute, second, millisecond, microsecond, nanosecond] =
-      time;
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
-  // Steps 1-2.
-  if (!ThrowIfInvalidISODateTime(cx, dateTime)) {
-    return nullptr;
-  }
-
-  // Step 3.
-  if (!ISODateTimeWithinLimits(dateTime)) {
+  // Step 1.
+  if (!ISODateTimeWithinLimits(isoDateTime)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
     return nullptr;
   }
 
-  // Steps 4-5.
+  // Steps 2-3.
   auto* object = NewBuiltinClassInstance<PlainDateTimeObject>(cx);
   if (!object) {
     return nullptr;
   }
 
-  // Step 6.
-  object->setFixedSlot(PlainDateTimeObject::ISO_YEAR_SLOT, Int32Value(isoYear));
+  // Step 4.
+  auto packedDate = PackedDate::pack(isoDateTime.date);
+  auto packedTime = PackedTime::pack(isoDateTime.time);
+  object->setFixedSlot(PlainDateTimeObject::PACKED_DATE_SLOT,
+                       PrivateUint32Value(packedDate.value));
+  object->setFixedSlot(
+      PlainDateTimeObject::PACKED_TIME_SLOT,
+      DoubleValue(mozilla::BitwiseCast<double>(packedTime.value)));
 
-  // Step 7.
-  object->setFixedSlot(PlainDateTimeObject::ISO_MONTH_SLOT,
-                       Int32Value(isoMonth));
-
-  // Step 8.
-  object->setFixedSlot(PlainDateTimeObject::ISO_DAY_SLOT, Int32Value(isoDay));
-
-  // Step 9.
-  object->setFixedSlot(PlainDateTimeObject::ISO_HOUR_SLOT, Int32Value(hour));
-
-  // Step 10.
-  object->setFixedSlot(PlainDateTimeObject::ISO_MINUTE_SLOT,
-                       Int32Value(minute));
-
-  // Step 11.
-  object->setFixedSlot(PlainDateTimeObject::ISO_SECOND_SLOT,
-                       Int32Value(second));
-
-  // Step 12.
-  object->setFixedSlot(PlainDateTimeObject::ISO_MILLISECOND_SLOT,
-                       Int32Value(millisecond));
-
-  // Step 13.
-  object->setFixedSlot(PlainDateTimeObject::ISO_MICROSECOND_SLOT,
-                       Int32Value(microsecond));
-
-  // Step 14.
-  object->setFixedSlot(PlainDateTimeObject::ISO_NANOSECOND_SLOT,
-                       Int32Value(nanosecond));
-
-  // Step 15.
+  // Step 5.
   object->setFixedSlot(PlainDateTimeObject::CALENDAR_SLOT,
                        calendar.toSlotValue());
 
-  // Step 16.
+  // Step 6.
   return object;
 }
 
 /**
- * CreateTemporalDateTime ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar [ , newTarget ] )
+ * CreateTemporalDateTime ( isoDateTime, calendar [ , newTarget ] )
  */
 static PlainDateTimeObject* CreateTemporalDateTime(
-    JSContext* cx, Handle<PlainDateTimeWithCalendar> dateTime) {
+    JSContext* cx, Handle<PlainDateTime> dateTime) {
   MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
   return CreateTemporalDateTime(cx, dateTime, dateTime.calendar());
 }
 
 /**
- * CreateTemporalDateTime ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar [ , newTarget ] )
+ * CreateTemporalDateTime ( isoDateTime, calendar [ , newTarget ] )
  */
-static bool CreateTemporalDateTime(
-    JSContext* cx, const PlainDateTime& dateTime,
-    Handle<CalendarValue> calendar,
-    MutableHandle<PlainDateTimeWithCalendar> result) {
-  // Steps 1-2.
-  if (!ThrowIfInvalidISODateTime(cx, dateTime)) {
-    return false;
-  }
+static bool CreateTemporalDateTime(JSContext* cx, const ISODateTime& dateTime,
+                                   Handle<CalendarValue> calendar,
+                                   MutableHandle<PlainDateTime> result) {
+  MOZ_ASSERT(IsValidISODateTime(dateTime));
 
-  // Step 3.
+  // Step 1.
   if (!ISODateTimeWithinLimits(dateTime)) {
     JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
                               JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
     return false;
   }
 
-  result.set(PlainDateTimeWithCalendar{dateTime, calendar});
+  // Step 2-6.
+  result.set(PlainDateTime{dateTime, calendar});
   return true;
-}
-
-/**
- * CreateTemporalDateTime ( isoYear, isoMonth, isoDay, hour, minute, second,
- * millisecond, microsecond, nanosecond, calendar [ , newTarget ] )
- */
-bool js::temporal::CreateTemporalDateTime(JSContext* cx, const PlainDate& date,
-                                          const PlainTime& time,
-                                          PlainDateTime* result) {
-  auto dateTime = PlainDateTime{date, time};
-
-  // Steps 1-2.
-  if (!ThrowIfInvalidISODateTime(cx, dateTime)) {
-    return false;
-  }
-
-  // Step 3.
-  if (!ISODateTimeWithinLimits(dateTime)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
-    return false;
-  }
-
-  *result = dateTime;
-  return true;
-}
-
-#ifdef DEBUG
-static bool IsPositiveInteger(double value) {
-  return IsInteger(value) && value >= 0;
-}
-#endif
-
-/**
- * ToTemporalTimeRecord ( temporalTimeLike [ , completeness ] )
- */
-static auto ToTemporalTimeRecord(const TemporalFields& temporalTimeLike) {
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.hour()));
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.minute()));
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.second()));
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.millisecond()));
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.microsecond()));
-  MOZ_ASSERT(IsPositiveInteger(temporalTimeLike.nanosecond()));
-
-  return TemporalTimeLike{
-      temporalTimeLike.hour(),        temporalTimeLike.minute(),
-      temporalTimeLike.second(),      temporalTimeLike.millisecond(),
-      temporalTimeLike.microsecond(), temporalTimeLike.nanosecond(),
-  };
 }
 
 /**
@@ -490,54 +218,90 @@ static auto ToTemporalTimeRecord(const TemporalFields& temporalTimeLike) {
  */
 bool js::temporal::InterpretTemporalDateTimeFields(
     JSContext* cx, Handle<CalendarValue> calendar,
-    Handle<TemporalFields> fields, TemporalOverflow overflow,
-    PlainDateTime* result) {
-  // FIXME: spec issue - ToTemporalTimeRecord is infallible
-
+    Handle<CalendarFields> fields, TemporalOverflow overflow,
+    ISODateTime* result) {
   // Step 1.
-  auto timeResult = ::ToTemporalTimeRecord(fields);
-
-  // Step 2.
-  Rooted<PlainDateWithCalendar> temporalDate(cx);
+  Rooted<PlainDate> temporalDate(cx);
   if (!CalendarDateFromFields(cx, calendar, fields, overflow, &temporalDate)) {
     return false;
   }
 
-  // Step 3.
-  PlainTime time;
-  if (!RegulateTime(cx, timeResult, overflow, &time)) {
+  // Step 2.
+  auto timeLike = TemporalTimeLike{
+      fields.hour(),        fields.minute(),      fields.second(),
+      fields.millisecond(), fields.microsecond(), fields.nanosecond(),
+  };
+  Time time;
+  if (!RegulateTime(cx, timeLike, overflow, &time)) {
     return false;
   }
 
-  // Step 4.
+  // Step 3.
   *result = {temporalDate.date(), time};
   return true;
 }
 
+struct DateTimeOptions {
+  TemporalOverflow overflow = TemporalOverflow::Constrain;
+};
+
 /**
- * ToTemporalDateTime ( item [ , overflow ] )
+ * ToTemporalDateTime ( item [ , options ] )
  */
-static bool ToTemporalDateTime(
-    JSContext* cx, Handle<JSObject*> item, TemporalOverflow overflow,
-    MutableHandle<PlainDateTimeWithCalendar> result) {
+static bool ToTemporalDateTimeOptions(JSContext* cx, Handle<Value> options,
+                                      DateTimeOptions* result) {
+  if (options.isUndefined()) {
+    *result = {};
+    return true;
+  }
+
+  // NOTE: |options| are only passed from `Temporal.PlainDateTime.from`.
+
+  Rooted<JSObject*> resolvedOptions(
+      cx, RequireObjectArg(cx, "options", "from", options));
+  if (!resolvedOptions) {
+    return false;
+  }
+
+  auto overflow = TemporalOverflow::Constrain;
+  if (!GetTemporalOverflowOption(cx, resolvedOptions, &overflow)) {
+    return false;
+  }
+
+  *result = {overflow};
+  return true;
+}
+
+/**
+ * ToTemporalDateTime ( item [ , options ] )
+ */
+static bool ToTemporalDateTime(JSContext* cx, Handle<JSObject*> item,
+                               Handle<Value> options,
+                               MutableHandle<PlainDateTime> result) {
   // Step 1. (Not applicable in our implementation.)
 
   // Step 2.a.
   if (auto* plainDateTime = item->maybeUnwrapIf<PlainDateTimeObject>()) {
-    auto dateTime = ToPlainDateTime(plainDateTime);
+    auto dateTime = plainDateTime->dateTime();
     Rooted<CalendarValue> calendar(cx, plainDateTime->calendar());
     if (!calendar.wrap(cx)) {
       return false;
     }
 
-    // Step 2.a.i.
-    result.set(PlainDateTimeWithCalendar{dateTime, calendar});
+    // Steps 2.a.i-ii.
+    DateTimeOptions ignoredOptions;
+    if (!ToTemporalDateTimeOptions(cx, options, &ignoredOptions)) {
+      return false;
+    }
+
+    // Step 2.a.iii.
+    result.set(PlainDateTime{dateTime, calendar});
     return true;
   }
 
   // Step 2.b.
   if (auto* zonedDateTime = item->maybeUnwrapIf<ZonedDateTimeObject>()) {
-    auto epochInstant = ToInstant(zonedDateTime);
+    auto epochNs = zonedDateTime->epochNanoseconds();
     Rooted<TimeZoneValue> timeZone(cx, zonedDateTime->timeZone());
     Rooted<CalendarValue> calendar(cx, zonedDateTime->calendar());
 
@@ -548,26 +312,39 @@ static bool ToTemporalDateTime(
       return false;
     }
 
-    // Steps 2.b.i-ii.
-    PlainDateTime dateTime;
-    if (!GetPlainDateTimeFor(cx, timeZone, epochInstant, &dateTime)) {
+    // Step 2.b.i.
+    ISODateTime dateTime;
+    if (!GetISODateTimeFor(cx, timeZone, epochNs, &dateTime)) {
       return false;
     }
 
-    result.set(PlainDateTimeWithCalendar{dateTime, calendar});
+    // Steps 2.b.ii-iii.
+    DateTimeOptions ignoredOptions;
+    if (!ToTemporalDateTimeOptions(cx, options, &ignoredOptions)) {
+      return false;
+    }
+
+    // Step 2.b.iv.
+    result.set(PlainDateTime{dateTime, calendar});
     return true;
   }
 
   // Step 2.c.
   if (auto* plainDate = item->maybeUnwrapIf<PlainDateObject>()) {
-    auto date = ToPlainDate(plainDate);
+    auto date = plainDate->date();
     Rooted<CalendarValue> calendar(cx, plainDate->calendar());
     if (!calendar.wrap(cx)) {
       return false;
     }
 
-    // Step 2.c.i.
-    return CreateTemporalDateTime(cx, PlainDateTime{date}, calendar, result);
+    // Steps 2.c.i-ii.
+    DateTimeOptions ignoredOptions;
+    if (!ToTemporalDateTimeOptions(cx, options, &ignoredOptions)) {
+      return false;
+    }
+
+    // Steps 2.c.iii-iv.
+    return CreateTemporalDateTime(cx, ISODateTime{date}, calendar, result);
   }
 
   // Step 2.d.
@@ -577,52 +354,57 @@ static bool ToTemporalDateTime(
   }
 
   // Step 2.e.
-  Rooted<TemporalFields> fields(cx);
+  Rooted<CalendarFields> fields(cx);
   if (!PrepareCalendarFields(cx, calendar, item,
                              {
-                                 CalendarField::Day,
+                                 CalendarField::Year,
                                  CalendarField::Month,
                                  CalendarField::MonthCode,
-                                 CalendarField::Year,
-                             },
-                             {
-                                 TemporalField::Hour,
-                                 TemporalField::Microsecond,
-                                 TemporalField::Millisecond,
-                                 TemporalField::Minute,
-                                 TemporalField::Nanosecond,
-                                 TemporalField::Second,
+                                 CalendarField::Day,
+                                 CalendarField::Hour,
+                                 CalendarField::Minute,
+                                 CalendarField::Second,
+                                 CalendarField::Millisecond,
+                                 CalendarField::Microsecond,
+                                 CalendarField::Nanosecond,
                              },
                              &fields)) {
     return false;
   }
 
-  // Step 2.f.
-  PlainDateTime dateTime;
+  // Steps 2.f-g.
+  DateTimeOptions resolvedOptions;
+  if (!ToTemporalDateTimeOptions(cx, options, &resolvedOptions)) {
+    return false;
+  }
+  auto [overflow] = resolvedOptions;
+
+  // Step 2.h.
+  ISODateTime dateTime;
   if (!InterpretTemporalDateTimeFields(cx, calendar, fields, overflow,
                                        &dateTime)) {
     return false;
   }
 
-  // Step 4.
+  // Step 2.i.
   return CreateTemporalDateTime(cx, dateTime, calendar, result);
 }
 
 /**
- * ToTemporalDateTime ( item [ , overflow ] )
+ * ToTemporalDateTime ( item [ , options ] )
  */
-static bool ToTemporalDateTime(
-    JSContext* cx, Handle<Value> item, TemporalOverflow overflow,
-    MutableHandle<PlainDateTimeWithCalendar> result) {
+static bool ToTemporalDateTime(JSContext* cx, Handle<Value> item,
+                               Handle<Value> options,
+                               MutableHandle<PlainDateTime> result) {
   // Step 1. (Not applicable)
 
   // Step 2.
   if (item.isObject()) {
     Rooted<JSObject*> itemObj(cx, &item.toObject());
-    return ToTemporalDateTime(cx, itemObj, overflow, result);
+    return ToTemporalDateTime(cx, itemObj, options, result);
   }
 
-  // Step 3.a.
+  // Step 3.
   if (!item.isString()) {
     ReportValueError(cx, JSMSG_UNEXPECTED_TYPE, JSDVG_IGNORE_STACK, item,
                      nullptr, "not a string");
@@ -630,344 +412,262 @@ static bool ToTemporalDateTime(
   }
   Rooted<JSString*> string(cx, item.toString());
 
-  // Step 3.b.
-  PlainDateTime dateTime;
+  // Steps 4-5.
+  ISODateTime dateTime;
   Rooted<JSString*> calendarString(cx);
   if (!ParseTemporalDateTimeString(cx, string, &dateTime, &calendarString)) {
     return false;
   }
+  MOZ_ASSERT(IsValidISODateTime(dateTime));
 
-  // Step 3.c.
-  MOZ_ASSERT(IsValidISODate(dateTime.date));
-
-  // Step 3.d.
-  MOZ_ASSERT(IsValidTime(dateTime.time));
-
-  // Steps 3.e-h.
+  // Steps 6-8.
   Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
   if (calendarString) {
-    if (!ToBuiltinCalendar(cx, calendarString, &calendar)) {
+    if (!CanonicalizeCalendar(cx, calendarString, &calendar)) {
       return false;
     }
   }
 
-  // Step 4.
+  // Steps 9-10.
+  DateTimeOptions ignoredOptions;
+  if (!ToTemporalDateTimeOptions(cx, options, &ignoredOptions)) {
+    return false;
+  }
+
+  // Steps 11-13.
   return CreateTemporalDateTime(cx, dateTime, calendar, result);
 }
 
 /**
- * ToTemporalDateTime ( item [ , overflow ] )
+ * ToTemporalDateTime ( item [ , options ] )
  */
-static bool ToTemporalDateTime(
-    JSContext* cx, Handle<Value> item,
-    MutableHandle<PlainDateTimeWithCalendar> result) {
-  return ToTemporalDateTime(cx, item, TemporalOverflow::Constrain, result);
+static bool ToTemporalDateTime(JSContext* cx, Handle<Value> item,
+                               MutableHandle<PlainDateTime> result) {
+  return ToTemporalDateTime(cx, item, UndefinedHandleValue, result);
 }
 
 /**
- * CompareISODateTime ( y1, mon1, d1, h1, min1, s1, ms1, mus1, ns1, y2, mon2,
- * d2, h2, min2, s2, ms2, mus2, ns2 )
+ * CompareISODateTime ( isoDateTime1, isoDateTime2 )
  */
-static int32_t CompareISODateTime(const PlainDateTime& one,
-                                  const PlainDateTime& two) {
-  // Step 1. (Not applicable in our implementation.)
-
-  // Steps 2-3.
-  if (int32_t dateResult = CompareISODate(one.date, two.date)) {
+static int32_t CompareISODateTime(const ISODateTime& isoDateTime1,
+                                  const ISODateTime& isoDateTime2) {
+  // Steps 1-2.
+  if (int32_t dateResult =
+          CompareISODate(isoDateTime1.date, isoDateTime2.date)) {
     return dateResult;
   }
 
-  // Steps 4.
-  return CompareTemporalTime(one.time, two.time);
+  // Steps 3.
+  return CompareTimeRecord(isoDateTime1.time, isoDateTime2.time);
 }
 
 /**
- * AddDateTime ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond, calendar, years, months, weeks, days, norm, overflow
- * )
+ * Add24HourDaysToTimeDuration ( d, days )
  */
-static bool AddDateTime(JSContext* cx, const PlainDateTime& dateTime,
-                        Handle<CalendarValue> calendar,
-                        const NormalizedDuration& duration,
-                        TemporalOverflow overflow, PlainDateTime* result) {
-  MOZ_ASSERT(IsValidDuration(duration));
-
+static TimeDuration Add24HourDaysToTimeDuration(const TimeDuration& d,
+                                                int32_t days) {
   // Step 1.
-  MOZ_ASSERT(IsValidISODateTime(dateTime));
+  auto result = d + TimeDuration::fromDays(days);
 
   // Step 2.
-  MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
+  MOZ_ASSERT(result.abs() <= TimeDuration::max());
 
   // Step 3.
-  auto timeResult = AddTime(dateTime.time, duration.time);
+  return result;
+}
+
+/**
+ * DifferenceISODateTime ( isoDateTime1, isoDateTime2, calendar, largestUnit )
+ */
+static bool DifferenceISODateTime(JSContext* cx,
+                                  const ISODateTime& isoDateTime1,
+                                  const ISODateTime& isoDateTime2,
+                                  Handle<CalendarValue> calendar,
+                                  TemporalUnit largestUnit,
+                                  InternalDuration* result) {
+  MOZ_ASSERT(isoDateTime1 != isoDateTime2,
+             "fast-path for same date-time case handled in caller");
+
+  // Steps 1-2.
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime1));
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime2));
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime1));
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime2));
+
+  // Step 3.
+  auto timeDuration = DifferenceTime(isoDateTime1.time, isoDateTime2.time);
 
   // Step 4.
-  const auto& datePart = dateTime.date;
+  int32_t timeSign = TimeDurationSign(timeDuration);
 
   // Step 5.
-  auto dateDuration = DateDuration{
-      duration.date.years,
-      duration.date.months,
-      duration.date.weeks,
-      duration.date.days + timeResult.days,
-  };
-  if (!ThrowIfInvalidDuration(cx, dateDuration)) {
-    return false;
-  }
+  int32_t dateSign = CompareISODate(isoDateTime1.date, isoDateTime2.date);
 
   // Step 6.
-  PlainDate addedDate;
-  if (!AddDate(cx, calendar, datePart, dateDuration, overflow, &addedDate)) {
+  auto adjustedDate = isoDateTime2.date;
+
+  // Step 7.
+  if (timeSign == dateSign) {
+    // Step 7.a.
+    adjustedDate = BalanceISODate(adjustedDate, timeSign);
+
+    // Step 7.b.
+    timeDuration = Add24HourDaysToTimeDuration(timeDuration, -timeSign);
+  }
+
+  MOZ_ASSERT(IsValidISODate(adjustedDate));
+  MOZ_ASSERT(ISODateWithinLimits(adjustedDate));
+
+  // Step 8.
+  auto dateLargestUnit = std::min(TemporalUnit::Day, largestUnit);
+
+  // Step 9.
+  DateDuration dateDifference;
+  if (!CalendarDateUntil(cx, calendar, isoDateTime1.date, adjustedDate,
+                         dateLargestUnit, &dateDifference)) {
     return false;
   }
 
-  // Step 7.
-  *result = {addedDate, timeResult.time};
+  // Steps 10.
+  if (largestUnit > TemporalUnit::Day) {
+    // Step 10.a.
+    auto days = mozilla::AssertedCast<int32_t>(dateDifference.days);
+    timeDuration = Add24HourDaysToTimeDuration(timeDuration, days);
+
+    // Step 10.b.
+    dateDifference.days = 0;
+  }
+
+  // Step 11.
+  MOZ_ASSERT(
+      DateDurationSign(dateDifference) * TimeDurationSign(timeDuration) >= 0);
+  *result = {dateDifference, timeDuration};
   return true;
 }
 
 /**
- * DifferenceISODateTime ( y1, mon1, d1, h1, min1, s1, ms1, mus1, ns1, y2, mon2,
- * d2, h2, min2, s2, ms2, mus2, ns2, calendar, largestUnit )
+ * RoundISODateTime ( isoDateTime, increment, unit, roundingMode )
  */
-static bool DifferenceISODateTime(JSContext* cx, const PlainDateTime& one,
-                                  const PlainDateTime& two,
-                                  Handle<CalendarValue> calendar,
-                                  TemporalUnit largestUnit,
-                                  NormalizedDuration* result) {
-  // Steps 1-2.
-  MOZ_ASSERT(IsValidISODateTime(one));
-  MOZ_ASSERT(IsValidISODateTime(two));
-  MOZ_ASSERT(ISODateTimeWithinLimits(one));
-  MOZ_ASSERT(ISODateTimeWithinLimits(two));
-
-  // Step 3.
-  auto timeDuration = DifferenceTime(one.time, two.time);
-
-  // Step 4.
-  int32_t timeSign = NormalizedTimeDurationSign(timeDuration);
-
-  // Step 5.
-  int32_t dateSign = CompareISODate(two.date, one.date);
-
-  // Step 6.
-  auto adjustedDate = two.date;
-
-  // Step 7.
-  if (timeSign == -dateSign) {
-    // Step 7.a.
-    adjustedDate = BalanceISODate(adjustedDate.year, adjustedDate.month,
-                                  adjustedDate.day + timeSign);
-
-    // Step 7.b.
-    if (!Add24HourDaysToNormalizedTimeDuration(cx, timeDuration, -timeSign,
-                                               &timeDuration)) {
-      return false;
-    }
-  }
-
-  MOZ_ASSERT(IsValidISODate(adjustedDate));
-  MOZ_ASSERT(ISODateTimeWithinLimits(adjustedDate));
-
-  // Step 8.
-  const auto& date1 = one.date;
-
-  // Step 9.
-  const auto& date2 = adjustedDate;
-
-  // Step 10.
-  auto dateLargestUnit = std::min(TemporalUnit::Day, largestUnit);
-
-  // Step 11.
-  DateDuration dateDifference;
-  if (!CalendarDateUntil(cx, calendar, date1, date2, dateLargestUnit,
-                         &dateDifference)) {
-    return false;
-  }
-
-  // Step 12. (Not applicable in our implementation.)
-
-  // Steps 13.
-  if (largestUnit != dateLargestUnit) {
-    // Step 13.a.
-    if (!Add24HourDaysToNormalizedTimeDuration(
-            cx, timeDuration, dateDifference.days, &timeDuration)) {
-      return false;
-    }
-
-    // Step 13.b.
-    dateDifference.days = 0;
-  }
-
-  // Step 14.
-  return CreateNormalizedDurationRecord(cx, dateDifference, timeDuration,
-                                        result);
-}
-
-/**
- * RoundISODateTime ( year, month, day, hour, minute, second, millisecond,
- * microsecond, nanosecond, increment, unit, roundingMode )
- */
-PlainDateTime js::temporal::RoundISODateTime(
-    const PlainDateTime& dateTime, Increment increment, TemporalUnit unit,
-    TemporalRoundingMode roundingMode) {
-  const auto& [date, time] = dateTime;
+ISODateTime js::temporal::RoundISODateTime(const ISODateTime& isoDateTime,
+                                           Increment increment,
+                                           TemporalUnit unit,
+                                           TemporalRoundingMode roundingMode) {
+  MOZ_ASSERT(IsValidISODateTime(isoDateTime));
 
   // Step 1.
-  MOZ_ASSERT(IsValidISODateTime(dateTime));
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime));
 
   // Step 2.
-  MOZ_ASSERT(ISODateTimeWithinLimits(dateTime));
-
-  // Step 3.
-  auto roundedTime = RoundTime(time, increment, unit, roundingMode);
+  auto roundedTime = RoundTime(isoDateTime.time, increment, unit, roundingMode);
   MOZ_ASSERT(0 <= roundedTime.days && roundedTime.days <= 1);
 
-  // Step 4.
-  auto balanceResult = BalanceISODate(date.year, date.month,
-                                      date.day + int32_t(roundedTime.days));
+  // Step 3.
+  auto balanceResult = BalanceISODate(isoDateTime.date, roundedTime.days);
 
-  // Step 5.
+  // Step 4.
   return {balanceResult, roundedTime.time};
 }
 
 /**
- * DifferencePlainDateTimeWithRounding ( y1, mon1, d1, h1, min1, s1, ms1, mus1,
- * ns1, y2, mon2, d2, h2, min2, s2, ms2, mus2, ns2, calendar, largestUnit,
- * roundingIncrement, smallestUnit, roundingMode )
+ * DifferencePlainDateTimeWithRounding ( isoDateTime1, isoDateTime2, calendar,
+ * largestUnit, roundingIncrement, smallestUnit, roundingMode )
  */
 bool js::temporal::DifferencePlainDateTimeWithRounding(
-    JSContext* cx, const PlainDateTime& one, const PlainDateTime& two,
-    Handle<CalendarValue> calendar, const DifferenceSettings& settings,
-    Duration* result) {
-  // Steps 1-2.
-  MOZ_ASSERT(ISODateTimeWithinLimits(one));
-  MOZ_ASSERT(ISODateTimeWithinLimits(two));
+    JSContext* cx, const ISODateTime& isoDateTime1,
+    const ISODateTime& isoDateTime2, Handle<CalendarValue> calendar,
+    const DifferenceSettings& settings, InternalDuration* result) {
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime1));
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime2));
 
-  // Step 3.
-  if (one == two) {
-    // Steps 3.a-b.
+  // Step 1.
+  if (isoDateTime1 == isoDateTime2) {
+    // Step 1.a.
     *result = {};
     return true;
   }
 
-  // Step 4.
-  NormalizedDuration diff;
-  if (!::DifferenceISODateTime(cx, one, two, calendar, settings.largestUnit,
-                               &diff)) {
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  InternalDuration diff;
+  if (!DifferenceISODateTime(cx, isoDateTime1, isoDateTime2, calendar,
+                             settings.largestUnit, &diff)) {
     return false;
   }
 
-  // Step 5.
+  // Step 4.
   if (settings.smallestUnit == TemporalUnit::Nanosecond &&
       settings.roundingIncrement == Increment{1}) {
-    // Step 5.a.
-    NormalizedTimeDuration withDays;
-    if (!Add24HourDaysToNormalizedTimeDuration(cx, diff.time, diff.date.days,
-                                               &withDays)) {
-      return false;
-    }
-
-    // Step 5.b.
-    TimeDuration timeResult;
-    if (!BalanceTimeDuration(cx, withDays, settings.largestUnit, &timeResult)) {
-      return false;
-    }
-
-    // Step 5.c. (Not application in our implementation.)
-
-    // Steps 5.d-e.
-    *result = {
-        double(diff.date.years),    double(diff.date.months),
-        double(diff.date.weeks),    double(timeResult.days),
-        double(timeResult.hours),   double(timeResult.minutes),
-        double(timeResult.seconds), double(timeResult.milliseconds),
-        timeResult.microseconds,    timeResult.nanoseconds,
-    };
-    MOZ_ASSERT(IsValidDuration(*result));
+    *result = diff;
     return true;
   }
 
+  // Step 5.
+  auto destEpochNs = GetUTCEpochNanoseconds(isoDateTime2);
+
   // Step 6.
-  const auto& dateTime = one;
-
-  // Step 7.
-  auto destEpochNs = GetUTCEpochNanoseconds(two);
-
-  // Step 8.
   Rooted<TimeZoneValue> timeZone(cx, TimeZoneValue{});
-  RoundedRelativeDuration relative;
-  if (!RoundRelativeDuration(cx, diff, destEpochNs, dateTime, calendar,
-                             timeZone, settings.largestUnit,
-                             settings.roundingIncrement, settings.smallestUnit,
-                             settings.roundingMode, &relative)) {
-    return false;
-  }
-  MOZ_ASSERT(IsValidDuration(relative.duration));
-
-  *result = relative.duration;
-  return true;
+  return RoundRelativeDuration(
+      cx, diff, destEpochNs, isoDateTime1, timeZone, calendar,
+      settings.largestUnit, settings.roundingIncrement, settings.smallestUnit,
+      settings.roundingMode, result);
 }
 
 /**
- * DifferencePlainDateTimeWithRounding ( y1, mon1, d1, h1, min1, s1, ms1, mus1,
- * ns1, y2, mon2, d2, h2, min2, s2, ms2, mus2, ns2, calendar, largestUnit,
- * roundingIncrement, smallestUnit, roundingMode )
+ * DifferencePlainDateTimeWithTotal ( isoDateTime1, isoDateTime2, calendar, unit
+ * )
  */
-bool js::temporal::DifferencePlainDateTimeWithRounding(
-    JSContext* cx, const PlainDateTime& one, const PlainDateTime& two,
-    Handle<CalendarValue> calendar, TemporalUnit unit, double* result) {
-  // Steps 1-2.
-  MOZ_ASSERT(ISODateTimeWithinLimits(one));
-  MOZ_ASSERT(ISODateTimeWithinLimits(two));
+bool js::temporal::DifferencePlainDateTimeWithTotal(
+    JSContext* cx, const ISODateTime& isoDateTime1,
+    const ISODateTime& isoDateTime2, Handle<CalendarValue> calendar,
+    TemporalUnit unit, double* result) {
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime1));
+  MOZ_ASSERT(ISODateTimeWithinLimits(isoDateTime2));
 
-  // Step 3.
-  if (one == two) {
-    // Steps 3.a-b.
+  // Step 1.
+  if (isoDateTime1 == isoDateTime2) {
+    // Step 1.a.
     *result = 0;
     return true;
   }
 
-  // Step 4.
-  NormalizedDuration diff;
-  if (!DifferenceISODateTime(cx, one, two, calendar, unit, &diff)) {
+  // Step 2. (Not applicable in our implementation.)
+
+  // Step 3.
+  InternalDuration diff;
+  if (!DifferenceISODateTime(cx, isoDateTime1, isoDateTime2, calendar, unit,
+                             &diff)) {
     return false;
   }
 
-  // Step 5.
-  if (unit == TemporalUnit::Nanosecond) {
-    // Step 5.a.
-    NormalizedTimeDuration withDays;
-    if (!Add24HourDaysToNormalizedTimeDuration(cx, diff.time, diff.date.days,
-                                               &withDays)) {
-      return false;
-    }
+  // Step 4. (Optimized to avoid GetUTCEpochNanoseconds for non-calendar units.)
+  if (unit > TemporalUnit::Day) {
+    MOZ_ASSERT(diff.date == DateDuration{});
 
-    // Step 5.b. (Not application in our implementation.)
+    // TotalRelativeDuration, steps 1-2. (Not applicable)
 
-    // Steps 5.c-d.
-    *result = double(withDays.toNanoseconds());
+    // TotalRelativeDuration, step 3.
+    *result = TotalTimeDuration(diff.time, unit);
+    return true;
+  } else if (unit == TemporalUnit::Day) {
+    // TotalRelativeDuration, step 1. (Not applicable)
+
+    // TotalRelativeDuration, step 2.
+    auto days = mozilla::AssertedCast<int32_t>(diff.date.days);
+    auto timeDuration = Add24HourDaysToTimeDuration(diff.time, days);
+
+    // TotalRelativeDuration, step 3.
+    *result = TotalTimeDuration(timeDuration, unit);
     return true;
   }
 
+  // Step 5.
+  auto destEpochNs = GetUTCEpochNanoseconds(isoDateTime2);
+
   // Step 6.
-  const auto& dateTime = one;
-
-  // Step 7.
-  auto destEpochNs = GetUTCEpochNanoseconds(two);
-
-  // Step 8.
   Rooted<TimeZoneValue> timeZone(cx, TimeZoneValue{});
-  RoundedRelativeDuration relative;
-  if (!RoundRelativeDuration(cx, diff, destEpochNs, dateTime, calendar,
-                             timeZone, unit, Increment{1}, unit,
-                             TemporalRoundingMode::Trunc, &relative)) {
-    return false;
-  }
-  MOZ_ASSERT(!std::isnan(relative.total));
-
-  *result = relative.total;
-  return true;
+  return TotalRelativeDuration(cx, diff, destEpochNs, isoDateTime1, timeZone,
+                               calendar, unit, result);
 }
 
 /**
@@ -976,44 +676,42 @@ bool js::temporal::DifferencePlainDateTimeWithRounding(
 static bool DifferenceTemporalPlainDateTime(JSContext* cx,
                                             TemporalDifference operation,
                                             const CallArgs& args) {
-  Rooted<PlainDateTimeWithCalendar> dateTime(
+  Rooted<PlainDateTime> dateTime(
       cx, &args.thisv().toObject().as<PlainDateTimeObject>());
 
-  // Step 1. (Not applicable in our implementation.)
-
-  // Step 2.
-  Rooted<PlainDateTimeWithCalendar> other(cx);
+  // Step 1.
+  Rooted<PlainDateTime> other(cx);
   if (!ToTemporalDateTime(cx, args.get(0), &other)) {
     return false;
   }
 
-  // Step 3.
+  // Step 2.
   if (!CalendarEquals(dateTime.calendar(), other.calendar())) {
-    JS_ReportErrorNumberASCII(
-        cx, GetErrorMessage, nullptr, JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
-        ToTemporalCalendarIdentifier(dateTime.calendar()).data(),
-        ToTemporalCalendarIdentifier(other.calendar()).data());
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_CALENDAR_INCOMPATIBLE,
+                              CalendarIdentifier(dateTime.calendar()).data(),
+                              CalendarIdentifier(other.calendar()).data());
     return false;
   }
 
-  // Steps 4-5.
+  // Steps 3-4.
   DifferenceSettings settings;
   if (args.hasDefined(1)) {
-    // Step 4.
+    // Step 3.
     Rooted<JSObject*> options(
         cx, RequireObjectArg(cx, "options", ToName(operation), args[1]));
     if (!options) {
       return false;
     }
 
-    // Step 5.
+    // Step 4.
     if (!GetDifferenceSettings(
             cx, operation, options, TemporalUnitGroup::DateTime,
             TemporalUnit::Nanosecond, TemporalUnit::Day, &settings)) {
       return false;
     }
   } else {
-    // Steps 4-5.
+    // Steps 3-4.
     settings = {
         TemporalUnit::Nanosecond,
         TemporalUnit::Day,
@@ -1022,8 +720,8 @@ static bool DifferenceTemporalPlainDateTime(JSContext* cx,
     };
   }
 
-  // Steps 6-8.
-  if (ToPlainDateTime(dateTime) == ToPlainDateTime(other)) {
+  // Step 5.
+  if (dateTime.dateTime() == other.dateTime()) {
     auto* obj = CreateTemporalDuration(cx, {});
     if (!obj) {
       return false;
@@ -1033,20 +731,30 @@ static bool DifferenceTemporalPlainDateTime(JSContext* cx,
     return true;
   }
 
-  // Steps 9-10.
-  Duration duration;
-  if (!DifferencePlainDateTimeWithRounding(
-          cx, dateTime, other, dateTime.calendar(), settings, &duration)) {
+  // Step 6.
+  InternalDuration internalDuration;
+  if (!DifferencePlainDateTimeWithRounding(cx, dateTime, other,
+                                           dateTime.calendar(), settings,
+                                           &internalDuration)) {
     return false;
   }
-  MOZ_ASSERT(IsValidDuration(duration));
+  MOZ_ASSERT(IsValidDuration(internalDuration));
 
-  // Step 11.
+  // Step 7.
+  Duration result;
+  if (!TemporalDurationFromInternal(cx, internalDuration, settings.largestUnit,
+                                    &result)) {
+    return false;
+  }
+  MOZ_ASSERT(IsValidDuration(result));
+
+  // Step 8.
   if (operation == TemporalDifference::Since) {
-    duration = duration.negate();
+    result = result.negate();
   }
 
-  auto* obj = CreateTemporalDuration(cx, duration);
+  // Step 9.
+  auto* obj = CreateTemporalDuration(cx, result);
   if (!obj) {
     return false;
   }
@@ -1055,34 +763,31 @@ static bool DifferenceTemporalPlainDateTime(JSContext* cx,
   return true;
 }
 
-enum class PlainDateTimeDuration { Add, Subtract };
-
 /**
- * AddDurationToOrSubtractDurationFromPlainDateTime ( operation, dateTime,
- * temporalDurationLike, options )
+ * AddDurationToDateTime ( operation, dateTime, temporalDurationLike, options )
  */
-static bool AddDurationToOrSubtractDurationFromPlainDateTime(
-    JSContext* cx, PlainDateTimeDuration operation, const CallArgs& args) {
-  Rooted<PlainDateTimeWithCalendar> dateTime(
+static bool AddDurationToDateTime(JSContext* cx, TemporalAddDuration operation,
+                                  const CallArgs& args) {
+  Rooted<PlainDateTime> dateTime(
       cx, &args.thisv().toObject().as<PlainDateTimeObject>());
 
-  // Step 1. (Not applicable in our implementation.)
+  // Step 1.
+  Duration duration;
+  if (!ToTemporalDuration(cx, args.get(0), &duration)) {
+    return false;
+  }
 
   // Step 2.
-  Duration duration;
-  if (!ToTemporalDurationRecord(cx, args.get(0), &duration)) {
-    return false;
+  if (operation == TemporalAddDuration::Subtract) {
+    duration = duration.negate();
   }
 
   // Steps 3-4.
   auto overflow = TemporalOverflow::Constrain;
   if (args.hasDefined(1)) {
-    const char* name =
-        operation == PlainDateTimeDuration::Add ? "add" : "subtract";
-
     // Step 3.
-    Rooted<JSObject*> options(cx,
-                              RequireObjectArg(cx, "options", name, args[1]));
+    Rooted<JSObject*> options(
+        cx, RequireObjectArg(cx, "options", ToName(operation), args[1]));
     if (!options) {
       return false;
     }
@@ -1094,22 +799,38 @@ static bool AddDurationToOrSubtractDurationFromPlainDateTime(
   }
 
   // Step 5.
-  if (operation == PlainDateTimeDuration::Subtract) {
-    duration = duration.negate();
-  }
-  auto normalized = CreateNormalizedDurationRecord(duration);
+  auto internalDuration = ToInternalDurationRecordWith24HourDays(duration);
+  MOZ_ASSERT(IsValidDuration(internalDuration));
 
-  // Step 6
-  PlainDateTime result;
-  if (!AddDateTime(cx, dateTime, dateTime.calendar(), normalized, overflow,
-                   &result)) {
+  // Step 6.
+  auto timeResult = AddTime(dateTime.time(), internalDuration.time);
+
+  // Step 7. (Inlined AdjustDateDurationRecord)
+  if (std::abs(timeResult.days) > TimeDuration::max().toDays()) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_DURATION_INVALID_NORMALIZED_TIME);
+    return false;
+  }
+  auto dateDuration = DateDuration{
+      internalDuration.date.years,
+      internalDuration.date.months,
+      internalDuration.date.weeks,
+      timeResult.days,
+  };
+  MOZ_ASSERT(IsValidDuration(dateDuration));
+
+  // Step 8.
+  ISODate addedDate;
+  if (!CalendarDateAdd(cx, dateTime.calendar(), dateTime.date(), dateDuration,
+                       overflow, &addedDate)) {
     return false;
   }
 
-  // Steps 7-8.
+  // Step 9.
+  auto result = ISODateTime{addedDate, timeResult.time};
   MOZ_ASSERT(IsValidISODateTime(result));
 
-  // Step 9.
+  // Step 10.
   auto* obj = CreateTemporalDateTime(cx, result, dateTime.calendar());
   if (!obj) {
     return false;
@@ -1121,8 +842,8 @@ static bool AddDurationToOrSubtractDurationFromPlainDateTime(
 
 /**
  * Temporal.PlainDateTime ( isoYear, isoMonth, isoDay [ , hour [ , minute [ ,
- * second [ , millisecond [ , microsecond [ , nanosecond [ , calendarLike ] ] ]
- * ] ] ] ] )
+ * second [ , millisecond [ , microsecond [ , nanosecond [ , calendar ] ] ] ] ]
+ * ] ] )
  */
 static bool PlainDateTimeConstructor(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
@@ -1198,7 +919,7 @@ static bool PlainDateTimeConstructor(JSContext* cx, unsigned argc, Value* vp) {
     }
   }
 
-  // Steps 11-14.
+  // Steps 11-13.
   Rooted<CalendarValue> calendar(cx, CalendarValue(CalendarId::ISO8601));
   if (args.hasDefined(9)) {
     // Step 12.
@@ -1208,17 +929,38 @@ static bool PlainDateTimeConstructor(JSContext* cx, unsigned argc, Value* vp) {
       return false;
     }
 
-    // Steps 13-14.
+    // Step 13.
     Rooted<JSString*> calendarString(cx, args[9].toString());
-    if (!ToBuiltinCalendar(cx, calendarString, &calendar)) {
+    if (!CanonicalizeCalendar(cx, calendarString, &calendar)) {
       return false;
     }
   }
 
+  // Step 14.
+  if (!ThrowIfInvalidISODate(cx, isoYear, isoMonth, isoDay)) {
+    return false;
+  }
+
   // Step 15.
-  auto* temporalDateTime = CreateTemporalDateTime(
-      cx, args, isoYear, isoMonth, isoDay, hour, minute, second, millisecond,
-      microsecond, nanosecond, calendar);
+  auto isoDate = ISODate{int32_t(isoYear), int32_t(isoMonth), int32_t(isoDay)};
+
+  // Step 16.
+  if (!ThrowIfInvalidTime(cx, hour, minute, second, millisecond, microsecond,
+                          nanosecond)) {
+    return false;
+  }
+
+  // Step 17.
+  auto time =
+      Time{int32_t(hour),        int32_t(minute),      int32_t(second),
+           int32_t(millisecond), int32_t(microsecond), int32_t(nanosecond)};
+
+  // Step 18.
+  auto isoDateTime = ISODateTime{isoDate, time};
+
+  // Step 19.
+  auto* temporalDateTime =
+      CreateTemporalDateTime(cx, args, isoDateTime, calendar);
   if (!temporalDateTime) {
     return false;
   }
@@ -1233,25 +975,9 @@ static bool PlainDateTimeConstructor(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_from(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
-  // Steps 1-2.
-  auto overflow = TemporalOverflow::Constrain;
-  if (args.hasDefined(1)) {
-    // Step 1.
-    Rooted<JSObject*> options(cx,
-                              RequireObjectArg(cx, "options", "from", args[1]));
-    if (!options) {
-      return false;
-    }
-
-    // Step 2.
-    if (!GetTemporalOverflowOption(cx, options, &overflow)) {
-      return false;
-    }
-  }
-
-  // Steps 3-4.
-  Rooted<PlainDateTimeWithCalendar> dateTime(cx);
-  if (!ToTemporalDateTime(cx, args.get(0), overflow, &dateTime)) {
+  // Step 1.
+  Rooted<PlainDateTime> dateTime(cx);
+  if (!ToTemporalDateTime(cx, args.get(0), args.get(1), &dateTime)) {
     return false;
   }
 
@@ -1271,13 +997,13 @@ static bool PlainDateTime_compare(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
 
   // Step 1.
-  Rooted<PlainDateTimeWithCalendar> one(cx);
+  Rooted<PlainDateTime> one(cx);
   if (!ToTemporalDateTime(cx, args.get(0), &one)) {
     return false;
   }
 
   // Step 2.
-  Rooted<PlainDateTimeWithCalendar> two(cx);
+  Rooted<PlainDateTime> two(cx);
   if (!ToTemporalDateTime(cx, args.get(1), &two)) {
     return false;
   }
@@ -1294,13 +1020,13 @@ static bool PlainDateTime_calendarId(JSContext* cx, const CallArgs& args) {
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
 
   // Step 3.
-  Rooted<CalendarValue> calendar(cx, dateTime->calendar());
-  auto* calendarId = ToTemporalCalendarIdentifier(cx, calendar);
-  if (!calendarId) {
+  auto* str =
+      NewStringCopy<CanGC>(cx, CalendarIdentifier(dateTime->calendar()));
+  if (!str) {
     return false;
   }
 
-  args.rval().setString(calendarId);
+  args.rval().setString(str);
   return true;
 }
 
@@ -1322,7 +1048,7 @@ static bool PlainDateTime_era(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarEra(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarEra(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1342,7 +1068,7 @@ static bool PlainDateTime_eraYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Steps 3-5.
-  return CalendarEraYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarEraYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1362,7 +1088,7 @@ static bool PlainDateTime_year(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1382,7 +1108,7 @@ static bool PlainDateTime_month(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarMonth(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarMonth(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1402,7 +1128,7 @@ static bool PlainDateTime_monthCode(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarMonthCode(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarMonthCode(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1423,7 +1149,7 @@ static bool PlainDateTime_day(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDay(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDay(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1441,7 +1167,7 @@ static bool PlainDateTime_day(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_hour(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoHour());
+  args.rval().setInt32(dateTime->time().hour);
   return true;
 }
 
@@ -1460,7 +1186,7 @@ static bool PlainDateTime_hour(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_minute(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoMinute());
+  args.rval().setInt32(dateTime->time().minute);
   return true;
 }
 
@@ -1479,7 +1205,7 @@ static bool PlainDateTime_minute(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_second(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoSecond());
+  args.rval().setInt32(dateTime->time().second);
   return true;
 }
 
@@ -1498,7 +1224,7 @@ static bool PlainDateTime_second(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_millisecond(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoMillisecond());
+  args.rval().setInt32(dateTime->time().millisecond);
   return true;
 }
 
@@ -1518,7 +1244,7 @@ static bool PlainDateTime_millisecond(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_microsecond(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoMicrosecond());
+  args.rval().setInt32(dateTime->time().microsecond);
   return true;
 }
 
@@ -1538,7 +1264,7 @@ static bool PlainDateTime_microsecond(JSContext* cx, unsigned argc, Value* vp) {
 static bool PlainDateTime_nanosecond(JSContext* cx, const CallArgs& args) {
   // Step 3.
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  args.rval().setInt32(dateTime->isoNanosecond());
+  args.rval().setInt32(dateTime->time().nanosecond);
   return true;
 }
 
@@ -1560,7 +1286,7 @@ static bool PlainDateTime_dayOfWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDayOfWeek(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDayOfWeek(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1581,7 +1307,7 @@ static bool PlainDateTime_dayOfYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDayOfYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDayOfYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1602,7 +1328,7 @@ static bool PlainDateTime_weekOfYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Steps 3-5.
-  return CalendarWeekOfYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarWeekOfYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1623,7 +1349,7 @@ static bool PlainDateTime_yearOfWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Steps 3-5.
-  return CalendarYearOfWeek(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarYearOfWeek(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1644,7 +1370,7 @@ static bool PlainDateTime_daysInWeek(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDaysInWeek(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDaysInWeek(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1665,7 +1391,7 @@ static bool PlainDateTime_daysInMonth(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDaysInMonth(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDaysInMonth(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1686,7 +1412,7 @@ static bool PlainDateTime_daysInYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarDaysInYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarDaysInYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1707,7 +1433,7 @@ static bool PlainDateTime_monthsInYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarMonthsInYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarMonthsInYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1729,7 +1455,7 @@ static bool PlainDateTime_inLeapYear(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  return CalendarInLeapYear(cx, calendar, ToPlainDate(dateTime), args.rval());
+  return CalendarInLeapYear(cx, calendar, dateTime->date(), args.rval());
 }
 
 /**
@@ -1746,7 +1472,7 @@ static bool PlainDateTime_inLeapYear(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.PlainDateTime.prototype.with ( temporalDateTimeLike [ , options ] )
  */
 static bool PlainDateTime_with(JSContext* cx, const CallArgs& args) {
-  Rooted<PlainDateTimeObject*> dateTime(
+  Rooted<PlainDateTime> dateTime(
       cx, &args.thisv().toObject().as<PlainDateTimeObject>());
 
   // Step 3.
@@ -1759,71 +1485,68 @@ static bool PlainDateTime_with(JSContext* cx, const CallArgs& args) {
     return false;
   }
 
-  // Steps 4-5.
+  // Step 4.
+  auto calendar = dateTime.calendar();
+
+  // Step 5.
+  Rooted<CalendarFields> fields(cx);
+  if (!ISODateToFields(cx, dateTime, &fields)) {
+    return false;
+  }
+
+  // Steps 6-11.
+  fields.setHour(dateTime.time().hour);
+  fields.setMinute(dateTime.time().minute);
+  fields.setSecond(dateTime.time().second);
+  fields.setMillisecond(dateTime.time().millisecond);
+  fields.setMicrosecond(dateTime.time().microsecond);
+  fields.setNanosecond(dateTime.time().nanosecond);
+
+  // Step 12.
+  Rooted<CalendarFields> partialDateTime(cx);
+  if (!PreparePartialCalendarFields(cx, calendar, temporalDateTimeLike,
+                                    {
+                                        CalendarField::Year,
+                                        CalendarField::Month,
+                                        CalendarField::MonthCode,
+                                        CalendarField::Day,
+                                        CalendarField::Hour,
+                                        CalendarField::Minute,
+                                        CalendarField::Second,
+                                        CalendarField::Millisecond,
+                                        CalendarField::Microsecond,
+                                        CalendarField::Nanosecond,
+                                    },
+                                    &partialDateTime)) {
+    return false;
+  }
+  MOZ_ASSERT(!partialDateTime.keys().isEmpty());
+
+  // Step 13.
+  fields = CalendarMergeFields(calendar, fields, partialDateTime);
+
+  // Steps 14-15.
   auto overflow = TemporalOverflow::Constrain;
   if (args.hasDefined(1)) {
-    // Step 4.
+    // Step 14.
     Rooted<JSObject*> options(cx,
                               RequireObjectArg(cx, "options", "with", args[1]));
     if (!options) {
       return false;
     }
 
-    // Step 5.
+    // Step 15.
     if (!GetTemporalOverflowOption(cx, options, &overflow)) {
       return false;
     }
   }
 
-  // Step 6.
-  Rooted<CalendarValue> calendar(cx, dateTime->calendar());
-
-  // Step 7.
-  Rooted<TemporalFields> fields(cx);
-  if (!PrepareCalendarFieldsAndFieldNames(cx, calendar, dateTime,
-                                          {
-                                              CalendarField::Day,
-                                              CalendarField::Month,
-                                              CalendarField::MonthCode,
-                                              CalendarField::Year,
-                                          },
-                                          &fields)) {
-    return false;
-  }
-
-  // Steps 8-14.
-  fields.setHour(dateTime->isoHour());
-  fields.setMinute(dateTime->isoMinute());
-  fields.setSecond(dateTime->isoSecond());
-  fields.setMillisecond(dateTime->isoMillisecond());
-  fields.setMicrosecond(dateTime->isoMicrosecond());
-  fields.setNanosecond(dateTime->isoNanosecond());
-
-  // Step 15.
-  Rooted<TemporalFields> partialDateTime(cx);
-  if (!PreparePartialTemporalFields(cx, temporalDateTimeLike, fields.keys(),
-                                    &partialDateTime)) {
-    return false;
-  }
-  MOZ_ASSERT(!partialDateTime.keys().isEmpty());
-
   // Step 16.
-  Rooted<TemporalFields> mergedFields(
-      cx, CalendarMergeFields(calendar, fields, partialDateTime));
-
-  // Step 17.
-  if (!PrepareTemporalFields(cx, mergedFields, fields.keys(), &fields)) {
-    return false;
-  }
-
-  // Step 18.
-  PlainDateTime result;
+  ISODateTime result;
   if (!InterpretTemporalDateTimeFields(cx, calendar, fields, overflow,
                                        &result)) {
     return false;
   }
-
-  // Steps 19-20.
   MOZ_ASSERT(IsValidISODateTime(result));
 
   // Step 21.
@@ -1850,11 +1573,11 @@ static bool PlainDateTime_with(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainDateTime_withPlainTime(JSContext* cx, const CallArgs& args) {
   auto* temporalDateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto date = ToPlainDate(temporalDateTime);
+  auto date = temporalDateTime->date();
   Rooted<CalendarValue> calendar(cx, temporalDateTime->calendar());
 
   // Step 3. (Inlined ToTemporalTimeOrMidnight)
-  PlainTime time = {};
+  Time time = {};
   if (args.hasDefined(0)) {
     if (!ToTemporalTime(cx, args[0], &time)) {
       return false;
@@ -1862,7 +1585,10 @@ static bool PlainDateTime_withPlainTime(JSContext* cx, const CallArgs& args) {
   }
 
   // Step 4.
-  auto* obj = CreateTemporalDateTime(cx, {date, time}, calendar);
+  auto isoDateTime = ISODateTime{date, time};
+
+  // Step 5.
+  auto* obj = CreateTemporalDateTime(cx, isoDateTime, calendar);
   if (!obj) {
     return false;
   }
@@ -1887,7 +1613,7 @@ static bool PlainDateTime_withPlainTime(JSContext* cx, unsigned argc,
  */
 static bool PlainDateTime_withCalendar(JSContext* cx, const CallArgs& args) {
   auto* temporalDateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dateTime = ToPlainDateTime(temporalDateTime);
+  auto dateTime = temporalDateTime->dateTime();
 
   // Step 3.
   Rooted<CalendarValue> calendar(cx);
@@ -1921,8 +1647,7 @@ static bool PlainDateTime_withCalendar(JSContext* cx, unsigned argc,
  */
 static bool PlainDateTime_add(JSContext* cx, const CallArgs& args) {
   // Step 3.
-  return AddDurationToOrSubtractDurationFromPlainDateTime(
-      cx, PlainDateTimeDuration::Add, args);
+  return AddDurationToDateTime(cx, TemporalAddDuration::Add, args);
 }
 
 /**
@@ -1940,8 +1665,7 @@ static bool PlainDateTime_add(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainDateTime_subtract(JSContext* cx, const CallArgs& args) {
   // Step 3.
-  return AddDurationToOrSubtractDurationFromPlainDateTime(
-      cx, PlainDateTimeDuration::Subtract, args);
+  return AddDurationToDateTime(cx, TemporalAddDuration::Subtract, args);
 }
 
 /**
@@ -1994,7 +1718,7 @@ static bool PlainDateTime_since(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainDateTime_round(JSContext* cx, const CallArgs& args) {
   auto* temporalDateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dateTime = ToPlainDateTime(temporalDateTime);
+  auto dateTime = temporalDateTime->dateTime();
   Rooted<CalendarValue> calendar(cx, temporalDateTime->calendar());
 
   // Steps 3-12.
@@ -2105,16 +1829,16 @@ static bool PlainDateTime_round(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainDateTime_equals(JSContext* cx, const CallArgs& args) {
   auto* temporalDateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dateTime = ToPlainDateTime(temporalDateTime);
+  auto dateTime = temporalDateTime->dateTime();
   Rooted<CalendarValue> calendar(cx, temporalDateTime->calendar());
 
   // Step 3.
-  Rooted<PlainDateTimeWithCalendar> other(cx);
+  Rooted<PlainDateTime> other(cx);
   if (!ToTemporalDateTime(cx, args.get(0), &other)) {
     return false;
   }
 
-  // Steps 4-6.
+  // Steps 4-5.
   bool equals = dateTime == other.dateTime() &&
                 CalendarEquals(calendar, other.calendar());
 
@@ -2136,7 +1860,7 @@ static bool PlainDateTime_equals(JSContext* cx, unsigned argc, Value* vp) {
  */
 static bool PlainDateTime_toString(JSContext* cx, const CallArgs& args) {
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dt = ToPlainDateTime(dateTime);
+  auto dt = dateTime->dateTime();
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   SecondsStringPrecision precision = {Precision::Auto(),
@@ -2191,8 +1915,15 @@ static bool PlainDateTime_toString(JSContext* cx, const CallArgs& args) {
       RoundISODateTime(dt, precision.increment, precision.unit, roundingMode);
 
   // Step 12.
-  JSString* str = ::TemporalDateTimeToString(cx, result, calendar,
-                                             precision.precision, showCalendar);
+  if (!ISODateTimeWithinLimits(result)) {
+    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
+                              JSMSG_TEMPORAL_PLAIN_DATE_TIME_INVALID);
+    return false;
+  }
+
+  // Step 13.
+  JSString* str = ISODateTimeToString(cx, result, calendar, precision.precision,
+                                      showCalendar);
   if (!str) {
     return false;
   }
@@ -2215,19 +1946,10 @@ static bool PlainDateTime_toString(JSContext* cx, unsigned argc, Value* vp) {
  * Temporal.PlainDateTime.prototype.toLocaleString ( [ locales [ , options ] ] )
  */
 static bool PlainDateTime_toLocaleString(JSContext* cx, const CallArgs& args) {
-  auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dt = ToPlainDateTime(dateTime);
-  Rooted<CalendarValue> calendar(cx, dateTime->calendar());
-
-  // Step 3.
-  JSString* str = ::TemporalDateTimeToString(
-      cx, dt, calendar, Precision::Auto(), ShowCalendar::Auto);
-  if (!str) {
-    return false;
-  }
-
-  args.rval().setString(str);
-  return true;
+  // Steps 3-4.
+  Handle<PropertyName*> required = cx->names().any;
+  Handle<PropertyName*> defaults = cx->names().all;
+  return TemporalObjectToLocaleString(cx, args, required, defaults);
 }
 
 /**
@@ -2246,12 +1968,12 @@ static bool PlainDateTime_toLocaleString(JSContext* cx, unsigned argc,
  */
 static bool PlainDateTime_toJSON(JSContext* cx, const CallArgs& args) {
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
-  auto dt = ToPlainDateTime(dateTime);
+  auto dt = dateTime->dateTime();
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  JSString* str = ::TemporalDateTimeToString(
-      cx, dt, calendar, Precision::Auto(), ShowCalendar::Auto);
+  JSString* str = ISODateTimeToString(cx, dt, calendar, Precision::Auto(),
+                                      ShowCalendar::Auto);
   if (!str) {
     return false;
   }
@@ -2283,9 +2005,9 @@ static bool PlainDateTime_valueOf(JSContext* cx, unsigned argc, Value* vp) {
  * options ] )
  */
 static bool PlainDateTime_toZonedDateTime(JSContext* cx, const CallArgs& args) {
-  Rooted<PlainDateTimeObject*> dateTime(
-      cx, &args.thisv().toObject().as<PlainDateTimeObject>());
-  Rooted<CalendarValue> calendar(cx, dateTime->calendar());
+  auto* temporalDateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
+  auto isoDateTime = temporalDateTime->dateTime();
+  Rooted<CalendarValue> calendar(cx, temporalDateTime->calendar());
 
   // Step 3.
   Rooted<TimeZoneValue> timeZone(cx);
@@ -2308,15 +2030,15 @@ static bool PlainDateTime_toZonedDateTime(JSContext* cx, const CallArgs& args) {
     }
   }
 
-  // Steps 6-7.
-  Instant instant;
-  if (!GetInstantFor(cx, timeZone, ToPlainDateTime(dateTime), disambiguation,
-                     &instant)) {
+  // Step 6.
+  EpochNanoseconds epochNs;
+  if (!GetEpochNanosecondsFor(cx, timeZone, isoDateTime, disambiguation,
+                              &epochNs)) {
     return false;
   }
 
-  // Step 8.
-  auto* result = CreateTemporalZonedDateTime(cx, instant, timeZone, calendar);
+  // Step 7.
+  auto* result = CreateTemporalZonedDateTime(cx, epochNs, timeZone, calendar);
   if (!result) {
     return false;
   }
@@ -2345,7 +2067,7 @@ static bool PlainDateTime_toPlainDate(JSContext* cx, const CallArgs& args) {
   Rooted<CalendarValue> calendar(cx, dateTime->calendar());
 
   // Step 3.
-  auto* obj = CreateTemporalDate(cx, ToPlainDate(dateTime), calendar);
+  auto* obj = CreateTemporalDate(cx, dateTime->date(), calendar);
   if (!obj) {
     return false;
   }
@@ -2371,7 +2093,7 @@ static bool PlainDateTime_toPlainTime(JSContext* cx, const CallArgs& args) {
   auto* dateTime = &args.thisv().toObject().as<PlainDateTimeObject>();
 
   // Step 3.
-  auto* obj = CreateTemporalTime(cx, ToPlainTime(dateTime));
+  auto* obj = CreateTemporalTime(cx, dateTime->time());
   if (!obj) {
     return false;
   }

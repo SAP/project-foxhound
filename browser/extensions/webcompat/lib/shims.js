@@ -55,6 +55,7 @@ class Shim {
     this.onlyIfDFPIActive = opts.onlyIfDFPIActive;
     this.onlyIfPrivateBrowsing = opts.onlyIfPrivateBrowsing;
     this._options = opts.options || {};
+    this.webExposedShimHelpers = opts.webExposedShimHelpers;
     this.needsShimHelpers = opts.needsShimHelpers;
     this.platform = opts.platform || "all";
     this.runFirst = opts.runFirst;
@@ -70,6 +71,7 @@ class Shim {
     );
 
     this._hostOptIns = new Set();
+    this._pBModeHostOptIns = new Set();
 
     this._disabledByConfig = opts.disabled;
     this._disabledGlobally = false;
@@ -270,10 +272,12 @@ class Shim {
     this.manager?.onShimStateChanged(this.id);
     if (!this.enabled) {
       await this._unregisterContentScripts();
-      return this._revokeRequestsInETP();
+      await this._revokeRequestsInETP();
+      return browser.testUtils.shimsInactive();
     }
     await this._registerContentScripts();
-    return this._allowRequestsInETP();
+    await this._allowRequestsInETP();
+    return browser.testUtils.shimsActive();
   }
 
   async _registerContentScripts() {
@@ -349,6 +353,7 @@ class Shim {
   async _allowRequestsInETP() {
     const matches = this.matches.map(m => m.patterns).flat();
     if (matches.length) {
+      // ensure requests shimmed in both PB and non-PB modes
       await browser.trackingProtection.shim(this.id, matches);
     }
 
@@ -358,7 +363,20 @@ class Shim {
         await browser.trackingProtection.allow(
           this.id,
           this._optInPatterns,
+          false,
           Array.from(this._hostOptIns)
+        );
+      }
+    }
+
+    if (this._pBModeHostOptIns.size) {
+      const optIns = this.getApplicableOptIns();
+      if (optIns.length) {
+        await browser.trackingProtection.allow(
+          this.id,
+          this._optInPatterns,
+          true,
+          Array.from(this._pBModeHostOptIns)
         );
       }
     }
@@ -455,21 +473,27 @@ class Shim {
     return optins;
   }
 
-  async onUserOptIn(host) {
+  async onUserOptIn(host, isPrivateMode) {
     const optins = await this.getApplicableOptIns();
+    const activeHostOptIns = isPrivateMode
+      ? this._pBModeHostOptIns
+      : this._hostOptIns;
     if (optins.length) {
-      this.userHasOptedIn = true;
-      this._hostOptIns.add(host);
+      activeHostOptIns.add(host);
       await browser.trackingProtection.allow(
         this.id,
         optins,
-        Array.from(this._hostOptIns)
+        isPrivateMode,
+        Array.from(activeHostOptIns)
       );
     }
   }
 
-  hasUserOptedInAlready(host) {
-    return this._hostOptIns.has(host);
+  hasUserOptedInAlready(host, isPrivateMode) {
+    const activeHostOptIns = isPrivateMode
+      ? this._pBModeHostOptIns
+      : this._hostOptIns;
+    return activeHostOptIns.has(host);
   }
 
   showOptInWarningOnce(tabId, origin) {
@@ -488,24 +512,43 @@ class Shim {
       .catch(() => {});
   }
 
-  async onUserOptOut(host) {
+  async onUserOptOut(host, isPrivateMode) {
     const optIns = await this.getApplicableOptIns();
+    const activeHostOptIns = isPrivateMode
+      ? this._pBModeHostOptIns
+      : this._hostOptIns;
     if (optIns.length) {
-      this._hostOptIns.delete(host);
+      activeHostOptIns.delete(host);
       await browser.trackingProtection.allow(
         this.id,
         optIns,
-        Array.from(this._hostOptIns)
+        isPrivateMode,
+        Array.from(activeHostOptIns)
       );
     }
-    if (!this._hostOptIns.length) {
-      this.userHasOptedIn = false;
+  }
+
+  async clearUserOptIns(forPrivateMode) {
+    const optIns = await this.getApplicableOptIns();
+    const activeHostOptIns = forPrivateMode
+      ? this._pBModeHostOptIns
+      : this._hostOptIns;
+    if (optIns.length) {
+      activeHostOptIns.clear();
+      await browser.trackingProtection.allow(
+        this.id,
+        optIns,
+        forPrivateMode,
+        Array.from(activeHostOptIns)
+      );
     }
   }
 }
 
 class Shims {
   constructor(availableShims) {
+    browser.testUtils.shimsInactive();
+
     if (!browser.trackingProtection) {
       console.error("Required experimental add-on APIs for shims unavailable");
       return;
@@ -538,13 +581,13 @@ class Shims {
           console.warn("Smartblock shim not found", { tabId, shimId });
           return;
         }
-        await shim.onUserOptIn(hostname);
+        const isPB = (await browser.tabs.get(tabId)).incognito;
+        await shim.onUserOptIn(hostname, isPB);
 
         // send request to shim to remove placeholders and replace with original embeds
         await browser.tabs.sendMessage(tabId, {
           shimId,
           topic: "smartblock:unblock-embed",
-          data: hostname,
         });
       }
     );
@@ -557,14 +600,21 @@ class Shims {
           console.warn("Smartblock shim not found", { tabId, shimId });
           return;
         }
-
-        await shim.onUserOptOut(hostname);
+        const isPB = (await browser.tabs.get(tabId)).incognito;
+        await shim.onUserOptOut(hostname, isPB);
 
         // a browser reload is required to reload the shim in the case where the shim gets unloaded
         // i.e. after user unblocks, then closes and revisits the page while shim is still allowed
         browser.tabs.reload(tabId);
       }
     );
+
+    // handles data clearing on private browsing mode end
+    browser.trackingProtection.onPrivateSessionEnd.addListener(() => {
+      for (const shim of this.shims.values()) {
+        shim.clearUserOptIns(true);
+      }
+    });
   }
 
   bindAboutCompatBroker(broker) {
@@ -831,9 +881,8 @@ class Shims {
           // Only get the dFPI state for the first shim which requires it.
           if (isDFPIActive === null) {
             const tabIsPB = (await browser.tabs.get(tabId)).incognito;
-            isDFPIActive = await browser.trackingProtection.isDFPIActive(
-              tabIsPB
-            );
+            isDFPIActive =
+              await browser.trackingProtection.isDFPIActive(tabIsPB);
           }
           if (!isDFPIActive) {
             return;
@@ -889,7 +938,9 @@ class Shims {
       message !== "getOptions" &&
       message !== "optIn" &&
       message !== "embedClicked" &&
-      message !== "smartblockGetFluentString"
+      message !== "smartblockEmbedReplaced" &&
+      message !== "smartblockGetFluentString" &&
+      message !== "checkFacebookLoginStatus"
     ) {
       return undefined;
     }
@@ -917,7 +968,7 @@ class Shims {
       );
     } else if (message === "optIn") {
       try {
-        await shim.onUserOptIn(new URL(url).hostname);
+        await shim.onUserOptIn(new URL(url).hostname, tab.incognito);
         const origin = new URL(tab.url).origin;
         warn(
           "** User opted in for",
@@ -936,12 +987,24 @@ class Shims {
       }
     } else if (message === "embedClicked") {
       browser.trackingProtection.openProtectionsPanel(id);
+    } else if (message === "smartblockEmbedReplaced") {
+      browser.trackingProtection.incrementSmartblockEmbedShownTelemetry();
     } else if (message === "smartblockGetFluentString") {
       return await browser.trackingProtection.getSmartBlockEmbedFluentString(
         id,
         shimId,
         new URL(url).hostname
       );
+    } else if (message === "checkFacebookLoginStatus") {
+      // Verify that the user is logged in to Facebook by checking the c_user
+      // cookie.
+      let cookie = await browser.cookies.get({
+        url: "https://www.facebook.com",
+        name: "c_user",
+      });
+
+      // If the cookie is found, the user is logged in to Facebook.
+      return cookie != null;
     }
 
     return undefined;
@@ -1073,6 +1136,7 @@ class Shims {
     return { requestHeaders };
   }
 
+  // eslint-disable-next-line complexity
   async _ensureShimForRequestOnTab(details) {
     await this._haveCheckedEnabledPrefs;
 
@@ -1093,8 +1157,10 @@ class Shims {
 
     // We need to base our checks not on the frame's host, but the tab's.
     const topHost = new URL((await browser.tabs.get(tabId)).url).hostname;
+    const isPB = (await browser.tabs.get(details.tabId)).incognito;
     const unblocked = await browser.trackingProtection.wasRequestUnblocked(
-      requestId
+      requestId,
+      isPB
     );
 
     let match;
@@ -1107,7 +1173,6 @@ class Shims {
       }
 
       if (shim.onlyIfDFPIActive || shim.onlyIfPrivateBrowsing) {
-        const isPB = (await browser.tabs.get(details.tabId)).incognito;
         if (!isPB && shim.onlyIfPrivateBrowsing) {
           continue;
         }
@@ -1138,7 +1203,7 @@ class Shims {
 
         // If the user has already opted in for this shim, all requests it covers
         // should be allowed; no need for a shim anymore.
-        if (shim.hasUserOptedInAlready(topHost)) {
+        if (shim.hasUserOptedInAlready(topHost, isPB)) {
           warn(
             `Allowing tracking ${type} ${url} on tab ${tabId} frame ${frameId} due to opt-in`
           );
@@ -1158,7 +1223,14 @@ class Shims {
       // complete via local redirect. Shims should gracefully handle this as well.
 
       const { target } = match;
-      const { bug, file, id, name, needsShimHelpers } = shimToApply;
+      const { bug, file, id, name } = shimToApply;
+
+      // Determine whether we should inject helper scripts into the page.
+      // webExposedShimHelpers is an optional list of helpers to provide
+      // directly to the website (see script injection below). If not used shims
+      // should pass an empty array to disable this functionality.
+      const needsShimHelpers =
+        shimToApply.webExposedShimHelpers || shimToApply.needsShimHelpers;
       runFirst = shimToApply.runFirst;
 
       const redirect = target || file;
@@ -1180,6 +1252,7 @@ class Shims {
             frameId,
             runAt: "document_start",
           });
+          shimToApply.setActiveOnTab(tabId);
         } catch (_) {}
       }
 

@@ -7,6 +7,7 @@
 
 use std::collections::HashSet;
 
+use internal_pings::InternalPings;
 use serde_json::json;
 
 use super::*;
@@ -19,7 +20,35 @@ pub fn new_glean(tempdir: Option<tempfile::TempDir>) -> (Glean, tempfile::TempDi
         None => tempfile::tempdir().unwrap(),
     };
     let tmpname = dir.path().display().to_string();
-    let glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true, true);
+    let mut glean = Glean::with_options(&tmpname, GLOBAL_APPLICATION_ID, true, true);
+    // Register the builtin pings as enabled.
+    _ = InternalPings::new(true);
+
+    // store{1, 2} is used throughout tests
+    let ping = PingType::new_internal(
+        "store1",
+        true,
+        false,
+        true,
+        true,
+        true,
+        vec![],
+        vec![],
+        true,
+    );
+    glean.register_ping_type(&ping);
+    let ping = PingType::new_internal(
+        "store2",
+        true,
+        false,
+        true,
+        true,
+        true,
+        vec![],
+        vec![],
+        true,
+    );
+    glean.register_ping_type(&ping);
     (glean, dir)
 }
 
@@ -401,9 +430,9 @@ fn correct_order() {
     fn discriminant(metric: &metrics::Metric) -> u32 {
         let ser = bincode::serialize(metric).unwrap();
         (ser[0] as u32)
-        | (ser[1] as u32) << 8
-        | (ser[2] as u32) << 16
-        | (ser[3] as u32) << 24
+        | ((ser[1] as u32) << 8)
+        | ((ser[2] as u32) << 16)
+        | ((ser[3] as u32) << 24)
     }
 
     // One of every metric type. The values are arbitrary and don't matter.
@@ -617,6 +646,7 @@ fn test_first_run() {
 
 #[test]
 fn test_dirty_bit() {
+    let _ = env_logger::builder().try_init();
     let dir = tempfile::tempdir().unwrap();
     let tmpname = dir.path().display().to_string();
     {
@@ -1187,6 +1217,7 @@ fn disabled_pings_are_not_submitted() {
         false,
         vec![],
         vec![],
+        true,
     );
     glean.register_ping_type(&ping);
 
@@ -1239,6 +1270,7 @@ fn pings_are_controllable_from_remote_settings_config() {
         false,
         vec![],
         vec![],
+        true,
     );
     glean.register_ping_type(&disabled_ping);
     let enabled_ping = PingType::new(
@@ -1250,6 +1282,7 @@ fn pings_are_controllable_from_remote_settings_config() {
         true,
         vec![],
         vec![],
+        true,
     );
     glean.register_ping_type(&enabled_ping);
 

@@ -582,12 +582,12 @@ void jit::JitSpew(JitSpewChannel channel, const char* fmt, ...) {
   JS::AutoSuppressGCAnalysis suppress;
 
   switch (channel) {
-#  define SpewChannel(x)                                                   \
-    case JitSpew_##x:                                                      \
-      if (x##Module.shouldLog(mozilla::LogLevel::Debug)) {                 \
-        x##Module.interface.logPrintVA(x##Module.logger,                   \
-                                       mozilla::LogLevel::Debug, fmt, ap); \
-      }                                                                    \
+#  define SpewChannel(x)                                                      \
+    case JitSpew_##x:                                                         \
+      if (x##Module.shouldLog(js::LogLevel::Debug)) {                         \
+        x##Module.interface.logPrintVA(x##Module.logger, js::LogLevel::Debug, \
+                                       fmt, ap);                              \
+      }                                                                       \
       break;
 
     JITSPEW_CHANNEL_LIST(SpewChannel)
@@ -648,6 +648,10 @@ void jit::DisableChannel(JitSpewChannel channel) {
   LoggingBits &= ~(uint64_t(1) << uint32_t(channel));
 }
 
+#endif /* JS_JITSPEW */
+
+#if defined(JS_JITSPEW) || defined(ENABLE_JS_AOT_ICS)
+
 const char* js::jit::ValTypeToString(JSValueType type) {
   switch (type) {
     case JSVAL_TYPE_DOUBLE:
@@ -679,4 +683,4 @@ const char* js::jit::ValTypeToString(JSValueType type) {
   }
 }
 
-#endif /* JS_JITSPEW */
+#endif /* defined(JS_JITSPEW) || defined(ENABLE_JS_AOT_ICS) */

@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
@@ -16,13 +17,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.History
 import org.mozilla.fenix.GleanMetrics.RecentlyVisitedHomepage
 import org.mozilla.fenix.R
+import org.mozilla.fenix.compose.MessageCard
+import org.mozilla.fenix.compose.button.TertiaryButton
 import org.mozilla.fenix.compose.home.HomeSectionHeader
 import org.mozilla.fenix.home.bookmarks.Bookmark
 import org.mozilla.fenix.home.bookmarks.interactor.BookmarksInteractor
@@ -45,9 +51,12 @@ import org.mozilla.fenix.home.recentvisits.interactor.RecentVisitsInteractor
 import org.mozilla.fenix.home.recentvisits.view.RecentVisitMenuItem
 import org.mozilla.fenix.home.recentvisits.view.RecentlyVisited
 import org.mozilla.fenix.home.sessioncontrol.CollectionInteractor
+import org.mozilla.fenix.home.sessioncontrol.CustomizeHomeIteractor
+import org.mozilla.fenix.home.sessioncontrol.MessageCardInteractor
 import org.mozilla.fenix.home.sessioncontrol.viewholders.FeltPrivacyModeInfoCard
 import org.mozilla.fenix.home.sessioncontrol.viewholders.PrivateBrowsingDescription
 import org.mozilla.fenix.home.store.HomepageState
+import org.mozilla.fenix.home.store.NimbusMessageState
 import org.mozilla.fenix.home.topsites.TopSiteColors
 import org.mozilla.fenix.home.topsites.TopSites
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -70,24 +79,37 @@ internal fun Homepage(
 ) {
     Column(
         modifier = Modifier
-            .padding(horizontal = 16.dp)
             .verticalScroll(rememberScrollState()),
     ) {
+        HomepageHeader(
+            browsingMode = state.browsingMode,
+            browsingModeChanged = interactor::onPrivateModeButtonClicked,
+        )
+
         with(state) {
             when (this) {
                 is HomepageState.Private -> {
-                    if (feltPrivateBrowsingEnabled) {
-                        FeltPrivacyModeInfoCard(
-                            onLearnMoreClick = interactor::onLearnMoreClicked,
-                        )
-                    } else {
-                        PrivateBrowsingDescription(
-                            onLearnMoreClick = interactor::onLearnMoreClicked,
-                        )
+                    Box(modifier = Modifier.padding(horizontal = horizontalMargin)) {
+                        if (feltPrivateBrowsingEnabled) {
+                            FeltPrivacyModeInfoCard(
+                                onLearnMoreClick = interactor::onLearnMoreClicked,
+                            )
+                        } else {
+                            PrivateBrowsingDescription(
+                                onLearnMoreClick = interactor::onLearnMoreClicked,
+                            )
+                        }
                     }
                 }
 
                 is HomepageState.Normal -> {
+                    nimbusMessage?.let {
+                        NimbusMessageCardSection(
+                            nimbusMessage = nimbusMessage,
+                            interactor = interactor,
+                        )
+                    }
+
                     if (showTopSites) {
                         TopSites(
                             topSites = topSites,
@@ -105,17 +127,23 @@ internal fun Homepage(
                         )
 
                         if (showRecentSyncedTab) {
-                            Spacer(modifier = Modifier.height(8.dp))
-
-                            RecentSyncedTab(
-                                tab = syncedTab,
-                                backgroundColor = cardBackgroundColor,
-                                buttonBackgroundColor = buttonBackgroundColor,
-                                buttonTextColor = buttonTextColor,
-                                onRecentSyncedTabClick = interactor::onRecentSyncedTabClicked,
-                                onSeeAllSyncedTabsButtonClick = interactor::onSyncedTabShowAllClicked,
-                                onRemoveSyncedTab = interactor::onRemovedRecentSyncedTab,
-                            )
+                            Box(
+                                modifier = Modifier.padding(
+                                    start = horizontalMargin,
+                                    end = horizontalMargin,
+                                    top = verticalMargin,
+                                ),
+                            ) {
+                                RecentSyncedTab(
+                                    tab = syncedTab,
+                                    backgroundColor = cardBackgroundColor,
+                                    buttonBackgroundColor = buttonBackgroundColor,
+                                    buttonTextColor = buttonTextColor,
+                                    onRecentSyncedTabClick = interactor::onRecentSyncedTabClicked,
+                                    onSeeAllSyncedTabsButtonClick = interactor::onSyncedTabShowAllClicked,
+                                    onRemoveSyncedTab = interactor::onRemovedRecentSyncedTab,
+                                )
+                            }
                         }
                     }
 
@@ -135,7 +163,10 @@ internal fun Homepage(
                         )
                     }
 
-                    CollectionsSection(collectionsState = collectionsState, interactor = interactor)
+                    CollectionsSection(
+                        collectionsState = collectionsState,
+                        interactor = interactor,
+                    )
 
                     if (showPocketStories) {
                         PocketSection(
@@ -145,11 +176,32 @@ internal fun Homepage(
                         )
                     }
 
-                    // This is a temporary value until I can fix layout issues
-                    Spacer(Modifier.height(288.dp))
+                    if (showCustomizeHome) {
+                        CustomizeHomeButton(
+                            buttonBackgroundColor = customizeHomeButtonBackgroundColor,
+                            interactor = interactor,
+                        )
+                    }
+
+                    Spacer(Modifier.height(bottomSpacerHeight))
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun NimbusMessageCardSection(
+    nimbusMessage: NimbusMessageState,
+    interactor: MessageCardInteractor,
+) {
+    with(nimbusMessage) {
+        MessageCard(
+            messageCardState = cardState,
+            modifier = Modifier.padding(horizontal = 16.dp),
+            onClick = { interactor.onMessageClicked(message) },
+            onCloseButtonClick = { interactor.onMessageClosedClicked(message) },
+        )
     }
 }
 
@@ -161,25 +213,27 @@ private fun RecentTabsSection(
 ) {
     Spacer(modifier = Modifier.height(40.dp))
 
-    HomeSectionHeader(
-        headerText = stringResource(R.string.recent_tabs_header),
-        description = stringResource(R.string.recent_tabs_show_all_content_description_2),
-        onShowAllClick = interactor::onRecentTabShowAllClicked,
-    )
+    Column(modifier = Modifier.padding(horizontal = horizontalMargin)) {
+        HomeSectionHeader(
+            headerText = stringResource(R.string.recent_tabs_header),
+            description = stringResource(R.string.recent_tabs_show_all_content_description_2),
+            onShowAllClick = interactor::onRecentTabShowAllClicked,
+        )
 
-    Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
-    RecentTabs(
-        recentTabs = recentTabs,
-        backgroundColor = cardBackgroundColor,
-        onRecentTabClick = { interactor.onRecentTabClicked(it) },
-        menuItems = listOf(
-            RecentTabMenuItem(
-                title = stringResource(id = R.string.recent_tab_menu_item_remove),
-                onClick = interactor::onRemoveRecentTab,
+        RecentTabs(
+            recentTabs = recentTabs,
+            backgroundColor = cardBackgroundColor,
+            onRecentTabClick = { interactor.onRecentTabClicked(it) },
+            menuItems = listOf(
+                RecentTabMenuItem(
+                    title = stringResource(id = R.string.recent_tab_menu_item_remove),
+                    onClick = interactor::onRemoveRecentTab,
+                ),
             ),
-        ),
-    )
+        )
+    }
 }
 
 @Composable
@@ -192,6 +246,7 @@ private fun BookmarksSection(
 
     HomeSectionHeader(
         headerText = stringResource(R.string.home_bookmarks_title),
+        modifier = Modifier.padding(horizontal = horizontalMargin),
         description = stringResource(R.string.home_bookmarks_show_all_content_description),
         onShowAllClick = interactor::onShowAllBookmarksClicked,
     )
@@ -219,11 +274,13 @@ private fun RecentlyVisitedSection(
 ) {
     Spacer(modifier = Modifier.height(40.dp))
 
-    HomeSectionHeader(
-        headerText = stringResource(R.string.history_metadata_header_2),
-        description = stringResource(R.string.past_explorations_show_all_content_description_2),
-        onShowAllClick = interactor::onHistoryShowAllClicked,
-    )
+    Box(modifier = Modifier.padding(horizontal = horizontalMargin)) {
+        HomeSectionHeader(
+            headerText = stringResource(R.string.history_metadata_header_2),
+            description = stringResource(R.string.past_explorations_show_all_content_description_2),
+            onShowAllClick = interactor::onHistoryShowAllClicked,
+        )
+    }
 
     Spacer(Modifier.height(16.dp))
 
@@ -271,7 +328,7 @@ private fun CollectionsSection(
 ) {
     when (collectionsState) {
         is CollectionsState.Content -> {
-            Column {
+            Column(modifier = Modifier.padding(horizontal = horizontalMargin)) {
                 Spacer(Modifier.height(56.dp))
 
                 HomeSectionHeader(headerText = stringResource(R.string.collections_header))
@@ -282,7 +339,7 @@ private fun CollectionsSection(
                     Collections(
                         collections = collections,
                         expandedCollections = expandedCollections,
-                        showAddTabToCollection = showAddTabToCollection,
+                        showAddTabToCollection = showSaveTabsToCollection,
                         interactor = interactor,
                     )
                 }
@@ -290,29 +347,53 @@ private fun CollectionsSection(
         }
 
         CollectionsState.Gone -> {} // no-op. Nothing is shown where there are no collections.
-        CollectionsState.Placeholder -> {
-            CollectionsPlaceholder()
+
+        is CollectionsState.Placeholder -> {
+            Box(
+                modifier = Modifier.padding(
+                    start = horizontalMargin,
+                    end = horizontalMargin,
+                    top = 40.dp,
+                    bottom = 12.dp,
+                ),
+            ) {
+                CollectionsPlaceholder(
+                    showAddTabsToCollection = collectionsState.showSaveTabsToCollection,
+                    colors = collectionsState.colors,
+                    interactor = interactor,
+                )
+            }
         }
     }
 }
 
 @Composable
-@Suppress("EmptyFunctionBlock")
-private fun CollectionsPlaceholder() {
+private fun CustomizeHomeButton(buttonBackgroundColor: Color, interactor: CustomizeHomeIteractor) {
+    Spacer(modifier = Modifier.height(68.dp))
+
+    TertiaryButton(
+        text = stringResource(R.string.browser_menu_customize_home_1),
+        modifier = Modifier
+            .padding(horizontal = dimensionResource(R.dimen.home_item_horizontal_margin))
+            .fillMaxWidth(),
+        backgroundColor = buttonBackgroundColor,
+        onClick = interactor::openCustomizeHomePage,
+    )
 }
 
 @Composable
-@Preview
+@PreviewLightDark
 private fun HomepagePreview() {
     FirefoxTheme {
         Homepage(
             HomepageState.Normal(
+                nimbusMessage = FakeHomepagePreview.nimbusMessageState(),
                 topSites = FakeHomepagePreview.topSites(),
                 recentTabs = FakeHomepagePreview.recentTabs(),
                 syncedTab = FakeHomepagePreview.recentSyncedTab(),
                 bookmarks = FakeHomepagePreview.bookmarks(),
                 recentlyVisited = FakeHomepagePreview.recentHistory(),
-                collectionsState = FakeHomepagePreview.collectionState(),
+                collectionsState = FakeHomepagePreview.collectionsPlaceholder(),
                 pocketState = FakeHomepagePreview.pocketState(),
                 showTopSites = true,
                 showRecentTabs = true,
@@ -324,6 +405,41 @@ private fun HomepagePreview() {
                 cardBackgroundColor = WallpaperState.default.cardBackgroundColor,
                 buttonTextColor = WallpaperState.default.buttonTextColor,
                 buttonBackgroundColor = WallpaperState.default.buttonBackgroundColor,
+                customizeHomeButtonBackgroundColor = FirefoxTheme.colors.actionTertiary,
+                bottomSpacerHeight = 188.dp,
+            ),
+            interactor = FakeHomepagePreview.homepageInteractor,
+            onTopSitesItemBound = {},
+        )
+    }
+}
+
+@Composable
+@PreviewLightDark
+private fun HomepagePreviewCollections() {
+    FirefoxTheme {
+        Homepage(
+            HomepageState.Normal(
+                nimbusMessage = null,
+                topSites = FakeHomepagePreview.topSites(),
+                recentTabs = FakeHomepagePreview.recentTabs(),
+                syncedTab = FakeHomepagePreview.recentSyncedTab(),
+                bookmarks = FakeHomepagePreview.bookmarks(),
+                recentlyVisited = FakeHomepagePreview.recentHistory(),
+                collectionsState = FakeHomepagePreview.collectionState(),
+                pocketState = FakeHomepagePreview.pocketState(),
+                showTopSites = false,
+                showRecentTabs = false,
+                showRecentSyncedTab = false,
+                showBookmarks = false,
+                showRecentlyVisited = true,
+                showPocketStories = true,
+                topSiteColors = TopSiteColors.colors(),
+                cardBackgroundColor = WallpaperState.default.cardBackgroundColor,
+                buttonTextColor = WallpaperState.default.buttonTextColor,
+                buttonBackgroundColor = WallpaperState.default.buttonBackgroundColor,
+                customizeHomeButtonBackgroundColor = FirefoxTheme.colors.actionTertiary,
+                bottomSpacerHeight = 188.dp,
             ),
             interactor = FakeHomepagePreview.homepageInteractor,
             onTopSitesItemBound = {},
@@ -343,6 +459,7 @@ private fun PrivateHomepagePreview() {
             Homepage(
                 HomepageState.Private(
                     feltPrivateBrowsingEnabled = false,
+                    bottomSpacerHeight = 188.dp,
                 ),
                 interactor = FakeHomepagePreview.homepageInteractor,
                 onTopSitesItemBound = {},
@@ -350,3 +467,9 @@ private fun PrivateHomepagePreview() {
         }
     }
 }
+
+private val horizontalMargin: Dp
+    @Composable get() = dimensionResource(R.dimen.home_item_horizontal_margin)
+
+private val verticalMargin: Dp
+    @Composable get() = dimensionResource(R.dimen.home_item_vertical_margin)

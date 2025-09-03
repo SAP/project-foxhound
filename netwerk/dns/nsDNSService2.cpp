@@ -56,10 +56,8 @@ static const char kPrefDnsCacheExpiration[] = "network.dnsCacheExpiration";
 static const char kPrefDnsCacheGrace[] =
     "network.dnsCacheExpirationGracePeriod";
 static const char kPrefIPv4OnlyDomains[] = "network.dns.ipv4OnlyDomains";
-static const char kPrefBlockDotOnion[] = "network.dns.blockDotOnion";
 static const char kPrefDnsLocalDomains[] = "network.dns.localDomains";
 static const char kPrefDnsForceResolve[] = "network.dns.forceResolve";
-static const char kPrefDnsOfflineLocalhost[] = "network.dns.offline-localhost";
 static const char kPrefDnsNotifyResolution[] = "network.dns.notifyResolution";
 static const char kPrefDnsMockHTTPSRRDomain[] =
     "network.dns.mock_HTTPS_RR_domain";
@@ -222,7 +220,7 @@ nsDNSRecord::GetNextAddr(uint16_t port, NetAddr* addr) {
       // attempt to reresolve it failed.
       return NS_ERROR_NOT_AVAILABLE;
     }
-    memcpy(addr, mHostRecord->addr.get(), sizeof(NetAddr));
+    *addr = *mHostRecord->addr;
     mDone = true;
   }
 
@@ -264,7 +262,7 @@ nsDNSRecord::GetAddresses(nsTArray<NetAddr>& aAddressArray) {
       return NS_ERROR_NOT_AVAILABLE;
     }
     NetAddr* addr = aAddressArray.AppendElement(NetAddr());
-    memcpy(addr, mHostRecord->addr.get(), sizeof(NetAddr));
+    *addr = *mHostRecord->addr;
     if (addr->raw.family == AF_INET) {
       addr->inet.port = 0;
     } else if (addr->raw.family == AF_INET6) {
@@ -427,6 +425,13 @@ nsDNSByTypeRecord::GetServiceModeRecordWithCname(bool aNoHttp2, bool aNoHttp3,
 
 NS_IMETHODIMP
 nsDNSByTypeRecord::IsTRR(bool* aResult) { return mHostRecord->IsTRR(aResult); }
+
+NS_IMETHODIMP
+nsDNSByTypeRecord::GetAllRecords(bool aNoHttp2, bool aNoHttp3,
+                                 const nsACString& aCname,
+                                 nsTArray<RefPtr<nsISVCBRecord>>& aResult) {
+  return mHostRecord->GetAllRecords(aNoHttp2, aNoHttp3, aCname, aResult);
+}
 
 NS_IMETHODIMP
 nsDNSByTypeRecord::GetAllRecordsWithEchConfig(
@@ -777,47 +782,8 @@ void nsDNSService::ReadPrefs(const char* name) {
   DNSServiceBase::ReadPrefs(name);
 
   bool tmpbool;
-  uint32_t tmpint;
-  mResolverPrefsUpdated = false;
-
-  // resolver-specific prefs first
-  if (!name || !strcmp(name, kPrefDnsCacheEntries)) {
-    if (NS_SUCCEEDED(Preferences::GetUint(kPrefDnsCacheEntries, &tmpint))) {
-      if (!name || (tmpint != mResCacheEntries)) {
-        mResCacheEntries = tmpint;
-        mResolverPrefsUpdated = true;
-      }
-    }
-  }
-  if (!name || !strcmp(name, kPrefDnsCacheExpiration)) {
-    if (NS_SUCCEEDED(Preferences::GetUint(kPrefDnsCacheExpiration, &tmpint))) {
-      if (!name || (tmpint != mResCacheExpiration)) {
-        mResCacheExpiration = tmpint;
-        mResolverPrefsUpdated = true;
-      }
-    }
-  }
-  if (!name || !strcmp(name, kPrefDnsCacheGrace)) {
-    if (NS_SUCCEEDED(Preferences::GetUint(kPrefDnsCacheGrace, &tmpint))) {
-      if (!name || (tmpint != mResCacheGrace)) {
-        mResCacheGrace = tmpint;
-        mResolverPrefsUpdated = true;
-      }
-    }
-  }
 
   // DNSservice prefs
-  if (!name || !strcmp(name, kPrefDnsOfflineLocalhost)) {
-    if (NS_SUCCEEDED(
-            Preferences::GetBool(kPrefDnsOfflineLocalhost, &tmpbool))) {
-      mOfflineLocalhost = tmpbool;
-    }
-  }
-  if (!name || !strcmp(name, kPrefBlockDotOnion)) {
-    if (NS_SUCCEEDED(Preferences::GetBool(kPrefBlockDotOnion, &tmpbool))) {
-      mBlockDotOnion = tmpbool;
-    }
-  }
   if (!name || !strcmp(name, kPrefDnsNotifyResolution)) {
     if (NS_SUCCEEDED(
             Preferences::GetBool(kPrefDnsNotifyResolution, &tmpbool))) {
@@ -873,8 +839,7 @@ nsDNSService::Init() {
   }
 
   RefPtr<nsHostResolver> res;
-  nsresult rv = nsHostResolver::Create(mResCacheEntries, mResCacheExpiration,
-                                       mResCacheGrace, getter_AddRefs(res));
+  nsresult rv = nsHostResolver::Create(getter_AddRefs(res));
   if (NS_SUCCEEDED(rv)) {
     // now, set all of our member variables while holding the lock
     MutexAutoLock lock(mLock);
@@ -890,8 +855,6 @@ nsDNSService::Init() {
     prefs->AddObserver(kPrefIPv4OnlyDomains, this, false);
     prefs->AddObserver(kPrefDnsLocalDomains, this, false);
     prefs->AddObserver(kPrefDnsForceResolve, this, false);
-    prefs->AddObserver(kPrefDnsOfflineLocalhost, this, false);
-    prefs->AddObserver(kPrefBlockDotOnion, this, false);
     prefs->AddObserver(kPrefDnsNotifyResolution, this, false);
     prefs->AddObserver(kPrefDnsMockHTTPSRRDomain, this, false);
     AddPrefObserver(prefs);
@@ -969,7 +932,8 @@ nsresult nsDNSService::PreprocessHostname(bool aLocalDomain,
                                           const nsACString& aInput,
                                           nsACString& aACE) {
   // Enforce RFC 7686
-  if (mBlockDotOnion && StringEndsWith(aInput, ".onion"_ns)) {
+  if (StaticPrefs::network_dns_blockDotOnion() &&
+      StringEndsWith(aInput, ".onion"_ns)) {
     return NS_ERROR_UNKNOWN_HOST;
   }
 
@@ -1055,8 +1019,8 @@ nsresult nsDNSService::AsyncResolveInternal(
     return rv;
   }
 
-  if (GetOffline() &&
-      (!mOfflineLocalhost || !hostname.LowerCaseEqualsASCII("localhost"))) {
+  if (GetOffline() && (!StaticPrefs::network_dns_offline_localhost() ||
+                       !hostname.LowerCaseEqualsASCII("localhost"))) {
     flags |= RESOLVE_OFFLINE;
   }
 
@@ -1260,8 +1224,8 @@ nsresult nsDNSService::ResolveInternal(
     return rv;
   }
 
-  if (GetOffline() &&
-      (!mOfflineLocalhost || !hostname.LowerCaseEqualsASCII("localhost"))) {
+  if (GetOffline() && (!StaticPrefs::network_dns_offline_localhost() ||
+                       !hostname.LowerCaseEqualsASCII("localhost"))) {
     flags |= RESOLVE_OFFLINE;
   }
 
@@ -1343,10 +1307,6 @@ nsDNSService::Observe(nsISupports* subject, const char* topic,
   } else if (!strcmp(topic, NS_PREFBRANCH_PREFCHANGE_TOPIC_ID)) {
     ReadPrefs(NS_ConvertUTF16toUTF8(data).get());
     NS_ENSURE_TRUE(resolver, NS_ERROR_NOT_INITIALIZED);
-    if (mResolverPrefsUpdated && resolver) {
-      resolver->SetCacheLimits(mResCacheEntries, mResCacheExpiration,
-                               mResCacheGrace);
-    }
   } else if (!strcmp(topic, NS_XPCOM_SHUTDOWN_OBSERVER_ID)) {
     Shutdown();
   }

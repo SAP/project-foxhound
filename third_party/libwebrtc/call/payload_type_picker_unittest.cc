@@ -13,9 +13,15 @@
 #include "call/payload_type.h"
 #include "media/base/codec.h"
 #include "media/base/media_constants.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 namespace webrtc {
+
+using testing::Eq;
+using testing::Ge;
+using testing::Lt;
+using testing::Ne;
 
 TEST(PayloadTypePicker, PayloadTypeAssignmentWorks) {
   // Note: This behavior is due to be deprecated and removed.
@@ -55,14 +61,34 @@ TEST(PayloadTypePicker, ModifyingPtIsIgnored) {
   PayloadTypePicker picker;
   PayloadTypeRecorder recorder(picker);
   const PayloadType a_payload_type(123);
-  cricket::Codec a_codec = cricket::CreateVideoCodec(0, "vp8");
-  cricket::Codec b_codec = cricket::CreateVideoCodec(0, "vp9");
+  cricket::Codec a_codec =
+      cricket::CreateVideoCodec(cricket::Codec::kIdNotSet, "vp8");
+  cricket::Codec b_codec =
+      cricket::CreateVideoCodec(cricket::Codec::kIdNotSet, "vp9");
   recorder.AddMapping(a_payload_type, a_codec);
   auto error = recorder.AddMapping(a_payload_type, b_codec);
   EXPECT_TRUE(error.ok());
   auto result = recorder.LookupCodec(a_payload_type);
   // Redefinition should be accepted.
   EXPECT_EQ(result.value(), b_codec);
+}
+
+TEST(PayloadTypePicker, ModifyingPtIsAnErrorIfDisallowed) {
+  PayloadTypePicker picker;
+  PayloadTypeRecorder recorder(picker);
+  const PayloadType a_payload_type(123);
+  cricket::Codec a_codec =
+      cricket::CreateVideoCodec(cricket::Codec::kIdNotSet, "vp8");
+  cricket::Codec b_codec =
+      cricket::CreateVideoCodec(cricket::Codec::kIdNotSet, "vp9");
+  recorder.DisallowRedefinition();
+  recorder.AddMapping(a_payload_type, a_codec);
+  auto error = recorder.AddMapping(a_payload_type, b_codec);
+  EXPECT_FALSE(error.ok());
+  auto result = recorder.LookupCodec(a_payload_type);
+  // Attempted redefinition should be ignored.
+  EXPECT_EQ(result.value(), a_codec);
+  recorder.ReallowRedefinition();
 }
 
 TEST(PayloadTypePicker, RollbackAndCommit) {
@@ -154,4 +180,57 @@ TEST(PayloadTypePicker, RecordedValueExcluded) {
   EXPECT_NE(47, result.value());
 }
 
+TEST(PayloadTypePicker, AudioGetsHigherRange) {
+  PayloadTypePicker picker;
+  cricket::Codec an_audio_codec =
+      cricket::CreateAudioCodec(-1, "lyra", 8000, 1);
+  auto result = picker.SuggestMapping(an_audio_codec, nullptr).value();
+  EXPECT_THAT(result, Ge(96));
+}
+
+TEST(PayloadTypePicker, VideoGetsTreatedSpecially) {
+  PayloadTypePicker picker;
+  cricket::Codec h264_constrained = cricket::CreateVideoCodec(SdpVideoFormat(
+      cricket::kH264CodecName, {{cricket::kH264FmtpProfileLevelId, "42e01f"},
+                                {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                                {cricket::kH264FmtpPacketizationMode, "1"}}));
+  cricket::Codec h264_yuv444 = cricket::CreateVideoCodec(SdpVideoFormat(
+      cricket::kH264CodecName, {{cricket::kH264FmtpProfileLevelId, "f4001f"},
+                                {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                                {cricket::kH264FmtpPacketizationMode, "1"}}));
+  cricket::Codec vp9_profile_2 = cricket::CreateVideoCodec(SdpVideoFormat(
+      {cricket::kVp9CodecName, {{cricket::kVP9ProfileId, "2"}}}));
+  cricket::Codec vp9_profile_3 = cricket::CreateVideoCodec(SdpVideoFormat(
+      {cricket::kVp9CodecName, {{cricket::kVP9ProfileId, "3"}}}));
+  // Valid for high range only.
+  EXPECT_THAT(picker.SuggestMapping(h264_constrained, nullptr).value(), Ge(96));
+  EXPECT_THAT(picker.SuggestMapping(vp9_profile_2, nullptr).value(), Ge(96));
+  // Valud for lower range.
+  EXPECT_THAT(picker.SuggestMapping(h264_yuv444, nullptr).value(), Lt(63));
+  EXPECT_THAT(picker.SuggestMapping(vp9_profile_3, nullptr).value(), Lt(63));
+}
+
+TEST(PayloadTypePicker, ChoosingH264Profiles) {
+  // No opinion on whether these are right or wrong, just that their
+  // behavior is consistent.
+  PayloadTypePicker picker;
+  cricket::Codec h264_constrained = cricket::CreateVideoCodec(SdpVideoFormat(
+      cricket::kH264CodecName, {{cricket::kH264FmtpProfileLevelId, "42e01f"},
+                                {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                                {cricket::kH264FmtpPacketizationMode, "1"}}));
+  cricket::Codec h264_high_1f = cricket::CreateVideoCodec(SdpVideoFormat(
+      cricket::kH264CodecName, {{cricket::kH264FmtpProfileLevelId, "640c1f"},
+                                {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                                {cricket::kH264FmtpPacketizationMode, "1"}}));
+  cricket::Codec h264_high_2a = cricket::CreateVideoCodec(SdpVideoFormat(
+      cricket::kH264CodecName, {{cricket::kH264FmtpProfileLevelId, "640c2a"},
+                                {cricket::kH264FmtpLevelAsymmetryAllowed, "1"},
+                                {cricket::kH264FmtpPacketizationMode, "1"}}));
+  PayloadType pt_constrained =
+      picker.SuggestMapping(h264_constrained, nullptr).value();
+  PayloadType pt_high_1f = picker.SuggestMapping(h264_high_1f, nullptr).value();
+  PayloadType pt_high_2a = picker.SuggestMapping(h264_high_2a, nullptr).value();
+  EXPECT_THAT(pt_constrained, Ne(pt_high_1f));
+  EXPECT_THAT(pt_high_1f, Eq(pt_high_2a));
+}
 }  // namespace webrtc

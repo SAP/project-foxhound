@@ -89,11 +89,11 @@ using namespace js::jit;
 //         DOUBLE_REG [FPU_REG]
 //           Double value stored in a FPU register.
 //
-//         ANY_FLOAT_REG [FPU_REG]
-//           Any Float value (float32, simd) stored in a FPU register.
+//         FLOAT32_REG [FPU_REG]
+//           Float32 value stored in a FPU register.
 //
-//         ANY_FLOAT_STACK [STACK_OFFSET]
-//           Any Float value (float32, simd) stored on the stack.
+//         FLOAT32_STACK [STACK_OFFSET]
+//           Float32 value stored on the stack.
 //
 //         UNTYPED_REG   [GPR_REG]
 //         UNTYPED_STACK [STACK_OFFSET]
@@ -125,6 +125,10 @@ using namespace js::jit;
 //
 //         INTPTR_STACK [STACK_OFFSET]:
 //           Unpacked IntPtr value stored in intptr_t. Payload is stored at an
+//           offset on the stack.
+//
+//         INTPTR_INT32_STACK [STACK_OFFSET]:
+//           Unpacked IntPtr value stored in int32_t. Payload is stored at an
 //           offset on the stack.
 //
 //         TYPED_REG [PACKED_TAG, GPR_REG]:
@@ -176,14 +180,14 @@ const RValueAllocation::Layout& RValueAllocation::layoutFromMode(Mode mode) {
                                                       "double"};
       return layout;
     }
-    case ANY_FLOAT_REG: {
+    case FLOAT32_REG: {
       static const RValueAllocation::Layout layout = {PAYLOAD_FPU, PAYLOAD_NONE,
-                                                      "float register content"};
+                                                      "float32"};
       return layout;
     }
-    case ANY_FLOAT_STACK: {
-      static const RValueAllocation::Layout layout = {
-          PAYLOAD_STACK_OFFSET, PAYLOAD_NONE, "float register content"};
+    case FLOAT32_STACK: {
+      static const RValueAllocation::Layout layout = {PAYLOAD_STACK_OFFSET,
+                                                      PAYLOAD_NONE, "float32"};
       return layout;
     }
 #if defined(JS_NUNBOX32)
@@ -252,6 +256,12 @@ const RValueAllocation::Layout& RValueAllocation::layoutFromMode(Mode mode) {
     case INTPTR_STACK: {
       static const RValueAllocation::Layout layout = {
           PAYLOAD_STACK_OFFSET, PAYLOAD_NONE, "unpacked intptr"};
+      return layout;
+    }
+
+    case INTPTR_INT32_STACK: {
+      static const RValueAllocation::Layout layout = {
+          PAYLOAD_STACK_OFFSET, PAYLOAD_NONE, "unpacked intptr (int32)"};
       return layout;
     }
 

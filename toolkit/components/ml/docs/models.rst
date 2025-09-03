@@ -33,6 +33,17 @@ Notice that for the encoder-decoder models with two files, you may need to renam
 to `decoder_model_merged_quantized.onnx`, and make similar changes to the fp16, q4 versions.
 You do not need to rename the encoder models.
 
+By default, the conversion script above generates a single file containing both the ONNX model architecture and its weights.
+
+To split the model architecture and weights into separate files, you can use the script provided at:
+`convert_to_external_data.py <https://searchfox.org/mozilla-central/source/toolkit/components/ml/tools/convert_to_external_data.py>`_.
+
+This process, known as using the external data format, provides additional speed and memory benefits for your model.
+
+For large models, this step is essential, as ONNX files have a 2GB size limit.
+Without splitting the model into multiple files, it would be impossible to run models that exceed or are close to the 2GB limit.
+Using the external data format ensures compatibility and allows such models to run successfully.
+
 
 Lifecycle
 :::::::::
@@ -50,7 +61,7 @@ When Firefox uses a model, it will
 
 We have two collections in Remote Settings:
 
-- `ml-onnx-runtime`: provides all the WASM files we need to run the inference platform.
+- `ml-onnx-runtime`: provides all the WASM files we need to run the inference runtime.
 - `ml-inference-options`: provides for each `taskId` a list of running options, such as the `modelId`.
 
 Running the inference API will download the WASM files if needed, and then see
@@ -119,7 +130,7 @@ Below are the most common files you’ll encounter:
 - ``pytorch_model.bin``: Contains the model's weights for PyTorch models. It is a serialized file that holds the parameters of the neural network.
 - ``tf_model.h5``: TensorFlow's version of the model weights.
 - ``flax_model.msgpack``: For models built with the Flax framework, this file contains the model weights in a format used by JAX and Flax.
-- ``onnx``: A subdirectory containing ONNX weights files in different quantization levels. **They are the one our platform uses**
+- ``onnx``: A subdirectory containing ONNX weights files in different quantization levels. **They are the one our runtime uses**
 
 
 2. Model Configuration

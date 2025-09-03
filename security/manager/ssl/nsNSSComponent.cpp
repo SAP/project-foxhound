@@ -4,6 +4,8 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#include <atomic>
+
 #include "nsNSSComponent.h"
 
 #include "BinaryPath.h"
@@ -35,11 +37,11 @@
 #include "mozilla/StaticPrefs_security.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/SyncRunnable.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Unused.h"
 #include "mozilla/Vector.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/net/SocketProcessParent.h"
 #include "mozpkix/pkixnss.h"
 #include "nsAppDirectoryServiceDefs.h"
@@ -138,34 +140,8 @@ void TruncateFromLastDirectorySeparator(nsCString& path) {
 }
 
 bool LoadIPCClientCerts() {
-  // This returns the path to the binary currently running, which in most
-  // cases is "plugin-container".
-  UniqueFreePtr<char> pluginContainerPath(BinaryPath::Get());
-  if (!pluginContainerPath) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("failed to get get plugin-container path"));
-    return false;
-  }
-  nsAutoCString ipcClientCertsDirString(pluginContainerPath.get());
-  // On most platforms, ipcclientcerts is in the same directory as
-  // plugin-container. To obtain the path to that directory, truncate from
-  // the last directory separator.
-  // On macOS, plugin-container is in
-  // Firefox.app/Contents/MacOS/plugin-container.app/Contents/MacOS/,
-  // whereas ipcclientcerts is in Firefox.app/Contents/MacOS/. Consequently,
-  // this truncation from the last directory separator has to happen 4 times
-  // total. Normally this would be done using nsIFile APIs, but due to when
-  // this is initialized in the socket process, those aren't available.
-  TruncateFromLastDirectorySeparator(ipcClientCertsDirString);
-#ifdef XP_MACOSX
-  TruncateFromLastDirectorySeparator(ipcClientCertsDirString);
-  TruncateFromLastDirectorySeparator(ipcClientCertsDirString);
-  TruncateFromLastDirectorySeparator(ipcClientCertsDirString);
-#endif
-  if (!LoadIPCClientCertsModule(ipcClientCertsDirString)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("failed to load ipcclientcerts from '%s'",
-             ipcClientCertsDirString.get()));
+  if (!LoadIPCClientCertsModule()) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("failed to load ipcclientcerts"));
     return false;
   }
   return true;
@@ -323,7 +299,7 @@ void nsNSSComponent::UnloadEnterpriseRoots() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("UnloadEnterpriseRoots"));
   MutexAutoLock lock(mMutex);
   mEnterpriseCerts.Clear();
-  setValidationOptions(false, lock);
+  setValidationOptions(lock);
   ClearSSLExternalAndInternalSessionCache();
 }
 
@@ -481,15 +457,10 @@ nsNSSComponent::AddEnterpriseIntermediate(
 class LoadLoadableCertsTask final : public Runnable {
  public:
   LoadLoadableCertsTask(nsNSSComponent* nssComponent,
-                        bool importEnterpriseRoots,
-                        Vector<nsCString>&& possibleLoadableRootsLocations,
-                        Maybe<nsCString>&& osClientCertsModuleLocation)
+                        bool importEnterpriseRoots)
       : Runnable("LoadLoadableCertsTask"),
         mNSSComponent(nssComponent),
-        mImportEnterpriseRoots(importEnterpriseRoots),
-        mPossibleLoadableRootsLocations(
-            std::move(possibleLoadableRootsLocations)),
-        mOSClientCertsModuleLocation(std::move(osClientCertsModuleLocation)) {
+        mImportEnterpriseRoots(importEnterpriseRoots) {
     MOZ_ASSERT(nssComponent);
   }
 
@@ -502,8 +473,6 @@ class LoadLoadableCertsTask final : public Runnable {
   nsresult LoadLoadableRoots();
   RefPtr<nsNSSComponent> mNSSComponent;
   bool mImportEnterpriseRoots;
-  Vector<nsCString> mPossibleLoadableRootsLocations;  // encoded in UTF-8
-  Maybe<nsCString> mOSClientCertsModuleLocation;      // encoded in UTF-8
 };
 
 nsresult LoadLoadableCertsTask::Dispatch() {
@@ -545,12 +514,14 @@ LoadLoadableCertsTask::Run() {
     mNSSComponent->ImportEnterpriseRoots();
     mNSSComponent->UpdateCertVerifierWithEnterpriseRoots();
   }
-  if (mOSClientCertsModuleLocation.isSome()) {
-    bool success = LoadOSClientCertsModule(*mOSClientCertsModuleLocation);
+
+  if (StaticPrefs::security_osclientcerts_autoload()) {
+    bool success = LoadOSClientCertsModule();
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("loading OS client certs module %s",
              success ? "succeeded" : "failed"));
   }
+
   {
     MonitorAutoLock rootsLoadedLock(mNSSComponent->mLoadableCertsLoadedMonitor);
     mNSSComponent->mLoadableCertsLoaded = true;
@@ -565,37 +536,13 @@ LoadLoadableCertsTask::Run() {
   return NS_OK;
 }
 
-// Returns by reference the path to the desired directory, based on the current
-// settings in the directory service.
-// |result| is encoded in UTF-8.
-static nsresult GetDirectoryPath(const char* directoryKey, nsCString& result) {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  nsCOMPtr<nsIProperties> directoryService(
-      do_GetService(NS_DIRECTORY_SERVICE_CONTRACTID));
-  if (!directoryService) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("could not get directory service"));
-    return NS_ERROR_FAILURE;
-  }
-  nsCOMPtr<nsIFile> directory;
-  nsresult rv = directoryService->Get(directoryKey, NS_GET_IID(nsIFile),
-                                      getter_AddRefs(directory));
-  if (NS_FAILED(rv)) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("could not get '%s' from directory service", directoryKey));
-    return rv;
-  }
-  return FileToCString(directory, result);
-}
-
 class BackgroundLoadOSClientCertsModuleTask final : public CryptoTask {
  public:
-  explicit BackgroundLoadOSClientCertsModuleTask(const nsCString&& libraryDir)
-      : mLibraryDir(std::move(libraryDir)) {}
+  explicit BackgroundLoadOSClientCertsModuleTask() {}
 
  private:
   virtual nsresult CalculateResult() override {
-    bool success = LoadOSClientCertsModule(mLibraryDir);
+    bool success = LoadOSClientCertsModule();
     return success ? NS_OK : NS_ERROR_FAILURE;
   }
 
@@ -610,19 +557,12 @@ class BackgroundLoadOSClientCertsModuleTask final : public CryptoTask {
           nullptr, "psm:load-os-client-certs-module-task-ran", nullptr);
     }
   }
-
-  nsCString mLibraryDir;
 };
 
 void AsyncLoadOrUnloadOSClientCertsModule(bool load) {
   if (load) {
-    nsCString libraryDir;
-    nsresult rv = GetDirectoryPath(NS_GRE_BIN_DIR, libraryDir);
-    if (NS_FAILED(rv)) {
-      return;
-    }
     RefPtr<BackgroundLoadOSClientCertsModuleTask> task =
-        new BackgroundLoadOSClientCertsModuleTask(std::move(libraryDir));
+        new BackgroundLoadOSClientCertsModuleTask();
     Unused << task->Dispatch();
   } else {
     UniqueSECMODModule osClientCertsModule(
@@ -694,6 +634,7 @@ nsresult nsNSSComponent::CheckForSmartCardChanges() {
   return NS_OK;
 }
 
+#ifdef MOZ_SYSTEM_NSS
 // Returns by reference the path to the directory containing the file that has
 // been loaded as MOZ_DLL_PREFIX nss3 MOZ_DLL_SUFFIX.
 // |result| is encoded in UTF-8.
@@ -707,13 +648,9 @@ static nsresult GetNSS3Directory(nsCString& result) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("nss not loaded?"));
     return NS_ERROR_FAILURE;
   }
-  nsCOMPtr<nsIFile> nss3File(do_CreateInstance(NS_LOCAL_FILE_CONTRACTID));
-  if (!nss3File) {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("couldn't create a file?"));
-    return NS_ERROR_FAILURE;
-  }
-  nsAutoCString nss3PathAsString(nss3Path.get());
-  nsresult rv = nss3File->InitWithNativePath(nss3PathAsString);
+  nsCOMPtr<nsIFile> nss3File;
+  nsresult rv = NS_NewNativeLocalFile(nsDependentCString(nss3Path.get()),
+                                      getter_AddRefs(nss3File));
   if (NS_FAILED(rv)) {
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("couldn't initialize file with path '%s'", nss3Path.get()));
@@ -727,69 +664,44 @@ static nsresult GetNSS3Directory(nsCString& result) {
   }
   return FileToCString(nss3Directory, result);
 }
+#endif  // MOZ_SYSTEM_NSS
 
-// The loadable roots library is probably in the same directory we loaded the
-// NSS shared library from, but in some cases it may be elsewhere. This function
-// enumerates and returns the possible locations as nsCStrings.
-// |possibleLoadableRootsLocations| is encoded in UTF-8.
-static nsresult ListPossibleLoadableRootsLocations(
-    Vector<nsCString>& possibleLoadableRootsLocations) {
-  MOZ_ASSERT(NS_IsMainThread());
-  if (!NS_IsMainThread()) {
-    return NS_ERROR_NOT_SAME_THREAD;
+nsresult LoadLoadableCertsTask::LoadLoadableRoots() {
+#ifdef MOZ_SYSTEM_NSS
+
+  // First try checking the OS' default library search path.
+  nsAutoCString emptyString;
+  if (mozilla::psm::LoadLoadableRoots(emptyString)) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+            ("loaded CKBI from from OS default library path"));
+    return NS_OK;
   }
 
-  // First try in the directory where we've already loaded
-  // MOZ_DLL_PREFIX nss3 MOZ_DLL_SUFFIX, since that's likely to be correct.
+  // Trying the library provided by NSS
   nsAutoCString nss3Dir;
   nsresult rv = GetNSS3Directory(nss3Dir);
+
   if (NS_SUCCEEDED(rv)) {
-    if (!possibleLoadableRootsLocations.append(std::move(nss3Dir))) {
-      return NS_ERROR_OUT_OF_MEMORY;
+    if (mozilla::psm::LoadLoadableRoots(nss3Dir)) {
+      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
+              ("loaded CKBI from %s", nss3Dir.get()));
+      return NS_OK;
     }
   } else {
-    // For some reason this fails on android. In any case, we should try with
-    // the other potential locations we have.
     MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
             ("could not determine where nss was loaded from"));
   }
-  nsAutoCString currentProcessDir;
-  rv = GetDirectoryPath(NS_XPCOM_CURRENT_PROCESS_DIR, currentProcessDir);
-  if (NS_SUCCEEDED(rv)) {
-    if (!possibleLoadableRootsLocations.append(std::move(currentProcessDir))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  } else {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-            ("could not get current process directory"));
-  }
-  nsAutoCString greDir;
-  rv = GetDirectoryPath(NS_GRE_DIR, greDir);
-  if (NS_SUCCEEDED(rv)) {
-    if (!possibleLoadableRootsLocations.append(std::move(greDir))) {
-      return NS_ERROR_OUT_OF_MEMORY;
-    }
-  } else {
-    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("could not get gre directory"));
-  }
-  // As a last resort, this will cause the library loading code to use the OS'
-  // default library search path.
-  nsAutoCString emptyString;
-  if (!possibleLoadableRootsLocations.append(std::move(emptyString))) {
-    return NS_ERROR_OUT_OF_MEMORY;
+
+#endif  // MOZ_SYSTEM_NSS
+
+  // Normally we load the built-in roots from the "trust_anchors" library.
+  // When configured to use the system version of NSS, we try that first,
+  // and only fall back to the internal built-ins if that fails.
+  if (LoadLoadableRootsFromXul()) {
+    MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("loaded CKBI from xul"));
+    return NS_OK;
   }
 
-  return NS_OK;
-}
-
-nsresult LoadLoadableCertsTask::LoadLoadableRoots() {
-  for (const auto& possibleLocation : mPossibleLoadableRootsLocations) {
-    if (mozilla::psm::LoadLoadableRoots(possibleLocation)) {
-      MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
-              ("loaded CKBI from %s", possibleLocation.get()));
-      return NS_OK;
-    }
-  }
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug, ("could not load loadable roots"));
   return NS_ERROR_FAILURE;
 }
@@ -1101,7 +1013,7 @@ nsresult CipherSuiteChangeObserver::Observe(nsISupports* /*aSubject*/,
 }  // namespace
 
 void nsNSSComponent::setValidationOptions(
-    bool isInitialSetting, const mozilla::MutexAutoLock& proofOfLock) {
+    const mozilla::MutexAutoLock& proofOfLock) {
   // We access prefs so this must be done on the main thread.
   mMutex.AssertCurrentThreadOwns();
   MOZ_ASSERT(NS_IsMainThread());
@@ -1130,20 +1042,6 @@ void nsNSSComponent::setValidationOptions(
   }
   CertVerifier::CertificateTransparencyConfig ctConfig(
       ctMode, std::move(skipCTForHosts), std::move(skipCTForSPKIHashes));
-
-  // This preference controls whether we do OCSP fetching and does not affect
-  // OCSP stapling.
-  // 0 = disabled, 1 = enabled, 2 = only enabled for EV
-  uint32_t ocspEnabled = StaticPrefs::security_OCSP_enabled();
-
-  bool ocspRequired = ocspEnabled > 0 && StaticPrefs::security_OCSP_require();
-
-  // We measure the setting of the pref at startup only to minimize noise by
-  // addons that may muck with the settings, though it probably doesn't matter.
-  if (isInitialSetting) {
-    Telemetry::Accumulate(Telemetry::CERT_OCSP_ENABLED, ocspEnabled);
-    Telemetry::Accumulate(Telemetry::CERT_OCSP_REQUIRED, ocspRequired);
-  }
 
   NetscapeStepUpPolicy netscapeStepUpPolicy = static_cast<NetscapeStepUpPolicy>(
       StaticPrefs::security_pki_netscape_step_up_policy());
@@ -1331,14 +1229,9 @@ static nsresult GetNSSProfilePath(nsAutoCString& aProfilePath) {
 // |profilePath| is encoded in UTF-8.
 static nsresult AttemptToRenamePKCS11ModuleDB(const nsACString& profilePath) {
   nsCOMPtr<nsIFile> profileDir;
-#  ifdef XP_WIN
   // |profilePath| is encoded in UTF-8 because SQLite always takes UTF-8 file
   // paths regardless of the current system code page.
-  MOZ_TRY(NS_NewLocalFile(u""_ns, getter_AddRefs(profileDir)));
-  MOZ_TRY(profileDir->InitWithPath(NS_ConvertUTF8toUTF16(profilePath)));
-#  else
-  MOZ_TRY(NS_NewNativeLocalFile(profilePath, getter_AddRefs(profileDir)));
-#  endif
+  MOZ_TRY(NS_NewUTF8LocalFile(profilePath, getter_AddRefs(profileDir)));
   const char* moduleDBFilename = "pkcs11.txt";
   nsAutoCString destModuleDBFilename(moduleDBFilename);
   destModuleDBFilename.Append(".fips");
@@ -1658,30 +1551,13 @@ nsresult nsNSSComponent::InitializeNSS() {
         Preferences::GetBool("security.pki.mitm_canary_issuer.enabled", true);
 
     // Set dynamic options from prefs.
-    setValidationOptions(true, lock);
+    setValidationOptions(lock);
 
     bool importEnterpriseRoots =
         StaticPrefs::security_enterprise_roots_enabled();
-    Vector<nsCString> possibleLoadableRootsLocations;
-    rv = ListPossibleLoadableRootsLocations(possibleLoadableRootsLocations);
-    MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
-    if (NS_FAILED(rv)) {
-      return rv;
-    }
 
-    bool loadOSClientCertsModule =
-        StaticPrefs::security_osclientcerts_autoload();
-    Maybe<nsCString> maybeOSClientCertsModuleLocation;
-    if (loadOSClientCertsModule) {
-      nsAutoCString libraryDir;
-      if (NS_SUCCEEDED(GetDirectoryPath(NS_GRE_BIN_DIR, libraryDir))) {
-        maybeOSClientCertsModuleLocation.emplace(libraryDir);
-      }
-    }
     RefPtr<LoadLoadableCertsTask> loadLoadableCertsTask(
-        new LoadLoadableCertsTask(this, importEnterpriseRoots,
-                                  std::move(possibleLoadableRootsLocations),
-                                  std::move(maybeOSClientCertsModuleLocation)));
+        new LoadLoadableCertsTask(this, importEnterpriseRoots));
     rv = loadLoadableCertsTask->Dispatch();
     MOZ_DIAGNOSTIC_ASSERT(NS_SUCCEEDED(rv));
     if (NS_FAILED(rv)) {
@@ -1778,7 +1654,7 @@ nsNSSComponent::Observe(nsISupports* aSubject, const char* aTopic,
         prefName.EqualsLiteral("security.OCSP.timeoutMilliseconds.hard") ||
         prefName.EqualsLiteral("security.pki.crlite_mode")) {
       MutexAutoLock lock(mMutex);
-      setValidationOptions(false, lock);
+      setValidationOptions(lock);
 #ifdef DEBUG
     } else if (prefName.EqualsLiteral("security.test.built_in_root_hash")) {
       MutexAutoLock lock(mMutex);
@@ -1838,13 +1714,6 @@ nsresult nsNSSComponent::GetNewPrompter(nsIPrompt** result) {
 }
 
 nsresult nsNSSComponent::LogoutAuthenticatedPK11() {
-  nsCOMPtr<nsICertOverrideService> icos =
-      do_GetService("@mozilla.org/security/certoverride;1");
-  if (icos) {
-    icos->ClearValidityOverride("all:temporary-certificates"_ns, 0,
-                                OriginAttributes());
-  }
-
   ClearSSLExternalAndInternalSessionCache();
 
   nsCOMPtr<nsIObserverService> os = mozilla::services::GetObserverService();
@@ -2006,6 +1875,25 @@ nsNSSComponent::AsyncClearSSLExternalAndInternalSessionCache(
   return NS_OK;
 }
 
+std::atomic<bool> sSearchingForClientAuthCertificates{false};
+
+extern "C" {
+
+bool IsGeckoSearchingForClientAuthCertificates() {
+  return sSearchingForClientAuthCertificates;
+}
+}
+
+AutoSearchingForClientAuthCertificates::
+    AutoSearchingForClientAuthCertificates() {
+  sSearchingForClientAuthCertificates = true;
+}
+
+AutoSearchingForClientAuthCertificates::
+    ~AutoSearchingForClientAuthCertificates() {
+  sSearchingForClientAuthCertificates = false;
+}
+
 namespace mozilla {
 namespace psm {
 
@@ -2053,6 +1941,7 @@ static inline void CopyCertificatesTo(UniqueCERTCertList& from,
 UniqueCERTCertList FindClientCertificatesWithPrivateKeys() {
   MOZ_LOG(gPIPNSSLog, LogLevel::Debug,
           ("FindClientCertificatesWithPrivateKeys"));
+  AutoSearchingForClientAuthCertificates _;
 
   (void)BlockUntilLoadableCertsLoaded();
   (void)CheckForSmartCardChanges();

@@ -283,6 +283,17 @@ export class ExtensionShortcuts {
     }
   }
 
+  async openShortcutSettings() {
+    let window = lazy.windowTracker.topWindow;
+    if (!window) {
+      throw new ExtensionError("No browser window available");
+    }
+
+    let { extension } = this;
+    const viewId = `addons://shortcuts/${encodeURIComponent(extension.id)}`;
+    await window.BrowserAddonUI.openAddonsMgr(viewId);
+  }
+
   loadCommands() {
     let { extension } = this;
 
@@ -467,10 +478,6 @@ export class ExtensionShortcuts {
    */
   buildKey(doc, name, shortcut) {
     let keyElement = this.buildKeyFromShortcut(doc, name, shortcut);
-
-    // We need to have the attribute "oncommand" for the "command" listener to fire,
-    // and it is currently ignored when set to the empty string.
-    keyElement.setAttribute("oncommand", "//");
 
     /* eslint-disable mozilla/balanced-listeners */
     // We remove all references to the key elements when the extension is shutdown,

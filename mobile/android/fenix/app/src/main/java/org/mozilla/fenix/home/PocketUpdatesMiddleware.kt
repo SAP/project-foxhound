@@ -16,8 +16,10 @@ import mozilla.components.lib.state.MiddlewareContext
 import mozilla.components.lib.state.Store
 import mozilla.components.service.pocket.PocketStoriesService
 import mozilla.components.service.pocket.PocketStory
+import mozilla.components.service.pocket.PocketStory.ContentRecommendation
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import mozilla.components.service.pocket.PocketStory.PocketSponsoredStory
+import mozilla.components.service.pocket.PocketStory.SponsoredContent
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction
 import org.mozilla.fenix.components.appstate.AppAction.ContentRecommendationsAction
@@ -36,7 +38,7 @@ import org.mozilla.fenix.home.pocket.PocketRecommendedStoriesSelectedCategory
  * @param coroutineScope [CoroutineScope] used for long running operations like disk IO.
  */
 class PocketUpdatesMiddleware(
-    private val pocketStoriesService: PocketStoriesService,
+    private val pocketStoriesService: Lazy<PocketStoriesService>,
     private val selectedPocketCategoriesDataStore: DataStore<SelectedPocketStoriesCategories>,
     private val coroutineScope: CoroutineScope = CoroutineScope(Dispatchers.IO),
 ) : Middleware<AppState, AppAction> {
@@ -70,8 +72,8 @@ class PocketUpdatesMiddleware(
             is ContentRecommendationsAction.PocketStoriesShown -> {
                 persistStoriesImpressions(
                     coroutineScope = coroutineScope,
-                    pocketStoriesService = pocketStoriesService,
-                    updatedStories = action.storiesShown,
+                    pocketStoriesService = pocketStoriesService.value,
+                    updatedStories = action.impressions.map { it.story },
                 )
             }
             is ContentRecommendationsAction.SelectPocketStoriesCategory,
@@ -111,9 +113,19 @@ internal fun persistStoriesImpressions(
                 },
         )
 
+        pocketStoriesService.updateRecommendationsImpressions(
+            recommendationsShown = updatedStories.filterIsInstance<ContentRecommendation>().map {
+                it.copy(impressions = it.impressions.inc())
+            },
+        )
+
         pocketStoriesService.recordStoriesImpressions(
             updatedStories.filterIsInstance<PocketSponsoredStory>()
                 .map { it.id },
+        )
+
+        pocketStoriesService.recordSponsoredContentImpressions(
+            impressions = updatedStories.filterIsInstance<SponsoredContent>().map { it.url },
         )
     }
 }

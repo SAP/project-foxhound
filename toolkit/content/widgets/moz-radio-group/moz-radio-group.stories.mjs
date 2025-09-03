@@ -78,15 +78,18 @@ moz-radio-described-long-1 =
 moz-radio-described-long-2 =
   .label = Hola ipsum dolor sit amet, consectetur adipiscing elit. Cras tincidunt diam id ligula faucibus volutpat. Integer quis ultricies elit. In in dolor luctus velit sollicitudin efficitur vel id massa.
   .description = This is the third option.
+moz-radio-group-description =
+  .label = This is the group label
+  .description = This is the group description
     `,
   },
 };
 
 const Template = ({
+  value = greetings[0],
   groupL10nId = "moz-radio-group",
   buttonLabels,
   groupName,
-  unchecked,
   showIcons,
   disabled,
   disabledButtons,
@@ -94,16 +97,24 @@ const Template = ({
   showAccesskeys,
   accesskeys,
   supportPage,
+  groupSupportPage,
+  hasSlottedSupportLinks,
+  groupSlottedSupportLink,
+  nestedFields,
 }) => html`
   <moz-radio-group
     name=${groupName}
     data-l10n-id=${groupL10nId}
+    support-page=${ifDefined(groupSupportPage)}
     ?disabled=${disabled}
+    value=${value}
   >
+    ${groupSlottedSupportLink
+      ? html`<a href="/" slot="support-link">Slotted support link</a>`
+      : ""}
     ${greetings.map(
       (greeting, i) => html`
         <moz-radio
-          ?checked=${i == 0 && !unchecked}
           ?disabled=${disabledButtons.includes(greeting)}
           value=${greeting}
           data-l10n-id=${showDescriptions
@@ -113,6 +124,18 @@ const Template = ({
           accesskey=${ifDefined(showAccesskeys ? accesskeys[i] : "")}
           support-page=${ifDefined(supportPage)}
         >
+          ${hasSlottedSupportLinks
+            ? html`<a slot="support-link" href="www.example.com">
+                Click me!
+              </a>`
+            : ""}
+          ${nestedFields
+            ? html`<moz-checkbox
+                slot="nested"
+                data-l10n-id=${ifDefined(buttonLabels[i])}
+              >
+              </moz-checkbox> `
+            : ""}
         </moz-radio>
       `
     )}
@@ -132,12 +155,15 @@ Default.args = {
   showAccesskeys: false,
   accesskeys: accesskeyOptions,
   supportPage: "",
+  groupSupportPage: "",
+  hasSlottedSupportLinks: false,
+  groupSlottedSupportLink: false,
 };
 
 export const AllUnchecked = Template.bind({});
 AllUnchecked.args = {
   ...Default.args,
-  unchecked: true,
+  value: "",
 };
 
 export const WithIcon = Template.bind({});
@@ -174,4 +200,36 @@ export const WithSupportLinks = Template.bind({});
 WithSupportLinks.args = {
   ...Default.args,
   supportPage: "test",
+};
+
+export const WithSlottedSupportLinks = Template.bind({});
+WithSlottedSupportLinks.args = {
+  ...Default.args,
+  hasSlottedSupportLinks: true,
+};
+
+export const WithRadioGroupDescription = Template.bind({});
+WithRadioGroupDescription.args = {
+  ...Default.args,
+  groupL10nId: "moz-radio-group-description",
+};
+
+export const WithRadioGroupSupportLink = Template.bind({});
+WithRadioGroupSupportLink.args = {
+  ...Default.args,
+  groupL10nId: "moz-radio-group-description",
+  groupSupportPage: "this is the group support page",
+};
+
+export const WithRadioGroupSlottedSupportLink = Template.bind({});
+WithRadioGroupSlottedSupportLink.args = {
+  ...Default.args,
+  groupL10nId: "moz-radio-group-description",
+  groupSlottedSupportLink: true,
+};
+
+export const WithNestedFields = Template.bind({});
+WithNestedFields.args = {
+  ...Default.args,
+  nestedFields: true,
 };

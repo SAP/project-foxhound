@@ -41,9 +41,6 @@
 #include "call/payload_type_picker.h"
 #include "media/base/codec.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
-#include "p2p/base/dtls_transport.h"
-#include "p2p/base/dtls_transport_factory.h"
-#include "p2p/base/dtls_transport_internal.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_transport_channel.h"
 #include "p2p/base/packet_transport_internal.h"
@@ -51,6 +48,9 @@
 #include "p2p/base/port_allocator.h"
 #include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
+#include "p2p/dtls/dtls_transport.h"
+#include "p2p/dtls/dtls_transport_factory.h"
+#include "p2p/dtls/dtls_transport_internal.h"
 #include "pc/dtls_srtp_transport.h"
 #include "pc/dtls_transport.h"
 #include "pc/jsep_transport.h"
@@ -247,10 +247,7 @@ class JsepTransportController : public PayloadTypeSuggester,
                            PayloadType payload_type,
                            const cricket::Codec& codec) override;
 
-  // TODO(deadbeef): GetStats isn't const because all the way down to
-  // OpenSSLStreamAdapter, GetSslCipherSuite and GetDtlsSrtpCryptoSuite are not
-  // const. Fix this.
-  bool GetStats(const std::string& mid, cricket::TransportStats* stats);
+  bool GetStats(const std::string& mid, cricket::TransportStats* stats) const;
 
   bool initial_offerer() const { return initial_offerer_ && *initial_offerer_; }
 

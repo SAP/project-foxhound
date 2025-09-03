@@ -4,12 +4,13 @@
 
 use crate::{
     cow_label, error::HasErrorBufferType, wgpu_string, AdapterInformation, ByteBuf,
-    CommandEncoderAction, DeviceAction, DropAction, ImageDataLayout, ImplicitLayout,
-    QueueWriteAction, RawString, TextureAction,
+    CommandEncoderAction, DeviceAction, DropAction, ImplicitLayout, QueueWriteAction, RawString,
+    TexelCopyBufferLayout, TextureAction,
 };
 
 use crate::SwapChainId;
 
+use wgc::naga::front::wgsl::ImplementedLanguageExtension;
 use wgc::{command::RenderBundleEncoder, id, identity::IdentityManager};
 use wgt::{BufferAddress, BufferSize, DynamicOffset, IndexFormat, TextureFormat};
 
@@ -19,7 +20,12 @@ use parking_lot::Mutex;
 
 use nsstring::{nsACString, nsString};
 
+use std::fmt::Write;
 use std::{borrow::Cow, ptr};
+
+use self::render_pass::RenderPassDepthStencilAttachment;
+
+pub mod render_pass;
 
 // we can't call `from_raw_parts` unconditionally because the caller
 // may not even have a valid pointer (e.g. NULL) if the `length` is zero.
@@ -67,7 +73,7 @@ impl ProgrammableStageDescriptor {
         wgc::pipeline::ProgrammableStageDescriptor {
             module: self.module,
             entry_point: cow_label(&self.entry_point),
-            constants: Cow::Owned(constants),
+            constants,
             zero_initialize_workgroup_memory: true,
         }
     }
@@ -415,6 +421,33 @@ pub extern "C" fn wgpu_client_fill_default_limits(limits: &mut wgt::Limits) {
     *limits = wgt::Limits::default();
 }
 
+/// Writes the single `WGSLLanguageFeature` associated with `index`, appending its identifier to the
+/// provided `buffer`. If `index` does not correspond to a valid feature index, then do nothing.
+///
+/// This function enables an FFI consumer to extract all implemented features in a loop, like so:
+///
+/// ```rust
+/// let mut buffer = nsstring::nsCString::new();
+/// for index in 0usize.. {
+///     buffer.truncate();
+///     wgpu_client_instance_get_wgsl_language_feature(&mut buffer, index);
+///     if buffer.is_empty() {
+///         break;
+///     }
+///     // Handle the identifier in `buffer`…
+/// }
+/// ```
+#[no_mangle]
+pub extern "C" fn wgpu_client_instance_get_wgsl_language_feature(
+    buffer: &mut nsstring::nsCString,
+    index: usize,
+) {
+    match ImplementedLanguageExtension::all().get(index) {
+        Some(some) => buffer.write_str(some.to_ident()).unwrap(),
+        None => (),
+    }
+}
+
 #[no_mangle]
 pub extern "C" fn wgpu_client_adapter_extract_info(
     byte_buf: &ByteBuf,
@@ -457,7 +490,7 @@ pub extern "C" fn wgpu_client_adapter_extract_info(
 #[repr(C)]
 pub struct FfiDeviceDescriptor<'a> {
     pub label: Option<&'a nsACString>,
-    pub required_features: wgt::Features,
+    pub required_features: wgt::FeaturesWebGPU,
     pub required_limits: wgt::Limits,
 }
 
@@ -467,9 +500,11 @@ pub extern "C" fn wgpu_client_serialize_device_descriptor(
     bb: &mut ByteBuf,
 ) {
     let label = wgpu_string(desc.label);
+    let required_features =
+        wgt::Features::from_internal_flags(wgt::FeaturesWGPU::empty(), desc.required_features);
     let desc = wgt::DeviceDescriptor {
         label,
-        required_features: desc.required_features.clone(),
+        required_features,
         required_limits: desc.required_limits.clone(),
         memory_hints: wgt::MemoryHints::MemoryUsage,
     };
@@ -549,6 +584,7 @@ pub extern "C" fn wgpu_client_create_texture_view(
             base_array_layer: desc.base_array_layer,
             array_layer_count: desc.array_layer_count.map(|ptr| *ptr),
         },
+        usage: None,
     };
 
     let action = TextureAction::CreateView(id, wgpu_desc);
@@ -798,7 +834,6 @@ pub unsafe extern "C" fn wgpu_command_encoder_begin_compute_pass(
             end_of_pass_write_index,
         }
     });
-    let timestamp_writes = timestamp_writes.as_ref();
 
     let pass = crate::command::RecordedComputePass::new(&wgc::command::ComputePassDescriptor {
         label,
@@ -824,9 +859,9 @@ pub unsafe extern "C" fn wgpu_compute_pass_destroy(pass: *mut crate::command::Re
 #[repr(C)]
 pub struct RenderPassDescriptor<'a> {
     pub label: Option<&'a nsACString>,
-    pub color_attachments: *const wgc::command::RenderPassColorAttachment,
+    pub color_attachments: *const wgc::command::RenderPassColorAttachment<id::TextureViewId>,
     pub color_attachments_length: usize,
-    pub depth_stencil_attachment: *const wgc::command::RenderPassDepthStencilAttachment,
+    pub depth_stencil_attachment: Option<&'a RenderPassDepthStencilAttachment>,
     pub timestamp_writes: Option<&'a PassTimestampWrites<'a>>,
     pub occlusion_query_set: Option<wgc::id::QuerySetId>,
 }
@@ -867,6 +902,7 @@ pub unsafe extern "C" fn wgpu_command_encoder_begin_render_pass(
         .iter()
         .map(|format| Some(format.clone()))
         .collect();
+    let depth_stencil_attachment = depth_stencil_attachment.cloned().map(|dsa| dsa.to_wgpu());
     let pass = crate::command::RecordedRenderPass::new(&wgc::command::RenderPassDescriptor {
         label,
         color_attachments: Cow::Owned(color_attachments),
@@ -1059,7 +1095,7 @@ pub unsafe extern "C" fn wgpu_client_create_bind_group(
             binding: entry.binding,
             resource: if let Some(id) = entry.buffer {
                 wgc::binding_model::BindingResource::Buffer(wgc::binding_model::BufferBinding {
-                    buffer_id: id,
+                    buffer: id,
                     offset: entry.offset,
                     size: entry.size,
                 })
@@ -1208,15 +1244,15 @@ pub unsafe extern "C" fn wgpu_command_encoder_copy_buffer_to_buffer(
 
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_command_encoder_copy_texture_to_buffer(
-    src: wgc::command::ImageCopyTexture,
+    src: wgc::command::TexelCopyTextureInfo,
     dst_buffer: wgc::id::BufferId,
-    dst_layout: &ImageDataLayout,
+    dst_layout: &TexelCopyBufferLayout,
     size: wgt::Extent3d,
     bb: &mut ByteBuf,
 ) {
     let action = CommandEncoderAction::CopyTextureToBuffer {
         src,
-        dst: wgc::command::ImageCopyBuffer {
+        dst: wgc::command::TexelCopyBufferInfo {
             buffer: dst_buffer,
             layout: dst_layout.into_wgt(),
         },
@@ -1228,13 +1264,13 @@ pub unsafe extern "C" fn wgpu_command_encoder_copy_texture_to_buffer(
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_command_encoder_copy_buffer_to_texture(
     src_buffer: wgc::id::BufferId,
-    src_layout: &ImageDataLayout,
-    dst: wgc::command::ImageCopyTexture,
+    src_layout: &TexelCopyBufferLayout,
+    dst: wgc::command::TexelCopyTextureInfo,
     size: wgt::Extent3d,
     bb: &mut ByteBuf,
 ) {
     let action = CommandEncoderAction::CopyBufferToTexture {
-        src: wgc::command::ImageCopyBuffer {
+        src: wgc::command::TexelCopyBufferInfo {
             buffer: src_buffer,
             layout: src_layout.into_wgt(),
         },
@@ -1246,8 +1282,8 @@ pub unsafe extern "C" fn wgpu_command_encoder_copy_buffer_to_texture(
 
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_command_encoder_copy_texture_to_texture(
-    src: wgc::command::ImageCopyTexture,
-    dst: wgc::command::ImageCopyTexture,
+    src: wgc::command::TexelCopyTextureInfo,
+    dst: wgc::command::TexelCopyTextureInfo,
     size: wgt::Extent3d,
     bb: &mut ByteBuf,
 ) {
@@ -1324,8 +1360,8 @@ pub unsafe extern "C" fn wgpu_queue_write_buffer(
 
 #[no_mangle]
 pub unsafe extern "C" fn wgpu_queue_write_texture(
-    dst: wgt::ImageCopyTexture<id::TextureId>,
-    layout: ImageDataLayout,
+    dst: wgt::TexelCopyTextureInfo<id::TextureId>,
+    layout: TexelCopyBufferLayout,
     size: wgt::Extent3d,
     bb: &mut ByteBuf,
 ) {

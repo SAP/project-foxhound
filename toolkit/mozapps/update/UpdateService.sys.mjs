@@ -74,16 +74,16 @@ const PREF_APP_UPDATE_CANCELATIONS_OSX = "app.update.cancelations.osx";
 const PREF_APP_UPDATE_CANCELATIONS_OSX_MAX = "app.update.cancelations.osx.max";
 const PREF_APP_UPDATE_CHECK_ONLY_INSTANCE_ENABLED =
   "app.update.checkOnlyInstance.enabled";
-const PREF_APP_UPDATE_CHECK_ONLY_INSTANCE_INTERVAL =
-  "app.update.checkOnlyInstance.interval";
-const PREF_APP_UPDATE_CHECK_ONLY_INSTANCE_TIMEOUT =
-  "app.update.checkOnlyInstance.timeout";
 const PREF_APP_UPDATE_DOWNLOAD_ATTEMPTS = "app.update.download.attempts";
 const PREF_APP_UPDATE_DOWNLOAD_MAXATTEMPTS = "app.update.download.maxAttempts";
 const PREF_APP_UPDATE_ELEVATE_NEVER = "app.update.elevate.never";
 const PREF_APP_UPDATE_ELEVATE_VERSION = "app.update.elevate.version";
 const PREF_APP_UPDATE_ELEVATE_ATTEMPTS = "app.update.elevate.attempts";
 const PREF_APP_UPDATE_ELEVATE_MAXATTEMPTS = "app.update.elevate.maxAttempts";
+const PREF_APP_UPDATE_INSTALL_LOCKOUT_ENABLED =
+  "app.update.multiSessionInstallLockout.enabled";
+const PREF_APP_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS =
+  "app.update.multiSessionInstallLockout.timeoutMs";
 const PREF_APP_UPDATE_LANGPACK_ENABLED = "app.update.langpack.enabled";
 const PREF_APP_UPDATE_LANGPACK_TIMEOUT = "app.update.langpack.timeout";
 const PREF_APP_UPDATE_NOTIFYDURINGDOWNLOAD = "app.update.notifyDuringDownload";
@@ -126,6 +126,7 @@ const FILE_UPDATE_MAR = "update.mar";
 const FILE_UPDATE_STATUS = "update.status";
 const FILE_UPDATE_TEST = "update.test";
 const FILE_UPDATE_VERSION = "update.version";
+const FILE_UPDATE_TIMESTAMP = "update.timestamp";
 
 const STATE_NONE = "null";
 const STATE_DOWNLOADING = "downloading";
@@ -271,24 +272,17 @@ const XML_SAVER_INTERVAL_MS = 200;
 // update before proceeding anyway.
 const LANGPACK_UPDATE_DEFAULT_TIMEOUT = 300000;
 
-// Interval between rechecks for other instances after the initial check finds
-// at least one other instance.
-const ONLY_INSTANCE_CHECK_DEFAULT_POLL_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
-
-// Wait this long after detecting that another instance is running (having been
-// polling that entire time) before giving up and applying the update anyway.
-const ONLY_INSTANCE_CHECK_DEFAULT_TIMEOUT_MS = 6 * 60 * 60 * 1000; // 6 hours
-
-// The other instance check timeout can be overridden via a pref, but we limit
-// that value to this so that the pref can't effectively disable the feature.
-const ONLY_INSTANCE_CHECK_MAX_TIMEOUT_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
-
 // Values to use when polling for staging. See `pollForStagingEnd` for more
 // details.
 const STAGING_POLLING_MIN_INTERVAL_MS = 15 * 1000; // 15 seconds
 const STAGING_POLLING_MAX_INTERVAL_MS = 5 * 60 * 1000; // 5 minutes
 const STAGING_POLLING_ATTEMPTS_PER_INTERVAL = 5;
 const STAGING_POLLING_MAX_DURATION_MS = 1 * 60 * 60 * 1000; // 1 hour
+
+// Timestamps further than this many milliseconds in the future will be
+// considered invalid.
+const MAX_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+const DEFAULT_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS = 24 * 60 * 60 * 1000; // 1 day
 
 // This value will be set to true if it appears that BITS is being used by
 // another user to download updates. We don't really want two users using BITS
@@ -413,15 +407,6 @@ function unwrap(obj) {
 const LangPackUpdates = new WeakMap();
 
 /**
- * When we're polling to see if other running instances of the application have
- * exited, there's no need to ever start polling again in parallel. To prevent
- * doing that, we keep track of the promise that resolves when polling completes
- * and return that if a second simultaneous poll is requested, so that the
- * multiple callers end up waiting for the same promise to resolve.
- */
-let gOtherInstancePollPromise;
-
-/**
  * Query the update sync manager to see if another instance of this same
  * installation of this application is currently running, under the context of
  * any operating system user (not just the current one).
@@ -449,83 +434,6 @@ function isOtherInstanceRunning() {
     LOG(`isOtherInstanceRunning - sync manager failed with exception: ${ex}`);
     return false;
   }
-}
-
-/**
- * Query the update sync manager to see if another instance of this same
- * installation of this application is currently running, under the context of
- * any operating system user (not just the one running this instance).
- * This function polls for the status of other instances continually
- * (asynchronously) until either none exist or a timeout expires.
- *
- * @return a Promise that resolves with false if at any point during polling no
- *         other instances can be found, or resolves with true if the timeout
- *         expires when other instances are still running
- */
-function waitForOtherInstances() {
-  // If we're already in the middle of a poll, reuse it rather than start again.
-  if (gOtherInstancePollPromise) {
-    return gOtherInstancePollPromise;
-  }
-
-  let timeout = Services.prefs.getIntPref(
-    PREF_APP_UPDATE_CHECK_ONLY_INSTANCE_TIMEOUT,
-    ONLY_INSTANCE_CHECK_DEFAULT_TIMEOUT_MS
-  );
-
-  // return immediately if timeout value is invalid.
-  if (timeout <= 0) {
-    return Promise.resolve(isOtherInstanceRunning());
-  }
-
-  // Don't allow the pref to set a super high timeout and break this feature.
-  if (timeout > ONLY_INSTANCE_CHECK_MAX_TIMEOUT_MS) {
-    timeout = ONLY_INSTANCE_CHECK_MAX_TIMEOUT_MS;
-  }
-
-  let interval = Services.prefs.getIntPref(
-    PREF_APP_UPDATE_CHECK_ONLY_INSTANCE_INTERVAL,
-    ONLY_INSTANCE_CHECK_DEFAULT_POLL_INTERVAL_MS
-  );
-
-  if (interval <= 0) {
-    interval = ONLY_INSTANCE_CHECK_DEFAULT_POLL_INTERVAL_MS;
-  }
-
-  // Don't allow an interval longer than the timeout.
-  interval = Math.min(interval, timeout);
-
-  let iterations = 0;
-  const maxIterations = Math.ceil(timeout / interval);
-
-  gOtherInstancePollPromise = new Promise(function (resolve) {
-    let poll = function () {
-      iterations++;
-      if (!isOtherInstanceRunning()) {
-        LOG("waitForOtherInstances - no other instances found, exiting");
-        resolve(false);
-        gOtherInstancePollPromise = undefined;
-      } else if (iterations >= maxIterations) {
-        LOG(
-          "waitForOtherInstances - timeout expired while other instances " +
-            "are still running"
-        );
-        resolve(true);
-        gOtherInstancePollPromise = undefined;
-      } else if (iterations + 1 == maxIterations && timeout % interval != 0) {
-        // In case timeout isn't a multiple of interval, set the next timeout
-        // for the remainder of the time rather than for the usual interval.
-        lazy.setTimeout(poll, timeout % interval);
-      } else {
-        lazy.setTimeout(poll, interval);
-      }
-    };
-
-    LOG("waitForOtherInstances - beginning polling");
-    poll();
-  });
-
-  return gOtherInstancePollPromise;
 }
 
 /**
@@ -831,10 +739,11 @@ function getCanStageUpdates(transient = true) {
  *           NoBits_Pref
  *           NoBits_Proxy
  *           NoBits_OtherUser
- *         These strings are directly compatible with the categories for
- *         UPDATE_CAN_USE_BITS_EXTERNAL and UPDATE_CAN_USE_BITS_NOTIFY telemetry
- *         probes. If this function is made to return other values, they should
+ *         These strings are directly compatible with the categories for the
+ *         Glean.update.canUseBitsExternal and Glean.update.canUseBitsNotify glean
+ *         metrics. If this function is made to return other values, they should
  *         also be added to the labels lists for those probes in Histograms.json
+ *         and metrics.yaml.
  */
 function getCanUseBits(transient = true) {
   if (AppConstants.platform != "win") {
@@ -1762,7 +1671,7 @@ function pingStateAndStatusCodes(aUpdate, aStartup, aStatus) {
     }
   }
 
-  let suffix = patchType + "_" + (aStartup ? AUSTLMY.STARTUP : AUSTLMY.STAGE);
+  let suffix = patchType + (aStartup ? AUSTLMY.STARTUP : AUSTLMY.STAGE);
   let stateCode = 0;
   let parts = aStatus.split(":");
   if (parts.length) {
@@ -2240,7 +2149,10 @@ class Update {
     // Set the installDate value with the current time. If the update has an
     // installDate attribute this will be replaced with that value if it doesn't
     // equal 0.
-    this.installDate = new Date().getTime();
+    this._installDate = new Date().getTime();
+    // The `installDate` set above isn't especially legitimate. In some cases,
+    // we need to be able to tell when we have the real install date.
+    this.usingDefaultInstallDate = true;
     this.patchCount = this._patches.length;
 
     for (let i = 0; i < update.attributes.length; ++i) {
@@ -2532,6 +2444,15 @@ class Update {
     return null;
   }
 
+  get installDate() {
+    return this._installDate;
+  }
+
+  set installDate(date) {
+    this._installDate = date;
+    this.usingDefaultInstallDate = false;
+  }
+
   QueryInterface = ChromeUtils.generateQI([
     Ci.nsIUpdate,
     Ci.nsIPropertyBag,
@@ -2594,6 +2515,12 @@ export class UpdateService {
         Ci.nsIApplicationUpdateServiceInternal,
       ]),
     };
+
+    Services.prefs.addObserver(PREF_APP_UPDATE_INSTALL_LOCKOUT_ENABLED, this);
+    Services.prefs.addObserver(
+      PREF_APP_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS,
+      this
+    );
   }
 
   /**
@@ -2634,6 +2561,14 @@ export class UpdateService {
         break;
       case "quit-application":
         Services.obs.removeObserver(this, topic);
+        Services.prefs.removeObserver(
+          PREF_APP_UPDATE_INSTALL_LOCKOUT_ENABLED,
+          this
+        );
+        Services.prefs.removeObserver(
+          PREF_APP_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS,
+          this
+        );
 
         if (lazy.UpdateMutex.isLocked()) {
           // If we hold the update mutex, let it go!
@@ -2670,6 +2605,14 @@ export class UpdateService {
             LOG("UpdateService:observe - releasing update mutex for testing");
             lazy.UpdateMutex.unlock();
           }
+        }
+        break;
+      case "nsPref:changed":
+        if (
+          data == PREF_APP_UPDATE_INSTALL_LOCKOUT_ENABLED ||
+          data == PREF_APP_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS
+        ) {
+          await this.writeTimestampFile();
         }
         break;
     }
@@ -2719,6 +2662,8 @@ export class UpdateService {
     }
     const readyUpdateDir = getReadyUpdateDir();
     let status = readStatusFile(readyUpdateDir);
+    let statusParts = status.split(":");
+    status = statusParts[0];
     LOG(`UpdateService:#asyncInit - status = "${status}"`);
     if (!this.canUsuallyApplyUpdates) {
       LOG(
@@ -2740,30 +2685,26 @@ export class UpdateService {
       updates.push(lazy.UM.internal.downloadingUpdate);
     }
 
-    if (status == STATE_NONE) {
-      // A status of STATE_NONE in #asyncInit means that the there
-      // isn't an update in progress. Let's make sure we initialize into a good
-      // state.
-      // Under some edgecases such as Windows system restore the
-      // active-update.xml will contain a pending update without the status
-      // file. We need to deal with that situation gracefully.
-      LOG("UpdateService:#asyncInit - Initial cleanup");
+    // Validate the update state. It's too complicated to recover much of
+    // anything if the state isn't already correct. And blowing away all the
+    // update state is a good way to make sure we always start the update loop
+    // in a reasonably consistent state. If we do this, we can return early
+    // since the rest of the function deals with further validation and handling
+    // of update success and failure.
+    const resetUpdateState = async (missingUpdateObject = false) => {
+      LOG("UpdateService:#asyncInit - Resetting update state");
 
-      const statusFile = readyUpdateDir.clone();
-      statusFile.append(FILE_UPDATE_STATUS);
-      if (statusFile.exists()) {
-        // This file existing but not having a state in it is unexpected. In
-        // addition to putting things in a good state, put a null update in the
-        // update history if we didn't start up with any.
-        LOG("UpdateService:#asyncInit - Status file is empty?");
-
+      // If we are clearing away some update data and we don't actually have a
+      // corresponding update object to write into the update history, just
+      // make an empty one.
+      if (missingUpdateObject && !updates.length) {
         if (!updates.length) {
           updates.push(new Update(null));
         }
       }
 
-      // There shouldn't be any updates when the update status is null. Mark any
-      // updates that are in there as having failed.
+      // We are about to clean up any updates that we have, so if we do have
+      // any, mark them as having failed.
       if (updates.length) {
         for (let update of updates) {
           update.state = STATE_FAILED;
@@ -2776,7 +2717,80 @@ export class UpdateService {
       }
 
       await cleanupActiveUpdates();
-      return;
+      transitionState(Ci.nsIApplicationUpdateService.STATE_IDLE);
+    };
+
+    switch (status) {
+      case STATE_DOWNLOADING:
+        if (!lazy.UM.internal.downloadingUpdate) {
+          LOG("UpdateService:#asyncInit - Missing downloading update object");
+          await resetUpdateState(true);
+          return;
+        } else if (lazy.UM.internal.readyUpdate) {
+          // It isn't valid to have a ready update while in the downloading
+          // state. We could just clear out the ready update and continue with
+          // the downloading update, but if the state is inconsistent, we'd
+          // prefer to start from scratch rather than try to rescue it
+          LOG("UpdateService:#asyncInit - Unexpected ready update object");
+          await resetUpdateState(true);
+          return;
+        }
+
+        // Note that we don't check for an existing downloading update MAR
+        // because there are good states where it does not exist (ex. BITS or
+        // the transfer just hasn't started yet).
+        break;
+      case STATE_PENDING:
+      case STATE_PENDING_SERVICE:
+      case STATE_PENDING_ELEVATE:
+      case STATE_APPLYING:
+      case STATE_APPLIED:
+      case STATE_APPLIED_SERVICE: {
+        let readyMarFile = readyUpdateDir.clone();
+        readyMarFile.append(FILE_UPDATE_MAR);
+
+        if (!lazy.UM.internal.readyUpdate) {
+          LOG("UpdateService:#asyncInit - Missing ready update object");
+          await resetUpdateState(true);
+          return;
+        } else if (!readyMarFile.exists()) {
+          LOG("UpdateService:#asyncInit - Missing mar file");
+          await resetUpdateState();
+          return;
+        }
+        break;
+      }
+      case STATE_SUCCEEDED:
+      case STATE_FAILED:
+        // There is more handing and validation to be done in this state, so
+        // we never want to return early here or lose any of the available state
+        // information, even if it is inconsistent.
+        break;
+      case STATE_DOWNLOAD_FAILED:
+        // This is an odd state to start up in since we usually handle this
+        // situation right away. We'll just clean this state up since the risk
+        // of whatever state is still hanging around interfering with update
+        // seems higher than the possible benefit of being able to salvage some
+        // partial transfer.
+        await resetUpdateState(!lazy.UM.internal.downloadingUpdate);
+        return;
+      case STATE_NONE: {
+        const statusFile = readyUpdateDir.clone();
+        statusFile.append(FILE_UPDATE_STATUS);
+        // This file existing but not having a state in it is unexpected.
+        const statusFileExists = statusFile.exists();
+        if (statusFileExists) {
+          LOG("UpdateService:#asyncInit - Status file is empty?");
+        }
+        await resetUpdateState(statusFileExists);
+        return;
+      }
+      default:
+        LOG(
+          `UpdateService:#asyncInit - Unexpected state! ${status}) - assuming no valid updates`
+        );
+        await resetUpdateState();
+        return;
     }
 
     let channelChanged = updatesToCheck => {
@@ -2988,15 +3002,13 @@ export class UpdateService {
       update = new Update(null);
     }
 
-    let parts = status.split(":");
-    status = parts[0];
     update.state = status;
     LOG(
       `UpdateService:#asyncInit - Setting update's state from ` +
         `the status file (="${update.state}")`
     );
-    if (update.state == STATE_FAILED && parts[1]) {
-      update.errorCode = parseInt(parts[1]);
+    if (update.state == STATE_FAILED && statusParts[1]) {
+      update.errorCode = parseInt(statusParts[1]);
       LOG(
         `UpdateService:#asyncInit - Setting update's errorCode ` +
           `from the status file (="${update.errorCode}")`
@@ -3099,6 +3111,7 @@ export class UpdateService {
         LOG("UpdateService:#asyncInit - Cleaning up missing pending update.");
         cleanupReadyUpdate();
       }
+      await this.writeTimestampFile();
     } else {
       // If there was an I/O error it is assumed that the patch is not invalid
       // and it is set to pending so an attempt to apply it again will happen
@@ -3308,7 +3321,7 @@ export class UpdateService {
     return this._checkForBackgroundUpdates(false);
   }
 
-  // The suffix used for background update check telemetry histogram ID's.
+  // The suffix used for background update check glean metric names.
   get _pingSuffix() {
     if (lazy.UM.internal.readyUpdate) {
       // Once an update has been downloaded, all later updates will be reported
@@ -3353,109 +3366,101 @@ export class UpdateService {
 
     this._isNotify = isNotify;
 
-    // Histogram IDs:
-    // UPDATE_PING_COUNT_EXTERNAL
-    // UPDATE_PING_COUNT_NOTIFY
-    // UPDATE_PING_COUNT_SUBSEQUENT
-    AUSTLMY.pingGeneric("UPDATE_PING_COUNT_" + this._pingSuffix, true, false);
+    // Glean metric names:
+    // Glean.update.pingCountExternal
+    // Glean.update.pingCountNotify
+    // Glean.update.pingCountSubsequent
+    Glean.update["pingCount" + this._pingSuffix].add();
 
-    // Histogram IDs:
-    // UPDATE_UNABLE_TO_APPLY_EXTERNAL
-    // UPDATE_UNABLE_TO_APPLY_NOTIFY
-    // UPDATE_UNABLE_TO_APPLY_SUBSEQUENT
-    AUSTLMY.pingGeneric(
-      "UPDATE_UNABLE_TO_APPLY_" + this._pingSuffix,
-      getCanApplyUpdates(),
-      true
-    );
-    // Histogram IDs:
-    // UPDATE_CANNOT_STAGE_EXTERNAL
-    // UPDATE_CANNOT_STAGE_NOTIFY
-    // UPDATE_CANNOT_STAGE_SUBSEQUENT
-    AUSTLMY.pingGeneric(
-      "UPDATE_CANNOT_STAGE_" + this._pingSuffix,
-      getCanStageUpdates(),
-      true
-    );
-    if (AppConstants.platform == "win") {
-      // Histogram IDs:
-      // UPDATE_CAN_USE_BITS_EXTERNAL
-      // UPDATE_CAN_USE_BITS_NOTIFY
-      // UPDATE_CAN_USE_BITS_SUBSEQUENT
-      AUSTLMY.pingGeneric(
-        "UPDATE_CAN_USE_BITS_" + this._pingSuffix,
-        getCanUseBits()
-      );
+    // Glean metric names:
+    // Glean.update.unableToApplyExternal
+    // Glean.update.unableToApplyNotify
+    // Glean.update.unableToApplySubsequent
+    if (!getCanApplyUpdates()) {
+      Glean.update["unableToApply" + this._pingSuffix].add();
     }
-    // Histogram IDs:
-    // UPDATE_INVALID_LASTUPDATETIME_EXTERNAL
-    // UPDATE_INVALID_LASTUPDATETIME_NOTIFY
-    // UPDATE_INVALID_LASTUPDATETIME_SUBSEQUENT
-    // UPDATE_LAST_NOTIFY_INTERVAL_DAYS_EXTERNAL
-    // UPDATE_LAST_NOTIFY_INTERVAL_DAYS_NOTIFY
-    // UPDATE_LAST_NOTIFY_INTERVAL_DAYS_SUBSEQUENT
+
+    // Glean metric names:
+    // Glean.update.cannotStageExternal
+    // Glean.update.cannotStageNotify
+    // Glean.update.cannotStageSubsequent
+    if (!getCanApplyUpdates()) {
+      Glean.update["cannotStage" + this._pingSuffix].add();
+    }
+    if (AppConstants.platform == "win") {
+      // labeled counter metric names:
+      // Glean.update.canUseBitsExternal
+      // Glean.update.canUseBitsNotify
+      // Glean.update.canUseBitsSubsequent
+      Glean.update["canUseBits" + this._pingSuffix][getCanUseBits()].add();
+    }
+    // Glean metric names:
+    // Glean.update.invalidLastupdatetimeExternal
+    // Glean.update.invalidLastupdatetimeNotify
+    // Glean.update.invalidLastupdatetimeSubsequent
+    // Glean.update.lastNotifyIntervalDaysExternal
+    // Glean.update.lastNotifyIntervalDaysNotify
+    // Glean.update.lastNotifyIntervalDaysSubsequent
     AUSTLMY.pingLastUpdateTime(this._pingSuffix);
-    // Histogram IDs:
-    // UPDATE_NOT_PREF_UPDATE_AUTO_EXTERNAL
-    // UPDATE_NOT_PREF_UPDATE_AUTO_NOTIFY
-    // UPDATE_NOT_PREF_UPDATE_AUTO_SUBSEQUENT
+    // Glean metric names:
+    // Glean.update.notPrefUpdateAutoExternal
+    // Glean.update.notPrefUpdateAutoNotify
+    // Glean.update.notPrefUpdateAutoSubsequent
     lazy.UpdateUtils.getAppUpdateAutoEnabled().then(enabled => {
-      AUSTLMY.pingGeneric(
-        "UPDATE_NOT_PREF_UPDATE_AUTO_" + this._pingSuffix,
-        enabled,
-        true
-      );
+      if (!enabled) {
+        Glean.update["notPrefUpdateAuto" + this._pingSuffix].add();
+      }
     });
-    // Histogram IDs:
-    // UPDATE_NOT_PREF_UPDATE_STAGING_ENABLED_EXTERNAL
-    // UPDATE_NOT_PREF_UPDATE_STAGING_ENABLED_NOTIFY
-    // UPDATE_NOT_PREF_UPDATE_STAGING_ENABLED_SUBSEQUENT
+    // Glean metric names:
+    // Glean.update.notPrefUpdateStagingEnabledExternal
+    // Glean.update.notPrefUpdateStagingEnabledNotify
+    // Glean.update.notPrefUpdateStagingEnabledSubsequent
     AUSTLMY.pingBoolPref(
-      "UPDATE_NOT_PREF_UPDATE_STAGING_ENABLED_" + this._pingSuffix,
+      Glean.update["notPrefUpdateStagingEnabled" + this._pingSuffix],
       PREF_APP_UPDATE_STAGING_ENABLED,
       true,
       true
     );
     if (AppConstants.platform == "win" || AppConstants.platform == "macosx") {
-      // Histogram IDs:
-      // UPDATE_PREF_UPDATE_CANCELATIONS_EXTERNAL
-      // UPDATE_PREF_UPDATE_CANCELATIONS_NOTIFY
-      // UPDATE_PREF_UPDATE_CANCELATIONS_SUBSEQUENT
+      // Glean metric names:
+      // Glean.update.prefUpdateCancelationsExternal
+      // Glean.update.prefUpdateCancelationsNotify
+      // Glean.update.prefUpdateCancelationsSubsequent
       AUSTLMY.pingIntPref(
-        "UPDATE_PREF_UPDATE_CANCELATIONS_" + this._pingSuffix,
+        Glean.update["prefUpdateCancelations" + this._pingSuffix],
         PREF_APP_UPDATE_CANCELATIONS,
         0,
         0
       );
     }
     if (AppConstants.MOZ_MAINTENANCE_SERVICE) {
-      // Histogram IDs:
-      // UPDATE_NOT_PREF_UPDATE_SERVICE_ENABLED_EXTERNAL
-      // UPDATE_NOT_PREF_UPDATE_SERVICE_ENABLED_NOTIFY
-      // UPDATE_NOT_PREF_UPDATE_SERVICE_ENABLED_SUBSEQUENT
+      // Glean metric names:
+      // Glean.update.notPrefUpdateServiceEnabledExternal
+      // Glean.update.notPrefUpdateServiceEnabledNotify
+      // Glean.update.notPrefUpdateServiceEnabledSubsequent
       AUSTLMY.pingBoolPref(
-        "UPDATE_NOT_PREF_UPDATE_SERVICE_ENABLED_" + this._pingSuffix,
+        Glean.update["notPrefUpdateServiceEnabled" + this._pingSuffix],
         PREF_APP_UPDATE_SERVICE_ENABLED,
         true
       );
-      // Histogram IDs:
-      // UPDATE_PREF_SERVICE_ERRORS_EXTERNAL
-      // UPDATE_PREF_SERVICE_ERRORS_NOTIFY
-      // UPDATE_PREF_SERVICE_ERRORS_SUBSEQUENT
+      // Glean metric names:
+      // Glean.update.prefServiceErrorsExternal
+      // Glean.update.prefServiceErrorsNotify
+      // Glean.update.prefServiceErrorsSubsequent
       AUSTLMY.pingIntPref(
-        "UPDATE_PREF_SERVICE_ERRORS_" + this._pingSuffix,
+        Glean.update["prefServiceErrors" + this._pingSuffix],
         PREF_APP_UPDATE_SERVICE_ERRORS,
         0,
         0
       );
       if (AppConstants.platform == "win") {
-        // Histogram IDs:
-        // UPDATE_SERVICE_INSTALLED_EXTERNAL
-        // UPDATE_SERVICE_INSTALLED_NOTIFY
-        // UPDATE_SERVICE_INSTALLED_SUBSEQUENT
-        // UPDATE_SERVICE_MANUALLY_UNINSTALLED_EXTERNAL
-        // UPDATE_SERVICE_MANUALLY_UNINSTALLED_NOTIFY
-        // UPDATE_SERVICE_MANUALLY_UNINSTALLED_SUBSEQUENT
+        // Glean metric names:
+        // Glean.update.serviceInstalledExternal
+        // Glean.update.serviceInstalledNotify
+        // Glean.update.serviceInstalledSubsequent
+        // Glean.update.serviceManuallyUninstalledExternal
+        // Glean.update.serviceManuallyUninstalledNotify
+        // Glean.update.serviceManuallyUninstalledSubsequent
         AUSTLMY.pingServiceInstallStatus(
           this._pingSuffix,
           isServiceInstalled()
@@ -3519,8 +3524,6 @@ export class UpdateService {
         );
       } else if (!hasUpdateMutex()) {
         AUSTLMY.pingCheckCode(this._pingSuffix, AUSTLMY.CHK_NO_MUTEX);
-      } else if (isOtherInstanceRunning()) {
-        AUSTLMY.pingCheckCode(this._pingSuffix, AUSTLMY.CHK_OTHER_INSTANCE);
       } else if (!this.canCheckForUpdates) {
         AUSTLMY.pingCheckCode(this._pingSuffix, AUSTLMY.CHK_UNABLE_TO_CHECK);
       }
@@ -3880,15 +3883,6 @@ export class UpdateService {
       return false;
     }
 
-    if (isOtherInstanceRunning()) {
-      // This doesn't block update checks, but we will have to wait until either
-      // the other instance is gone or we time out waiting for it.
-      LOG(
-        "UpdateService.canCheckForUpdates - another instance is holding the " +
-          "lock, will need to wait for it prior to checking for updates"
-      );
-    }
-
     LOG("UpdateService.canCheckForUpdates - able to check for updates");
     return true;
   }
@@ -3911,11 +3905,7 @@ export class UpdateService {
    * See nsIUpdateService.idl
    */
   get canApplyUpdates() {
-    return (
-      this.canUsuallyApplyUpdates &&
-      hasUpdateMutex() &&
-      !isOtherInstanceRunning()
-    );
+    return this.canUsuallyApplyUpdates && hasUpdateMutex();
   }
 
   /**
@@ -4148,6 +4138,7 @@ export class UpdateService {
       "Other instance of the application currently running: " +
         this.isOtherInstanceHandlingUpdates
     );
+    LOG("Current update state: " + this.getStateName(gUpdateState));
     LOG("Downloading: " + !!this.isDownloading);
     if (this._downloader && this._downloader.isBusy) {
       LOG("Downloading complete update: " + this._downloader.isCompleteUpdate);
@@ -4376,6 +4367,88 @@ export class UpdateService {
     LOG(
       `UpdateService:cancelDownloadingUpdate - Successfully cleaned up BITS Job ${bitsId}`
     );
+  }
+
+  /**
+   * Writes a timestamp for the end of the install lockout timeout to
+   * 'update.timestamp'. Before this timestamp, Firefox will only install
+   * updates at startup if there are no other instances running. After this
+   * timestamp, Firefox will install updates at startup even if there are other
+   * instances running.
+   *
+   * Unless this is the initial write of this file, this function only writes to
+   * the file when we are reasonably sure we know when the timer ought to have
+   * started (i.e. when the update download finished). We want to make sure that
+   * we aren't writing a timestamp based on the current time to this file.
+   *
+   * If the update timeout feature is not enabled, this instead removes the
+   * timeout file, if present.
+   *
+   * @param  options
+   *         An optional object containing any of these keys:
+   *           dir
+   *             The patch directory where the update.timestamp file should be
+   *             written. Defaults to using `getReadyUpdateDir()`.
+   *           update
+   *             The nsIUpdate to write the timestamp for. Defaults to the
+   *             current `readyUpdate`.
+   *           isInitialWrite
+   *             Should be `true` if this is the first write of the timestamp
+   *             file for this update. If this is `true`, `update` must have a
+   *             valid `installDate` set (`usingDefaultInstallDate == false`).
+   */
+  async writeTimestampFile({ dir, update, isInitialWrite = false } = {}) {
+    if (!update) {
+      update = lazy.UM.internal.readyUpdate;
+    }
+    if (!update) {
+      LOG(
+        "UpdateService:writeTimestampFile - Not writing timestamp file. No update."
+      );
+      return;
+    }
+
+    const timeoutsEnabled = Services.prefs.getBoolPref(
+      PREF_APP_UPDATE_INSTALL_LOCKOUT_ENABLED,
+      true
+    );
+    if (timeoutsEnabled && update.usingDefaultInstallDate && !isInitialWrite) {
+      LOG(
+        "UpdateService:writeTimestampFile - Skipping timestamp update. Lack of valid data."
+      );
+      return;
+    }
+
+    const timestampFile = dir ? dir.clone() : getReadyUpdateDir();
+    timestampFile.append(FILE_UPDATE_TIMESTAMP);
+
+    const timeoutMs = Services.prefs.getIntPref(
+      PREF_APP_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS,
+      DEFAULT_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS
+    );
+
+    if (timeoutsEnabled && timeoutMs > 0) {
+      const timestampMs = Math.min(
+        update.installDate + timeoutMs,
+        Date.now() + MAX_UPDATE_INSTALL_LOCKOUT_TIMEOUT_MS
+      );
+      LOG(
+        `UpdateService:writeTimestampFile - Writing ${new Date(
+          timestampMs
+        )} (${timestampMs})`
+      );
+      writeStringToFile(timestampFile, timestampMs);
+    } else {
+      LOG(
+        `UpdateService:writeTimestampFile - Removing file. Feature ` +
+          `Enabled=${timeoutsEnabled}, Timeout=${timeoutMs}ms`
+      );
+      try {
+        await IOUtils.remove(timestampFile.path, { ignoreAbsent: true });
+      } catch (ex) {
+        LOG("UpdateService:writeTimestampFile - Failed to remove file: " + ex);
+      }
+    }
   }
 
   classID = UPDATESERVICE_CID;
@@ -5373,8 +5446,6 @@ export class CheckerService {
       await lazy.AUS.init();
     }
 
-    await waitForOtherInstances();
-
     let url;
     try {
       url = await this.getUpdateURL(checkType);
@@ -5393,9 +5464,8 @@ export class CheckerService {
     request.channel.loadFlags |= Ci.nsIRequest.INHIBIT_CACHING;
     // Disable cutting edge features, like TLS 1.3, where middleboxes might
     // brick us
-    request.channel.QueryInterface(
-      Ci.nsIHttpChannelInternal
-    ).beConservative = true;
+    request.channel.QueryInterface(Ci.nsIHttpChannelInternal).beConservative =
+      true;
 
     request.overrideMimeType("text/xml");
     // The Cache-Control header is only interpreted by proxies and the
@@ -6712,11 +6782,16 @@ class Downloader {
             `Downloader:onStopRequest - Ready to apply. Setting state to ` +
               `"${state}".`
           );
-          writeStatusFile(getReadyUpdateDir(), state);
-          writeVersionFile(getReadyUpdateDir(), this._update.appVersion);
-          this._update.installDate = new Date().getTime();
+          this._update.installDate = Date.now();
           this._update.statusText =
             lazy.gUpdateBundle.GetStringFromName("installPending");
+          writeStatusFile(readyDir, state);
+          writeVersionFile(readyDir, this._update.appVersion);
+          await this.updateService.writeTimestampFile({
+            dir: readyDir,
+            update: this._update,
+            isInitialWrite: true,
+          });
           Services.prefs.setIntPref(PREF_APP_UPDATE_DOWNLOAD_ATTEMPTS, 0);
         } else {
           LOG(

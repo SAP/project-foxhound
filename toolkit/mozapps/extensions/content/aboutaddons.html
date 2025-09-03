@@ -2,7 +2,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this file,
    - You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title data-l10n-id="addons-page-title"></title>
@@ -30,6 +30,7 @@
 
     <link rel="localization" href="branding/brand.ftl" />
     <link rel="localization" href="toolkit/about/aboutAddons.ftl" />
+    <link rel="localization" href="toolkit/global/extensionPermissions.ftl" />
 
     <!-- Defer scripts so all the templates are loaded by the time they run. -->
     <script
@@ -357,7 +358,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-recommended2"
+                data-l10n-id="addon-badge-recommended3"
                 hidden
               >
               </a>
@@ -366,7 +367,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-line3"
+                data-l10n-id="addon-badge-line4"
                 hidden
               >
               </a>
@@ -375,7 +376,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-verified2"
+                data-l10n-id="addon-badge-verified3"
                 hidden
               >
               </a>
@@ -383,7 +384,7 @@
                 class="addon-badge addon-badge-private-browsing-allowed"
                 is="moz-support-link"
                 support-page="extensions-pb"
-                data-l10n-id="addon-badge-private-browsing-allowed2"
+                data-l10n-id="addon-badge-private-browsing-allowed3"
                 hidden
               >
               </a>
@@ -776,7 +777,7 @@
     </template>
 
     <template id="shortcut-card-template">
-      <div class="card shortcut">
+      <div class="card card-no-hover shortcut">
         <div class="card-heading">
           <img class="card-heading-icon addon-icon" />
           <h2 class="addon-name"></h2>

@@ -49,14 +49,15 @@
 #include "test/mock_transport.h"
 #include "test/rtcp_packet_parser.h"
 
+namespace webrtc {
+namespace {
+
 using ::testing::_;
 using ::testing::ElementsAre;
 using ::testing::Eq;
 using ::testing::Invoke;
 using ::testing::Property;
 using ::testing::SizeIs;
-
-namespace webrtc {
 
 class RtcpPacketTypeCounterObserverImpl : public RtcpPacketTypeCounterObserver {
  public:
@@ -77,7 +78,7 @@ class TestTransport : public Transport {
   TestTransport() {}
 
   bool SendRtp(rtc::ArrayView<const uint8_t> /*data*/,
-               const PacketOptions& options) override {
+               const PacketOptions& /* options */) override {
     return false;
   }
   bool SendRtcp(rtc::ArrayView<const uint8_t> data) override {
@@ -87,12 +88,10 @@ class TestTransport : public Transport {
   test::RtcpPacketParser parser_;
 };
 
-namespace {
-static const uint32_t kSenderSsrc = 0x11111111;
-static const uint32_t kRemoteSsrc = 0x22222222;
-static const uint32_t kStartRtpTimestamp = 0x34567;
-static const uint32_t kRtpTimestamp = 0x45678;
-}  // namespace
+constexpr uint32_t kSenderSsrc = 0x11111111;
+constexpr uint32_t kRemoteSsrc = 0x22222222;
+constexpr uint32_t kStartRtpTimestamp = 0x34567;
+constexpr uint32_t kRtpTimestamp = 0x45678;
 
 class RtcpSenderTest : public ::testing::Test {
  protected:
@@ -857,4 +856,5 @@ TEST_F(RtcpSenderTest, SendsCombinedRtcpPacket) {
   EXPECT_EQ(parser()->app()->sender_ssrc(), kSenderSsrc);
 }
 
+}  // namespace
 }  // namespace webrtc

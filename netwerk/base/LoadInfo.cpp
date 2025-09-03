@@ -109,7 +109,7 @@ LoadInfo::LoadInfo(
     nsContentPolicyType aContentPolicyType,
     const Maybe<mozilla::dom::ClientInfo>& aLoadingClientInfo,
     const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController,
-    uint32_t aSandboxFlags, bool aSkipCheckForBrokenURLOrZeroSized)
+    uint32_t aSandboxFlags)
     : mLoadingPrincipal(aLoadingContext ? aLoadingContext->NodePrincipal()
                                         : aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal ? aTriggeringPrincipal
@@ -121,8 +121,7 @@ LoadInfo::LoadInfo(
       mLoadingContext(do_GetWeakReference(aLoadingContext)),
       mSecurityFlags(aSecurityFlags),
       mSandboxFlags(aSandboxFlags),
-      mInternalContentPolicyType(aContentPolicyType),
-      mSkipCheckForBrokenURLOrZeroSized(aSkipCheckForBrokenURLOrZeroSized) {
+      mInternalContentPolicyType(aContentPolicyType) {
   MOZ_ASSERT(mLoadingPrincipal);
   MOZ_ASSERT(mTriggeringPrincipal);
 
@@ -647,6 +646,7 @@ LoadInfo::LoadInfo(const LoadInfo& rhs)
       mInitialSecurityCheckDone(rhs.mInitialSecurityCheckDone),
       mIsThirdPartyContext(rhs.mIsThirdPartyContext),
       mIsThirdPartyContextToTopWindow(rhs.mIsThirdPartyContextToTopWindow),
+      mIsOn3PCBExceptionList(rhs.mIsOn3PCBExceptionList),
       mIsFormSubmission(rhs.mIsFormSubmission),
       mIsGETRequest(rhs.mIsGETRequest),
       mSendCSPViolationEvents(rhs.mSendCSPViolationEvents),
@@ -721,9 +721,9 @@ LoadInfo::LoadInfo(
     bool aForceInheritPrincipalDropped, uint64_t aInnerWindowID,
     uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
     bool aInitialSecurityCheckDone, bool aIsThirdPartyContext,
-    const Maybe<bool>& aIsThirdPartyContextToTopWindow, bool aIsFormSubmission,
-    bool aIsGETRequest, bool aSendCSPViolationEvents,
-    const OriginAttributes& aOriginAttributes,
+    const Maybe<bool>& aIsThirdPartyContextToTopWindow,
+    bool aIsOn3PCBExceptionList, bool aIsFormSubmission, bool aIsGETRequest,
+    bool aSendCSPViolationEvents, const OriginAttributes& aOriginAttributes,
     RedirectHistoryArray&& aRedirectChainIncludingInternalRedirects,
     RedirectHistoryArray&& aRedirectChain,
     nsTArray<nsCOMPtr<nsIPrincipal>>&& aAncestorPrincipals,
@@ -739,7 +739,7 @@ LoadInfo::LoadInfo(
     bool aIsSameDocumentNavigation, bool aAllowDeprecatedSystemRequests,
     bool aIsInDevToolsContext, bool aParserCreatedScript,
     nsILoadInfo::StoragePermissionState aStoragePermission,
-    const Maybe<RFPTarget>& aOverriddenFingerprintingSettings,
+    const Maybe<RFPTargetSet>& aOverriddenFingerprintingSettings,
     bool aIsMetaRefresh, uint32_t aRequestBlockingReason,
     nsINode* aLoadingContext,
     nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
@@ -748,7 +748,8 @@ LoadInfo::LoadInfo(
     bool aHasInjectedCookieForCookieBannerHandling,
     nsILoadInfo::SchemelessInputType aSchemelessInput,
     nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry,
-    bool aIsNewWindowTarget)
+    bool aIsNewWindowTarget,
+    dom::UserNavigationInvolvement aUserNavigationInvolvement)
     : mLoadingPrincipal(aLoadingPrincipal),
       mTriggeringPrincipal(aTriggeringPrincipal),
       mPrincipalToInherit(aPrincipalToInherit),
@@ -788,6 +789,7 @@ LoadInfo::LoadInfo(
       mInitialSecurityCheckDone(aInitialSecurityCheckDone),
       mIsThirdPartyContext(aIsThirdPartyContext),
       mIsThirdPartyContextToTopWindow(aIsThirdPartyContextToTopWindow),
+      mIsOn3PCBExceptionList(aIsOn3PCBExceptionList),
       mIsFormSubmission(aIsFormSubmission),
       mIsGETRequest(aIsGETRequest),
       mSendCSPViolationEvents(aSendCSPViolationEvents),
@@ -831,6 +833,7 @@ LoadInfo::LoadInfo(
           aHasInjectedCookieForCookieBannerHandling),
       mSchemelessInput(aSchemelessInput),
       mHttpsUpgradeTelemetry(aHttpsUpgradeTelemetry),
+      mUserNavigationInvolvement(aUserNavigationInvolvement),
       mIsNewWindowTarget(aIsNewWindowTarget) {
   // Only top level TYPE_DOCUMENT loads can have a null loadingPrincipal
   MOZ_ASSERT(mLoadingPrincipal ||
@@ -995,6 +998,18 @@ LoadInfo::GetLoadingDocument(Document** aResult) {
   }
   return NS_OK;
 }
+NS_IMETHODIMP
+LoadInfo::GetUserNavigationInvolvement(uint8_t* aUserNavigationInvolvement) {
+  *aUserNavigationInvolvement = uint8_t(mUserNavigationInvolvement);
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetUserNavigationInvolvement(uint8_t aUserNavigationInvolvement) {
+  mUserNavigationInvolvement =
+      dom::UserNavigationInvolvement(aUserNavigationInvolvement);
+  return NS_OK;
+}
 
 nsINode* LoadInfo::LoadingNode() {
   nsCOMPtr<nsINode> node = do_QueryReferent(mLoadingContext);
@@ -1113,6 +1128,18 @@ LoadInfo::SetIsThirdPartyContextToTopWindow(
   return NS_OK;
 }
 
+NS_IMETHODIMP
+LoadInfo::GetIsOn3PCBExceptionList(bool* aIsOn3PCBExceptionList) {
+  *aIsOn3PCBExceptionList = mIsOn3PCBExceptionList;
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+LoadInfo::SetIsOn3PCBExceptionList(bool aIsOn3PCBExceptionList) {
+  mIsOn3PCBExceptionList = aIsOn3PCBExceptionList;
+  return NS_OK;
+}
+
 static const uint32_t sCookiePolicyMask =
     nsILoadInfo::SEC_COOKIES_DEFAULT | nsILoadInfo::SEC_COOKIES_INCLUDE |
     nsILoadInfo::SEC_COOKIES_SAME_ORIGIN | nsILoadInfo::SEC_COOKIES_OMIT;
@@ -1200,7 +1227,7 @@ LoadInfo::SetStoragePermission(
   return NS_OK;
 }
 
-const Maybe<RFPTarget>& LoadInfo::GetOverriddenFingerprintingSettings() {
+const Maybe<RFPTargetSet>& LoadInfo::GetOverriddenFingerprintingSettings() {
 #ifdef DEBUG
   RefPtr<BrowsingContext> browsingContext;
   GetTargetBrowsingContext(getter_AddRefs(browsingContext));
@@ -1214,7 +1241,7 @@ const Maybe<RFPTarget>& LoadInfo::GetOverriddenFingerprintingSettings() {
   return mOverriddenFingerprintingSettings;
 }
 
-void LoadInfo::SetOverriddenFingerprintingSettings(RFPTarget aTargets) {
+void LoadInfo::SetOverriddenFingerprintingSettings(RFPTargetSet aTargets) {
   mOverriddenFingerprintingSettings.reset();
   mOverriddenFingerprintingSettings.emplace(aTargets);
 }
@@ -2141,14 +2168,6 @@ NS_IMETHODIMP
 LoadInfo::GetIsFromObjectOrEmbed(bool* aIsFromObjectOrEmbed) {
   MOZ_ASSERT(aIsFromObjectOrEmbed);
   *aIsFromObjectOrEmbed = mIsFromObjectOrEmbed;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-LoadInfo::GetShouldSkipCheckForBrokenURLOrZeroSized(
-    bool* aShouldSkipCheckForBrokenURLOrZeroSized) {
-  MOZ_ASSERT(aShouldSkipCheckForBrokenURLOrZeroSized);
-  *aShouldSkipCheckForBrokenURLOrZeroSized = mSkipCheckForBrokenURLOrZeroSized;
   return NS_OK;
 }
 

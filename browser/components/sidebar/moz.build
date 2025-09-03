@@ -12,4 +12,7 @@ BROWSER_CHROME_MANIFESTS += ["tests/browser/browser.toml"]
 
 EXTRA_JS_MODULES += [
     "SidebarManager.sys.mjs",
+    "SidebarState.sys.mjs",
 ]
+
+XPCSHELL_TESTS_MANIFESTS += ["tests/unit/xpcshell.toml"]

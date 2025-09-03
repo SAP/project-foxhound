@@ -14,7 +14,7 @@ const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-t
 
 const {
   connect,
-} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 
 const {
   L10N,
@@ -104,9 +104,8 @@ class MessagePayload extends Component {
 
     getMessagePayload(selectedMessage.payload, connector.getLongString).then(
       async payload => {
-        const { formattedData, formattedDataTitle } = await this.parsePayload(
-          payload
-        );
+        const { formattedData, formattedDataTitle } =
+          await this.parsePayload(payload);
         this.setState({
           payload,
           isFormattedData: !!formattedData,

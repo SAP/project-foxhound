@@ -72,7 +72,6 @@
 #include "vm/GeneratorObject.h"
 #include "vm/JSContext.h"
 #include "vm/NumberObject.h"
-#include "vm/PIC.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpObject.h"
 #include "vm/RegExpStatics.h"
@@ -80,11 +79,6 @@
 #include "vm/StringObject.h"
 #include "wasm/WasmFeatures.h"
 #include "wasm/WasmJS.h"
-#ifdef ENABLE_RECORD_TUPLE
-#  include "vm/RecordType.h"
-#  include "vm/TupleType.h"
-#endif
-
 #include "gc/GCContext-inl.h"
 #include "vm/JSObject-inl.h"
 #include "vm/Realm-inl.h"
@@ -157,6 +151,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_Uint16Array:
     case JSProto_Int32Array:
     case JSProto_Uint32Array:
+    case JSProto_Float16Array:
     case JSProto_Float32Array:
     case JSProto_Float64Array:
     case JSProto_Uint8ClampedArray:
@@ -177,10 +172,8 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_AsyncFunction:
     case JSProto_GeneratorFunction:
     case JSProto_AsyncGeneratorFunction:
-#ifdef ENABLE_RECORD_TUPLE
-    case JSProto_Record:
-    case JSProto_Tuple:
-#endif
+    case JSProto_WeakRef:
+    case JSProto_FinalizationRegistry:
       return false;
 
     case JSProto_WebAssembly:
@@ -206,6 +199,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_Collator:
     case JSProto_DateTimeFormat:
     case JSProto_DisplayNames:
+    case JSProto_DurationFormat:
     case JSProto_Locale:
     case JSProto_ListFormat:
     case JSProto_NumberFormat:
@@ -220,12 +214,6 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
       return true;
 #  endif
 
-    case JSProto_DurationFormat:
-#  ifdef NIGHTLY_BUILD
-      return false;
-#  else
-      return true;
-#  endif
 #endif
 
 #ifdef JS_HAS_TEMPORAL_API
@@ -239,7 +227,7 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_PlainYearMonth:
     case JSProto_TemporalNow:
     case JSProto_ZonedDateTime:
-      return false;
+      return !JS::Prefs::experimental_temporal();
 #endif
 
     // Return true if the given constructor has been disabled at run-time.
@@ -247,18 +235,11 @@ bool GlobalObject::skipDeselectedConstructor(JSContext* cx, JSProtoKey key) {
     case JSProto_SharedArrayBuffer:
       return !cx->realm()->creationOptions().getSharedMemoryAndAtomicsEnabled();
 
-    case JSProto_WeakRef:
-    case JSProto_FinalizationRegistry:
-      return JS::GetWeakRefsEnabled() == JS::WeakRefSpecifier::Disabled;
-
     case JSProto_AsyncIterator:
       return !IsAsyncIteratorHelpersEnabled();
 
     case JSProto_ShadowRealm:
       return !JS::Prefs::experimental_shadow_realms();
-
-    case JSProto_Float16Array:
-      return !JS::Prefs::experimental_float16array();
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
     case JSProto_SuppressedError:
@@ -844,23 +825,6 @@ bool js::DefineToStringTag(JSContext* cx, HandleObject obj, JSAtom* tag) {
 }
 
 /* static */
-NativeObject* GlobalObject::getOrCreateForOfPICObject(
-    JSContext* cx, Handle<GlobalObject*> global) {
-  cx->check(global);
-  NativeObject* forOfPIC = global->getForOfPICObject();
-  if (forOfPIC) {
-    return forOfPIC;
-  }
-
-  forOfPIC = ForOfPIC::createForOfPICObject(cx, global);
-  if (!forOfPIC) {
-    return nullptr;
-  }
-  global->data().forOfPICChain.init(forOfPIC);
-  return forOfPIC;
-}
-
-/* static */
 JSObject* GlobalObject::getOrCreateRealmKeyObject(
     JSContext* cx, Handle<GlobalObject*> global) {
   cx->check(global);
@@ -902,19 +866,6 @@ GlobalObject::getOrCreateFinalizationRegistryData() {
 
   return maybeFinalizationRegistryData();
 }
-
-#ifndef NIGHTLY_BUILD
-bool GlobalObject::addToVarNames(JSContext* cx, JS::Handle<JSAtom*> name) {
-  MOZ_ASSERT(name);
-
-  if (!data().varNames.put(name)) {
-    ReportOutOfMemory(cx);
-    return false;
-  }
-
-  return true;
-}
-#endif
 
 /* static */
 bool GlobalObject::createIntrinsicsHolder(JSContext* cx,
@@ -1073,23 +1024,11 @@ void GlobalObject::releaseData(JS::GCContext* gcx) {
   gcx->delete_(this, data, MemoryUse::GlobalObjectData);
 }
 
-GlobalObjectData::GlobalObjectData(Zone* zone)
-#ifndef NIGHTLY_BUILD
-    : varNames(zone)
-#endif
-{
-}
+GlobalObjectData::GlobalObjectData(Zone* zone) {}
 
 GlobalObjectData::~GlobalObjectData() = default;
 
 void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
-#ifndef NIGHTLY_BUILD
-  // Atoms are always tenured so don't need to be traced during minor GC.
-  if (trc->runtime()->heapState() != JS::HeapState::MinorCollecting) {
-    varNames.trace(trc);
-  }
-#endif
-
   for (auto& ctorWithProto : builtinConstructors) {
     TraceNullableEdge(trc, &ctorWithProto.constructor, "global-builtin-ctor");
     TraceNullableEdge(trc, &ctorWithProto.prototype,
@@ -1107,7 +1046,6 @@ void GlobalObjectData::trace(JSTracer* trc, GlobalObject* global) {
   TraceNullableEdge(trc, &intrinsicsHolder, "global-intrinsics-holder");
   TraceNullableEdge(trc, &computedIntrinsicsHolder,
                     "global-computed-intrinsics-holder");
-  TraceNullableEdge(trc, &forOfPICChain, "global-for-of-pic");
   TraceNullableEdge(trc, &sourceURLsHolder, "global-source-urls");
   TraceNullableEdge(trc, &realmKeyObject, "global-realm-key");
   TraceNullableEdge(trc, &throwTypeError, "global-throw-type-error");
@@ -1157,9 +1095,4 @@ void GlobalObjectData::addSizeOfIncludingThis(
     info->objectsMallocHeapGlobalData +=
         regExpRealm.regExpStatics->sizeOfIncludingThis(mallocSizeOf);
   }
-
-#ifndef NIGHTLY_BUILD
-  info->objectsMallocHeapGlobalVarNamesSet +=
-      varNames.shallowSizeOfExcludingThis(mallocSizeOf);
-#endif
 }

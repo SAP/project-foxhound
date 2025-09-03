@@ -65,6 +65,7 @@ mod glean;
 mod lang;
 mod logging;
 mod logic;
+mod memory_test;
 mod net;
 mod process;
 mod settings;
@@ -77,15 +78,12 @@ mod test;
 
 fn main() {
     // Determine the mode in which to run. This is very simplistic, but need not be more permissive
-    // nor flexible since we control how the program is invoked.
-    if std::env::args_os()
-        .nth(1)
-        .map(|s| s == "--analyze")
-        .unwrap_or(false)
-    {
-        analyze::main()
-    } else {
-        report_main()
+    // nor flexible since we control how the program is invoked. We don't use the mocked version
+    // because we want the actual args.
+    match ::std::env::args_os().nth(1) {
+        Some(s) if s == "--analyze" => analyze::main(),
+        Some(s) if s == "--memtest" => memory_test::main(),
+        _ => report_main(),
     }
 }
 
@@ -94,28 +92,27 @@ fn report_main() {
     let log_target = logging::init();
 
     let mut config = Config::new();
-    let config_result = config.read_from_environment();
     config.log_target = Some(log_target);
+    config.read_from_environment();
 
     let mut config = Arc::new(config);
 
-    let result = config_result.and_then(|()| {
-        let attempted_send = try_run(&mut config)?;
-        if !attempted_send {
-            // Exited without attempting to send the crash report; delete files.
-            config.delete_files();
+    match try_run(&mut config) {
+        Ok(attempted_send) => {
+            if !attempted_send {
+                // Exited without attempting to send the crash report; delete files.
+                config.delete_files();
+            }
         }
-        Ok(())
-    });
-
-    if let Err(message) = result {
-        // TODO maybe errors should also delete files?
-        log::error!("exiting with error: {message}");
-        if !config.auto_submit {
-            // Only show a dialog if auto_submit is disabled.
-            ui::error_dialog(&config, message);
+        Err(message) => {
+            // TODO maybe errors should also delete files?
+            log::error!("exiting with error: {message:#}");
+            if !config.auto_submit {
+                // Only show a dialog if auto_submit is disabled.
+                ui::error_dialog(&config, message);
+            }
+            std::process::exit(1);
         }
-        std::process::exit(1);
     }
 }
 
@@ -202,7 +199,7 @@ fn report_main() {
         cfg.ping_dir = Some("ping_dir".into());
         cfg.dump_file = Some("minidump.dmp".into());
         cfg.restart_command = Some("mockfox".into());
-        cfg.strings = Some(lang::load().unwrap());
+        cfg.strings = Some(lang::load());
 
         let mut cfg = Arc::new(cfg);
         try_run(&mut cfg)

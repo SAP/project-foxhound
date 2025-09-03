@@ -18,6 +18,7 @@ exclude = [
     "/android",
     "/ios",
 ]
+autolib = false
 autobins = false
 autoexamples = false
 autotests = false
@@ -25,6 +26,12 @@ autobenches = false
 description = "Manages sponsored and web suggestions for Firefox Suggest"
 readme = "README.md"
 license = "MPL-2.0"
+
+[features]
+benchmark_api = [
+    "tempfile",
+    "viaduct-reqwest",
+]
 
 [lib]
 name = "suggest"
@@ -111,9 +118,3 @@ path = "../support/rc_crypto"
 [build-dependencies.uniffi]
 version = "0.28.2"
 features = ["build"]
-
-[features]
-benchmark_api = [
-    "tempfile",
-    "viaduct-reqwest",
-]

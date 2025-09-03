@@ -16,7 +16,7 @@
 #include "mozilla/FontPropertyTypes.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/AccessibleMetrics.h"
 #include "mozilla/widget/WidgetMessageUtils.h"
 #include "mozilla/MacStringHelpers.h"
 
@@ -583,7 +583,7 @@ nsresult nsLookAndFeel::GetKeyboardLayoutImpl(nsACString& aLayout) {
   nsAutoString layout;
 
   CFStringRef layoutName = static_cast<CFStringRef>(
-      ::TISGetInputSourceProperty(source, kTISPropertyLocalizedName));
+      ::TISGetInputSourceProperty(source, kTISPropertyInputSourceID));
   CopyNSStringToXPCOMString((const NSString*)layoutName, layout);
   aLayout.Assign(NS_ConvertUTF16toUTF8(layout));
 

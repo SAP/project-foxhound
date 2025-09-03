@@ -24,15 +24,15 @@ g.test('from_ImageData')
   of dst texture, and read the contents out to compare with the ImageData contents.
 
   Expect alpha to get premultiplied in the copy if, and only if, 'premultipliedAlpha'
-  in 'GPUImageCopyTextureTagged' is set to 'true'.
+  in 'GPUCopyExternalImageDestInfo' is set to 'true'.
 
-  If 'flipY' in 'GPUImageCopyExternalImage' is set to 'true', copy will ensure the result
+  If 'flipY' in 'GPUCopyExternalImageSourceInfo' is set to 'true', copy will ensure the result
   is flipped.
 
   The tests covers:
   - Valid dstColorFormat of copyExternalImageToTexture()
   - Valid dest alphaMode
-  - Valid 'flipY' config in 'GPUImageCopyExternalImage' (named 'srcDoFlipYDuringCopy' in cases)
+  - Valid 'flipY' config in 'GPUCopyExternalImageSourceInfo' (named 'srcDoFlipYDuringCopy' in cases)
 
   And the expected results are all passed.
   `
@@ -47,6 +47,7 @@ g.test('from_ImageData')
       .combine('height', [1, 2, 4, 15, 255, 256])
   )
   .beforeAllSubcases(t => {
+    t.skipIf(typeof ImageData === 'undefined', 'ImageData does not exist in this environment');
     t.skipIfTextureFormatNotSupported(t.params.dstColorFormat);
   })
   .fn(t => {
@@ -130,16 +131,16 @@ g.test('copy_subrect_from_ImageData')
   with the ImageBitmap contents.
 
   Expect alpha to get premultiplied in the copy if, and only if, 'premultipliedAlpha'
-  in 'GPUImageCopyTextureTagged' is set to 'true'.
+  in 'GPUCopyExternalImageDestInfo' is set to 'true'.
 
-  If 'flipY' in 'GPUImageCopyExternalImage' is set to 'true', copy will ensure the result
+  If 'flipY' in 'GPUCopyExternalImageSourceInfo' is set to 'true', copy will ensure the result
   is flipped, and origin is top-left consistantly.
 
   The tests covers:
   - Source WebGPU Canvas lives in the same GPUDevice or different GPUDevice as test
   - Valid dstColorFormat of copyExternalImageToTexture()
   - Valid dest alphaMode
-  - Valid 'flipY' config in 'GPUImageCopyExternalImage' (named 'srcDoFlipYDuringCopy' in cases)
+  - Valid 'flipY' config in 'GPUCopyExternalImageSourceInfo' (named 'srcDoFlipYDuringCopy' in cases)
   - Valid subrect copies.
 
   And the expected results are all passed.
@@ -152,6 +153,9 @@ g.test('copy_subrect_from_ImageData')
       .beginSubcases()
       .combine('copySubRectInfo', kCopySubrectInfo)
   )
+  .beforeAllSubcases(t => {
+    t.skipIf(typeof ImageData === 'undefined', 'ImageData does not exist in this environment');
+  })
   .fn(t => {
     const { copySubRectInfo, dstPremultiplied, srcDoFlipYDuringCopy } = t.params;
 

@@ -16,7 +16,7 @@
 #include "mozilla/ProfilerLabels.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/StaticMutex.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomMediaPlatformsWmfMetrics.h"
 #include "nsThreadUtils.h"
 #include "VideoUtils.h"
 
@@ -950,7 +950,7 @@ void ExternalEngineStateMachine::OnRequestVideo() {
     return;
   }
 
-  if (IsRequestingVideoData() || mVideoWaitRequest.Exists() || IsSeeking()) {
+  if (IsTrackingVideoData() || IsSeeking()) {
     LOGV(
         "No need to request video, isRequesting=%d, waitingVideo=%d, "
         "isSeeking=%d",

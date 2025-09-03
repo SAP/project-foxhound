@@ -481,7 +481,10 @@ impl<W: Write> Writer<W> {
                         "storage_",
                         "",
                         storage_format_str(format),
-                        if access.contains(crate::StorageAccess::LOAD | crate::StorageAccess::STORE)
+                        if access.contains(crate::StorageAccess::ATOMIC) {
+                            ",atomic"
+                        } else if access
+                            .contains(crate::StorageAccess::LOAD | crate::StorageAccess::STORE)
                         {
                             ",read_write"
                         } else if access.contains(crate::StorageAccess::LOAD) {
@@ -520,6 +523,9 @@ impl<W: Write> Writer<W> {
                         self.write_type(module, base)?;
                         write!(self.out, ", {len}")?;
                     }
+                    crate::ArraySize::Pending(_) => {
+                        unreachable!();
+                    }
                     crate::ArraySize::Dynamic => {
                         self.write_type(module, base)?;
                     }
@@ -533,6 +539,9 @@ impl<W: Write> Writer<W> {
                     crate::ArraySize::Constant(len) => {
                         self.write_type(module, base)?;
                         write!(self.out, ", {len}")?;
+                    }
+                    crate::ArraySize::Pending(_) => {
+                        unreachable!();
                     }
                     crate::ArraySize::Dynamic => {
                         self.write_type(module, base)?;
@@ -783,6 +792,27 @@ impl<W: Write> Writer<W> {
                 write!(self.out, ", ")?;
                 self.write_expr(module, value, func_ctx)?;
                 writeln!(self.out, ");")?
+            }
+            Statement::ImageAtomic {
+                image,
+                coordinate,
+                array_index,
+                ref fun,
+                value,
+            } => {
+                write!(self.out, "{level}")?;
+                let fun_str = fun.to_wgsl();
+                write!(self.out, "textureAtomic{fun_str}(")?;
+                self.write_expr(module, image, func_ctx)?;
+                write!(self.out, ", ")?;
+                self.write_expr(module, coordinate, func_ctx)?;
+                if let Some(array_index_expr) = array_index {
+                    write!(self.out, ", ")?;
+                    self.write_expr(module, array_index_expr, func_ctx)?;
+                }
+                write!(self.out, ", ")?;
+                self.write_expr(module, value, func_ctx)?;
+                writeln!(self.out, ");")?;
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {
                 write!(self.out, "{level}")?;
@@ -1723,6 +1753,7 @@ impl<W: Write> Writer<W> {
                     Mf::InverseSqrt => Function::Regular("inverseSqrt"),
                     Mf::Transpose => Function::Regular("transpose"),
                     Mf::Determinant => Function::Regular("determinant"),
+                    Mf::QuantizeToF16 => Function::Regular("quantizeToF16"),
                     // bits
                     Mf::CountTrailingZeros => Function::Regular("countTrailingZeros"),
                     Mf::CountLeadingZeros => Function::Regular("countLeadingZeros"),
@@ -2048,6 +2079,7 @@ const fn storage_format_str(format: crate::StorageFormat) -> &'static str {
         Sf::Rgb10a2Uint => "rgb10a2uint",
         Sf::Rgb10a2Unorm => "rgb10a2unorm",
         Sf::Rg11b10Ufloat => "rg11b10float",
+        Sf::R64Uint => "r64uint",
         Sf::Rg32Uint => "rg32uint",
         Sf::Rg32Sint => "rg32sint",
         Sf::Rg32Float => "rg32float",
@@ -2100,7 +2132,9 @@ const fn address_space_str(
             As::Private => "private",
             As::Uniform => "uniform",
             As::Storage { access } => {
-                if access.contains(crate::StorageAccess::STORE) {
+                if access.contains(crate::StorageAccess::ATOMIC) {
+                    return (Some("storage"), Some("atomic"));
+                } else if access.contains(crate::StorageAccess::STORE) {
                     return (Some("storage"), Some("read_write"));
                 } else {
                     "storage"

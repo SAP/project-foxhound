@@ -1,6 +1,6 @@
 [DEFAULT]
 support-files = [
-  "../../../newtab/test/browser/blue_page.html",
+  "../../../../extensions/newtab/test/browser/blue_page.html",
   "head.js",
 ]
 
@@ -19,9 +19,9 @@ https_first_disabled = true
 
 ["browser_asrouter_group_userprefs.js"]
 skip-if = [
-  "os == 'linux' && os_version == '18.04' && processor == 'x84_64' && asan && swgl", # Bug 1775852
-  "os == 'linux' && os_version == '18.04' && processor == 'x84_64' && debug && swgl", # Bug 1775852
-  "os == 'linux' && os_version == '18.04' && processor == 'x84_64' && opt && swgl && socketprocess_networking", # Bug 1775852
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && asan && swgl", # Bug 1775852
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && swgl", # Bug 1775852
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && opt && swgl && socketprocess_networking", # Bug 1775852
 ]
 
 ["browser_asrouter_infobar.js"]
@@ -52,9 +52,17 @@ skip-if = ["a11y_checks"] # Bug 1854515 and 1858041 to investigate intermittent 
 ["browser_feature_callout_in_chrome.js"]
 skip-if = [
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # Bug 1804349
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1932912
 ]
 
 ["browser_feature_callout_panel.js"]
+
+["browser_foxdoodle_set_default.js"]
+
+["browser_multistage_spotlight.js"]
+
+["browser_multistage_spotlight_telemetry.js"]
+skip-if = ["verify"] # bug 1834620 - order of events not stable
 
 ["browser_remote_l10n.js"]
 
@@ -62,3 +70,5 @@ skip-if = [
 
 ["browser_trigger_listeners.js"]
 https_first_disabled = true
+
+["browser_trigger_messagesLoaded.js"]

@@ -217,9 +217,8 @@ add_task(async function test_list_ordering() {
     const { document } = browser.contentWindow;
     await clearAllParentTelemetryEvents();
     await navigateToViewAndWait(document, "recentlyclosed");
-    let [cardMainSlotNode, listItems] = await waitForRecentlyClosedTabsList(
-      document
-    );
+    let [cardMainSlotNode, listItems] =
+      await waitForRecentlyClosedTabsList(document);
 
     is(
       cardMainSlotNode.tagName.toLowerCase(),
@@ -350,6 +349,34 @@ add_task(async function test_restore_tab() {
     is(listItems.length, 2, "Two tabs are shown in the list.");
   });
   await cleanup();
+});
+
+add_task(async function test_restore_tab_from_deleted_group() {
+  let tab = await add_new_tab("about:mozilla");
+  let group = gBrowser.addTabGroup([tab]);
+  Assert.equal(gBrowser.visibleTabs.length, 2, "2 tabs are open");
+  Assert.ok(tab.group, "New tab is grouped");
+  await gBrowser.removeTabGroup(group);
+  Assert.equal(
+    gBrowser.visibleTabs.length,
+    1,
+    "1 tab is open after group deletion"
+  );
+
+  await withFirefoxView({}, async browser => {
+    const { document } = browser.contentWindow;
+    await navigateToViewAndWait(document, "recentlyclosed");
+
+    let [, listItems] = await waitForRecentlyClosedTabsList(document);
+
+    let closedTabItem = listItems[0];
+    info("Restoring the closed tab");
+    await clearAllParentTelemetryEvents();
+    await restore_tab(closedTabItem, browser, closedTabItem.url);
+    await recentlyClosedTelemetry();
+    Assert.equal(gBrowser.visibleTabs.length, 2, "Tab was restored");
+  });
+  BrowserTestUtils.removeTab(gBrowser.tabs[1]);
 });
 
 /**

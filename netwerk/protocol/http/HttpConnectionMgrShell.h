@@ -28,12 +28,8 @@ class ClassOfService;
 //----------------------------------------------------------------------------
 
 // f5379ff9-2758-4bec-9992-2351c258aed6
-#define HTTPCONNECTIONMGRSHELL_IID                   \
-  {                                                  \
-    0xf5379ff9, 0x2758, 0x4bec, {                    \
-      0x99, 0x92, 0x23, 0x51, 0xc2, 0x58, 0xae, 0xd6 \
-    }                                                \
-  }
+#define HTTPCONNECTIONMGRSHELL_IID \
+  {0xf5379ff9, 0x2758, 0x4bec, {0x99, 0x92, 0x23, 0x51, 0xc2, 0x58, 0xae, 0xd6}}
 
 class HttpConnectionMgrShell : public nsISupports {
  public:
@@ -59,11 +55,9 @@ class HttpConnectionMgrShell : public nsISupports {
       uint16_t maxUrgentExcessiveConns, uint16_t maxConnections,
       uint16_t maxPersistentConnectionsPerHost,
       uint16_t maxPersistentConnectionsPerProxy, uint16_t maxRequestDelay,
-      bool throttleEnabled, uint32_t throttleVersion,
-      uint32_t throttleSuspendFor, uint32_t throttleResumeFor,
-      uint32_t throttleReadLimit, uint32_t throttleReadInterval,
-      uint32_t throttleHoldTime, uint32_t throttleMaxTime,
-      bool beConservativeForProxy) = 0;
+      bool throttleEnabled, uint32_t throttleSuspendFor,
+      uint32_t throttleResumeFor, uint32_t throttleHoldTime,
+      uint32_t throttleMaxTime, bool beConservativeForProxy) = 0;
 
   [[nodiscard]] virtual nsresult Shutdown() = 0;
 
@@ -180,11 +174,9 @@ NS_DEFINE_STATIC_IID_ACCESSOR(HttpConnectionMgrShell,
       uint16_t maxUrgentExcessiveConns, uint16_t maxConnections,               \
       uint16_t maxPersistentConnectionsPerHost,                                \
       uint16_t maxPersistentConnectionsPerProxy, uint16_t maxRequestDelay,     \
-      bool throttleEnabled, uint32_t throttleVersion,                          \
-      uint32_t throttleSuspendFor, uint32_t throttleResumeFor,                 \
-      uint32_t throttleReadLimit, uint32_t throttleReadInterval,               \
-      uint32_t throttleHoldTime, uint32_t throttleMaxTime,                     \
-      bool beConservativeForProxy) override;                                   \
+      bool throttleEnabled, uint32_t throttleSuspendFor,                       \
+      uint32_t throttleResumeFor, uint32_t throttleHoldTime,                   \
+      uint32_t throttleMaxTime, bool beConservativeForProxy) override;         \
   virtual nsresult Shutdown() override;                                        \
   virtual nsresult UpdateRequestTokenBucket(EventTokenBucket* aBucket)         \
       override;                                                                \

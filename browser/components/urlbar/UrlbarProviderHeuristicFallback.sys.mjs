@@ -86,9 +86,7 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       // to visit or search for it, we provide an alternative searchengine
       // match if the string looks like an alphanumeric origin or an e-mail.
       let str = queryContext.searchString;
-      try {
-        new URL(str);
-      } catch (ex) {
+      if (!URL.canParse(str)) {
         if (
           lazy.UrlbarPrefs.get("keyword.enabled") &&
           (lazy.UrlbarTokenizer.looksLikeOrigin(str, {
@@ -116,13 +114,19 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       return;
     }
 
-    result = await this._engineSearchResult(queryContext);
-    if (instance != this.queryInstance) {
-      return;
-    }
-    if (result) {
-      result.heuristic = true;
-      addCallback(this, result);
+    if (
+      lazy.UrlbarPrefs.get("keyword.enabled") ||
+      queryContext.restrictSource == UrlbarUtils.RESULT_SOURCE.SEARCH ||
+      queryContext.searchMode
+    ) {
+      result = await this._engineSearchResult(queryContext);
+      if (instance != this.queryInstance) {
+        return;
+      }
+      if (result) {
+        result.heuristic = true;
+        addCallback(this, result);
+      }
     }
   }
 
@@ -323,7 +327,7 @@ class ProviderHeuristicFallback extends UrlbarProvider {
       UrlbarUtils.RESULT_SOURCE.SEARCH,
       ...lazy.UrlbarResult.payloadAndSimpleHighlights(queryContext.tokens, {
         engine: [engine.name, UrlbarUtils.HIGHLIGHT.TYPED],
-        icon: await engine.getIconURL(),
+        icon: UrlbarUtils.ICON.SEARCH_GLASS,
         query: [query, UrlbarUtils.HIGHLIGHT.NONE],
         keyword: keyword ? [keyword, UrlbarUtils.HIGHLIGHT.NONE] : undefined,
       })

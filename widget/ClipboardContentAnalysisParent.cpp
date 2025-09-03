@@ -119,16 +119,14 @@ static RefPtr<ClipboardResultPromise> GetClipboardImpl(
   auto resultPromise = MakeRefPtr<ClipboardResultPromise::Private>(__func__);
 
   auto contentAnalysisCallback =
-      mozilla::MakeRefPtr<mozilla::contentanalysis::ContentAnalysis::
-                              SafeContentAnalysisResultCallback>(
+      mozilla::MakeRefPtr<mozilla::contentanalysis::ContentAnalysisCallback>(
           [transferable, resultPromise,
            cpHandle = RefPtr{aRequestingContentParent}](
-              RefPtr<nsIContentAnalysisResult>&& aResult) {
+              nsIContentAnalysisResult* aResult) {
             // Needed to call cpHandle->GetContentParent()
             AssertIsOnMainThread();
 
-            bool shouldAllow = aResult->GetShouldAllowContent();
-            if (!shouldAllow) {
+            if (!aResult->GetShouldAllowContent()) {
               resultPromise->Reject(NS_ERROR_CONTENT_BLOCKED, __func__);
               return;
             }
@@ -200,11 +198,14 @@ ipc::IPCResult ClipboardContentAnalysisParent::GetSomeClipboardData(
 
   if (aTransferableDataOrError->type() ==
       IPCTransferableDataOrError::Tnsresult) {
-    NS_WARNING(nsPrintfCString(
-                   "ClipboardContentAnalysisParent::"
-                   "GetSomeClipboardData got error %x",
-                   static_cast<int>(aTransferableDataOrError->get_nsresult()))
-                   .get());
+    nsresult rv = aTransferableDataOrError->get_nsresult();
+    // don't show a warning if the content was just blocked
+    if (rv != NS_ERROR_CONTENT_BLOCKED) {
+      NS_WARNING(nsPrintfCString("ClipboardContentAnalysisParent::"
+                                 "GetSomeClipboardData got error %x",
+                                 static_cast<int>(rv))
+                     .get());
+    }
   }
 
   return IPC_OK();

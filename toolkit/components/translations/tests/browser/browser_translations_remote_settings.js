@@ -143,9 +143,10 @@ add_task(async function test_get_records_with_multiple_versions() {
   );
 
   const lookupKey = record =>
-    `${record.name}${TranslationsParent.languagePairKey(
+    `${record.name}${TranslationsParent.nonPivotKey(
       record.fromLang,
-      record.toLang
+      record.toLang,
+      record.variant
     )}`;
 
   // A mapping of each record name to its max version.
@@ -271,10 +272,12 @@ add_task(async function test_get_records_with_multiple_versions() {
       .client,
   });
 
-  const retrievedRecords = await TranslationsParent.getMaxVersionRecords(
-    client,
-    { lookupKey, majorVersion: 1 }
-  );
+  const retrievedRecords =
+    await TranslationsParent.getMaxSupportedVersionRecords(client, {
+      lookupKey,
+      minSupportedMajorVersion: 1,
+      maxSupportedMajorVersion: 1,
+    });
 
   for (const record of retrievedRecords) {
     is(

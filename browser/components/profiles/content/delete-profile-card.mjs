@@ -23,6 +23,7 @@ export class DeleteProfileCard extends MozLitElement {
 
   static queries = {
     headerAvatar: "#header-avatar",
+    cancelButton: "#cancel-delete",
   };
 
   connectedCallback() {
@@ -93,17 +94,18 @@ export class DeleteProfileCard extends MozLitElement {
             id="header-avatar"
             width="80"
             height="80"
+            data-l10n-id=${this.data.profile.avatarL10nId}
             src="chrome://browser/content/profiles/assets/80_${this.data.profile
               .avatar}.svg"
           />
           <div id="profile-content">
             <div>
-              <h1
+              <h2
                 data-l10n-id="delete-profile-header"
-                data-l10n-args="${JSON.stringify({
+                data-l10n-args=${JSON.stringify({
                   profilename: this.data.profile.name,
-                })}"
-              ></h1>
+                })}
+              ></h2>
               <p
                 class="sub-header"
                 data-l10n-id="delete-profile-description"

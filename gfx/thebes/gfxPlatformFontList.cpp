@@ -32,7 +32,7 @@
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/StaticPrefs_layout.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/GfxMetrics.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/BlobImpl.h"
 #include "mozilla/dom/ContentChild.h"
@@ -204,7 +204,10 @@ gfxFontListPrefObserver::Observe(nsISupports* aSubject, const char* aTopic,
   FontListPrefChanged(nullptr);
 
   if (XRE_IsParentProcess()) {
-    gfxPlatform::ForceGlobalReflow(gfxPlatform::NeedsReframe::No);
+    gfxPlatform::GlobalReflowFlags flags =
+        gfxPlatform::GlobalReflowFlags::BroadcastToChildren |
+        gfxPlatform::GlobalReflowFlags::FontsChanged;
+    gfxPlatform::ForceGlobalReflow(flags);
   }
   return NS_OK;
 }
@@ -584,8 +587,10 @@ bool gfxPlatformFontList::InitFontList() {
     // There's no need to broadcast this reflow request to child processes, as
     // ContentParent::NotifyUpdatedFonts deals with it by re-entering into this
     // function on child processes.
-    ForceGlobalReflowLocked(gfxPlatform::NeedsReframe::Yes,
-                            gfxPlatform::BroadcastToChildren::No);
+    gfxPlatform::GlobalReflowFlags flags =
+        gfxPlatform::GlobalReflowFlags::NeedsReframe |
+        gfxPlatform::GlobalReflowFlags::FontsChanged;
+    ForceGlobalReflowLocked(flags);
 
     mAliasTable.Clear();
     mLocalNameTable.Clear();
@@ -719,19 +724,6 @@ void gfxPlatformFontList::InitializeCodepointsWithNoFonts() {
   }
 }
 
-void gfxPlatformFontList::FontListChanged() {
-  MOZ_ASSERT(!XRE_IsParentProcess());
-  AutoLock lock(mLock);
-  InitializeCodepointsWithNoFonts();
-  if (SharedFontList()) {
-    // If we're using a shared local face-name list, this may have changed
-    // such that existing font entries held by user font sets are no longer
-    // safe to use: ensure they all get flushed.
-    RebuildLocalFonts(/*aForgetLocalFaces*/ true);
-  }
-  ForceGlobalReflowLocked(gfxPlatform::NeedsReframe::Yes);
-}
-
 void gfxPlatformFontList::GenerateFontListKey(const nsACString& aKeyName,
                                               nsACString& aResult) {
   aResult = aKeyName;
@@ -845,11 +837,9 @@ gfxFontEntry* gfxPlatformFontList::SearchFamiliesForFaceName(
 
   lookup = FindFaceName(aFaceName);
 
-  TimeStamp end = TimeStamp::Now();
-  Telemetry::AccumulateTimeDelta(Telemetry::FONTLIST_INITFACENAMELISTS, start,
-                                 end);
+  TimeDuration elapsed = TimeStamp::Now() - start;
+  glean::fontlist::initfacenamelists.AccumulateRawDuration(elapsed);
   if (LOG_FONTINIT_ENABLED()) {
-    TimeDuration elapsed = end - start;
     LOG_FONTINIT(("(fontinit) SearchFamiliesForFaceName took %8.2f ms %s %s",
                   elapsed.ToMilliseconds(), (lookup ? "found name" : ""),
                   (timedOut ? "timeout" : "")));
@@ -1008,7 +998,10 @@ void gfxPlatformFontList::UpdateFontList(bool aFullRebuild) {
     if (mStartedLoadingCmapsFrom != 0xffffffffu) {
       InitializeCodepointsWithNoFonts();
       mStartedLoadingCmapsFrom = 0xffffffffu;
-      ForceGlobalReflowLocked(gfxPlatform::NeedsReframe::No);
+      gfxPlatform::GlobalReflowFlags flags =
+          gfxPlatform::GlobalReflowFlags::FontsChanged |
+          gfxPlatform::GlobalReflowFlags::BroadcastToChildren;
+      ForceGlobalReflowLocked(flags);
     }
   }
 }
@@ -1173,17 +1166,11 @@ already_AddRefed<gfxFont> gfxPlatformFontList::SystemFindFontForChar(
 
   // track system fallback time
   static bool first = true;
-  int32_t intElapsed =
-      int32_t(first ? elapsed.ToMilliseconds() : elapsed.ToMicroseconds());
-  Telemetry::Accumulate((first ? Telemetry::SYSTEM_FONT_FALLBACK_FIRST
-                               : Telemetry::SYSTEM_FONT_FALLBACK),
-                        intElapsed);
+  if (first)
+    glean::fontlist::system_font_fallback_first.AccumulateRawDuration(elapsed);
+  else
+    glean::fontlist::system_font_fallback.AccumulateRawDuration(elapsed);
   first = false;
-
-  // track the script for which fallback occurred (incremented one make it
-  // 1-based)
-  Telemetry::Accumulate(Telemetry::SYSTEM_FONT_FALLBACK_SCRIPT,
-                        int(aRunScript) + 1);
 
   return font.forget();
 }
@@ -1418,47 +1405,27 @@ void gfxPlatformFontList::StartCmapLoadingFromFamily(uint32_t aStartIndex) {
   }
 }
 
-class LoadCmapsRunnable : public CancelableRunnable {
-  class WillShutdownObserver : public nsIObserver {
-   public:
-    NS_DECL_ISUPPORTS
-    NS_DECL_NSIOBSERVER
+class LoadCmapsRunnable final : public IdleRunnable,
+                                public nsIObserver,
+                                public nsSupportsWeakReference {
+  NS_DECL_ISUPPORTS_INHERITED
+  NS_DECL_NSIOBSERVER
 
-    explicit WillShutdownObserver(LoadCmapsRunnable* aRunnable)
-        : mRunnable(aRunnable) {}
-
-    void Remove() {
-      nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-      if (obs) {
-        obs->RemoveObserver(this, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID);
-      }
-      mRunnable = nullptr;
+ private:
+  virtual ~LoadCmapsRunnable() {
+    if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+      obs->RemoveObserver(this, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID);
     }
-
-   protected:
-    virtual ~WillShutdownObserver() = default;
-
-    LoadCmapsRunnable* mRunnable;
-  };
+  }
 
  public:
-  explicit LoadCmapsRunnable(uint32_t aGeneration, uint32_t aFamilyIndex)
-      : CancelableRunnable("gfxPlatformFontList::LoadCmapsRunnable"),
+  LoadCmapsRunnable(uint32_t aGeneration, uint32_t aFamilyIndex)
+      : IdleRunnable("gfxPlatformFontList::LoadCmapsRunnable"),
         mGeneration(aGeneration),
         mStartIndex(aFamilyIndex),
-        mIndex(aFamilyIndex) {
-    nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-    if (obs) {
-      mObserver = new WillShutdownObserver(this);
-      obs->AddObserver(mObserver, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID, false);
-    }
-  }
+        mIndex(aFamilyIndex) {}
 
-  virtual ~LoadCmapsRunnable() {
-    if (mObserver) {
-      mObserver->Remove();
-    }
-  }
+  void SetDeadline(TimeStamp aDeadline) override { mDeadline = aDeadline; }
 
   // Reset the current family index, if the value passed is earlier than our
   // original starting position. We don't "reset" if it would move the current
@@ -1474,10 +1441,7 @@ class LoadCmapsRunnable : public CancelableRunnable {
     }
   }
 
-  nsresult Cancel() override {
-    mIsCanceled = true;
-    return NS_OK;
-  }
+  void Cancel() { mIsCanceled = true; }
 
   NS_IMETHOD Run() override {
     if (mIsCanceled) {
@@ -1497,21 +1461,26 @@ class LoadCmapsRunnable : public CancelableRunnable {
       return NS_OK;
     }
     auto* families = list->Families();
-    // Skip any families that are already initialized.
-    while (mIndex < numFamilies && families[mIndex].IsFullyInitialized()) {
-      ++mIndex;
-    }
-    // Fully process one family, and advance index.
-    if (mIndex < numFamilies) {
-      Unused << pfl->InitializeFamily(&families[mIndex], true);
-      ++mIndex;
+    while (mIndex < numFamilies) {
+      auto& family = families[mIndex++];
+      if (family.IsFullyInitialized()) {
+        // Skip any families that are already initialized.
+        continue;
+      }
+      // Fully initialize this family.
+      Unused << pfl->InitializeFamily(&family, true);
+      // TODO(emilio): It'd make sense to use mDeadline here to determine
+      // whether we can do more work, but that is surprisingly a performance
+      // regression in practice, see bug 1936489. Investigate if we can be
+      // smarter about this.
+      break;
     }
     // If there are more families to initialize, post ourselves back to the
-    // idle queue to handle the next one; otherwise we're finished and we need
+    // idle queue handle the next ones; otherwise we're finished and we need
     // to notify content processes to update their rendering.
     if (mIndex < numFamilies) {
-      RefPtr<CancelableRunnable> task = this;
-      NS_DispatchToMainThreadQueue(task.forget(), EventQueuePriority::Idle);
+      mDeadline = TimeStamp();
+      NS_DispatchToMainThreadQueue(do_AddRef(this), EventQueuePriority::Idle);
     } else {
       pfl->Lock();
       pfl->CancelLoadCmapsTask();
@@ -1526,25 +1495,27 @@ class LoadCmapsRunnable : public CancelableRunnable {
   uint32_t mGeneration;
   uint32_t mStartIndex;
   uint32_t mIndex;
+  TimeStamp mDeadline;
   bool mIsCanceled = false;
-
-  RefPtr<WillShutdownObserver> mObserver;
 };
 
-NS_IMPL_ISUPPORTS(LoadCmapsRunnable::WillShutdownObserver, nsIObserver)
+NS_IMPL_ISUPPORTS_INHERITED(LoadCmapsRunnable, IdleRunnable, nsIObserver,
+                            nsISupportsWeakReference);
 
 NS_IMETHODIMP
-LoadCmapsRunnable::WillShutdownObserver::Observe(nsISupports* aSubject,
-                                                 const char* aTopic,
-                                                 const char16_t* aData) {
-  if (!nsCRT::strcmp(aTopic, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID)) {
-    if (mRunnable) {
-      mRunnable->Cancel();
-    }
-  } else {
-    MOZ_ASSERT_UNREACHABLE("unexpected notification topic");
-  }
+LoadCmapsRunnable::Observe(nsISupports* aSubject, const char* aTopic,
+                           const char16_t* aData) {
+  MOZ_ASSERT(!nsCRT::strcmp(aTopic, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID),
+             "unexpected topic");
+  Cancel();
   return NS_OK;
+}
+
+void gfxPlatformFontList::CancelLoadCmapsTask() {
+  if (mLoadCmapsRunnable) {
+    mLoadCmapsRunnable->Cancel();
+    mLoadCmapsRunnable = nullptr;
+  }
 }
 
 void gfxPlatformFontList::StartCmapLoading(uint32_t aGeneration,
@@ -1559,13 +1530,16 @@ void gfxPlatformFontList::StartCmapLoading(uint32_t aGeneration,
   if (mLoadCmapsRunnable) {
     // We already have a runnable; just make sure it covers the full range of
     // families needed.
-    static_cast<LoadCmapsRunnable*>(mLoadCmapsRunnable.get())
-        ->MaybeResetIndex(aStartIndex);
+    mLoadCmapsRunnable->MaybeResetIndex(aStartIndex);
     return;
   }
   mLoadCmapsRunnable = new LoadCmapsRunnable(aGeneration, aStartIndex);
-  RefPtr<CancelableRunnable> task = mLoadCmapsRunnable;
-  NS_DispatchToMainThreadQueue(task.forget(), EventQueuePriority::Idle);
+  if (nsCOMPtr<nsIObserverService> obs = services::GetObserverService()) {
+    obs->AddObserver(mLoadCmapsRunnable, NS_XPCOM_WILL_SHUTDOWN_OBSERVER_ID,
+                     /* ownsWeak = */ true);
+  }
+  NS_DispatchToMainThreadQueue(do_AddRef(mLoadCmapsRunnable),
+                               EventQueuePriority::Idle);
 }
 
 gfxFontFamily* gfxPlatformFontList::CheckFamily(gfxFontFamily* aFamily) {
@@ -2811,7 +2785,9 @@ void gfxPlatformFontList::CleanupLoader() {
                FindFamiliesFlags::eNoAddToNamesMissedWhenSearching));
         });
     if (forceReflow) {
-      ForceGlobalReflowLocked(gfxPlatform::NeedsReframe::No);
+      gfxPlatform::GlobalReflowFlags flags =
+          gfxPlatform::GlobalReflowFlags::FontsChanged;
+      ForceGlobalReflowLocked(flags);
     }
 
     mOtherNamesMissed = nullptr;
@@ -2832,20 +2808,47 @@ void gfxPlatformFontList::CleanupLoader() {
   gfxFontInfoLoader::CleanupLoader();
 }
 
-void gfxPlatformFontList::ForceGlobalReflowLocked(
-    gfxPlatform::NeedsReframe aNeedsReframe,
-    gfxPlatform::BroadcastToChildren aBroadcastToChildren) {
+void gfxPlatformFontList::ForceGlobalReflow(
+    gfxPlatform::GlobalReflowFlags aFlags) {
   if (!NS_IsMainThread()) {
     NS_DispatchToMainThread(NS_NewRunnableFunction(
-        "gfxPlatformFontList::ForceGlobalReflowLocked",
-        [aNeedsReframe, aBroadcastToChildren] {
-          gfxPlatform::ForceGlobalReflow(aNeedsReframe, aBroadcastToChildren);
-        }));
+        "gfxPlatformFontList::ForceGlobalReflow",
+        [this, aFlags] { this->ForceGlobalReflow(aFlags); }));
     return;
   }
 
+  if (aFlags & gfxPlatform::GlobalReflowFlags::FontsChanged) {
+    AutoLock lock(mLock);
+    InitializeCodepointsWithNoFonts();
+    if (SharedFontList()) {
+      // If we're using a shared local face-name list, this may have changed
+      // such that existing font entries held by user font sets are no longer
+      // safe to use: ensure they all get flushed.
+      RebuildLocalFonts(/*aForgetLocalFaces*/ true);
+    }
+  }
+
+  gfxPlatform::ForceGlobalReflow(aFlags);
+}
+
+void gfxPlatformFontList::ForceGlobalReflowLocked(
+    gfxPlatform::GlobalReflowFlags aFlags) {
+  if (!NS_IsMainThread()) {
+    NS_DispatchToMainThread(NS_NewRunnableFunction(
+        "gfxPlatformFontList::ForceGlobalReflow",
+        [this, aFlags] { this->ForceGlobalReflow(aFlags); }));
+    return;
+  }
+
+  if (aFlags & gfxPlatform::GlobalReflowFlags::FontsChanged) {
+    InitializeCodepointsWithNoFonts();
+    if (SharedFontList()) {
+      RebuildLocalFonts(/*aForgetLocalFaces*/ true);
+    }
+  }
+
   AutoUnlock unlock(mLock);
-  gfxPlatform::ForceGlobalReflow(aNeedsReframe, aBroadcastToChildren);
+  gfxPlatform::ForceGlobalReflow(aFlags);
 }
 
 void gfxPlatformFontList::GetPrefsAndStartLoader() {
@@ -2868,7 +2871,16 @@ void gfxPlatformFontList::GetPrefsAndStartLoader() {
 }
 
 void gfxPlatformFontList::RebuildLocalFonts(bool aForgetLocalFaces) {
+  // Make a local copy of the list of font sets we need to process.
+  AutoTArray<RefPtr<gfxUserFontSet>, 16> fontSets;
+  fontSets.SetCapacity(mUserFontSetList.Count());
   for (auto* fontset : mUserFontSetList) {
+    fontSets.AppendElement(fontset);
+  }
+  // Drop our lock before calling ForgetLocalFaces and RebuildLocalRules
+  // for each set, to avoid possible deadlocks.
+  AutoUnlock unlock(mLock);
+  for (auto fontset : fontSets) {
     if (aForgetLocalFaces) {
       fontset->ForgetLocalFaces();
     }
@@ -3030,12 +3042,10 @@ void gfxPlatformFontList::InitOtherFamilyNamesInternal(
       mOtherFamilyNamesInitialized = true;
       CancelInitOtherFamilyNamesTask();
     }
-    TimeStamp end = TimeStamp::Now();
-    Telemetry::AccumulateTimeDelta(Telemetry::FONTLIST_INITOTHERFAMILYNAMES,
-                                   start, end);
+    TimeDuration elapsed = TimeStamp::Now() - start;
+    glean::fontlist::initotherfamilynames.AccumulateRawDuration(elapsed);
 
     if (LOG_FONTINIT_ENABLED()) {
-      TimeDuration elapsed = end - start;
       LOG_FONTINIT(("(fontinit) InitOtherFamilyNames took %8.2f ms %s",
                     elapsed.ToMilliseconds(), (timedOut ? "timeout" : "")));
     }
@@ -3057,12 +3067,11 @@ void gfxPlatformFontList::InitOtherFamilyNamesInternal(
     mOtherFamilyNamesInitialized = true;
     CancelInitOtherFamilyNamesTask();
 
-    TimeStamp end = TimeStamp::Now();
-    Telemetry::AccumulateTimeDelta(
-        Telemetry::FONTLIST_INITOTHERFAMILYNAMES_NO_DEFERRING, start, end);
+    TimeDuration elapsed = TimeStamp::Now() - start;
+    glean::fontlist::initotherfamilynames_no_deferring.AccumulateRawDuration(
+        elapsed);
 
     if (LOG_FONTINIT_ENABLED()) {
-      TimeDuration elapsed = end - start;
       LOG_FONTINIT(
           ("(fontinit) InitOtherFamilyNames without deferring took %8.2f ms",
            elapsed.ToMilliseconds()));
@@ -3088,8 +3097,14 @@ void gfxPlatformFontList::CancelInitOtherFamilyNamesTask() {
       mLocalNameTable.Clear();
       forceReflow = true;
     }
-    if (forceReflow) {
-      dom::ContentParent::BroadcastFontListChanged();
+    // If there's a LoadCmapsRunnable alive, we ignore forceReflow because the
+    // runnable will trigger a reflow when it completes, and we don't want to
+    // reflow more times than necessary.
+    if (forceReflow && !mLoadCmapsRunnable) {
+      gfxPlatform::GlobalReflowFlags flags =
+          gfxPlatform::GlobalReflowFlags::BroadcastToChildren |
+          gfxPlatform::GlobalReflowFlags::FontsChanged;
+      gfxPlatform::ForceGlobalReflow(flags);
     }
   }
 }

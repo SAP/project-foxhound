@@ -9,6 +9,7 @@ with Files("**"):
 
 MOCHITEST_MANIFESTS += [
     "mochitest/mochitest-no-pref.toml",
+    "mochitest/mochitest-resistfingerprinting.toml",
     "mochitest/mochitest.toml",
 ]
 
@@ -78,7 +79,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "ExternalTextureD3D11.cpp",
     ]
 
-if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
+if CONFIG["OS_TARGET"] == "Linux":
     EXPORTS.mozilla.webgpu += [
         "ExternalTextureDMABuf.h",
     ]
@@ -86,12 +87,19 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "gtk":
         "ExternalTextureDMABuf.cpp",
     ]
 
+
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
     EXPORTS.mozilla.webgpu += [
         "ExternalTextureMacIOSurface.h",
     ]
     UNIFIED_SOURCES += [
         "ExternalTextureMacIOSurface.cpp",
+    ]
+
+if CONFIG["MOZ_DXCOMPILER"] and not CONFIG["MOZ_ARTIFACT_BUILDS"]:
+    FINAL_TARGET_FILES += [
+        "%" + CONFIG["MOZ_DXC_DLL_PATH"],
+        "%" + CONFIG["MOZ_DXIL_DLL_PATH"],
     ]
 
 if CONFIG["CC_TYPE"] in ("clang", "clang-cl"):

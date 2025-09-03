@@ -39,6 +39,7 @@ include protocol PWebrtcGlobal;
 include protocol PWindowGlobal;
 include protocol PURLClassifier;
 include protocol PURLClassifierLocal;
+include protocol PURLClassifierLocalByName;
 include protocol PVRManager;
 include protocol PRemoteDecoderManager;
 include protocol PRemoteWorkerService;
@@ -72,6 +73,7 @@ include protocol PSandboxTesting;
 include "ipc/MediaControlIPC.h";
 include "mozilla/AntiTrackingIPCUtils.h";
 include "mozilla/GfxMessageUtils.h";
+include "mozilla/URLClassifierIPCUtils.h";
 include "mozilla/dom/BindingIPCUtils.h";
 include "mozilla/dom/CSPMessageUtils.h";
 include "mozilla/dom/DocShellMessageUtils.h";
@@ -80,7 +82,7 @@ include "mozilla/dom/GeolocationIPCUtils.h";
 include "mozilla/dom/MediaSessionIPCUtils.h";
 include "mozilla/dom/PageLoadEventUtils.h";
 include "mozilla/dom/ReferrerInfoUtils.h";
-include "mozilla/glean/GleanMetrics.h";
+include "mozilla/glean/DomMetrics.h";
 include "mozilla/ipc/ByteBufUtils.h";
 include "mozilla/ipc/TransportSecurityInfoUtils.h";
 include "mozilla/ipc/URIUtils.h";
@@ -89,7 +91,6 @@ include "mozilla/widget/WidgetMessageUtils.h";
 include "mozilla/PermissionDelegateIPCUtils.h";
 
 [RefCounted] using class nsIDOMGeoPosition from "nsGeoPositionIPCSerialiser.h";
-[RefCounted] using class nsIAlertNotification from "mozilla/AlertNotificationIPCSerializer.h";
 
 using struct ChromePackage from "mozilla/chrome/RegistryMessageUtils.h";
 using struct SubstitutionMapping from "mozilla/chrome/RegistryMessageUtils.h";
@@ -100,6 +101,7 @@ using mozilla::dom::NativeThreadId from "mozilla/dom/NativeThreadId.h";
 using mozilla::hal::ProcessPriority from "mozilla/HalTypes.h";
 using mozilla::gfx::IntSize from "mozilla/gfx/2D.h";
 using mozilla::gfx::SurfaceFormat from "mozilla/gfx/Types.h";
+using gfxPlatform::GlobalReflowFlags from "gfxPlatform.h";
 using mozilla::dom::TabId from "mozilla/dom/ipc/IdType.h";
 using mozilla::dom::ContentParentId from "mozilla/dom/ipc/IdType.h";
 using mozilla::EventMessage from "mozilla/EventForwards.h";
@@ -129,7 +131,7 @@ using mozilla::dom::geolocation::GeolocationPermissionStatus from "mozilla/dom/G
 #endif  // defined(XP_WIN)
 
 using mozilla::Telemetry::DiscardedData from "mozilla/TelemetryComms.h";
-using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/GleanMetrics.h";
+using mozilla::glean::perf::PageLoadExtra from "mozilla/glean/DomMetrics.h";
 [MoveOnly] using mozilla::CrossProcessMutexHandle from "mozilla/ipc/CrossProcessMutex.h";
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 using mozilla::dom::BrowsingContextTransaction from "mozilla/dom/BrowsingContext.h";
@@ -169,6 +171,7 @@ using nsIDNSService::ResolverMode from "nsIDNSService.h";
 using mozilla::dom::UserActivation::Modifiers from "mozilla/dom/UserActivation.h";
 using mozilla::dom::PrivateAttributionImpressionType from "mozilla/dom/PrivateAttributionIPCUtils.h";
 using nsIClipboard::ClipboardType from "nsIClipboard.h";
+using nsIUrlClassifierFeature::listType from "nsIUrlClassifierFeature.h";
 
 union ChromeRegistryItem
 {
@@ -305,10 +308,6 @@ struct JSWindowActorInfo
 {
   nsCString name;
   bool allFrames;
-
-  // True if `url` is for ESM.
-  // False if `url` is for JSM or nothing.
-  bool isESModule;
 
   // This is to align with JSProcessActorInfo.
   // This attribute isn't used for JSWindow Actors.
@@ -463,6 +462,11 @@ union ClipboardReadRequestOrError {
     nsresult;
 };
 
+struct BroadcastBlobURLUnregistrationRequest {
+    nsCString url;
+    nullable nsIPrincipal principal;
+};
+
 /**
  * The PContent protocol is a top-level protocol between the UI process
  * and a content process. There is exactly one PContentParent/PContentChild pair
@@ -495,6 +499,7 @@ sync protocol PContent
 #endif
     manages PURLClassifier;
     manages PURLClassifierLocal;
+    manages PURLClassifierLocalByName;
     manages PScriptCache;
     manages PSessionStorageObserver;
     manages PBenchmarkStorage;
@@ -648,13 +653,15 @@ child:
 
     async ClearImageCacheFromSite(nsCString aSchemelessSite, OriginAttributesPattern aPattern);
 
-    async ClearImageCache(bool privateLoader, bool chrome);
+    async ClearImageCache(bool privateLoader, bool? chrome);
 
-    async ClearStyleSheetCache(nullable nsIPrincipal? aPrincipal,
+    async ClearStyleSheetCache(bool? aChrome,
+                               nullable nsIPrincipal? aPrincipal,
                                nsCString? aSchemelessSite,
                                OriginAttributesPattern? aPattern);
 
-    async ClearScriptCache(nullable nsIPrincipal? aPrincipal,
+    async ClearScriptCache(bool? aChrome,
+                           nullable nsIPrincipal? aPrincipal,
                            nsCString? aSchemelessSite,
                            OriginAttributesPattern? aPattern);
 
@@ -698,17 +705,10 @@ child:
     [Priority=mediumhigh] async RebuildFontList(bool aFullRebuild);
 
     /**
-     * The shared font list has been modified, potentially adding matches
-     * for src:local() names that were previously not known, so content
-     * may need to be reflowed.
-     */
-    async FontListChanged();
-
-    /**
      * The font list or prefs have been updated in such a way that we might need
      * to do a reflow and maybe reframe.
      */
-    async ForceGlobalReflow(bool aNeedsReframe);
+    async ForceGlobalReflow(GlobalReflowFlags aFlags);
 
     /**
      * A new shmem block has been added to the font list; the child process
@@ -863,17 +863,12 @@ child:
     async PushWithData(nsCString scope, nullable nsIPrincipal principal,
                        nsString messageId, uint8_t[] data);
 
-    /**
-     * Send a `pushsubscriptionchange` event to a service worker in the child.
-     */
-    async PushSubscriptionChange(nsCString scope, nullable nsIPrincipal principal);
-
     async GetFilesResponse(nsID aID, GetFilesResponseResult aResult);
 
     async BlobURLRegistration(nsCString aURI, IPCBlob aBlob,
                               nullable nsIPrincipal aPrincipal, nsCString aPartitionKey);
 
-    async BlobURLUnregistration(nsCString aURI);
+    async BlobURLUnregistration(nsCString[] aURIs);
 
     async GMPsChanged(GMPCapabilityData[] capabilities);
 
@@ -1072,6 +1067,10 @@ parent:
     async GetLoadingSessionHistoryInfoFromParent(MaybeDiscardedBrowsingContext aContext)
         returns (LoadingSessionHistoryInfo? aLoadingInfo);
 
+    async GetContiguousSessionHistoryInfos(MaybeDiscardedBrowsingContext aContext,
+                                           SessionHistoryInfo aInfo)
+        returns (SessionHistoryInfo[] infos);
+
     async RemoveFromBFCache(MaybeDiscardedBrowsingContext aContext);
 
     async InitBackground(Endpoint<PBackgroundStarterParent> aEndpoint);
@@ -1115,6 +1114,7 @@ parent:
         returns (bool success);
 
     async PURLClassifierLocal(nullable nsIURI uri, IPCURLClassifierFeature[] features);
+    async PURLClassifierLocalByName(nullable nsIURI uri, nsCString[] featureNames, listType aListType);
 
     async PSessionStorageObserver();
 
@@ -1551,19 +1551,13 @@ parent:
     async NotifyPushObserversWithData(nsCString scope, nullable nsIPrincipal principal,
                                       nsString messageId, uint8_t[] data);
 
-    /**
-     * Notify `push-subscription-change` observers in the parent.
-     */
-    async NotifyPushSubscriptionChangeObservers(nsCString scope,
-                                                nullable nsIPrincipal principal);
-
-     async GetFilesRequest(nsID aID, nsString aDirectory, bool aRecursiveFlag);
+     async GetFilesRequest(nsID aID, nsString[] aDirectories, bool aRecursiveFlag);
      async DeleteGetFilesRequest(nsID aID);
 
      async StoreAndBroadcastBlobURLRegistration(nsCString url, IPCBlob blob,
                                                 nullable nsIPrincipal principal, nsCString aPartitionKey);
 
-     async UnstoreAndBroadcastBlobURLUnregistration(nsCString url, nullable nsIPrincipal principal);
+     async UnstoreAndBroadcastBlobURLUnregistration(BroadcastBlobURLUnregistrationRequest[] aRequests);
 
     /**
      * Messages for communicating child Glean data to the parent process

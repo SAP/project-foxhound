@@ -63,6 +63,8 @@ pid_t gettid_pthread() {
 
 #include <atomic>
 
+#include "jit/BaselineFrameInfo.h"
+#include "jit/CacheIR.h"
 #include "jit/Jitdump.h"
 #include "jit/JitSpewer.h"
 #include "jit/LIR.h"
@@ -74,12 +76,11 @@ pid_t gettid_pthread() {
 #include "vm/MutexIDs.h"
 
 #ifdef XP_WIN
-#  include <windef.h>
+#  include "util/WindowsWrapper.h"
 #  include <codecvt>
 #  include <evntprov.h>
 #  include <locale>
 #  include <string>
-#  include <windows.h>
 
 const GUID PROVIDER_JSCRIPT9 = {
     0x57277741,
@@ -140,8 +141,6 @@ static uint32_t GetMachineEncoding() {
   return 40;  // EM_ARM
 #  elif defined(JS_CODEGEN_ARM64)
   return 183;  // EM_AARCH64
-#  elif defined(JS_CODEGEN_MIPS32)
-  return 8;  // EM_MIPS
 #  elif defined(JS_CODEGEN_MIPS64)
   return 8;  // EM_MIPS
 #  else
@@ -369,13 +368,14 @@ bool js::jit::PerfEnabled() {
 }
 
 void InlineCachePerfSpewer::recordInstruction(MacroAssembler& masm,
-                                              CacheOp op) {
+                                              const CacheOp& op) {
   if (!PerfIREnabled()) {
     return;
   }
   AutoLockPerfSpewer lock;
 
-  if (!opcodes_.emplaceBack(masm.currentOffset(), static_cast<unsigned>(op))) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_,
+                            static_cast<uint32_t>(op))) {
     opcodes_.clear();
     DisablePerfSpewer(lock);
   }
@@ -409,8 +409,8 @@ void IonPerfSpewer::recordInstruction(MacroAssembler& masm, LInstruction* ins) {
     opcodeStr = buf.release();
   }
 #endif
-  if (!opcodes_.emplaceBack(masm.currentOffset(), static_cast<unsigned>(op),
-                            opcodeStr, bytecodepc)) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_,
+                            static_cast<uint32_t>(op), opcodeStr, bytecodepc)) {
     opcodes_.clear();
     DisablePerfSpewer();
   }
@@ -481,6 +481,21 @@ static void PrintStackValue(JSContext* maybeCx, StackValue* stackVal,
 }
 #endif
 
+[[nodiscard]] bool WasmBaselinePerfSpewer::needsToRecordInstruction() const {
+  return PerfIREnabled() || PerfSrcEnabled();
+}
+
+void WasmBaselinePerfSpewer::recordInstruction(MacroAssembler& masm,
+                                               const wasm::OpBytes& op) {
+  MOZ_ASSERT(needsToRecordInstruction());
+
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_,
+                            op.toPacked())) {
+    opcodes_.clear();
+    DisablePerfSpewer();
+  }
+}
+
 void BaselinePerfSpewer::recordInstruction(MacroAssembler& masm, jsbytecode* pc,
                                            CompilerFrameInfo& frame) {
   if (!PerfIREnabled() && !PerfSrcEnabled()) {
@@ -535,25 +550,30 @@ void BaselinePerfSpewer::recordInstruction(MacroAssembler& masm, jsbytecode* pc,
   }
 #endif
 
-  if (!opcodes_.emplaceBack(masm.currentOffset(), static_cast<unsigned>(op),
-                            opcodeStr, pc)) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_,
+                            static_cast<uint32_t>(op), opcodeStr, pc)) {
     opcodes_.clear();
     DisablePerfSpewer();
   }
 }
 
-const char* BaselinePerfSpewer::CodeName(unsigned op) {
+const char* BaselinePerfSpewer::CodeName(uint32_t op) {
   return js::CodeName(static_cast<JSOp>(op));
 }
 
-const char* BaselineInterpreterPerfSpewer::CodeName(unsigned op) {
+const char* BaselineInterpreterPerfSpewer::CodeName(uint32_t op) {
   return js::CodeName(static_cast<JSOp>(op));
 }
 
-const char* IonPerfSpewer::CodeName(unsigned op) {
+const char* IonPerfSpewer::CodeName(uint32_t op) {
   return js::jit::LIRCodeName(static_cast<LNode::Opcode>(op));
 }
-const char* InlineCachePerfSpewer::CodeName(unsigned op) {
+
+const char* WasmBaselinePerfSpewer::CodeName(uint32_t op) {
+  return wasm::OpBytes::fromPacked(op).toString();
+}
+
+const char* InlineCachePerfSpewer::CodeName(uint32_t op) {
   return js::jit::CacheIRCodeName(static_cast<CacheOp>(op));
 }
 
@@ -641,13 +661,13 @@ void PerfSpewer::recordOffset(MacroAssembler& masm, const char* msg) {
   }
 
   UniqueChars offsetStr = DuplicateString(msg);
-  if (!opcodes_.emplaceBack(masm.currentOffset(), offsetStr)) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_, offsetStr)) {
     opcodes_.clear();
     DisablePerfSpewer();
   }
 }
 
-void PerfSpewer::saveJitCodeIRInfo(JitCode* code, AutoLockPerfSpewer& lock) {
+void PerfSpewer::saveIRInfo(uintptr_t base, AutoLockPerfSpewer& lock) {
 #ifdef JS_ION_PERF
   static uint32_t filenameCounter = 0;
   UniqueChars scriptFilename;
@@ -673,7 +693,7 @@ void PerfSpewer::saveJitCodeIRInfo(JitCode* code, AutoLockPerfSpewer& lock) {
       sizeof(debug_record) + n_records * (sizeof(JitDumpDebugEntry) +
                                           strlen(scriptFilename.get()) + 1);
   debug_record.header.timestamp = GetMonotonicTimestamp();
-  debug_record.code_addr = uint64_t(code->raw());
+  debug_record.code_addr = uint64_t(base);
   debug_record.nr_entry = n_records;
 
   WriteToJitDumpFile(&debug_record, sizeof(debug_record), lock);
@@ -686,7 +706,7 @@ void PerfSpewer::saveJitCodeIRInfo(JitCode* code, AutoLockPerfSpewer& lock) {
     } else {
       fprintf(scriptFile, "%s\n", CodeName(entry.opcode));
     }
-    uint64_t addr = uint64_t(code->raw()) + entry.offset;
+    uint64_t addr = uint64_t(base) + entry.offset;
     uint64_t lineno = i + 1;
     WriteJitDumpDebugEntry(addr, scriptFilename.get(), lineno,
                            JS::LimitedColumnNumberOneOrigin(), lock);
@@ -764,24 +784,42 @@ static UniqueChars GetFunctionDesc(const char* tierName, JSContext* cx,
                      script->lineno(), script->column().oneOriginValue());
 }
 
-void PerfSpewer::saveDebugInfo(JSScript* script, JitCode* code,
-                               AutoLockPerfSpewer& lock) {
+void PerfSpewer::saveJitCodeDebugInfo(JSScript* script, JitCode* code,
+                                      AutoLockPerfSpewer& lock) {
   MOZ_ASSERT(code);
   if (PerfIREnabled()) {
-    saveJitCodeIRInfo(code, lock);
+    saveIRInfo(uintptr_t(code->raw()), lock);
   } else if (PerfSrcEnabled() && script) {
     saveJitCodeSourceInfo(script, code, lock);
   }
 }
 
-void PerfSpewer::saveProfile(JitCode* code, UniqueChars& desc,
-                             JSScript* script) {
+void PerfSpewer::saveWasmCodeDebugInfo(uintptr_t base,
+                                       AutoLockPerfSpewer& lock) {
+  if (PerfIREnabled()) {
+    saveIRInfo(base, lock);
+  }
+}
+
+void PerfSpewer::saveJSProfile(JitCode* code, UniqueChars& desc,
+                               JSScript* script) {
   MOZ_ASSERT(PerfEnabled());
   MOZ_ASSERT(code && desc);
   AutoLockPerfSpewer lock;
 
-  saveDebugInfo(script, code, lock);
+  saveJitCodeDebugInfo(script, code, lock);
   CollectJitCodeInfo(desc, code, lock);
+}
+
+void PerfSpewer::saveWasmProfile(uintptr_t base, size_t size,
+                                 UniqueChars& desc) {
+  MOZ_ASSERT(PerfEnabled());
+  MOZ_ASSERT(desc);
+  AutoLockPerfSpewer lock;
+
+  saveWasmCodeDebugInfo(base, lock);
+  PerfSpewer::CollectJitCodeInfo(desc, reinterpret_cast<void*>(base),
+                                 uint64_t(size), lock);
 }
 
 IonICPerfSpewer::IonICPerfSpewer(jsbytecode* pc) {
@@ -843,7 +881,7 @@ void IonICPerfSpewer::saveProfile(JSContext* cx, JSScript* script,
     return;
   }
   UniqueChars desc = GetFunctionDesc("IonIC", cx, script, stubName);
-  PerfSpewer::saveProfile(code, desc, script);
+  PerfSpewer::saveJSProfile(code, desc, script);
 }
 
 void BaselineICPerfSpewer::saveProfile(JitCode* code, const char* stubName) {
@@ -851,7 +889,7 @@ void BaselineICPerfSpewer::saveProfile(JitCode* code, const char* stubName) {
     return;
   }
   UniqueChars desc = JS_smprintf("BaselineIC: %s", stubName);
-  PerfSpewer::saveProfile(code, desc, nullptr);
+  PerfSpewer::saveJSProfile(code, desc, nullptr);
 }
 
 void BaselinePerfSpewer::saveProfile(JSContext* cx, JSScript* script,
@@ -860,7 +898,7 @@ void BaselinePerfSpewer::saveProfile(JSContext* cx, JSScript* script,
     return;
   }
   UniqueChars desc = GetFunctionDesc("Baseline", cx, script);
-  PerfSpewer::saveProfile(code, desc, script);
+  PerfSpewer::saveJSProfile(code, desc, script);
 }
 
 void BaselineInterpreterPerfSpewer::saveProfile(JitCode* code) {
@@ -884,7 +922,7 @@ void BaselineInterpreterPerfSpewer::saveProfile(JitCode* code) {
   // and emit the opcodes as IR if IONPERF=ir is used.
   if (kind == SpewKind::SingleSym) {
     UniqueChars desc = DuplicateString("BaselineInterpreter");
-    PerfSpewer::saveProfile(code, desc, nullptr);
+    PerfSpewer::saveJSProfile(code, desc, nullptr);
     return;
   }
 
@@ -916,12 +954,13 @@ void BaselineInterpreterPerfSpewer::saveProfile(JitCode* code) {
 }
 
 void BaselineInterpreterPerfSpewer::recordOffset(MacroAssembler& masm,
-                                                 JSOp op) {
+                                                 const JSOp& op) {
   if (!PerfEnabled()) {
     return;
   }
 
-  if (!opcodes_.emplaceBack(masm.currentOffset(), unsigned(op))) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_,
+                            unsigned(op))) {
     opcodes_.clear();
     DisablePerfSpewer();
   }
@@ -934,19 +973,35 @@ void BaselineInterpreterPerfSpewer::recordOffset(MacroAssembler& masm,
   }
 
   UniqueChars desc = DuplicateString(name);
-  if (!opcodes_.emplaceBack(masm.currentOffset(), desc)) {
+  if (!opcodes_.emplaceBack(masm.currentOffset() - startOffset_, desc)) {
     opcodes_.clear();
     DisablePerfSpewer();
   }
 }
 
-void IonPerfSpewer::saveProfile(JSContext* cx, JSScript* script,
-                                JitCode* code) {
+void IonPerfSpewer::saveJSProfile(JSContext* cx, JSScript* script,
+                                  JitCode* code) {
   if (!PerfEnabled()) {
     return;
   }
   UniqueChars desc = GetFunctionDesc("Ion", cx, script);
-  PerfSpewer::saveProfile(code, desc, script);
+  PerfSpewer::saveJSProfile(code, desc, script);
+}
+
+void IonPerfSpewer::saveWasmProfile(uintptr_t codeBase, size_t codeSize,
+                                    UniqueChars& desc) {
+  if (!PerfEnabled()) {
+    return;
+  }
+  PerfSpewer::saveWasmProfile(codeBase, codeSize, desc);
+}
+
+void WasmBaselinePerfSpewer::saveProfile(uintptr_t codeBase, size_t codeSize,
+                                         UniqueChars& desc) {
+  if (!PerfEnabled()) {
+    return;
+  }
+  PerfSpewer::saveWasmProfile(codeBase, codeSize, desc);
 }
 
 void js::jit::CollectPerfSpewerJitCodeProfile(JitCode* code, const char* msg) {
@@ -979,29 +1034,12 @@ void js::jit::CollectPerfSpewerJitCodeProfile(uintptr_t base, uint64_t size,
 }
 
 void js::jit::CollectPerfSpewerWasmMap(uintptr_t base, uintptr_t size,
-                                       const char* filename,
-                                       const char* annotation) {
+                                       UniqueChars&& desc) {
   if (size == 0U || !PerfEnabled()) {
     return;
   }
   AutoLockPerfSpewer lock;
 
-  UniqueChars desc = JS_smprintf("%s: Function %s", filename, annotation);
-  PerfSpewer::CollectJitCodeInfo(desc, reinterpret_cast<void*>(base),
-                                 uint64_t(size), lock);
-}
-
-void js::jit::CollectPerfSpewerWasmFunctionMap(uintptr_t base, uintptr_t size,
-                                               const char* filename,
-                                               unsigned lineno,
-                                               const char* funcName) {
-  if (size == 0U || !PerfEnabled()) {
-    return;
-  }
-  AutoLockPerfSpewer lock;
-
-  UniqueChars desc =
-      JS_smprintf("%s:%u: Function %s", filename, lineno, funcName);
   PerfSpewer::CollectJitCodeInfo(desc, reinterpret_cast<void*>(base),
                                  uint64_t(size), lock);
 }

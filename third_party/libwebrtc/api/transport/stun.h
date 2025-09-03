@@ -294,19 +294,6 @@ class StunMessage {
   bool EqualAttributes(const StunMessage* other,
                        std::function<bool(int type)> attribute_type_mask) const;
 
-  // Validates that a STUN message in byte buffer form
-  // has a correct MESSAGE-INTEGRITY value.
-  // These functions are not recommended and will be deprecated; use
-  // ValidateMessageIntegrity(password) on the parsed form instead.
-  [[deprecated("Use member function")]] static bool ValidateMessageIntegrity(
-      const char* data,
-      size_t size,
-      const std::string& password);
-  [[deprecated("Use member function")]] static bool ValidateMessageIntegrity32(
-      const char* data,
-      size_t size,
-      const std::string& password);
-
   // Expose raw-buffer ValidateMessageIntegrity function for testing.
   static bool ValidateMessageIntegrityForTesting(const char* data,
                                                  size_t size,
@@ -358,7 +345,7 @@ class StunAttribute {
   virtual StunAttributeValueType value_type() const = 0;
 
   // Only XorAddressAttribute needs this so far.
-  virtual void SetOwner(StunMessage* owner) {}
+  virtual void SetOwner(StunMessage* /* owner */) {}
 
   // Reads the body (not the type or length) for this type of attribute from
   // the given buffer.  Return value is true if successful.
@@ -735,6 +722,9 @@ enum IceAttributeType {
   STUN_ATTR_GOOG_DELTA_SYNC_REQ = 0xC05E,  // Not yet implemented.
   // MESSAGE-INTEGRITY truncated to 32-bit.
   STUN_ATTR_GOOG_MESSAGE_INTEGRITY_32 = 0xC060,
+  // Experimental: piggybacking the DTLS handshake in STUN.
+  STUN_ATTR_META_DTLS_IN_STUN = 0xC070,
+  STUN_ATTR_META_DTLS_IN_STUN_ACK = 0xC071,
 };
 
 // When adding new attributes to STUN_ATTR_GOOG_MISC_INFO

@@ -3269,6 +3269,10 @@ static bool CheckArguments(FunctionValidatorShared& f, ParseNode** stmtIter,
     }
   }
 
+  if (argTypes->length() > MaxParams) {
+    return f.fail(stmt, "too many parameters");
+  }
+
   *stmtIter = stmt;
   return true;
 }
@@ -3989,6 +3993,9 @@ static bool CheckCallArgs(FunctionValidator<Unit>& f, ParseNode* callNode,
       return false;
     }
   }
+  if (args->length() > MaxParams) {
+    return f.fail(callNode, "too many parameters");
+  }
   return true;
 }
 
@@ -4005,10 +4012,6 @@ template <typename Unit>
 static bool CheckFunctionSignature(ModuleValidator<Unit>& m, ParseNode* usepn,
                                    FuncType&& sig, TaggedParserAtomIndex name,
                                    ModuleValidatorShared::Func** func) {
-  if (sig.args().length() > MaxParams) {
-    return m.failf(usepn, "too many parameters");
-  }
-
   ModuleValidatorShared::Func* existing = m.lookupFuncDef(name);
   if (!existing) {
     if (!CheckModuleLevelName(m, usepn, name)) {
@@ -7235,7 +7238,7 @@ bool js::IsAsmJSStrictModeModuleOrFunction(JSFunction* fun) {
   }
 
   if (IsAsmJSFunction(fun)) {
-    return ExportedFunctionToInstance(fun).codeMetaForAsmJS()->asAsmJS().strict;
+    return fun->wasmInstance().codeMetaForAsmJS()->asAsmJS().strict;
   }
 
   return false;
@@ -7340,9 +7343,9 @@ JSString* js::AsmJSFunctionToString(JSContext* cx, HandleFunction fun) {
   MOZ_ASSERT(IsAsmJSFunction(fun));
 
   const CodeMetadataForAsmJSImpl& codeMetaForAsmJS =
-      ExportedFunctionToInstance(fun).codeMetaForAsmJS()->asAsmJS();
+      fun->wasmInstance().codeMetaForAsmJS()->asAsmJS();
   const AsmJSExport& f =
-      codeMetaForAsmJS.lookupAsmJSExport(ExportedFunctionToFuncIndex(fun));
+      codeMetaForAsmJS.lookupAsmJSExport(fun->wasmFuncIndex());
 
   uint32_t begin = codeMetaForAsmJS.srcStart + f.startOffsetInModule();
   uint32_t end = codeMetaForAsmJS.srcStart + f.endOffsetInModule();

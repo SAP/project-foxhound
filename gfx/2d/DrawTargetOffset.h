@@ -40,6 +40,9 @@ class SourceSurfaceOffset : public SourceSurface {
   virtual already_AddRefed<SourceSurface> GetUnderlyingSurface() override {
     return mSurface->GetUnderlyingSurface();
   }
+  virtual SurfaceType GetUnderlyingType() const override {
+    return mSurface->GetUnderlyingType();
+  }
 
  private:
   RefPtr<SourceSurface> mSurface;
@@ -123,6 +126,9 @@ class DrawTargetOffset : public DrawTarget {
   virtual void PushClip(const Path* aPath) override;
   virtual void PushClipRect(const Rect& aRect) override;
   virtual void PopClip() override;
+  virtual bool RemoveAllClips() override {
+    return mDrawTarget->RemoveAllClips();
+  }
   virtual void PushLayer(bool aOpaque, Float aOpacity, SourceSurface* aMask,
                          const Matrix& aMaskTransform,
                          const IntRect& aBounds = IntRect(),

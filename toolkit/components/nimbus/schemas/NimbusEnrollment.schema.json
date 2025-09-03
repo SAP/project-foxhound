@@ -122,7 +122,24 @@
           "type": "null"
         }
       ],
-      "description": "An optional string containing the Fluent ID for the title of the opt-in"
+      "description": "The title shown in Firefox Labs (Fluent ID)"
+    },
+    "firefoxLabsDescriptionLinks": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "format": "uri",
+            "maxLength": 2083,
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Links that will be used with the firefoxLabsDescription Fluent ID. May be null for Firefox Labs Opt-In recipes that do not use links."
     },
     "firefoxLabsDescription": {
       "anyOf": [
@@ -133,7 +150,22 @@
           "type": "null"
         }
       ],
-      "description": "An optional string containing the Fluent ID for the description of the opt-in"
+      "description": "The title shown in Firefox Labs (Fluent ID)"
+    },
+    "firefoxLabsGroup": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "The group this should appear under in Firefox Labs"
+    },
+    "requiresRestart": {
+      "description": "Does the experiment require a restart to take effect? Only used by Firefox Labs Opt-Ins.",
+      "type": "boolean"
     }
   },
   "required": [

@@ -14,6 +14,7 @@
 // Global includes
 #include <utility>
 #include "MainThreadUtils.h"
+#include "mozilla/AppShutdown.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/ErrorResult.h"
 #include "mozilla/MacroForEach.h"
@@ -32,11 +33,10 @@
 #include "mozilla/dom/PBackgroundLSRequest.h"
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
 #include "mozilla/dom/quota/PrincipalUtils.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomLocalstorageMetrics.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
-#include "mozilla/ipc/ProcessChild.h"
 #include "nsCOMPtr.h"
 #include "nsContentUtils.h"
 #include "nsDebug.h"
@@ -896,7 +896,12 @@ nsresult LSObject::EnsureDatabase() {
     return NS_OK;
   }
 
-  auto latencyTimerId = glean::ls_preparelsdatabase::processing_time.Start();
+  auto timerId = glean::localstorage_database::new_object_setup_time.Start();
+
+  auto autoCancelTimer = MakeScopeExit([&timerId] {
+    glean::localstorage_database::new_object_setup_time.Cancel(
+        std::move(timerId));
+  });
 
   // We don't need this yet, but once the request successfully finishes, it's
   // too late to initialize PBackground child on the owning thread, because
@@ -948,13 +953,15 @@ nsresult LSObject::EnsureDatabase() {
 
   database->SetActor(actor);
 
-  glean::ls_preparelsdatabase::processing_time.StopAndAccumulate(
-      std::move(latencyTimerId));
-
   if (prepareDatastoreResponse.invalidated()) {
     database->RequestAllowToClose();
     return NS_ERROR_ABORT;
   }
+
+  autoCancelTimer.release();
+
+  glean::localstorage_database::new_object_setup_time.StopAndAccumulate(
+      std::move(timerId));
 
   mDatabase = std::move(database);
 
@@ -1074,7 +1081,7 @@ nsresult RequestHelper::StartAndReturnResponse(LSRequestResponse& aResponse) {
     // dispatch ourselves to the DOM File thread to cancel the operation.  We
     // don't abort until the cancellation has gone through, as otherwise we
     // could race with the DOM File thread.
-    if (mozilla::ipc::ProcessChild::ExpectingShutdown() || now >= deadline) {
+    if (AppShutdown::IsShutdownImpending() || now >= deadline) {
       switch (mState) {
         case State::Initial:
           // The DOM File thread never even woke before ExpectingShutdown() or a
@@ -1150,7 +1157,7 @@ RequestHelper::Run() {
       // be destroyed anyway.
       if (mActor && !mActor->Finishing()) {
         if (mActor->SendCancel()) {
-          glean::ls_request::send_cancellation.Add();
+          glean::localstorage_request::send_cancel_counter.Add();
         }
       }
 

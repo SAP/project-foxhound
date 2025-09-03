@@ -18,8 +18,8 @@
 #include "ScopedNSSTypes.h"
 #include "mozilla/RandomNum.h"
 #include "mozilla/RefPtr.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/ScopeExit.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/net/DNS.h"
 #include "nsHttpHandler.h"
 #include "nsIHttpActivityObserver.h"
@@ -138,6 +138,11 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
 
   mUseNSPRForIO = StaticPrefs::network_http_http3_use_nspr_for_io();
 
+  uint32_t idleTimeout =
+      mConnInfo->GetIsTrrServiceChannel()
+          ? StaticPrefs::network_trr_idle_timeout_for_http3_conn()
+          : StaticPrefs::network_http_http3_idle_timeout();
+
   nsresult rv;
   if (mUseNSPRForIO) {
     rv = NeqoHttp3Conn::InitUseNSPRForIO(
@@ -149,7 +154,7 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
         StaticPrefs::network_http_http3_version_negotiation_enabled(),
         mConnInfo->GetWebTransport(), gHttpHandler->Http3QlogDir(),
         datagramSize, StaticPrefs::network_http_http3_max_accumlated_time_ms(),
-        aProviderFlags, getter_AddRefs(mHttp3Connection));
+        aProviderFlags, idleTimeout, getter_AddRefs(mHttp3Connection));
   } else {
     rv = NeqoHttp3Conn::Init(
         mConnInfo->GetOrigin(), mConnInfo->GetNPNToken(), selfAddr, peerAddr,
@@ -160,7 +165,7 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
         StaticPrefs::network_http_http3_version_negotiation_enabled(),
         mConnInfo->GetWebTransport(), gHttpHandler->Http3QlogDir(),
         datagramSize, StaticPrefs::network_http_http3_max_accumlated_time_ms(),
-        aProviderFlags, socket->GetFileDescriptor(),
+        aProviderFlags, idleTimeout, socket->GetFileDescriptor(),
         getter_AddRefs(mHttp3Connection));
   }
   if (NS_FAILED(rv)) {
@@ -182,11 +187,14 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
     return servCertHashes && !servCertHashes->IsEmpty();
   };
 
+  auto config = mConnInfo->GetEchConfig();
+
   // In WebTransport, when servCertHashes is specified, it indicates that the
   // connection to the WebTransport server should authenticate using the
   // expected certificate hash. Therefore, 0RTT should be disabled in this
   // context to ensure the certificate hash is checked.
-  if (StaticPrefs::network_http_http3_enable_0rtt() && !hasServCertHashes() &&
+  if (StaticPrefs::network_http_http3_enable_0rtt() && config.IsEmpty() &&
+      !hasServCertHashes() &&
       NS_SUCCEEDED(SSLTokensCache::Get(peerId, token, info))) {
     LOG(("Found a resumption token in the cache."));
     mHttp3Connection->SetResumptionToken(token);
@@ -218,7 +226,6 @@ nsresult Http3Session::Init(const nsHttpConnectionInfo* aConnInfo,
   }
 #endif
 
-  auto config = mConnInfo->GetEchConfig();
   if (config.IsEmpty()) {
     if (StaticPrefs::security_tls_ech_grease_http3() && config.IsEmpty()) {
       if ((RandomUint64().valueOr(0) % 100) >=
@@ -376,26 +383,16 @@ Http3Session::~Http3Session() {
 #ifndef ANDROID
   EchOutcomeTelemetry();
 #endif
-  Telemetry::Accumulate(Telemetry::HTTP3_REQUEST_PER_CONN, mTransactionCount);
-  Telemetry::Accumulate(Telemetry::HTTP3_BLOCKED_BY_STREAM_LIMIT_PER_CONN,
-                        mBlockedByStreamLimitCount);
-  Telemetry::Accumulate(Telemetry::HTTP3_TRANS_BLOCKED_BY_STREAM_LIMIT_PER_CONN,
-                        mTransactionsBlockedByStreamLimitCount);
+  glean::http3::request_per_conn.AccumulateSingleSample(mTransactionCount);
+  glean::http3::blocked_by_stream_limit_per_conn.AccumulateSingleSample(
+      mBlockedByStreamLimitCount);
+  glean::http3::trans_blocked_by_stream_limit_per_conn.AccumulateSingleSample(
+      mTransactionsBlockedByStreamLimitCount);
 
-  Telemetry::Accumulate(
-      Telemetry::HTTP3_TRANS_SENDING_BLOCKED_BY_FLOW_CONTROL_PER_CONN,
-      mTransactionsSenderBlockedByFlowControlCount);
+  glean::http3::trans_sending_blocked_by_flow_control_per_conn
+      .AccumulateSingleSample(mTransactionsSenderBlockedByFlowControlCount);
 
   Shutdown();
-
-  // We only record the average interval for performance reason.
-  if (mTotelReadInterval) {
-    nsAutoCString key(mServer.EqualsLiteral("cloudflare") ? "cloudflare"_ns
-                                                          : "others"_ns);
-    glean::network::http3_avg_read_interval.Get(key).AccumulateRawDuration(
-        TimeDuration::FromMilliseconds(
-            static_cast<double>(mTotelReadInterval / mTotelReadIntervalCount)));
-  }
 }
 
 // This function may return a socket error.
@@ -411,15 +408,6 @@ nsresult Http3Session::ProcessInput(nsIUDPSocket* socket) {
   LOG(("Http3Session::ProcessInput writer=%p [this=%p state=%d]",
        mUdpConn.get(), this, mState));
 
-  PRIntervalTime now = PR_IntervalNow();
-  if (!mLastReadTime) {
-    mLastReadTime = now;
-  } else {
-    mTotelReadInterval +=
-        PR_IntervalToMilliseconds(PR_IntervalNow() - mLastReadTime);
-    mTotelReadIntervalCount++;
-    mLastReadTime = now;
-  }
   if (mUseNSPRForIO) {
     while (true) {
       nsTArray<uint8_t> data;
@@ -1029,8 +1017,14 @@ nsresult Http3Session::ProcessOutputAndEvents(nsIUDPSocket* socket) {
 
   MOZ_ASSERT(mTimerShouldTrigger);
 
-  Telemetry::AccumulateTimeDelta(Telemetry::HTTP3_TIMER_DELAYED,
-                                 mTimerShouldTrigger, TimeStamp::Now());
+  auto now = TimeStamp::Now();
+  if (mTimerShouldTrigger > now) {
+    // See bug 1935459
+    glean::http3::timer_delayed.AccumulateRawDuration(0);
+  } else {
+    glean::http3::timer_delayed.AccumulateRawDuration(now -
+                                                      mTimerShouldTrigger);
+  }
 
   mTimerShouldTrigger = TimeStamp();
 
@@ -1086,10 +1080,19 @@ bool Http3Session::AddStream(nsAHttpTransaction* aHttpTransaction,
 
   nsHttpTransaction* trans = aHttpTransaction->QueryHttpTransaction();
 
+  bool firstStream = false;
   if (!mConnection) {
     // Get the connection from the first transaction.
     mConnection = aHttpTransaction->Connection();
+    firstStream = true;
   }
+
+  // Make sure we report the connectStart
+  auto reportConnectStart = MakeScopeExit([&] {
+    if (firstStream) {
+      OnTransportStatus(nullptr, NS_NET_STATUS_CONNECTING_TO, 0);
+    }
+  });
 
   if (IsClosing()) {
     LOG3(
@@ -1726,8 +1729,8 @@ void Http3Session::Close(nsresult aReason) {
     mError = aReason;
     // If necko closes connection, this will map to the "closing" key and the
     // value HTTP3_TELEMETRY_APP_NECKO.
-    Telemetry::Accumulate(Telemetry::HTTP3_CONNECTION_CLOSE_CODE_3,
-                          "app_closing"_ns, HTTP3_TELEMETRY_APP_NECKO);
+    glean::http3::connection_close_code.Get("app_closing"_ns)
+        .AccumulateSingleSample(HTTP3_TELEMETRY_APP_NECKO);
     CloseInternal(true);
   }
 
@@ -2241,7 +2244,7 @@ void Http3Session::CallCertVerification(Maybe<nsCString> aEchPublicName) {
         return;
       }
       // ok, we succeded
-      Authenticated(0);
+      Authenticated(0, true);
       return;
     }
   }
@@ -2279,7 +2282,8 @@ void Http3Session::CallCertVerification(Maybe<nsCString> aEchPublicName) {
   }
 }
 
-void Http3Session::Authenticated(int32_t aError) {
+void Http3Session::Authenticated(int32_t aError,
+                                 bool aServCertHashesSucceeded) {
   LOG(("Http3Session::Authenticated error=0x%" PRIx32 " [this=%p].", aError,
        this));
   if ((mState == INITIALIZING) || (mState == ZERORTT)) {
@@ -2296,9 +2300,12 @@ void Http3Session::Authenticated(int32_t aError) {
               ? StaticPrefs::
                     network_http_http3_has_third_party_roots_found_in_automation()
               : !mSocketControl->IsBuiltCertChainRootBuiltInRoot();
-      LOG(("Http3Session::Authenticated [this=%p, hasThirdPartyRoots=%d]", this,
-           hasThirdPartyRoots));
-      if (hasThirdPartyRoots) {
+      LOG(
+          ("Http3Session::Authenticated [this=%p, hasThirdPartyRoots=%d, "
+           "servCertHashesSucceeded=%d]",
+           this, hasThirdPartyRoots, aServCertHashesSucceeded));
+      // If serverCertificateHashes is used a thirdPartyRoot is legal
+      if (hasThirdPartyRoots && !aServCertHashesSucceeded) {
         if (mFirstHttpTransaction) {
           mFirstHttpTransaction->DisableHttp3(false);
         }
@@ -2466,40 +2473,44 @@ void Http3Session::CloseConnectionTelemetry(CloseError& aError, bool aClosing) {
 
   key.Append(aClosing ? "_closing"_ns : "_closed"_ns);
 
-  Telemetry::Accumulate(Telemetry::HTTP3_CONNECTION_CLOSE_CODE_3, key, value);
+  glean::http3::connection_close_code.Get(key).AccumulateSingleSample(value);
 
   Http3Stats stats{};
   mHttp3Connection->GetStats(&stats);
 
   if (stats.packets_tx > 0) {
     unsigned long loss = (stats.lost * 10000) / stats.packets_tx;
-    Telemetry::Accumulate(Telemetry::HTTP3_LOSS_RATIO, loss);
+    glean::http3::loss_ratio.AccumulateSingleSample(loss);
 
-    Telemetry::Accumulate(Telemetry::HTTP3_LATE_ACK, "ack"_ns, stats.late_ack);
-    Telemetry::Accumulate(Telemetry::HTTP3_LATE_ACK, "pto"_ns, stats.pto_ack);
+    glean::http3::late_ack.EnumGet(glean::http3::LateAckLabel::eAck)
+        .AccumulateSingleSample(stats.late_ack);
+    glean::http3::late_ack.EnumGet(glean::http3::LateAckLabel::ePto)
+        .AccumulateSingleSample(stats.pto_ack);
 
     unsigned long late_ack_ratio = (stats.late_ack * 10000) / stats.packets_tx;
     unsigned long pto_ack_ratio = (stats.pto_ack * 10000) / stats.packets_tx;
-    Telemetry::Accumulate(Telemetry::HTTP3_LATE_ACK_RATIO, "ack"_ns,
-                          late_ack_ratio);
-    Telemetry::Accumulate(Telemetry::HTTP3_LATE_ACK_RATIO, "pto"_ns,
-                          pto_ack_ratio);
+    glean::http3::late_ack_ratio.EnumGet(glean::http3::LateAckRatioLabel::eAck)
+        .AccumulateSingleSample(late_ack_ratio);
+    glean::http3::late_ack_ratio.EnumGet(glean::http3::LateAckRatioLabel::ePto)
+        .AccumulateSingleSample(pto_ack_ratio);
 
     for (uint32_t i = 0; i < MAX_PTO_COUNTS; i++) {
       nsAutoCString key;
       key.AppendInt(i);
-      Telemetry::Accumulate(Telemetry::HTTP3_COUNTS_PTO, key,
-                            stats.pto_counts[i]);
+      glean::http3::counts_pto.Get(key).AccumulateSingleSample(
+          stats.pto_counts[i]);
     }
 
-    Telemetry::Accumulate(Telemetry::HTTP3_DROP_DGRAMS, stats.dropped_rx);
-    Telemetry::Accumulate(Telemetry::HTTP3_SAVED_DGRAMS, stats.saved_datagrams);
+    glean::http3::drop_dgrams.AccumulateSingleSample(stats.dropped_rx);
+    glean::http3::saved_dgrams.AccumulateSingleSample(stats.saved_datagrams);
   }
 
-  Telemetry::Accumulate(Telemetry::HTTP3_RECEIVED_SENT_DGRAMS, "received"_ns,
-                        stats.packets_rx);
-  Telemetry::Accumulate(Telemetry::HTTP3_RECEIVED_SENT_DGRAMS, "sent"_ns,
-                        stats.packets_tx);
+  glean::http3::received_sent_dgrams
+      .EnumGet(glean::http3::ReceivedSentDgramsLabel::eReceived)
+      .AccumulateSingleSample(stats.packets_rx);
+  glean::http3::received_sent_dgrams
+      .EnumGet(glean::http3::ReceivedSentDgramsLabel::eSent)
+      .AccumulateSingleSample(stats.packets_tx);
 }
 
 void Http3Session::Finish0Rtt(bool aRestart) {
@@ -2540,21 +2551,21 @@ void Http3Session::ReportHttp3Connection() {
 void Http3Session::EchOutcomeTelemetry() {
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
 
-  nsAutoCString key;
+  glean::http3::EchOutcomeLabel label;
   switch (mEchExtensionStatus) {
     case EchExtensionStatus::kNotPresent:
-      key = "NONE";
+      label = glean::http3::EchOutcomeLabel::eNone;
       break;
     case EchExtensionStatus::kGREASE:
-      key = "GREASE";
+      label = glean::http3::EchOutcomeLabel::eGrease;
       break;
     case EchExtensionStatus::kReal:
-      key = "REAL";
+      label = glean::http3::EchOutcomeLabel::eReal;
       break;
   }
 
-  Telemetry::Accumulate(Telemetry::HTTP3_ECH_OUTCOME, key,
-                        mHandshakeSucceeded ? 0 : 1);
+  glean::http3::ech_outcome.EnumGet(label).AccumulateSingleSample(
+      mHandshakeSucceeded ? 0 : 1);
 }
 
 void Http3Session::ZeroRttTelemetry(ZeroRttOutcome aOutcome) {

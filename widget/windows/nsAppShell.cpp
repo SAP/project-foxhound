@@ -464,6 +464,9 @@ WindowsDiagnosticsError CollectUser32SingleStepData(
 //
 /* static */ [[clang::optnone]] MOZ_NEVER_INLINE HWND
 nsAppShell::StaticCreateEventWindow() {
+  // This code path would fail at CreateWindowW under win32k lockdown.
+  MOZ_RELEASE_ASSERT(!IsWin32kLockedDown());
+
   // note the incoming error-state; this may be relevant to errors we get later
   auto _initialErr [[maybe_unused]] = WinErrorState::Get();
   // reset the error-state, to avoid ambiguity below
@@ -619,17 +622,23 @@ nsresult nsAppShell::Init() {
     if (nsresult rv = this->InitEventWindow(); NS_FAILED(rv)) {
       return rv;
     }
-  } else if (XRE_IsContentProcess() && !IsWin32kLockedDown()) {
-    // We're not generally processing native events, but still using GDI and we
-    // still have some internal windows, e.g. from calling CoInitializeEx.
-    // So we use a class that will do a single event pump where previously we
-    // might have processed multiple events to make sure any occasional messages
-    // to these windows are processed. This also allows any internal Windows
-    // messages to be processed to ensure the GDI data remains fresh.
-    nsCOMPtr<nsIThreadInternal> threadInt =
-        do_QueryInterface(NS_GetCurrentThread());
-    if (threadInt) {
-      threadInt->SetObserver(new SingleNativeEventPump());
+  } else {
+    // Load winmm.dll because it is still needed by our event loop and might not
+    // get loaded before we lower the sandbox.
+    ::LoadLibraryW(L"winmm.dll");
+
+    if (XRE_IsContentProcess() && !IsWin32kLockedDown()) {
+      // We're not generally processing native events, but still using GDI and
+      // we still have some internal windows, e.g. from calling CoInitializeEx.
+      // So we use a class that will do a single event pump where previously we
+      // might have processed multiple events to make sure any occasional
+      // messages to these windows are processed. This also allows any internal
+      // Windows messages to be processed to ensure the GDI data remains fresh.
+      nsCOMPtr<nsIThreadInternal> threadInt =
+          do_QueryInterface(NS_GetCurrentThread());
+      if (threadInt) {
+        threadInt->SetObserver(new SingleNativeEventPump());
+      }
     }
   }
 
@@ -745,20 +754,6 @@ bool nsAppShell::ProcessNextNativeEvent(bool mayWait) {
 
   do {
     MSG msg;
-
-    // For avoiding deadlock between our process and plugin process by
-    // mouse wheel messages, we're handling actually when we receive one of
-    // following internal messages which is posted by native mouse wheel
-    // message handler. Any other events, especially native modifier key
-    // events, should not be handled between native message and posted
-    // internal message because it may make different modifier key state or
-    // mouse cursor position between them.
-    if (mozilla::widget::MouseScrollHandler::IsWaitingInternalMessage()) {
-      gotMessage = WinUtils::PeekMessage(&msg, nullptr, MOZ_WM_MOUSEWHEEL_FIRST,
-                                         MOZ_WM_MOUSEWHEEL_LAST, PM_REMOVE);
-      NS_ASSERTION(gotMessage,
-                   "waiting internal wheel message, but it has not come");
-    }
 
     if (!gotMessage) {
       gotMessage = WinUtils::PeekMessage(&msg, nullptr, 0, 0, PM_REMOVE);

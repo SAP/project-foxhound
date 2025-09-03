@@ -52,6 +52,29 @@ privacy.ui.fpp.click:
         type: string
     telemetry_mirror: PrivacyUiFpp_Click_Menu
 
+network.proxy.settings:
+  proxy_type_preference:
+    type: event
+    description: >
+      This metric tracks what proxy types users are choosing in the Network Settings dialog
+      at the bottom of about:preferences#general.
+      It gets recorded when pressing OK in the dialog box.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1909436
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1909436
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - necko@mozilla.com
+      - omansfeld@mozilla.com
+    expires: never
+    extra_keys:
+      value:
+        description: >
+          Type of proxy that is selected (DIRECT, MANUAL, PAC, WPAD, SYSTEM, OTHER).
+        type: string
+
 security.doh.settings:
   mode_changed_button:
     type: event
@@ -98,30 +121,6 @@ security.doh.settings:
           event's `value` parameter.
         type: string
     telemetry_mirror: SecurityDohSettings_ProviderChoice_Value
-
-  warn_checkbox_checkbox:
-    type: event
-    description: >
-      User clicked the Warn if a third party actively prevents secure DNS
-      checkbox in about:preferences#privacy. Value is true or false,
-      reflecting if box is checked or unchecked.
-      This event was generated to correspond to the Legacy Telemetry event
-      security.doh.settings.warn_checkbox#checkbox.
-    bugs:
-      - https://bugzil.la/1829905
-    data_reviews:
-      - https://bugzil.la/1829905
-    notification_emails:
-      - vgosu@mozilla.com
-      - necko@mozilla.com
-    expires: never
-    extra_keys:
-      value:
-        description: >
-          The `value` of the event. Mirrors to the Legacy Telemetry
-          event's `value` parameter.
-        type: string
-    telemetry_mirror: SecurityDohSettings_WarnCheckbox_Checkbox
 
 intl.ui.browser_language:
   manage_main:

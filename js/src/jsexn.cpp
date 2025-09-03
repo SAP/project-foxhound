@@ -221,10 +221,6 @@ struct SuppressErrorsGuard {
   ~SuppressErrorsGuard() { JS::SetWarningReporter(cx, prevReporter); }
 };
 
-// Cut off the stack if it gets too deep (most commonly for infinite recursion
-// errors).
-static const size_t MAX_REPORTED_STACK_DEPTH = 1u << 7;
-
 bool js::CaptureStack(JSContext* cx, MutableHandleObject stack) {
   return CaptureCurrentStack(
       cx, stack, JS::StackCapture(JS::MaxFrames(MAX_REPORTED_STACK_DEPTH)));
@@ -802,8 +798,8 @@ const char* js::ValueToSourceForError(JSContext* cx, HandleValue val,
   }
 
   JSStringBuilder sb(cx);
-  if (val.hasObjectPayload()) {
-    RootedObject valObj(cx, &val.getObjectPayload());
+  if (val.isObject()) {
+    RootedObject valObj(cx, &val.toObject());
     ESClass cls;
     if (!JS::GetBuiltinClass(cx, valObj, &cls)) {
       return "<<error determining class of value>>";
@@ -815,12 +811,6 @@ const char* js::ValueToSourceForError(JSContext* cx, HandleValue val,
       s = "the array buffer ";
     } else if (JS_IsArrayBufferViewObject(valObj)) {
       s = "the typed array ";
-#ifdef ENABLE_RECORD_TUPLE
-    } else if (cls == ESClass::Record) {
-      s = "the record ";
-    } else if (cls == ESClass::Tuple) {
-      s = "the tuple ";
-#endif
     } else {
       s = "the object ";
     }

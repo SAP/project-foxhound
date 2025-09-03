@@ -113,6 +113,8 @@
 
 #include "gfxPlatform.h"
 
+#include "mozilla/GeckoTrace.h"
+
 using base::AtExitManager;
 using mozilla::ipc::IOThreadParent;
 
@@ -468,6 +470,11 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   mozilla::InitPHCState();
 #endif
 
+#ifdef MOZ_MEMORY
+  // We did set up our main thread earlier and can read prefs now.
+  mozilla::TaskController::SetupIdleMemoryCleanup();
+#endif
+
   // After autoreg, but before we actually instantiate any components,
   // add any services listed in the "xpcom-directory-providers" category
   // to the directory service.
@@ -495,6 +502,8 @@ NS_InitXPCOM(nsIServiceManager** aResult, nsIFile* aBinDirectory,
   RegisterStrongMemoryReporter(new ICUReporter());
   RegisterStrongMemoryReporter(new OggReporter());
   xpc::SelfHostedShmem::GetSingleton().InitMemoryReporter();
+
+  mozilla::gecko_trace::Init();
 
   mozilla::Telemetry::Init();
 
@@ -557,6 +566,7 @@ NS_InitMinimalXPCOM() {
   }
 
   mozilla::SharedThreadPool::InitStatics();
+  mozilla::gecko_trace::Init();
   mozilla::Telemetry::Init();
   mozilla::BackgroundHangMonitor::Startup();
 

@@ -62,6 +62,7 @@
 #include "nsFlexContainerFrame.h"
 #include "nsFocusManager.h"
 #include "nsFrameList.h"
+#include "nsFrameState.h"
 #include "nsTextControlFrame.h"
 #include "nsPlaceholderFrame.h"
 #include "nsIBaseWindow.h"
@@ -232,7 +233,7 @@ static void SetOrUpdateRectValuedProperty(
 
 FrameDestroyContext::~FrameDestroyContext() {
   for (auto& content : mozilla::Reversed(mAnonymousContent)) {
-    mPresShell->NativeAnonymousContentRemoved(content);
+    mPresShell->NativeAnonymousContentWillBeRemoved(content);
     content->UnbindFromTree();
   }
 }
@@ -817,7 +818,8 @@ void nsIFrame::Destroy(DestroyContext& aContext) {
 
   MaybeScheduleReflowSVGNonDisplayText(this);
 
-  SVGObserverUtils::InvalidateDirectRenderingObservers(this);
+  SVGObserverUtils::InvalidateDirectRenderingObservers(
+      this, SVGObserverUtils::INVALIDATE_DESTROY);
 
   const auto* disp = StyleDisplay();
   if (disp->mPosition == StylePositionProperty::Sticky) {
@@ -1254,7 +1256,7 @@ void nsIFrame::DidSetComputedStyle(ComputedStyle* aOldComputedStyle) {
       const nsStylePosition* pos = StylePosition();
       const nsStylePosition* oldPos = aOldComputedStyle->StylePosition();
       if (!needAnchorSuppression &&
-          (!oldPos->InsetEquals(*pos) ||
+          (oldPos->mOffset != pos->mOffset ||
            oldPos->GetWidth() != pos->GetWidth() ||
            oldPos->GetMinWidth() != pos->GetMinWidth() ||
            oldPos->GetMaxWidth() != pos->GetMaxWidth() ||
@@ -1759,6 +1761,7 @@ bool nsIFrame::Extend3DContext(const nsStyleDisplay* aStyleDisplay,
          !GetClipPropClipRect(disp, effects, GetSize()) &&
          !SVGIntegrationUtils::UsingEffectsForFrame(this) &&
          !effects->HasMixBlendMode() &&
+         !ForcesStackingContextForViewTransition() &&
          disp->mIsolation != StyleIsolation::Isolate;
 }
 
@@ -2740,6 +2743,19 @@ Maybe<nsRect> nsIFrame::GetClipPropClipRect(const nsStyleDisplay* aDisp,
   return Some(rect);
 }
 
+// https://drafts.csswg.org/css-view-transitions-1/#named-and-transitioning
+//
+// Note https://github.com/w3c/csswg-drafts/issues/11772, however, for the root
+// style check.
+bool nsIFrame::ForcesStackingContextForViewTransition() const {
+  auto* style = Style();
+  return (style->StyleUIReset()->HasViewTransitionName() ||
+          HasAnyStateBits(NS_FRAME_CAPTURED_IN_VIEW_TRANSITION) ||
+          style->StyleDisplay()->mWillChange.bits &
+              mozilla::StyleWillChangeBits::VIEW_TRANSITION_NAME) &&
+         !style->IsRootElementStyle();
+}
+
 /**
  * If the CSS 'overflow' property applies to this frame, and is not
  * handled by constructing a dedicated nsHTML/XULScrollFrame, set up clipping
@@ -3338,6 +3354,7 @@ void nsIFrame::BuildDisplayListForStackingContext(
 
   bool useFixedPosition =
       disp->mPosition == StylePositionProperty::Fixed &&
+      aBuilder->IsPaintingToWindow() && !IsMenuPopupFrame() &&
       (DisplayPortUtils::IsFixedPosFrameInDisplayPort(this) ||
        BuilderHasScrolledClip(aBuilder));
 
@@ -4697,6 +4714,17 @@ nsresult nsIFrame::MoveCaretToEventPoint(nsPresContext* aPresContext,
     return NS_OK;
   }
 
+  EventStateManager* const esm = aPresContext->EventStateManager();
+  if (nsIContent* dragGestureContent = esm->GetTrackingDragGestureContent()) {
+    if (dragGestureContent != this->GetContent()) {
+      // When the current tracked dragging gesture is different
+      // than this frame, it means this frame was being dragged, however
+      // it got moved/destroyed. So we should consider the drag is
+      // still happening, so return early here.
+      return NS_OK;
+    }
+  }
+
   const nsPoint pt = nsLayoutUtils::GetEventCoordinatesRelativeTo(
       aMouseEvent, RelativeTo{this});
 
@@ -4961,53 +4989,51 @@ bool nsIFrame::MovingCaretToEventPointAllowedIfSecondaryButtonEvent(
           aContentAtEventPoint.IsTextControlElement()
               ? &aContentAtEventPoint
               : aContentAtEventPoint.GetClosestNativeAnonymousSubtreeRoot());
-  if (Selection* selection =
-          aFrameSelection.GetSelection(SelectionType::eNormal)) {
-    const bool selectionIsCollapsed =
-        selection->AreNormalAndCrossShadowBoundaryRangesCollapsed();
-    // If right click in a selection range, we should not collapse
-    // selection.
-    if (!selectionIsCollapsed && nsContentUtils::IsPointInSelection(
-                                     *selection, aContentAtEventPoint,
-                                     static_cast<uint32_t>(aOffsetAtEventPoint),
-                                     true /* aAllowCrossShadowBoundary */)) {
-      return false;
+  const Selection& selection = aFrameSelection.NormalSelection();
+  const bool selectionIsCollapsed =
+      selection.AreNormalAndCrossShadowBoundaryRangesCollapsed();
+  // If right click in a selection range, we should not collapse
+  // selection.
+  if (!selectionIsCollapsed && nsContentUtils::IsPointInSelection(
+                                   selection, aContentAtEventPoint,
+                                   static_cast<uint32_t>(aOffsetAtEventPoint),
+                                   true /* aAllowCrossShadowBoundary */)) {
+    return false;
+  }
+  const bool wantToPreventMoveCaret =
+      StaticPrefs::
+          ui_mouse_right_click_move_caret_stop_if_in_focused_editable_node() &&
+      selectionIsCollapsed && (contentIsEditable || contentAsTextControl);
+  const bool wantToPreventCollapseSelection =
+      StaticPrefs::
+          ui_mouse_right_click_collapse_selection_stop_if_non_collapsed_selection() &&
+      !selectionIsCollapsed;
+  if (wantToPreventMoveCaret || wantToPreventCollapseSelection) {
+    // If currently selection is limited in an editing host, we should not
+    // collapse selection nor move caret if the clicked point is in the
+    // ancestor limiter.  Otherwise, this mouse click moves focus from the
+    // editing host to different one or blur the editing host.  In this case,
+    // we need to update selection because keeping current selection in the
+    // editing host looks like it's not blurred.
+    // FIXME: If the active editing host is the document element, editor
+    // does not set ancestor limiter properly.  Fix it in the editor side.
+    if (nsIContent* ancestorLimiter = selection.GetAncestorLimiter()) {
+      MOZ_ASSERT(ancestorLimiter->IsEditable());
+      return !aContentAtEventPoint.IsInclusiveDescendantOf(ancestorLimiter);
     }
-    const bool wantToPreventMoveCaret =
-        StaticPrefs::
-            ui_mouse_right_click_move_caret_stop_if_in_focused_editable_node() &&
-        selectionIsCollapsed && (contentIsEditable || contentAsTextControl);
-    const bool wantToPreventCollapseSelection =
-        StaticPrefs::
-            ui_mouse_right_click_collapse_selection_stop_if_non_collapsed_selection() &&
-        !selectionIsCollapsed;
-    if (wantToPreventMoveCaret || wantToPreventCollapseSelection) {
-      // If currently selection is limited in an editing host, we should not
-      // collapse selection nor move caret if the clicked point is in the
-      // ancestor limiter.  Otherwise, this mouse click moves focus from the
-      // editing host to different one or blur the editing host.  In this case,
-      // we need to update selection because keeping current selection in the
-      // editing host looks like it's not blurred.
-      // FIXME: If the active editing host is the document element, editor
-      // does not set ancestor limiter properly.  Fix it in the editor side.
-      if (nsIContent* ancestorLimiter = selection->GetAncestorLimiter()) {
-        MOZ_ASSERT(ancestorLimiter->IsEditable());
-        return !aContentAtEventPoint.IsInclusiveDescendantOf(ancestorLimiter);
-      }
-    }
-    // If selection is editable and `stop_if_in_focused_editable_node` pref is
-    // set to true, user does not want to move caret to right click place if
-    // clicked in the focused text control element.
-    if (wantToPreventMoveCaret && contentAsTextControl &&
-        contentAsTextControl == nsFocusManager::GetFocusedElementStatic()) {
-      return false;
-    }
-    // If currently selection is not limited in an editing host, we should
-    // collapse selection only when this click moves focus to an editing
-    // host because we need to update selection in this case.
-    if (wantToPreventCollapseSelection && !contentIsEditable) {
-      return false;
-    }
+  }
+  // If selection is editable and `stop_if_in_focused_editable_node` pref is
+  // set to true, user does not want to move caret to right click place if
+  // clicked in the focused text control element.
+  if (wantToPreventMoveCaret && contentAsTextControl &&
+      contentAsTextControl == nsFocusManager::GetFocusedElementStatic()) {
+    return false;
+  }
+  // If currently selection is not limited in an editing host, we should
+  // collapse selection only when this click moves focus to an editing
+  // host because we need to update selection in this case.
+  if (wantToPreventCollapseSelection && !contentIsEditable) {
+    return false;
   }
 
   return !StaticPrefs::
@@ -6148,10 +6174,10 @@ void nsIFrame::InlineMinISizeData::OptionallyBreak(nscoord aHyphenWidth) {
   ForceBreak();
 }
 
-void nsIFrame::InlinePrefISizeData::ForceBreak(StyleClear aClearType) {
+void nsIFrame::InlinePrefISizeData::ForceBreak(UsedClear aClearType) {
   // If this force break is not clearing any float, we can leave all the
   // floats to the next force break.
-  if (!mFloats.IsEmpty() && aClearType != StyleClear::None) {
+  if (!mFloats.IsEmpty() && aClearType != UsedClear::None) {
     // Preferred isize accumulated for floats that have already
     // been cleared past
     nscoord floatsDone = 0;
@@ -6161,24 +6187,25 @@ void nsIFrame::InlinePrefISizeData::ForceBreak(StyleClear aClearType) {
 
     for (const FloatInfo& floatInfo : mFloats) {
       const nsStyleDisplay* floatDisp = floatInfo.Frame()->StyleDisplay();
-      StyleClear clearType = floatDisp->mClear;
-      if (clearType == StyleClear::Left || clearType == StyleClear::Right ||
-          clearType == StyleClear::Both) {
+      auto cbWM = floatInfo.Frame()->GetParent()->GetWritingMode();
+      UsedClear clearType = floatDisp->UsedClear(cbWM);
+      if (clearType == UsedClear::Left || clearType == UsedClear::Right ||
+          clearType == UsedClear::Both) {
         nscoord floatsCur = NSCoordSaturatingAdd(floatsCurLeft, floatsCurRight);
         if (floatsCur > floatsDone) {
           floatsDone = floatsCur;
         }
-        if (clearType != StyleClear::Right) {
+        if (clearType != UsedClear::Right) {
           floatsCurLeft = 0;
         }
-        if (clearType != StyleClear::Left) {
+        if (clearType != UsedClear::Left) {
           floatsCurRight = 0;
         }
       }
 
-      StyleFloat floatStyle = floatDisp->mFloat;
+      UsedFloat floatStyle = floatDisp->UsedFloat(cbWM);
       nscoord& floatsCur =
-          floatStyle == StyleFloat::Left ? floatsCurLeft : floatsCurRight;
+          floatStyle == UsedFloat::Left ? floatsCurLeft : floatsCurRight;
       nscoord floatISize = floatInfo.ISize();
       // Negative-width floats don't change the available space so they
       // shouldn't change our intrinsic line isize either.
@@ -6192,7 +6219,7 @@ void nsIFrame::InlinePrefISizeData::ForceBreak(StyleClear aClearType) {
 
     mCurrentLine = NSCoordSaturatingAdd(mCurrentLine, floatsDone);
 
-    if (aClearType == StyleClear::Both) {
+    if (aClearType == UsedClear::Both) {
       mFloats.Clear();
     } else {
       // If the break type does not clear all floats, it means there may
@@ -6202,15 +6229,16 @@ void nsIFrame::InlinePrefISizeData::ForceBreak(StyleClear aClearType) {
       // floats may be cleared directly or indirectly. See below.
       nsTArray<FloatInfo> newFloats;
       MOZ_ASSERT(
-          aClearType == StyleClear::Left || aClearType == StyleClear::Right,
+          aClearType == UsedClear::Left || aClearType == UsedClear::Right,
           "Other values should have been handled in other branches");
-      StyleFloat clearFloatType =
-          aClearType == StyleClear::Left ? StyleFloat::Left : StyleFloat::Right;
+      UsedFloat clearFloatType =
+          aClearType == UsedClear::Left ? UsedFloat::Left : UsedFloat::Right;
       // Iterate the array in reverse so that we can stop when there are
       // no longer any floats we need to keep. See below.
       for (FloatInfo& floatInfo : Reversed(mFloats)) {
         const nsStyleDisplay* floatDisp = floatInfo.Frame()->StyleDisplay();
-        if (floatDisp->mFloat != clearFloatType) {
+        auto cbWM = floatInfo.Frame()->GetParent()->GetWritingMode();
+        if (floatDisp->UsedFloat(cbWM) != clearFloatType) {
           newFloats.AppendElement(floatInfo);
         } else {
           // This is a float on the side that this break directly clears
@@ -6220,8 +6248,8 @@ void nsIFrame::InlinePrefISizeData::ForceBreak(StyleClear aClearType) {
           // (earlier) floats on that side would be indirectly cleared
           // as well. Thus, we should break out of this loop and stop
           // considering earlier floats to be kept in mFloats.
-          StyleClear clearType = floatDisp->mClear;
-          if (clearType != aClearType && clearType != StyleClear::None) {
+          UsedClear clearType = floatDisp->UsedClear(cbWM);
+          if (clearType != aClearType && clearType != UsedClear::None) {
             break;
           }
         }
@@ -6395,15 +6423,30 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
                                        aBorderPadding.ISize(aWM) -
                                        boxSizingAdjust.ISize(aWM);
 
-  const auto& styleISize = aSizeOverrides.mStyleISize
-                               ? *aSizeOverrides.mStyleISize
-                               : stylePos->ISize(aWM);
-  const auto& styleBSize = aSizeOverrides.mStyleBSize
-                               ? *aSizeOverrides.mStyleBSize
-                               : stylePos->BSize(aWM);
   const auto& aspectRatio = aSizeOverrides.mAspectRatio
                                 ? *aSizeOverrides.mAspectRatio
                                 : GetAspectRatio();
+  const auto& styleISize = aSizeOverrides.mStyleISize
+                               ? *aSizeOverrides.mStyleISize
+                               : stylePos->ISize(aWM);
+  // For bsize, we consider overrides *and then* we resolve 'stretch' to a
+  // nscoord value, for convenience (so that we can assume that either
+  // isAutoBSize is true, or styleBSize is of type LengthPercentage()).
+  const auto& styleBSize = [&] {
+    const auto& styleBSizeConsideringOverrides =
+        (aSizeOverrides.mStyleBSize) ? *aSizeOverrides.mStyleBSize
+                                     : stylePos->BSize(aWM);
+    if (styleBSizeConsideringOverrides.BehavesLikeStretchOnBlockAxis() &&
+        aCBSize.BSize(aWM) != NS_UNCONSTRAINEDSIZE) {
+      // We've got a 'stretch' BSize; resolve it to a length:
+      nscoord stretchBSize = nsLayoutUtils::ComputeStretchBSize(
+          aCBSize.BSize(aWM), aMargin.BSize(aWM), aBorderPadding.BSize(aWM),
+          stylePos->mBoxSizing);
+      return StyleSize::LengthPercentage(
+          LengthPercentage::FromAppUnits(stretchBSize));
+    }
+    return styleBSizeConsideringOverrides;
+  }();
 
   auto parentFrame = GetParent();
   auto alignCB = parentFrame;
@@ -6440,6 +6483,11 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   const bool isAutoBSize =
       nsLayoutUtils::IsAutoBSize(styleBSize, aCBSize.BSize(aWM));
 
+  MOZ_ASSERT(isAutoBSize || styleBSize.IsLengthPercentage(),
+             "We should have resolved away any non-'auto'-like flavors "
+             "of styleBSize into a LengthPercentage. (If this fails, we "
+             "might run afoul of some AsLengthPercentage() call below.)");
+
   // Compute inline-axis size
   const bool isSubgriddedInInlineAxis =
       isSubgrid && static_cast<nsGridContainerFrame*>(this)->IsColSubgrid();
@@ -6458,7 +6506,7 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
   } else if (MOZ_UNLIKELY(isGridItem) && !IsTrueOverflowContainer()) {
     // 'auto' inline-size for grid-level box - fill the CB for 'stretch' /
     // 'normal' and clamp it to the CB if requested:
-    bool stretch = false;
+    bool isStretchAligned = false;
     bool mayUseAspectRatio = aspectRatio && !isAutoBSize;
     if (!aFlags.contains(ComputeSizeFlag::ShrinkWrap) &&
         !StyleMargin()->HasInlineAxisAuto(aWM) &&
@@ -6467,9 +6515,9 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
       auto inlineAxisAlignment =
           isOrthogonal ? StylePosition()->UsedAlignSelf(alignCB->Style())._0
                        : StylePosition()->UsedJustifySelf(alignCB->Style())._0;
-      stretch = inlineAxisAlignment == StyleAlignFlags::STRETCH ||
-                (inlineAxisAlignment == StyleAlignFlags::NORMAL &&
-                 !mayUseAspectRatio);
+      isStretchAligned = inlineAxisAlignment == StyleAlignFlags::STRETCH ||
+                         (inlineAxisAlignment == StyleAlignFlags::NORMAL &&
+                          !mayUseAspectRatio);
     }
 
     // Apply the preferred aspect ratio for alignments other than *stretch* and
@@ -6478,18 +6526,19 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     // the intrinsic size should respect the preferred aspect ratio, so we also
     // apply aspect ratio for all other values.
     // https://drafts.csswg.org/css-grid/#grid-item-sizing
-    if (!stretch && mayUseAspectRatio) {
+    if (!isStretchAligned && mayUseAspectRatio) {
       result.ISize(aWM) = ComputeISizeValueFromAspectRatio(
           aWM, aCBSize, boxSizingAdjust, styleBSize.AsLengthPercentage(),
           aspectRatio);
       aspectRatioUsage = AspectRatioUsage::ToComputeISize;
     }
 
-    if (stretch || aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) {
+    if (isStretchAligned ||
+        aFlags.contains(ComputeSizeFlag::IClampMarginBoxMinSize)) {
       auto iSizeToFillCB =
           std::max(nscoord(0), aCBSize.ISize(aWM) - aBorderPadding.ISize(aWM) -
                                    aMargin.ISize(aWM));
-      if (stretch || result.ISize(aWM) > iSizeToFillCB) {
+      if (isStretchAligned || result.ISize(aWM) > iSizeToFillCB) {
         result.ISize(aWM) = iSizeToFillCB;
       }
     }
@@ -6664,16 +6713,16 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     if (cbSize != NS_UNCONSTRAINEDSIZE) {
       // 'auto' block-size for grid-level box - fill the CB for 'stretch' /
       // 'normal' and clamp it to the CB if requested:
-      bool stretch = false;
+      bool isStretchAligned = false;
       bool mayUseAspectRatio =
           aspectRatio && result.ISize(aWM) != NS_UNCONSTRAINEDSIZE;
       if (!StyleMargin()->HasBlockAxisAuto(aWM)) {
         auto blockAxisAlignment =
             isOrthogonal ? StylePosition()->UsedJustifySelf(alignCB->Style())._0
                          : StylePosition()->UsedAlignSelf(alignCB->Style())._0;
-        stretch = blockAxisAlignment == StyleAlignFlags::STRETCH ||
-                  (blockAxisAlignment == StyleAlignFlags::NORMAL &&
-                   !mayUseAspectRatio);
+        isStretchAligned = blockAxisAlignment == StyleAlignFlags::STRETCH ||
+                           (blockAxisAlignment == StyleAlignFlags::NORMAL &&
+                            !mayUseAspectRatio);
       }
 
       // Apply the preferred aspect ratio for alignments other than *stretch*
@@ -6682,19 +6731,19 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
       // and the intrinsic size should respect the preferred aspect ratio, so
       // we also apply aspect ratio for all other values.
       // https://drafts.csswg.org/css-grid/#grid-item-sizing
-      if (!stretch && mayUseAspectRatio) {
+      if (!isStretchAligned && mayUseAspectRatio) {
         result.BSize(aWM) = aspectRatio.ComputeRatioDependentSize(
             LogicalAxis::Block, aWM, result.ISize(aWM), boxSizingAdjust);
         MOZ_ASSERT(aspectRatioUsage == AspectRatioUsage::None);
         aspectRatioUsage = AspectRatioUsage::ToComputeBSize;
       }
 
-      if (stretch || aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize)) {
-        auto bSizeToFillCB =
-            std::max(nscoord(0),
-                     cbSize - aBorderPadding.BSize(aWM) - aMargin.BSize(aWM));
-        if (stretch || (result.BSize(aWM) != NS_UNCONSTRAINEDSIZE &&
-                        result.BSize(aWM) > bSizeToFillCB)) {
+      if (isStretchAligned ||
+          aFlags.contains(ComputeSizeFlag::BClampMarginBoxMinSize)) {
+        auto bSizeToFillCB = nsLayoutUtils::ComputeStretchContentBoxBSize(
+            cbSize, aMargin.BSize(aWM), aBorderPadding.BSize(aWM));
+        if (isStretchAligned || (result.BSize(aWM) != NS_UNCONSTRAINEDSIZE &&
+                                 result.BSize(aWM) > bSizeToFillCB)) {
           result.BSize(aWM) = bSizeToFillCB;
         }
       }
@@ -6722,16 +6771,16 @@ nsIFrame::SizeComputationResult nsIFrame::ComputeSize(
     const bool shouldIgnoreMinMaxBSize =
         isFlexItemBlockAxisMainAxis || isSubgriddedInBlockAxis;
     if (!isAutoMaxBSize && !shouldIgnoreMinMaxBSize) {
-      nscoord maxBSize = nsLayoutUtils::ComputeBSizeValue(
-          aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
-          maxBSizeCoord.AsLengthPercentage());
+      nscoord maxBSize = nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+          aCBSize.BSize(aWM), aMargin.BSize(aWM), aBorderPadding.BSize(aWM),
+          boxSizingAdjust.BSize(aWM), maxBSizeCoord);
       result.BSize(aWM) = std::min(maxBSize, result.BSize(aWM));
     }
 
     if (!isAutoMinBSize && !shouldIgnoreMinMaxBSize) {
-      nscoord minBSize = nsLayoutUtils::ComputeBSizeValue(
-          aCBSize.BSize(aWM), boxSizingAdjust.BSize(aWM),
-          minBSizeCoord.AsLengthPercentage());
+      nscoord minBSize = nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+          aCBSize.BSize(aWM), aMargin.BSize(aWM), aBorderPadding.BSize(aWM),
+          boxSizingAdjust.BSize(aWM), minBSizeCoord);
       result.BSize(aWM) = std::max(minBSize, result.BSize(aWM));
     }
   }
@@ -6770,20 +6819,32 @@ nscoord nsIFrame::ComputeBSizeValueAsPercentageBasis(
     return NS_UNCONSTRAINEDSIZE;
   }
 
-  const nscoord bSize = nsLayoutUtils::ComputeBSizeValue(
-      aCBBSize, aContentEdgeToBoxSizingBSize, aStyleBSize.AsLengthPercentage());
+  // TODO(dholbert): This is a temporary hack, to be fixed up in bug 1933604.
+  // We don't know have aMargin or aBorderPadding args available,
+  // so we use these dummy zero-valued variables as placeholders in
+  // our call to ComputeBSizeValueHandlingStretch. (This might mean we
+  // end up resolving 'stretch' to something slighlty-too-large for the
+  // purposes of this call, if there's actually nonzero margin/border/padding).
+  const nscoord dummyMargin = 0;
+  const nscoord dummyBorderPadding = 0;
 
-  const nscoord minBSize = nsLayoutUtils::IsAutoBSize(aStyleMinBSize, aCBBSize)
-                               ? 0
-                               : nsLayoutUtils::ComputeBSizeValue(
-                                     aCBBSize, aContentEdgeToBoxSizingBSize,
-                                     aStyleMinBSize.AsLengthPercentage());
+  const nscoord bSize = nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+      aCBBSize, dummyMargin, dummyBorderPadding, aContentEdgeToBoxSizingBSize,
+      aStyleBSize);
 
-  const nscoord maxBSize = nsLayoutUtils::IsAutoBSize(aStyleMaxBSize, aCBBSize)
-                               ? NS_UNCONSTRAINEDSIZE
-                               : nsLayoutUtils::ComputeBSizeValue(
-                                     aCBBSize, aContentEdgeToBoxSizingBSize,
-                                     aStyleMaxBSize.AsLengthPercentage());
+  const nscoord minBSize =
+      nsLayoutUtils::IsAutoBSize(aStyleMinBSize, aCBBSize)
+          ? 0
+          : nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+                aCBBSize, dummyMargin, dummyBorderPadding,
+                aContentEdgeToBoxSizingBSize, aStyleMinBSize);
+
+  const nscoord maxBSize =
+      nsLayoutUtils::IsAutoBSize(aStyleMaxBSize, aCBBSize)
+          ? NS_UNCONSTRAINEDSIZE
+          : nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+                aCBBSize, dummyMargin, dummyBorderPadding,
+                aContentEdgeToBoxSizingBSize, aStyleMaxBSize);
 
   return CSSMinMax(bSize, minBSize, maxBSize);
 }
@@ -6819,8 +6880,8 @@ LogicalSize nsIFrame::ComputeAutoSize(
                                ? *aSizeOverrides.mStyleISize
                                : StylePosition()->ISize(aWM);
   if (styleISize.IsAuto()) {
-    nscoord availBased =
-        aAvailableISize - aMargin.ISize(aWM) - aBorderPadding.ISize(aWM);
+    nscoord availBased = nsLayoutUtils::ComputeStretchContentBoxISize(
+        aAvailableISize, aMargin.ISize(aWM), aBorderPadding.ISize(aWM));
     const auto* stylePos = StylePosition();
     const auto& styleBSize = aSizeOverrides.mStyleBSize
                                  ? *aSizeOverrides.mStyleBSize
@@ -6867,17 +6928,24 @@ LogicalSize nsIFrame::ComputeAbsolutePosAutoSize(
   const auto& styleISize = aSizeOverrides.mStyleISize
                                ? *aSizeOverrides.mStyleISize
                                : stylePos->ISize(aWM);
-  const auto& styleBSize = aSizeOverrides.mStyleISize
-                               ? *aSizeOverrides.mStyleISize
+  const auto& styleBSize = aSizeOverrides.mStyleBSize
+                               ? *aSizeOverrides.mStyleBSize
                                : stylePos->BSize(aWM);
+  const auto positionProperty = StyleDisplay()->mPosition;
   const auto iStartOffsetIsAuto =
-      stylePos->GetInset(LogicalSide::IStart, aWM).IsAuto();
+      stylePos
+          ->GetAnchorResolvedInset(LogicalSide::IStart, aWM, positionProperty)
+          ->IsAuto();
   const auto iEndOffsetIsAuto =
-      stylePos->GetInset(LogicalSide::IEnd, aWM).IsAuto();
+      stylePos->GetAnchorResolvedInset(LogicalSide::IEnd, aWM, positionProperty)
+          ->IsAuto();
   const auto bStartOffsetIsAuto =
-      stylePos->GetInset(LogicalSide::BStart, aWM).IsAuto();
+      stylePos
+          ->GetAnchorResolvedInset(LogicalSide::BStart, aWM, positionProperty)
+          ->IsAuto();
   const auto bEndOffsetIsAuto =
-      stylePos->GetInset(LogicalSide::BEnd, aWM).IsAuto();
+      stylePos->GetAnchorResolvedInset(LogicalSide::BEnd, aWM, positionProperty)
+          ->IsAuto();
   const auto boxSizingAdjust = stylePos->mBoxSizing == StyleBoxSizing::Border
                                    ? aBorderPadding
                                    : LogicalSize(aWM);
@@ -6926,18 +6994,33 @@ LogicalSize nsIFrame::ComputeAbsolutePosAutoSize(
   const auto bShouldStretch =
       shouldStretch(blockAlignSelf, this, bStartOffsetIsAuto, bEndOffsetIsAuto);
   const auto iSizeIsAuto = styleISize.IsAuto();
-  const auto bSizeIsAuto = styleBSize.IsAuto();
+  // Note(dshin, bug 1789477): `auto` in the context of abs-element uses
+  // stretch-fit sizing, given specific alignment conditions [1]. Effectively,
+  // `auto` is `stretch`. `nsLayoutUtils::IsAutoBSize` is not the right tool
+  // here, since the mapping is explicit, and it's incorrect to e.g. map
+  // `fit-content` to `stretch`.
+  // `-moz-available` behaves like `auto` in general, so map the same way.
+  // When Bug 567039 brings `-moz-available` into alignment with `stretch`, this
+  // special check can be removed. TODO(dshin): we're probably duplicating the
+  // `stretch` logic here, since `stretch` is `stretch-fit` sizing [2].
+  //
+  // [1]: https://drafts.csswg.org/css-position/#abspos-auto-size
+  // [2]: https://drafts.csswg.org/css-sizing-4/#valdef-width-stretch
+  const auto bSizeIsAuto = styleBSize.IsAuto() || styleBSize.IsMozAvailable();
   if (bSizeIsAuto && bShouldStretch) {
-    result.BSize(aWM) =
-        aCBSize.BSize(aWM) - aBorderPadding.BSize(aWM) - aMargin.BSize(aWM);
+    result.BSize(aWM) = nsLayoutUtils::ComputeStretchContentBoxBSize(
+        aCBSize.BSize(aWM), aMargin.BSize(aWM), aBorderPadding.BSize(aWM));
   }
   if (iSizeIsAuto) {
     if (iShouldStretch) {
-      result.ISize(aWM) =
-          aCBSize.ISize(aWM) - aBorderPadding.ISize(aWM) - aMargin.ISize(aWM);
+      // inline-size to make our margin-box fill the containing block:
+      result.ISize(aWM) = nsLayoutUtils::ComputeStretchContentBoxISize(
+          aCBSize.ISize(aWM), aMargin.ISize(aWM), aBorderPadding.ISize(aWM));
     } else {
-      nscoord availBased =
-          aAvailableISize - aMargin.ISize(aWM) - aBorderPadding.ISize(aWM);
+      // inline-size to make our margin-box fill aAvailableISize:
+      nscoord availBased = nsLayoutUtils::ComputeStretchContentBoxISize(
+          aAvailableISize, aMargin.ISize(aWM), aBorderPadding.ISize(aWM));
+
       const nscoord bSize = ComputeBSizeValueAsPercentageBasis(
           styleBSize.IsAuto() && result.BSize(aWM) != NS_UNCONSTRAINEDSIZE
               ? StyleSize::LengthPercentage(
@@ -6975,12 +7058,8 @@ LogicalSize nsIFrame::ComputeAbsolutePosAutoSize(
       } else if (!iShouldStretch) {
         // If one axis has `auto` inset, that is the ratio dependent axis,
         // otherwise the block axis is.
-        const bool inlineInsetHasAuto =
-            stylePos->GetInset(LogicalSide::IStart, aWM).IsAuto() ||
-            stylePos->GetInset(LogicalSide::IEnd, aWM).IsAuto();
-        const bool blockInsetHasAuto =
-            stylePos->GetInset(LogicalSide::BStart, aWM).IsAuto() ||
-            stylePos->GetInset(LogicalSide::BEnd, aWM).IsAuto();
+        const bool inlineInsetHasAuto = iStartOffsetIsAuto || iEndOffsetIsAuto;
+        const bool blockInsetHasAuto = bStartOffsetIsAuto || bEndOffsetIsAuto;
         aspectRatioUsage = inlineInsetHasAuto && !blockInsetHasAuto
                                ? AspectRatioUsage::ToComputeISize
                                : AspectRatioUsage::ToComputeBSize;
@@ -7342,14 +7421,10 @@ bool nsIFrame::HasSelectionInSubtree() {
     return false;
   }
 
-  const Selection* selection =
-      frameSelection->GetSelection(SelectionType::eNormal);
-  if (!selection) {
-    return false;
-  }
+  const Selection& selection = frameSelection->NormalSelection();
 
-  for (uint32_t i = 0; i < selection->RangeCount(); i++) {
-    auto* range = selection->GetRangeAt(i);
+  for (uint32_t i = 0; i < selection.RangeCount(); i++) {
+    auto* range = selection.GetRangeAt(i);
     MOZ_ASSERT(range);
 
     const auto* commonAncestorNode =
@@ -8494,13 +8569,13 @@ Maybe<uint32_t> nsIFrame::ContentIndexInContainer(const nsIFrame* aFrame) {
   return Nothing();
 }
 
-nsAutoCString nsIFrame::ListTag() const {
+nsAutoCString nsIFrame::ListTag(bool aListOnlyDeterministic) const {
   nsAutoString tmp;
   GetFrameName(tmp);
 
   nsAutoCString tag;
   tag += NS_ConvertUTF16toUTF8(tmp);
-  tag += nsPrintfCString("@%p", static_cast<const void*>(this));
+  ListPtr(tag, aListOnlyDeterministic, this, "@");
   return tag;
 }
 
@@ -8530,25 +8605,31 @@ std::string nsIFrame::ConvertToString(const LogicalSize& aSize,
 void nsIFrame::ListGeneric(nsACString& aTo, const char* aPrefix,
                            ListFlags aFlags) const {
   aTo += aPrefix;
-  aTo += ListTag();
+  const bool onlyDeterministic =
+      aFlags.contains(ListFlag::OnlyListDeterministicInfo);
+  aTo += ListTag(onlyDeterministic);
   if (HasView()) {
-    aTo += nsPrintfCString(" [view=%p]", static_cast<void*>(GetView()));
+    aTo += " [view";
+    ListPtr(aTo, aFlags, GetView());
+    aTo += "]";
   }
-  if (GetParent()) {
-    aTo += nsPrintfCString(" parent=%p", static_cast<void*>(GetParent()));
-  }
-  if (GetNextSibling()) {
-    aTo += nsPrintfCString(" next=%p", static_cast<void*>(GetNextSibling()));
+  if (!onlyDeterministic) {
+    if (GetParent()) {
+      aTo += nsPrintfCString(" parent=%p", static_cast<void*>(GetParent()));
+    }
+    if (GetNextSibling()) {
+      aTo += nsPrintfCString(" next=%p", static_cast<void*>(GetNextSibling()));
+    }
   }
   if (GetPrevContinuation()) {
     bool fluid = GetPrevInFlow() == GetPrevContinuation();
-    aTo += nsPrintfCString(" prev-%s=%p", fluid ? "in-flow" : "continuation",
-                           static_cast<void*>(GetPrevContinuation()));
+    aTo += nsPrintfCString(" prev-%s", fluid ? "in-flow" : "continuation");
+    ListPtr(aTo, aFlags, GetPrevContinuation());
   }
   if (GetNextContinuation()) {
     bool fluid = GetNextInFlow() == GetNextContinuation();
-    aTo += nsPrintfCString(" next-%s=%p", fluid ? "in-flow" : "continuation",
-                           static_cast<void*>(GetNextContinuation()));
+    aTo += nsPrintfCString(" next-%s", fluid ? "in-flow" : "continuation");
+    ListPtr(aTo, aFlags, GetNextContinuation());
   }
   if (const nsAtom* const autoPageValue =
           GetProperty(AutoPageValueProperty())) {
@@ -8573,11 +8654,13 @@ void nsIFrame::ListGeneric(nsACString& aTo, const char* aPrefix,
   }
   void* IBsibling = GetProperty(IBSplitSibling());
   if (IBsibling) {
-    aTo += nsPrintfCString(" IBSplitSibling=%p", IBsibling);
+    aTo += nsPrintfCString(" IBSplitSibling");
+    ListPtr(aTo, aFlags, IBsibling);
   }
   void* IBprevsibling = GetProperty(IBSplitPrevSibling());
   if (IBprevsibling) {
-    aTo += nsPrintfCString(" IBSplitPrevSibling=%p", IBprevsibling);
+    aTo += nsPrintfCString(" IBSplitPrevSibling");
+    ListPtr(aTo, aFlags, IBprevsibling);
   }
   if (nsLayoutUtils::FontSizeInflationEnabled(PresContext())) {
     if (HasAnyStateBits(NS_FRAME_FONT_INFLATION_FLOW_ROOT)) {
@@ -8669,14 +8752,25 @@ void nsIFrame::ListGeneric(nsACString& aTo, const char* aPrefix,
     aTo += nsPrintfCString(" combines-3d-transform-with-ancestors");
   }
   if (mContent) {
-    aTo += nsPrintfCString(" [content=%p]", static_cast<void*>(mContent));
+    if (!onlyDeterministic) {
+      aTo += nsPrintfCString(" [content=%p]", static_cast<void*>(mContent));
+    }
+    if (IsPrimaryFrame() && DisplayPortUtils::HasDisplayPort(mContent)) {
+      // Anon boxes and continuations point to the same content - Just print on
+      // primary frame.
+      aTo += "[displayport]"_ns;
+    }
   }
-  aTo += nsPrintfCString(" [cs=%p", static_cast<void*>(mComputedStyle));
+  if (!onlyDeterministic) {
+    aTo += nsPrintfCString("[cs=%p]", static_cast<void*>(mComputedStyle));
+  }
   if (mComputedStyle) {
-    auto pseudoType = mComputedStyle->GetPseudoType();
-    aTo += ToString(pseudoType).c_str();
+    const auto pseudoType = mComputedStyle->GetPseudoType();
+    const auto pseudoTypeStr = ToString(pseudoType);
+    if (!pseudoTypeStr.empty()) {
+      aTo += nsPrintfCString("[%s]", pseudoTypeStr.c_str());
+    }
   }
-  aTo += "]";
 
   auto contentVisibility = StyleDisplay()->ContentVisibility(*this);
   if (contentVisibility != StyleContentVisibility::Visible) {
@@ -8777,12 +8871,20 @@ nsresult nsIFrame::MakeFrameName(const nsAString& aType,
   return NS_OK;
 }
 
-void nsIFrame::DumpFrameTree() const {
-  PresShell()->GetRootFrame()->List(stderr);
+void nsIFrame::DumpFrameTree(bool aListOnlyDeterministic) const {
+  ListFlags flags;
+  if (aListOnlyDeterministic) {
+    flags += ListFlag::OnlyListDeterministicInfo;
+  }
+  PresShell()->GetRootFrame()->List(stderr, "", flags);
 }
 
-void nsIFrame::DumpFrameTreeInCSSPixels() const {
-  PresShell()->GetRootFrame()->List(stderr, "", ListFlag::DisplayInCSSPixels);
+void nsIFrame::DumpFrameTreeInCSSPixels(bool aListOnlyDeterministic) const {
+  ListFlags flags{ListFlag::DisplayInCSSPixels};
+  if (aListOnlyDeterministic) {
+    flags += ListFlag::OnlyListDeterministicInfo;
+  }
+  PresShell()->GetRootFrame()->List(stderr, "", flags);
 }
 
 void nsIFrame::DumpFrameTreeLimited() const { List(stderr); }
@@ -11482,6 +11584,11 @@ bool nsIFrame::IsStackingContext(const nsStyleDisplay* aStyleDisplay,
       return true;
     }
   }
+
+  if (ForcesStackingContextForViewTransition()) {
+    return true;
+  }
+
   // strictly speaking, 'perspective' doesn't require visual atomicity,
   // but the spec says it acts like the rest of these
   if (aStyleDisplay->HasPerspectiveStyle() ||
@@ -11496,6 +11603,9 @@ bool nsIFrame::IsStackingContext(const nsStyleDisplay* aStyleDisplay,
       return true;
     }
   }
+  // Elements captured in a view transition during a view transition or whose
+  // view-transition-name computed value is not none (at any time) form a s
+  // https://drafts.csswg.org/css-view-transitions-1/#named-and-transitioning
   return aStyleEffects->mMixBlendMode != StyleBlend::Normal ||
          SVGIntegrationUtils::UsingEffectsForFrame(this) ||
          aStyleDisplay->IsPositionForcingStackingContext() ||
@@ -11583,16 +11693,9 @@ gfx::Matrix nsIFrame::ComputeWidgetTransform() const {
 
   TransformReferenceBox refBox(nullptr, nsRect(nsPoint(), GetSize()));
 
-  nsPresContext* presContext = PresContext();
-  int32_t appUnitsPerDevPixel = presContext->AppUnitsPerDevPixel();
+  int32_t appUnitsPerDevPixel = PresContext()->AppUnitsPerDevPixel();
   gfx::Matrix4x4 matrix = nsStyleTransformMatrix::ReadTransforms(
       uiReset->mMozWindowTransform, refBox, float(appUnitsPerDevPixel));
-
-  // Apply the -moz-window-transform-origin translation to the matrix.
-  const StyleTransformOrigin& origin = uiReset->mWindowTransformOrigin;
-  Point transformOrigin = nsStyleTransformMatrix::Convert2DPosition(
-      origin.horizontal, origin.vertical, refBox, appUnitsPerDevPixel);
-  matrix.ChangeBasis(Point3D(transformOrigin.x, transformOrigin.y, 0));
 
   gfx::Matrix result2d;
   if (!matrix.CanDraw2D(&result2d)) {

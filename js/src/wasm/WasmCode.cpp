@@ -193,96 +193,6 @@ void wasm::StaticallyUnlink(uint8_t* base, const LinkData& linkData) {
   }
 }
 
-static bool AppendToString(const char* str, UTF8Bytes* bytes) {
-  return bytes->append(str, strlen(str)) && bytes->append('\0');
-}
-
-static void SendCodeRangesToProfiler(
-    const uint8_t* segmentBase, const CodeMetadata& codeMeta,
-    const CodeMetadataForAsmJS* codeMetaForAsmJS,
-    const CodeRangeVector& codeRanges) {
-  bool enabled = false;
-  enabled |= PerfEnabled();
-#ifdef MOZ_VTUNE
-  enabled |= vtune::IsProfilingActive();
-#endif
-  if (!enabled) {
-    return;
-  }
-
-  for (const CodeRange& codeRange : codeRanges) {
-    if (!codeRange.hasFuncIndex()) {
-      continue;
-    }
-
-    uintptr_t start = uintptr_t(segmentBase + codeRange.begin());
-    uintptr_t size = codeRange.end() - codeRange.begin();
-
-    UTF8Bytes name;
-    bool ok;
-    if (codeMetaForAsmJS) {
-      ok = codeMetaForAsmJS->getFuncNameForAsmJS(codeRange.funcIndex(), &name);
-    } else {
-      ok = codeMeta.getFuncNameForWasm(NameContext::Standalone,
-                                       codeRange.funcIndex(), &name);
-    }
-    if (!ok) {
-      return;
-    }
-
-    // Avoid "unused" warnings
-    (void)start;
-    (void)size;
-
-    if (PerfEnabled()) {
-      const char* file = codeMeta.scriptedCaller().filename.get();
-      if (codeRange.isFunction()) {
-        if (!name.append('\0')) {
-          return;
-        }
-        CollectPerfSpewerWasmFunctionMap(
-            start, size, file,
-            codeMeta.funcBytecodeOffset(codeRange.funcIndex()), name.begin());
-      } else if (codeRange.isInterpEntry()) {
-        if (!AppendToString(" slow entry", &name)) {
-          return;
-        }
-        CollectPerfSpewerWasmMap(start, size, file, name.begin());
-      } else if (codeRange.isJitEntry()) {
-        if (!AppendToString(" fast entry", &name)) {
-          return;
-        }
-        CollectPerfSpewerWasmMap(start, size, file, name.begin());
-      } else if (codeRange.isImportInterpExit()) {
-        if (!AppendToString(" slow exit", &name)) {
-          return;
-        }
-        CollectPerfSpewerWasmMap(start, size, file, name.begin());
-      } else if (codeRange.isImportJitExit()) {
-        if (!AppendToString(" fast exit", &name)) {
-          return;
-        }
-        CollectPerfSpewerWasmMap(start, size, file, name.begin());
-      } else {
-        MOZ_CRASH("unhandled perf hasFuncIndex type");
-      }
-    }
-#ifdef MOZ_VTUNE
-    if (!vtune::IsProfilingActive()) {
-      continue;
-    }
-    if (!codeRange.isFunction()) {
-      continue;
-    }
-    if (!name.append('\0')) {
-      return;
-    }
-    vtune::MarkWasm(vtune::GenerateUniqueMethodID(), name.begin(), (void*)start,
-                    size);
-#endif
-  }
-}
-
 size_t CodeSegment::AllocationAlignment() {
   // If we are write-protecting code, all new code allocations must be rounded
   // to the system page size.
@@ -677,6 +587,9 @@ bool Code::createManyLazyEntryStubs(const WriteGuard& guard,
     }
   }
 
+  stubCodeBlock->sendToProfiler(*codeMeta_, codeMetaForAsmJS_,
+                                FuncIonPerfSpewerSpan(),
+                                FuncBaselinePerfSpewerSpan());
   return addCodeBlock(guard, std::move(stubCodeBlock), nullptr);
 }
 
@@ -1028,9 +941,6 @@ bool CodeBlock::initialize(const Code& code, size_t codeBlockIndex) {
   this->codeBlockIndex = codeBlockIndex;
   segment->setCode(code);
 
-  SendCodeRangesToProfiler(segment->base(), code.codeMeta(),
-                           code.codeMetaForAsmJS(), codeRanges);
-
   // In the case of tiering, RegisterCodeBlock() immediately makes this code
   // block live to access from other threads executing the containing
   // module. So only call once the CodeBlock is fully initialized.
@@ -1047,6 +957,126 @@ bool CodeBlock::initialize(const Code& code, size_t codeBlockIndex) {
   return true;
 }
 
+static JS::UniqueChars DescribeCodeRangeForProfiler(
+    const wasm::CodeMetadata& codeMeta,
+    const CodeMetadataForAsmJS* codeMetaForAsmJS, const CodeRange& codeRange,
+    CodeBlockKind codeBlockKind) {
+  uint32_t funcIndex = codeRange.funcIndex();
+  UTF8Bytes name;
+  bool ok;
+  if (codeMetaForAsmJS) {
+    ok = codeMetaForAsmJS->getFuncNameForAsmJS(funcIndex, &name);
+  } else {
+    ok = codeMeta.getFuncNameForWasm(NameContext::Standalone, funcIndex, &name);
+  }
+  if (!ok) {
+    return nullptr;
+  }
+  if (!name.append('\0')) {
+    return nullptr;
+  }
+
+  const char* filename = codeMeta.scriptedCaller().filename.get();
+  const char* suffix = "";
+  if (codeRange.isFunction()) {
+    if (codeBlockKind == CodeBlockKind::BaselineTier) {
+      suffix = " (baseline)";
+    } else if (codeBlockKind == CodeBlockKind::OptimizedTier) {
+      suffix = " (optimized)";
+    }
+  } else if (codeRange.isInterpEntry()) {
+    suffix = " slow entry";
+  } else if (codeRange.isJitEntry()) {
+    suffix = " fast entry";
+  } else if (codeRange.isImportInterpExit()) {
+    suffix = " slow exit";
+  } else if (codeRange.isImportJitExit()) {
+    suffix = " fast exit";
+  }
+
+  return JS_smprintf("%s: Function %s%s", filename, name.begin(), suffix);
+}
+
+void CodeBlock::sendToProfiler(
+    const CodeMetadata& codeMeta, const CodeMetadataForAsmJS* codeMetaForAsmJS,
+    FuncIonPerfSpewerSpan ionSpewers,
+    FuncBaselinePerfSpewerSpan baselineSpewers) const {
+  bool enabled = false;
+  enabled |= PerfEnabled();
+#ifdef MOZ_VTUNE
+  enabled |= vtune::IsProfilingActive();
+#endif
+  if (!enabled) {
+    return;
+  }
+
+  // We only ever have ion or baseline spewers, and they correspond with our
+  // code block kind.
+  MOZ_ASSERT(ionSpewers.empty() || baselineSpewers.empty());
+  MOZ_ASSERT_IF(kind == CodeBlockKind::BaselineTier, ionSpewers.empty());
+  MOZ_ASSERT_IF(kind == CodeBlockKind::OptimizedTier, baselineSpewers.empty());
+  bool hasSpewers = !ionSpewers.empty() || !baselineSpewers.empty();
+
+  // Save the collected Ion perf spewers with their IR/source information.
+  for (FuncIonPerfSpewer& funcIonSpewer : ionSpewers) {
+    const CodeRange& codeRange = this->codeRange(funcIonSpewer.funcIndex);
+    UniqueChars desc = DescribeCodeRangeForProfiler(codeMeta, codeMetaForAsmJS,
+                                                    codeRange, kind);
+    if (!desc) {
+      return;
+    }
+    uintptr_t start = uintptr_t(segment->base() + codeRange.begin());
+    uintptr_t size = codeRange.end() - codeRange.begin();
+    funcIonSpewer.spewer.saveWasmProfile(start, size, desc);
+  }
+
+  // Save the collected baseline perf spewers with their IR/source information.
+  for (FuncBaselinePerfSpewer& funcBaselineSpewer : baselineSpewers) {
+    const CodeRange& codeRange = this->codeRange(funcBaselineSpewer.funcIndex);
+    UniqueChars desc = DescribeCodeRangeForProfiler(codeMeta, codeMetaForAsmJS,
+                                                    codeRange, kind);
+    if (!desc) {
+      return;
+    }
+    uintptr_t start = uintptr_t(segment->base() + codeRange.begin());
+    uintptr_t size = codeRange.end() - codeRange.begin();
+    funcBaselineSpewer.spewer.saveProfile(start, size, desc);
+  }
+
+  // Save the rest of the code ranges.
+  for (const CodeRange& codeRange : codeRanges) {
+    if (!codeRange.hasFuncIndex()) {
+      continue;
+    }
+
+    // Skip functions when they have corresponding spewers, as they will have
+    // already handled the function.
+    if (codeRange.isFunction() && hasSpewers) {
+      continue;
+    }
+
+    UniqueChars desc = DescribeCodeRangeForProfiler(codeMeta, codeMetaForAsmJS,
+                                                    codeRange, kind);
+    if (!desc) {
+      return;
+    }
+
+    uintptr_t start = uintptr_t(segment->base() + codeRange.begin());
+    uintptr_t size = codeRange.end() - codeRange.begin();
+
+#ifdef MOZ_VTUNE
+    if (vtune::IsProfilingActive()) {
+      vtune::MarkWasm(vtune::GenerateUniqueMethodID(), desc.get(), (void*)start,
+                      size);
+    }
+#endif
+
+    if (PerfEnabled()) {
+      CollectPerfSpewerWasmMap(start, size, std::move(desc));
+    }
+  }
+}
+
 void CodeBlock::offsetMetadataBy(uint32_t delta) {
   if (delta == 0) {
     return;
@@ -1054,14 +1084,8 @@ void CodeBlock::offsetMetadataBy(uint32_t delta) {
   for (CodeRange& cr : codeRanges) {
     cr.offsetBy(delta);
   }
-  for (CallSite& cs : callSites) {
-    cs.offsetBy(delta);
-  }
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    for (TrapSite& ts : trapSites[trap]) {
-      ts.offsetBy(delta);
-    }
-  }
+  callSites.offsetBy(delta);
+  trapSites.offsetBy(delta);
   for (FuncExport& fe : funcExports) {
     fe.offsetBy(delta);
   }
@@ -1093,26 +1117,9 @@ const CodeRange* CodeBlock::lookupRange(const void* pc) const {
   return LookupInSorted(codeRanges, target);
 }
 
-struct CallSiteRetAddrOffset {
-  const CallSiteVector& callSites;
-  explicit CallSiteRetAddrOffset(const CallSiteVector& callSites)
-      : callSites(callSites) {}
-  uint32_t operator[](size_t index) const {
-    return callSites[index].returnAddressOffset();
-  }
-};
-
-const CallSite* CodeBlock::lookupCallSite(void* pc) const {
+bool CodeBlock::lookupCallSite(void* pc, CallSite* callSite) const {
   uint32_t target = ((uint8_t*)pc) - segment->base();
-  size_t lowerBound = 0;
-  size_t upperBound = callSites.length();
-
-  size_t match;
-  if (BinarySearch(CallSiteRetAddrOffset(callSites), lowerBound, upperBound,
-                   target, &match)) {
-    return &callSites[match];
-  }
-  return nullptr;
+  return callSites.lookup(target, callSite);
 }
 
 const StackMap* CodeBlock::lookupStackMap(uint8_t* pc) const {
@@ -1133,30 +1140,11 @@ const wasm::TryNote* CodeBlock::lookupTryNote(const void* pc) const {
   return nullptr;
 }
 
-struct TrapSitePCOffset {
-  const TrapSiteVector& trapSites;
-  explicit TrapSitePCOffset(const TrapSiteVector& trapSites)
-      : trapSites(trapSites) {}
-  uint32_t operator[](size_t index) const { return trapSites[index].pcOffset; }
-};
-
-bool CodeBlock::lookupTrap(void* pc, Trap* trapOut,
-                           BytecodeOffset* bytecode) const {
+bool CodeBlock::lookupTrap(void* pc, Trap* kindOut,
+                           TrapSiteDesc* trapOut) const {
+  MOZ_ASSERT(containsCodePC(pc));
   uint32_t target = ((uint8_t*)pc) - segment->base();
-  for (Trap trap : MakeEnumeratedRange(Trap::Limit)) {
-    const TrapSiteVector& trapSitesForKind = trapSites[trap];
-
-    size_t upperBound = trapSitesForKind.length();
-    size_t match;
-    if (BinarySearch(TrapSitePCOffset(trapSitesForKind), 0, upperBound, target,
-                     &match)) {
-      MOZ_ASSERT(containsCodePC(pc));
-      *trapOut = trap;
-      *bytecode = trapSitesForKind[match].bytecode;
-      return true;
-    }
-  }
-  return false;
+  return trapSites.lookup(target, kindOut, trapOut);
 }
 
 struct UnwindInfoPCOffset {
@@ -1313,14 +1301,6 @@ bool Code::initialize(FuncImportVector&& funcImports,
   return true;
 }
 
-uint32_t Code::getFuncIndex(JSFunction* fun) const {
-  MOZ_ASSERT(fun->isWasm() || fun->isAsmJSNative());
-  if (!fun->isWasmWithJitEntry()) {
-    return fun->wasmFuncIndex();
-  }
-  return jumpTables_.funcIndexFromJitEntry(fun->wasmJitEntry());
-}
-
 Tiers Code::completeTiers() const {
   if (hasCompleteTier2_) {
     return Tiers(completeTier1_->tier(), completeTier2_->tier());
@@ -1379,22 +1359,6 @@ void Code::clearLinkData() const {
   for (UniqueLinkData& linkData : guard->blocksLinkData) {
     linkData = nullptr;
   }
-}
-
-bool Code::lookupFunctionTier(const CodeRange* codeRange, Tier* tier) const {
-  // This logic only works if the codeRange is a function, and therefore only
-  // exists in metadata and not a lazy stub tier. Generalizing to access lazy
-  // stubs would require taking a lock, which is undesirable for the profiler.
-  MOZ_ASSERT(codeRange->isFunction());
-  for (Tier t : completeTiers()) {
-    const CodeBlock& code = completeTierCodeBlock(t);
-    if (codeRange >= code.codeRanges.begin() &&
-        codeRange < code.codeRanges.end()) {
-      *tier = t;
-      return true;
-    }
-  }
-  return false;
 }
 
 // When enabled, generate profiling labels for every name in funcNames_ that is

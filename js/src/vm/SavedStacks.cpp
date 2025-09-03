@@ -1327,7 +1327,8 @@ bool SavedFrame::toStringMethod(JSContext* cx, unsigned argc, Value* vp) {
 
 bool SavedStacks::saveCurrentStack(
     JSContext* cx, MutableHandle<SavedFrame*> frame,
-    JS::StackCapture&& capture /* = JS::StackCapture(JS::AllFrames()) */) {
+    JS::StackCapture&& capture /* = JS::StackCapture(JS::AllFrames()) */,
+    HandleObject startAt /* nullptr */) {
   MOZ_RELEASE_ASSERT(cx->realm());
   MOZ_DIAGNOSTIC_ASSERT(&cx->realm()->savedStacks() == this);
 
@@ -1338,7 +1339,7 @@ bool SavedStacks::saveCurrentStack(
   }
 
   AutoGeckoProfilerEntry labelFrame(cx, "js::SavedStacks::saveCurrentStack");
-  return insertFrames(cx, frame, std::move(capture));
+  return insertFrames(cx, frame, std::move(capture), startAt);
 }
 
 bool SavedStacks::copyAsyncStack(JSContext* cx, HandleObject asyncStack,
@@ -1414,7 +1415,10 @@ static inline bool captureIsSatisfied(JSContext* cx, JSPrincipals* principals,
 }
 
 bool SavedStacks::insertFrames(JSContext* cx, MutableHandle<SavedFrame*> frame,
-                               JS::StackCapture&& capture) {
+                               JS::StackCapture&& capture,
+                               HandleObject startAtObj) {
+  MOZ_ASSERT_IF(startAtObj, startAtObj->isCallable());
+
   // In order to look up a cached SavedFrame object, we need to have its parent
   // SavedFrame, which means we need to walk the stack from oldest frame to
   // youngest. However, FrameIter walks the stack from youngest frame to
@@ -1467,6 +1471,11 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandle<SavedFrame*> frame,
   // frame and the target frame.) To accomplish this, we keep track of eval
   // targets and ensure that we don't stop before they have all been reached.
   Vector<AbstractFramePtr, 4, TempAllocPolicy> unreachedEvalTargets(cx);
+
+  Rooted<JSFunction*> startAt(cx, startAtObj && startAtObj->is<JSFunction>()
+                                      ? &startAtObj->as<JSFunction>()
+                                      : nullptr);
+  bool seenStartAt = !startAt;
 
   while (!iter.done()) {
     Activation& activation = *iter.activation();
@@ -1544,17 +1553,27 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandle<SavedFrame*> frame,
     auto principals = iter.realm()->principals();
     MOZ_ASSERT_IF(framePtr && !iter.isWasm(), iter.pc());
 
-    if (!stackChain.emplaceBack(location.source(), location.sourceId(),
-                                location.line(), location.column(), displayAtom,
-                                nullptr,  // asyncCause
-                                nullptr,  // parent (not known yet)
-                                principals, iter.mutedErrors(), framePtr,
-                                iter.pc(), &activation)) {
-      return false;
+    // If we haven't yet seen the start, then don't add anything to the stack
+    // chain.
+    if (seenStartAt) {
+      if (!stackChain.emplaceBack(location.source(), location.sourceId(),
+                                  location.line(), location.column(),
+                                  displayAtom,
+                                  nullptr,  // asyncCause
+                                  nullptr,  // parent (not known yet)
+                                  principals, iter.mutedErrors(), framePtr,
+                                  iter.pc(), &activation)) {
+        return false;
+      }
     }
 
     if (captureIsSatisfied(cx, principals, location.source(), capture)) {
       break;
+    }
+
+    if (!seenStartAt && iter.isFunctionFrame() &&
+        iter.matchCallee(cx, startAt)) {
+      seenStartAt = true;
     }
 
     ++iter;
@@ -1578,9 +1597,13 @@ bool SavedStacks::insertFrames(JSContext* cx, MutableHandle<SavedFrame*> frame,
     // stack.
     //
     // Captures using FirstSubsumedFrame expect us to ignore async parents.
+    //
+    // If we're censoring the stack for Error.captureStackTrace we also
+    // don't want to re-parent an empty stack trace, so make sure
+    // we actually saw a frame.
     if (iter.activation() != &activation && activation.asyncStack() &&
         (activation.asyncCallIsExplicit() || iter.done()) &&
-        !capture.is<JS::FirstSubsumedFrame>()) {
+        !capture.is<JS::FirstSubsumedFrame>() && seenStartAt) {
       // Atomize the async cause string. There should only be a few
       // different strings used.
       const char* cause = activation.asyncCause();

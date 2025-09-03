@@ -312,7 +312,7 @@
 
 .message > .message-body-wrapper {
   flex: auto;
-  min-width: 0px;
+  min-width: 0;
   margin: var(--console-output-vertical-padding) 0;
 }
 
@@ -343,6 +343,14 @@
 .warning-group-badge {
   color: var(--console-warning-background);
   background-color: var(--console-warning-color);
+}
+
+:root[forced-colors-active] :is(
+  .message-repeats,
+  .warning-group-badge
+) {
+  color: Canvas;
+  background-color: CanvasText;
 }
 
 .message-location {
@@ -705,7 +713,7 @@ a.learn-more-link.webconsole-learn-more-link {
     /* Don't stretch so there is room around the input to show the borders
        and the focus indicator */
     align-self: unset;
-    outline-offset: 0px;
+    outline-offset: 0;
   }
 }
 

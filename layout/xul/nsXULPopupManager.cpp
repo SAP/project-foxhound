@@ -146,7 +146,7 @@ void PendingPopup::InitMousePoint() {
         !event->AsGUIEvent()->mWidget) {
       // no widget, so just use the client point if available
       MouseEvent* mouseEvent = mEvent->AsMouseEvent();
-      nsIntPoint clientPt(mouseEvent->ClientX(), mouseEvent->ClientY());
+      const CSSIntPoint clientPt(RoundedToInt(mouseEvent->ClientPoint()));
 
       // XXX this doesn't handle IFRAMEs in transforms
       nsPoint thisDocToRootDocOffset =
@@ -1836,8 +1836,7 @@ void nsXULPopupManager::FirePopupHidingEvent(Element* aPopup,
   // and wait for it to finish.
   // The transition would still occur either way, but if we don't wait the
   // view will be hidden and you won't be able to see it.
-  if (shouldAnimate && AnimationUtils::HasCurrentTransitions(
-                           aPopup, PseudoStyleType::NotPseudo)) {
+  if (shouldAnimate && AnimationUtils::HasCurrentTransitions(aPopup)) {
     RefPtr<TransitionEnder> ender = new TransitionEnder(aPopup, aOptions);
     aPopup->AddSystemEventListener(u"transitionend"_ns, ender, false, false);
     aPopup->AddSystemEventListener(u"transitioncancel"_ns, ender, false, false);

@@ -312,11 +312,15 @@ option {
   word-wrap: normal !important;
 }
 
+option:read-write {
+  user-select: text;
+}
+
 select > option {
   padding-inline: 4px;
 }
 
-option:checked {
+select:-moz-select-list-box option:checked {
   background-color: -moz-cellhighlight;
   color: -moz-cellhighlighttext;
 }
@@ -518,7 +522,7 @@ input[type=color] {
 /* https://github.com/whatwg/html/issues/9976 */
 input:not([type=image i], [type=range i], [type=checkbox i], [type=radio i]) {
   overflow: clip !important;
-  overflow-clip-margin: 0px !important;
+  overflow-clip-margin: 0 !important;
 }
 
 button,

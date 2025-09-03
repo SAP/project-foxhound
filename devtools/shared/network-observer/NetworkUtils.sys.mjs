@@ -73,27 +73,33 @@ function stringToCauseType(value) {
 }
 
 function isChannelFromSystemPrincipal(channel) {
-  let principal = null;
-  let browsingContext = channel.loadInfo.browsingContext;
-  if (!browsingContext) {
-    const topFrame = lazy.NetworkHelper.getTopFrameForRequest(channel);
-    if (topFrame) {
-      browsingContext = topFrame.browsingContext;
-    } else {
-      // Fallback to the triggering principal when browsingContext and topFrame is null
-      // e.g some chrome requests
-      principal = channel.loadInfo.triggeringPrincipal;
-    }
+  let principal;
+
+  if (channel.isDocument) {
+    // The loadingPrincipal is the principal where the request will be used.
+    principal = channel.loadInfo.loadingPrincipal;
+  } else {
+    // The triggeringPrincipal is the principal of the resource which triggered
+    // the request. Except for document loads, this is normally the best way
+    // to know if a request is done on behalf of a chrome resource.
+    // For instance if a chrome stylesheet loads a resource which is used in a
+    // content page, the loadingPrincipal will be a content principal, but the
+    // triggeringPrincipal will be the system principal.
+    principal = channel.loadInfo.triggeringPrincipal;
   }
 
-  // When in the parent process, we can get the documentPrincipal from the
-  // WindowGlobal which is available on the BrowsingContext
-  if (!principal) {
-    principal = CanonicalBrowsingContext.isInstance(browsingContext)
-      ? browsingContext.currentWindowGlobal?.documentPrincipal
-      : browsingContext.window.document.nodePrincipal;
+  return !!principal?.isSystemPrincipal;
+}
+
+function isChromeFileChannel(channel) {
+  if (!(channel instanceof Ci.nsIFileChannel)) {
+    return false;
   }
-  return principal?.isSystemPrincipal;
+
+  return (
+    channel.originalURI.spec.startsWith("chrome://") ||
+    channel.originalURI.spec.startsWith("resource://")
+  );
 }
 
 /**
@@ -158,7 +164,8 @@ function isPreloadRequest(channel) {
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_MODULE_PRELOAD ||
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_IMAGE_PRELOAD ||
     type == Ci.nsIContentPolicy.TYPE_INTERNAL_STYLESHEET_PRELOAD ||
-    type == Ci.nsIContentPolicy.TYPE_INTERNAL_FONT_PRELOAD
+    type == Ci.nsIContentPolicy.TYPE_INTERNAL_FONT_PRELOAD ||
+    type == Ci.nsIContentPolicy.TYPE_INTERNAL_JSON_PRELOAD
   );
 }
 
@@ -439,6 +446,25 @@ function fetchRequestHeadersAndCookies(channel) {
 }
 
 /**
+ * Parse the early hint raw headers string to an
+ * array of name/value object header pairs
+ *
+ * @param {String} rawHeaders
+ * @returns {Array}
+ */
+function parseEarlyHintsResponseHeaders(rawHeaders) {
+  const headers = rawHeaders.split("\r\n");
+  // Remove the line with the HTTP version and the status
+  headers.shift();
+  return headers
+    .map(header => {
+      const [name, value] = header.split(":");
+      return { name, value };
+    })
+    .filter(header => header.name.length);
+}
+
+/**
  * For a given channel, fetch the response's headers and cookies.
  *
  * @param {nsIChannel} channel
@@ -501,8 +527,8 @@ function matchRequest(channel, filters) {
     // Ignore requests from chrome or add-on code when we don't monitor the whole browser
     if (
       channel.loadInfo?.loadingDocument === null &&
-      (channel.loadInfo.loadingPrincipal ===
-        Services.scriptSecurityManager.getSystemPrincipal() ||
+      (isChannelFromSystemPrincipal(channel) ||
+        isChromeFileChannel(channel) ||
         channel.loadInfo.isInDevToolsContext)
     ) {
       return false;
@@ -572,8 +598,7 @@ function legacyMatchRequest(channel, filters) {
   // content.
   if (
     channel.loadInfo?.loadingDocument === null &&
-    (channel.loadInfo.loadingPrincipal ===
-      Services.scriptSecurityManager.getSystemPrincipal() ||
+    (isChannelFromSystemPrincipal(channel) ||
       channel.loadInfo.isInDevToolsContext)
   ) {
     return false;
@@ -685,6 +710,7 @@ function getCharset(channel) {
 export const NetworkUtils = {
   causeTypeToString,
   fetchRequestHeadersAndCookies,
+  parseEarlyHintsResponseHeaders,
   fetchResponseHeadersAndCookies,
   getCauseDetails,
   getChannelBrowsingContextID,

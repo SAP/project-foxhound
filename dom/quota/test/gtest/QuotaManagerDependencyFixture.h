@@ -62,6 +62,14 @@ class QuotaManagerDependencyFixture : public testing::Test {
 
   static void InitializeTemporaryClient(const ClientMetadata& aClientMetadata);
 
+  static CStringArray ListOrigins();
+  static CStringArray ListCachedOrigins();
+
+  static void ClearStoragesForOriginAttributesPattern(
+      const nsAString& aPattern);
+
+  static uint64_t TotalDirectoryIterations();
+
   /* Convenience method for tasks which must be called on PBackground thread */
   template <class Invokable, class... Args>
   static auto PerformOnBackgroundThread(Invokable&& aInvokable, Args&&... aArgs)
@@ -76,7 +84,7 @@ class QuotaManagerDependencyFixture : public testing::Test {
   static auto PerformOnIOThread(Invokable&& aInvokable, Args&&... aArgs)
       -> std::invoke_result_t<Invokable, Args...> {
     QuotaManager* quotaManager = QuotaManager::Get();
-    ASSERT_TRUE(quotaManager);
+    MOZ_RELEASE_ASSERT(quotaManager);
 
     return PerformOnThread(quotaManager->IOThread(),
                            std::forward<Invokable>(aInvokable),
@@ -202,6 +210,7 @@ class QuotaManagerDependencyFixture : public testing::Test {
   }
 
   static PrincipalMetadata GetTestPrincipalMetadata();
+  static OriginMetadata GetTestPersistentOriginMetadata();
   static OriginMetadata GetTestOriginMetadata();
   static ClientMetadata GetTestClientMetadata();
 

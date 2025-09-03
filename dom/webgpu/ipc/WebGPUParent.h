@@ -135,7 +135,8 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
 
   ipc::IPCResult GetFrontBufferSnapshot(
       IProtocol* aProtocol, const layers::RemoteTextureOwnerId& aOwnerId,
-      Maybe<Shmem>& aShmem, gfx::IntSize& aSize);
+      const RawId& aCommandEncoderId, Maybe<Shmem>& aShmem, gfx::IntSize& aSize,
+      uint32_t& aByteStride);
 
   void ActorDestroy(ActorDestroyReason aWhy) override;
 
@@ -161,9 +162,14 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
                                          struct ffi::WGPUTextureFormat aFormat,
                                          ffi::WGPUTextureUsages aUsage);
 
+  void EnsureExternalTextureForReadBackPresent(
+      ffi::WGPUSwapChainId aSwapChainId, ffi::WGPUDeviceId aDeviceId,
+      ffi::WGPUTextureId aTextureId, uint32_t aWidth, uint32_t aHeight,
+      struct ffi::WGPUTextureFormat aFormat, ffi::WGPUTextureUsages aUsage);
+
   std::shared_ptr<ExternalTexture> CreateExternalTexture(
-      ffi::WGPUDeviceId aDeviceId, ffi::WGPUTextureId aTextureId,
-      uint32_t aWidth, uint32_t aHeight,
+      const layers::RemoteTextureOwnerId& aOwnerId, ffi::WGPUDeviceId aDeviceId,
+      ffi::WGPUTextureId aTextureId, uint32_t aWidth, uint32_t aHeight,
       const struct ffi::WGPUTextureFormat aFormat,
       ffi::WGPUTextureUsages aUsage);
 
@@ -178,9 +184,15 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
     return ForwardError(Some(aDeviceId), aError);
   }
 
+  ffi::WGPUGlobal* GetContext() const { return mContext.get(); }
+
+  bool IsDeviceActive(const RawId aDeviceId) {
+    return mActiveDeviceIds.Contains(aDeviceId);
+  }
+
  private:
-  static void MapCallback(ffi::WGPUBufferMapAsyncStatus aStatus,
-                          uint8_t* aUserData);
+  static void MapCallback(uint8_t* aUserData,
+                          ffi::WGPUBufferMapAsyncStatus aStatus);
   static void DeviceLostCallback(uint8_t* aUserData, uint8_t aReason,
                                  const char* aMessage);
   void DeallocBufferShmem(RawId aBufferId);
@@ -224,19 +236,33 @@ class WebGPUParent final : public PWebGPUParent, public SupportsWeakPtr {
   // limit each Device to one DeviceLost message.
   nsTHashSet<RawId> mLostDeviceIds;
 
+  // Store active DeviceIds
+  nsTHashSet<RawId> mActiveDeviceIds;
+
   // Shared handle of wgpu device's fence.
   std::unordered_map<RawId, RefPtr<gfx::FileHandleWrapper>> mDeviceFenceHandles;
-
-  // Store DeviceLostRequest structs for each device as unique_ptrs mapped
-  // to their device ids. We keep these unique_ptrs alive as long as the
-  // device is alive.
-  struct DeviceLostRequest {
-    WeakPtr<WebGPUParent> mParent;
-    RawId mDeviceId;
-  };
-  std::unordered_map<RawId, std::unique_ptr<DeviceLostRequest>>
-      mDeviceLostRequests;
 };
+
+#if defined(XP_LINUX) && !defined(MOZ_WIDGET_ANDROID)
+class VkImageHandle {
+ public:
+  explicit VkImageHandle(WebGPUParent* aParent,
+                         const ffi::WGPUDeviceId aDeviceId,
+                         const ffi::WGPUVkImageHandle* aVkImageHandle)
+      : mParent(aParent),
+        mDeviceId(aDeviceId),
+        mVkImageHandle(aVkImageHandle) {}
+
+  const ffi::WGPUVkImageHandle* Get() { return mVkImageHandle; }
+
+  ~VkImageHandle();
+
+ protected:
+  const WeakPtr<WebGPUParent> mParent;
+  const RawId mDeviceId;
+  const ffi::WGPUVkImageHandle* mVkImageHandle;
+};
+#endif
 
 }  // namespace webgpu
 }  // namespace mozilla

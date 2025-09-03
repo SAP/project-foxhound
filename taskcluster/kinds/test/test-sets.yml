@@ -25,7 +25,6 @@ webgpu:
 web-platform-tests:
     - web-platform-tests
     - web-platform-tests-crashtest
-    - web-platform-tests-privatebrowsing
     - web-platform-tests-print-reftest
     - web-platform-tests-reftest
     - web-platform-tests-wdspec
@@ -111,6 +110,8 @@ browsertime:
     - browsertime-indexeddb
     - browsertime-video-playback-latency
     - browsertime-network-bench
+    - browsertime-webcodecs
+    - browsertime-trr-performance
 
 browsertime-clang:
     - browsertime-tp6
@@ -235,7 +236,7 @@ linux2204-wayland-tests:
     - xpcshell
 
 # Windows
-windows32-2009-tests:
+windows32-tests:
     - cppunittest
     - crashtest
     - gtest
@@ -247,19 +248,15 @@ windows32-2009-tests:
     - mochitest-browser-a11y
     - mochitest-browser-chrome
     - mochitest-browser-media
-    - mochitest-browser-translations
     - mochitest-chrome
-    - mochitest-chrome-gpu
     - mochitest-media
-    - mochitest-plain
-    - mochitest-plain-gpu
-    - mochitest-remote
     - reftest
-    - telemetry-tests-client
     - test-verify
     - test-verify-gpu
     - test-verify-wpt
     - xpcshell
+    - web-platform-tests
+    - web-platform-tests-crashtest
 
 windows10-2009-tests:
     - cppunittest
@@ -281,7 +278,7 @@ windows11-64-2009-ccov-tests:
     - web-platform-tests-webcodecs
     - web-platform-tests-eme
 
-windows11-2009-tests:
+windows11-24h2-tests:
     - cppunittest
     - crashtest
     - firefox-ui-functional
@@ -322,8 +319,8 @@ mingwclang-tests-debug:
     - mochitest-webgl1-ext
     - mochitest-webgl2-core
     - mochitest-webgl2-ext
-    - reftest
     - telemetry-tests-client
+    - reftest
 
 # The following is the same as the above block, minus reftests.
 # Reftests were disabled due to frequent hangs; see bug 1642719
@@ -401,7 +398,7 @@ macosx1100-aarch64-qr-tests:
     - cppunittest
     - mochitest-media
 
-macosx1015-64-qr-tests:
+macosx1470-64-tests:
     - cppunittest
     - crashtest
     - firefox-ui-functional
@@ -412,7 +409,6 @@ macosx1015-64-qr-tests:
     - marionette-unittest
     - mochitest-a11y
     - mochitest-browser-a11y
-    - mochitest-browser-chrome
     - mochitest-browser-media
     - mochitest-browser-translations
     - mochitest-chrome
@@ -431,6 +427,26 @@ macosx1015-64-qr-tests:
     - test-verify
     - test-verify-gpu
     - test-verify-wpt
+    - web-platform-tests
+    - web-platform-tests-canvas
+    - web-platform-tests-crashtest
+    - web-platform-tests-eme
+    - web-platform-tests-print-reftest
+    - web-platform-tests-reftest
+    - web-platform-tests-wdspec
+    - web-platform-tests-webcodecs
+    - xpcshell
+
+macosx1015-64-qr-tests:
+    - cppunittest
+    - crashtest
+    - jittest
+    - mochitest-browser-chrome
+    - mochitest-media
+    - mochitest-webgl1-core
+    - mochitest-webgl1-ext
+    - mochitest-webgl2-core
+    - mochitest-webgl2-ext
     - xpcshell
 
 macosx64-talos:
@@ -520,6 +536,7 @@ android-hw-browsertime:
     - browsertime-benchmark-motionmark-1-3
     - browsertime-benchmark-jetstream2
     - browsertime-video-playback-latency-mobile
+    - browsertime-youtube-playback-power-mobile
 
 android-hw-browsertime-profiling:
     - browsertime-tp6m-profiling
@@ -527,3 +544,6 @@ android-hw-browsertime-profiling:
 android-hw-speedometer-tests:
     - browsertime-benchmark-speedometer-mobile
     - browsertime-benchmark-speedometer3-mobile
+
+android-hw-power-tests:
+    - browsertime-youtube-playback-power-mobile

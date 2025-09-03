@@ -96,6 +96,7 @@
 
     <androidx.preference.PreferenceCategory
         android:title="@string/preferences_category_privacy_security"
+        android:key="@string/pref_key_privacy_security_category"
         android:layout="@layout/preference_category_no_icon_style">
 
         <androidx.preference.Preference
@@ -107,6 +108,12 @@
             android:key="@string/pref_key_https_only_settings"
             app:iconSpaceReserved="false"
             android:title="@string/preferences_https_only_title" />
+
+        <androidx.preference.Preference
+            android:key="@string/pref_key_doh_settings"
+            app:iconSpaceReserved="false"
+            app:isPreferenceVisible="false"
+            android:title="@string/preference_doh_title" />
 
         <org.mozilla.fenix.settings.cookiebannerhandling.CustomCBHSwitchPreference
             android:key="@string/pref_key_cookie_banner_private_mode"
@@ -165,6 +172,11 @@
             android:key="@string/pref_key_override_amo_collection"
             app:iconSpaceReserved="false"
             android:title="@string/preferences_customize_extension_collection" />
+
+        <androidx.preference.Preference
+            android:key="@string/pref_key_link_sharing"
+            app:iconSpaceReserved="false"
+            android:title="@string/preferences_link_sharing" />
 
         <androidx.preference.Preference
             android:key="@string/pref_key_open_links_in_apps"

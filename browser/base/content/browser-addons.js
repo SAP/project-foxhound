@@ -18,6 +18,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ExtensionParent: "resource://gre/modules/ExtensionParent.sys.mjs",
   ExtensionPermissions: "resource://gre/modules/ExtensionPermissions.sys.mjs",
   OriginControls: "resource://gre/modules/ExtensionPermissions.sys.mjs",
+  PERMISSION_L10N: "resource://gre/modules/ExtensionPermissionMessages.sys.mjs",
   SITEPERMS_ADDON_TYPE:
     "resource://gre/modules/addons/siteperms-addon-utils.sys.mjs",
 });
@@ -183,7 +184,7 @@ customElements.define(
     }
 
     render() {
-      const { strings, showIncognitoCheckbox } =
+      const { strings, showIncognitoCheckbox, isUserScriptsRequest } =
         this.notification.options.customElementOptions;
 
       const { textEl, introEl, permsSingleEl, permsListEl } = this;
@@ -192,6 +193,9 @@ customElements.define(
       const doc = this.ownerDocument;
 
       this.#clearChildElements();
+      // Re-enable "Allow" button if it was disabled by a previous request with
+      // isUserScriptsRequest=true.
+      this.#setAllowButtonEnabled(true);
 
       if (strings.text) {
         textEl.textContent = strings.text;
@@ -242,6 +246,25 @@ customElements.define(
           permsListEl.appendChild(item);
         }
         permsListEl.hidden = false;
+        return;
+      }
+
+      if (isUserScriptsRequest) {
+        // The "userScripts" permission cannot be granted until the user has
+        // confirmed again in the notification's content, as described at
+        // https://bugzilla.mozilla.org/show_bug.cgi?id=1917000#c1
+
+        let { checkboxEl, warningEl } = this.#createUserScriptsPermissionItems(
+          // "userScripts" can only be requested with "permissions.request()",
+          // which enforces that it is the only permission in the request.
+          strings.msgs[0]
+        );
+
+        this.#setAllowButtonEnabled(false);
+
+        permsSingleEl.append(checkboxEl, warningEl);
+        permsSingleEl.classList.add("webext-perm-optional");
+        permsSingleEl.hidden = false;
         return;
       }
 
@@ -316,8 +339,56 @@ customElements.define(
       permsListEl.hidden = true;
     }
 
+    #createUserScriptsPermissionItems(userScriptsPermissionMessage) {
+      const doc = this.ownerDocument;
+
+      let checkboxEl = doc.createXULElement("checkbox");
+      checkboxEl.label = userScriptsPermissionMessage;
+      checkboxEl.checked = false;
+      checkboxEl.addEventListener("CheckboxStateChange", () => {
+        // The main "Allow" button is disabled until the checkbox is checked.
+        this.#setAllowButtonEnabled(checkboxEl.checked);
+      });
+
+      let warningEl = document.createElement("moz-message-bar");
+      warningEl.setAttribute("type", "warning");
+      warningEl.setAttribute(
+        "message",
+        lazy.PERMISSION_L10N.formatValueSync(
+          "webext-perms-extra-warning-userScripts-short"
+        )
+      );
+
+      return { checkboxEl, warningEl };
+    }
+
+    #setAllowButtonEnabled(allowed) {
+      let disabled = !allowed;
+      // "mainactiondisabled" mirrors the "disabled" boolean attribute of the
+      // "Allow" button. toggleAttribute("mainactiondisabled", disabled) cannot
+      // be used due to bug 1938481.
+      if (disabled) {
+        this.setAttribute("mainactiondisabled", "true");
+      } else {
+        this.removeAttribute("mainactiondisabled");
+      }
+
+      // The "mainactiondisabled" attribute may also be toggled by the
+      // PopupNotifications._setNotificationUIState() method, which can be
+      // called as a side effect of toggling a checkbox within the notification
+      // (via PopupNotifications._onCommand).
+      //
+      // To prevent PopupNotifications._setNotificationUIState() from setting
+      // the "mainactiondisabled" attribute to a different state, also set the
+      // "invalidselection" attribute, since _setNotificationUIState() mirrors
+      // its value to "mainactiondisabled".
+      //
+      // TODO bug 1938623: Remove this when a better alternative exists.
+      this.toggleAttribute("invalidselection", disabled);
+    }
+
     #createPrivateBrowsingCheckbox() {
-      const { onPrivateBrowsingAllowedChanged, grantPrivateBrowsingAllowed } =
+      const { grantPrivateBrowsingAllowed } =
         this.notification.options.customElementOptions;
 
       const doc = this.ownerDocument;
@@ -325,6 +396,12 @@ customElements.define(
       let checkboxEl = doc.createXULElement("checkbox");
       checkboxEl.checked = grantPrivateBrowsingAllowed;
       checkboxEl.addEventListener("CheckboxStateChange", () => {
+        // NOTE: the popupnotification instances will be reused
+        // and so the callback function is destructured here to
+        // avoid this custom element to prevent it from being
+        // garbage collected.
+        const { onPrivateBrowsingAllowedChanged } =
+          this.notification.options.customElementOptions;
         onPrivateBrowsingAllowedChanged?.(checkboxEl.checked);
       });
       doc.l10n.setAttributes(
@@ -494,6 +571,75 @@ customElements.define(
 
     onDownloadEnded() {
       this.updateProgress();
+    }
+  }
+);
+
+// This custom element wraps the messagebar shown in the extensions panel
+// and used in both ext-browserAction.js and browser-unified-extensions.js
+customElements.define(
+  "unified-extensions-item-messagebar-wrapper",
+  class extends HTMLElement {
+    get extensionPolicy() {
+      return WebExtensionPolicy.getByID(this.extensionId);
+    }
+
+    get extensionName() {
+      return this.extensionPolicy?.name;
+    }
+
+    get isSoftBlocked() {
+      return this.extensionPolicy?.extension?.isSoftBlocked;
+    }
+
+    connectedCallback() {
+      this.messagebar = document.createElement("moz-message-bar");
+      this.messagebar.classList.add("unified-extensions-item-messagebar");
+      this.append(this.messagebar);
+      this.refresh();
+    }
+
+    disconnectedCallback() {
+      this.messagebar?.remove();
+    }
+
+    async refresh() {
+      if (!this.messagebar) {
+        // Nothing to refresh, the custom element has not been
+        // connected to the DOM yet.
+        return;
+      }
+      if (!customElements.get("moz-message-bar")) {
+        document.createElement("moz-message-bar");
+        await customElements.whenDefined("moz-message-bar");
+      }
+      const { messagebar } = this;
+      if (this.isSoftBlocked) {
+        const SOFTBLOCK_FLUENTID =
+          "unified-extensions-item-messagebar-softblocked";
+        if (
+          messagebar.messageL10nId === SOFTBLOCK_FLUENTID &&
+          messagebar.messageL10nArgs?.extensionName === this.extensionName
+        ) {
+          // nothing to refresh.
+          return;
+        }
+        messagebar.removeAttribute("hidden");
+        messagebar.setAttribute("type", "warning");
+        messagebar.messageL10nId = SOFTBLOCK_FLUENTID;
+        messagebar.messageL10nArgs = {
+          extensionName: this.extensionName,
+        };
+      } else {
+        if (messagebar.hasAttribute("hidden")) {
+          // nothing to refresh.
+          return;
+        }
+        messagebar.setAttribute("hidden", "true");
+        messagebar.messageL10nId = null;
+        messagebar.messageL10nArgs = null;
+      }
+      messagebar.requestUpdate();
     }
   }
 );
@@ -855,11 +1001,9 @@ var gXPInstallObserver = {
 
         options.removeOnDismissal = true;
         options.persistent = false;
-
-        let secHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
-        secHistogram.add(
-          Ci.nsISecurityUITelemetry.WARNING_ADDON_ASKING_PREVENTED
-        );
+        Services.telemetry
+          .getHistogramById("SECURITY_UI")
+          .add(Ci.nsISecurityUITelemetry.WARNING_ADDON_ASKING_PREVENTED);
         let popup = PopupNotifications.show(
           browser,
           aTopic,
@@ -950,11 +1094,9 @@ var gXPInstallObserver = {
           let learnMore = doc.getElementById("addon-install-blocked-info");
           learnMore.setAttribute("support-page", article);
         };
-
-        let secHistogram = Services.telemetry.getHistogramById("SECURITY_UI");
-        secHistogram.add(
-          Ci.nsISecurityUITelemetry.WARNING_ADDON_ASKING_PREVENTED
-        );
+        Services.telemetry
+          .getHistogramById("SECURITY_UI")
+          .add(Ci.nsISecurityUITelemetry.WARNING_ADDON_ASKING_PREVENTED);
 
         const [
           installMsg,
@@ -969,10 +1111,12 @@ var gXPInstallObserver = {
         ]);
 
         const action = buildNotificationAction(installMsg, () => {
-          secHistogram.add(
-            Ci.nsISecurityUITelemetry
-              .WARNING_ADDON_ASKING_PREVENTED_CLICK_THROUGH
-          );
+          Services.telemetry
+            .getHistogramById("SECURITY_UI")
+            .add(
+              Ci.nsISecurityUITelemetry
+                .WARNING_ADDON_ASKING_PREVENTED_CLICK_THROUGH
+            );
           installInfo.install();
         });
 
@@ -1900,6 +2044,12 @@ var gUnifiedExtensions = {
       );
       CustomizableUI.addPanelCloseListeners(this._panel);
 
+      this._panel
+        .querySelector("#unified-extensions-manage-extensions")
+        .addEventListener("command", () => {
+          BrowserAddonUI.openAddonsMgr("addons://list/extension");
+        });
+
       // Lazy-load the l10n strings. Those strings are used for the CUI and
       // non-CUI extensions in the unified extensions panel.
       document
@@ -2109,7 +2259,9 @@ var gUnifiedExtensions = {
 
   _getExtensionId(menu) {
     const { triggerNode } = menu;
-    return triggerNode.dataset.extensionid;
+    return triggerNode
+      .closest(".unified-extensions-item")
+      ?.querySelector("toolbarbutton")?.dataset.extensionid;
   },
 
   _getWidgetId(menu) {

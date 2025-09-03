@@ -442,7 +442,7 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
 
   void UpdateKeyboardHeight(mozilla::ScreenIntCoord aHeight);
 
-  mozilla::ScreenIntCoord GetKeyboardHeight() const { return mKeyboardHeight; }
+  mozilla::ScreenIntCoord GetKeyboardHeight() const;
 
   /**
    * Returns true if the software keyboard is hidden or
@@ -740,10 +740,13 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
    * treated as "overflow: visible"), and we store the overflow style here.
    * If the document is in fullscreen, and the fullscreen element is not the
    * root, the scrollbar of viewport will be suppressed.
+   * @param aRemovedChild the element we're about to remove from the DOM, which
+   *                      we can't make the new override element.
    * @return if scroll was propagated from some content node, the content node
    *         it was propagated from.
    */
-  mozilla::dom::Element* UpdateViewportScrollStylesOverride();
+  mozilla::dom::Element* UpdateViewportScrollStylesOverride(
+      const mozilla::dom::Element* aRemovedChild = nullptr);
 
   /**
    * Returns the cached result from the last call to
@@ -1244,8 +1247,6 @@ class nsPresContext : public nsISupports, public mozilla::SupportsWeakPtr {
   // The maximum height of the dynamic toolbar on mobile.
   mozilla::ScreenIntCoord mDynamicToolbarMaxHeight;
   mozilla::ScreenIntCoord mDynamicToolbarHeight;
-  // The software keyboard height.
-  mozilla::ScreenIntCoord mKeyboardHeight;
   // Safe area insets support
   mozilla::LayoutDeviceIntMargin mSafeAreaInsets;
   nsSize mPageSize;

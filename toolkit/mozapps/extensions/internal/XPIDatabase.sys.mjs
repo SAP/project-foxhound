@@ -430,7 +430,7 @@ export class AddonInternal {
     }
 
     for (const [name, uri] of Object.entries({ installFrom, source })) {
-      if (!installOrigins.includes(new URL(uri.spec).origin)) {
+      if (!installOrigins.includes(URL.fromURI(uri).origin)) {
         logger.warn(
           `Addon ${this.id} Installation not allowed, ${name} "${uri.spec}" is not included in the Addon install_origins`
         );
@@ -739,6 +739,19 @@ export class AddonInternal {
         this.softDisabled = softDisabled;
       }
     }
+
+    if (oldState != newState) {
+      lazy.AddonManagerPrivate.callAddonListeners(
+        "onPropertyChanged",
+        this.wrapper,
+        ["blocklistState"]
+      );
+      if (this.active) {
+        // Make sure to sync the XPIState with the blocklistState
+        // set in the AddonDB if the addon is active.
+        XPIDatabase.updateXPIStates(this);
+      }
+    }
   }
 
   recordAddonBlockChangeTelemetry(reason) {
@@ -826,15 +839,19 @@ export class AddonInternal {
   permissions() {
     let permissions = 0;
 
+    let settings = Services.policies?.getExtensionSettings(this.id) || {};
     // The permission to "toggle the private browsing access" is locked down
     // when the extension has opted out or it gets the permission automatically
-    // on every extension startup (as system, privileged and builtin addons).
+    // on every extension startup (as system, privileged and builtin addons) or
+    // when private browsing access as been set and locke dthrough enterprise
+    // policy settings.
     if (
       this.type === "extension" &&
       this.incognito !== "not_allowed" &&
       this.signedState !== lazy.AddonManager.SIGNEDSTATE_PRIVILEGED &&
       this.signedState !== lazy.AddonManager.SIGNEDSTATE_SYSTEM &&
-      !this.location.isBuiltin
+      !this.location.isBuiltin &&
+      !("private_browsing" in settings)
     ) {
       // NOTE: This permission is computed even for addons not in the database because
       // it is being used in the first dialog part of the install flow, when the addon
@@ -971,6 +988,13 @@ AddonWrapper = class {
       this.type === "extension" &&
       !this.quarantineIgnoredByApp
     );
+  }
+
+  get previousActiveThemeID() {
+    if (this.type === "theme") {
+      return addonFor(this).previousActiveThemeID;
+    }
+    return null;
   }
 
   get seen() {

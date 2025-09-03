@@ -8,8 +8,6 @@
 user_pref("browser.newtabpage.enabled", false);
 // Don't restore the last open set of tabs if the browser has crashed
 user_pref("browser.sessionstore.resume_from_crash", false);
-//  Disable session restore infobar.
-user_pref("browser.startup.couldRestoreSession.count", -1);
 // Don't show the Bookmarks Toolbar on any tab (the above pref that
 // disables the New Tab Page ends up showing the toolbar on about:blank).
 user_pref("browser.toolbars.bookmarks.visibility", "never");
@@ -96,3 +94,7 @@ user_pref("network.http.http2.websockets", true);
 user_pref("app.update.disabledForTesting", true);
 // Use dummy server for geolocation
 user_pref("geo.provider.network.url", "https://web-platform.test:8444/_mozilla/geolocation-API/dummy.py");
+// If we are on a platform where we can detect that we don't have OS
+// geolocation permission, and we can open it and wait for the user to give
+// permission, then don't do that.
+user_pref("geo.prompt.open_system_prefs", false);

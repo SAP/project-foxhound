@@ -23,6 +23,7 @@ namespace gfx {
 class SourceSurface;
 }
 }  // namespace mozilla
+
 class DragData final {
  public:
   NS_INLINE_DECL_REFCOUNTING(DragData)
@@ -111,6 +112,8 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   // accepts/denies D&D operation and uses stored
   // mTargetDragContextForRemote context.
   NS_IMETHOD UpdateDragEffect() override;
+
+  nsAutoCString GetDebugTag() const;
 
   MOZ_CAN_RUN_SCRIPT nsresult
   EndDragSessionImpl(bool aDoneDrag, uint32_t aKeyModifiers) override;
@@ -309,9 +312,9 @@ class nsDragSession : public nsBaseDragSession, public nsIObserver {
   bool SourceDataGetText(nsITransferable* aItem, const nsACString& aMIMEType,
                          bool aNeedToDoConversionToPlainText,
                          GtkSelectionData* aSelectionData);
-  void SourceDataGetImage(nsITransferable* aItem,
+  bool SourceDataGetImage(nsITransferable* aItem,
                           GtkSelectionData* aSelectionData);
-  void SourceDataGetXDND(nsITransferable* aItem, GdkDragContext* aContext,
+  bool SourceDataGetXDND(nsITransferable* aItem, GdkDragContext* aContext,
                          GtkSelectionData* aSelectionData);
   void SourceDataGetUriList(GdkDragContext* aContext,
                             GtkSelectionData* aSelectionData,

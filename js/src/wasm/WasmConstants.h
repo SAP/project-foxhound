@@ -833,8 +833,8 @@ enum class SimdOp {
   F64x2RelaxedMin = 0x10f,
   F64x2RelaxedMax = 0x110,
   I16x8RelaxedQ15MulrS = 0x111,
-  I16x8DotI8x16I7x16S = 0x112,
-  I32x4DotI8x16I7x16AddS = 0x113,
+  I16x8RelaxedDotI8x16I7x16S = 0x112,
+  I32x4RelaxedDotI8x16I7x16AddS = 0x113,
 
   // Reserved for Relaxed SIMD = 0x114-0x12f
 
@@ -1076,7 +1076,18 @@ struct OpBytes {
     b0 = uint16_t(x);
     b1 = 0;
   }
+  OpBytes(uint16_t b0, uint16_t b1) : b0(b0), b1(b1) {}
   OpBytes() = default;
+
+  uint32_t toPacked() const {
+    // In practice all of our secondary bytecodes are actually 16-bit right now.
+    MOZ_RELEASE_ASSERT(b1 <= UINT16_MAX);
+    return b0 | (b1 << 16);
+  }
+
+  static OpBytes fromPacked(uint32_t packed) {
+    return OpBytes(packed & 0xFFFF, packed >> 16);
+  }
 
   // Whether this opcode should have a breakpoint site inserted directly before
   // the opcode in baseline when debugging. We use this as a heuristic to
@@ -1110,10 +1121,8 @@ struct OpBytes {
     }
   }
 
-#ifdef DEBUG
   // Defined in WasmOpIter.cpp
   const char* toString() const;
-#endif
 };
 
 static const char NameSectionName[] = "name";

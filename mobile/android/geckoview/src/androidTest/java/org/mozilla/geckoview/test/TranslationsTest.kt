@@ -6,7 +6,9 @@ package org.mozilla.geckoview.test
 
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.MediumTest
+import junit.framework.TestCase.assertEquals
 import junit.framework.TestCase.assertFalse
+import junit.framework.TestCase.assertNull
 import junit.framework.TestCase.assertTrue
 import junit.framework.TestCase.fail
 import org.json.JSONObject
@@ -14,6 +16,7 @@ import org.junit.After
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.gecko.EventDispatcher
 import org.mozilla.geckoview.GeckoResult
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.TranslationsController
@@ -31,6 +34,7 @@ import org.mozilla.geckoview.TranslationsController.SessionTranslation.Delegate
 import org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationOptions
 import org.mozilla.geckoview.TranslationsController.SessionTranslation.TranslationState
 import org.mozilla.geckoview.TranslationsController.TranslationsException
+import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_COULD_NOT_TRANSLATE
 import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_COULD_NOT_DELETE
 import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_COULD_NOT_DOWNLOAD
 import org.mozilla.geckoview.TranslationsController.TranslationsException.ERROR_MODEL_DOWNLOAD_REQUIRED
@@ -90,7 +94,7 @@ class TranslationsTest : BaseSessionTest() {
                       "isDocLangTagSupported": true,
                       "docLangTag": "es"
                     },
-                    "requestedTranslationPair": null,
+                    "requestedLanguagePair": null,
                     "hasVisibleChange": false,
                     "error": null,
                     "isEngineReady": false
@@ -226,6 +230,62 @@ class TranslationsTest : BaseSessionTest() {
         }
     }
 
+    @Test
+    fun testInvalidLanguageCode() {
+        sessionRule.setPrefsUntilTestEnd(
+            mapOf(
+                "browser.translations.geckoview.enableAllTestMocks" to false,
+            ),
+        )
+        mainSession.loadTestPath(TRANSLATIONS_ES)
+        mainSession.waitForPageStop()
+
+        val invalidCode = "xyz-not-a-language"
+
+        // Translate
+        val translate = sessionRule.session.sessionTranslation!!.translate("es", invalidCode, null)
+        try {
+            sessionRule.waitForResult(translate)
+            fail("Should not complete requests on an translate invalid code.")
+        } catch (e: RuntimeException) {
+            // Wait call causes a runtime exception too.
+            val te = e.cause as TranslationsException
+            assertEquals(
+                "Correctly could not translate.",
+                ERROR_COULD_NOT_TRANSLATE,
+                te.code,
+            )
+        }
+
+        // Set Language Settings
+        try {
+            sessionRule.waitForResult(RuntimeTranslation.setLanguageSettings(invalidCode, NEVER))
+            fail("Should not complete requests on an invalid language setting code.")
+        } catch (e: RuntimeException) {
+            // Wait call causes a runtime exception too.
+            val qe = e.cause as EventDispatcher.QueryException
+            assertEquals(
+                "Correctly could not set language setting.",
+                "The language tag $invalidCode is not valid.",
+                qe.data.toString(),
+            )
+        }
+
+        // Size Check
+        try {
+            sessionRule.waitForResult(RuntimeTranslation.checkPairDownloadSize("es", invalidCode))
+            fail("Should not complete requests on an invalid download size check code.")
+        } catch (e: RuntimeException) {
+            // Wait call causes a runtime exception too.
+            val qe = e.cause as EventDispatcher.QueryException
+            assertEquals(
+                "Correctly could not complete a size check.",
+                "The language tag es or $invalidCode is not valid.",
+                qe.data.toString(),
+            )
+        }
+    }
+
     // More comprehensive translation test that also tests delegate state.
     // Tests es -> en
     @Test
@@ -332,17 +392,20 @@ class TranslationsTest : BaseSessionTest() {
         sessionRule.setPrefsUntilTestEnd(mapOf("intl.accept_languages" to "fr-CA, it, de"))
         val preferredLanguages = TranslationsController.RuntimeTranslation.preferredLanguages()
         sessionRule.waitForResult(preferredLanguages).let { languages ->
-            assertTrue(
+            assertEquals(
                 "French is the first language preference.",
-                languages[0] == "fr",
+                "fr-CA",
+                languages[0],
             )
-            assertTrue(
+            assertEquals(
                 "Italian is the second language preference.",
-                languages[1] == "it",
+                "it",
+                languages[1],
             )
-            assertTrue(
+            assertEquals(
                 "German is the third language preference.",
-                languages[2] == "de",
+                "de",
+                languages[2],
             )
             // "en" is likely the 4th preference via system language;
             // however, this is difficult to guarantee/set in automation.
@@ -447,24 +510,27 @@ class TranslationsTest : BaseSessionTest() {
             assertTrue("Should have an exception, this isn't a valid tag.", true)
         }
 
-        // Capital BG is non-canonical BCP 47, but the API should normalize it to "bg".
+        // Capital BG is non-canonical BCP 47
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("BG", ALWAYS))
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("fr", OFFER))
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("de", NEVER))
+        sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("zh-Hans", NEVER))
 
         // Query corresponding prefs
         val alwaysTranslate = (sessionRule.getPrefs("browser.translations.alwaysTranslateLanguages").get(0) as String).split(",")
         val neverTranslate = (sessionRule.getPrefs("browser.translations.neverTranslateLanguages").get(0) as String).split(",")
 
         // Test setting
-        assertTrue("BG was correctly set to ALWAYS", alwaysTranslate.contains("bg"))
+        assertTrue("BG was correctly set to ALWAYS", alwaysTranslate.contains("BG"))
         assertTrue("FR was correctly set to OFFER", !alwaysTranslate.contains("fr") && !neverTranslate.contains("fr"))
         assertTrue("DE was correctly set to NEVER", neverTranslate.contains("de"))
+        assertTrue("zh-Hans was correctly set to NEVER", neverTranslate.contains("zh-Hans"))
 
         // Reset back to offer
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("BG", OFFER))
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("fr", OFFER))
         sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("de", OFFER))
+        sessionRule.waitForResult(TranslationsController.RuntimeTranslation.setLanguageSettings("zh-Hans", OFFER))
 
         // Query corresponding prefs
         val alwaysTranslateReset = (sessionRule.getPrefs("browser.translations.alwaysTranslateLanguages").get(0) as String).split(",")
@@ -474,6 +540,7 @@ class TranslationsTest : BaseSessionTest() {
         assertTrue("BG was correctly set back to OFFER", !alwaysTranslateReset.contains("bg") && !neverTranslateReset.contains("bg"))
         assertTrue("FR was correctly set back to OFFER", !alwaysTranslateReset.contains("fr") && !neverTranslateReset.contains("fr"))
         assertTrue("DE was correctly set back to OFFER", !alwaysTranslateReset.contains("de") && !neverTranslateReset.contains("de"))
+        assertTrue("zh-Hans was correctly set back to OFFER", !alwaysTranslateReset.contains("zh-Hans") && !neverTranslateReset.contains("zh-Hans"))
     }
 
     @Test
@@ -746,7 +813,7 @@ class TranslationsTest : BaseSessionTest() {
                       "isDocLangTagSupported": true,
                       "docLangTag": "es"
                     },
-                    "requestedTranslationPair": null,
+                    "requestedLanguagePair": null,
                     "hasVisibleChange": false,
                     "error": null,
                     "isEngineReady": false
@@ -767,7 +834,83 @@ class TranslationsTest : BaseSessionTest() {
                       "isDocLangTagSupported": true,
                       "docLangTag": "es"
                     },
-                    "requestedTranslationPair": {"fromLanguage" : "es" , "toLanguage" : "en"},
+                    "requestedLanguagePair": {"sourceLanguage" : "es" , "targetLanguage" : "en"},
+                    "hasVisibleChange": true,
+                    "error": null,
+                    "isEngineReady": true
+                    }
+                }
+            }
+            """.trimIndent(),
+        )
+        mainSession.triggerLanguageStateChange(translated)
+        sessionRule.waitForResult(handled)
+    }
+
+    @Test
+    fun checkStateDeserialization() {
+        mainSession.loadTestPath(TRANSLATIONS_ES)
+        mainSession.waitForPageStop()
+
+        val handled = GeckoResult<Void>()
+        sessionRule.delegateUntilTestEnd(object : Delegate {
+            @AssertCalled(count = 1)
+            override fun onTranslationStateChange(
+                session: GeckoSession,
+                translationState: TranslationState?,
+            ) {
+                assertEquals(
+                    "userLangTag is as expected.",
+                    "en",
+                    translationState!!.detectedLanguages!!.userLangTag,
+                )
+                assertEquals(
+                    "isDocLangTagSupported is as expected.",
+                    true,
+                    translationState.detectedLanguages!!.isDocLangTagSupported,
+                )
+                assertEquals(
+                    "docLangTag is as expected.",
+                    "es",
+                    translationState.detectedLanguages!!.docLangTag,
+                )
+                // Full rename to match JS and Java names is bug 1943444, right now it deserializes to different Java names.
+                assertEquals(
+                    "sourceLanguage is as expected.",
+                    "es",
+                    translationState.requestedTranslationPair!!.fromLanguage,
+                )
+                assertEquals(
+                    "targetLanguage is as expected.",
+                    "en",
+                    translationState.requestedTranslationPair!!.toLanguage,
+                )
+                assertEquals(
+                    "hasVisibleChange is as expected.",
+                    true,
+                    translationState.hasVisibleChange,
+                )
+                assertNull("error is as expected.", translationState.error)
+                assertEquals(
+                    "isEngineReady is as expected.",
+                    true,
+                    translationState.isEngineReady,
+                )
+                handled.complete(null)
+            }
+        })
+
+        val translated = JSONObject(
+            """
+            {
+            "actor":{
+                "languageState":{
+                    "detectedLanguages": {
+                      "userLangTag": "en",
+                      "isDocLangTagSupported": true,
+                      "docLangTag": "es"
+                    },
+                    "requestedLanguagePair": {"sourceLanguage" : "es" , "targetLanguage" : "en"},
                     "hasVisibleChange": true,
                     "error": null,
                     "isEngineReady": true

@@ -5,8 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "nsWaylandDisplay.h"
-
-#include <dlfcn.h>
+#include "DMABufFormats.h"
 
 #include "base/message_loop.h"    // for MessageLoop
 #include "base/task.h"            // for NewRunnableMethod, etc
@@ -16,6 +15,7 @@
 #include "mozilla/StaticPtr.h"
 #include "mozilla/ThreadLocal.h"
 #include "mozilla/StaticPrefs_widget.h"
+#include "mozilla/StaticPrefs_general.h"
 #include "mozilla/Sprintf.h"
 #include "WidgetUtilsGtk.h"
 #include "nsGtkKeyUtils.h"
@@ -100,7 +100,7 @@ class WaylandPointerEvent {
   void SetTime(uint32_t aTime) { mTime = aTime; }
 
   void SendScrollEvent() {
-    if (!mWindow) {
+    if (!mWindow || !StaticPrefs::general_smoothScroll()) {
       return;
     }
 
@@ -342,7 +342,12 @@ static void keyboard_handle_leave(void* data, struct wl_keyboard* keyboard,
 
 static void keyboard_handle_key(void* data, struct wl_keyboard* keyboard,
                                 uint32_t serial, uint32_t time, uint32_t key,
-                                uint32_t state) {}
+                                uint32_t state) {
+  // hardware key code is +8.
+  // https://gitlab.gnome.org/GNOME/gtk/-/blob/3.24.41/gdk/wayland/gdkdevice-wayland.c#L2341
+  KeymapWrapper::KeyboardHandlerForWayland(serial, key + 8, state);
+}
+
 static void keyboard_handle_modifiers(void* data, struct wl_keyboard* keyboard,
                                       uint32_t serial, uint32_t mods_depressed,
                                       uint32_t mods_latched,
@@ -367,6 +372,7 @@ void nsWaylandDisplay::ClearKeyboard() {
   if (mKeyboard) {
     wl_keyboard_destroy(mKeyboard);
     mKeyboard = nullptr;
+    KeymapWrapper::ClearKeymap();
   }
 }
 
@@ -402,8 +408,25 @@ void nsWaylandDisplay::SetPointerGestures(
   mPointerGestures = aPointerGestures;
 }
 
-void nsWaylandDisplay::SetDmabuf(zwp_linux_dmabuf_v1* aDmabuf) {
+void nsWaylandDisplay::SetDmabuf(zwp_linux_dmabuf_v1* aDmabuf, int aVersion) {
+  if (!aDmabuf || aVersion < ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION) {
+    return;
+  }
   mDmabuf = aDmabuf;
+  mDmabufIsFeedback =
+      (aVersion >= ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION);
+  if (mDmabufIsFeedback) {
+    mFormats->InitFeedback(mDmabuf, nullptr);
+  } else {
+    mFormats->InitV3(mDmabuf);
+  }
+}
+
+void nsWaylandDisplay::EnsureDMABufFormats() {
+  if (mDmabuf && !mDmabufIsFeedback) {
+    mFormats->InitV3Done();
+  }
+  mFormats->EnsureBasicFormats();
 }
 
 void nsWaylandDisplay::SetXdgActivation(xdg_activation_v1* aXdgActivation) {
@@ -413,6 +436,85 @@ void nsWaylandDisplay::SetXdgActivation(xdg_activation_v1* aXdgActivation) {
 void nsWaylandDisplay::SetXdgDbusAnnotationManager(
     xdg_dbus_annotation_manager_v1* aXdgDbusAnnotationManager) {
   mXdgDbusAnnotationManager = aXdgDbusAnnotationManager;
+}
+
+void nsWaylandDisplay::SetCMSupportedFeature(uint32_t aFeature) {
+  switch (aFeature) {
+    case XX_COLOR_MANAGER_V4_FEATURE_ICC_V2_V4:
+      mColorManagerSupportedFeature.mICC = true;
+      break;
+    case XX_COLOR_MANAGER_V4_FEATURE_PARAMETRIC:
+      mColorManagerSupportedFeature.mParametric = true;
+      break;
+    case XX_COLOR_MANAGER_V4_FEATURE_SET_PRIMARIES:
+      mColorManagerSupportedFeature.mPrimaries = true;
+      break;
+    case XX_COLOR_MANAGER_V4_FEATURE_SET_TF_POWER:
+      mColorManagerSupportedFeature.mFTPower = true;
+      break;
+    case XX_COLOR_MANAGER_V4_FEATURE_SET_LUMINANCES:
+      mColorManagerSupportedFeature.mLuminances = true;
+      break;
+    case XX_COLOR_MANAGER_V4_FEATURE_SET_MASTERING_DISPLAY_PRIMARIES:
+      mColorManagerSupportedFeature.mDisplayPrimaries = true;
+      break;
+  }
+}
+
+void nsWaylandDisplay::SetCMSupportedTFNamed(uint32_t aTF) {
+  if (aTF < sColorTransfersNum) {
+    mSupportedTransfer[aTF] = aTF;
+  } else {
+    NS_WARNING("Unknow color transfer function!");
+  }
+}
+
+void nsWaylandDisplay::SetCMSupportedPrimariesNamed(uint32_t aPrimaries) {
+  if (aPrimaries < sColorPrimariesNum) {
+    mSupportedPrimaries[aPrimaries] = aPrimaries;
+  } else {
+    NS_WARNING("Unknown color primaries!");
+  }
+}
+
+static void supported_intent(void* data,
+                             struct xx_color_manager_v4* color_manager,
+                             uint32_t render_intent) {}
+
+static void supported_feature(void* data,
+                              struct xx_color_manager_v4* color_manager,
+                              uint32_t feature) {
+  auto* display = static_cast<nsWaylandDisplay*>(data);
+  display->SetCMSupportedFeature(feature);
+}
+
+static void supported_tf_named(void* data,
+                               struct xx_color_manager_v4* color_manager,
+                               uint32_t tf) {
+  auto* display = static_cast<nsWaylandDisplay*>(data);
+  display->SetCMSupportedTFNamed(tf);
+}
+
+static void supported_primaries_named(void* data,
+                                      struct xx_color_manager_v4* color_manager,
+                                      uint32_t primaries) {
+  auto* display = static_cast<nsWaylandDisplay*>(data);
+  display->SetCMSupportedPrimariesNamed(primaries);
+}
+
+static const struct xx_color_manager_v4_listener color_manager_listener = {
+    supported_intent,
+    supported_feature,
+    supported_tf_named,
+    supported_primaries_named,
+};
+
+void nsWaylandDisplay::SetColorManager(xx_color_manager_v4* aColorManager) {
+  mColorManager = aColorManager;
+  if (mColorManager) {
+    xx_color_manager_v4_add_listener(mColorManager, &color_manager_listener,
+                                     this);
+  }
 }
 
 static void global_registry_handler(void* data, wl_registry* registry,
@@ -455,12 +557,15 @@ static void global_registry_handler(void* data, wl_registry* registry,
     auto* viewporter = WaylandRegistryBind<wp_viewporter>(
         registry, id, &wp_viewporter_interface, 1);
     display->SetViewporter(viewporter);
-  } else if (iface.EqualsLiteral("zwp_linux_dmabuf_v1") &&
-             version >= ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION) {
+  } else if (iface.EqualsLiteral("zwp_linux_dmabuf_v1")) {
+    if (version < ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION) {
+      return;
+    }
+    int vers =
+        MIN(version, ZWP_LINUX_DMABUF_V1_GET_DEFAULT_FEEDBACK_SINCE_VERSION);
     auto* dmabuf = WaylandRegistryBind<zwp_linux_dmabuf_v1>(
-        registry, id, &zwp_linux_dmabuf_v1_interface,
-        ZWP_LINUX_DMABUF_V1_MODIFIER_SINCE_VERSION);
-    display->SetDmabuf(dmabuf);
+        registry, id, &zwp_linux_dmabuf_v1_interface, vers);
+    display->SetDmabuf(dmabuf, vers);
   } else if (iface.EqualsLiteral("xdg_activation_v1")) {
     auto* activation = WaylandRegistryBind<xdg_activation_v1>(
         registry, id, &xdg_activation_v1_interface, 1);
@@ -490,6 +595,11 @@ static void global_registry_handler(void* data, wl_registry* registry,
         registry, id, &zwp_pointer_gestures_v1_interface,
         ZWP_POINTER_GESTURES_V1_GET_HOLD_GESTURE_SINCE_VERSION);
     display->SetPointerGestures(gestures);
+  } else if (iface.EqualsLiteral("xx_color_manager_v4")) {
+    // initialize_color_maps(wl);
+    auto* colorManager = WaylandRegistryBind<xx_color_manager_v4>(
+        registry, id, &xx_color_manager_v4_interface, version);
+    display->SetColorManager(colorManager);
   }
 }
 
@@ -542,10 +652,19 @@ nsWaylandDisplay::nsWaylandDisplay(wl_display* aDisplay)
   // in a similar fashion
   wl_log_set_handler_client(WlLogHandler);
 
+  mFormats = new DMABufFormats();
   mRegistry = wl_display_get_registry(mDisplay);
   wl_registry_add_listener(mRegistry, &registry_listener, this);
   wl_display_roundtrip(mDisplay);
   wl_display_roundtrip(mDisplay);
+  EnsureDMABufFormats();
+
+  for (auto& e : mSupportedTransfer) {
+    e = -1;
+  };
+  for (auto& e : mSupportedPrimaries) {
+    e = -1;
+  };
 
   // Check we have critical Wayland interfaces.
   // Missing ones indicates a compositor bug and we can't continue.

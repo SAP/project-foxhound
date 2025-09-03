@@ -16,6 +16,8 @@ run-if = ["nightly_build"] # Bug 1890946
 
 ["browser_pdfjs_caret_browsing_mode.js"]
 
+["browser_pdfjs_check_alttext_en.js"]
+
 ["browser_pdfjs_chrome_events.js"]
 
 ["browser_pdfjs_download_button.js"]
@@ -49,6 +51,9 @@ support-files = ["file_pdfjs_hcm.pdf"]
 
 ["browser_pdfjs_highlight_telemetry.js"]
 skip-if = ["true"]
+
+["browser_pdfjs_jpeg2000.js"]
+support-files = ["file_pdfjs_jp2_image.pdf"]
 
 ["browser_pdfjs_js.js"]
 support-files = ["file_pdfjs_js.pdf"]
@@ -88,6 +93,10 @@ support-files = [
 skip-if = ["verify"]
 
 ["browser_pdfjs_secondary_toolbar_telemetry.js"]
+
+["browser_pdfjs_signature_storage.js"]
+
+["browser_pdfjs_signature_telemetry.js"]
 
 ["browser_pdfjs_stamp_telemetry.js"]
 support-files = ["moz.png"]

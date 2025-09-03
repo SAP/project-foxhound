@@ -6,6 +6,7 @@ import {
   LitElement,
   html,
   ifDefined,
+  nothing,
 } from "chrome://global/content/vendor/lit.all.mjs";
 
 /**
@@ -91,7 +92,7 @@ function queryAll(el, selector) {
  * async onClick() {
  *   let response = await this.getServerResponse(this.data);
  *   // Show the response status to the user.
- *   this.responseStatus = respose.status;
+ *   this.responseStatus = response.status;
  *   this.dispatchOnUpdateComplete(
  *     new CustomEvent("status-shown")
  *   );
@@ -232,6 +233,9 @@ export class MozLitElement extends LitElement {
  * @property {string} supportPage - Name of the SUMO support page to link to.
  */
 export class MozBaseInputElement extends MozLitElement {
+  #internals;
+  #hasSlottedContent = new Map();
+
   static properties = {
     label: { type: String, fluent: true },
     name: { type: String },
@@ -247,11 +251,51 @@ export class MozBaseInputElement extends MozLitElement {
   constructor() {
     super();
     this.disabled = false;
+    this.#internals = this.attachInternals();
   }
 
   connectedCallback() {
     super.connectedCallback();
     this.setAttribute("inputlayout", this.constructor.inputLayout);
+  }
+
+  willUpdate(changedProperties) {
+    super.willUpdate(changedProperties);
+    this.#updateInternalState(this.description, "description");
+    this.#updateInternalState(this.supportPage, "support-link");
+    this.#updateInternalState(this.label, "label");
+
+    let activatedProperty = this.constructor.activatedProperty;
+    if (
+      (activatedProperty && changedProperties.has(activatedProperty)) ||
+      changedProperties.has("disabled")
+    ) {
+      this.updateNestedElements();
+    }
+  }
+
+  #updateInternalState(propVal, stateKey) {
+    let internalStateKey = `has-${stateKey}`;
+    let hasValue = !!(propVal || this.#hasSlottedContent.get(stateKey));
+
+    if (this.#internals.states?.has(internalStateKey) == hasValue) {
+      return;
+    }
+
+    if (hasValue) {
+      this.#internals.states.add(internalStateKey);
+    } else {
+      this.#internals.states.delete(internalStateKey);
+    }
+  }
+
+  updateNestedElements() {
+    for (let el of this.nestedEls) {
+      if ("disabled" in el) {
+        el.disabled =
+          !this[this.constructor.activatedProperty] || this.disabled;
+      }
+    }
   }
 
   get inputEl() {
@@ -270,6 +314,22 @@ export class MozBaseInputElement extends MozLitElement {
     return this.renderRoot.getElementById("description");
   }
 
+  get nestedEls() {
+    return this.renderRoot.querySelector(".nested")?.assignedElements() ?? [];
+  }
+
+  get hasDescription() {
+    return this.#internals.states.has("has-description");
+  }
+
+  get hasSupportLink() {
+    return this.#internals.states.has("has-support-link");
+  }
+
+  get hasLabel() {
+    return this.#internals.states.has("has-label");
+  }
+
   click() {
     this.inputEl.click();
   }
@@ -278,10 +338,35 @@ export class MozBaseInputElement extends MozLitElement {
     this.inputEl.focus();
   }
 
+  blur() {
+    this.inputEl.blur();
+  }
+
+  /**
+   * Dispatches an event from the host element so that outside
+   * listeners can react to these events
+   *
+   * @param {Event} event
+   * @memberof MozBaseInputElement
+   */
+  redispatchEvent(event) {
+    let { bubbles, cancelable, composed, type } = event;
+    let newEvent = new Event(type, {
+      bubbles,
+      cancelable,
+      composed,
+    });
+    this.dispatchEvent(newEvent);
+  }
+
   inputTemplate() {
     throw new Error(
       "inputTemplate() must be implemented and provide the input element"
     );
+  }
+
+  inputStylesTemplate() {
+    return nothing;
   }
 
   render() {
@@ -291,33 +376,39 @@ export class MozBaseInputElement extends MozLitElement {
         rel="stylesheet"
         href="chrome://global/content/elements/moz-input-common.css"
       />
+      ${this.inputStylesTemplate()}
       <span class="label-wrapper">
         <label
           is="moz-label"
           part="label"
           for="input"
           shownaccesskey=${ifDefined(this.accessKey)}
-        >
-          ${isInlineLayout ? this.inputTemplate() : ""}${this.labelTemplate()}
-        </label>
-        ${this.supportLinkTemplate()}
+          >${isInlineLayout
+            ? this.inputTemplate()
+            : ""}${this.labelTemplate()}</label
+        >${this.hasDescription ? "" : this.supportLinkTemplate()}
       </span>
       ${this.descriptionTemplate()}
       ${!isInlineLayout ? this.inputTemplate() : ""}
+      ${this.nestedFieldsTemplate()}
     `;
   }
 
   labelTemplate() {
-    return html`<span class="label-content">
-      ${this.iconTemplate()}
-      <span class="text">${this.label}</span>
-    </span>`;
+    if (!this.label) {
+      return "";
+    }
+    return html`${this.iconTemplate()}<span class="text">${this.label}</span>`;
   }
 
   descriptionTemplate() {
     return html`
       <div id="description" class="description text-deemphasized">
-        ${this.description ?? html`<slot name="description"></slot>`}
+        ${this.description ??
+        html`<slot
+          name="description"
+          @slotchange=${this.onSlotchange}
+        ></slot>`}${this.hasDescription ? this.supportLinkTemplate() : ""}
       </div>
     `;
   }
@@ -337,6 +428,36 @@ export class MozBaseInputElement extends MozLitElement {
         part="support-link"
       ></a>`;
     }
-    return html`<slot name="support-link"></slot>`;
+    return html`<slot
+      name="support-link"
+      @slotchange=${this.onSlotchange}
+    ></slot>`;
+  }
+
+  nestedFieldsTemplate() {
+    if (this.constructor.activatedProperty) {
+      return html`<slot
+        name="nested"
+        class="nested"
+        @slotchange=${this.updateNestedElements}
+      ></slot>`;
+    }
+    return "";
+  }
+
+  onSlotchange(e) {
+    let propName = e.target.name;
+    let hasSlottedContent = e.target
+      .assignedNodes()
+      .some(
+        node => node.textContent.trim() || node.getAttribute("data-l10n-id")
+      );
+
+    if (hasSlottedContent == this.#hasSlottedContent.get(propName)) {
+      return;
+    }
+
+    this.#hasSlottedContent.set(propName, hasSlottedContent);
+    this.requestUpdate();
   }
 }

@@ -51,8 +51,9 @@ object TestAssetHelper {
     fun getLoremIpsumAsset(server: MockWebServer): TestAsset {
         val url = server.url("pages/lorem-ipsum.html").toString().toUri()!!
         val content = "Page content: lorem ipsum"
+        val title = "Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod tempor invidunt"
 
-        return TestAsset(url, content, "")
+        return TestAsset(url, content, title)
     }
 
     fun getRefreshAsset(server: MockWebServer): TestAsset {
@@ -166,5 +167,21 @@ object TestAssetHelper {
         val title = "BeforeUnload_Test_Page"
 
         return TestAsset(url, "", title)
+    }
+
+    fun getFirstForeignWebPageAsset(server: MockWebServer): TestAsset {
+        val url = server.url("pages/firstForeignWebPage.html").toString().toUri()!!
+        val title = "Page_de_test_FR_1"
+        val content = "Article du jour"
+
+        return TestAsset(url, content, title)
+    }
+
+    fun getSecondForeignWebPageAsset(server: MockWebServer): TestAsset {
+        val url = server.url("pages/secondForeignWebPage.html").toString().toUri()!!
+        val title = "Page_de_test_FR_2"
+        val content = "Mot du jour"
+
+        return TestAsset(url, content, title)
     }
 }

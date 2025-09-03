@@ -2714,7 +2714,7 @@ class DisplaySVGText final : public DisplaySVGItem {
     MOZ_COUNT_CTOR(DisplaySVGText);
   }
 
-  MOZ_COUNTED_DTOR_OVERRIDE(DisplaySVGText)
+  MOZ_COUNTED_DTOR_FINAL(DisplaySVGText)
 
   NS_DISPLAY_DECL_NAME("DisplaySVGText", TYPE_SVG_TEXT)
 
@@ -2893,8 +2893,11 @@ void SVGTextFrame::MutationObserver::ContentInserted(nsIContent* aChild) {
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
-void SVGTextFrame::MutationObserver::ContentRemoved(
-    nsIContent* aChild, nsIContent* aPreviousSibling) {
+void SVGTextFrame::MutationObserver::ContentWillBeRemoved(
+    nsIContent* aChild, const BatchRemovalState* aState) {
+  if (aState && !aState->mIsFirst) {
+    return;
+  }
   mFrame->NotifyGlyphMetricsChange(true);
 }
 
@@ -3136,8 +3139,7 @@ void SVGTextFrame::PaintSVG(gfxContext& aContext, const gfxMatrix& aTransform,
   gfxMatrix currentMatrix = aContext.CurrentMatrixDouble();
 
   RefPtr<nsCaret> caret = presContext->PresShell()->GetCaret();
-  nsRect caretRect;
-  nsIFrame* caretFrame = caret->GetPaintGeometry(&caretRect);
+  nsIFrame* caretFrame = caret->GetPaintGeometry();
 
   gfxContextAutoSaveRestore ctxSR;
   TextRenderedRunIterator it(this, TextRenderedRunIterator::eVisibleFrames);

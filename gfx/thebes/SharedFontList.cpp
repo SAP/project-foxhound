@@ -24,13 +24,15 @@ namespace fontlist {
 
 static double WSSDistance(const Face* aFace, const gfxFontStyle& aStyle) {
   double stretchDist = StretchDistance(aFace->mStretch, aStyle.stretch);
-  double styleDist = StyleDistance(aFace->mStyle, aStyle.style);
+  double styleDist = StyleDistance(
+      aFace->mStyle, aStyle.style,
+      aStyle.synthesisStyle != StyleFontSynthesisStyle::ObliqueOnly);
   double weightDist = WeightDistance(aFace->mWeight, aStyle.weight);
 
   // Sanity-check that the distances are within the expected range
   // (update if implementation of the distance functions is changed).
   MOZ_ASSERT(stretchDist >= 0.0 && stretchDist <= 2000.0);
-  MOZ_ASSERT(styleDist >= 0.0 && styleDist <= 500.0);
+  MOZ_ASSERT(styleDist >= 0.0 && styleDist <= 900.0);
   MOZ_ASSERT(weightDist >= 0.0 && weightDist <= 1600.0);
 
   // weight/style/stretch priority: stretch >> style >> weight
@@ -233,7 +235,7 @@ void Family::AddFaces(FontList* aList, const nsTArray<Face::InitData>& aFaces) {
       if (f.mWeight.Min().IsBold()) {
         slot |= kBoldMask;
       }
-      if (f.mStyle.Min().IsItalic() || f.mStyle.Min().IsOblique()) {
+      if (!f.mStyle.Min().IsNormal()) {
         slot |= kItalicMask;
       }
       if (slots[slot]) {
@@ -604,7 +606,7 @@ void Family::SetFacePtrs(FontList* aList, nsTArray<Pointer>& aFaces) {
       if (f->mWeight.Min().IsBold()) {
         slot |= kBoldMask;
       }
-      if (f->mStyle.Min().IsItalic() || f->mStyle.Min().IsOblique()) {
+      if (!f->mStyle.Min().IsNormal()) {
         slot |= kItalicMask;
       }
       if (!slots[slot].IsNull()) {

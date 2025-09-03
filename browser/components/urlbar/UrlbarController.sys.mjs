@@ -330,7 +330,7 @@ export class UrlbarController {
           ) {
             this.browserWindow.gBrowser.selectedBrowser.focus();
           } else {
-            this.input.handleRevert({ escapeSearchMode: true });
+            this.input.handleRevert();
           }
         }
         event.preventDefault();
@@ -357,19 +357,37 @@ export class UrlbarController {
         if (
           lazy.UrlbarPrefs.get("scotchBonnet.enableOverride") &&
           this.view.isOpen &&
-          ((event.shiftKey &&
-            this.view.selectedElement ==
-              this.view.getFirstSelectableElement()) ||
-            (!event.shiftKey &&
-              this.view.selectedElement ==
-                this.view.getLastSelectableElement()))
+          !event.ctrlKey &&
+          !event.altKey
         ) {
-          // If pressing tab + shift when the first or last element has been
-          // selected, move the focus to the Unified Search Button.
-          event.preventDefault();
-          this.view.selectedRowIndex = -1;
-          this.#focusOnDedicatedSearchButton();
-          break;
+          if (
+            (event.shiftKey &&
+              this.view.selectedElement ==
+                this.view.getFirstSelectableElement()) ||
+            (!event.shiftKey &&
+              this.view.selectedElement == this.view.getLastSelectableElement())
+          ) {
+            // If pressing tab + shift when the first or pressing tab when last
+            // element has been selected, move the focus to the Unified Search
+            // Button. Then make urlbar results selectable by tab + shift.
+            event.preventDefault();
+            this.view.selectedRowIndex = -1;
+            this.#focusOnUnifiedSearchButton();
+            break;
+          } else if (
+            !this.view.selectedElement &&
+            this.input.focusedViaMousedown
+          ) {
+            if (event.shiftKey) {
+              this.#focusOnUnifiedSearchButton();
+            } else {
+              this.view.selectBy(1, {
+                userPressedTab: true,
+              });
+            }
+            event.preventDefault();
+            break;
+          }
         }
 
         // It's always possible to tab through results when the urlbar was
@@ -504,10 +522,6 @@ export class UrlbarController {
     if (!this.input || context.isPrivate || !context.results.length) {
       return;
     }
-    let { url } = lazy.UrlbarUtils.getUrlFromResult(result);
-    if (!url) {
-      return;
-    }
 
     switch (reason) {
       case "resultsadded": {
@@ -531,6 +545,11 @@ export class UrlbarController {
               );
             }
           } else if (result.autofill) {
+            const { url } = lazy.UrlbarUtils.getUrlFromResult(result);
+            if (!url) {
+              return;
+            }
+
             lazy.UrlbarUtils.setupSpeculativeConnection(
               url,
               this.browserWindow
@@ -540,6 +559,11 @@ export class UrlbarController {
         return;
       }
       case "mousedown": {
+        const { url } = lazy.UrlbarUtils.getUrlFromResult(result);
+        if (!url) {
+          return;
+        }
+
         // On mousedown, connect only to http/https urls.
         if (url.startsWith("http")) {
           lazy.UrlbarUtils.setupSpeculativeConnection(url, this.browserWindow);
@@ -591,36 +615,6 @@ export class UrlbarController {
       selectedResult,
       this._userSelectionBehavior
     );
-
-    if (!result) {
-      return;
-    }
-
-    // Do not modify existing telemetry types.  To add a new type:
-    //
-    // * Set telemetryType appropriately. Since telemetryType is used as the
-    //   probe name, it must be alphanumeric with optional underscores.
-    // * Add a new keyed scalar probe into the urlbar.picked category for the
-    //   newly added telemetryType.
-    // * Add a new matching Glean metric in browser/components/urlbar/metrics.yaml.
-    // * Add a test named browser_UsageTelemetry_urlbar_newType.js to
-    //   browser/modules/test/browser.
-    //
-    // The "topsite" type overrides the other ones, because it starts from a
-    // unique user interaction, that we want to count apart. We do this here
-    // rather than in telemetryTypeFromResult because other consumers, like
-    // events telemetry, are reporting this information separately.
-    let telemetryType =
-      result.providerName == "UrlbarProviderTopSites"
-        ? "topsite"
-        : lazy.UrlbarUtils.telemetryTypeFromResult(result, true);
-    Glean.urlbarPicked[telemetryType]?.[resultIndex].add(1);
-    if (this.input.searchMode && !this.input.searchMode.isPreview) {
-      let name = this.input.searchMode.entry.replace(/_([a-z])/g, (m, p) =>
-        p.toUpperCase()
-      );
-      Glean.urlbarPickedSearchmode[name]?.[resultIndex].add(1);
-    }
   }
 
   /**
@@ -727,7 +721,9 @@ export class UrlbarController {
     }
   }
 
-  #focusOnDedicatedSearchButton() {
+  #focusOnUnifiedSearchButton() {
+    this.input.toggleAttribute("unifiedsearchbutton-available", true);
+
     const switcher = this.input.document.getElementById(
       "urlbar-searchmode-switcher"
     );
@@ -741,8 +737,21 @@ export class UrlbarController {
     this.input.addEventListener("blur", this.input);
     switcher.addEventListener(
       "blur",
-      () => {
+      e => {
         switcher.removeAttribute("tabindex");
+        if (
+          this.input.hasAttribute("focused") &&
+          !e.relatedTarget?.closest("#urlbar")
+        ) {
+          // If the focus is not back to urlbar, fire blur event explicitly to
+          // clear the urlbar. Because the input field has been losing an
+          // opportunity to lose the focus since we removed blur listener once.
+          this.input.inputField.dispatchEvent(
+            new FocusEvent("blur", {
+              relatedTarget: e.relatedTarget,
+            })
+          );
+        }
       },
       { once: true }
     );
@@ -998,12 +1007,6 @@ class TelemetryEvent {
     }
 
     if (!skipLegacyTelemetry) {
-      if (method == "engagement") {
-        Glean.urlbar.engagementCount.add(1);
-      } else {
-        Glean.urlbar.abandonmentCount.add(1);
-      }
-
       let firstVisibleResult = this._controller.view?.visibleResults?.[0];
       if (
         method === "engagement" &&

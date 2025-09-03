@@ -14,19 +14,48 @@
     --input-margin-inline-start-adjust: calc(-1 * var(--input-space-offset));
   }
 
+  :host(:not([hidden])) {
+    display: block;
+  }
+
+  :host(:not(:state(has-label))) {
+    --input-space-offset: var(--input-width);
+    display: inline-block;
+  }
+
   :host([inputlayout="block"]) {
     --input-space-offset: 0;
     --input-margin-block-adjust: var(--space-xsmall) 0;
+  }
+
+  :host([inputlayout="block"]:not(:state(has-label), :state(has-description))) {
+    --input-margin-block-adjust: 0;
+  }
+
+  @media (forced-colors) {
+    :host([disabled]) {
+      color: GrayText;
+    }
+  }
+
+  /* Label text */
+
+  .label-wrapper {
+    display: block;
+    padding-inline-start: var(--input-space-offset);
   }
 
   label {
     display: block;
 
     &:has(+ a[is="moz-support-link"]),
-    :host(:has([slot="support-link"])) & {
+    :host(:not(:state(has-description)):state(has-support-link)) & {
       display: inline;
+      margin-inline-end: var(--space-xsmall);
     }
   }
+
+  /* Input */
 
   #input {
     -moz-theme: non-native;
@@ -40,15 +69,17 @@
     line-height: inherit;
     vertical-align: top;
     margin-block: var(--input-margin-block-adjust);
-    margin-inline-start: var(--input-margin-inline-start-adjust);
+    margin-inline: var(--input-margin-inline-start-adjust) var(--space-small);
+
+    :host(:not(:state(has-label))) & {
+      margin-inline-end: 0;
+    }
   }
 
-  .label-content {
-    position: relative;
-  }
+  /* Icon */
 
   .icon {
-    position: absolute;
+    vertical-align: top;
     width: var(--icon-size-default);
     height: var(--icon-size-default);
     margin-block: var(--icon-margin-block-adjust);
@@ -57,17 +88,43 @@
     stroke: currentColor;
 
     + .text {
-      margin-inline-start: calc(var(--icon-size-default) + var(--space-small));
+      margin-inline-start: var(--space-small);
     }
   }
 
-  .description {
+  /* Description */
+
+  :host(:state(has-description)) .description {
     margin-inline-start: var(--input-space-offset);
     margin-block-start: var(--space-xxsmall);
+
+    a[is="moz-support-link"],
+    ::slotted([slot="support-link"]) {
+      margin-inline-start: var(--space-xsmall);
+    }
   }
 
-  .label-wrapper {
-    display: block;
-    padding-inline-start: var(--input-space-offset);
+  ::slotted([slot="description"]) {
+    display: inline;
+  }
+
+  /* Support link */
+
+  a[is="moz-support-link"],
+  ::slotted([slot="support-link"]) {
+    display: inline-block;
+  }
+
+  /* Nested fields */
+
+  .nested {
+    margin-inline-start: var(--input-space-offset);
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-large);
+  }
+
+  ::slotted([slot="nested"]:first-child) {
+    margin-block-start: var(--space-large);
   }
 }

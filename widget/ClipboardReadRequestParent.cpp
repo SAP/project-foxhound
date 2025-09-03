@@ -10,6 +10,7 @@
 #include "nsComponentManagerUtils.h"
 #include "nsIClipboard.h"
 #include "nsITransferable.h"
+#include "nsThreadManager.h"
 #include "nsWidgetsCID.h"
 
 using mozilla::dom::ContentParent;
@@ -73,7 +74,7 @@ IPCResult ClipboardReadRequestParent::RecvGetData(
   bool valid = false;
   if (NS_FAILED(mClipboardDataSnapshot->GetValid(&valid)) || !valid) {
     Unused << PClipboardReadRequestParent::Send__delete__(this);
-    aResolver(NS_ERROR_FAILURE);
+    aResolver(NS_ERROR_NOT_AVAILABLE);
     return IPC_OK();
   }
 
@@ -115,10 +116,21 @@ IPCResult ClipboardReadRequestParent::RecvGetData(
 IPCResult ClipboardReadRequestParent::RecvGetDataSync(
     const nsTArray<nsCString>& aFlavors,
     dom::IPCTransferableDataOrError* aTransferableDataOrError) {
+  auto destroySoon = [&] {
+    // Delete this actor, but don't do it in the middle of this sync IPC call
+    // Make sure nothing else gets processed before this deletion, so use
+    // DispatchDirectTaskToCurrentThread()
+    RefPtr<nsIRunnable> task = NS_NewRunnableFunction(
+        "ClipboardReadRequestParent_SyncError", [self = RefPtr{this}]() {
+          Unused << PClipboardReadRequestParent::Send__delete__(self);
+        });
+    nsThreadManager::get().DispatchDirectTaskToCurrentThread(task);
+  };
+
   bool valid = false;
   if (NS_FAILED(mClipboardDataSnapshot->GetValid(&valid)) || !valid) {
-    Unused << PClipboardReadRequestParent::Send__delete__(this);
-    *aTransferableDataOrError = NS_ERROR_FAILURE;
+    destroySoon();
+    *aTransferableDataOrError = NS_ERROR_NOT_AVAILABLE;
     return IPC_OK();
   }
 
@@ -134,7 +146,7 @@ IPCResult ClipboardReadRequestParent::RecvGetDataSync(
   if (NS_FAILED(rv)) {
     *aTransferableDataOrError = rv;
     if (NS_FAILED(mClipboardDataSnapshot->GetValid(&valid)) || !valid) {
-      Unused << PClipboardReadRequestParent::Send__delete__(this);
+      destroySoon();
     }
     return IPC_OK();
   }

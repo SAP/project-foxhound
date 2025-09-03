@@ -66,8 +66,8 @@ community-2 = <label data-l10n-name="community-githubLink">{ -brand-short-name }
 helpus = Want to find out more about { -brand-short-name }? Check out our <label data-l10n-name="community-githubLink">GitHub</label> page! Want to help supporting Firefox? <label data-l10n-name="helpus-donateLink">Make a donation</label> or <label data-l10n-name="helpus-getInvolvedLink">get involved!</label>
 
 bottomLinks-license = Licensing Information
-bottomLinks-rights = End-User Rights
-bottomLinks-privacy = Privacy Policy
+bottom-links-terms = Terms of Use
+bottom-links-privacy = Privacy Notice
 
 # Example of resulting string: 66.0.1 (64-bit)
 # Variables:

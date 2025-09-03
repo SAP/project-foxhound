@@ -165,18 +165,7 @@ RTPSender::RTPSender(const Environment& env,
                      const RtpRtcpInterface::Configuration& config,
                      RtpPacketHistory* packet_history,
                      RtpPacketSender* packet_sender)
-    : RTPSender(&env.clock(), config, packet_history, packet_sender) {}
-
-RTPSender::RTPSender(const RtpRtcpInterface::Configuration& config,
-                     RtpPacketHistory* packet_history,
-                     RtpPacketSender* packet_sender)
-    : RTPSender(config.clock, config, packet_history, packet_sender) {}
-
-RTPSender::RTPSender(Clock* clock,
-                     const RtpRtcpInterface::Configuration& config,
-                     RtpPacketHistory* packet_history,
-                     RtpPacketSender* packet_sender)
-    : clock_(clock),
+    : clock_(&env.clock()),
       random_(clock_->TimeInMicroseconds()),
       audio_configured_(config.audio),
       ssrc_(config.local_media_ssrc),
@@ -346,7 +335,8 @@ int32_t RTPSender::ReSendPacket(uint16_t packet_id) {
   return packet_size;
 }
 
-void RTPSender::OnReceivedAckOnSsrc(int64_t extended_highest_sequence_number) {
+void RTPSender::OnReceivedAckOnSsrc(
+    int64_t /* extended_highest_sequence_number */) {
   MutexLock lock(&send_mutex_);
   bool update_required = !ssrc_has_acked_;
   ssrc_has_acked_ = true;
@@ -356,7 +346,7 @@ void RTPSender::OnReceivedAckOnSsrc(int64_t extended_highest_sequence_number) {
 }
 
 void RTPSender::OnReceivedAckOnRtxSsrc(
-    int64_t extended_highest_sequence_number) {
+    int64_t /* extended_highest_sequence_number */) {
   MutexLock lock(&send_mutex_);
   bool update_required = !rtx_ssrc_has_acked_;
   rtx_ssrc_has_acked_ = true;

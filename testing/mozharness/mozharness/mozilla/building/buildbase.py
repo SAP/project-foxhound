@@ -300,6 +300,7 @@ class BuildOptionParser(object):
         "arm-lite-debug": path_base + "%s_arm_debug_lite.py",
         "arm-debug-ccov": path_base + "%s_arm_debug_ccov.py",
         "arm-gradle": path_base + "%s_arm_gradle.py",
+        "arm-profile-generate": path_base + "%s_arm_profile_generate.py",
         "rusttests": path_base + "%s_rusttests.py",
         "rusttests-debug": path_base + "%s_rusttests_debug.py",
         "x86": path_base + "%s_x86.py",
@@ -1074,14 +1075,22 @@ items from that key's value."
                 val = sum(val["counts"].values())
             return val
 
+        def hit_rate(hits, total):
+            if hits == total:
+                return 100
+            rate = hits * 100 / total
+            # If the rate is not quite 100%, avoid values that will round to 100%.
+            if rate > 99.99:
+                return 99.99
+            return rate
+
         total = get_stat("requests_executed")
         hits = get_stat("cache_hits")
-        if total > 0:
-            hits /= float(total)
+        errors = get_stat("cache_errors")
 
         yield {
-            "name": "sccache hit rate",
-            "value": hits,
+            "name": "sccache percent hit",
+            "value": hit_rate(hits, total),
             "subtests": [],
             "alertThreshold": 50.0,
             "lowerIsBetter": False,
@@ -1090,9 +1099,39 @@ items from that key's value."
             "shouldAlert": False,
         }
 
+        if isinstance(stats["stats"]["cache_hits"]["counts"], dict):
+            for lang, value in stats["stats"]["cache_hits"]["counts"].items():
+                yield {
+                    "name": f"sccache percent hit {lang}",
+                    "value": hit_rate(
+                        value,
+                        (value + stats["stats"]["cache_misses"]["counts"].get(lang, 0)),
+                    ),
+                    "subtests": [],
+                    "alertThreshold": 50.0,
+                    "lowerIsBetter": False,
+                    # We want to always collect metrics.
+                    # But disable automatic alerting on it
+                    "shouldAlert": False,
+                }
+
+        yield {
+            "name": "sccache cache_read_errors",
+            "value": stats["stats"]["cache_read_errors"],
+            "alertThreshold": 50.0,
+            "subtests": [],
+        }
+
         yield {
             "name": "sccache cache_write_errors",
             "value": stats["stats"]["cache_write_errors"],
+            "alertThreshold": 50.0,
+            "subtests": [],
+        }
+
+        yield {
+            "name": "sccache cache_errors",
+            "value": errors,
             "alertThreshold": 50.0,
             "subtests": [],
         }
@@ -1111,7 +1150,7 @@ items from that key's value."
         dirs = self.query_abs_dirs()
 
         dist_dir = os.path.join(dirs["abs_obj_dir"], "dist")
-        for ext in ["apk", "dmg", "tar.bz2", "zip"]:
+        for ext in ["apk", "dmg", "tar.bz2", "zip", "tar.xz"]:
             name = "target." + ext
             if os.path.exists(os.path.join(dist_dir, name)):
                 packageName = name

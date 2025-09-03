@@ -263,9 +263,8 @@ export class FeatureCallout {
         this._removePanelConflictListeners();
         this.doc.querySelector(`[src="${BUNDLE_SRC}"]`)?.remove();
         if (nextMessage) {
-          const isMessageUnblocked = await lazy.ASRouter.isUnblockedMessage(
-            nextMessage
-          );
+          const isMessageUnblocked =
+            await lazy.ASRouter.isUnblockedMessage(nextMessage);
           if (!isMessageUnblocked) {
             this.endTour();
             return;
@@ -604,12 +603,28 @@ export class FeatureCallout {
           continue;
         }
       }
+      if (selector.includes("::%shadow%")) {
+        let parts = selector.split("::%shadow%");
+        for (let i = 0; i < parts.length; i++) {
+          selector = parts[i].trim();
+          if (i === parts.length - 1) {
+            break;
+          }
+          let el = scope.querySelector(selector);
+          if (!el) {
+            break;
+          }
+          if (el.shadowRoot) {
+            scope = el.shadowRoot;
+          }
+        }
+      }
       let element = scope.querySelector(selector);
       // The element may not be a child of the scope, but the scope itself. For
       // example, if we're anchoring directly to the trigger tab, our selector
       // might look like `%triggerTab%[visuallyselected]`. In this case,
       // querySelector() will return nothing, but matches() will return true.
-      if (!element && scope.matches(selector)) {
+      if (!element && scope.matches?.(selector)) {
         element = scope;
       }
       if (!element) {
@@ -768,7 +783,7 @@ export class FeatureCallout {
       return false;
     }
 
-    const { autohide, padding } = this.currentScreen.content;
+    const { autohide, ignorekeys, padding } = this.currentScreen.content;
     const { panel_position, hide_arrow, no_open_on_anchor, arrow_width } =
       anchor;
     const needsPanel =
@@ -785,13 +800,15 @@ export class FeatureCallout {
         let fragment = this.win.MozXULElement.parseXULToFragment(`<panel
             class="panel-no-padding"
             orient="vertical"
-            ignorekeys="true"
             noautofocus="true"
             flip="slide"
             type="arrow"
+            consumeoutsideclicks="never"
+            norolluponanchor="true"
             position="${panel_position.panel_position_string}"
             ${hide_arrow ? "" : 'show-arrow=""'}
             ${autohide ? "" : 'noautohide="true"'}
+            ${ignorekeys ? 'ignorekeys="true"' : ""}
             ${no_open_on_anchor ? 'no-open-on-anchor=""' : ""}
           />`);
         this._container = fragment.firstElementChild;
@@ -800,7 +817,7 @@ export class FeatureCallout {
         this._container = this.doc.createElement("div");
         this._container?.classList.add("hidden");
       }
-      this._container.classList.add("featureCallout", "callout-arrow");
+      this._container.classList.add("featureCallout");
       if (hide_arrow) {
         this._container.setAttribute("hide-arrow", "permanent");
       } else {
@@ -817,7 +834,21 @@ export class FeatureCallout {
         this._container.style.removeProperty("--arrow-width");
       }
       if (padding) {
-        this._container.style.setProperty("--callout-padding", `${padding}px`);
+        // This property used to accept a number value, either a number or a
+        // string that is a number. It now accepts a standard CSS padding value
+        // (e.g. "10px 12px" or "1em"), but we need to maintain backwards
+        // compatibility with the old number value until there are no more uses
+        // of it across experiments.
+        if (CSS.supports("padding", padding)) {
+          this._container.style.setProperty("--callout-padding", padding);
+        } else {
+          let cssValue = `${padding}px`;
+          if (CSS.supports("padding", cssValue)) {
+            this._container.style.setProperty("--callout-padding", cssValue);
+          } else {
+            this._container.style.removeProperty("--callout-padding");
+          }
+        }
       } else {
         this._container.style.removeProperty("--callout-padding");
       }
@@ -1427,8 +1458,8 @@ export class FeatureCallout {
   }
 
   async _addScriptsAndRender() {
-    const reactSrc = "resource://activity-stream/vendor/react.js";
-    const domSrc = "resource://activity-stream/vendor/react-dom.js";
+    const reactSrc = "chrome://global/content/vendor/react.js";
+    const domSrc = "chrome://global/content/vendor/react-dom.js";
     // Add React script
     const getReactReady = () => {
       return new Promise(resolve => {
@@ -1924,6 +1955,9 @@ export class FeatureCallout {
     "link-color-hover",
     "link-color-active",
     "icon-success-color",
+    "dismiss-button-bg",
+    "dismiss-button-bg-hover",
+    "dismiss-button-bg-active",
   ];
 
   /** @type {Object<String, FeatureCalloutTheme>} */
@@ -1971,6 +2005,12 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
+        "dismiss-button-bg":
+          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(var(--newtab-background-color-secondary), var(--newtab-background-color-secondary))",
+        "dismiss-button-bg-hover":
+          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary)))",
+        "dismiss-button-bg-active":
+          "var(--newtab-background-color, var(--in-content-page-background)) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary)))",
       },
       dark: {
         border:
@@ -1993,6 +2033,11 @@ export class FeatureCallout {
         "button-background-active": "ButtonText",
         "button-color-active": "ButtonFace",
         "button-border-active": "ButtonText",
+        "dismiss-button-bg": "-moz-dialog",
+        "dismiss-button-bg-hover":
+          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
       },
     },
     // PDF.js colors are from toolkit/components/pdfjs/content/web/viewer.css
@@ -2016,6 +2061,10 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
+        "dismiss-button-bg": "#FFF",
+        "dismiss-button-bg-hover": "color-mix(in srgb, currentColor 14%, #FFF)",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, #FFF)",
       },
       dark: {
         background: "#1C1B22",
@@ -2027,6 +2076,11 @@ export class FeatureCallout {
         "button-color-hover": "#F9F9FA",
         "button-background-active": "rgb(102, 102, 103)",
         "button-color-active": "#F9F9FA",
+        "dismiss-button-bg": "#1C1B22",
+        "dismiss-button-bg-hover":
+          "color-mix(in srgb, currentColor 14%, #1C1B22)",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, #1C1B22)",
       },
       hcm: {
         background: "-moz-dialog",
@@ -2042,6 +2096,11 @@ export class FeatureCallout {
         "button-background-active": "Highlight",
         "button-color-active": "CanvasText",
         "button-border-active": "Highlight",
+        "dismiss-button-bg": "-moz-dialog",
+        "dismiss-button-bg-hover":
+          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
       },
     },
     newtab: {
@@ -2067,6 +2126,12 @@ export class FeatureCallout {
         "link-color-active": "color-mix(in srgb, rgb(0, 97, 224) 80%, #000)",
         "link-color-visited": "rgb(0, 97, 224)",
         "icon-success-color": "#2AC3A2",
+        "dismiss-button-bg":
+          "var(--newtab-background-color, #F9F9FB) linear-gradient(var(--newtab-background-color-secondary, #FFF), var(--newtab-background-color-secondary, #FFF))",
+        "dismiss-button-bg-hover":
+          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #FFF)))",
+        "dismiss-button-bg-active":
+          "var(--newtab-background-color, #F9F9FB) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #FFF)))",
       },
       dark: {
         "accent-color": "rgb(0, 221, 255)",
@@ -2082,6 +2147,12 @@ export class FeatureCallout {
         "link-color-active": "color-mix(in srgb, rgb(0, 221, 255) 60%, #FFF)",
         "link-color-visited": "rgb(0, 221, 255)",
         "icon-success-color": "#54FFBD",
+        "dismiss-button-bg":
+          "var(--newtab-background-color, #2B2A33) linear-gradient(var(--newtab-background-color-secondary, #42414D), var(--newtab-background-color-secondary, #42414D))",
+        "dismiss-button-bg-hover":
+          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)), color-mix(in srgb, currentColor 14%, var(--newtab-background-color-secondary, #42414D)))",
+        "dismiss-button-bg-active":
+          "var(--newtab-background-color, #2B2A33) linear-gradient(color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D), color-mix(in srgb, currentColor 21%, var(--newtab-background-color-secondary, #42414D)))",
       },
       hcm: {
         background: "-moz-dialog",
@@ -2101,6 +2172,11 @@ export class FeatureCallout {
         "link-color-hover": "LinkText",
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
+        "dismiss-button-bg": "-moz-dialog",
+        "dismiss-button-bg-hover":
+          "color-mix(in srgb, currentColor 14%, -moz-dialog)",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, -moz-dialog)",
       },
     },
     // These colors are intended to inherit the user's theme properties from the
@@ -2142,9 +2218,20 @@ export class FeatureCallout {
         "link-color-active": "ActiveText",
         "link-color-visited": "VisitedText",
         "icon-success-color": "var(--attention-dot-color)",
+        "dismiss-button-bg":
+          "Menu linear-gradient(var(--arrowpanel-background), var(--arrowpanel-background))",
+        "dismiss-button-bg-hover":
+          "Menu linear-gradient(color-mix(in srgb, currentColor 14%, var(--arrowpanel-background)))",
+        "dismiss-button-bg-active":
+          "Menu linear-gradient(color-mix(in srgb, currentColor 21%, var(--arrowpanel-background)))",
       },
       hcm: {
         background: "var(--arrowpanel-background)",
+        "dismiss-button-bg": "var(--arrowpanel-background)",
+        "dismiss-button-bg-hover":
+          "color-mix(in srgb, currentColor 14%, var(--arrowpanel-background))",
+        "dismiss-button-bg-active":
+          "color-mix(in srgb, currentColor 21%, var(--arrowpanel-background))",
       },
     },
   };

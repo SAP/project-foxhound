@@ -59,8 +59,9 @@ extern JSLinearString* Int32ToStringWithHeap(JSContext* cx, int32_t i,
 
 extern JSLinearString* Int32ToStringPure(JSContext* cx, int32_t i);
 
-extern JSString* Int32ToStringWithBase(JSContext* cx, int32_t i, int32_t base,
-                                       bool lowerCase);
+template <AllowGC allowGC>
+extern JSLinearString* Int32ToStringWithBase(JSContext* cx, int32_t i,
+                                             int32_t base, bool lowerCase);
 
 extern JSAtom* Int32ToAtom(JSContext* cx, int32_t si);
 
@@ -305,6 +306,20 @@ template <typename CharT>
                                                            Value* vp);
 
 [[nodiscard]] extern bool num_valueOf(JSContext* cx, unsigned argc, Value* vp);
+
+static inline bool IsNumberIndex(const Value& v) {
+  if (v.isInt32() && v.toInt32() >= 0) {
+    return true;
+  }
+
+  int64_t i;
+  if (v.isDouble() && mozilla::NumberEqualsInt64(v.toDouble(), &i) && i >= 0 &&
+      i <= MAX_ARRAY_INDEX) {
+    return true;
+  }
+
+  return false;
+}
 
 /*
  * Returns true if the given value is definitely an index: that is, the value

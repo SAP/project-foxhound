@@ -1,5 +1,5 @@
 // META: title=test WebNN API transpose operation
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -28,6 +28,29 @@ const getTransposePrecisionTolerance = (graphResources) => {
 };
 
 const transposeTests = [
+  {
+    'name': 'transpose float32 0D constant tensor default options',
+    'graph': {
+      'inputs': {
+        'transposeInput': {
+          'data': [-45.67443084716797],
+          'descriptor': {shape: [], dataType: 'float32'},
+          'constant': true
+        }
+      },
+      'operators': [{
+        'name': 'transpose',
+        'arguments': [{'input': 'transposeInput'}],
+        'outputs': 'transposeOutput'
+      }],
+      'expectedOutputs': {
+        'transposeOutput': {
+          'data': [-45.67443084716797],
+          'descriptor': {shape: [], dataType: 'float32'}
+        }
+      }
+    }
+  },
   {
     'name': 'transpose float32 1D constant tensor default options',
     'graph': {

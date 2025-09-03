@@ -63,7 +63,7 @@ add_task(async function test_network_markers_service_worker_use() {
     "The profiler is not currently active"
   );
 
-  startProfilerForMarkerTests();
+  await ProfilerTestUtils.startProfilerForMarkerTests();
 
   const url = `${BASE_URL_HTTPS}serviceworkers/serviceworker_simple.html`;
   await BrowserTestUtils.withNewTab(url, async contentBrowser => {
@@ -109,7 +109,9 @@ add_task(async function test_network_markers_service_worker_use() {
       serviceWorkerParentThread
     );
 
-    const parentNetworkMarkers = getInflatedNetworkMarkers(parentThread)
+    const parentNetworkMarkers = ProfilerTestUtils.getInflatedNetworkMarkers(
+      parentThread
+    )
       // When we load a page, Firefox will check the service worker freshness
       // after a few seconds. So when the test lasts a long time (with some test
       // environments) we might see spurious markers about that that we're not
@@ -117,10 +119,10 @@ add_task(async function test_network_markers_service_worker_use() {
       // parent process.
       .filter(marker => !marker.data.URI.includes(serviceWorkerFileName));
 
-    const contentNetworkMarkers = getInflatedNetworkMarkers(contentThread);
-    const serviceWorkerNetworkMarkers = getInflatedNetworkMarkers(
-      serviceWorkerParentThread
-    );
+    const contentNetworkMarkers =
+      ProfilerTestUtils.getInflatedNetworkMarkers(contentThread);
+    const serviceWorkerNetworkMarkers =
+      ProfilerTestUtils.getInflatedNetworkMarkers(serviceWorkerParentThread);
 
     // Some more logs for debugging purposes.
     info(
@@ -135,9 +137,12 @@ add_task(async function test_network_markers_service_worker_use() {
         JSON.stringify(serviceWorkerNetworkMarkers, null, 2)
     );
 
-    const parentPairs = getPairsOfNetworkMarkers(parentNetworkMarkers);
-    const contentPairs = getPairsOfNetworkMarkers(contentNetworkMarkers);
-    const serviceWorkerPairs = getPairsOfNetworkMarkers(
+    const parentPairs =
+      ProfilerTestUtils.getPairsOfNetworkMarkers(parentNetworkMarkers);
+    const contentPairs = ProfilerTestUtils.getPairsOfNetworkMarkers(
+      contentNetworkMarkers
+    );
+    const serviceWorkerPairs = ProfilerTestUtils.getPairsOfNetworkMarkers(
       serviceWorkerNetworkMarkers
     );
 
@@ -221,7 +226,8 @@ add_task(async function test_network_markers_service_worker_use() {
           type: "Network",
           status: "STATUS_REDIRECT",
           URI: fullUrl("serviceworker_simple.html"),
-          httpVersion: "http/1.1",
+          classOfService: "UrgentStart",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
           contentType: null,
           startTime: Expect.number(),
@@ -243,7 +249,10 @@ add_task(async function test_network_markers_service_worker_use() {
           status: "STATUS_STOP",
           URI: fullUrl("serviceworker_simple.html"),
           httpVersion: "http/1.1",
+          classOfService: "UrgentStart",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
+          responseStatus: 200,
           contentType: "text/html",
           startTime: Expect.number(),
           endTime: Expect.number(),
@@ -258,7 +267,10 @@ add_task(async function test_network_markers_service_worker_use() {
           status: "STATUS_STOP",
           URI: fullUrl("serviceworker_simple.html"),
           httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
+          responseStatus: 200,
           contentType: "text/html",
           // Because the request races with the cache, these 2 values are valid:
           // "Missed" when the cache answered before we get a result from the network.
@@ -289,7 +301,8 @@ add_task(async function test_network_markers_service_worker_use() {
           type: "Network",
           status: "STATUS_REDIRECT",
           URI: fullUrl("firefox-generated.svg"),
-          httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
           contentType: null,
           startTime: Expect.number(),
@@ -311,7 +324,10 @@ add_task(async function test_network_markers_service_worker_use() {
           status: "STATUS_STOP",
           URI: fullUrl("firefox-generated.svg"),
           httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
+          responseStatus: 200,
           contentType: "image/svg+xml",
           startTime: Expect.number(),
           endTime: Expect.number(),
@@ -328,7 +344,8 @@ add_task(async function test_network_markers_service_worker_use() {
           type: "Network",
           status: "STATUS_REDIRECT",
           URI: fullUrl("firefox-logo-nightly.svg"),
-          httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
           contentType: null,
           startTime: Expect.number(),
@@ -350,7 +367,10 @@ add_task(async function test_network_markers_service_worker_use() {
           status: "STATUS_STOP",
           URI: fullUrl("firefox-logo-nightly.svg"),
           httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
+          responseStatus: 200,
           contentType: "image/svg+xml",
           startTime: Expect.number(),
           endTime: Expect.number(),
@@ -366,7 +386,10 @@ add_task(async function test_network_markers_service_worker_use() {
           status: "STATUS_STOP",
           URI: fullUrl("firefox-logo-nightly.svg"),
           httpVersion: "http/1.1",
+          classOfService: "Unset",
+          requestStatus: "NS_OK",
           requestMethod: "GET",
+          responseStatus: 200,
           contentType: "image/svg+xml",
           // Because the request races with the cache, these 2 values are valid:
           // "Missed" when the cache answered before we get a result from the network.
@@ -449,7 +472,10 @@ add_task(async function test_network_markers_service_worker_use() {
         status: "STATUS_STOP",
         URI: fullUrl("serviceworker_simple.html"),
         httpVersion: "http/1.1",
+        classOfService: "Unset",
+        requestStatus: "NS_OK",
         requestMethod: "GET",
+        responseStatus: 200,
         contentType: "text/html",
         startTime: Expect.number(),
         endTime: Expect.number(),
@@ -464,7 +490,10 @@ add_task(async function test_network_markers_service_worker_use() {
         status: "STATUS_STOP",
         URI: fullUrl("firefox-generated.svg"),
         httpVersion: "http/1.1",
+        classOfService: "Unset",
+        requestStatus: "NS_OK",
         requestMethod: "GET",
+        responseStatus: 200,
         contentType: "image/svg+xml",
         startTime: Expect.number(),
         endTime: Expect.number(),
@@ -480,7 +509,10 @@ add_task(async function test_network_markers_service_worker_use() {
         status: "STATUS_STOP",
         URI: fullUrl("firefox-logo-nightly.svg"),
         httpVersion: "http/1.1",
+        classOfService: "Unset",
+        requestStatus: "NS_OK",
         requestMethod: "GET",
+        responseStatus: 200,
         contentType: "image/svg+xml",
         startTime: Expect.number(),
         endTime: Expect.number(),

@@ -12,6 +12,7 @@
 #include <stdint.h>  // uint32_t, uintptr_t
 
 #include "jstypes.h"  // JS_PUBLIC_API, js::Bit, js::BitMask, JS_BITS_PER_WORD
+#include "Taint.h"
 
 #include "js/TypeDecls.h"  // JS::Latin1Char
 

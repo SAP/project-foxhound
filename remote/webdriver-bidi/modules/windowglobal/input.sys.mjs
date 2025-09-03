@@ -7,7 +7,7 @@ import { WindowGlobalBiDiModule } from "chrome://remote/content/webdriver-bidi/m
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  action: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
+  actions: "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
   AnimationFramePromise: "chrome://remote/content/shared/Sync.sys.mjs",
   assertTargetInViewPort:
     "chrome://remote/content/shared/webdriver/Actions.sys.mjs",
@@ -192,14 +192,14 @@ class InputModule extends WindowGlobalBiDiModule {
     }
   }
 
-  _finalizeAction() {
+  async _finalizeAction() {
     // Terminate the current wheel transaction if there is one. Wheel
     // transactions should not live longer than a single action chain.
     ChromeUtils.endWheelTransaction();
 
     // Wait for the next animation frame to make sure the page's content
     // was updated.
-    return lazy.AnimationFramePromise(this.messageHandler.window);
+    await lazy.AnimationFramePromise(this.messageHandler.window);
   }
 
   async _getClientRects(options) {
@@ -234,9 +234,8 @@ class InputModule extends WindowGlobalBiDiModule {
   async setFiles(options) {
     const { element: sharedReference, files } = options;
 
-    const element = await this.#deserializeElementSharedReference(
-      sharedReference
-    );
+    const element =
+      await this.#deserializeElementSharedReference(sharedReference);
 
     if (
       !HTMLInputElement.isInstance(element) ||
@@ -296,12 +295,12 @@ class InputModule extends WindowGlobalBiDiModule {
     const { actions } = options;
 
     if (this.#actionState === null) {
-      this.#actionState = new lazy.action.State();
+      this.#actionState = new lazy.actions.State();
     }
 
     await this.#deserializeActionOrigins(actions);
 
-    const actionChain = await lazy.action.Chain.fromJSON(
+    const actionChain = await lazy.actions.Chain.fromJSON(
       this.#actionState,
       actions,
       this.#actionsOptions

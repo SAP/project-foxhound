@@ -4,7 +4,25 @@ title: Changelog
 permalink: /changelog/
 ---
 
-# 134.0 (In Development)
+# 137.0 (In Development)
+* **support-ktx**
+  * 🌟 Added `String.isContentUrl` method that checks if the string is a content URL. [Bug 1944084](https://bugzilla.mozilla.org/show_bug.cgi?id=1944084).
+  * 🌟 Added `String.isAboutUrl` method that checks if the string is an about URL. [Bug 1944084](https://bugzilla.mozilla.org/show_bug.cgi?id=1944084).
+
+# 136.0
+* **support-ktx**
+    * 🆕 New `ExpandablePrompt` interface implemented by `AddressSelectBar`, `CreditCardSelectBar` to inform when it is expanded or collapsed. [Bug 19010409](https://bugzilla.mozilla.org/show_bug.cgi?id=19010409).
+
+# 135.0
+* **support-ktx**
+    * 🆕 `Context.setApplicationNightMode()` will apply the provided night mode on all API levels and persist it on Android 31+ so that on new launches the splashscreen matches. [Bug 1919488](https://bugzilla.mozilla.org/show_bug.cgi?id=1919488)
+* **feature-downloads**
+    * `AbstractFetchDownloadService.createOpenFileIntent` will no longer create an intent to open PDF files from the caller application if it can open PDFs. The user will be prompted to choose an application. See [Bug 1941609](https://bugzilla.mozilla.org/show_bug.cgi?id=1941609).
+* **feature-prompts**
+    * 🆕 New `ToggleablePrompt` interface implemented by `AddressSelectBar`, `CreditCardSelectBar` `LoginSelectBar` and `SuggestStrongPasswordBar` to inform when these are shown or hidden. [Bug 1909746](https://bugzilla.mozilla.org/show_bug.cgi?id=1909746).
+    * 🆕 New `ExpandablePrompt` interface implemented by `LoginSelectBar` to inform when it is expanded or collapsed. [Bug 1909746](https://bugzilla.mozilla.org/show_bug.cgi?id=1909746).
+
+# 134.0
 * **browser-state**
   * 🌟 Added `DownloadState.isPdf` property to indicate whether the file associated with the download is a PDF. See [Bug 1920092](https://bugzilla.mozilla.org/show_bug.cgi?id=1920092).
 

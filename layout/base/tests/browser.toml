@@ -44,6 +44,8 @@ support-files = [
   "scroll_into_view_in_child.html"
 ]
 
+["browser_select_popup_from_background_tab.js"]
+
 ["browser_select_popup_position_in_out_of_process_iframe.js"]
 skip-if = [
   "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && verify", # bug 1627874
@@ -61,6 +63,17 @@ tags = "bleedover"
 support-files = [
   "file_stylesheet_change_events.html",
   "stylesheet_change_events.css"
+]
+
+["browser_test_oopif_reconstruct.js"]
+support-files = [
+  "!/gfx/layers/apz/test/mochitest/apz_test_utils.js",
+  "!/gfx/layers/apz/test/mochitest/apz_test_native_event_utils.js",
+  "helper_oopif_reconstruct.html",
+  "helper_oopif_reconstruct_child.html",
+  "helper_oopif_reconstruct_nested.html",
+  "helper_oopif_reconstruct_nested_child.html",
+  "helper_oopif_reconstruct_nested_grandchild.html",
 ]
 
 ["browser_visual_viewport_iframe.js"]

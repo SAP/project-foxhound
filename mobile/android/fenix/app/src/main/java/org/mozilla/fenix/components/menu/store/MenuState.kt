@@ -8,6 +8,8 @@ import android.graphics.Bitmap
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.feature.addons.Addon
 import mozilla.components.lib.state.State
+import mozilla.components.support.ktx.kotlin.isAboutUrl
+import mozilla.components.support.ktx.kotlin.isContentUrl
 
 /**
  * Value type that represents the state of the menu.
@@ -16,7 +18,6 @@ import mozilla.components.lib.state.State
  * @property customTabSessionId The ID of the custom tab session if navigating from
  * an external access point, and null otherwise.
  * @property extensionMenuState The [ExtensionMenuState] to display.
- * @property toolsMenuState The [ToolsMenuState] to display.
  * @property isDesktopMode Whether or not the desktop mode is enabled for the currently visited
  * page.
  */
@@ -24,9 +25,21 @@ data class MenuState(
     val browserMenuState: BrowserMenuState? = null,
     val customTabSessionId: String? = null,
     val extensionMenuState: ExtensionMenuState = ExtensionMenuState(),
-    val toolsMenuState: ToolsMenuState = ToolsMenuState(),
     val isDesktopMode: Boolean = false,
-) : State
+) : State {
+
+    /**
+     * Check whether to enable the WebCompat Reporter menu button. The reporter is not accessible
+     * from about and content URLs.
+     */
+    val isWebCompatEnabled: Boolean
+        get() {
+            val url = browserMenuState?.selectedTab?.content?.url
+            val isAboutUrl = url?.isAboutUrl() ?: false
+            val isContentUrl = url?.isContentUrl() ?: false
+            return !isAboutUrl && !isContentUrl
+        }
+}
 
 /**
  * Value type that represents the state of the browser menu.
@@ -52,7 +65,7 @@ data class BrowserMenuState(
  * @property addonInstallationInProgress The [Addon] that is currently being installed.
  * @property shouldShowManageExtensionsMenuItem Indicates if manage extensions menu item
  * should be displayed to the user.
- * @property browserWebExtensionMenuItem A list of [WebExtensionMenuItem.WebExtensionBrowserMenuItem]s
+ * @property browserWebExtensionMenuItem A list of [WebExtensionMenuItem]s
  * to be shown in the menu.
  */
 data class ExtensionMenuState(
@@ -62,7 +75,7 @@ data class ExtensionMenuState(
     val showDisabledExtensionsOnboarding: Boolean = false,
     val addonInstallationInProgress: Addon? = null,
     val shouldShowManageExtensionsMenuItem: Boolean = false,
-    val browserWebExtensionMenuItem: List<WebExtensionMenuItem.WebExtensionBrowserMenuItem> = emptyList(),
+    val browserWebExtensionMenuItem: List<WebExtensionMenuItem> = emptyList(),
 )
 
 /**
@@ -77,66 +90,22 @@ data class BookmarkState(
 )
 
 /**
- * Value type that represents the state of the tools menu.
+ * Installed extensions actions to display relevant to the browser as a whole.
  *
- * @property pageWebExtensionMenuItem A list of [WebExtensionMenuItem.WebExtensionPageMenuItem]s
- * to be shown in the menu.
+ * @property label The label of the web extension menu item.
+ * @property enabled Indicates if web extension menu item should be enabled or disabled.
+ * @property icon The icon that should be shown in the menu.
+ * @property badgeText Menu item badge text.
+ * @property badgeTextColor Menu item badge text color.
+ * @property badgeBackgroundColor Menu item badge background color.
+ * @property onClick A callback to be executed when the web extension menu item is clicked.
  */
-data class ToolsMenuState(
-    val pageWebExtensionMenuItem: List<WebExtensionMenuItem.WebExtensionPageMenuItem> = emptyList(),
+data class WebExtensionMenuItem(
+    val label: String,
+    val enabled: Boolean?,
+    val icon: Bitmap?,
+    val badgeText: String?,
+    val badgeTextColor: Int?,
+    val badgeBackgroundColor: Int?,
+    val onClick: () -> Unit,
 )
-
-/**
- * Value type that represents the web extension menu item.
- */
-sealed class WebExtensionMenuItem {
-    abstract val label: String
-    abstract val enabled: Boolean?
-    abstract val icon: Bitmap?
-    abstract val badgeText: String?
-    abstract val badgeTextColor: Int?
-    abstract val badgeBackgroundColor: Int?
-    abstract val onClick: () -> Unit
-
-    /**
-     * Installed extensions actions to display relevant to only particular pages.
-     *
-     * @property label The label of the web extension menu item.
-     * @property enabled Indicates if web extension menu item should be enabled or disabled.
-     * @property icon The icon that should be shown in the menu.
-     * @property badgeText Menu item badge text.
-     * @property badgeTextColor Menu item badge text color.
-     * @property badgeBackgroundColor Menu item badge background color.
-     * @property onClick A callback to be executed when the web extension menu item is clicked.
-     */
-    data class WebExtensionPageMenuItem(
-        override val label: String,
-        override val enabled: Boolean?,
-        override val icon: Bitmap?,
-        override val badgeText: String?,
-        override val badgeTextColor: Int?,
-        override val badgeBackgroundColor: Int?,
-        override val onClick: () -> Unit,
-    ) : WebExtensionMenuItem()
-
-    /**
-     * Installed extensions actions to display relevant to the browser as a whole.
-     *
-     * @property label The label of the web extension menu item.
-     * @property enabled Indicates if web extension menu item should be enabled or disabled.
-     * @property icon The icon that should be shown in the menu.
-     * @property badgeText Menu item badge text.
-     * @property badgeTextColor Menu item badge text color.
-     * @property badgeBackgroundColor Menu item badge background color.
-     * @property onClick A callback to be executed when the web extension menu item is clicked.
-     */
-    data class WebExtensionBrowserMenuItem(
-        override val label: String,
-        override val enabled: Boolean?,
-        override val icon: Bitmap?,
-        override val badgeText: String?,
-        override val badgeTextColor: Int?,
-        override val badgeBackgroundColor: Int?,
-        override val onClick: () -> Unit,
-    ) : WebExtensionMenuItem()
-}

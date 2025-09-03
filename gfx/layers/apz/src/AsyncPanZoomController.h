@@ -448,12 +448,6 @@ class AsyncPanZoomController {
   void ClearPhysicalOverscroll();
 
   /**
-   * Returns whether this APZC is for an element marked with the 'scrollgrab'
-   * attribute.
-   */
-  bool HasScrollgrab() const { return mScrollMetadata.GetHasScrollgrab(); }
-
-  /**
    * Returns whether this APZC has scroll snap points.
    */
   bool HasScrollSnapping() const {
@@ -1388,6 +1382,7 @@ class AsyncPanZoomController {
 
  private:
   friend class AutoApplyAsyncTestAttributes;
+  friend class AutoDynamicToolbarHider;
 
   bool SuppressAsyncScrollOffset() const;
 
@@ -1484,6 +1479,7 @@ class AsyncPanZoomController {
 
  private:
   friend class StateChangeNotificationBlocker;
+  friend class ThreadSafeStateChangeNotificationBlocker;
   /**
    * A counter of how many StateChangeNotificationBlockers are active.
    * A non-zero count will prevent state change notifications from

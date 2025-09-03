@@ -63,7 +63,7 @@
 #include "mozilla/dom/Nullable.h"
 #include "mozilla/dom/RTCRtpParametersBinding.h"
 #include "mozilla/dom/RTCStatsReportBinding.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/DomMediaWebrtcMetrics.h"
 #include "js/RootingAPI.h"
 #include "jsep/JsepTransceiver.h"
 #include "RTCStatsReport.h"
@@ -219,6 +219,17 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
     track->GetId(trackName);
   }
 
+  std::string mid = mTransceiver->GetMidAscii();
+  std::map<uint32_t, std::string> videoSsrcToRidMap;
+  const auto encodings = mVideoCodec.Ref().andThen(
+      [](const auto& aCodec) { return SomeRef(aCodec.mEncodings); });
+  if (encodings && !encodings->empty() && encodings->front().rid != "") {
+    for (size_t i = 0; i < std::min(mSsrcs.Ref().size(), encodings->size());
+         ++i) {
+      videoSsrcToRidMap.insert({mSsrcs.Ref()[i], (*encodings)[i].rid});
+    }
+  }
+
   {
     // Add bandwidth estimation stats
     promises.AppendElement(InvokeAsync(
@@ -246,7 +257,9 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
   }
 
   promises.AppendElement(InvokeAsync(
-      mPipeline->mCallThread, __func__, [pipeline = mPipeline, trackName] {
+      mPipeline->mCallThread, __func__,
+      [pipeline = mPipeline, trackName, mid = std::move(mid),
+       videoSsrcToRidMap = std::move(videoSsrcToRidMap)] {
         auto report = MakeUnique<dom::RTCStatsCollection>();
         auto asAudio = pipeline->mConduit->AsAudioSessionConduit();
         auto asVideo = pipeline->mConduit->AsVideoSessionConduit();
@@ -305,6 +318,9 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
                     kind);  // mediaType is the old name for kind.
                 if (remoteId.Length()) {
                   aLocal.mRemoteId.Construct(remoteId);
+                }
+                if (!mid.empty()) {
+                  aLocal.mMid.Construct(NS_ConvertUTF8toUTF16(mid).get());
                 }
               };
 
@@ -475,6 +491,10 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
             // present)
             RTCOutboundRtpStreamStats local;
             constructCommonOutboundRtpStats(local);
+            if (auto it = videoSsrcToRidMap.find(ssrc);
+                it != videoSsrcToRidMap.end() && it->second != "") {
+              local.mRid.Construct(NS_ConvertUTF8toUTF16(it->second).get());
+            }
             local.mPacketsSent.Construct(
                 streamStats->rtp_stats.transmitted.packets);
             local.mBytesSent.Construct(
@@ -525,11 +545,10 @@ nsTArray<RefPtr<dom::RTCStatsPromise>> RTCRtpSender::GetStatsInternal(
             videoSourceStats.mFramesPerSecond.Construct(
                 videoStats->input_frame_rate);
             auto resolution = aConduit->GetLastResolution();
-            resolution.apply(
-                [&](const VideoSessionConduit::Resolution& aResolution) {
-                  videoSourceStats.mWidth.Construct(aResolution.width);
-                  videoSourceStats.mHeight.Construct(aResolution.height);
-                });
+            resolution.apply([&](const auto& aResolution) {
+              videoSourceStats.mWidth.Construct(aResolution.width);
+              videoSourceStats.mHeight.Construct(aResolution.height);
+            });
             if (!report->mVideoSourceStats.AppendElement(
                     std::move(videoSourceStats), fallible)) {
               mozalloc_handle_oom(0);

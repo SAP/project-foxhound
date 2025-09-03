@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.Card
 import androidx.compose.material.Snackbar
-import androidx.compose.material.SnackbarDuration
 import androidx.compose.material.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -37,15 +36,16 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
-import androidx.compose.ui.tooling.preview.PreviewLightDark
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.coordinatorlayout.widget.CoordinatorLayout
 import com.google.android.material.snackbar.BaseTransientBottomBar
 import kotlinx.coroutines.launch
+import mozilla.components.compose.base.annotation.FlexibleWindowLightDarkPreview
+import mozilla.components.compose.base.button.TextButton
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.SnackbarBehavior
 import org.mozilla.fenix.compose.button.PrimaryButton
-import org.mozilla.fenix.compose.button.TextButton
 import org.mozilla.fenix.compose.core.Action
 import org.mozilla.fenix.compose.snackbar.Snackbar.Companion.SnackbarAnimationCallback
 import org.mozilla.fenix.compose.snackbar.SnackbarState.Type
@@ -61,7 +61,6 @@ private val snackbarHorizontalMargin = 16.dp
 private val snackbarHorizontalPadding = 16.dp
 private val snackbarVerticalPadding = 12.dp
 private val snackbarActionHorizontalSpacing = 8.dp
-private val snackbarMaxWidth = 600.dp
 
 /**
  * A Snackbar embedded within a View. To display a Snackbar embedded in a View hierarchy, use
@@ -108,10 +107,12 @@ class Snackbar private constructor(
             val contentView = ComposeView(context = parent.context)
             val callback = SnackbarAnimationCallback(contentView)
             val durationOrAccessibleDuration =
-                if (parent.context.settings().accessibilityServicesEnabled) {
+                if (parent.context.settings().accessibilityServicesEnabled &&
+                    LENGTH_ACCESSIBLE > snackbarState.durationMs
+                ) {
                     LENGTH_ACCESSIBLE
                 } else {
-                    snackbarState.duration.toIntegerSnackbarDuration()
+                    snackbarState.durationMs
                 }
 
             return Snackbar(
@@ -231,7 +232,7 @@ internal fun Snackbar(
     Column(
         modifier = modifier
             .padding(horizontal = snackbarHorizontalMargin)
-            .widthIn(max = snackbarMaxWidth)
+            .widthIn(max = FirefoxTheme.layout.size.maxWidth.small)
             .semantics {
                 testTagsAsResourceId = true
             }
@@ -256,6 +257,8 @@ internal fun Snackbar(
                             bottom = snackbarVerticalPadding,
                         ),
                     color = colors.messageTextColor,
+                    overflow = TextOverflow.Ellipsis,
+                    maxLines = 2,
                     style = FirefoxTheme.typography.headline7,
                 )
 
@@ -309,7 +312,7 @@ private data class SnackbarColors(
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun SnackbarHostPreview() {
     val snackbarHostState = remember { AcornSnackbarHostState() }
@@ -330,7 +333,7 @@ private fun SnackbarHostPreview() {
                         snackbarHostState.showSnackbar(
                             snackbarState = SnackbarState(
                                 message = "Default snackbar",
-                                duration = SnackbarDuration.Short,
+                                duration = SnackbarState.Duration.Preset.Short,
                                 type = Type.Default,
                                 action = Action(
                                     label = "click me",
@@ -351,7 +354,7 @@ private fun SnackbarHostPreview() {
                         snackbarHostState.showSnackbar(
                             snackbarState = SnackbarState(
                                 message = "Warning snackbar",
-                                duration = SnackbarDuration.Short,
+                                duration = SnackbarState.Duration.Preset.Short,
                                 type = Type.Warning,
                                 action = Action(
                                     label = "click me",
@@ -390,7 +393,7 @@ private fun SnackbarHostPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun SnackbarPreview() {
     FirefoxTheme {
@@ -402,7 +405,7 @@ private fun SnackbarPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun LongSnackbarPreview() {
     FirefoxTheme {
@@ -414,7 +417,7 @@ private fun LongSnackbarPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun SnackbarActionPreview() {
     FirefoxTheme {
@@ -430,7 +433,7 @@ private fun SnackbarActionPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun LongSnackbarActionPreview() {
     FirefoxTheme {
@@ -446,7 +449,7 @@ private fun LongSnackbarActionPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun WarningSnackbarPreview() {
     FirefoxTheme {
@@ -459,7 +462,7 @@ private fun WarningSnackbarPreview() {
     }
 }
 
-@PreviewLightDark
+@FlexibleWindowLightDarkPreview
 @Composable
 private fun WarningSnackbarActionPreview() {
     FirefoxTheme {

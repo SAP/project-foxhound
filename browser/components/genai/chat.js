@@ -28,6 +28,11 @@ XPCOMUtils.defineLazyPreferenceGetter(
   "shortcutsPref",
   "browser.ml.chat.shortcuts"
 );
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "sidebarRevampPref",
+  "sidebar.revamp"
+);
 
 ChromeUtils.defineLazyGetter(
   lazy,
@@ -63,8 +68,10 @@ function request(url = lazy.providerPref) {
 function renderChat() {
   const browser = document.createXULElement("browser");
   browser.setAttribute("disableglobalhistory", "true");
-  browser.setAttribute("type", "content");
+  browser.setAttribute("maychangeremoteness", "true");
+  browser.setAttribute("nodefaultsrc", "true");
   browser.setAttribute("remote", "true");
+  browser.setAttribute("type", "content");
   return document.body.appendChild(browser);
 }
 
@@ -249,6 +256,7 @@ var browserPromise = new Promise((resolve, reject) => {
       opened: true,
       provider: lazy.GenAI.getProviderId(),
       reason: "load",
+      version: lazy.sidebarRevampPref ? "new" : "old",
     });
   });
 });
@@ -259,6 +267,7 @@ addEventListener("unload", () => {
     opened: false,
     provider: lazy.GenAI.getProviderId(),
     reason: "unload",
+    version: lazy.sidebarRevampPref ? "new" : "old",
   });
 });
 

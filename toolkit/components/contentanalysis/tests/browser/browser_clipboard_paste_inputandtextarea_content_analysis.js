@@ -51,8 +51,13 @@ async function testClipboardPaste(testMode) {
     content.document.getElementById("isEmptyPaste").checked = testMode.isEmpty;
   });
   await testPasteWithElementId("testInput", browser, testMode);
-  // Set the clipboard data again so we don't use a cached CA result
-  setClipboardData(testMode.isEmpty ? "" : CLIPBOARD_TEXT_STRING);
+  // Make sure pasting the same data twice doesn't use the cache
+  await setElementValue(browser, "testInput", "");
+  await testPasteWithElementId("testInput", browser, testMode);
+
+  await testPasteWithElementId("testTextArea", browser, testMode);
+  // Make sure pasting the same data twice doesn't use the cache
+  await setElementValue(browser, "testTextArea", "");
   await testPasteWithElementId("testTextArea", browser, testMode);
 
   BrowserTestUtils.removeTab(tab);
@@ -144,7 +149,12 @@ async function testPasteWithElementId(elementId, browser, testMode) {
     "Correct number of calls to Content Analysis"
   );
   if (testMode.shouldRunCA) {
-    assertContentAnalysisRequest(mockCA.calls[0], CLIPBOARD_TEXT_STRING);
+    assertContentAnalysisRequest(
+      mockCA.calls[0],
+      CLIPBOARD_TEXT_STRING,
+      mockCA.calls[0].userActionId,
+      1
+    );
   }
   mockCA.clearCalls();
   let value = await getElementValue(browser, elementId);
@@ -155,12 +165,22 @@ async function testPasteWithElementId(elementId, browser, testMode) {
   );
 }
 
-function assertContentAnalysisRequest(request, expectedText) {
+function assertContentAnalysisRequest(
+  request,
+  expectedText,
+  expectedUserActionId,
+  expectedRequestsCount
+) {
   is(request.url.spec, PAGE_URL, "request has correct URL");
   is(
     request.analysisType,
     Ci.nsIContentAnalysisRequest.eBulkDataEntry,
     "request has correct analysisType"
+  );
+  is(
+    request.reason,
+    Ci.nsIContentAnalysisRequest.eClipboardPaste,
+    "request has correct reason"
   );
   is(
     request.operationTypeForDisplay,
@@ -169,6 +189,17 @@ function assertContentAnalysisRequest(request, expectedText) {
   );
   is(request.filePath, "", "request filePath should match");
   is(request.textContent, expectedText, "request textContent should match");
+  is(
+    request.userActionRequestsCount,
+    expectedRequestsCount,
+    "request userActionRequestsCount should match"
+  );
+  is(
+    request.userActionId,
+    expectedUserActionId,
+    "request userActionId should match"
+  );
+  ok(request.userActionId.length, "request userActionId should not be empty");
   is(request.printDataHandle, 0, "request printDataHandle should not be 0");
   is(request.printDataSize, 0, "request printDataSize should not be 0");
   ok(!!request.requestToken.length, "request requestToken should not be empty");
@@ -178,6 +209,16 @@ async function getElementValue(browser, elementId) {
   return await SpecialPowers.spawn(browser, [elementId], async elementId => {
     return content.document.getElementById(elementId).value;
   });
+}
+
+async function setElementValue(browser, elementId, value) {
+  await SpecialPowers.spawn(
+    browser,
+    [elementId, value],
+    async (elementId, value) => {
+      content.document.getElementById(elementId).value = value;
+    }
+  );
 }
 
 add_task(async function testClipboardPasteWithContentAnalysisAllow() {

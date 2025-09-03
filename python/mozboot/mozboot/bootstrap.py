@@ -132,6 +132,7 @@ FEDORA_DISTROS = (
     "nobara",
     "oracle",
     "fedora-asahi-remix",
+    "ultramarine",
 )
 
 ADD_GIT_CINNABAR_PATH = """
@@ -522,6 +523,12 @@ class Bootstrapper(object):
 
         print("Checking for Dev Drive...")
 
+        if not shutil.which("powershell"):
+            print(
+                "PowerShell is not available on the system path. Unable to check for Dev Drive."
+            )
+            return
+
         try:
             ver_output = subprocess.check_output(["cmd.exe", "/c", "ver"], text=True)
             current_windows_version = extract_windows_version_number(ver_output)
@@ -833,6 +840,7 @@ def update_git_tools(git: Optional[Path], root_state_dir: Path):
     # git-cinnabar 0.6.0rc1 self-update had a bug that could leave an empty
     # file. If that happens, install from scratch.
     if not exists or cinnabar_exe.stat().st_size == 0:
+        import ssl
         from urllib.request import urlopen
 
         import certifi
@@ -843,10 +851,9 @@ def update_git_tools(git: Optional[Path], root_state_dir: Path):
         cinnabar_url = "https://github.com/glandium/git-cinnabar/"
         download_py = cinnabar_dir / "download.py"
         with open(download_py, "wb") as fh:
+            context = ssl.create_default_context(cafile=certifi.where())
             shutil.copyfileobj(
-                urlopen(
-                    f"{cinnabar_url}/raw/master/download.py", cafile=certifi.where()
-                ),
+                urlopen(f"{cinnabar_url}/raw/master/download.py", context=context),
                 fh,
             )
 

@@ -10,7 +10,8 @@
 "use strict";
 
 ChromeUtils.defineESModuleGetters(this, {
-  NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
+  AppProvidedSearchEngine:
+    "resource://gre/modules/AppProvidedSearchEngine.sys.mjs",
 });
 
 const BASE_CONFIG = [
@@ -128,6 +129,38 @@ const MAIN_CONFIG = [
   },
 ];
 
+const CONFIG_WITH_MODIFIED_CLASSIFICATION = [
+  {
+    identifier: "originalDefault",
+    base: {
+      name: "Original Default",
+      urls: {
+        search: {
+          base: "https://example.com/search",
+          searchTermParamName: "q",
+        },
+      },
+      classification: "unknown",
+    },
+  },
+];
+
+const CONFIG_WITH_MODIFIED_NAME = [
+  {
+    identifier: "originalDefault",
+    base: {
+      name: "Modified Engine Name",
+      urls: {
+        search: {
+          base: "https://example.com/search",
+          searchTermParamName: "q",
+        },
+      },
+      classification: "general",
+    },
+  },
+];
+
 const testSearchEngine = {
   id: "originalDefault",
   name: "Original Default",
@@ -171,13 +204,6 @@ async function checkTelemetry(
   checkPrivate = false,
   additionalEventsExpected = false
 ) {
-  // TODO Bug 1876178 - Improve engine change telemetry.
-  // When we reload engines due to a config change, we update the engines as
-  // they may have changed, we don't track if any attribute has actually changed
-  // from previous, and so we send out an update regardless. This is why in
-  // this test we test for the additional `engine-update` event that's recorded.
-  // In future, we should be more specific about when to record the event and
-  // so only one event is captured and not two.
   let snapshot;
   if (checkPrivate) {
     snapshot = await Glean.searchEnginePrivate.changed.testGetValue();
@@ -185,6 +211,8 @@ async function checkTelemetry(
     snapshot = await Glean.searchEngineDefault.changed.testGetValue();
   }
 
+  // additionalEventsExpected should be true whenever we expect something
+  // stored in AppProvidedSearchEngine.#prevEngineInfo to have changed.
   if (additionalEventsExpected) {
     delete snapshot[0].timestamp;
     Assert.deepEqual(
@@ -229,8 +257,6 @@ async function checkTelemetry(
   );
 }
 
-let getVariableStub;
-
 add_setup(async () => {
   Region._setHomeRegion("US", false);
   Services.locale.availableLocales = [
@@ -239,14 +265,6 @@ add_setup(async () => {
     "fr",
   ];
   Services.locale.requestedLocales = ["en"];
-
-  sinon.spy(NimbusFeatures.searchConfiguration, "onUpdate");
-  sinon.stub(NimbusFeatures.searchConfiguration, "ready").resolves();
-  getVariableStub = sinon.stub(
-    NimbusFeatures.searchConfiguration,
-    "getVariable"
-  );
-  getVariableStub.returns(null);
 
   Services.fog.initializeFOG();
   sinon.stub(
@@ -257,6 +275,10 @@ add_setup(async () => {
   SearchTestUtils.setRemoteSettingsConfig(BASE_CONFIG);
 
   await Services.search.init();
+
+  registerCleanupFunction(async () => {
+    sinon.restore();
+  });
 });
 
 add_task(async function test_configuration_changes_default() {
@@ -278,20 +300,21 @@ add_task(async function test_experiment_changes_default() {
 
   let reloadObserved =
     SearchTestUtils.promiseSearchNotification("engines-reloaded");
-  getVariableStub.callsFake(name => (name == "experiment" ? "test1" : null));
-  NimbusFeatures.searchConfiguration.onUpdate.firstCall.args[0]();
+  Services.prefs.setStringPref("browser.search.experiment", "test1");
   await reloadObserved;
 
   await checkTelemetry(
     "experiment",
     testNewDefaultEngine,
     testDefaultForExperiment,
-    false,
-    true
+    false
   );
 
-  // Reset the stub so that we are no longer in an experiment.
-  getVariableStub.returns(null);
+  // Clear the pref so that we are no longer in an experiment.
+  reloadObserved =
+    SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  Services.prefs.clearUserPref("browser.search.experiment");
+  await reloadObserved;
 });
 
 add_task(async function test_locale_changes_default() {
@@ -304,10 +327,9 @@ add_task(async function test_locale_changes_default() {
 
   await checkTelemetry(
     "locale",
-    testDefaultForExperiment,
+    testNewDefaultEngine,
     testDefaultInLocaleFRNotRegionDEEngine,
-    false,
-    true
+    false
   );
 });
 
@@ -323,8 +345,7 @@ add_task(async function test_region_changes_default() {
     "region",
     testDefaultInLocaleFRNotRegionDEEngine,
     testPrefEngine,
-    false,
-    true
+    false
   );
 });
 
@@ -362,11 +383,9 @@ add_task(async function test_user_changes_separate_private_pref() {
   );
 
   await checkTelemetry("user_private_split", testNewDefaultEngine, null, true);
-
-  getVariableStub.returns(null);
 });
 
-add_task(async function test_experiment_with_separate_default_notifies() {
+add_task(async function test_ui_enabled_with_separate_default_notifies() {
   Services.prefs.setBoolPref(
     SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
     false
@@ -378,20 +397,43 @@ add_task(async function test_experiment_with_separate_default_notifies() {
 
   clearTelemetry();
 
-  getVariableStub.callsFake(name =>
-    name == "seperatePrivateDefaultUIEnabled" ? true : null
+  let defaultChanged = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.DEFAULT_PRIVATE,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
   );
-  NimbusFeatures.searchConfiguration.onUpdate.firstCall.args[0]();
 
-  await checkTelemetry("experiment", null, testNewDefaultEngine, true);
+  Services.prefs.setBoolPref(
+    SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
+    true
+  );
+  await defaultChanged;
+
+  await checkTelemetry(
+    "user_private_pref_enabled",
+    null,
+    testNewDefaultEngine,
+    true
+  );
 
   clearTelemetry();
 
-  // Reset the stub so that we are no longer in an experiment.
-  getVariableStub.returns(null);
-  NimbusFeatures.searchConfiguration.onUpdate.firstCall.args[0]();
+  // Reset the pref so that we are no longer in an experiment.
+  defaultChanged = SearchTestUtils.promiseSearchNotification(
+    SearchUtils.MODIFIED_TYPE.DEFAULT_PRIVATE,
+    SearchUtils.TOPIC_ENGINE_MODIFIED
+  );
+  Services.prefs.setBoolPref(
+    SearchUtils.BROWSER_SEARCH_PREF + "separatePrivateDefault.ui.enabled",
+    false
+  );
+  await defaultChanged;
 
-  await checkTelemetry("experiment", testNewDefaultEngine, null, true);
+  await checkTelemetry(
+    "user_private_pref_enabled",
+    testNewDefaultEngine,
+    null,
+    true
+  );
 });
 
 add_task(async function test_default_engine_update() {
@@ -445,3 +487,78 @@ add_task(async function test_default_engine_update() {
   await checkTelemetry("engine-update", defaultEngineData, defaultEngineData);
   await extension.unload();
 });
+
+add_task(async function test_only_notify_on_relevant_engine_property_change() {
+  clearTelemetry();
+  await SearchTestUtils.updateRemoteSettingsConfig(BASE_CONFIG);
+
+  // Since SearchUtils.notifyAction can be called for multiple different search
+  // engine topics, `resetPrevEngineInfo` is a better way to track
+  // notifications in this case.
+  let notificationSpy = sinon.spy(
+    AppProvidedSearchEngine.prototype,
+    "_resetPrevEngineInfo"
+  );
+
+  // Change an engine property that is not stored in
+  // AppProvidedSearchEngine.#prevEngineInfo.
+  let reloadObserved =
+    SearchTestUtils.promiseSearchNotification("engines-reloaded");
+  await SearchTestUtils.updateRemoteSettingsConfig(
+    CONFIG_WITH_MODIFIED_CLASSIFICATION
+  );
+  await reloadObserved;
+
+  Assert.equal(
+    notificationSpy.callCount,
+    0,
+    "Should not have sent a notification"
+  );
+
+  notificationSpy.restore();
+});
+
+add_task(
+  async function test_multiple_updates_only_notify_on_relevant_engine_property_change() {
+    clearTelemetry();
+    await SearchTestUtils.updateRemoteSettingsConfig(BASE_CONFIG);
+
+    // Since SearchUtils.notifyAction can be called for multiple different search
+    // engine topics, `resetPrevEngineInfo` is a better way to track
+    // notifications in this case.
+    let notificationSpy = sinon.spy(
+      AppProvidedSearchEngine.prototype,
+      "_resetPrevEngineInfo"
+    );
+
+    // Change an engine property that is not stored in
+    // AppProvidedSearchEngine.#prevEngineInfo.
+    let reloadObserved1 =
+      SearchTestUtils.promiseSearchNotification("engines-reloaded");
+    await SearchTestUtils.updateRemoteSettingsConfig(
+      CONFIG_WITH_MODIFIED_CLASSIFICATION
+    );
+    await reloadObserved1;
+
+    Assert.equal(
+      notificationSpy.callCount,
+      0,
+      "Should not have sent a notification"
+    );
+
+    // Now change an engine property that is stored in
+    // AppProvidedSearchEngine.#prevEngineInfo.
+    let reloadObserved2 =
+      SearchTestUtils.promiseSearchNotification("engines-reloaded");
+    await SearchTestUtils.updateRemoteSettingsConfig(CONFIG_WITH_MODIFIED_NAME);
+    await reloadObserved2;
+
+    Assert.equal(
+      notificationSpy.callCount,
+      1,
+      "Should have sent a notification"
+    );
+
+    notificationSpy.restore();
+  }
+);

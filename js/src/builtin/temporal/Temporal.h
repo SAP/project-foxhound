@@ -167,15 +167,8 @@ bool GetRoundingModeOption(JSContext* cx, JS::Handle<JSObject*> options,
 /**
  * RoundNumberToIncrement ( x, increment, roundingMode )
  */
-Int128 RoundNumberToIncrement(int64_t numerator, int64_t denominator,
+Int128 RoundNumberToIncrement(const Int128& numerator, int64_t denominator,
                               Increment increment,
-                              TemporalRoundingMode roundingMode);
-
-/**
- * RoundNumberToIncrement ( x, increment, roundingMode )
- */
-Int128 RoundNumberToIncrement(const Int128& numerator,
-                              const Int128& denominator, Increment increment,
                               TemporalRoundingMode roundingMode);
 
 /**
@@ -352,6 +345,12 @@ enum class TemporalDifference { Since, Until };
 
 inline const char* ToName(TemporalDifference difference) {
   return difference == TemporalDifference::Since ? "since" : "until";
+}
+
+enum class TemporalAddDuration { Add, Subtract };
+
+inline const char* ToName(TemporalAddDuration addDuration) {
+  return addDuration == TemporalAddDuration::Add ? "add" : "subtract";
 }
 
 struct DifferenceSettings final {

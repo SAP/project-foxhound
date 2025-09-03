@@ -55,7 +55,7 @@ sidebar:
     type: string
     lifetime: application
     description: >
-      Setting for sidebar display (either "always" or "hide").
+      Setting for sidebar display (either "always", "expand-on-hover", or "hide").
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1898250
     data_reviews:
@@ -243,6 +243,28 @@ sidebar:
       addon_id:
         type: string
         description: The extension's ID.
+  keyboard_shortcut:
+    type: event
+    description: >
+      Revamped sidebar toggled with keyboard shortcut.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1897411
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D229405
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      panel:
+        type: string
+        description: Sidebar panel is currently open if any.
+      opened:
+        type: boolean
+        description: Whether the sidebar is opening
 history:
   sidebar_toggle:
     type: event
@@ -263,6 +285,33 @@ history:
       opened:
         type: boolean
         description: Whether the panel was opened.
+      version:
+        type: string
+        description: The active version of sidebar (either "old" or "new").
+shopping:
+  sidebar_toggle:
+    type: event
+    description: >
+      The Review Checker sidebar panel was loaded or unloaded.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1941047
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D235052
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      opened:
+        type: boolean
+        description: New/current state of sidebar is open.
+      version:
+        type: string
+        description: The active version of sidebar (either "old" or "new").
 synced_tabs:
   sidebar_toggle:
     type: event
@@ -286,6 +335,9 @@ synced_tabs:
       synced_tabs_loaded:
         type: boolean
         description: Whether synced tabs are showing.
+      version:
+        type: string
+        description: The active version of sidebar (either "old" or "new").
 bookmarks:
   sidebar_toggle:
     type: event
@@ -306,6 +358,9 @@ bookmarks:
       opened:
         type: boolean
         description: Whether the panel was opened.
+      version:
+        type: string
+        description: The active version of sidebar (either "old" or "new").
 extension:
   sidebar_toggle:
     type: event
@@ -332,6 +387,9 @@ extension:
       addon_name:
         type: string
         description: The localized name of the extension.
+      version:
+        type: string
+        description: The active version of sidebar (either "old" or "new").
 sidebar.customize:
   panel_toggle:
     type: event
@@ -437,6 +495,26 @@ sidebar.customize:
     expires: never
     notification_emails:
       - vsabino@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      checked:
+        type: boolean
+        description: Whether the box was checked.
+  shopping_review_checker_enabled:
+    type: event
+    description: >
+      User clicked on the checkbox corresponding to Review Checker on sidebar customization settings.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938428
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D235053
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - events
     extra_keys:
@@ -549,3 +627,43 @@ sidebar.customize:
       - vsabino@mozilla.com
     send_in_pings:
       - events
+  expand_on_hover_enabled:
+    type: event
+    description: >
+      User clicked on the checkbox corresponding to expand on hover on sidebar customization settings.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1930201
+    data_reviews:
+      - https://phabricator.services.mozilla.com/D233098
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - vsabino@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      checked:
+        type: boolean
+        description: Whether the box was checked.
+contextual_manager:
+  sidebar_toggle:
+    type: event
+    description: Client opens Contextual Manager.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1946830
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1947634
+    data_sensitivity:
+      - interaction
+    expires: never
+    notification_emails:
+      - issozi@mozilla.com
+      - tthorne@mozilla.com
+      - passwords-dev@mozilla.org
+    send_in_pings:
+      - events
+    extra_keys:
+      opened:
+        type: boolean
+        description: Whether the sidebar is opening.

@@ -57,7 +57,7 @@ var sdputils = {
 
   findExtmapIdsUrnsDirections(sdp) {
     var sdpExtmap = [];
-    extmapRegEx = /^a=extmap:([0-9+])([A-Za-z/]*) ([A-Za-z0-9_:\-\/\.]+)/gm;
+    extmapRegEx = /^a=extmap:([0-9+])([A-Za-z/]*) ([A-Za-z0-9_:#\-\/\.]+)/gm;
     // must call exec on the regex to get each match in the string
     while ((searchResults = extmapRegEx.exec(sdp)) !== null) {
       // returned array has the matched text as the first item,
@@ -311,6 +311,7 @@ var sdputils = {
     info("Examining this SessionDescription: " + JSON.stringify(desc));
     info("offerConstraintsList: " + JSON.stringify(offerConstraintsList));
     info("offerOptions: " + JSON.stringify(offerOptions));
+    info("testOptions: " + JSON.stringify(testOptions));
     ok(desc, "SessionDescription is not null");
     is(desc.type, expectedType, "SessionDescription type is " + expectedType);
     ok(desc.sdp.length > 10, "SessionDescription body length is plausible");
@@ -371,7 +372,14 @@ var sdputils = {
             desc.sdp.includes("a=rtpmap:105 H264/90000"),
           "H.264 codec is present in SDP"
         );
-      } else {
+      }
+      if (testOptions.av1) {
+        ok(
+          desc.sdp.includes("a=rtpmap:99 AV1/90000"),
+          "AV1 codec is present in SDP"
+        );
+      }
+      if (!testOptions.h264 && !testOptions.av1) {
         ok(
           desc.sdp.includes("a=rtpmap:120 VP8/90000") ||
             desc.sdp.includes("a=rtpmap:121 VP9/90000"),
