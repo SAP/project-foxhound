@@ -1269,11 +1269,11 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
   }
 
-  // Foxhound
-  JSLinearString* res = newChars.template toStringDontDeflate<CanGC>(cx, resultLength);
-  if (!res)
   // Foxhound: Add taint operation to all taint ranges of the input string.
-  res->setTaint(cx, taint);
+  JSLinearString* res = newChars.template toStringDontDeflate<CanGC>(cx, resultLength);
+  if (res && taint.hasTaint()) {
+    res->setTaint(cx, taint);
+  }
 
   return res;
 }
@@ -1709,7 +1709,7 @@ static JSLinearString* ToUpperCase(JSContext* cx, JSLinearString* str) {
   };
 
   JSLinearString* res = newChars.mapNonEmpty(toString);
-    // Foxhound: Add taint operation to all taint ranges of the input string.
+  // Foxhound: Add taint operation to all taint ranges of the input string.
   if(taint.hasTaint()) {
     res->setTaint(cx, taint);
   }
