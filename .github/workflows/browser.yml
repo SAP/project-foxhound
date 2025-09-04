@@ -54,7 +54,6 @@ jobs:
       - name: Dry Run
         run: |
           cp taintfox_mozconfig_ubuntu .mozconfig
-          echo "mk_add_options MOZ_PARALLEL_BUILD=4" >> .mozconfig
           bash build.sh -p -n
 
       - name: Bootstrap
