@@ -2,7 +2,7 @@
 
 # Project "Foxhound"
 [![License](https://img.shields.io/github/license/SAP/project-foxhound?label=License)](https://github.com/SAP/project-foxhound?tab=GPL-3.0-1-ov-file#readme)
-![Main Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Ftmbrbr%2Fproject-foxhound%2Frefs%2Fheads%2Fmain%2Fbrowser%2Fconfig%2Fversion.txt&search=(.*)&replace=v%241&label=Version)
+![Main Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FSAP%2Fproject-foxhound%2Frefs%2Fheads%2Fmain%2Fbrowser%2Fconfig%2Fversion.txt&search=(.*)&replace=v%241&label=Version)
 ![Playwright Version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2FSAP%2Fproject-foxhound%2Frefs%2Fheads%2Fmain%2F.PLAYWRIGHT_VERSION&search=PLAYWRIGHT_VERSION%3D%22(.*%3F)%22&replace=%241&label=Playwright)
 [![Latest Release](https://img.shields.io/github/v/release/sap/project-foxhound.svg?label=Latest%20Release)](https://github.com/SAP/project-foxhound/releases/latest)
 [![Code Size](https://img.shields.io/github/languages/code-size/SAP/project-foxhound?label=Code%20Size)](https://github.com/SAP/project-foxhound/releases/latest)
