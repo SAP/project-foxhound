@@ -32,14 +32,9 @@ namespace {
 void InitializeClientDirectory(const ClientMetadata& aClientMetadata) {
   QuotaManager* quotaManager = QuotaManager::Get();
 
-  QM_TRY(MOZ_TO_RESULT(
-             quotaManager->EnsureTemporaryStorageIsInitializedInternal()),
-         QM_TEST_FAIL);
-
   QM_TRY_INSPECT(
       const auto& directory,
-      quotaManager->EnsureTemporaryOriginIsInitializedInternal(aClientMetadata)
-          .map([](const auto& aPair) { return aPair.first; }),
+      quotaManager->GetOrCreateTemporaryOriginDirectory(aClientMetadata),
       QM_TEST_FAIL);
 
   QM_TRY(MOZ_TO_RESULT(directory->Append(
@@ -188,7 +183,8 @@ class TestStorageConnection : public QuotaManagerDependencyFixture {
   struct NSSInitContextDeleter {
     void operator()(NSSInitContext* p) { NSS_ShutdownContext(p); }
   };
-  inline static std::unique_ptr<NSSInitContext, NSSInitContextDeleter>
+  MOZ_RUNINIT inline static std::unique_ptr<NSSInitContext,
+                                            NSSInitContextDeleter>
       sNssContext;
 };
 

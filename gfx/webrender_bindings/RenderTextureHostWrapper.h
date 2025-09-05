@@ -47,6 +47,7 @@ class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
   RenderAndroidSurfaceTextureHost* AsRenderAndroidSurfaceTextureHost() override;
   RenderEGLImageTextureHost* AsRenderEGLImageTextureHost() override;
   RenderTextureHostSWGL* AsRenderTextureHostSWGL() override;
+  RenderDMABUFTextureHost* AsRenderDMABUFTextureHost() override;
   void SetIsSoftwareDecodedVideo() override;
   bool IsSoftwareDecodedVideo() override;
   RefPtr<RenderTextureHostUsageInfo> GetOrMergeUsageInfo(
@@ -67,11 +68,6 @@ class RenderTextureHostWrapper final : public RenderTextureHostSWGL {
   // This is just a wrapper, so doesn't need to report the
   // size of the wrapped object (which reports itself).
   size_t Bytes() override { return 0; }
-
- protected:
-  // RenderTextureHost
-  std::pair<gfx::Point, gfx::Point> GetUvCoords(
-      gfx::IntSize aTextureSize) const override;
 
  private:
   ~RenderTextureHostWrapper() override;

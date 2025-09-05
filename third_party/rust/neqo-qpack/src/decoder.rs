@@ -40,7 +40,7 @@ impl QPackDecoder {
     /// If settings include invalid values.
     #[must_use]
     pub fn new(qpack_settings: &QpackSettings) -> Self {
-        qdebug!("Decoder: creating a new qpack decoder.");
+        qdebug!("Decoder: creating a new qpack decoder");
         let mut send_buf = QpackData::default();
         send_buf.encode_varint(QPACK_UNI_STREAM_TYPE_DECODER);
         Self {
@@ -93,7 +93,7 @@ impl QPackDecoder {
         let r = self
             .blocked_streams
             .iter()
-            .filter_map(|(id, req)| if *req <= base_new { Some(*id) } else { None })
+            .filter_map(|(id, req)| (*req <= base_new).then_some(*id))
             .collect::<Vec<_>>();
         self.blocked_streams.retain(|(_, req)| *req > base_new);
         Ok(r)
@@ -139,14 +139,14 @@ impl QPackDecoder {
                 self.stats.dynamic_table_inserts += 1;
             }
             DecodedEncoderInstruction::NoInstruction => {
-                unreachable!("This can be call only with an instruction.");
+                unreachable!("This can be call only with an instruction");
             }
         }
         Ok(())
     }
 
     fn set_capacity(&mut self, cap: u64) -> Res<()> {
-        qdebug!([self], "received instruction capacity cap={}", cap);
+        qdebug!("[{self}] received instruction capacity cap={cap}");
         if cap > self.max_table_size {
             return Err(Error::EncoderStream);
         }
@@ -182,11 +182,11 @@ impl QPackDecoder {
             DecoderInstruction::InsertCountIncrement { increment }.marshal(&mut self.send_buf);
             self.acked_inserts = self.table.base();
         }
-        if self.send_buf.len() != 0 && self.local_stream_id.is_some() {
+        if !self.send_buf.is_empty() && self.local_stream_id.is_some() {
             let r = conn
                 .stream_send(self.local_stream_id.unwrap(), &self.send_buf[..])
                 .map_err(|_| Error::DecoderStream)?;
-            qdebug!([self], "{} bytes sent.", r);
+            qdebug!("[{self}] {r} bytes sent");
             self.send_buf.read(r);
         }
         Ok(())
@@ -214,7 +214,7 @@ impl QPackDecoder {
         buf: &[u8],
         stream_id: StreamId,
     ) -> Res<Option<Vec<Header>>> {
-        qdebug!([self], "decode header block.");
+        qdebug!("[{self}] decode header block");
         let mut decoder = HeaderDecoder::new(buf);
 
         match decoder.decode_header_block(&self.table, self.max_entries, self.table.base()) {
@@ -225,7 +225,7 @@ impl QPackDecoder {
                     let r = self
                         .blocked_streams
                         .iter()
-                        .filter_map(|(id, req)| if *id == stream_id { Some(*req) } else { None })
+                        .filter_map(|(id, req)| (*id == stream_id).then_some(*req))
                         .collect::<Vec<_>>();
                     if !r.is_empty() {
                         debug_assert!(r.len() == 1);
@@ -285,8 +285,6 @@ fn map_error(err: &Error) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use std::mem;
-
     use neqo_common::Header;
     use neqo_transport::{StreamId, StreamType};
     use test_fixture::now;
@@ -333,8 +331,8 @@ mod tests {
             .peer_conn
             .stream_send(decoder.recv_stream_id, encoder_instruction)
             .unwrap();
-        let out = decoder.peer_conn.process(None, now());
-        mem::drop(decoder.conn.process(out.as_dgram_ref(), now()));
+        let out = decoder.peer_conn.process_output(now());
+        drop(decoder.conn.process(out.dgram(), now()));
         assert_eq!(
             decoder
                 .decoder
@@ -345,8 +343,8 @@ mod tests {
 
     fn send_instructions_and_check(decoder: &mut TestDecoder, decoder_instruction: &[u8]) {
         decoder.decoder.send(&mut decoder.conn).unwrap();
-        let out = decoder.conn.process(None, now());
-        mem::drop(decoder.peer_conn.process(out.as_dgram_ref(), now()));
+        let out = decoder.conn.process_output(now());
+        drop(decoder.peer_conn.process(out.dgram(), now()));
         let mut buf = [0_u8; 100];
         let (amount, fin) = decoder
             .peer_conn
@@ -396,7 +394,7 @@ mod tests {
 
     // test insert_with_name_ref which fails because there is not enough space in the table
     #[test]
-    fn test_recv_insert_with_name_ref_1() {
+    fn recv_insert_with_name_ref_1() {
         test_instruction(
             0,
             &[0xc4, 0x04, 0x31, 0x32, 0x33, 0x34],
@@ -408,7 +406,7 @@ mod tests {
 
     // test insert_name_ref that succeeds
     #[test]
-    fn test_recv_insert_with_name_ref_2() {
+    fn recv_insert_with_name_ref_2() {
         test_instruction(
             100,
             &[0xc4, 0x04, 0x31, 0x32, 0x33, 0x34],
@@ -420,7 +418,7 @@ mod tests {
 
     // test insert with name literal - succeeds
     #[test]
-    fn test_recv_insert_with_name_litarel_2() {
+    fn recv_insert_with_name_litarel_2() {
         test_instruction(
             200,
             &[
@@ -434,12 +432,12 @@ mod tests {
     }
 
     #[test]
-    fn test_recv_change_capacity() {
+    fn recv_change_capacity() {
         test_instruction(0, &[0x3f, 0xa9, 0x01], &Ok(()), &[0x03], 200);
     }
 
     #[test]
-    fn test_recv_change_capacity_too_big() {
+    fn recv_change_capacity_too_big() {
         test_instruction(
             0,
             &[0x3f, 0xf1, 0x02],
@@ -452,7 +450,7 @@ mod tests {
     // this test tests header decoding, the header acks command and the insert count increment
     // command.
     #[test]
-    fn test_duplicate() {
+    fn duplicate() {
         let mut decoder = connect();
 
         assert!(decoder.decoder.set_capacity(100).is_ok());
@@ -480,7 +478,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_incr_encode_header_ack_some() {
+    fn encode_incr_encode_header_ack_some() {
         // 1. Decoder receives an instruction (header and value both as literal)
         // 2. Decoder process the instruction and sends an increment instruction.
         // 3. Decoder receives another two instruction (header and value both as literal) and a
@@ -517,7 +515,7 @@ mod tests {
     }
 
     #[test]
-    fn test_encode_incr_encode_header_ack_all() {
+    fn encode_incr_encode_header_ack_all() {
         // 1. Decoder receives an instruction (header and value both as literal)
         // 2. Decoder process the instruction and sends an increment instruction.
         // 3. Decoder receives another instruction (header and value both as literal) and a header
@@ -553,7 +551,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_ack_all() {
+    fn header_ack_all() {
         // Send two instructions to insert values into the dynamic table and then send a header
         // that references them both. The result should be only a header acknowledgement.
         let headers = vec![
@@ -579,7 +577,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_ack_and_incr_instruction() {
+    fn header_ack_and_incr_instruction() {
         // Send two instructions to insert values into the dynamic table and then send a header
         // that references only the first. The result should be a header acknowledgement and a
         // increment instruction.
@@ -603,7 +601,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_block_decoder() {
+    fn header_block_decoder() {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
@@ -684,7 +682,7 @@ mod tests {
     }
 
     #[test]
-    fn test_header_block_decoder_huffman() {
+    fn header_block_decoder_huffman() {
         let test_cases: [TestElement; 6] = [
             // test a header with ref to static - encode_indexed
             TestElement {
@@ -763,7 +761,7 @@ mod tests {
     }
 
     #[test]
-    fn test_subtract_overflow_in_header_ack() {
+    fn subtract_overflow_in_header_ack() {
         const HEADER_BLOCK_1: &[u8] = &[0x03, 0x81, 0x10, 0x11];
         const ENCODER_INST: &[u8] = &[
             0x4a, 0x6d, 0x79, 0x2d, 0x68, 0x65, 0x61, 0x64, 0x65, 0x72, 0x61, 0x09, 0x6d, 0x79,
@@ -795,7 +793,7 @@ mod tests {
     }
 
     #[test]
-    fn test_base_larger_than_entry_count() {
+    fn base_larger_than_entry_count() {
         // Test for issue https://github.com/mozilla/neqo/issues/533
         // Send instruction that inserts 2 fields into the dynamic table and send a header that
         // uses base larger than 2.

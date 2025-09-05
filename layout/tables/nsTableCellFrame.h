@@ -84,8 +84,11 @@ class nsTableCellFrame : public nsContainerFrame,
 #endif
 
   nsContainerFrame* GetContentInsertionFrame() override {
-    return PrincipalChildList().FirstChild()->GetContentInsertionFrame();
+    return Inner()->GetContentInsertionFrame();
   }
+
+  // Return our anonymous inner frame.
+  nsIFrame* Inner() const;
 
   nsIFrame* CellContentFrame() const;
 
@@ -102,7 +105,7 @@ class nsTableCellFrame : public nsContainerFrame,
                               nsDisplayListBuilder* aBuilder,
                               const nsDisplayListSet& aLists);
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const mozilla::IntrinsicSizeInput& aInput,
                          mozilla::IntrinsicISizeType aType) override;
 
   IntrinsicSizeOffsetData IntrinsicISizeOffsets(
@@ -136,7 +139,7 @@ class nsTableCellFrame : public nsContainerFrame,
    * Get the first-line baseline of the cell relative to its block-start border
    * edge, as if the cell were vertically aligned to the top of the row.
    */
-  nscoord GetCellBaseline() const;
+  Maybe<nscoord> GetCellBaseline() const;
 
   /**
    * return the cell's specified row span. this is what was specified in the

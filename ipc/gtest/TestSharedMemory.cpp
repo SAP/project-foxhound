@@ -6,11 +6,9 @@
 
 #include "gtest/gtest.h"
 
-#include "base/shared_memory.h"
-
 #include "mozilla/RefPtr.h"
 #include "mozilla/ipc/SharedMemory.h"
-#include "mozilla/ipc/SharedMemoryBasic.h"
+#include "mozilla/ipc/SharedMemoryCursor.h"
 
 #ifdef XP_LINUX
 #  include <errno.h>
@@ -31,28 +29,29 @@ namespace mozilla {
 // compromised and then receives a frozen handle.
 TEST(IPCSharedMemory, FreezeAndMapRW)
 {
-  base::SharedMemory shm;
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shm.CreateFreezeable(1));
-  ASSERT_TRUE(shm.Map(1));
-  auto mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->CreateFreezable(1));
+  ASSERT_TRUE(shm->Map(1));
+  auto* mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_TRUE(mem);
   *mem = 'A';
 
   // Freeze
-  ASSERT_TRUE(shm.Freeze());
-  ASSERT_FALSE(shm.memory());
+  ASSERT_TRUE(shm->Freeze());
+  ASSERT_FALSE(shm->Memory());
 
   // Re-create as writeable
-  auto handle = shm.TakeHandle();
-  ASSERT_TRUE(shm.IsHandleValid(handle));
-  ASSERT_FALSE(shm.IsValid());
-  ASSERT_TRUE(shm.SetHandle(std::move(handle), /* read-only */ false));
-  ASSERT_TRUE(shm.IsValid());
+  auto handle = shm->TakeHandleAndUnmap();
+  ASSERT_TRUE(shm->IsHandleValid(handle));
+  ASSERT_FALSE(shm->IsValid());
+  ASSERT_TRUE(shm->SetHandle(std::move(handle),
+                             ipc::SharedMemory::OpenRights::RightsReadWrite));
+  ASSERT_TRUE(shm->IsValid());
 
   // This should fail
-  EXPECT_FALSE(shm.Map(1));
+  EXPECT_FALSE(shm->Map(1));
 }
 
 // Try to restore write permissions to a frozen mapping.  Threat
@@ -61,22 +60,22 @@ TEST(IPCSharedMemory, FreezeAndMapRW)
 // proof-of-concept at https://crbug.com/project-zero/1671 ).
 TEST(IPCSharedMemory, FreezeAndReprotect)
 {
-  base::SharedMemory shm;
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shm.CreateFreezeable(1));
-  ASSERT_TRUE(shm.Map(1));
-  auto mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->CreateFreezable(1));
+  ASSERT_TRUE(shm->Map(1));
+  auto* mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_TRUE(mem);
   *mem = 'A';
 
   // Freeze
-  ASSERT_TRUE(shm.Freeze());
-  ASSERT_FALSE(shm.memory());
+  ASSERT_TRUE(shm->Freeze());
+  ASSERT_FALSE(shm->Memory());
 
   // Re-map
-  ASSERT_TRUE(shm.Map(1));
-  mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->Map(1));
+  mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_EQ(*mem, 'A');
 
   // Try to alter protection; should fail
@@ -84,32 +83,39 @@ TEST(IPCSharedMemory, FreezeAndReprotect)
       mem, 1, ipc::SharedMemory::RightsReadWrite));
 }
 
-#ifndef XP_WIN
+#if !defined(XP_WIN) && !defined(XP_DARWIN)
 // This essentially tests whether FreezeAndReprotect would have failed
-// without the freeze.  It doesn't work on Windows: VirtualProtect
-// can't exceed the permissions set in MapViewOfFile regardless of the
-// security status of the original handle.
+// without the freeze.
+//
+// It doesn't work on Windows: VirtualProtect can't exceed the permissions set
+// in MapViewOfFile regardless of the security status of the original handle.
+//
+// It doesn't work on MacOS: we can set a higher max_protection for the memory
+// when creating the handle, but we wouldn't want to do this for freezable
+// handles (to prevent creating additional RW mappings that break the memory
+// freezing invariants).
 TEST(IPCSharedMemory, Reprotect)
 {
-  base::SharedMemory shm;
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shm.CreateFreezeable(1));
-  ASSERT_TRUE(shm.Map(1));
-  auto mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->CreateFreezable(1));
+  ASSERT_TRUE(shm->Map(1));
+  auto* mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_TRUE(mem);
   *mem = 'A';
 
   // Re-create as read-only
-  auto handle = shm.TakeHandle();
-  ASSERT_TRUE(shm.IsHandleValid(handle));
-  ASSERT_FALSE(shm.IsValid());
-  ASSERT_TRUE(shm.SetHandle(std::move(handle), /* read-only */ true));
-  ASSERT_TRUE(shm.IsValid());
+  auto handle = shm->TakeHandleAndUnmap();
+  ASSERT_TRUE(shm->IsHandleValid(handle));
+  ASSERT_FALSE(shm->IsValid());
+  ASSERT_TRUE(shm->SetHandle(std::move(handle),
+                             ipc::SharedMemory::OpenRights::RightsReadOnly));
+  ASSERT_TRUE(shm->IsValid());
 
   // Re-map
-  ASSERT_TRUE(shm.Map(1));
-  mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->Map(1));
+  mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_EQ(*mem, 'A');
 
   // Try to alter protection; should succeed, because not frozen
@@ -124,23 +130,23 @@ TEST(IPCSharedMemory, Reprotect)
 // See also https://crbug.com/338538
 TEST(IPCSharedMemory, WinUnfreeze)
 {
-  base::SharedMemory shm;
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shm.CreateFreezeable(1));
-  ASSERT_TRUE(shm.Map(1));
-  auto mem = reinterpret_cast<char*>(shm.memory());
+  ASSERT_TRUE(shm->CreateFreezable(1));
+  ASSERT_TRUE(shm->Map(1));
+  auto* mem = reinterpret_cast<char*>(shm->Memory());
   ASSERT_TRUE(mem);
   *mem = 'A';
 
   // Freeze
-  ASSERT_TRUE(shm.Freeze());
-  ASSERT_FALSE(shm.memory());
+  ASSERT_TRUE(shm->Freeze());
+  ASSERT_FALSE(shm->Memory());
 
   // Extract handle.
-  auto handle = shm.TakeHandle();
-  ASSERT_TRUE(shm.IsHandleValid(handle));
-  ASSERT_FALSE(shm.IsValid());
+  auto handle = shm->TakeHandleAndUnmap();
+  ASSERT_TRUE(shm->IsHandleValid(handle));
+  ASSERT_FALSE(shm->IsValid());
 
   // Unfreeze.
   HANDLE newHandle = INVALID_HANDLE_VALUE;
@@ -155,24 +161,25 @@ TEST(IPCSharedMemory, WinUnfreeze)
 // mapping in the case that the page wasn't accessed before the copy.
 TEST(IPCSharedMemory, ROCopyAndWrite)
 {
-  base::SharedMemory shmRW, shmRO;
+  auto shmRW = MakeRefPtr<ipc::SharedMemory>();
+  auto shmRO = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shmRW.CreateFreezeable(1));
-  ASSERT_TRUE(shmRW.Map(1));
-  auto memRW = reinterpret_cast<char*>(shmRW.memory());
+  ASSERT_TRUE(shmRW->CreateFreezable(1));
+  ASSERT_TRUE(shmRW->Map(1));
+  auto* memRW = reinterpret_cast<char*>(shmRW->Memory());
   ASSERT_TRUE(memRW);
 
   // Create read-only copy
-  ASSERT_TRUE(shmRW.ReadOnlyCopy(&shmRO));
-  EXPECT_FALSE(shmRW.IsValid());
-  ASSERT_EQ(shmRW.memory(), memRW);
-  ASSERT_EQ(shmRO.max_size(), size_t(1));
+  ASSERT_TRUE(shmRW->ReadOnlyCopy(shmRO));
+  EXPECT_FALSE(shmRW->IsValid());
+  ASSERT_EQ(shmRW->Memory(), memRW);
+  ASSERT_EQ(shmRO->MaxSize(), size_t(1));
 
   // Map read-only
-  ASSERT_TRUE(shmRO.IsValid());
-  ASSERT_TRUE(shmRO.Map(1));
-  auto memRO = reinterpret_cast<const char*>(shmRO.memory());
+  ASSERT_TRUE(shmRO->IsValid());
+  ASSERT_TRUE(shmRO->Map(1));
+  const auto* memRO = reinterpret_cast<const char*>(shmRO->Memory());
   ASSERT_TRUE(memRO);
   ASSERT_NE(memRW, memRO);
 
@@ -186,25 +193,26 @@ TEST(IPCSharedMemory, ROCopyAndWrite)
 // (and, before that, sees the state as of when the copy was made).
 TEST(IPCSharedMemory, ROCopyAndRewrite)
 {
-  base::SharedMemory shmRW, shmRO;
+  auto shmRW = MakeRefPtr<ipc::SharedMemory>();
+  auto shmRO = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shmRW.CreateFreezeable(1));
-  ASSERT_TRUE(shmRW.Map(1));
-  auto memRW = reinterpret_cast<char*>(shmRW.memory());
+  ASSERT_TRUE(shmRW->CreateFreezable(1));
+  ASSERT_TRUE(shmRW->Map(1));
+  auto* memRW = reinterpret_cast<char*>(shmRW->Memory());
   ASSERT_TRUE(memRW);
   *memRW = 'A';
 
   // Create read-only copy
-  ASSERT_TRUE(shmRW.ReadOnlyCopy(&shmRO));
-  EXPECT_FALSE(shmRW.IsValid());
-  ASSERT_EQ(shmRW.memory(), memRW);
-  ASSERT_EQ(shmRO.max_size(), size_t(1));
+  ASSERT_TRUE(shmRW->ReadOnlyCopy(shmRO));
+  EXPECT_FALSE(shmRW->IsValid());
+  ASSERT_EQ(shmRW->Memory(), memRW);
+  ASSERT_EQ(shmRO->MaxSize(), size_t(1));
 
   // Map read-only
-  ASSERT_TRUE(shmRO.IsValid());
-  ASSERT_TRUE(shmRO.Map(1));
-  auto memRO = reinterpret_cast<const char*>(shmRO.memory());
+  ASSERT_TRUE(shmRO->IsValid());
+  ASSERT_TRUE(shmRO->Map(1));
+  const auto* memRO = reinterpret_cast<const char*>(shmRO->Memory());
   ASSERT_TRUE(memRO);
   ASSERT_NE(memRW, memRO);
 
@@ -218,49 +226,52 @@ TEST(IPCSharedMemory, ROCopyAndRewrite)
 // See FreezeAndMapRW.
 TEST(IPCSharedMemory, ROCopyAndMapRW)
 {
-  base::SharedMemory shmRW, shmRO;
+  auto shmRW = MakeRefPtr<ipc::SharedMemory>();
+  auto shmRO = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shmRW.CreateFreezeable(1));
-  ASSERT_TRUE(shmRW.Map(1));
-  auto memRW = reinterpret_cast<char*>(shmRW.memory());
+  ASSERT_TRUE(shmRW->CreateFreezable(1));
+  ASSERT_TRUE(shmRW->Map(1));
+  auto* memRW = reinterpret_cast<char*>(shmRW->Memory());
   ASSERT_TRUE(memRW);
   *memRW = 'A';
 
   // Create read-only copy
-  ASSERT_TRUE(shmRW.ReadOnlyCopy(&shmRO));
-  ASSERT_TRUE(shmRO.IsValid());
+  ASSERT_TRUE(shmRW->ReadOnlyCopy(shmRO));
+  ASSERT_TRUE(shmRO->IsValid());
 
   // Re-create as writeable
-  auto handle = shmRO.TakeHandle();
-  ASSERT_TRUE(shmRO.IsHandleValid(handle));
-  ASSERT_FALSE(shmRO.IsValid());
-  ASSERT_TRUE(shmRO.SetHandle(std::move(handle), /* read-only */ false));
-  ASSERT_TRUE(shmRO.IsValid());
+  auto handle = shmRO->TakeHandleAndUnmap();
+  ASSERT_TRUE(shmRO->IsHandleValid(handle));
+  ASSERT_FALSE(shmRO->IsValid());
+  ASSERT_TRUE(shmRO->SetHandle(std::move(handle),
+                               ipc::SharedMemory::OpenRights::RightsReadWrite));
+  ASSERT_TRUE(shmRO->IsValid());
 
   // This should fail
-  EXPECT_FALSE(shmRO.Map(1));
+  EXPECT_FALSE(shmRO->Map(1));
 }
 
 // See FreezeAndReprotect
 TEST(IPCSharedMemory, ROCopyAndReprotect)
 {
-  base::SharedMemory shmRW, shmRO;
+  auto shmRW = MakeRefPtr<ipc::SharedMemory>();
+  auto shmRO = MakeRefPtr<ipc::SharedMemory>();
 
   // Create and initialize
-  ASSERT_TRUE(shmRW.CreateFreezeable(1));
-  ASSERT_TRUE(shmRW.Map(1));
-  auto memRW = reinterpret_cast<char*>(shmRW.memory());
+  ASSERT_TRUE(shmRW->CreateFreezable(1));
+  ASSERT_TRUE(shmRW->Map(1));
+  auto* memRW = reinterpret_cast<char*>(shmRW->Memory());
   ASSERT_TRUE(memRW);
   *memRW = 'A';
 
   // Create read-only copy
-  ASSERT_TRUE(shmRW.ReadOnlyCopy(&shmRO));
-  ASSERT_TRUE(shmRO.IsValid());
+  ASSERT_TRUE(shmRW->ReadOnlyCopy(shmRO));
+  ASSERT_TRUE(shmRO->IsValid());
 
   // Re-map
-  ASSERT_TRUE(shmRO.Map(1));
-  auto memRO = reinterpret_cast<char*>(shmRO.memory());
+  ASSERT_TRUE(shmRO->Map(1));
+  auto* memRO = reinterpret_cast<char*>(shmRO->Memory());
   ASSERT_EQ(*memRO, 'A');
 
   // Try to alter protection; should fail
@@ -268,30 +279,16 @@ TEST(IPCSharedMemory, ROCopyAndReprotect)
       memRO, 1, ipc::SharedMemory::RightsReadWrite));
 }
 
-TEST(IPCSharedMemory, IsZero)
-{
-  base::SharedMemory shm;
-
-  static constexpr size_t kSize = 65536;
-  ASSERT_TRUE(shm.Create(kSize));
-  ASSERT_TRUE(shm.Map(kSize));
-
-  auto* mem = reinterpret_cast<char*>(shm.memory());
-  for (size_t i = 0; i < kSize; ++i) {
-    ASSERT_EQ(mem[i], 0) << "offset " << i;
-  }
-}
-
 #ifndef FUZZING
 TEST(IPCSharedMemory, BasicIsZero)
 {
-  auto shm = MakeRefPtr<ipc::SharedMemoryBasic>();
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
 
   static constexpr size_t kSize = 65536;
   ASSERT_TRUE(shm->Create(kSize));
   ASSERT_TRUE(shm->Map(kSize));
 
-  auto* mem = reinterpret_cast<char*>(shm->memory());
+  auto* mem = reinterpret_cast<char*>(shm->Memory());
   for (size_t i = 0; i < kSize; ++i) {
     ASSERT_EQ(mem[i], 0) << "offset " << i;
   }
@@ -299,32 +296,45 @@ TEST(IPCSharedMemory, BasicIsZero)
 #endif
 
 #if defined(XP_LINUX) && !defined(ANDROID)
+class IPCSharedMemoryLinuxTest : public ::testing::Test {
+  int mMajor = 0;
+  int mMinor = 0;
+
+ protected:
+  void SetUp() override {
+    if (mMajor != 0) {
+      return;
+    }
+    struct utsname uts;
+    ASSERT_EQ(uname(&uts), 0) << strerror(errno);
+    ASSERT_STREQ(uts.sysname, "Linux");
+    ASSERT_EQ(sscanf(uts.release, "%d.%d", &mMajor, &mMinor), 2);
+  }
+
+  bool HaveKernelVersion(int aMajor, int aMinor) {
+    return mMajor > aMajor || (mMajor == aMajor && mMinor >= aMinor);
+  }
+
+  bool ShouldHaveMemfd() { return HaveKernelVersion(3, 17); }
+
+  bool ShouldHaveMemfdNoExec() { return HaveKernelVersion(6, 3); }
+};
+
 // Test that memfd_create is used where expected.
 //
 // More precisely: if memfd_create support is expected, verify that
 // shared memory isn't subject to a filesystem size limit.
-TEST(IPCSharedMemory, IsMemfd)
-{
-  static constexpr int kMajor = 3;
-  static constexpr int kMinor = 17;
-
-  struct utsname uts;
-  ASSERT_EQ(uname(&uts), 0) << strerror(errno);
-  ASSERT_STREQ(uts.sysname, "Linux");
-  int major, minor;
-  ASSERT_EQ(sscanf(uts.release, "%d.%d", &major, &minor), 2);
-  bool expectMemfd = major > kMajor || (major == kMajor && minor >= kMinor);
-
-  base::SharedMemory shm;
-  ASSERT_TRUE(shm.Create(1));
-  UniqueFileHandle fd = shm.TakeHandle();
+TEST_F(IPCSharedMemoryLinuxTest, IsMemfd) {
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
+  ASSERT_TRUE(shm->Create(1));
+  UniqueFileHandle fd = shm->TakeHandleAndUnmap();
   ASSERT_TRUE(fd);
 
   struct statfs fs;
   ASSERT_EQ(fstatfs(fd.get(), &fs), 0) << strerror(errno);
   EXPECT_EQ(fs.f_type, TMPFS_MAGIC);
   static constexpr decltype(fs.f_blocks) kNoLimit = 0;
-  if (expectMemfd) {
+  if (ShouldHaveMemfd()) {
     EXPECT_EQ(fs.f_blocks, kNoLimit);
   } else {
     // On older kernels, we expect the memfd / no-limit test to fail.
@@ -333,6 +343,95 @@ TEST(IPCSharedMemory, IsMemfd)
     EXPECT_NE(fs.f_blocks, kNoLimit);
   }
 }
+
+TEST_F(IPCSharedMemoryLinuxTest, MemfdNoExec) {
+  const bool expectExec = ShouldHaveMemfd() && !ShouldHaveMemfdNoExec();
+
+  auto shm = MakeRefPtr<ipc::SharedMemory>();
+  ASSERT_TRUE(shm->Create(1));
+  UniqueFileHandle fd = shm->TakeHandleAndUnmap();
+  ASSERT_TRUE(fd);
+
+  struct stat sb;
+  ASSERT_EQ(fstat(fd.get(), &sb), 0) << strerror(errno);
+  // Check that mode is reasonable.
+  EXPECT_EQ(sb.st_mode & (S_IRUSR | S_IWUSR), mode_t(S_IRUSR | S_IWUSR));
+  // Chech the exec bit
+  EXPECT_EQ(sb.st_mode & S_IXUSR, mode_t(expectExec ? S_IXUSR : 0));
+}
 #endif
+
+TEST(IPCSharedMemory, CursorWriteRead)
+{
+  // Select a chunk size which is at least as big as the allocation granularity,
+  // as smaller sizes will not be able to map.
+  const size_t chunkSize = ipc::shared_memory::SystemAllocationGranularity();
+  ASSERT_TRUE(IsPowerOfTwo(chunkSize));
+
+  const uint64_t fullSize = chunkSize * 20;
+  auto handle = ipc::shared_memory::Create(fullSize);
+  ASSERT_TRUE(handle.IsValid());
+  ASSERT_EQ(handle.Size(), fullSize);
+
+  // Map the entire region.
+  auto mapping = handle.Map();
+  ASSERT_TRUE(mapping.IsValid());
+  ASSERT_EQ(mapping.Size(), fullSize);
+
+  // Use a cursor to write some data.
+  ipc::shared_memory::Cursor cursor(std::move(handle));
+  ASSERT_EQ(cursor.Offset(), 0u);
+  ASSERT_EQ(cursor.Size(), fullSize);
+
+  // Set the chunk size to ensure we use multiple mappings for this data region.
+  cursor.SetChunkSize(chunkSize);
+
+  // Two basic blocks of data which are used for writeReadTest.
+  const char data[] = "Hello, World!";
+  const char data2[] = "AnotherString";
+  auto writeReadTest = [&]() {
+    uint64_t initialOffset = cursor.Offset();
+
+    // Clear out the buffer to a known state so that any checks will fail if
+    // they're depending on previous writes.
+    memset(mapping.Data(), 0xe5, mapping.Size());
+
+    // Write "Hello, World" at the offset, and ensure it is reflected in the
+    // full mapping.
+    ASSERT_TRUE(cursor.Write(data, std::size(data)));
+    ASSERT_EQ(cursor.Offset(), initialOffset + std::size(data));
+    ASSERT_STREQ(static_cast<char*>(mapping.Data()) + initialOffset, data);
+
+    // Write some data in the full mapping at the same offset, and enure it can
+    // be read.
+    memcpy(static_cast<char*>(mapping.Data()) + initialOffset, data2,
+           std::size(data2));
+    cursor.Seek(initialOffset);
+    ASSERT_EQ(cursor.Offset(), initialOffset);
+    char buffer[std::size(data2)];
+    ASSERT_TRUE(cursor.Read(buffer, std::size(buffer)));
+    ASSERT_EQ(cursor.Offset(), initialOffset + std::size(buffer));
+    ASSERT_STREQ(buffer, data2);
+  };
+
+  writeReadTest();
+
+  // Run the writeReadTest at various offsets within the buffer, including at
+  // every chunk boundary, and in the middle of each chunk.
+  for (size_t offset = chunkSize - 3; offset < fullSize - 3;
+       offset += chunkSize / 2) {
+    cursor.Seek(offset);
+    writeReadTest();
+  }
+
+  // Do a writeReadTest at the very end of the allocated region to ensure that
+  // edge case is handled.
+  cursor.Seek(mapping.Size() - std::max(std::size(data), std::size(data2)));
+  writeReadTest();
+
+  // Ensure that writes past the end fail safely.
+  cursor.Seek(mapping.Size() - 3);
+  ASSERT_FALSE(cursor.Write(data, std::size(data)));
+}
 
 }  // namespace mozilla

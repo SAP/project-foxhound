@@ -70,13 +70,13 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b86cb7278bc4e5571
 ---
  .gn                                           |  2 +
  BUILD.gn                                      | 46 ++++++++++++++++++-
- api/BUILD.gn                                  | 36 ++++++++++++++-
+ api/BUILD.gn                                  | 37 ++++++++++++++-
  api/rtp_sender_interface.h                    |  4 +-
  api/rtp_sender_setparameters_callback.cc      | 27 +++++++++++
  api/rtp_sender_setparameters_callback.h       | 28 +++++++++++
  api/task_queue/BUILD.gn                       |  2 +
  api/transport/BUILD.gn                        |  2 +
- call/BUILD.gn                                 | 14 +++++-
+ call/BUILD.gn                                 |  8 +++-
  call/audio_send_stream.h                      |  2 +-
  call/video_send_stream.h                      |  2 +-
  common_audio/BUILD.gn                         |  4 --
@@ -99,16 +99,16 @@ Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b86cb7278bc4e5571
  test/BUILD.gn                                 | 10 ++++
  video/BUILD.gn                                |  4 +-
  webrtc.gni                                    | 32 ++++++++-----
- 31 files changed, 315 insertions(+), 98 deletions(-)
+ 31 files changed, 311 insertions(+), 97 deletions(-)
  create mode 100644 api/rtp_sender_setparameters_callback.cc
  create mode 100644 api/rtp_sender_setparameters_callback.h
  create mode 100644 common_audio/intrin.h
 
 diff --git a/.gn b/.gn
-index 5de968946f..5796d30b7b 100644
+index 12d5e3d4fc..6c011fd453 100644
 --- a/.gn
 +++ b/.gn
-@@ -73,6 +73,8 @@ default_args = {
+@@ -72,6 +72,8 @@ default_args = {
    # Prevent jsoncpp to pass -Wno-deprecated-declarations to users
    jsoncpp_no_deprecated_declarations = false
  
@@ -118,7 +118,7 @@ index 5de968946f..5796d30b7b 100644
    # TODO(https://bugs.webrtc.org/14437):  Remove this section if general
    # Chromium fix resolves the problem.
 diff --git a/BUILD.gn b/BUILD.gn
-index f090f16120..7533507619 100644
+index 5833911122..7368cb9adc 100644
 --- a/BUILD.gn
 +++ b/BUILD.gn
 @@ -33,7 +33,7 @@ if (is_android) {
@@ -130,7 +130,7 @@ index f090f16120..7533507619 100644
    # This target should (transitively) cause everything to be built; if you run
    # 'ninja default' and then 'ninja all', the second build should do no work.
    group("default") {
-@@ -158,6 +158,10 @@ config("common_inherited_config") {
+@@ -157,6 +157,10 @@ config("common_inherited_config") {
      defines += [ "WEBRTC_ENABLE_OBJC_SYMBOL_EXPORT" ]
    }
  
@@ -141,7 +141,7 @@ index f090f16120..7533507619 100644
    if (!rtc_builtin_ssl_root_certificates) {
      defines += [ "WEBRTC_EXCLUDE_BUILT_IN_SSL_ROOT_CERTS" ]
    }
-@@ -513,9 +517,11 @@ config("common_config") {
+@@ -496,9 +500,11 @@ config("common_config") {
    }
  }
  
@@ -151,9 +151,9 @@ index f090f16120..7533507619 100644
  }
 +}
  
- if (!build_with_chromium) {
-   # Target to build all the WebRTC production code.
-@@ -566,6 +572,34 @@ if (!build_with_chromium) {
+ if (!rtc_build_ssl) {
+   config("external_ssl_library") {
+@@ -561,6 +567,34 @@ if (!build_with_chromium) {
        "sdk",
        "video",
      ]
@@ -188,7 +188,7 @@ index f090f16120..7533507619 100644
  
      if (rtc_include_builtin_audio_codecs) {
        deps += [
-@@ -578,6 +612,16 @@ if (!build_with_chromium) {
+@@ -573,6 +607,16 @@ if (!build_with_chromium) {
        deps += [
          "api/video:video_frame",
          "api/video:video_rtp_headers",
@@ -206,12 +206,12 @@ index f090f16120..7533507619 100644
      } else {
        deps += [
 diff --git a/api/BUILD.gn b/api/BUILD.gn
-index b71430956e..3c097619f1 100644
+index c270aadd28..7aea5819c2 100644
 --- a/api/BUILD.gn
 +++ b/api/BUILD.gn
-@@ -40,6 +40,9 @@ rtc_source_set("enable_media") {
-     "../rtc_base/system:rtc_export",
+@@ -44,6 +44,9 @@ rtc_source_set("enable_media") {
      "environment",
+     "//third_party/abseil-cpp/absl/base:nullability",
    ]
 +  if (build_with_mozilla) {
 +    deps -= [ "../pc:media_factory" ]
@@ -219,7 +219,7 @@ index b71430956e..3c097619f1 100644
  }
  
  rtc_source_set("enable_media_with_defaults") {
-@@ -66,7 +69,7 @@ rtc_source_set("enable_media_with_defaults") {
+@@ -71,7 +74,7 @@ rtc_source_set("enable_media_with_defaults") {
    ]
  }
  
@@ -240,8 +240,8 @@ index b71430956e..3c097619f1 100644
  
    sources = [
 @@ -239,6 +246,7 @@ rtc_library("dtls_transport_interface") {
+     "//third_party/abseil-cpp/absl/base:core_headers",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
  }
 +}
  
@@ -258,7 +258,7 @@ index b71430956e..3c097619f1 100644
    visibility = [ "*" ]
  
    sources = [
-@@ -265,16 +277,31 @@ rtc_library("rtp_sender_interface") {
+@@ -265,6 +277,7 @@ rtc_library("rtp_sender_interface") {
      ":ref_count",
      ":rtc_error",
      ":rtp_parameters",
@@ -266,10 +266,10 @@ index b71430956e..3c097619f1 100644
      ":scoped_refptr",
      "../rtc_base:checks",
      "../rtc_base/system:rtc_export",
-     "crypto:frame_encryptor_interface",
-     "video_codecs:video_codecs_api",
+@@ -273,8 +286,23 @@ rtc_library("rtp_sender_interface") {
+     "//third_party/abseil-cpp/absl/functional:any_invocable",
    ]
-+}
+ }
 +}
 +
 +rtc_library("rtp_sender_setparameters_callback") {
@@ -281,24 +281,24 @@ index b71430956e..3c097619f1 100644
 +  ]
 +  deps = [
 +    ":rtc_error",
++    "//third_party/abseil-cpp/absl/functional:any_invocable",
 +  ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/functional:any_invocable" ]
- }
++}
  
  rtc_library("libjingle_peerconnection_api") {
 +if (!build_with_mozilla) {
    visibility = [ "*" ]
    cflags = []
    sources = [
-@@ -392,6 +419,7 @@ rtc_library("libjingle_peerconnection_api") {
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -396,6 +424,7 @@ rtc_library("libjingle_peerconnection_api") {
+     "../rtc_base/system:rtc_export",
    ]
  }
 +}
  
  rtc_source_set("frame_transformer_interface") {
    visibility = [ "*" ]
-@@ -564,6 +592,7 @@ rtc_source_set("peer_network_dependencies") {
+@@ -596,6 +625,7 @@ rtc_source_set("peer_network_dependencies") {
  }
  
  rtc_source_set("peer_connection_quality_test_fixture_api") {
@@ -306,15 +306,15 @@ index b71430956e..3c097619f1 100644
    visibility = [ "*" ]
    testonly = true
    sources = [ "test/peerconnection_quality_test_fixture.h" ]
-@@ -612,6 +641,7 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -641,6 +671,7 @@ rtc_source_set("peer_connection_quality_test_fixture_api") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
  }
 +}
  
  rtc_source_set("frame_generator_api") {
    visibility = [ "*" ]
-@@ -737,6 +767,7 @@ rtc_library("create_frame_generator") {
+@@ -763,6 +794,7 @@ rtc_library("create_frame_generator") {
    ]
  }
  
@@ -322,15 +322,15 @@ index b71430956e..3c097619f1 100644
  rtc_library("create_peer_connection_quality_test_frame_generator") {
    visibility = [ "*" ]
    testonly = true
-@@ -753,6 +784,7 @@ rtc_library("create_peer_connection_quality_test_frame_generator") {
+@@ -780,6 +812,7 @@ rtc_library("create_peer_connection_quality_test_frame_generator") {
+     "units:time_delta",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
  }
 +}
  
  rtc_source_set("libjingle_logging_api") {
    visibility = [ "*" ]
-@@ -936,6 +968,7 @@ rtc_source_set("refcountedbase") {
+@@ -964,6 +997,7 @@ rtc_source_set("refcountedbase") {
    ]
  }
  
@@ -338,7 +338,7 @@ index b71430956e..3c097619f1 100644
  rtc_library("ice_transport_factory") {
    visibility = [ "*" ]
    sources = [
-@@ -959,6 +992,7 @@ rtc_library("ice_transport_factory") {
+@@ -988,6 +1022,7 @@ rtc_library("ice_transport_factory") {
      "rtc_event_log:rtc_event_log",
    ]
  }
@@ -347,21 +347,27 @@ index b71430956e..3c097619f1 100644
  rtc_library("neteq_simulator_api") {
    visibility = [ "*" ]
 diff --git a/api/rtp_sender_interface.h b/api/rtp_sender_interface.h
-index 7d92c42a18..98591c6c99 100644
+index 91d7b3c561..4595c28140 100644
 --- a/api/rtp_sender_interface.h
 +++ b/api/rtp_sender_interface.h
-@@ -34,9 +34,9 @@
+@@ -34,6 +34,8 @@
  #include "api/video_codecs/video_encoder_factory.h"
  #include "rtc_base/system/rtc_export.h"
  
--namespace webrtc {
 +#include "api/rtp_sender_setparameters_callback.h"
++
+ namespace webrtc {
+ 
+ class RtpSenderObserverInterface {
+@@ -46,8 +48,6 @@ class RtpSenderObserverInterface {
+   virtual ~RtpSenderObserverInterface() {}
+ };
  
 -using SetParametersCallback = absl::AnyInvocable<void(RTCError) &&>;
-+namespace webrtc {
- 
+-
  class RTC_EXPORT RtpSenderInterface : public webrtc::RefCountInterface,
                                        public FrameTransformerHost {
+  public:
 diff --git a/api/rtp_sender_setparameters_callback.cc b/api/rtp_sender_setparameters_callback.cc
 new file mode 100644
 index 0000000000..99728ef95e
@@ -430,10 +436,10 @@ index 0000000000..45194f5ace
 +
 +#endif  // API_RTP_SENDER_SETPARAMETERS_CALLBACK_H_
 diff --git a/api/task_queue/BUILD.gn b/api/task_queue/BUILD.gn
-index d2e96de4d0..8697f87433 100644
+index 9f10f0afc6..c1c917abb2 100644
 --- a/api/task_queue/BUILD.gn
 +++ b/api/task_queue/BUILD.gn
-@@ -31,6 +31,7 @@ rtc_library("task_queue") {
+@@ -29,6 +29,7 @@ rtc_library("task_queue") {
    ]
  }
  
@@ -441,7 +447,7 @@ index d2e96de4d0..8697f87433 100644
  rtc_library("task_queue_test") {
    visibility = [ "*" ]
    testonly = true
-@@ -79,6 +80,7 @@ rtc_library("task_queue_test") {
+@@ -74,6 +75,7 @@ rtc_library("task_queue_test") {
      ]
    }
  }
@@ -450,10 +456,10 @@ index d2e96de4d0..8697f87433 100644
  rtc_library("default_task_queue_factory") {
    visibility = [ "*" ]
 diff --git a/api/transport/BUILD.gn b/api/transport/BUILD.gn
-index 756e1cc16f..1572251bf9 100644
+index 7769526e07..f56ce3ce54 100644
 --- a/api/transport/BUILD.gn
 +++ b/api/transport/BUILD.gn
-@@ -99,6 +99,7 @@ rtc_source_set("sctp_transport_factory_interface") {
+@@ -107,6 +107,7 @@ rtc_source_set("sctp_transport_factory_interface") {
  }
  
  rtc_source_set("stun_types") {
@@ -461,20 +467,20 @@ index 756e1cc16f..1572251bf9 100644
    visibility = [ "*" ]
    sources = [
      "stun.cc",
-@@ -119,6 +120,7 @@ rtc_source_set("stun_types") {
+@@ -129,6 +130,7 @@ rtc_source_set("stun_types") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
  }
 +}
  
  if (rtc_include_tests) {
    rtc_source_set("test_feedback_generator_interface") {
 diff --git a/call/BUILD.gn b/call/BUILD.gn
-index a934b36da4..0a4df24f3e 100644
+index 179d4c7efb..9e4c4d1d96 100644
 --- a/call/BUILD.gn
 +++ b/call/BUILD.gn
-@@ -44,7 +44,7 @@ rtc_library("call_interfaces") {
-     "../api:network_state_predictor_api",
+@@ -48,7 +48,7 @@ rtc_library("call_interfaces") {
+     "../api:ref_count",
      "../api:rtp_headers",
      "../api:rtp_parameters",
 -    "../api:rtp_sender_interface",
@@ -482,15 +488,11 @@ index a934b36da4..0a4df24f3e 100644
      "../api:scoped_refptr",
      "../api:transport_api",
      "../api/adaptation:resource_adaptation_api",
-@@ -345,6 +345,16 @@ rtc_library("call") {
-     "//third_party/abseil-cpp/absl/strings",
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -379,6 +379,12 @@ rtc_library("call") {
+     "//third_party/abseil-cpp/absl/functional:bind_front",
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
 +  if (build_with_mozilla) { # See Bug 1820869.
-+    sources -= [
-+      "create_call.cc",
-+      "degraded_call.cc",
-+    ]
 +    deps -= [
 +      ":fake_network",
 +      ":simulated_network",
@@ -498,31 +500,22 @@ index a934b36da4..0a4df24f3e 100644
 +  }
  }
  
- rtc_source_set("receive_stream_interface") {
-@@ -372,7 +382,7 @@ rtc_library("video_stream_api") {
-     "../api:frame_transformer_interface",
-     "../api:rtp_headers",
-     "../api:rtp_parameters",
--    "../api:rtp_sender_interface",
-+    "../api:rtp_sender_setparameters_callback",
-     "../api:scoped_refptr",
-     "../api:transport_api",
-     "../api/adaptation:resource_adaptation_api",
+ rtc_library("payload_type_picker") {
 diff --git a/call/audio_send_stream.h b/call/audio_send_stream.h
-index 798b1cdb9f..f9b6a25a44 100644
+index 768ba0b19e..2d2cc89b08 100644
 --- a/call/audio_send_stream.h
 +++ b/call/audio_send_stream.h
-@@ -26,7 +26,7 @@
- #include "api/crypto/frame_encryptor_interface.h"
+@@ -27,7 +27,7 @@
  #include "api/frame_transformer_interface.h"
+ #include "api/rtp_headers.h"
  #include "api/rtp_parameters.h"
 -#include "api/rtp_sender_interface.h"
 +#include "api/rtp_sender_setparameters_callback.h"
  #include "api/scoped_refptr.h"
+ #include "api/units/time_delta.h"
  #include "call/audio_sender.h"
- #include "call/rtp_config.h"
 diff --git a/call/video_send_stream.h b/call/video_send_stream.h
-index 2c3fe55f8d..ca900823c8 100644
+index 3bf13c5e74..2f5ff4ad3c 100644
 --- a/call/video_send_stream.h
 +++ b/call/video_send_stream.h
 @@ -23,7 +23,7 @@
@@ -535,7 +528,7 @@ index 2c3fe55f8d..ca900823c8 100644
  #include "api/video/video_content_type.h"
  #include "api/video/video_frame.h"
 diff --git a/common_audio/BUILD.gn b/common_audio/BUILD.gn
-index 2ae6d32710..a45214f754 100644
+index 4845bc71ef..0b5f6cb858 100644
 --- a/common_audio/BUILD.gn
 +++ b/common_audio/BUILD.gn
 @@ -267,14 +267,10 @@ if (current_cpu == "x86" || current_cpu == "x64") {
@@ -581,10 +574,10 @@ index 0000000000..f6ff7f218f
 +  #endif
 +#endif
 diff --git a/media/BUILD.gn b/media/BUILD.gn
-index 5a0a5ef245..77487d1dc5 100644
+index 19c6cd0b22..0016e948fe 100644
 --- a/media/BUILD.gn
 +++ b/media/BUILD.gn
-@@ -79,7 +79,7 @@ rtc_library("rtc_media_base") {
+@@ -76,7 +76,7 @@ rtc_library("rtc_media_base") {
      "../api:media_stream_interface",
      "../api:rtc_error",
      "../api:rtp_parameters",
@@ -593,9 +586,9 @@ index 5a0a5ef245..77487d1dc5 100644
      "../api:scoped_refptr",
      "../api:sequence_checker",
      "../api:transport_api",
-@@ -136,6 +136,12 @@ rtc_library("rtc_media_base") {
-     "//third_party/abseil-cpp/absl/strings",
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -127,6 +127,12 @@ rtc_library("rtc_media_base") {
+     "../video/config:encoder_config",
+     "//third_party/abseil-cpp/absl/base:core_headers",
    ]
 +    if (build_with_mozilla) {
 +    sources -= [
@@ -606,20 +599,20 @@ index 5a0a5ef245..77487d1dc5 100644
  }
  
  rtc_library("adapted_video_track_source") {
-@@ -161,6 +167,9 @@ rtc_library("adapted_video_track_source") {
+@@ -151,6 +157,9 @@ rtc_library("adapted_video_track_source") {
  
  rtc_source_set("audio_source") {
    sources = [ "base/audio_source.h" ]
 +  if (build_with_mozilla) {
 +    sources -= [ "base/audio_source.h" ]
 +  }
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
-   deps = []
  }
-@@ -259,9 +268,16 @@ rtc_library("media_engine") {
+ 
+ rtc_library("video_adapter") {
+@@ -254,9 +263,16 @@ rtc_library("media_engine") {
      "../rtc_base/system:file_wrapper",
+     "//third_party/abseil-cpp/absl/algorithm:container",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/algorithm:container" ]
 +  if (build_with_mozilla) {
 +    sources -= [
 +      "base/media_engine.cc",
@@ -633,15 +626,15 @@ index 5a0a5ef245..77487d1dc5 100644
    sources = [
      "base/media_channel_impl.cc",
      "base/media_channel_impl.h",
-@@ -311,6 +327,7 @@ rtc_library("media_channel_impl") {
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -303,6 +319,7 @@ rtc_library("media_channel_impl") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
  }
 +}
  
  rtc_source_set("media_channel") {
    sources = [ "base/media_channel.h" ]
-@@ -388,6 +405,7 @@ rtc_library("codec") {
+@@ -396,6 +413,7 @@ rtc_library("codec_list") {
  }
  
  rtc_library("rtp_utils") {
@@ -649,9 +642,9 @@ index 5a0a5ef245..77487d1dc5 100644
    sources = [
      "base/rtp_utils.cc",
      "base/rtp_utils.h",
-@@ -404,8 +422,10 @@ rtc_library("rtp_utils") {
+@@ -412,8 +430,10 @@ rtc_library("rtp_utils") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
  }
 +}
  
@@ -660,15 +653,15 @@ index 5a0a5ef245..77487d1dc5 100644
    sources = [
      "base/stream_params.cc",
      "base/stream_params.h",
-@@ -418,6 +438,7 @@ rtc_library("stream_params") {
+@@ -426,6 +446,7 @@ rtc_library("stream_params") {
+     "//third_party/abseil-cpp/absl/algorithm:container",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/algorithm:container" ]
  }
 +}
  
  rtc_library("media_constants") {
    sources = [
-@@ -428,6 +449,7 @@ rtc_library("media_constants") {
+@@ -436,6 +457,7 @@ rtc_library("media_constants") {
  }
  
  rtc_library("turn_utils") {
@@ -676,7 +669,7 @@ index 5a0a5ef245..77487d1dc5 100644
    sources = [
      "base/turn_utils.cc",
      "base/turn_utils.h",
-@@ -438,14 +460,17 @@ rtc_library("turn_utils") {
+@@ -446,14 +468,17 @@ rtc_library("turn_utils") {
      "../rtc_base/system:rtc_export",
    ]
  }
@@ -694,9 +687,9 @@ index 5a0a5ef245..77487d1dc5 100644
  
  rtc_library("rtc_simulcast_encoder_adapter") {
    visibility = [ "*" ]
-@@ -520,6 +545,11 @@ rtc_library("rtc_internal_video_codecs") {
-     "../system_wrappers:field_trial",
-     "../test:fake_video_codecs",
+@@ -535,6 +560,11 @@ rtc_library("rtc_internal_video_codecs") {
+     "//third_party/abseil-cpp/absl/container:inlined_vector",
+     "//third_party/abseil-cpp/absl/strings",
    ]
 +  if (build_with_mozilla) {
 +    deps -= [
@@ -706,7 +699,7 @@ index 5a0a5ef245..77487d1dc5 100644
  
    if (enable_libaom) {
      defines += [ "RTC_USE_LIBAOM_AV1_ENCODER" ]
-@@ -543,6 +573,13 @@ rtc_library("rtc_internal_video_codecs") {
+@@ -554,6 +584,13 @@ rtc_library("rtc_internal_video_codecs") {
      "engine/internal_encoder_factory.cc",
      "engine/internal_encoder_factory.h",
    ]
@@ -721,10 +714,10 @@ index 5a0a5ef245..77487d1dc5 100644
  
  rtc_library("rtc_audio_video") {
 diff --git a/media/base/media_channel.h b/media/base/media_channel.h
-index 3721e5f3b1..a2cf599b7c 100644
+index 55ec4ff2e9..e286d39f5d 100644
 --- a/media/base/media_channel.h
 +++ b/media/base/media_channel.h
-@@ -65,10 +65,6 @@ class Timing;
+@@ -67,10 +67,6 @@ class Timing;
  
  namespace webrtc {
  class VideoFrame;
@@ -736,7 +729,7 @@ index 3721e5f3b1..a2cf599b7c 100644
  
  namespace cricket {
 diff --git a/media/base/media_channel_impl.cc b/media/base/media_channel_impl.cc
-index 1c08382969..ff69ea62dc 100644
+index 9a2d22f986..cd7903e9e8 100644
 --- a/media/base/media_channel_impl.cc
 +++ b/media/base/media_channel_impl.cc
 @@ -31,19 +31,6 @@
@@ -760,10 +753,10 @@ index 1c08382969..ff69ea62dc 100644
  using webrtc::FrameDecryptorInterface;
  using webrtc::FrameEncryptorInterface;
 diff --git a/modules/audio_coding/BUILD.gn b/modules/audio_coding/BUILD.gn
-index 8b23955d5b..a49df7e7d2 100644
+index 3511b8ffed..d671360baf 100644
 --- a/modules/audio_coding/BUILD.gn
 +++ b/modules/audio_coding/BUILD.gn
-@@ -553,7 +553,7 @@ rtc_library("webrtc_opus_wrapper") {
+@@ -358,7 +358,7 @@ rtc_library("webrtc_opus_wrapper") {
      deps += [ rtc_opus_dir ]
      public_configs = [ "//third_party/opus:opus_config" ]
    } else if (build_with_mozilla) {
@@ -773,7 +766,7 @@ index 8b23955d5b..a49df7e7d2 100644
  }
  
 diff --git a/modules/audio_device/BUILD.gn b/modules/audio_device/BUILD.gn
-index d15071cdd6..637c10da31 100644
+index aa4d216b28..55c39a530f 100644
 --- a/modules/audio_device/BUILD.gn
 +++ b/modules/audio_device/BUILD.gn
 @@ -30,6 +30,7 @@ rtc_source_set("audio_device_default") {
@@ -800,15 +793,15 @@ index d15071cdd6..637c10da31 100644
    sources = [
      "audio_device_buffer.cc",
      "audio_device_buffer.h",
-@@ -81,6 +84,7 @@ rtc_library("audio_device_buffer") {
+@@ -80,6 +83,7 @@ rtc_library("audio_device_buffer") {
+     "../../system_wrappers:metrics",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
  }
 +}
  
  rtc_library("audio_device_generic") {
    sources = [
-@@ -257,6 +261,7 @@ if (!build_with_chromium) {
+@@ -250,6 +254,7 @@ if (!build_with_chromium) {
  # Contains default implementations of webrtc::AudioDeviceModule for Windows,
  # Linux, Mac, iOS and Android.
  rtc_library("audio_device_impl") {
@@ -816,7 +809,7 @@ index d15071cdd6..637c10da31 100644
    visibility = [ "*" ]
    deps = [
      ":audio_device_buffer",
-@@ -305,9 +310,9 @@ rtc_library("audio_device_impl") {
+@@ -295,9 +300,9 @@ rtc_library("audio_device_impl") {
    sources = [ "include/fake_audio_device.h" ]
  
    if (build_with_mozilla) {
@@ -829,7 +822,7 @@ index d15071cdd6..637c10da31 100644
      ]
    }
  
-@@ -412,6 +417,7 @@ rtc_library("audio_device_impl") {
+@@ -402,6 +407,7 @@ rtc_library("audio_device_impl") {
      sources += [ "dummy/file_audio_device_factory.h" ]
    }
  }
@@ -837,7 +830,7 @@ index d15071cdd6..637c10da31 100644
  
  if (is_mac) {
    rtc_source_set("audio_device_impl_frameworks") {
-@@ -429,6 +435,7 @@ if (is_mac) {
+@@ -419,6 +425,7 @@ if (is_mac) {
    }
  }
  
@@ -845,9 +838,9 @@ index d15071cdd6..637c10da31 100644
  rtc_source_set("mock_audio_device") {
    visibility = [ "*" ]
    testonly = true
-@@ -447,8 +454,10 @@ rtc_source_set("mock_audio_device") {
+@@ -436,8 +443,10 @@ rtc_source_set("mock_audio_device") {
+     "../../test:test_support",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
  }
 +}
  
@@ -858,10 +851,10 @@ index d15071cdd6..637c10da31 100644
      testonly = true
  
 diff --git a/modules/audio_processing/aec3/BUILD.gn b/modules/audio_processing/aec3/BUILD.gn
-index f5eb5d5951..3e11a245a1 100644
+index 12a32b8929..39e24c9324 100644
 --- a/modules/audio_processing/aec3/BUILD.gn
 +++ b/modules/audio_processing/aec3/BUILD.gn
-@@ -264,14 +264,11 @@ if (current_cpu == "x86" || current_cpu == "x64") {
+@@ -260,14 +260,11 @@ if (current_cpu == "x86" || current_cpu == "x64") {
        "vector_math_avx2.cc",
      ]
  
@@ -895,10 +888,10 @@ index b6eda9f117..8d6e1cf3d7 100644
  #include "modules/audio_processing/aec3/adaptive_fir_filter.h"
  #include "rtc_base/checks.h"
 diff --git a/modules/audio_processing/agc2/rnn_vad/BUILD.gn b/modules/audio_processing/agc2/rnn_vad/BUILD.gn
-index 9093a68cf3..3003a585bd 100644
+index 025794d262..a23a7c15ce 100644
 --- a/modules/audio_processing/agc2/rnn_vad/BUILD.gn
 +++ b/modules/audio_processing/agc2/rnn_vad/BUILD.gn
-@@ -122,7 +122,7 @@ rtc_source_set("vector_math") {
+@@ -121,7 +121,7 @@ rtc_source_set("vector_math") {
  if (current_cpu == "x86" || current_cpu == "x64") {
    rtc_library("vector_math_avx2") {
      sources = [ "vector_math_avx2.cc" ]
@@ -908,10 +901,10 @@ index 9093a68cf3..3003a585bd 100644
      } else {
        cflags = [
 diff --git a/modules/desktop_capture/BUILD.gn b/modules/desktop_capture/BUILD.gn
-index d0c636a2bc..7ad562acb4 100644
+index 4ea31b9db7..e39700419d 100644
 --- a/modules/desktop_capture/BUILD.gn
 +++ b/modules/desktop_capture/BUILD.gn
-@@ -343,37 +343,12 @@ rtc_library("desktop_capture") {
+@@ -346,37 +346,12 @@ rtc_library("desktop_capture") {
      ]
      deps += [ ":desktop_capture_objc" ]
    }
@@ -949,7 +942,7 @@ index d0c636a2bc..7ad562acb4 100644
    }
  
    if (rtc_use_x11_extensions) {
-@@ -538,9 +513,7 @@ rtc_library("desktop_capture") {
+@@ -535,9 +510,7 @@ rtc_library("desktop_capture") {
      deps += [ "../../rtc_base:sanitizer" ]
    }
  
@@ -961,7 +954,7 @@ index d0c636a2bc..7ad562acb4 100644
    if (use_desktop_capture_differ_sse2) {
      deps += [ ":desktop_capture_differ_sse2" ]
 diff --git a/modules/portal/BUILD.gn b/modules/portal/BUILD.gn
-index d0756f269b..d7768b2323 100644
+index e2b2717c89..aff8609b54 100644
 --- a/modules/portal/BUILD.gn
 +++ b/modules/portal/BUILD.gn
 @@ -11,6 +11,7 @@ import("//tools/generate_stubs/rules.gni")
@@ -1023,10 +1016,10 @@ index 8cefe5653c..b8d75865f7 100644
    }
  }
 diff --git a/modules/video_capture/BUILD.gn b/modules/video_capture/BUILD.gn
-index b8345841fa..7289dbe0a8 100644
+index 29a7bea9d9..a8994aaa68 100644
 --- a/modules/video_capture/BUILD.gn
 +++ b/modules/video_capture/BUILD.gn
-@@ -125,21 +125,12 @@ if (!build_with_chromium || is_linux || is_chromeos) {
+@@ -129,21 +129,12 @@ if (!build_with_chromium || is_linux || is_chromeos) {
          "strmiids.lib",
          "user32.lib",
        ]
@@ -1050,18 +1043,18 @@ index b8345841fa..7289dbe0a8 100644
          "/config/external/nspr",
          "/nsprpub/lib/ds",
 diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
-index db328d51c6..27bac96ba1 100644
+index d0d90bbb3e..d779982b32 100644
 --- a/rtc_base/BUILD.gn
 +++ b/rtc_base/BUILD.gn
-@@ -334,6 +334,7 @@ rtc_library("sample_counter") {
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+@@ -312,6 +312,7 @@ rtc_library("sample_counter") {
+   ]
  }
  
 +if (!build_with_mozilla) { # See Bug 1820869.
  rtc_library("timestamp_aligner") {
    visibility = [ "*" ]
    sources = [
-@@ -347,6 +348,7 @@ rtc_library("timestamp_aligner") {
+@@ -325,6 +326,7 @@ rtc_library("timestamp_aligner") {
      "system:rtc_export",
    ]
  }
@@ -1069,17 +1062,17 @@ index db328d51c6..27bac96ba1 100644
  
  rtc_library("zero_memory") {
    visibility = [ "*" ]
-@@ -868,7 +870,9 @@ rtc_library("rtc_json") {
-     "strings/json.h",
+@@ -806,7 +808,9 @@ rtc_library("rtc_json") {
+     ":stringutils",
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
-   deps = [ ":stringutils" ]
 +if (!build_with_mozilla) {
    all_dependent_configs = [ "//third_party/jsoncpp:jsoncpp_config" ]
 +}
    if (rtc_build_json) {
      deps += [ "//third_party/jsoncpp" ]
    } else {
-@@ -1222,6 +1226,7 @@ if (!build_with_chromium) {
+@@ -1159,6 +1163,7 @@ if (!build_with_chromium) {
  }
  
  rtc_library("network") {
@@ -1087,7 +1080,7 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "network.cc",
-@@ -1260,16 +1265,20 @@ rtc_library("network") {
+@@ -1196,16 +1201,20 @@ rtc_library("network") {
      deps += [ ":win32" ]
    }
  }
@@ -1108,9 +1101,9 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "net_helper.cc",
-@@ -1278,8 +1287,10 @@ rtc_library("net_helper") {
-   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
-   deps = [ "system:rtc_export" ]
+@@ -1216,8 +1225,10 @@ rtc_library("net_helper") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
+   ]
  }
 +}
  
@@ -1119,15 +1112,15 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "socket_adapters.cc",
-@@ -1298,6 +1309,7 @@ rtc_library("socket_adapters") {
+@@ -1236,6 +1247,7 @@ rtc_library("socket_adapters") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
  }
 +}
  
  rtc_library("network_route") {
    sources = [
-@@ -1312,6 +1324,7 @@ rtc_library("network_route") {
+@@ -1250,6 +1262,7 @@ rtc_library("network_route") {
  }
  
  rtc_library("async_tcp_socket") {
@@ -1135,7 +1128,7 @@ index db328d51c6..27bac96ba1 100644
    sources = [
      "async_tcp_socket.cc",
      "async_tcp_socket.h",
-@@ -1329,8 +1342,10 @@ rtc_library("async_tcp_socket") {
+@@ -1267,8 +1280,10 @@ rtc_library("async_tcp_socket") {
      "network:sent_packet",
    ]
  }
@@ -1146,9 +1139,9 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "async_udp_socket.cc",
-@@ -1354,8 +1369,10 @@ rtc_library("async_udp_socket") {
+@@ -1293,8 +1308,10 @@ rtc_library("async_udp_socket") {
+     "system:no_unique_address",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
  }
 +}
  
@@ -1157,15 +1150,15 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "async_packet_socket.cc",
-@@ -1375,6 +1392,7 @@ rtc_library("async_packet_socket") {
-     "third_party/sigslot",
+@@ -1317,6 +1334,7 @@ rtc_library("async_packet_socket") {
+     "//third_party/abseil-cpp/absl/functional:any_invocable",
    ]
  }
 +}
  
  if (rtc_include_tests) {
    rtc_library("async_packet_socket_unittest") {
-@@ -1429,6 +1447,7 @@ rtc_library("data_rate_limiter") {
+@@ -1389,6 +1407,7 @@ rtc_library("data_rate_limiter") {
  }
  
  rtc_library("unique_id_generator") {
@@ -1173,15 +1166,15 @@ index db328d51c6..27bac96ba1 100644
    sources = [
      "unique_id_generator.cc",
      "unique_id_generator.h",
-@@ -1443,6 +1462,7 @@ rtc_library("unique_id_generator") {
+@@ -1403,6 +1422,7 @@ rtc_library("unique_id_generator") {
+     "//third_party/abseil-cpp/absl/strings:string_view",
    ]
-   absl_deps = [ "//third_party/abseil-cpp/absl/strings" ]
  }
 +}
  
  rtc_library("crc32") {
    sources = [
-@@ -1475,6 +1495,7 @@ rtc_library("stream") {
+@@ -1437,6 +1457,7 @@ rtc_library("stream") {
  }
  
  rtc_library("rtc_certificate_generator") {
@@ -1189,26 +1182,31 @@ index db328d51c6..27bac96ba1 100644
    visibility = [ "*" ]
    sources = [
      "rtc_certificate_generator.cc",
-@@ -1492,8 +1513,10 @@ rtc_library("rtc_certificate_generator") {
-     "//third_party/abseil-cpp/absl/types:optional",
+@@ -1451,6 +1472,7 @@ rtc_library("rtc_certificate_generator") {
+     "//third_party/abseil-cpp/absl/functional:any_invocable",
    ]
  }
 +}
+ 
+ rtc_source_set("ssl_header") {
+   visibility = [ "*" ]
+@@ -1507,6 +1529,7 @@ rtc_library("crypto_random") {
+ }
  
  rtc_library("ssl") {
 +if (!build_with_mozilla) {
    visibility = [ "*" ]
    sources = [
-     "helpers.cc",
-@@ -1594,6 +1617,7 @@ rtc_library("ssl") {
+     "openssl_key_pair.cc",
+@@ -1580,6 +1603,7 @@ rtc_library("ssl") {
      deps += [ ":win32" ]
    }
  }
 +}
  
- rtc_library("crypt_string") {
-   sources = [
-@@ -2161,7 +2185,7 @@ if (rtc_include_tests) {
+ rtc_library("ssl_adapter") {
+   visibility = [ "*" ]
+@@ -2188,7 +2212,7 @@ if (rtc_include_tests) {
    }
  }
  
@@ -1218,10 +1216,10 @@ index db328d51c6..27bac96ba1 100644
      visibility = [ "*" ]
      sources = [
 diff --git a/rtc_base/system/BUILD.gn b/rtc_base/system/BUILD.gn
-index 4360317d3b..777d46e05c 100644
+index b18114f107..3ca6994c81 100644
 --- a/rtc_base/system/BUILD.gn
 +++ b/rtc_base/system/BUILD.gn
-@@ -104,7 +104,7 @@ if (is_mac || is_ios) {
+@@ -101,7 +101,7 @@ if (is_mac || is_ios) {
  rtc_source_set("warn_current_thread_is_deadlocked") {
    sources = [ "warn_current_thread_is_deadlocked.h" ]
    deps = []
@@ -1231,18 +1229,18 @@ index 4360317d3b..777d46e05c 100644
      deps += [
        "..:logging",
 diff --git a/test/BUILD.gn b/test/BUILD.gn
-index 9f9491713f..1c5e59a35d 100644
+index 598c196bad..18179de94f 100644
 --- a/test/BUILD.gn
 +++ b/test/BUILD.gn
-@@ -243,6 +243,7 @@ rtc_library("audio_test_common") {
-   absl_deps = [ "//third_party/abseil-cpp/absl/memory" ]
+@@ -230,6 +230,7 @@ rtc_library("audio_test_common") {
+   ]
  }
  
 +if (!build_with_mozilla) {
  if (!build_with_chromium) {
    if (is_mac || is_ios) {
      rtc_library("video_test_mac") {
-@@ -296,8 +297,12 @@ if (!build_with_chromium) {
+@@ -283,8 +284,12 @@ if (!build_with_chromium) {
      }
    }
  }
@@ -1255,7 +1253,7 @@ index 9f9491713f..1c5e59a35d 100644
    testonly = true
    sources = [
      "rtcp_packet_parser.cc",
-@@ -307,6 +312,7 @@ rtc_library("rtp_test_utils") {
+@@ -294,6 +299,7 @@ rtc_library("rtp_test_utils") {
      "rtp_file_writer.cc",
      "rtp_file_writer.h",
    ]
@@ -1263,8 +1261,8 @@ index 9f9491713f..1c5e59a35d 100644
  
    deps = [
      "../api:array_view",
-@@ -561,7 +567,9 @@ rtc_library("video_test_support") {
-   absl_deps = [ "//third_party/abseil-cpp/absl/types:optional" ]
+@@ -516,7 +522,9 @@ rtc_library("video_frame_writer") {
+   ]
  
    if (!is_ios) {
 +    if (!build_with_mozilla) {
@@ -1273,7 +1271,7 @@ index 9f9491713f..1c5e59a35d 100644
      sources += [ "testsupport/jpeg_frame_writer.cc" ]
    } else {
      sources += [ "testsupport/jpeg_frame_writer_ios.cc" ]
-@@ -1320,6 +1328,7 @@ if (!build_with_chromium) {
+@@ -1300,6 +1308,7 @@ if (!build_with_chromium) {
    }
  }
  
@@ -1281,8 +1279,8 @@ index 9f9491713f..1c5e59a35d 100644
  if (!build_with_chromium && is_android) {
    rtc_android_library("native_test_java") {
      testonly = true
-@@ -1333,6 +1342,7 @@ if (!build_with_chromium && is_android) {
-     ]
+@@ -1342,6 +1351,7 @@ if (!build_with_chromium && is_android) {
+     sources = [ "android/org/webrtc/native_test/NativeTestWebrtc.java" ]
    }
  }
 +}
@@ -1290,7 +1288,7 @@ index 9f9491713f..1c5e59a35d 100644
  rtc_library("call_config_utils") {
    testonly = true
 diff --git a/video/BUILD.gn b/video/BUILD.gn
-index 3e423b61be..335b0d31f7 100644
+index fdd12cf2a7..b767851b13 100644
 --- a/video/BUILD.gn
 +++ b/video/BUILD.gn
 @@ -17,7 +17,7 @@ rtc_library("video_stream_encoder_interface") {
@@ -1302,7 +1300,7 @@ index 3e423b61be..335b0d31f7 100644
      "../api:scoped_refptr",
      "../api/adaptation:resource_adaptation_api",
      "../api/units:data_rate",
-@@ -411,7 +411,7 @@ rtc_library("video_stream_encoder_impl") {
+@@ -408,7 +408,7 @@ rtc_library("video_stream_encoder_impl") {
      ":video_stream_encoder_interface",
      "../api:field_trials_view",
      "../api:rtp_parameters",
@@ -1312,7 +1310,7 @@ index 3e423b61be..335b0d31f7 100644
      "../api/adaptation:resource_adaptation_api",
      "../api/environment",
 diff --git a/webrtc.gni b/webrtc.gni
-index c9f75e2cde..076a93bb83 100644
+index 8c1aeab911..4d3d5a8289 100644
 --- a/webrtc.gni
 +++ b/webrtc.gni
 @@ -35,6 +35,11 @@ if (is_mac) {
@@ -1339,7 +1337,7 @@ index c9f75e2cde..076a93bb83 100644
  declare_args() {
    # Setting this to true will make RTC_EXPORT (see rtc_base/system/rtc_export.h)
    # expand to code that will manage symbols visibility.
-@@ -96,7 +106,7 @@ declare_args() {
+@@ -92,7 +102,7 @@ declare_args() {
    # will tell the pre-processor to remove the default definition of the
    # SystemTimeNanos() which is defined in rtc_base/system_time.cc. In
    # that case a new implementation needs to be provided.
@@ -1348,7 +1346,7 @@ index c9f75e2cde..076a93bb83 100644
  
    # Setting this to false will require the API user to pass in their own
    # SSLCertificateVerifier to verify the certificates presented from a
-@@ -122,7 +132,7 @@ declare_args() {
+@@ -115,7 +125,7 @@ declare_args() {
  
    # Used to specify an external OpenSSL include path when not compiling the
    # library that comes with WebRTC (i.e. rtc_build_ssl == 0).
@@ -1357,8 +1355,8 @@ index c9f75e2cde..076a93bb83 100644
  
    # Enable when an external authentication mechanism is used for performing
    # packet authentication for RTP packets instead of libsrtp.
-@@ -139,13 +149,13 @@ declare_args() {
-   rtc_enable_bwe_test_logging = false
+@@ -129,13 +139,13 @@ declare_args() {
+   rtc_exclude_audio_processing_module = false
  
    # Set this to false to skip building examples.
 -  rtc_build_examples = true
@@ -1374,7 +1372,7 @@ index c9f75e2cde..076a93bb83 100644
  
    # Set this to use PipeWire on the Wayland display server.
    # By default it's only enabled on desktop Linux (excludes ChromeOS) and
-@@ -156,9 +166,6 @@ declare_args() {
+@@ -146,9 +156,6 @@ declare_args() {
    # Set this to link PipeWire and required libraries directly instead of using the dlopen.
    rtc_link_pipewire = false
  
@@ -1384,7 +1382,7 @@ index c9f75e2cde..076a93bb83 100644
    # Experimental: enable use of Android AAudio which requires Android SDK 26 or above
    # and NDK r16 or above.
    rtc_enable_android_aaudio = false
-@@ -291,7 +298,7 @@ declare_args() {
+@@ -284,7 +291,7 @@ declare_args() {
    rtc_build_json = !build_with_mozilla
    rtc_build_libsrtp = !build_with_mozilla
    rtc_build_libvpx = !build_with_mozilla
@@ -1393,7 +1391,7 @@ index c9f75e2cde..076a93bb83 100644
    rtc_build_opus = !build_with_mozilla
    rtc_build_ssl = !build_with_mozilla
  
-@@ -310,7 +317,7 @@ declare_args() {
+@@ -293,7 +300,7 @@ declare_args() {
  
    # Chromium uses its own IO handling, so the internal ADM is only built for
    # standalone WebRTC.
@@ -1402,7 +1400,7 @@ index c9f75e2cde..076a93bb83 100644
  
    # Set this to true to enable the avx2 support in webrtc.
    # TODO: Make sure that AVX2 works also for non-clang compilers.
-@@ -354,6 +361,9 @@ declare_args() {
+@@ -333,6 +340,9 @@ declare_args() {
    rtc_enable_grpc = rtc_enable_protobuf && (is_linux || is_mac)
  }
  
@@ -1412,7 +1410,7 @@ index c9f75e2cde..076a93bb83 100644
  # Make it possible to provide custom locations for some libraries (move these
  # up into declare_args should we need to actually use them for the GN build).
  rtc_libvpx_dir = "//third_party/libvpx"
-@@ -1188,7 +1198,7 @@ if (is_mac || is_ios) {
+@@ -1198,7 +1208,7 @@ if (is_mac || is_ios) {
    }
  }
  

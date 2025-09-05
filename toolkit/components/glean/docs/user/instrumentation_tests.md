@@ -47,7 +47,7 @@ you're going to want to write some automated tests.
     * You might be able to assert that the value is at least as much as a known, timed value,
       but beware of rounding.
     * If your metric is a `timing_distribution` mirroring to a Telemetry probe via [GIFFT](./gifft.md),
-      there may be [small observed differences between systems](./gifft.md#timing-distribution-mirrors-samples-and-sums-might-be-different)
+      there may be [small observed differences between systems](./gifft.md#timing_distribution-mirrors-samples-and-sums-might-be-different)
       that can cause equality assertions to fail.
 * Errors in instrumentation APIs do not panic, throw, or crash.
   But Glean remembers that the errors happened.
@@ -186,9 +186,42 @@ for updates on a better design and implementation for ping tests. ))
 
 `browser-chrome`-flavoured mochitests can be tested very similarly to `xpcshell`,
 though you do not need to request a profile or initialize FOG.
-`plain`-flavoured mochitests aren't yet supported (follow
-[bug 1799977](https://bugzilla.mozilla.org/show_bug.cgi?id=1799977)
-for updates and a workaround).
+`plain`-flavoured mochitests can use [`GleanTest.js`](https://searchfox.org/mozilla-central/source/testing/mochitest/tests/SimpleTest/GleanTest.js).
+It doesn't support all the features, only the `testResetFOG`,
+`testFlushAllChildren` (as `flush`), and `testGetValue` functions.
+
+```{admonition} Asynchronicity
+In `GleanTest.js`, test functions are all `async` meaning you need to `await`
+their results as they make the trip over IPC and back again.
+```
+
+```html
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Sample SimpleTest with GleanTest.js</title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+    <script src="/tests/SimpleTest/GleanTest.js"></script>
+  </head>
+  <body>
+    <p id="display"></p>
+    <div id="content" style="display: none"></div>
+    <pre id="test"></pre>
+
+    <script>
+      add_task(async function () {
+        await GleanTest.testResetFOG();
+
+        // Run code that sets your metric.
+
+        const value = await GleanTest.myMetricCategory.myMetricName.testGetValue();
+      });
+    </script>
+  </body>
+</html>
+```
 
 If you're testing in `mochitest`, your instrumentation (or your test)
 might not be running in the parent process.

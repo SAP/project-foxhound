@@ -90,11 +90,12 @@ DEFINE_PROPERTYKEY(EME_CONTENTDECRYPTIONMODULE_ORIGIN_ID, 0x1218a3e2, 0xcfb0,
   } while (false)
 
 StaticMutex sFactoryMutex;
-static nsTHashMap<nsStringHashKey, ComPtr<IMFContentDecryptionModuleFactory>>
+MOZ_RUNINIT static nsTHashMap<nsStringHashKey,
+                              ComPtr<IMFContentDecryptionModuleFactory>>
     sFactoryMap;
-static CopyableTArray<MFCDMCapabilitiesIPDL> sCapabilities;
+MOZ_RUNINIT static CopyableTArray<MFCDMCapabilitiesIPDL> sCapabilities;
 StaticMutex sCapabilitesMutex;
-static ComPtr<IUnknown> sMediaEngineClassFactory;
+MOZ_RUNINIT static ComPtr<IUnknown> sMediaEngineClassFactory;
 
 // RAIIized PROPVARIANT. See
 // third_party/libwebrtc/modules/audio_device/win/core_audio_utility_win.h
@@ -605,23 +606,23 @@ static bool FactorySupports(ComPtr<IMFContentDecryptionModuleFactory>& aFactory,
     contentType.AppendLiteral(u",");
     contentType.AppendASCII(aAudioCodec);
   }
-  // These features are required to call IsTypeSupported(). We only care about
-  // codec and encryption scheme so hardcode the rest.
-  contentType.AppendLiteral(
-      u"\";features=\"decode-bpp=8,"
-      "decode-res-x=1920,decode-res-y=1080,"
-      "decode-bitrate=10000000,decode-fps=30,");
-  if (!aAdditionalFeatures.IsEmpty()) {
-    contentType.Append(aAdditionalFeatures);
-  }
-  // `encryption-robustness` is for Widevine only.
+  contentType.AppendLiteral(u"\";features=\"");
   if (IsWidevineExperimentKeySystemAndSupported(aKeySystem) ||
       IsWidevineKeySystem(aKeySystem)) {
+    // This decoder subsystem settings are only required by Wivevine.
+    contentType.AppendLiteral(
+        u"decode-bpc=8,"
+        "decode-res-x=1920,decode-res-y=1080,"
+        "decode-bitrate=10000000,decode-fps=30,");
+    // `encryption-robustness` is for Widevine only.
     if (aIsHWSecure) {
-      contentType.AppendLiteral(u"encryption-robustness=HW_SECURE_ALL");
+      contentType.AppendLiteral(u"encryption-robustness=HW_SECURE_ALL,");
     } else {
-      contentType.AppendLiteral(u"encryption-robustness=SW_SECURE_DECODE");
+      contentType.AppendLiteral(u"encryption-robustness=SW_SECURE_DECODE,");
     }
+  }
+  if (!aAdditionalFeatures.IsEmpty()) {
+    contentType.Append(aAdditionalFeatures);
   }
   contentType.AppendLiteral(u"\"");
   // End of the query string
@@ -861,7 +862,7 @@ void MFCDMParent::GetCapabilities(const nsString& aKeySystem,
   if (aFlags.contains(CapabilitesFlag::NeedClearLeadCheck)) {
     for (const auto& codec : kVideoCodecs) {
       if (codec == KeySystemConfig::EME_CODEC_HEVC &&
-          !StaticPrefs::media_wmf_hevc_enabled()) {
+          !StaticPrefs::media_hevc_enabled()) {
         continue;
       }
       CryptoSchemeSet supportedScheme;
@@ -926,7 +927,7 @@ void MFCDMParent::GetCapabilities(const nsString& aKeySystem,
     // Non clearlead situation for video codecs
     for (const auto& codec : kVideoCodecs) {
       if (codec == KeySystemConfig::EME_CODEC_HEVC &&
-          !StaticPrefs::media_wmf_hevc_enabled()) {
+          !StaticPrefs::media_hevc_enabled()) {
         continue;
       }
       if (FactorySupports(factory, aKeySystem, convertCodecToFourCC(codec),

@@ -1780,16 +1780,7 @@ stop_and_join_render_thread(cubeb_stream * stm)
     return false;
   }
 
-  /* Wait five seconds for the rendering thread to return. It's supposed to
-   * check its event loop very often, five seconds is rather conservative.
-   * Note: 5*1s loop to work around timer sleep issues on pre-Windows 8. */
-  DWORD r;
-  for (int i = 0; i < 5; ++i) {
-    r = WaitForSingleObject(stm->thread, 1000);
-    if (r == WAIT_OBJECT_0) {
-      break;
-    }
-  }
+  DWORD r = WaitForSingleObject(stm->thread, INFINITE);
   if (r != WAIT_OBJECT_0) {
     LOG("stop_and_join_render_thread: WaitForSingleObject on thread failed: "
         "%lx, %lx",
@@ -3323,7 +3314,8 @@ wasapi_create_device(cubeb * ctx, cubeb_device_info & ret,
     ret.preferred =
         (cubeb_device_pref)(ret.preferred | CUBEB_DEVICE_PREF_MULTIMEDIA |
                             CUBEB_DEVICE_PREF_NOTIFICATION);
-  } else if (defaults->is_default(flow, eCommunications, device_id.get())) {
+  }
+  if (defaults->is_default(flow, eCommunications, device_id.get())) {
     ret.preferred =
         (cubeb_device_pref)(ret.preferred | CUBEB_DEVICE_PREF_VOICE);
   }

@@ -47,8 +47,11 @@ class FuzzyParser(BaseTryParser):
             {
                 "action": "store_true",
                 "default": False,
-                "help": "Force running fzf interactively even when using presets or "
-                "queries with -q/--query.",
+                "help": "Run fzf interactively, even if --preset or --query is used. "
+                "Tasks selected interactively will be unioned with tasks selected "
+                "by the --preset/--query flags. If -x/--and is also specified, tasks "
+                "selected interactively will instead be intersected with tasks "
+                "selected by --preset/--query.",
             },
         ],
         [
@@ -88,7 +91,7 @@ class FuzzyParser(BaseTryParser):
             },
         ],
         [
-            ["--disable-target-task-filter"],
+            ["--disable-target-task-filter", "--all-tasks"],
             {
                 "action": "store_true",
                 "default": False,
@@ -144,6 +147,7 @@ def run(
     show_estimates=False,
     disable_target_task_filter=False,
     push_to_lando=False,
+    push_to_vcs=False,
     show_chunk_numbers=False,
     new_test_config=False,
 ):
@@ -288,4 +292,5 @@ def run(
         dry_run=dry_run,
         closed_tree=closed_tree,
         push_to_lando=push_to_lando,
+        push_to_vcs=push_to_vcs,
     )

@@ -2,7 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { BaseFeature } from "resource:///modules/urlbar/private/BaseFeature.sys.mjs";
+import { SuggestFeature } from "resource:///modules/urlbar/private/SuggestFeature.sys.mjs";
 
 const lazy = {};
 
@@ -12,21 +12,14 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 /**
- * A set of blocked suggestions for quick suggest.
+ * A set of blocked suggestion URLs for Suggest. This feature is always enabled
+ * as long as Suggest is enabled.
  */
-export class BlockedSuggestions extends BaseFeature {
+export class BlockedSuggestions extends SuggestFeature {
   constructor() {
     super();
     this.#taskQueue = new lazy.TaskQueue();
     lazy.UrlbarPrefs.addObserver(this);
-  }
-
-  get shouldEnable() {
-    // Return true so that we'll always load blocked digests when quick suggest
-    // is enabled, even if blocking new suggestions is currently disabled.
-    // Blocking may have been enabled previously, and blocked suggestions should
-    // remain blocked as long as quick suggest as a whole remains enabled.
-    return true;
   }
 
   enable(enabled) {
@@ -36,17 +29,49 @@ export class BlockedSuggestions extends BaseFeature {
   }
 
   /**
-   * Blocks a suggestion.
+   * Blocks a result's URL.
+   *
+   * @param {UrlbarResult} result
+   *   The URL of this result will be blocked.
+   */
+  async blockResult(result) {
+    // For some Suggest results, `url` is a value that is modified at query time
+    // and that is potentially unique per query. For example, it might contain
+    // timestamps or query-related search params. Those results will also have
+    // an `originalUrl` that is the unmodified URL, and it should be used for
+    // blocking purposes.
+    await this.add(result.payload.originalUrl || result.payload.url);
+  }
+
+  /**
+   * Returns true if a result's URL is blocked.
+   *
+   * @param {UrlbarResult} result
+   *   The result to check.
+   * @returns {boolean}
+   *   Whether the result's URL is blocked.
+   */
+  async isResultBlocked(result) {
+    // See `blockResult()` for a note on `originalUrl`.
+    let isBlocked = await this.has(
+      result.payload.originalUrl || result.payload.url
+    );
+    return isBlocked;
+  }
+
+  /**
+   * Blocks a URL. Callers should use `blockResult()` instead when they have a
+   * `UrlbarResult`.
    *
    * @param {string} originalUrl
-   *   The suggestion's original URL with its unreplaced timestamp template.
+   *   The URL to block. In cases where a URL is potentially unique to a query,
+   *   this value should be the original unmodified URL.
    */
   async add(originalUrl) {
-    this.logger.debug(`Queueing add: ${originalUrl}`);
     await this.#taskQueue.queue(async () => {
-      this.logger.info(`Blocking suggestion: ${originalUrl}`);
+      this.logger.info("Blocking suggestion", { originalUrl });
       let digest = await this.#getDigest(originalUrl);
-      this.logger.debug(`Got digest for '${originalUrl}': ${digest}`);
+      this.logger.debug("Got digest", { originalUrl, digest });
       this.#digests.add(digest);
       let json = JSON.stringify([...this.#digests]);
       this.#updatingDigests = true;
@@ -55,37 +80,33 @@ export class BlockedSuggestions extends BaseFeature {
       } finally {
         this.#updatingDigests = false;
       }
-      this.logger.debug(`All blocked suggestions: ${json}`);
+      this.logger.debug("All blocked suggestions", json);
     });
   }
 
   /**
-   * Gets whether a suggestion is blocked.
+   * Returns true if a URL is blocked. Callers should use `isResultBlocked()`
+   * instead when they have a `UrlbarResult`.
    *
    * @param {string} originalUrl
-   *   The suggestion's original URL with its unreplaced timestamp template.
+   *   The URL to check. In cases where a URL is potentially unique to a query,
+   *   this value should be the original unmodified URL.
    * @returns {boolean}
-   *   Whether the suggestion is blocked.
+   *   Whether the URL is blocked.
    */
   async has(originalUrl) {
-    this.logger.debug(`Queueing has: ${originalUrl}`);
     return this.#taskQueue.queue(async () => {
-      this.logger.info(`Getting blocked status: ${originalUrl}`);
       let digest = await this.#getDigest(originalUrl);
-      this.logger.debug(`Got digest for '${originalUrl}': ${digest}`);
-      let isBlocked = this.#digests.has(digest);
-      this.logger.info(`Blocked status for '${originalUrl}': ${isBlocked}`);
-      return isBlocked;
+      return this.#digests.has(digest);
     });
   }
 
   /**
-   * Unblocks all suggestions.
+   * Unblocks all URLs.
    */
   async clear() {
-    this.logger.debug(`Queueing clearBlockedSuggestions`);
     await this.#taskQueue.queue(() => {
-      this.logger.info(`Clearing all blocked suggestions`);
+      this.logger.info("Clearing all blocked suggestions");
       this.#digests.clear();
       lazy.UrlbarPrefs.clear("quicksuggest.blockedDigests");
     });
@@ -101,7 +122,7 @@ export class BlockedSuggestions extends BaseFeature {
     switch (pref) {
       case "quicksuggest.blockedDigests":
         if (!this.#updatingDigests) {
-          this.logger.info(
+          this.logger.debug(
             "browser.urlbar.quicksuggest.blockedDigests changed"
           );
           this.#loadDigests();
@@ -114,24 +135,15 @@ export class BlockedSuggestions extends BaseFeature {
    * Loads blocked suggestion digests from the pref into `#digests`.
    */
   async #loadDigests() {
-    this.logger.debug(`Queueing #loadDigests`);
     await this.#taskQueue.queue(() => {
-      this.logger.info(`Loading blocked suggestion digests`);
       let json = lazy.UrlbarPrefs.get("quicksuggest.blockedDigests");
-      this.logger.debug(
-        `browser.urlbar.quicksuggest.blockedDigests value: ${json}`
-      );
       if (!json) {
-        this.logger.info(`There are no blocked suggestion digests`);
         this.#digests.clear();
       } else {
         try {
           this.#digests = new Set(JSON.parse(json));
-          this.logger.info(`Successfully loaded blocked suggestion digests`);
         } catch (error) {
-          this.logger.error(
-            `Error loading blocked suggestion digests: ${error}`
-          );
+          this.logger.error("Error loading blocked suggestion digests", error);
         }
       }
     });
@@ -164,9 +176,12 @@ export class BlockedSuggestions extends BaseFeature {
     return this.#getDigest(string);
   }
 
-  // Set of digests of the original URLs of blocked suggestions. A suggestion's
-  // "original URL" is its URL straight from the source with an unreplaced
-  // timestamp template. For details on the digests, see `#getDigest()`.
+  // Set of digests of the original URLs of blocked suggestions. For some
+  // Suggest results, `url` is a value that is modified at query time and that
+  // is potentially unique per query. For example, it might contain timestamps
+  // or query-related search params. Those results will also have an
+  // `originalUrl` that is the unmodified URL, and it should be used for
+  // blocking purposes. For details on the digests, see `#getDigest()`.
   //
   // The only reason we use URL digests is that suggestions currently do not
   // have persistent IDs. We could use the URLs themselves but SHA-1 digests are

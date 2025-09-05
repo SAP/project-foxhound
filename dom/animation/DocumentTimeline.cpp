@@ -160,7 +160,8 @@ void DocumentTimeline::NotifyAnimationUpdated(Animation& aAnimation) {
 }
 
 void DocumentTimeline::TriggerAllPendingAnimationsNow() {
-  for (Animation* animation : mAnimationOrder) {
+  for (Animation* animation :
+       ToTArray<AutoTArray<RefPtr<Animation>, 32>>(mAnimationOrder)) {
     animation->TryTriggerNow();
   }
 }
@@ -188,14 +189,7 @@ void DocumentTimeline::WillRefresh() {
   // of mDocument's PresShell.
   if (nsRefreshDriver* refreshDriver = GetRefreshDriver()) {
     refreshDriver->EnsureAnimationUpdate();
-  } else {
-    MOZ_ASSERT_UNREACHABLE(
-        "Refresh driver should still be valid at end of WillRefresh");
   }
-}
-
-void DocumentTimeline::RemoveAnimation(Animation* aAnimation) {
-  AnimationTimeline::RemoveAnimation(aAnimation);
 }
 
 void DocumentTimeline::NotifyAnimationContentVisibilityChanged(

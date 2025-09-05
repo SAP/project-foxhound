@@ -13,7 +13,7 @@ async function setupForExperimentFeature() {
   const manager = ExperimentFakes.manager();
   await manager.onStartup();
 
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
+  sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
 
   return { sandbox, manager };
 }
@@ -68,6 +68,7 @@ add_task(
     const recipe = ExperimentFakes.experiment("awexperiment", {
       branch: {
         slug: "treatment",
+        ratio: 1,
         features: [
           {
             featureId: "aboutwelcome",
@@ -127,6 +128,7 @@ add_task(
     const recipe = ExperimentFakes.experiment("aw-experiment", {
       branch: {
         slug: "treatment",
+        ratio: 1,
         features: [
           {
             featureId: FEATURE_ID,
@@ -138,6 +140,7 @@ add_task(
     const rollout = ExperimentFakes.rollout("aw-rollout", {
       branch: {
         slug: "treatment",
+        ratio: 1,
         features: [
           { featureId: FEATURE_ID, value: { screens: [], source: "rollout" } },
         ],
@@ -185,6 +188,7 @@ add_task(
     const rollout = ExperimentFakes.rollout("foo-aw", {
       branch: {
         slug: "getAllVariables",
+        ratio: 1,
         features: [{ featureId: FEATURE_ID, value: { screens: [] } }],
       },
     });

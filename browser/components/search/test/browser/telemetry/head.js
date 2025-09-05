@@ -4,6 +4,7 @@
 ChromeUtils.defineESModuleGetters(this, {
   ADLINK_CHECK_TIMEOUT_MS:
     "resource:///actors/SearchSERPTelemetryChild.sys.mjs",
+  BrowserSearchTelemetry: "resource:///modules/BrowserSearchTelemetry.sys.mjs",
   CATEGORIZATION_SETTINGS: "resource:///modules/SearchSERPTelemetry.sys.mjs",
   CustomizableUITestUtils:
     "resource://testing-common/CustomizableUITestUtils.sys.mjs",
@@ -108,7 +109,7 @@ async function typeInSearchField(browser, text, fieldName) {
 
 async function searchInSearchbar(inputText, win = window) {
   await new Promise(r => waitForFocus(r, win));
-  let sb = win.BrowserSearch.searchBar;
+  let sb = win.document.getElementById("searchbar");
   // Write the search query in the searchbar.
   sb.focus();
   sb.value = inputText;
@@ -517,7 +518,15 @@ registerCleanupFunction(async () => {
   await PlacesUtils.history.clear();
 });
 
-async function mockRecordWithAttachment({ id, version, filename, mapping }) {
+async function mockRecordWithAttachment({
+  id,
+  version,
+  filename,
+  mapping,
+  includeRegions,
+  excludeRegions,
+  isDefault = true,
+}) {
   // Get the bytes of the file for the hash and size for attachment metadata.
   let buffer = new TextEncoder().encode(JSON.stringify(mapping)).buffer;
   let stream = Cc["@mozilla.org/io/arraybuffer-input-stream;1"].createInstance(
@@ -539,6 +548,9 @@ async function mockRecordWithAttachment({ id, version, filename, mapping }) {
   let record = {
     id,
     version,
+    includeRegions,
+    excludeRegions,
+    isDefault,
     attachment: {
       hash,
       location: `main-workspace/search-categorization/${filename}`,
@@ -597,6 +609,9 @@ async function insertRecordIntoCollection() {
     version: 1,
     filename: "domain_category_mappings.json",
     mapping: CONVERTED_ATTACHMENT_VALUES,
+    includeRegions: [],
+    excludeRegions: [],
+    isDefault: true,
   });
   await db.create(record);
   await client.attachments.cacheImpl.set(record.id, attachment);

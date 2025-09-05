@@ -21,44 +21,32 @@
   --console-warning-background: var(--theme-warning-background);
   --console-warning-border: var(--theme-warning-border);
   --console-warning-color: var(--theme-warning-color);
-}
 
-.theme-dark {
-  --console-input-background: var(--theme-tab-toolbar-background);
+  --console-input-background: light-dark(var(--theme-body-background), var(--theme-tab-toolbar-background));
   --console-message-background: var(--theme-body-background);
-  --console-message-border: var(--theme-splitter-color);
+  --console-message-border: light-dark(
+      color-mix(in srgb, var(--grey-10), var(--grey-20)),
+      var(--theme-splitter-color)
+    );
   --console-message-color: var(--theme-text-color-strong);
-  --console-error-background: hsl(345, 23%, 24%);
-  --console-error-border: hsl(345, 30%, 35%);
-  --console-error-color: var(--red-20);
+  --console-error-background: light-dark(hsl(344, 73%, 97%), hsl(345, 23%, 24%));
+  --console-error-border: light-dark(
+      rgb(from var(--red-60) r g b / 0.12),
+      hsl(345, 30%, 35%)
+    );
+  --console-error-color: light-dark(var(--red-70), var(--red-20));
   --console-navigation-color: var(--theme-highlight-blue);
-  --console-navigation-border: var(--blue-60);
+  --console-navigation-border: light-dark(var(--blue-30), var(--blue-60));
   --console-indent-border-color: var(--theme-highlight-blue);
-  --console-repeat-bubble-background: var(--blue-60);
+  --console-repeat-bubble-background: light-dark(var(--theme-highlight-blue), var(--blue-60));
 
   /* TODO in bug 1549195: colors used in shared components (e.g. Reps) should
      be renamed and/or moved to variables.css so they work everywhere */
-  --error-color: var(--red-20);
-  --console-output-color: white;
-}
+  --error-color: light-dark(var(--red-70), var(--red-20));
+  --console-output-color: light-dark(var(--grey-90), white);
 
-.theme-light {
-  --console-input-background: var(--theme-body-background);
-  --console-message-background: var(--theme-body-background);
-  --console-message-border: #f2f2f4; /* between Grey 10 and Grey 20 */
-  --console-message-color: var(--theme-text-color-strong);
-  --console-error-background: hsl(344, 73%, 97%);
-  --console-error-border: rgba(215, 0, 34, 0.12); /* Red 60 + opacity */
-  --console-error-color: var(--red-70);
-  --console-navigation-color: var(--theme-highlight-blue);
-  --console-navigation-border: var(--blue-30);
-  --console-indent-border-color: var(--theme-highlight-blue);
-  --console-repeat-bubble-background: var(--theme-highlight-blue);
-
-  /* TODO in bug 1549195: colors used in shared components (e.g. Reps) should
-     be renamed and/or moved to variables.css so they work everywhere */
-  --error-color: var(--red-70);
-  --console-output-color: var(--grey-90);
+  --console-tracer-dom-background: light-dark(var(--blue-55), #204e8a);
+  --console-tracer-dom-color: white;
 }
 
 /* General output styles */
@@ -324,7 +312,7 @@
 
 .message > .message-body-wrapper {
   flex: auto;
-  min-width: 0px;
+  min-width: 0;
   margin: var(--console-output-vertical-padding) 0;
 }
 
@@ -355,6 +343,14 @@
 .warning-group-badge {
   color: var(--console-warning-background);
   background-color: var(--console-warning-color);
+}
+
+:root[forced-colors-active] :is(
+  .message-repeats,
+  .warning-group-badge
+) {
+  color: Canvas;
+  background-color: CanvasText;
 }
 
 .message-location {
@@ -567,7 +563,9 @@ html #webconsole-notificationbox {
   fill: var(--theme-icon-dimmed-color);
 }
 
-.jsterm-input-container > .CodeMirror-focused {
+/* We don't want to change the color in High Contrast Mode. A proper focus indicator
+   should be added on the input */
+:root:not([forced-colors-active]) .jsterm-input-container > .CodeMirror-focused {
   fill: var(--theme-icon-checked-color);
 }
 
@@ -709,6 +707,14 @@ a.learn-more-link.webconsole-learn-more-link {
   /* It's important to keep this in px as it's used in JS to control the display mode
    * of the filter toolbar. */
   min-width: 150px;
+
+  /* High Contrast Mode */
+  :root[forced-colors-active] & {
+    /* Don't stretch so there is room around the input to show the borders
+       and the focus indicator */
+    align-self: unset;
+    outline-offset: 0;
+  }
 }
 
 /* We always render the "X hidden" element in the filter bar for accessibility.
@@ -779,12 +785,12 @@ a.learn-more-link.webconsole-learn-more-link {
   margin-inline: 2px;
 }
 .webconsole-app .jstracer-dom-event {
-  background-color: var(--toolbarbutton-checked-background);
-  color: var(--toolbarbutton-checked-color);
+  background-color: var( --console-tracer-dom-background);
+  color: var(--console-tracer-dom-color);
 }
 .webconsole-app .jstracer-dom-mutation {
-  background-color: var(--toolbarbutton-checked-background);
-  color: var(--toolbarbutton-checked-color);
+  background-color: var( --console-tracer-dom-background);
+  color: var(--console-tracer-dom-color);
   margin-inline-end: 4px;
 }
 .webconsole-app .jstracer-implementation {
@@ -811,7 +817,6 @@ a.learn-more-link.webconsole-learn-more-link {
   max-height: 250px;
   overflow: auto;
   position: relative;
-  border-width: 1px 0 0 1px;
   padding: 0;
   margin-block-end: var(--attachment-margin-block-end);
   border: 1px solid var(--consoletable-border);

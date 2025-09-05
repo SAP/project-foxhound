@@ -9,9 +9,10 @@
 
 #include "mozilla/Maybe.h"
 #include "mozilla/Variant.h"
+#include "mozilla/XorShift128PlusRNG.h"
 
-#include "ds/OrderedHashTable.h"
 #include "gc/Barrier.h"
+#include "js/HashTable.h"
 #include "js/TracingAPI.h"
 #include "js/TypeDecls.h"
 #include "threading/ProtectedData.h"
@@ -52,17 +53,6 @@ class MarkStackIter;
 class ParallelMarker;
 class UnmarkGrayTracer;
 
-struct EphemeronEdgeTableHashPolicy {
-  using Lookup = Cell*;
-  static HashNumber hash(const Lookup& v,
-                         const mozilla::HashCodeScrambler& hcs) {
-    return hcs.scramble(mozilla::HashGeneric(v));
-  }
-  static bool match(Cell* const& k, const Lookup& l) { return k == l; }
-  static bool isEmpty(Cell* const& v) { return !v; }
-  static void makeEmpty(Cell** vp) { *vp = nullptr; }
-};
-
 // Ephemeron edges have two source nodes and one target, and mark the target
 // with the minimum (least-marked) color of the sources. Currently, one of
 // those sources will always be a WeakMapBase, so this will refer to its color
@@ -77,9 +67,8 @@ struct EphemeronEdge {
 
 using EphemeronEdgeVector = Vector<EphemeronEdge, 2, js::SystemAllocPolicy>;
 
-using EphemeronEdgeTable =
-    OrderedHashMap<Cell*, EphemeronEdgeVector, EphemeronEdgeTableHashPolicy,
-                   js::SystemAllocPolicy>;
+using EphemeronEdgeTable = HashMap<Cell*, EphemeronEdgeVector,
+                                   PointerHasher<Cell*>, js::SystemAllocPolicy>;
 
 /*
  * The mark stack. Pointers in this stack are "gray" in the GC sense, but
@@ -106,6 +95,7 @@ class MarkStack {
   enum Tag {
     SlotsOrElementsRangeTag = 0,  // Must match SlotsOrElementsKind::Unused.
     ObjectTag,
+    SymbolTag,
     JitCodeTag,
     ScriptTag,
     TempRopeTag,
@@ -188,6 +178,7 @@ class MarkStack {
 
   template <typename T>
   [[nodiscard]] bool push(T* ptr);
+  void infalliblePush(const SlotsOrElementsRange& range);
   void infalliblePush(JSObject* obj, SlotsOrElementsKind kind, size_t start);
   [[nodiscard]] bool push(const TaggedPtr& ptr);
   void infalliblePush(const TaggedPtr& ptr);
@@ -210,7 +201,8 @@ class MarkStack {
 
   [[nodiscard]] bool ensureSpace(size_t count);
 
-  static void moveWork(MarkStack& dst, MarkStack& src);
+  static size_t moveWork(GCMarker* marker, MarkStack& dst, MarkStack& src,
+                         bool allowDistribute);
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -279,13 +271,13 @@ class MOZ_STACK_CLASS MarkStackIter {
   void next();
 
   MarkStack::Tag peekTag() const;
+  MarkStack::TaggedPtr peekPtr() const;
   bool isSlotsOrElementsRange() const;
   MarkStack::SlotsOrElementsRange slotsOrElementsRange() const;
   void setSlotsOrElementsRange(const MarkStack::SlotsOrElementsRange& range);
 
  private:
   size_t position() const;
-  MarkStack::TaggedPtr peekPtr() const;
 };
 
 // Bitmask of options to parameterize MarkingTracerT.
@@ -426,7 +418,7 @@ class GCMarker {
   template <uint32_t markingOptions, gc::MarkColor>
   bool markOneColor(JS::SliceBudget& budget);
 
-  static void moveWork(GCMarker* dst, GCMarker* src);
+  static size_t moveWork(GCMarker* dst, GCMarker* src, bool allowDistribute);
 
   [[nodiscard]] bool initStack();
   void resetStackCapacity();
@@ -494,6 +486,9 @@ class GCMarker {
 
   template <uint32_t markingOptions>
   bool markAndTraversePrivateGCThing(JSObject* source, gc::TenuredCell* target);
+
+  template <uint32_t markingOptions>
+  bool markAndTraverseSymbol(JSObject* source, JS::Symbol* target);
 
   template <typename S, typename T>
   void checkTraversedEdge(S source, T* target);
@@ -603,6 +598,9 @@ class GCMarker {
    * pref: javascript.options.mem.incremental_weakmap
    */
   MainThreadOrGCTaskData<bool> incrementalWeakMapMarkingEnabled;
+
+  /* Random number generator state. */
+  MainThreadOrGCTaskData<mozilla::non_crypto::XorShift128PlusRNG> random;
 
 #ifdef DEBUG
  private:

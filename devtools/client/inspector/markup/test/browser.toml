@@ -86,13 +86,13 @@ support-files = [
 ]
 
 ["browser_markup_accessibility_focus_blur.js"]
-skip-if = ["os == 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
 
 ["browser_markup_accessibility_navigation.js"]
-skip-if = ["os == 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
 
 ["browser_markup_accessibility_navigation_after_edit.js"]
-skip-if = ["os == 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
 
 ["browser_markup_accessibility_new_selection.js"]
 
@@ -322,6 +322,8 @@ skip-if = ["true"] # Bug 1706833, times out waiting for context menu to open
 ["browser_markup_scrollable_badge_click.js"]
 
 ["browser_markup_search_01.js"]
+
+["browser_markup_search_html.js"]
 
 ["browser_markup_shadowdom.js"]
 

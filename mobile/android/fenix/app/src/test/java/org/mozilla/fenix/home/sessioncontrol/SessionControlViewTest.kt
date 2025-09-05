@@ -12,9 +12,11 @@ import mozilla.components.service.nimbus.messaging.Message
 import mozilla.components.service.pocket.PocketStory
 import mozilla.components.service.pocket.PocketStory.PocketRecommendedStory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mozilla.fenix.home.bookmarks.Bookmark
+import org.mozilla.fenix.home.ext.showWallpaperOnboardingDialog
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem.RecentHistoryGroup
 import org.mozilla.fenix.utils.Settings
 
@@ -177,6 +179,7 @@ class SessionControlViewTest {
         every { settings.showBookmarksHomeFeature } returns true
         every { settings.historyMetadataUIFeature } returns true
         every { settings.showPocketRecommendationsFeature } returns true
+        every { settings.showContentRecommendations } returns false
 
         val results = normalModeAdapterItems(
             settings,
@@ -217,6 +220,45 @@ class SessionControlViewTest {
 
         assertTrue(results2[0] is AdapterItem.TopPlaceholderItem)
         assertTrue(results2[1] is AdapterItem.BottomSpacer)
+    }
+
+    @Test
+    fun `GIVEN pocket articles and content recommendations are enabled WHEN normalModeAdapterItems is called THEN do not show pocket topic categories and footer`() {
+        val settings: Settings = mockk()
+        val topSites = emptyList<TopSite>()
+        val collections = emptyList<TabCollection>()
+        val expandedCollections = emptySet<Long>()
+        val bookmarks = listOf<Bookmark>()
+        val historyMetadata = emptyList<RecentHistoryGroup>()
+        val pocketStories = listOf(PocketRecommendedStory("", "", "", "", "", 1, 1))
+
+        every { settings.showTopSitesFeature } returns true
+        every { settings.showRecentTabsFeature } returns true
+        every { settings.showBookmarksHomeFeature } returns true
+        every { settings.historyMetadataUIFeature } returns true
+        every { settings.showPocketRecommendationsFeature } returns true
+        every { settings.showContentRecommendations } returns true
+
+        val results = normalModeAdapterItems(
+            settings = settings,
+            topSites = topSites,
+            collections = collections,
+            expandedCollections = expandedCollections,
+            bookmarks = bookmarks,
+            showCollectionsPlaceholder = false,
+            nimbusMessageCard = null,
+            showRecentTab = false,
+            showRecentSyncedTab = false,
+            recentVisits = historyMetadata,
+            pocketStories = pocketStories,
+            firstFrameDrawn = true,
+        )
+
+        assertEquals(4, results.size)
+        assertTrue(results[0] is AdapterItem.TopPlaceholderItem)
+        assertTrue(results[1] is AdapterItem.PocketStoriesItem)
+        assertTrue(results[2] is AdapterItem.CustomizeHomeButton)
+        assertTrue(results[3] is AdapterItem.BottomSpacer)
     }
 
     @Test
@@ -287,5 +329,41 @@ class SessionControlViewTest {
         )
 
         assertTrue(results[0] is AdapterItem.TopPlaceholderItem)
+    }
+
+    @Test
+    fun `GIVEN app opened three times, should show the dialog and wallpaper feature has not been recommended WHEN showWallpaperOnboardingDialog THEN returns true`() {
+        val settings = mockk<Settings>()
+        every { settings.numberOfAppLaunches } returns 3
+        every { settings.showWallpaperOnboarding } returns true
+
+        assertTrue(settings.showWallpaperOnboardingDialog(false))
+    }
+
+    @Test
+    fun `GIVEN app opened two times, should show the dialog and wallpaper feature has not been recommended WHEN showWallpaperOnboardingDialog THEN returns false`() {
+        val settings = mockk<Settings>()
+        every { settings.numberOfAppLaunches } returns 2
+        every { settings.showWallpaperOnboarding } returns true
+
+        assertFalse(settings.showWallpaperOnboardingDialog(false))
+    }
+
+    @Test
+    fun `GIVEN app opened three times, should not show the dialog and wallpaper feature has not been recommended WHEN showWallpaperOnboardingDialog THEN returns false`() {
+        val settings = mockk<Settings>()
+        every { settings.numberOfAppLaunches } returns 3
+        every { settings.showWallpaperOnboarding } returns false
+
+        assertFalse(settings.showWallpaperOnboardingDialog(false))
+    }
+
+    @Test
+    fun `GIVEN app opened three times, should show the dialog and wallpaper feature already recommended WHEN showWallpaperOnboardingDialog THEN returns false`() {
+        val settings = mockk<Settings>()
+        every { settings.numberOfAppLaunches } returns 3
+        every { settings.showWallpaperOnboarding } returns false
+
+        assertFalse(settings.showWallpaperOnboardingDialog(true))
     }
 }

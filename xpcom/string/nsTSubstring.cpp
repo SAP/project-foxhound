@@ -8,11 +8,16 @@
  */
 
 #include "double-conversion/double-conversion.h"
+#include "mozilla/Assertions.h"
 #include "mozilla/CheckedInt.h"
 #include "mozilla/MathAlgorithms.h"
 #include "mozilla/MemoryReporting.h"
 #include "mozilla/Printf.h"
 #include "mozilla/ResultExtensions.h"
+
+#include <iterator>
+#include "fmt/format.h"
+#include "fmt/xchar.h"
 
 #include "nsASCIIMask.h"
 #include "nsCharTraits.h"
@@ -39,15 +44,6 @@
 const uint32_t kNsStringBufferShrinkingThreshold = 384;
 
 using double_conversion::DoubleToStringConverter;
-
-// ---------------------------------------------------------------------------
-
-static const char16_t gNullChar = 0;
-
-char* const nsCharTraits<char>::sEmptyBuffer =
-    (char*)const_cast<char16_t*>(&gNullChar);
-char16_t* const nsCharTraits<char16_t>::sEmptyBuffer =
-    const_cast<char16_t*>(&gNullChar);
 
 // ---------------------------------------------------------------------------
 
@@ -100,10 +96,13 @@ nsTSubstring<T>::BulkWrite(size_type aCapacity, size_type aPrefixToPreserve,
 }
 
 template <typename T>
-auto nsTSubstring<T>::StartBulkWriteImpl(
-    size_type aCapacity, size_type aPrefixToPreserve, bool aAllowShrinking,
-    size_type aSuffixLength, size_type aOldSuffixStart,
-    size_type aNewSuffixStart) -> mozilla::Result<size_type, nsresult> {
+auto nsTSubstring<T>::StartBulkWriteImpl(size_type aCapacity,
+                                         size_type aPrefixToPreserve,
+                                         bool aAllowShrinking,
+                                         size_type aSuffixLength,
+                                         size_type aOldSuffixStart,
+                                         size_type aNewSuffixStart)
+    -> mozilla::Result<size_type, nsresult> {
   // Note! Capacity does not include room for the terminating null char.
 
   MOZ_ASSERT(aPrefixToPreserve <= aCapacity,
@@ -461,6 +460,11 @@ void nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength) {
 }
 
 template <typename T>
+void nsTSubstring<T>::AssignASCII(const nsLiteralCString& aData) {
+  AssignASCII(aData.get(), aData.Length());
+}
+
+template <typename T>
 bool nsTSubstring<T>::AssignASCII(const char* aData, size_type aLength,
                                   const fallible_t& aFallible) {
   MOZ_ASSERT(aLength != size_type(-1));
@@ -752,25 +756,38 @@ bool nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
 template <typename T>
 void nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
                               const substring_tuple_type& aTuple) {
+  if (!Replace(aCutStart, aCutLength, aTuple, mozilla::fallible)) {
+    AllocFailed(this->Length() - aCutLength + aTuple.Length());
+  }
+}
+
+template <typename T>
+bool nsTSubstring<T>::Replace(index_type aCutStart, size_type aCutLength,
+                              const substring_tuple_type& aTuple,
+                              const fallible_t& aFallible) {
   const auto [isDependentOnThis, tupleLength] =
       aTuple.IsDependentOnWithLength(this->mData, this->mData + this->mLength);
 
   if (isDependentOnThis) {
     nsTAutoString<T> temp;
     if (!temp.AssignNonDependent(aTuple, tupleLength, mozilla::fallible)) {
-      AllocFailed(tupleLength);
+      return false;
     }
-    Replace(aCutStart, aCutLength, temp);
-    return;
+    return Replace(aCutStart, aCutLength, temp, aFallible);
   }
 
   aCutStart = XPCOM_MIN(aCutStart, this->Length());
 
-  if (ReplacePrep(aCutStart, aCutLength, tupleLength) && tupleLength > 0) {
+  if (!ReplacePrep(aCutStart, aCutLength, tupleLength)) {
+    return false;
+  }
+
+  if (tupleLength > 0) {
     aTuple.WriteTo(this->mData + aCutStart, tupleLength);
     // Foxhound: propagate taint.
     this->mTaint.replace(aCutStart, aCutStart + aCutLength, tupleLength, aTuple.Taint());
   }
+  return true;
 }
 
 template <typename T>
@@ -861,6 +878,11 @@ void nsTSubstring<T>::AppendASCII(const char* aData, size_type aLength) {
     AllocFailed(this->mLength +
                 (aLength == size_type(-1) ? strlen(aData) : aLength));
   }
+}
+
+template <typename T>
+void nsTSubstring<T>::AppendASCII(const nsLiteralCString& aData) {
+  AppendASCII(aData.get(), aData.Length());
 }
 
 template <typename T>
@@ -1165,6 +1187,73 @@ void nsTSubstring<T>::StripCRLF() {
   // instead of just calling it does somewhat help with performance
   // but it is not worth it given the duplicated code.
   StripTaggedASCII(mozilla::ASCIIMask::MaskCRLF());
+}
+
+// An adapter type for a `nsTSubstring<T>` to provide a std::string-like
+// interface for `{fmt}`.
+template <typename T>
+class nsTSubstringStdCollectionAdapter {
+ public:
+  using value_type = T;
+
+  explicit nsTSubstringStdCollectionAdapter(nsTSubstring<T>& aString)
+      : mSize(aString.Length()), mHandle(InfallibleBulkWrite(aString)) {}
+
+  ~nsTSubstringStdCollectionAdapter() { mHandle.Finish(mSize, false); }
+
+  size_t size() const { return mSize; }
+  void resize(size_t aNewSize) {
+    EnsureCapacity(aNewSize);
+    mSize = aNewSize;
+    // XXX: technically resize should zero-initialize any new bytes to match
+    // std::string.
+  }
+
+  T& operator[](size_t i) {
+    MOZ_RELEASE_ASSERT(i < mSize);
+    return mHandle.Elements()[i];
+  }
+  const T& operator[](size_t i) const {
+    MOZ_RELEASE_ASSERT(i < mSize);
+    return mHandle.Elements()[i];
+  }
+
+ private:
+  void EnsureCapacity(size_t aNewCapacity) {
+    if (aNewCapacity > mHandle.Length()) {
+      auto result = mHandle.RestartBulkWrite(aNewCapacity, mSize, false);
+      if (result.isErr()) {
+        ::NS_ABORT_OOM(aNewCapacity * sizeof(value_type));
+      }
+    }
+  }
+  static mozilla::BulkWriteHandle<T> InfallibleBulkWrite(
+      nsTSubstring<T>& aString) {
+    size_t length = aString.Length();
+    auto res = aString.BulkWrite(length, length, false);
+    if (res.isErr()) {
+      ::NS_ABORT_OOM(length * sizeof(value_type));
+    }
+    return res.unwrap();
+  }
+
+  size_t mSize;
+  mozilla::BulkWriteHandle<T> mHandle;
+};
+
+// Mark the collection as contiguous for {fmt} so that the buffer will be used
+// directly.
+namespace fmt {
+template <typename T>
+struct is_contiguous<nsTSubstringStdCollectionAdapter<T>> : std::true_type {};
+}  // namespace fmt
+
+template <typename T>
+void nsTSubstring<T>::AppendVfmt(
+    fmt::basic_string_view<char_type> aFormatStr,
+    fmt::basic_format_args<fmt::buffered_context<char_type>> aArgs) {
+  nsTSubstringStdCollectionAdapter<char_type> adapter{*this};
+  fmt::vformat_to(std::back_inserter(adapter), aFormatStr, aArgs);
 }
 
 template <typename T>

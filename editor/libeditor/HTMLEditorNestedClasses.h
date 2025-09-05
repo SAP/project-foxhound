@@ -10,6 +10,7 @@
 #include "EditorForwards.h"
 #include "HTMLEditor.h"       // for HTMLEditor
 #include "HTMLEditHelpers.h"  // for EditorInlineStyleAndValue
+#include "HTMLEditUtils.h"    // for HTMLEditUtils::IsContainerNode
 
 #include "mozilla/Attributes.h"
 #include "mozilla/OwningNonNull.h"
@@ -77,8 +78,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInlineStyleSetter final
    * See comments in the definition what this does.
    */
   Result<EditorRawDOMRange, nsresult> ExtendOrShrinkRangeToApplyTheStyle(
-      const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange,
-      const Element& aEditingHost) const;
+      const HTMLEditor& aHTMLEditor, const EditorDOMRange& aRange) const;
 
   /**
    * Returns next/previous sibling of aContent or an ancestor of it if it's
@@ -103,7 +103,6 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInlineStyleSetter final
    * @param aHTMLEditor                 The editor.
    * @param aCandidatePointToInsert     The point where the caller wants to
    *                                    insert new text.
-   * @param aEditingHost                The editing host.
    * @return            If this creates new empty text node returns it.
    *                    If this couldn't create new empty text node due to
    *                    the point or aEditingHost cannot have text node,
@@ -111,9 +110,8 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInlineStyleSetter final
    *                    Otherwise, returns error.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT static Result<RefPtr<Text>, nsresult>
-  GetEmptyTextNodeToApplyNewStyle(HTMLEditor& aHTMLEditor,
-                                  const EditorDOMPoint& aCandidatePointToInsert,
-                                  const Element& aEditingHost);
+  GetEmptyTextNodeToApplyNewStyle(
+      HTMLEditor& aHTMLEditor, const EditorDOMPoint& aCandidatePointToInsert);
 
  private:
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<CaretPoint, nsresult> ApplyStyle(
@@ -186,6 +184,13 @@ class MOZ_STACK_CLASS HTMLEditor::AutoInlineStyleSetter final
     mLastHandledPoint = aEndPoint;
   }
   void OnHandled(nsIContent& aContent) {
+    if (aContent.IsElement() && !HTMLEditUtils::IsContainerNode(aContent)) {
+      if (!mFirstHandledPoint.IsSet()) {
+        mFirstHandledPoint.Set(&aContent);
+      }
+      mLastHandledPoint.SetAfter(&aContent);
+      return;
+    }
     if (!mFirstHandledPoint.IsSet()) {
       mFirstHandledPoint.Set(&aContent, 0u);
     }
@@ -391,7 +396,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
    * @param aEditingHost                The editing host.
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult> Run(
-      HTMLEditor& aHTMLEditor, AutoRangeArray& aRanges,
+      HTMLEditor& aHTMLEditor, AutoClonedSelectionRangeArray& aRanges,
       HTMLEditor::SelectAllOfCurrentList aSelectAllOfCurrentList,
       const Element& aEditingHost) const;
 
@@ -408,7 +413,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   SplitAtRangeEdgesAndCollectContentNodesToMoveIntoList(
-      HTMLEditor& aHTMLEditor, AutoRangeArray& aRanges,
+      HTMLEditor& aHTMLEditor, AutoClonedRangeArray& aRanges,
       SelectAllOfCurrentList aSelectAllOfCurrentList,
       const Element& aEditingHost, ContentNodeArray& aOutArrayOfContents) const;
 
@@ -430,7 +435,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<RefPtr<Element>, nsresult>
   ReplaceContentNodesWithEmptyNewList(
-      HTMLEditor& aHTMLEditor, const AutoRangeArray& aRanges,
+      HTMLEditor& aHTMLEditor, const AutoClonedRangeArray& aRanges,
       const AutoContentNodeArray& aArrayOfContents,
       const Element& aEditingHost) const;
 
@@ -442,7 +447,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
    */
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<RefPtr<Element>, nsresult>
   WrapContentNodesIntoNewListElements(HTMLEditor& aHTMLEditor,
-                                      AutoRangeArray& aRanges,
+                                      AutoClonedRangeArray& aRanges,
                                       AutoContentNodeArray& aArrayOfContents,
                                       const Element& aEditingHost) const;
 
@@ -510,7 +515,7 @@ class MOZ_STACK_CLASS HTMLEditor::AutoListElementCreator final {
    * aRanges in aListItemOrListToPutCaret again.
    */
   nsresult EnsureCollapsedRangeIsInListItemOrListElement(
-      Element& aListItemOrListToPutCaret, AutoRangeArray& aRanges) const;
+      Element& aListItemOrListToPutCaret, AutoClonedRangeArray& aRanges) const;
 
   MOZ_KNOWN_LIVE nsStaticAtom& mListTagName;
   MOZ_KNOWN_LIVE nsStaticAtom& mListItemTagName;

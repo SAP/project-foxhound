@@ -44,11 +44,12 @@ if (isNode()) {
   pref("devtools.debugger.skip-pausing", false);
   pref("devtools.debugger.log-actions", true);
   pref("devtools.debugger.log-event-breakpoints", false);
-  pref("devtools.debugger.javascript-tracing-log-method", "console");
+  pref("devtools.debugger.javascript-tracing-log-method", "debugger-sidebar");
   pref("devtools.debugger.javascript-tracing-values", false);
   pref("devtools.debugger.javascript-tracing-on-next-interaction", false);
   pref("devtools.debugger.javascript-tracing-on-next-load", false);
   pref("devtools.debugger.javascript-tracing-function-return", false);
+  pref("devtools.debugger.show-content-scripts", false);
   pref("devtools.debugger.hide-ignored-sources", false);
   pref("devtools.debugger.source-map-ignore-list-enabled", true);
   pref("devtools.debugger.features.wasm", true);
@@ -59,7 +60,7 @@ if (isNode()) {
   pref("devtools.debugger.features.log-points", true);
   pref("devtools.debugger.features.inline-preview", true);
   pref("devtools.debugger.features.javascript-tracing", false);
-  pref("devtools.debugger.features.codemirror-next", false);
+  pref("devtools.debugger.features.codemirror-next", true);
   pref("devtools.editor.tabsize", 2);
   pref("devtools.editor.expandtab", false);
   pref("devtools.editor.autoclosebrackets", false);
@@ -124,6 +125,7 @@ export const prefs = new PrefsHelper("devtools", {
     "Bool",
     "debugger.javascript-tracing-function-return",
   ],
+  showContentScripts: ["Bool", "debugger.show-content-scripts"],
   hideIgnoredSources: ["Bool", "debugger.hide-ignored-sources"],
   sourceMapIgnoreListEnabled: [
     "Bool",

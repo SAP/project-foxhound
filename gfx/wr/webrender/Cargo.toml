@@ -23,7 +23,7 @@ sw_compositor = ["swgl"]
 
 [build-dependencies]
 build-parallel = "0.1.2"
-glslopt = "0.1.10"
+glslopt = "0.1.11"
 webrender_build = { version = "0.0.2", path = "../webrender_build" }
 
 [dependencies]
@@ -57,7 +57,8 @@ firefox-on-glean = { version = "0.1.0", optional = true }
 swgl = { path = "../swgl", optional = true }
 topological-sort = "0.1"
 peek-poke = { version = "0.3", path = "../peek-poke" }
+allocator-api2 = { version = "0.2.18", features = ["alloc", "serde"] }
 
 [dev-dependencies]
-mozangle = "0.3.3"
+mozangle = "0.5.2"
 rand = "0.4"

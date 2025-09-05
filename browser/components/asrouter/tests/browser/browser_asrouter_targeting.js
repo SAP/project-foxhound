@@ -12,6 +12,7 @@ ChromeUtils.defineESModuleGetters(this, {
   ExperimentFakes: "resource://testing-common/NimbusTestUtils.sys.mjs",
   FxAccounts: "resource://gre/modules/FxAccounts.sys.mjs",
   HomePage: "resource:///modules/HomePage.sys.mjs",
+  InfoBar: "resource:///modules/asrouter/InfoBar.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   NimbusFeatures: "resource://nimbus/ExperimentAPI.sys.mjs",
   PlacesTestUtils: "resource://testing-common/PlacesTestUtils.sys.mjs",
@@ -208,6 +209,62 @@ add_task(async function checkCurrentDate() {
     await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
     message,
     "should select message based on currentDate > timestamp"
+  );
+});
+
+add_task(async function check_canCreateSelectableProfiles() {
+  if (!AppConstants.MOZ_SELECTABLE_PROFILES) {
+    // `mochitest-browser` suite `add_task` does not yet support
+    // `properties.skip_if`.
+    ok(true, "Skipping because !AppConstants.MOZ_SELECTABLE_PROFILES");
+    return;
+  }
+
+  is(
+    await ASRouterTargeting.Environment.canCreateSelectableProfiles,
+    false,
+    "The new profiles feature doesn't support standalone profiles which are used in automation."
+  );
+
+  // We have to fake there being a real profile available and enable the profiles feature
+  await pushPrefs(["browser.profiles.enabled", "someValue"]);
+  await SelectableProfileService.resetProfileService({ currentProfile: {} });
+
+  is(
+    await ASRouterTargeting.Environment.canCreateSelectableProfiles,
+    true,
+    "should return true if the current profile is valid for use with SelectableProfileService"
+  );
+
+  const message = { id: "foo", targeting: "canCreateSelectableProfiles" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by canCreateSelectableProfiles"
+  );
+
+  await SelectableProfileService.resetProfileService(null);
+});
+
+add_task(async function check_hasSelectableProfiles() {
+  is(
+    await ASRouterTargeting.Environment.hasSelectableProfiles,
+    false,
+    "should return false before the pref is set"
+  );
+
+  await pushPrefs(["toolkit.profiles.storeID", "someValue"]);
+  is(
+    await ASRouterTargeting.Environment.hasSelectableProfiles,
+    true,
+    "should return true if the pref is set"
+  );
+
+  const message = { id: "foo", targeting: "hasSelectableProfiles" };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by hasSelectableProfiles"
   );
 });
 
@@ -479,8 +536,8 @@ add_task(async function checkAddonsInfo() {
     "service",
   ]);
 
-  const { addons: asRouterAddons, isFullData } = await ASRouterTargeting
-    .Environment.addonsInfo;
+  const { addons: asRouterAddons, isFullData } =
+    await ASRouterTargeting.Environment.addonsInfo;
 
   ok(
     addons.every(({ id }) => asRouterAddons[id]),
@@ -518,6 +575,18 @@ add_task(async function checkAddonsInfo() {
     Object.prototype.hasOwnProperty.call(testAddon, "isWebExtension") &&
       testAddon.isWebExtension === true,
     "should correctly provide `isWebExtension` property"
+  );
+
+  ok(
+    Object.prototype.hasOwnProperty.call(testAddon, "hidden") &&
+      testAddon.hidden === false,
+    "should correctly provide `hidden` property"
+  );
+
+  ok(
+    Object.prototype.hasOwnProperty.call(testAddon, "isBuiltin") &&
+      testAddon.isBuiltin === false,
+    "should correctly provide `isBuiltin` property"
   );
 
   // As we installed our test addon the addons database must be initialised, so
@@ -1267,6 +1336,31 @@ add_task(async function test_fxViewButtonAreaType_removed() {
   CustomizableUI.reset();
 });
 
+add_task(async function test_alltabsButtonAreaType_default() {
+  is(
+    typeof (await ASRouterTargeting.Environment.alltabsButtonAreaType),
+    "string",
+    "Should return a string"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.alltabsButtonAreaType,
+    "toolbar",
+    "Should return name of container if button hasn't been removed"
+  );
+});
+
+add_task(async function test_alltabsButtonAreaType_removed() {
+  CustomizableUI.removeWidgetFromArea("alltabs-button");
+
+  is(
+    await ASRouterTargeting.Environment.alltabsButtonAreaType,
+    null,
+    "Should return null if button has been removed"
+  );
+  CustomizableUI.reset();
+});
+
 add_task(async function test_creditCardsSaved() {
   await SpecialPowers.pushPrefEnv({
     set: [
@@ -1678,10 +1772,217 @@ add_task(async function check_archBits() {
   ok(bits === 32 || bits === 64, "archBits is either 32 or 64");
 });
 
+add_task(async function check_systemArch() {
+  const arch = ASRouterTargeting.Environment.systemArch;
+  is(typeof arch, "string", "systemArch should be a string");
+  ok(
+    ["x86", "x86-64", "aarch64"].includes(arch),
+    "systemArch is either x86, x86-64 or aarch64"
+  );
+});
+
 add_task(async function check_memoryMB() {
   const memory = ASRouterTargeting.Environment.memoryMB;
   is(typeof memory, "number", "Memory is a number");
   // To make sure we get a sensible number we verify that whatever system
   // runs this unit test it has between 500MB and 1TB of RAM.
   ok(memory > 500 && memory < 5_000_000);
+});
+
+add_task(async function check_totalSearches() {
+  await pushPrefs(["browser.search.totalSearches", 20]);
+  is(
+    typeof ASRouterTargeting.Environment.totalSearches,
+    "number",
+    "should return a number"
+  );
+
+  is(
+    await ASRouterTargeting.Environment.totalSearches,
+    20,
+    "should return a value of 20"
+  );
+});
+
+add_task(async function checkisDefaultBrowserUncached() {
+  const expected = ShellService.isDefaultBrowser();
+  const result = await ASRouterTargeting.Environment.isDefaultBrowserUncached;
+  is(
+    typeof result,
+    "boolean",
+    "isDefaultBrowserUncached should be a boolean value"
+  );
+  is(
+    result,
+    expected,
+    "isDefaultBrowserUncached should be equal to ShellService.isDefaultBrowser()"
+  );
+  const message = {
+    id: "foo",
+    targeting: `isDefaultBrowserUncached == ${expected.toString()}`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by isDefaultBrowserUncached"
+  );
+});
+
+add_task(async function check_doesAppNeedPin() {
+  const expected = await ShellService.doesAppNeedPin();
+  const result = await ASRouterTargeting.Environment.doesAppNeedPinUncached;
+  is(
+    typeof (await ASRouterTargeting.Environment.doesAppNeedPinUncached),
+    "boolean",
+    "Should return a boolean"
+  );
+  is(
+    result,
+    expected,
+    "doesAppNeedPinUncached should be equal to ShellService.doesAppNeedPin()"
+  );
+  const message = {
+    id: "foo",
+    targeting: `doesAppNeedPinUncached == ${expected.toString()}`,
+  };
+  is(
+    await ASRouterTargeting.findMatchingMessage({ messages: [message] }),
+    message,
+    "should select correct item by doesAppNeedPinUncached"
+  );
+});
+
+add_task(
+  async function check_activeNotifications_newtab_topic_selection_modal_shown_past() {
+    // 10 minutes ago
+    let timestamp10MinsAgo = `${new Date().getTime() - 600000}`;
+    await pushPrefs([
+      "browser.newtabpage.activity-stream.discoverystream.topicSelection.onboarding.lastDisplayed",
+      timestamp10MinsAgo,
+    ]);
+
+    is(
+      await ASRouterTargeting.Environment.activeNotifications,
+      false,
+      "activeNotifications should be false if the topic selection modal on newtab was last shown more than a minute ago"
+    );
+  }
+);
+
+add_task(async function check_activeNotifications_infobar_shown() {
+  let message = {
+    ...(await CFRMessageProvider.getMessages()).find(
+      m => m.id === "INFOBAR_ACTION_86"
+    ),
+  };
+
+  let dispatchStub = sinon.stub();
+  let infobar = await InfoBar.showInfoBarMessage(
+    BrowserWindowTracker.getTopWindow().gBrowser.selectedBrowser,
+    message,
+    dispatchStub
+  );
+
+  is(
+    await ASRouterTargeting.Environment.activeNotifications,
+    true,
+    "activeNotifications should be true when an Infobar is rendered"
+  );
+
+  // dismiss infobar
+  infobar.notification.closeButton.click();
+  dispatchStub.reset();
+});
+
+add_task(
+  async function check_activeNotifications_newtab_topic_selection_modal_shown_recently() {
+    // 1 second ago
+    let timestamp1SecAgo = `${new Date().getTime() - 1000}`;
+    await pushPrefs([
+      "browser.newtabpage.activity-stream.discoverystream.topicSelection.onboarding.lastDisplayed",
+      timestamp1SecAgo,
+    ]);
+
+    is(
+      await ASRouterTargeting.Environment.activeNotifications,
+      true,
+      "activeNotifications should be true if the topic selection modal on newtab was last shown less than a minute ago"
+    );
+  }
+);
+
+add_task(async function check_unhandledCampaignAction() {
+  is(
+    typeof ASRouterTargeting.Environment.unhandledCampaignAction,
+    "object",
+    "Should return an object" // is null unless an unhandled action is present
+  );
+
+  const DID_HANDLE_CAMAPAIGN_ACTION_PREF =
+    "trailhead.firstrun.didHandleCampaignAction";
+
+  const TEST_CASES = [
+    {
+      title: "unsupported open_url campaign action",
+      attributionData: {
+        campaign: "open_url",
+      },
+      expected: null,
+      after: () => {
+        QueryCache.queries.UnhandledCampaignAction.expire();
+      },
+    },
+    {
+      title: "supported and unhandled set default browser campaign action",
+      attributionData: {
+        campaign: "set_default_browser",
+      },
+      expected: "SET_DEFAULT_BROWSER",
+      after: () => {
+        QueryCache.queries.UnhandledCampaignAction.expire();
+      },
+    },
+    {
+      title: "supported and handled set default browser campaign action",
+      attributionData: {
+        campaign: "set_default_browser",
+      },
+      expected: null,
+      before: async () => {
+        await pushPrefs([DID_HANDLE_CAMAPAIGN_ACTION_PREF, true]);
+      },
+      after: () => {
+        Services.prefs.clearUserPref(DID_HANDLE_CAMAPAIGN_ACTION_PREF);
+        QueryCache.queries.UnhandledCampaignAction.expire();
+      },
+    },
+  ];
+
+  const sandbox = sinon.createSandbox();
+  registerCleanupFunction(async () => {
+    sandbox.restore();
+  });
+
+  const stub = sandbox.stub(AttributionCode, "getCachedAttributionData");
+
+  for (const {
+    title,
+    attributionData,
+    expected,
+    before,
+    after,
+  } of TEST_CASES) {
+    if (before) {
+      await before();
+    }
+    stub.returns(attributionData);
+    is(
+      ASRouterTargeting.Environment.unhandledCampaignAction,
+      expected,
+      `${title} - Expected unhandledCampaignAction to have the expected value`
+    );
+    if (after) {
+      after();
+    }
+  }
 });

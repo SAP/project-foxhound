@@ -305,14 +305,6 @@ bool ContentPrincipal::MayLoadInternal(nsIURI* aURI) {
     return true;
   }
 
-  // If strict file origin policy is in effect, local files will always fail
-  // SecurityCompareURIs unless they are identical. Explicitly check file origin
-  // policy, in that case.
-  if (nsScriptSecurityManager::GetStrictFileOriginPolicy() &&
-      NS_URIIsLocalFile(aURI) && NS_RelaxStrictFileOriginPolicy(aURI, mURI)) {
-    return true;
-  }
-
   return false;
 }
 
@@ -403,6 +395,15 @@ static nsresult GetSpecialBaseDomain(const nsCOMPtr<nsIURI>& aURI,
   if (hasNoRelativeFlag && !aURI->SchemeIs("ftp")) {
     *aHandled = true;
     return aURI->GetSpec(aBaseDomain);
+  }
+
+  // For local resources we can't get a meaningful base domain.
+  bool isUIResource = false;
+  if (NS_SUCCEEDED(NS_URIChainHasFlags(
+          aURI, nsIProtocolHandler::URI_IS_UI_RESOURCE, &isUIResource)) &&
+      isUIResource) {
+    *aHandled = true;
+    return aURI->GetPrePath(aBaseDomain);
   }
 
   if (aURI->SchemeIs("indexeddb")) {

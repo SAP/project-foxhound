@@ -592,6 +592,12 @@ CssRuleView.prototype = {
       "click",
       this._onToggleDarkColorSchemeSimulation
     );
+    const { rfpCSSColorScheme } = this.inspector.walker;
+    if (rfpCSSColorScheme) {
+      this.colorSchemeLightSimulationButton.setAttribute("disabled", true);
+      this.colorSchemeDarkSimulationButton.setAttribute("disabled", true);
+      console.warn("Color scheme simulation is disabled in RFP mode.");
+    }
   },
 
   /**
@@ -709,6 +715,9 @@ CssRuleView.prototype = {
     const elementStyle = this._elementStyle;
     const element = elementStyle.element;
     const pseudoClasses = element.pseudoClassLocks;
+
+    // Clear the search input so the new rule is visible
+    this._onClearSearch();
 
     this._focusNextUserAddedRule = true;
     this.pageStyle.addNewRule(element, pseudoClasses);

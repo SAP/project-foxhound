@@ -30,8 +30,8 @@
 #include "mozilla/dom/StorageUtils.h"
 #include "mozilla/JSONStringWriteFuncs.h"
 #include "mozilla/JSONWriter.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsIURL.h"
-#include "nsEffectiveTLDService.h"
 #include "nsIURIMutator.h"
 #include "mozilla/StaticPrefs_permissions.h"
 #include "nsIURIMutator.h"
@@ -372,7 +372,7 @@ nsresult BasePrincipal::ToJSON(nsACString& aJSON) {
 }
 
 nsresult BasePrincipal::ToJSON(JSONWriter& aWriter) {
-  static_assert(eKindMax < ArrayLength(JSONEnumKeyStrings));
+  static_assert(eKindMax < std::size(JSONEnumKeyStrings));
 
   aWriter.Start(JSONWriter::CollectionStyle::SingleLineStyle);
 
@@ -538,7 +538,7 @@ BasePrincipal::EqualsForPermission(nsIPrincipal* aOther, bool aExactHost,
   }
 
   nsCOMPtr<nsIEffectiveTLDService> tldService =
-      do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID);
+      mozilla::components::EffectiveTLD::Service();
   if (!tldService) {
     NS_ERROR("Should have a tld service!");
     return NS_ERROR_FAILURE;
@@ -794,18 +794,6 @@ BasePrincipal::IsL10nAllowed(nsIURI* aURI, bool* aRes) {
 }
 
 NS_IMETHODIMP
-BasePrincipal::AllowsRelaxStrictFileOriginPolicy(nsIURI* aURI, bool* aRes) {
-  *aRes = false;
-  nsCOMPtr<nsIURI> prinURI;
-  nsresult rv = GetURI(getter_AddRefs(prinURI));
-  if (NS_FAILED(rv) || !prinURI) {
-    return NS_OK;
-  }
-  *aRes = NS_RelaxStrictFileOriginPolicy(aURI, prinURI);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 BasePrincipal::GetPrefLightCacheKey(nsIURI* aURI, bool aWithCredentials,
                                     const OriginAttributes& aOriginAttributes,
                                     nsACString& _retval) {
@@ -850,13 +838,25 @@ BasePrincipal::HasFirstpartyStorageAccess(mozIDOMWindow* aCheckWindow,
   *aRejectedReason = 0;
   *aOutAllowed = false;
 
+  if (IsSystemPrincipal()) {
+    // System principal is always considered to have first-party storage access.
+    *aOutAllowed = true;
+    return NS_OK;
+  }
+
   nsPIDOMWindowInner* win = nsPIDOMWindowInner::From(aCheckWindow);
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetURI(getter_AddRefs(uri));
   if (NS_FAILED(rv)) {
     return rv;
   }
-  *aOutAllowed = ShouldAllowAccessFor(win, uri, aRejectedReason);
+
+  // The uri could be null if the principal is an expanded principal.
+  if (!uri) {
+    return NS_ERROR_UNEXPECTED;
+  }
+
+  *aOutAllowed = ShouldAllowAccessFor(win, uri, true, aRejectedReason);
   return NS_OK;
 }
 
@@ -1416,8 +1416,8 @@ BasePrincipal::GetLocalStorageQuotaKey(nsACString& aKey) {
     rv = url->GetDirectory(baseDomain);
     NS_ENSURE_SUCCESS(rv, rv);
   } else {
-    nsCOMPtr<nsIEffectiveTLDService> eTLDService(
-        do_GetService(NS_EFFECTIVETLDSERVICE_CONTRACTID, &rv));
+    nsCOMPtr<nsIEffectiveTLDService> eTLDService =
+        mozilla::components::EffectiveTLD::Service(&rv);
     NS_ENSURE_SUCCESS(rv, rv);
 
     nsAutoCString eTLDplusOne;
@@ -1459,7 +1459,12 @@ BasePrincipal::GetNextSubDomainPrincipal(
   }
 
   nsCString subDomain;
-  rv = nsEffectiveTLDService::GetInstance()->GetNextSubDomain(host, subDomain);
+  nsCOMPtr<nsIEffectiveTLDService> eTLDService =
+      mozilla::components::EffectiveTLD::Service();
+  if (!eTLDService) {
+    return NS_OK;
+  }
+  rv = eTLDService->GetNextSubDomain(host, subDomain);
 
   if (NS_FAILED(rv) || subDomain.IsEmpty()) {
     return NS_OK;

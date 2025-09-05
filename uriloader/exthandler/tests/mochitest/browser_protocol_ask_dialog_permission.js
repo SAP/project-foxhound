@@ -364,16 +364,6 @@ async function testCheckbox(
 }
 
 /**
- * Get the dialog element which is a child of the SubDialogs browser frame.
- * @param {SubDialog} subDialog - Dialog to get the dialog element for.
- */
-function getDialogElementFromSubDialog(subDialog) {
-  let dialogEl = subDialog._frame.contentDocument.querySelector("dialog");
-  ok(dialogEl, "SubDialog should have dialog element");
-  return dialogEl;
-}
-
-/**
  * Wait for the test handler to be opened.
  * @param {MozBrowser} browser - The browser the load should occur in.
  * @param {string} scheme - Scheme which triggered the handler to open.
@@ -475,9 +465,6 @@ registerCleanupFunction(function () {
 });
 
 add_setup(async function () {
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.external_protocol_requires_permission", true]],
-  });
   initTestHandlers();
 });
 
@@ -641,7 +628,7 @@ add_task(async function test_permission_system_principal() {
  * Tests that we correctly handle system principals and show
  * a simplified permission dialog if there is a default handler.
  */
-add_task(async function test_permission_system_principal() {
+add_task(async function test_permission_system_principal_have_default() {
   let scheme = getSystemProtocol();
   if (!scheme) {
     return;
@@ -659,26 +646,6 @@ add_task(async function test_permission_system_principal() {
       ),
     });
   });
-});
-
-/**
- * Tests that we don't show the permission dialog if the permission is disabled
- * by pref.
- */
-add_task(async function test_permission_disabled() {
-  let scheme = TEST_PROTOS[0];
-
-  await SpecialPowers.pushPrefEnv({
-    set: [["security.external_protocol_requires_permission", false]],
-  });
-
-  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
-    await testOpenProto(browser, scheme, {
-      chooserDialogOptions: { hasCheckbox: true, actionConfirm: true },
-    });
-  });
-
-  await SpecialPowers.popPrefEnv();
 });
 
 /**
@@ -1277,7 +1244,7 @@ add_task(async function test_redirect_principal() {
 /**
  * Test that we use the redirect principal for the dialog for refresh headers.
  */
-add_task(async function test_redirect_principal() {
+add_task(async function test_redirect_principal_refresh_header() {
   let scheme = TEST_PROTOS[0];
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     await testOpenProto(browser, scheme, {
@@ -1295,7 +1262,7 @@ add_task(async function test_redirect_principal() {
 /**
  * Test that we use the redirect principal for the dialog for meta refreshes.
  */
-add_task(async function test_redirect_principal() {
+add_task(async function test_redirect_principal_meta() {
   let scheme = TEST_PROTOS[0];
   await BrowserTestUtils.withNewTab("about:blank", async browser => {
     await testOpenProto(browser, scheme, {
@@ -1370,6 +1337,36 @@ add_task(async function test_redirect_principal_links() {
           textLink.textContent = "click me";
           content.document.body.appendChild(textLink);
           textLink.click();
+        });
+      },
+      permDialogOptions: {
+        checkboxOrigin: ORIGIN1,
+        chooserIsNext: true,
+        hasCheckbox: true,
+        actionConfirm: false, // Cancel dialog
+      },
+    });
+  });
+});
+
+add_task(async function test_unloaded_iframe() {
+  let scheme = TEST_PROTOS[0];
+  await BrowserTestUtils.withNewTab(ORIGIN1, async browser => {
+    await testOpenProto(browser, scheme, {
+      triggerLoad() {
+        let uri = `${scheme}://test`;
+        return ContentTask.spawn(browser, { uri }, args => {
+          let frame = content.document.createElement("iframe");
+          frame.setAttribute("loading", "lazy");
+          frame.setAttribute("src", "about:blank");
+          frame.setAttribute("style", "margin-top: 10000px;");
+          frame.setAttribute("name", "yo");
+          content.document.body.append(frame);
+          // Navigate...
+          content.open(args.uri, "yo");
+          // Then remove the iframe again so that we can't find a
+          // currentWindowGlobal for the BC once we show the dialog.
+          frame.remove();
         });
       },
       permDialogOptions: {

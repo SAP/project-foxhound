@@ -29,6 +29,13 @@
   }
 }
 
+/* stylelint-disable-next-line media-query-no-invalid */
+@media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
+  #identity-box[pageproxystate="invalid"] {
+    display: none;
+  }
+}
+
 .identity-box-button {
   padding-inline: var(--urlbar-icon-padding);
   border-radius: var(--urlbar-icon-border-radius);
@@ -66,6 +73,10 @@
 #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage),
 #urlbar-label-box {
   margin-inline-end: 8px;
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media (-moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride")) {
+    margin-inline-end: var(--urlbar-searchmodeswitcher-margin-inline-end);
+  }
 }
 
 #identity-box[pageproxystate="valid"]:is(.notSecureText, .chromeUI, .extensionPage) > .identity-box-button,

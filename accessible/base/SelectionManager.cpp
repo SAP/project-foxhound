@@ -63,25 +63,25 @@ void SelectionManager::SetControlSelectionListener(dom::Element* aFocusedElm) {
   if (!frameSel) return;
 
   // Register 'this' as selection listener for the normal selection.
-  Selection* normalSel = frameSel->GetSelection(SelectionType::eNormal);
-  normalSel->AddSelectionListener(this);
-  mCurrCtrlNormalSel = normalSel;
+  Selection& normalSel = frameSel->NormalSelection();
+  normalSel.AddSelectionListener(this);
+  mCurrCtrlNormalSel = &normalSel;
 }
 
 void SelectionManager::AddDocSelectionListener(PresShell* aPresShell) {
   const nsFrameSelection* frameSel = aPresShell->ConstFrameSelection();
 
   // Register 'this' as selection listener for the normal selection.
-  Selection* normalSel = frameSel->GetSelection(SelectionType::eNormal);
-  normalSel->AddSelectionListener(this);
+  Selection& normalSel = frameSel->NormalSelection();
+  normalSel.AddSelectionListener(this);
 }
 
 void SelectionManager::RemoveDocSelectionListener(PresShell* aPresShell) {
   const nsFrameSelection* frameSel = aPresShell->ConstFrameSelection();
 
   // Remove 'this' registered as selection listener for the normal selection.
-  Selection* normalSel = frameSel->GetSelection(SelectionType::eNormal);
-  normalSel->RemoveSelectionListener(this);
+  Selection& normalSel = frameSel->NormalSelection();
+  normalSel.RemoveSelectionListener(this);
 
   if (mCurrCtrlNormalSel) {
     if (mCurrCtrlNormalSel->GetPresShell() == aPresShell) {
@@ -203,14 +203,20 @@ void SelectionManager::ProcessSelectionChanged(SelData* aSelData) {
 bool SelectionManager::SelectionRangeChanged(SelectionType aType,
                                              const dom::AbstractRange& aRange) {
   if (aType != SelectionType::eSpellCheck &&
-      aType != SelectionType::eTargetText) {
+      aType != SelectionType::eTargetText &&
+      aType != SelectionType::eHighlight) {
     // We don't need to handle range changes for this selection type.
     return false;
   }
   if (!GetAccService()) {
     return false;
   }
-  dom::Document* doc = aRange.GetStartContainer()->OwnerDoc();
+  nsINode* start = aRange.GetStartContainer();
+  if (!start) {
+    // This can happen when the document is being cleaned up.
+    return false;
+  }
+  dom::Document* doc = start->OwnerDoc();
   MOZ_ASSERT(doc);
   nsINode* node = aRange.GetClosestCommonInclusiveAncestor();
   HyperTextAccessible* acc = nsAccUtils::GetTextContainer(node);

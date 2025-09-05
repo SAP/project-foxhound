@@ -24,6 +24,7 @@ import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.AP
 import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.APP_VERSION
 import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.BLOCKLIST
 import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.SIGNATURE
+import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.SOFT_BLOCKLIST
 import mozilla.components.concept.engine.webextension.DisabledFlags.Companion.USER
 import mozilla.components.concept.engine.webextension.EnableSource
 import mozilla.components.concept.engine.webextension.InstallationMethod
@@ -66,6 +67,7 @@ class AddonManagerTest {
 
     @get:Rule
     val coroutinesTestRule = MainCoroutineRule()
+    private val dispatcher = coroutinesTestRule.testDispatcher
 
     @Before
     fun setup() {
@@ -351,7 +353,7 @@ class AddonManagerTest {
         WebExtensionSupport.initialize(engine, store)
         WebExtensionSupport.installedExtensions[addon.id] = extension
 
-        val addonManager = AddonManager(store, mock(), addonsProvider, mock())
+        val addonManager = AddonManager(store, mock(), addonsProvider, mock(), dispatcher)
         addonManager.installAddon(url = addon.downloadUrl)
         addonManager.enableAddon(addon)
         addonManager.disableAddon(addon)
@@ -390,7 +392,7 @@ class AddonManagerTest {
 
         val addonsProvider: AddonsProvider = mock()
         whenever(addonsProvider.getFeaturedAddons(anyBoolean(), eq(null), language = anyString())).thenReturn(emptyList())
-        val addonsManager = AddonManager(store, mock(), addonsProvider, mock())
+        val addonsManager = AddonManager(store, mock(), addonsProvider, mock(), dispatcher)
 
         addonsManager.getAddons()
         verify(addonsProvider).getFeaturedAddons(eq(true), eq(null), language = anyString())
@@ -416,7 +418,7 @@ class AddonManagerTest {
         )
         val onSuccessCaptor = argumentCaptor<((WebExtension?) -> Unit)>()
         var updateStatus: Status? = null
-        val manager = AddonManager(store, engine, mock(), mock())
+        val manager = AddonManager(store, engine, mock(), mock(), mock())
 
         val updatedExt: WebExtension = mock()
         whenever(updatedExt.id).thenReturn("extensionId")
@@ -459,7 +461,7 @@ class AddonManagerTest {
     fun `updateAddon - when extension is not installed`() {
         var updateStatus: Status? = null
 
-        val manager = AddonManager(mock(), mock(), mock(), mock())
+        val manager = AddonManager(mock(), mock(), mock(), mock(), mock())
 
         manager.updateAddon("extensionId") { status ->
             updateStatus = status
@@ -481,7 +483,7 @@ class AddonManagerTest {
 
         WebExtensionSupport.installedExtensions["extensionId"] = extension
 
-        val manager = AddonManager(mock(), mock(), mock(), mock())
+        val manager = AddonManager(mock(), mock(), mock(), mock(), mock())
         manager.updateAddon("extensionId") { status ->
             updateStatus = status
         }
@@ -494,7 +496,7 @@ class AddonManagerTest {
         val engine: Engine = mock()
         val onErrorCaptor = argumentCaptor<((String, Throwable) -> Unit)>()
         var updateStatus: Status? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
 
         WebExtensionSupport.installedExtensions["extensionId"] = mock()
 
@@ -513,7 +515,7 @@ class AddonManagerTest {
         val engine: Engine = mock()
         val onSuccessCaptor = argumentCaptor<((WebExtension?) -> Unit)>()
         var updateStatus: Status? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
 
         WebExtensionSupport.installedExtensions["extensionId"] = mock()
         manager.updateAddon("extensionId") { status ->
@@ -532,7 +534,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<((WebExtension) -> Unit)>()
 
         var installedAddon: Addon? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.installAddon(
             url = addon.downloadUrl,
             installationMethod = InstallationMethod.MANAGER,
@@ -567,7 +569,7 @@ class AddonManagerTest {
         val onErrorCaptor = argumentCaptor<((Throwable) -> Unit)>()
 
         var throwable: Throwable? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.installAddon(
             url = addon.downloadUrl,
             installationMethod = InstallationMethod.FROM_FILE,
@@ -603,7 +605,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<(() -> Unit)>()
 
         var successCallbackInvoked = false
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.uninstallAddon(
             installedAddon,
             onSuccess = {
@@ -628,7 +630,7 @@ class AddonManagerTest {
             throwable = caught
             msg = errorMsg
         }
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
 
         // Extension is not installed so we're invoking the error callback and never the engine
         manager.uninstallAddon(addon, onError = errorCallback)
@@ -676,7 +678,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<((WebExtension) -> Unit)>()
 
         var updateAddon: Addon? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.addOptionalPermission(
             addon,
             permission,
@@ -700,7 +702,7 @@ class AddonManagerTest {
     @Test
     fun `add optional with empty permissions and origins`() {
         var onErrorWasExecuted = false
-        val manager = AddonManager(mock(), mock(), mock(), mock())
+        val manager = AddonManager(mock(), mock(), mock(), mock(), mock())
 
         manager.addOptionalPermission(
             mock(),
@@ -731,7 +733,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<((WebExtension) -> Unit)>()
 
         var updateAddon: Addon? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.removeOptionalPermission(
             addon,
             permission,
@@ -751,7 +753,7 @@ class AddonManagerTest {
     @Test
     fun `remove optional with empty permissions and origins`() {
         var onErrorWasExecuted = false
-        val manager = AddonManager(mock(), mock(), mock(), mock())
+        val manager = AddonManager(mock(), mock(), mock(), mock(), mock())
 
         manager.removeOptionalPermission(
             mock(),
@@ -780,7 +782,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<((WebExtension) -> Unit)>()
 
         var enabledAddon: Addon? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.enableAddon(
             addon,
             onSuccess = {
@@ -804,7 +806,7 @@ class AddonManagerTest {
         val errorCallback = { caught: Throwable ->
             throwable = caught
         }
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
 
         // Extension is not installed so we're invoking the error callback and never the engine
         manager.enableAddon(addon, onError = errorCallback)
@@ -844,7 +846,7 @@ class AddonManagerTest {
         val onSuccessCaptor = argumentCaptor<((WebExtension) -> Unit)>()
 
         var disabledAddon: Addon? = null
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
         manager.disableAddon(
             addon,
             source = EnableSource.APP_SUPPORT,
@@ -869,7 +871,7 @@ class AddonManagerTest {
         val errorCallback = { caught: Throwable ->
             throwable = caught
         }
-        val manager = AddonManager(mock(), engine, mock(), mock())
+        val manager = AddonManager(mock(), engine, mock(), mock(), mock())
 
         // Extension is not installed so we're invoking the error callback and never the engine
         manager.disableAddon(addon, onError = errorCallback)
@@ -899,7 +901,7 @@ class AddonManagerTest {
         val extension: WebExtension = mock()
         val metadata: Metadata = mock()
 
-        val manager = spy(AddonManager(mock(), mock(), mock(), mock()))
+        val manager = spy(AddonManager(mock(), mock(), mock(), mock(), mock()))
 
         manager.iconsCache["ext1"] = mock()
         whenever(extension.id).thenReturn("ext1")
@@ -929,7 +931,7 @@ class AddonManagerTest {
         val extension: WebExtension = mock()
         val metadata: Metadata = mock()
 
-        val manager = spy(AddonManager(mock(), mock(), mock(), mock()))
+        val manager = spy(AddonManager(mock(), mock(), mock(), mock(), mock()))
 
         whenever(extension.id).thenReturn("ext1")
         whenever(extension.getMetadata()).thenReturn(metadata)
@@ -957,7 +959,7 @@ class AddonManagerTest {
     fun `loadIcon try to load the icon from extension`() = runTestOnMain {
         val extension: WebExtension = mock()
 
-        val manager = spy(AddonManager(mock(), mock(), mock(), mock()))
+        val manager = spy(AddonManager(mock(), mock(), mock(), mock(), mock()))
 
         whenever(extension.loadIcon(AddonManager.ADDON_ICON_SIZE)).thenReturn(mock())
 
@@ -971,7 +973,7 @@ class AddonManagerTest {
         runTestOnMain {
             val extension: WebExtension = mock()
 
-            val manager = spy(AddonManager(mock(), mock(), mock(), mock()))
+            val manager = spy(AddonManager(mock(), mock(), mock(), mock(), mock()))
             doNothing().`when`(manager).tryLoadIconInBackground(extension)
 
             doThrow(mock<TimeoutCancellationException>()).`when`(extension)
@@ -1003,6 +1005,9 @@ class AddonManagerTest {
 
         whenever(metadata.disabledFlags).thenReturn(DisabledFlags.select(APP_VERSION))
         assertEquals(Addon.DisabledReason.INCOMPATIBLE, extension.getDisabledReason())
+
+        whenever(metadata.disabledFlags).thenReturn(DisabledFlags.select(SOFT_BLOCKLIST))
+        assertEquals(Addon.DisabledReason.SOFT_BLOCKED, extension.getDisabledReason())
 
         whenever(metadata.disabledFlags).thenReturn(DisabledFlags.select(0))
         assertNull(extension.getDisabledReason())

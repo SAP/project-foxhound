@@ -40,6 +40,7 @@ open class BaseSessionTest(
         const val CLIPBOARD_READ_HTML_PATH = "/assets/www/clipboard_read.html"
         const val CONTENT_CRASH_URL = "about:crashcontent"
         const val DND_HTML_PATH = "/assets/www/dnd.html"
+        const val DND_XORIGIN_HTML_PATH = "/assets/www/dnd_xorigin.html"
         const val DOWNLOAD_HTML_PATH = "/assets/www/download.html"
         const val FORM_BLANK_HTML_PATH = "/assets/www/form_blank.html"
         const val FORMS_HTML_PATH = "/assets/www/forms.html"
@@ -74,6 +75,7 @@ open class BaseSessionTest(
         const val PROMPT_HTML_PATH = "/assets/www/prompts.html"
         const val SAVE_STATE_PATH = "/assets/www/saveState.html"
         const val TEST_GIF_PATH = "/assets/www/images/test.gif"
+        const val TEXT_CONTROL_PATH = "/assets/www/textcontrol.html"
         const val TITLE_CHANGE_HTML_PATH = "/assets/www/titleChange.html"
         const val TRACKERS_PATH = "/assets/www/trackers.html"
         const val VIDEO_MP4_PATH = "/assets/www/mp4.html"
@@ -86,6 +88,7 @@ open class BaseSessionTest(
         const val IFRAME_REDIRECT_LOCAL = "/assets/www/iframe_redirect_local.html"
         const val IFRAME_REDIRECT_AUTOMATION = "/assets/www/iframe_redirect_automation.html"
         const val AUTOPLAY_PATH = "/assets/www/autoplay.html"
+        const val SIMPLE_SCROLL_TEST_PATH = "/assets/www/simple-scroll.html"
         const val SCROLL_TEST_PATH = "/assets/www/scroll.html"
         const val COLORS_HTML_PATH = "/assets/www/colors.html"
         const val FIXED_BOTTOM = "/assets/www/fixedbottom.html"
@@ -145,6 +148,11 @@ open class BaseSessionTest(
         const val INTERSECTION_OBSERVER_HTML_PATH = "/assets/www/intersection-observer.html"
         const val INTERSECTION_OBSERVER_DESKTOP_HTML_PATH = "/assets/www/intersection-observer-desktop.html"
         const val BUG1909181_HTML_PATH = "/assets/www/bug1909181.html"
+        const val BUG1912358_HTML_PATH = "/assets/www/bug1912358.html"
+        const val POSITION_STICKY_HTML_PATH = "/assets/www/position-sticky.html"
+        const val POSITION_STICKY_ON_MAIN_THREAD_HTML_PATH = "/assets/www/position-sticky-on-main-thread.html"
+        const val INTERACTIVE_WIDGET_HTML_PATH = "/assets/www/interactive-widget.html"
+        const val INTERACTIVE_WIDGET_OVERLAYS_CONTENT_HTML_PATH = "/assets/www/interactive-widget-overlays-content.html"
 
         const val TEST_ENDPOINT = GeckoSessionTestRule.TEST_ENDPOINT
         const val TEST_HOST = GeckoSessionTestRule.TEST_HOST

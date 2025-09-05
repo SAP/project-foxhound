@@ -18,7 +18,6 @@
 #include "mozilla/dom/WebGL2RenderingContextBinding.h"
 #include "mozilla/layers/LayersSurfaces.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "WebGLFormats.h"
 #include "WebGLStrongTypes.h"
 #include "WebGLTypes.h"
 
@@ -195,7 +194,7 @@ struct NotLostData final {
   webgl::InitContextResult info;
 
   RefPtr<mozilla::dom::WebGLChild> outOfProcess;
-  UniquePtr<HostWebGLContext> inProcess;
+  std::unique_ptr<HostWebGLContext> inProcess;
 
   webgl::ContextGenerationInfo state;
   std::array<RefPtr<ClientWebGLExtensionBase>,
@@ -1057,6 +1056,7 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
 
  private:
   std::optional<dom::PredefinedColorSpace> mDrawingBufferColorSpace;
+  std::optional<dom::PredefinedColorSpace> mUnpackColorSpace;
 
  public:
   auto DrawingBufferColorSpace() const {
@@ -1064,6 +1064,12 @@ class ClientWebGLContext final : public nsICanvasRenderingContextInternal,
                                     : dom::PredefinedColorSpace::Srgb;
   }
   void SetDrawingBufferColorSpace(dom::PredefinedColorSpace);
+
+  auto UnpackColorSpace() const {
+    return mUnpackColorSpace ? *mUnpackColorSpace
+                             : dom::PredefinedColorSpace::Srgb;
+  }
+  void SetUnpackColorSpace(dom::PredefinedColorSpace);
 
   // -
 

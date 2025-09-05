@@ -98,8 +98,8 @@ LOCAL_INCLUDES += [
     "/layout/xul/tree",
     "/media/webrtc/",
     "/netwerk/base/",
+    "/third_party/abseil-cpp",
     "/third_party/libwebrtc",
-    "/third_party/libwebrtc/third_party/abseil-cpp",
 ]
 
 LOCAL_INCLUDES += ["/third_party/msgpack/include"]
@@ -205,5 +205,11 @@ if CONFIG["COMPILE_ENVIRONMENT"]:
         "CSSPageDescriptors.webidl",
         script="GenerateCSSPropListWebIDL.py",
         entry_point="generateCSSPageDescriptors",
+        inputs=["!/layout/style/ServoCSSPropList.py"],
+    )
+    GeneratedFile(
+        "CSSPositionTryDescriptors.webidl",
+        script="GenerateCSSPropListWebIDL.py",
+        entry_point="generateCSSPositionTryDescriptors",
         inputs=["!/layout/style/ServoCSSPropList.py"],
     )

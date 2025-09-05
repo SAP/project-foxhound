@@ -13,6 +13,8 @@ import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 import org.mozilla.fenix.ui.robots.notificationShade
+import org.mozilla.fenix.utils.DURATION_MS_TRANSLATIONS
+import org.mozilla.fenix.utils.exitMenu
 
 /**
  *  Tests for verifying the the privacy and security section of the Settings menu
@@ -37,7 +39,7 @@ class SettingsPrivacyTest : TestSetup() {
             verifySettingsOptionSummary("Cookie Banner Blocker in private browsing", "")
             verifyEnhancedTrackingProtectionButton()
             verifySettingsOptionSummary("Enhanced Tracking Protection", "Standard")
-            verifySitePermissionsButton()
+            verifySiteSettingsButton()
             verifyDeleteBrowsingDataButton()
             verifyDeleteBrowsingDataOnQuitButton()
             verifySettingsOptionSummary("Delete browsing data on quit", "Off")
@@ -50,30 +52,40 @@ class SettingsPrivacyTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/243362
     @Test
     fun verifyDataCollectionSettingsTest() {
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openSettings {
-        }.openSettingsSubMenuDataCollection {
+        homeScreen {}.openThreeDotMenu {}.openSettings {}.openSettingsSubMenuDataCollection {
+            // Studies depends on the telemetry switch,  if telemetry is off studies will be
+            // turned off as well, and will require the app to be restarted.
+            // Daily usage ping should default to telemetry pref value
             verifyDataCollectionView(
-                true,
-                "On",
+                isUsageAndTechnicalDataEnabled = true,
+                isDailyUsagePingEnabled = true,
+                studiesSummary = "On",
             )
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(false)
+            verifyDailyUsagePingToggle(true)
+
+            // Automatically turned off as telemetry was turned off.
+            verifyDataCollectionView(
+                isUsageAndTechnicalDataEnabled = false,
+                isDailyUsagePingEnabled = true,
+                studiesSummary = "Off",
+            )
             clickUsageAndTechnicalDataToggle()
             verifyUsageAndTechnicalDataToggle(true)
+            verifyDailyUsagePingToggle(true)
+
             clickStudiesOption()
             verifyStudiesToggle(true)
+            // Turning to false
             clickStudiesToggle()
-            verifyStudiesDialog()
-            clickStudiesDialogCancelButton()
-            verifyStudiesToggle(true)
+            verifyStudiesToggle(false)
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1024594
     @Test
-    fun verifyNotificationsSettingsTest() {
+    fun allowAppToSendNotifications() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
         // Clear all existing notifications
@@ -88,7 +100,7 @@ class SettingsPrivacyTest : TestSetup() {
         navigationToolbar {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openNotificationShade {
-            verifySystemNotificationExists("Close private tabs")
+            verifySystemNotificationExists("Close private tabs?")
         }.closeNotificationTray {
         }.openThreeDotMenu {
         }.openSettings {
@@ -96,15 +108,7 @@ class SettingsPrivacyTest : TestSetup() {
         }.openSettingsSubMenuNotifications {
             verifyAllSystemNotificationsToggleState(true)
             verifyPrivateBrowsingSystemNotificationsToggleState(true)
-            clickPrivateBrowsingSystemNotificationsToggle()
-            verifyPrivateBrowsingSystemNotificationsToggleState(false)
-            clickAllSystemNotificationsToggle()
-            verifyAllSystemNotificationsToggleState(false)
-        }.goBack {
-            verifySettingsOptionSummary("Notifications", "Not allowed")
-        }.goBackToBrowser {
-        }.openNotificationShade {
-            verifySystemNotificationDoesNotExist("Close private tabs")
+            exitMenu(DURATION_MS_TRANSLATIONS)
         }
     }
 }

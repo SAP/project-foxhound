@@ -21,7 +21,7 @@ import org.mozilla.focus.R
 import org.mozilla.focus.cookiebanner.CookieBannerOption
 import org.mozilla.focus.nimbus.FocusNimbus
 import org.mozilla.focus.searchsuggestions.SearchSuggestionsPreferences
-import org.mozilla.focus.utils.AppConstants.isKlarBuild
+import org.mozilla.focus.telemetry.GleanMetricsService
 
 /**
  * A simple wrapper for SharedPreferences that makes reading preference a little bit easier.
@@ -170,13 +170,7 @@ class Settings(
             false,
         )
 
-    var isExperimentationEnabled: Boolean
-        get() = preferences.getBoolean(getPreferenceKey(R.string.pref_key_studies), !isKlarBuild)
-        set(value) {
-            preferences.edit()
-                .putBoolean(getPreferenceKey(R.string.pref_key_studies), value)
-                .commit()
-        }
+    var isExperimentationEnabled: Boolean = false
 
     var shouldShowCookieBannerCfr: Boolean
         get() = preferences.getBoolean(
@@ -498,6 +492,12 @@ class Settings(
             else -> CookieBannerOption.CookieBannerDisabled()
         }
     }
+
+    var isDailyUsagePingEnabled by booleanPreference(
+        getPreferenceKey(R.string.pref_key_daily_usage_ping),
+        default = GleanMetricsService.shouldTelemetryBeEnabledByDefault(context),
+        persistDefaultIfNotExists = true,
+    )
 
     private fun getPreferenceKey(resourceId: Int): String =
         context.getString(resourceId)

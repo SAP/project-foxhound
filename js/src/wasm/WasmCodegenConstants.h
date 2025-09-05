@@ -28,6 +28,11 @@ static const unsigned MaxArgsForJitInlineCall = 8;
 static const unsigned MaxResultsForJitEntry = 1;
 static const unsigned MaxResultsForJitExit = 1;
 static const unsigned MaxResultsForJitInlineCall = MaxResultsForJitEntry;
+
+// The maximum number of fields in a struct to be optimized by scalar
+// replacement.
+static const unsigned MaxFieldsScalarReplacementStructs = 10;
+
 // The maximum number of results of a function call or block that may be
 // returned in registers.
 static const unsigned MaxRegisterResults = 1;
@@ -69,6 +74,10 @@ static const uint32_t MinSuperTypeVectorLength = 8;
 // below offset of each entry in the jump table to be compatible with
 // BaseScript/SelfHostedLazyScript.
 static const uint32_t JumpTableJitEntryOffset = 0;
+
+// Some JIT code relies on wasm exported functions not being nursery allocated.
+// This assert tracks those locations for future updating, if this changes.
+#define STATIC_ASSERT_WASM_FUNCTIONS_TENURED
 
 }  // namespace wasm
 }  // namespace js

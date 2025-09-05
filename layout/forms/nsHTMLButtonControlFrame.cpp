@@ -85,7 +85,8 @@ class nsDisplayButtonForeground final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayButtonForeground);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayButtonForeground)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayButtonForeground)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   bool CreateWebRenderCommands(
@@ -234,13 +235,14 @@ void nsHTMLButtonControlFrame::BuildDisplayList(
   DisplaySelectionOverlay(aBuilder, aLists.Content());
 }
 
-nscoord nsHTMLButtonControlFrame::IntrinsicISize(gfxContext* aContext,
-                                                 IntrinsicISizeType aType) {
+nscoord nsHTMLButtonControlFrame::IntrinsicISize(
+    const IntrinsicSizeInput& aInput, IntrinsicISizeType aType) {
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
     return *containISize;
   }
-  return nsLayoutUtils::IntrinsicForContainer(aContext, mFrames.FirstChild(),
-                                              aType);
+  return nsLayoutUtils::IntrinsicForContainer(
+      aInput.mContext, mFrames.FirstChild(), aType,
+      aInput.mPercentageBasisForChildren);
 }
 
 void nsHTMLButtonControlFrame::Reflow(nsPresContext* aPresContext,

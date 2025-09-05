@@ -14,11 +14,13 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 let gTree;
-const isRestrictKeywordsFeatureOn = UrlbarPrefs.getScotchBonnetPref(
-  "searchRestrictKeywords.featureGate"
-);
+const isRestrictKeywordsFeatureOn = () =>
+  UrlbarPrefs.getScotchBonnetPref("searchRestrictKeywords.featureGate");
 
 add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.scotchBonnet.enableOverride", true]],
+  });
   let prefs = await openPreferencesViaOpenPreferencesAPI("search", {
     leaveOpen: true,
   });
@@ -161,14 +163,18 @@ add_task(async function keywordNotEditable_enterKey() {
       "Sanity check: Shortcut restriction char is non-empty"
     );
 
-    let tokenToKeyword = await UrlbarTokenizer.getL10nRestrictKeywords();
-    let keyword = tokenToKeyword.get(shortcut.restrict).toLowerCase();
+    let tokenToKeywords = await UrlbarTokenizer.getL10nRestrictKeywords();
+    let keywords = tokenToKeywords
+      .get(shortcut.restrict)
+      .map(keyword => `@${keyword.toLowerCase()}`)
+      .join(", ");
+
     Assert.equal(
       gTree.view.getCellText(row, col),
-      isRestrictKeywordsFeatureOn
-        ? `@${keyword}, ${shortcut.restrict}`
+      isRestrictKeywordsFeatureOn()
+        ? `${keywords}, ${shortcut.restrict}`
         : shortcut.restrict,
-      isRestrictKeywordsFeatureOn
+      isRestrictKeywordsFeatureOn()
         ? "Sanity check: Keyword column has correct restriction keyword and char initially"
         : "Sanity check: Keyword column has correct restriction char initially"
     );
@@ -184,10 +190,10 @@ add_task(async function keywordNotEditable_enterKey() {
 
     Assert.equal(
       gTree.view.getCellText(row, col),
-      isRestrictKeywordsFeatureOn
-        ? `@${keyword}, ${shortcut.restrict}`
+      isRestrictKeywordsFeatureOn()
+        ? `${keywords}, ${shortcut.restrict}`
         : shortcut.restrict,
-      isRestrictKeywordsFeatureOn
+      isRestrictKeywordsFeatureOn()
         ? "Keyword column is still restriction keyword and char"
         : "Keyword column is still restriction char"
     );
@@ -198,8 +204,11 @@ add_task(async function keywordNotEditable_enterKey() {
 add_task(async function keywordNotEditable_click() {
   let col = gTree.columns.getNamedColumn("engineKeyword");
   await forEachLocalShortcutRow(async (row, shortcut) => {
-    let tokenToKeyword = await UrlbarTokenizer.getL10nRestrictKeywords();
-    let keyword = tokenToKeyword.get(shortcut.restrict).toLowerCase();
+    let tokenToKeywords = await UrlbarTokenizer.getL10nRestrictKeywords();
+    let keywords = tokenToKeywords
+      .get(shortcut.restrict)
+      .map(keyword => `@${keyword.toLowerCase()}`)
+      .join(", ");
 
     Assert.ok(
       shortcut.restrict,
@@ -207,10 +216,10 @@ add_task(async function keywordNotEditable_click() {
     );
     Assert.equal(
       gTree.view.getCellText(row, col),
-      isRestrictKeywordsFeatureOn
-        ? `@${keyword}, ${shortcut.restrict}`
+      isRestrictKeywordsFeatureOn()
+        ? `${keywords}, ${shortcut.restrict}`
         : shortcut.restrict,
-      isRestrictKeywordsFeatureOn
+      isRestrictKeywordsFeatureOn()
         ? "Sanity check: Keyword column has correct restriction keyword and char initially"
         : "Sanity check: Keyword column has correct restriction char initially"
     );
@@ -250,10 +259,10 @@ add_task(async function keywordNotEditable_click() {
 
     Assert.equal(
       gTree.view.getCellText(row, col),
-      isRestrictKeywordsFeatureOn
-        ? `@${keyword}, ${shortcut.restrict}`
+      isRestrictKeywordsFeatureOn()
+        ? `${keywords}, ${shortcut.restrict}`
         : shortcut.restrict,
-      isRestrictKeywordsFeatureOn
+      isRestrictKeywordsFeatureOn()
         ? "Keyword column is still restriction keyword and char"
         : "Keyword column is still restriction char"
     );
@@ -312,12 +321,6 @@ async function forEachLocalShortcutRow(callback) {
   for (let i = 0; i < UrlbarUtils.LOCAL_SEARCH_MODES.length; i++) {
     let shortcut = UrlbarUtils.LOCAL_SEARCH_MODES[i];
     let row = engines.length + i;
-    // These tests assume LOCAL_SEARCH_MODES are enabled, this can be removed
-    // when we enable QuickActions. We cant just enable the pref in browser.ini
-    // as this test calls clearUserPref.
-    if (shortcut.pref == "shortcuts.quickactions") {
-      continue;
-    }
     await callback(row, shortcut);
   }
 }

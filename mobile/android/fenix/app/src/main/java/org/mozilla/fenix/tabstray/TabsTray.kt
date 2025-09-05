@@ -32,9 +32,9 @@ import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.storage.sync.TabEntry
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.lib.state.ext.observeAsState
-import org.mozilla.fenix.compose.Divider
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.tabstray.ext.isNormalTab
 import org.mozilla.fenix.tabstray.syncedtabs.SyncedTabsListItem
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -89,7 +89,6 @@ import org.mozilla.fenix.tabstray.syncedtabs.OnTabCloseClick as OnSyncedTabClose
  * @param onInactiveTabsCFRClick Invoked when the inactive tabs CFR is clicked.
  * @param onInactiveTabsCFRDismiss Invoked when the inactive tabs CFR is dismissed.
  */
-@OptIn(ExperimentalFoundationApi::class)
 @Suppress("LongMethod", "LongParameterList", "ComplexMethod")
 @Composable
 fun TabsTray(
@@ -148,6 +147,12 @@ fun TabsTray(
         Modifier.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
     }
 
+    val syncedTabCount = remember(tabsTrayState.syncedTabs) {
+        tabsTrayState.syncedTabs
+            .filterIsInstance<SyncedTabsListItem.DeviceSection>()
+            .sumOf { deviceSection: SyncedTabsListItem.DeviceSection -> deviceSection.tabs.size }
+    }
+
     LaunchedEffect(tabsTrayState.selectedPage) {
         pagerState.animateScrollToPage(tabsTrayState.selectedPage.ordinal)
     }
@@ -164,6 +169,7 @@ fun TabsTray(
                 selectedPage = tabsTrayState.selectedPage,
                 normalTabCount = tabsTrayState.normalTabs.size + tabsTrayState.inactiveTabs.size,
                 privateTabCount = tabsTrayState.privateTabs.size,
+                syncedTabCount = syncedTabCount,
                 selectionMode = tabsTrayState.mode,
                 isInDebugMode = isInDebugMode,
                 shouldShowTabAutoCloseBanner = shouldShowTabAutoCloseBanner,
@@ -197,7 +203,7 @@ fun TabsTray(
             HorizontalPager(
                 modifier = Modifier.fillMaxSize(),
                 state = pagerState,
-                beyondBoundsPageCount = 2,
+                beyondViewportPageCount = 2,
                 userScrollEnabled = false,
             ) { position ->
                 when (Page.positionToPage(position)) {

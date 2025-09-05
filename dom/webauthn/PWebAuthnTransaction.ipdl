@@ -14,7 +14,7 @@
  * selecting a different tab.
  */
 
-include protocol PBackground;
+include protocol PWindowGlobal;
 
 using mozilla::dom::MaybeDiscardedBrowsingContext from "mozilla/dom/BrowsingContext.h";
 
@@ -32,10 +32,6 @@ struct WebAuthnScopedCredential {
   uint8_t transports;
 };
 
-struct WebAuthnExtensionAppId {
-  nsString appIdentifier;
-};
-
 struct WebAuthnExtensionCredProps {
   bool credProps;
 };
@@ -48,11 +44,28 @@ struct WebAuthnExtensionMinPinLength {
   bool minPinLength;
 };
 
+struct WebAuthnExtensionPrf {
+  WebAuthnExtensionPrfValues? eval;
+  bool evalByCredentialMaybe;
+  WebAuthnExtensionPrfEvalByCredentialEntry[] evalByCredential;
+};
+
+struct WebAuthnExtensionPrfValues {
+    uint8_t[] first;
+    bool secondMaybe;
+    uint8_t[] second;
+};
+
+struct WebAuthnExtensionPrfEvalByCredentialEntry {
+    uint8_t[] credentialId;
+    WebAuthnExtensionPrfValues eval;
+};
+
 union WebAuthnExtension {
-  WebAuthnExtensionAppId;
   WebAuthnExtensionCredProps;
   WebAuthnExtensionHmacSecret;
   WebAuthnExtensionMinPinLength;
+  WebAuthnExtensionPrf;
 };
 
 struct WebAuthnExtensionResultAppId {
@@ -67,10 +80,16 @@ struct WebAuthnExtensionResultHmacSecret {
   bool hmacCreateSecret;
 };
 
+struct WebAuthnExtensionResultPrf {
+  bool? enabled;
+  WebAuthnExtensionPrfValues? results;
+};
+
 union WebAuthnExtensionResult {
   WebAuthnExtensionResultAppId;
   WebAuthnExtensionResultCredProps;
   WebAuthnExtensionResultHmacSecret;
+  WebAuthnExtensionResultPrf;
 };
 
 struct WebAuthnMakeCredentialRpInfo {
@@ -88,10 +107,8 @@ struct CoseAlg {
 };
 
 struct WebAuthnMakeCredentialInfo {
-  nsString Origin;
-  nsString RpId;
+  nsCString RpId;
   uint8_t[] Challenge;
-  nsCString ClientDataJSON;
   uint32_t TimeoutMS;
   WebAuthnScopedCredential[] ExcludeList;
   WebAuthnMakeCredentialRpInfo Rp;
@@ -100,7 +117,6 @@ struct WebAuthnMakeCredentialInfo {
   WebAuthnExtension[] Extensions;
   WebAuthnAuthenticatorSelection AuthenticatorSelection;
   nsString attestationConveyancePreference;
-  uint64_t BrowsingContextId;
 };
 
 struct WebAuthnMakeCredentialResult {
@@ -112,17 +128,20 @@ struct WebAuthnMakeCredentialResult {
   nsString? AuthenticatorAttachment;
 };
 
+union WebAuthnMakeCredentialResponse {
+  nsresult;
+  WebAuthnMakeCredentialResult;
+};
+
 struct WebAuthnGetAssertionInfo {
-  nsString Origin;
-  nsString RpId;
+  nsCString RpId;
+  nsCString? AppId;
   uint8_t[] Challenge;
-  nsCString ClientDataJSON;
   uint32_t TimeoutMS;
   WebAuthnScopedCredential[] AllowList;
   WebAuthnExtension[] Extensions;
   nsString userVerificationRequirement;
   bool ConditionallyMediated;
-  uint64_t BrowsingContextId;
 };
 
 struct WebAuthnGetAssertionResult {
@@ -135,22 +154,22 @@ struct WebAuthnGetAssertionResult {
   nsString? AuthenticatorAttachment;
 };
 
-[ManualDealloc]
+union WebAuthnGetAssertionResponse {
+  nsresult;
+  WebAuthnGetAssertionResult;
+};
+
 async protocol PWebAuthnTransaction {
-  manager PBackground;
+  manager PWindowGlobal;
 
   parent:
-    async RequestRegister(uint64_t aTransactionId, WebAuthnMakeCredentialInfo aTransactionInfo);
-    async RequestSign(uint64_t aTransactionId, WebAuthnGetAssertionInfo aTransactionInfo);
+    async RequestRegister(WebAuthnMakeCredentialInfo aTransactionInfo) returns (WebAuthnMakeCredentialResponse response);
+    async RequestSign(WebAuthnGetAssertionInfo aTransactionInfo) returns (WebAuthnGetAssertionResponse response);
     async RequestIsUVPAA() returns (bool available);
-    [Tainted] async RequestCancel(uint64_t aTransactionId);
-    async DestroyMe();
+    async RequestCancel();
 
   child:
     async __delete__();
-    async ConfirmRegister(uint64_t aTransactionId, WebAuthnMakeCredentialResult aResult);
-    async ConfirmSign(uint64_t aTransactionId, WebAuthnGetAssertionResult aResult);
-    async Abort(uint64_t aTransactionId, nsresult Error);
 };
 
 }

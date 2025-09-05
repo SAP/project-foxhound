@@ -15,6 +15,7 @@ import android.util.AttributeSet
 import android.view.MenuItem
 import android.view.View
 import android.view.ViewTreeObserver
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.ActionBar
 import androidx.appcompat.widget.Toolbar
@@ -28,8 +29,11 @@ import mozilla.components.feature.search.widget.BaseVoiceSearchActivity
 import mozilla.components.lib.auth.canUseBiometricFeature
 import mozilla.components.lib.crash.Crash
 import mozilla.components.support.base.feature.UserInteractionHandler
-import mozilla.components.support.ktx.android.content.getColorFromAttr
+import mozilla.components.support.ktx.android.content.getStatusBarColor
 import mozilla.components.support.ktx.android.view.createWindowInsetsController
+import mozilla.components.support.ktx.android.view.setNavigationBarColorCompat
+import mozilla.components.support.ktx.android.view.setNavigationBarDividerColorCompat
+import mozilla.components.support.ktx.android.view.setStatusBarColorCompat
 import mozilla.components.support.locale.LocaleAwareAppCompatActivity
 import mozilla.components.support.utils.SafeIntent
 import mozilla.components.support.utils.StatusBarUtils
@@ -96,18 +100,16 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         // Checks if Activity is currently in PiP mode if launched from external intents, then exits it
         checkAndExitPiP()
 
-        if (!isTaskRoot) {
-            if (intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN == intent.action) {
-                finish()
-                return
-            }
+        if (!isTaskRoot && intent.hasCategory(Intent.CATEGORY_LAUNCHER) && Intent.ACTION_MAIN == intent.action) {
+            finish()
+            return
         }
 
         @Suppress("DEPRECATION") // https://github.com/mozilla-mobile/focus-android/issues/5016
         window.decorView.systemUiVisibility =
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
 
-        window.statusBarColor = ContextCompat.getColor(this, android.R.color.transparent)
+        window.setStatusBarColorCompat(ContextCompat.getColor(this, android.R.color.transparent))
         when (resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) {
             Configuration.UI_MODE_NIGHT_UNDEFINED, // We assume light here per Android doc's recommendation
             Configuration.UI_MODE_NIGHT_NO,
@@ -152,12 +154,22 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         privateNotificationFeature = PrivateNotificationFeature(
             context = applicationContext,
             browserStore = components.store,
+            crashReporter = components.crashReporter,
             permissionRequestHandler = { requestNotificationPermission() },
         ).also {
             it.start()
         }
 
         components.notificationsDelegate.bindToActivity(this)
+
+        onBackPressedDispatcher.addCallback(
+            this,
+            object : OnBackPressedCallback(true) {
+                override fun handleOnBackPressed() {
+                    this@MainActivity.handleBackPressed()
+                }
+            },
+        )
     }
 
     private fun requestNotificationPermission() {
@@ -231,6 +243,7 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         super.onStop()
     }
 
+    @Suppress("PARAMETER_NAME_CHANGED_ON_OVERRIDE")
     override fun onNewIntent(unsafeIntent: Intent) {
         if (Crash.isCrashIntent(unsafeIntent)) {
             val browserFragment = supportFragmentManager
@@ -330,7 +343,7 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
         }
     }
 
-    override fun onBackPressed() {
+    private fun handleBackPressed() {
         val fragmentManager = supportFragmentManager
 
         val urlInputFragment =
@@ -364,7 +377,8 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
             return
         }
 
-        onBackPressedDispatcher.onBackPressed()
+        // If no fragments are handling the back press, finish the activity.
+        finish()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
@@ -393,20 +407,21 @@ open class MainActivity : LocaleAwareAppCompatActivity() {
 
     private fun updateLightSystemBars() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            window.statusBarColor = getColorFromAttr(android.R.attr.statusBarColor)
+            window.context.getStatusBarColor()?.let { window.setStatusBarColorCompat(it) }
             window.createWindowInsetsController().isAppearanceLightStatusBars = true
         } else {
-            window.statusBarColor = Color.BLACK
+            window.setStatusBarColorCompat(Color.BLACK)
         }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             // API level can display handle light navigation bar color
             window.createWindowInsetsController().isAppearanceLightNavigationBars = true
-            window.navigationBarColor = ContextCompat.getColor(this, android.R.color.transparent)
+            window.setNavigationBarColorCompat(ContextCompat.getColor(this, android.R.color.transparent))
 
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                window.navigationBarDividerColor =
-                    ContextCompat.getColor(this, android.R.color.transparent)
+                window.setNavigationBarDividerColorCompat(
+                    ContextCompat.getColor(this, android.R.color.transparent),
+                )
             }
         }
     }

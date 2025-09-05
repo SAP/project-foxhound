@@ -37,10 +37,16 @@ use crate::ipc::need_ipc;
 /// ```rust,ignore
 /// browser::bread_recipe.set("The 'baguette de tradition française' is made from wheat flour, water, yeast, and common salt. It may contain up to 2% broad bean flour, up to 0.5% soya flour, and up to 0.3% wheat malt flour.");
 /// ```
-
 #[derive(Clone)]
 pub enum TextMetric {
-    Parent(Arc<glean::private::TextMetric>),
+    Parent {
+        /// The metric's ID. Used for testing and profiler markers. Text
+        /// metrics canot be labeled, so we only store a MetricId. If this
+        /// changes, this should be changed to a MetricGetter to distinguish
+        /// between metrics and sub-metrics.
+        id: MetricId,
+        inner: Arc<glean::private::TextMetric>,
+    },
     Child(TextMetricIpc),
 }
 
@@ -49,18 +55,21 @@ pub struct TextMetricIpc;
 
 impl TextMetric {
     /// Create a new text metric.
-    pub fn new(_id: MetricId, meta: CommonMetricData) -> Self {
+    pub fn new(id: MetricId, meta: CommonMetricData) -> Self {
         if need_ipc() {
             TextMetric::Child(TextMetricIpc)
         } else {
-            TextMetric::Parent(Arc::new(glean::private::TextMetric::new(meta)))
+            TextMetric::Parent {
+                id,
+                inner: Arc::new(glean::private::TextMetric::new(meta)),
+            }
         }
     }
 
     #[cfg(test)]
     pub(crate) fn child_metric(&self) -> Self {
         match self {
-            TextMetric::Parent(_) => TextMetric::Child(TextMetricIpc),
+            TextMetric::Parent { .. } => TextMetric::Child(TextMetricIpc),
             TextMetric::Child(_) => panic!("Can't get a child metric from a child process"),
         }
     }
@@ -75,8 +84,16 @@ impl glean::traits::Text for TextMetric {
     /// * `value` - The text to set the metric to.
     pub fn set<S: Into<std::string::String>>(&self, value: S) {
         match self {
-            TextMetric::Parent(p) => {
-                p.set(value.into());
+            #[allow(unused)]
+            TextMetric::Parent { id, inner } => {
+                let value = value.into();
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Text::set",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    super::profiler_utils::StringLikeMetricMarker::new((*id).into(), &value)
+                );
+                inner.set(value);
             }
             TextMetric::Child(_) => {
                 log::error!("Unable to set text metric in non-main process. This operation will be ignored.");
@@ -103,7 +120,7 @@ impl glean::traits::Text for TextMetric {
     ) -> Option<std::string::String> {
         let ping_name = ping_name.into().map(|s| s.to_string());
         match self {
-            TextMetric::Parent(p) => p.test_get_value(ping_name),
+            TextMetric::Parent { inner, .. } => inner.test_get_value(ping_name),
             TextMetric::Child(_) => {
                 panic!("Cannot get test value for text metric in non-main process!")
             }
@@ -125,7 +142,7 @@ impl glean::traits::Text for TextMetric {
     /// The number of errors reported.
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
-            TextMetric::Parent(p) => p.test_get_num_recorded_errors(error),
+            TextMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             TextMetric::Child(_) => panic!(
                 "Cannot get the number of recorded errors for text metric in non-main process!"
             ),
@@ -145,7 +162,10 @@ mod test {
 
         metric.set("test_text_value");
 
-        assert_eq!("test_text_value", metric.test_get_value("store1").unwrap());
+        assert_eq!(
+            "test_text_value",
+            metric.test_get_value("test-ping").unwrap()
+        );
     }
 
     #[test]
@@ -172,7 +192,7 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            "test_parent_value" == parent_metric.test_get_value("store1").unwrap(),
+            "test_parent_value" == parent_metric.test_get_value("test-ping").unwrap(),
             "Text metrics should only work in the parent process"
         );
     }

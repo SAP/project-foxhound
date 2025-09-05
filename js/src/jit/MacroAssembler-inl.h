@@ -35,8 +35,6 @@
 #  include "jit/arm/MacroAssembler-arm-inl.h"
 #elif defined(JS_CODEGEN_ARM64)
 #  include "jit/arm64/MacroAssembler-arm64-inl.h"
-#elif defined(JS_CODEGEN_MIPS32)
-#  include "jit/mips32/MacroAssembler-mips32-inl.h"
 #elif defined(JS_CODEGEN_MIPS64)
 #  include "jit/mips64/MacroAssembler-mips64-inl.h"
 #elif defined(JS_CODEGEN_LOONG64)
@@ -283,10 +281,7 @@ void MacroAssembler::PushFrameDescriptorForJitCall(FrameType type,
 void MacroAssembler::pushFrameDescriptorForJitCall(FrameType type,
                                                    Register argc,
                                                    Register scratch) {
-  if (argc != scratch) {
-    mov(argc, scratch);
-  }
-  lshift32(Imm32(NUMACTUALARGS_SHIFT), scratch);
+  lshift32(Imm32(NUMACTUALARGS_SHIFT), argc, scratch);
   or32(Imm32(int32_t(type)), scratch);
   push(scratch);
 }
@@ -413,8 +408,12 @@ void MacroAssembler::addPtr(ImmPtr imm, Register dest) {
 // ===============================================================
 // Branch functions
 
-template <class L>
-void MacroAssembler::branchIfFalseBool(Register reg, L label) {
+void MacroAssembler::branchTest64(Condition cond, Register64 lhs,
+                                  Register64 rhs, Label* success, Label* fail) {
+  branchTest64(cond, lhs, rhs, InvalidReg, success, fail);
+}
+
+void MacroAssembler::branchIfFalseBool(Register reg, Label* label) {
   // Note that C++ bool is only 1 byte, so ignore the higher-order bits.
   branchTest32(Assembler::Zero, reg, Imm32(0xFF), label);
 }
@@ -422,6 +421,16 @@ void MacroAssembler::branchIfFalseBool(Register reg, L label) {
 void MacroAssembler::branchIfTrueBool(Register reg, Label* label) {
   // Note that C++ bool is only 1 byte, so ignore the higher-order bits.
   branchTest32(Assembler::NonZero, reg, Imm32(0xFF), label);
+}
+
+void MacroAssembler::branchIfNotNullOrUndefined(ValueOperand val,
+                                                Label* label) {
+  Label nullOrUndefined;
+  ScratchTagScope tag(*this, val);
+  splitTagForTest(val, tag);
+  branchTestNull(Assembler::Equal, tag, &nullOrUndefined);
+  branchTestUndefined(Assembler::NotEqual, tag, label);
+  bind(&nullOrUndefined);
 }
 
 void MacroAssembler::branchIfRope(Register str, Label* label) {
@@ -550,15 +559,17 @@ void MacroAssembler::branchIfObjectEmulatesUndefined(Register objReg,
       scratch);
   branchPtr(Assembler::Equal, scratch, ImmPtr(nullptr), &done);
 
-  // The branches to out-of-line code here implement a conservative version
-  // of the JSObject::isWrapper test performed in EmulatesUndefined.
   loadObjClassUnsafe(objReg, scratch);
-
-  branchTestClassIsProxy(true, scratch, slowCheck);
 
   Address flags(scratch, JSClass::offsetOfFlags());
   branchTest32(Assembler::NonZero, flags, Imm32(JSCLASS_EMULATES_UNDEFINED),
                label);
+
+  // Call into C++ if the object is a wrapper.
+  branchTestClassIsProxy(false, scratch, &done);
+  branchTestProxyHandlerFamily(Assembler::Equal, objReg, scratch,
+                               &Wrapper::family, slowCheck);
+
   bind(&done);
 }
 

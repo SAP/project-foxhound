@@ -13,6 +13,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.appcompat.content.res.AppCompatResources
+import androidx.core.view.OneShotPreDrawListener
 import androidx.core.view.isVisible
 import androidx.fragment.app.activityViewModels
 import kotlinx.coroutines.CoroutineScope
@@ -53,7 +54,6 @@ import org.mozilla.focus.topsites.DefaultTopSitesStorage.Companion.TOP_SITES_MAX
 import org.mozilla.focus.topsites.DefaultTopSitesView
 import org.mozilla.focus.topsites.TopSitesOverlay
 import org.mozilla.focus.ui.theme.FocusTheme
-import org.mozilla.focus.utils.OneShotOnPreDrawListener
 import org.mozilla.focus.utils.SupportUtils
 import org.mozilla.focus.utils.ViewUtils
 import kotlin.coroutines.CoroutineContext
@@ -210,17 +210,17 @@ class UrlInputFragment :
         savedInstanceState: Bundle?,
     ): View {
         _binding = FragmentUrlinputBinding.inflate(inflater, container, false)
-
-        binding.topSites.setContent {
-            FocusTheme {
-                TopSitesOverlay()
-            }
-        }
         return binding.root
     }
 
     @Suppress("LongMethod")
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        binding.topSites.setContent {
+            FocusTheme {
+                TopSitesOverlay()
+            }
+        }
+
         childFragmentManager.beginTransaction()
             .replace(binding.searchViewContainer.id, SearchSuggestionsFragment.create())
             .commit()
@@ -277,9 +277,8 @@ class UrlInputFragment :
 
         binding.dismissView.setOnClickListener(this)
 
-        OneShotOnPreDrawListener(binding.urlInputContainerView) {
+        OneShotPreDrawListener.add(binding.urlInputContainerView) {
             animateFirstDraw()
-            true
         }
 
         if (isOverlay) {
@@ -473,10 +472,8 @@ class UrlInputFragment :
             .setListener(
                 object : AnimatorListenerAdapter() {
                     override fun onAnimationEnd(animation: Animator) {
-                        if (reverse) {
-                            if (isOverlay) {
-                                dismiss()
-                            }
+                        if (reverse && isOverlay) {
+                            dismiss()
                         }
 
                         isAnimating = false
@@ -510,11 +507,11 @@ class UrlInputFragment :
         if (input.trim { it <= ' ' }.isNotEmpty()) {
             handleCrashTrigger(input)
 
-            ViewUtils.hideKeyboard(binding.browserToolbar)
+            binding.browserToolbar.hideKeyboard()
 
             val isUrl = URLStringUtils.isURLLike(input)
             if (isUrl) {
-                openUrl(URLStringUtils.toNormalizedURL(input))
+                openUrl(input)
             } else {
                 search(input)
             }
@@ -547,7 +544,7 @@ class UrlInputFragment :
             search(query)
         } else {
             if (URLStringUtils.isURLLike(query)) {
-                openUrl(URLStringUtils.toNormalizedURL(query))
+                openUrl(query)
             } else {
                 search(query)
             }
@@ -573,7 +570,8 @@ class UrlInputFragment :
     }
 
     private fun openUrl(url: String) {
-        when (url) {
+        val normalizedUrl = URLStringUtils.toNormalizedURL(url)
+        when (normalizedUrl) {
             "focus:about" -> {
                 requireComponents.appStore.dispatch(
                     AppAction.OpenSettings(Screen.Settings.Page.About),
@@ -584,15 +582,20 @@ class UrlInputFragment :
 
         val tab = tab
         if (tab != null) {
-            requireComponents.sessionUseCases.loadUrl(url, tab.id)
+            requireComponents.sessionUseCases.loadUrl(
+                normalizedUrl,
+                tab.id,
+                originalInput = url,
+            )
 
             requireComponents.appStore.dispatch(AppAction.FinishEdit(tab.id))
         } else {
             requireComponents.tabsUseCases.addTab(
-                url,
+                normalizedUrl,
                 source = SessionState.Source.Internal.UserEntered,
                 selectTab = true,
                 private = true,
+                originalInput = url,
             )
         }
 

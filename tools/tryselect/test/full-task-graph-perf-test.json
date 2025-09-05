@@ -44,7 +44,16 @@
   "test-platform-android/opt-awsy": {
     "task": {
       "payload": {
-        "command": [["options", "--tp6"]]
+        "command": [[]]
+      }
+    }
+  },
+  "perftest-linux-ml-multi-perf": {
+    "task": {
+      "payload": {
+        "command": [
+          ["perftest/test/finder/path/perftest_finder_ml_engine_perf.js"]
+        ]
       }
     }
   }

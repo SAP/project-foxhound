@@ -97,22 +97,6 @@
         "parameters": []
       },
       {
-        "name": "setScalar",
-        "type": "function",
-        "async": true,
-        "description": "Set the given value to the scalar with the given id.",
-        "parameters": [
-          {
-            "type": "string",
-            "name": "id"
-          },
-          {
-            "type": "any",
-            "name": "value"
-          }
-        ]
-      },
-      {
         "name": "setResolutionAndScaleTo",
         "type": "function",
         "async": true,
@@ -257,7 +241,21 @@
         "description": "Clears the sites on the HSTS list.",
         "parameters": []
       },
+      {
+        "name": "isSessionHistoryInParentRunning",
+        "type": "function",
+        "async": true,
+        "description": "Checks if session history in parent (SHIP) is running.",
+        "parameters": []
+      },
 
+      {
+        "name": "isFissionRunning",
+        "type": "function",
+        "async": true,
+        "description": "Checks if fission is running.",
+        "parameters": []
+      },
       {
         "name": "triggerCookieBannerDetected",
         "type": "function",

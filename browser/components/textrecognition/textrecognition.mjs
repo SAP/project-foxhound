@@ -77,10 +77,7 @@ class TextRecognitionModal {
           "There was an error recognizing the text from an image.",
           error
         );
-        Services.telemetry.scalarAdd(
-          "browser.ui.interaction.textrecognition_error",
-          1
-        );
+        Glean.browserUiInteraction.textrecognitionError.add(1);
         TelemetryStopwatch.cancel(
           "TEXT_RECOGNITION_API_PERFORMANCE",
           resultsPromise
@@ -121,10 +118,9 @@ class TextRecognitionModal {
    * @param {number} textLength
    */
   static recordTextLengthTelemetry(textLength) {
-    const histogram = Services.telemetry.getHistogramById(
-      "TEXT_RECOGNITION_TEXT_LENGTH"
-    );
-    histogram.add(textLength);
+    Services.telemetry
+      .getHistogramById("TEXT_RECOGNITION_TEXT_LENGTH")
+      .add(textLength);
   }
 
   setupCloseHandler() {

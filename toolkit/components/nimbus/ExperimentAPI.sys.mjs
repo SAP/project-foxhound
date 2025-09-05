@@ -8,11 +8,24 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  CleanupManager: "resource://normandy/lib/CleanupManager.sys.mjs",
   ExperimentManager: "resource://nimbus/lib/ExperimentManager.sys.mjs",
-  ExperimentStore: "resource://nimbus/lib/ExperimentStore.sys.mjs",
   FeatureManifest: "resource://nimbus/FeatureManifest.sys.mjs",
+  NimbusMigrations: "resource://nimbus/lib/Migrations.sys.mjs",
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
+  RemoteSettingsExperimentLoader:
+    "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs",
 });
+
+ChromeUtils.defineLazyGetter(lazy, "log", () => {
+  const { Logger } = ChromeUtils.importESModule(
+    "resource://messaging-system/lib/Logger.sys.mjs"
+  );
+  return new Logger("ExperimentAPI");
+});
+
+const CRASHREPORTER_ENABLED =
+  AppConstants.MOZ_CRASHREPORTER && AppConstants.MOZ_APP_NAME !== "thunderbird";
 
 const IS_MAIN_PROCESS =
   Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT;
@@ -25,9 +38,6 @@ XPCOMUtils.defineLazyPreferenceGetter(
   COLLECTION_ID_PREF,
   COLLECTION_ID_FALLBACK
 );
-const EXPOSURE_EVENT_CATEGORY = "normandy";
-const EXPOSURE_EVENT_METHOD = "expose";
-const EXPOSURE_EVENT_OBJECT = "nimbus_experiment";
 
 function parseJSON(value) {
   if (value) {
@@ -76,12 +86,82 @@ const experimentBranchAccessor = {
   },
 };
 
+let initialized = false;
+
 export const ExperimentAPI = {
   /**
-   * @returns {Promise} Resolves when the API has synchronized to the main store
+   * Initialize the ExperimentAPI.
+   *
+   * This will initialize the ExperimentManager and the
+   * RemoteSettingsExperimentLoader. It will also trigger The
+   * RemoteSettingsExperimentLoader to update recipes.
    */
-  ready() {
+  async init() {
+    if (!initialized) {
+      initialized = true;
+
+      try {
+        await this._manager.onStartup();
+      } catch (e) {
+        lazy.log.error("Failed to initialize ExperimentManager:", e);
+      }
+
+      try {
+        await this._rsLoader.enable();
+      } catch (e) {
+        lazy.log.error("Failed to enable RemoteSettingsExperimentLoader:", e);
+      }
+
+      try {
+        await lazy.NimbusMigrations.applyMigrations();
+      } catch (e) {
+        lazy.log.error("Failed to apply migrations", e);
+      }
+
+      if (CRASHREPORTER_ENABLED) {
+        this._manager.store.on("update", this._annotateCrashReport);
+        this._annotateCrashReport();
+      }
+    }
+  },
+
+  _resetForTests() {
+    this._rsLoader.disable();
+    this._manager.store.off("update", this._annotateCrashReport);
+    initialized = false;
+  },
+
+  /**
+   * Wait for the ExperimentAPI to become ready.
+   *
+   * NB: This method will not initialize the ExperimentAPI. This is intentional
+   * and doing so breaks a lot of tests due to enabling the
+   * RemoteSettingsExperimentLoader et al.
+   *
+   * @returns {Promise}
+   *          A promise that resolves when the API has synchronized to the main
+   *          store
+   */
+  async ready() {
     return this._store.ready();
+  },
+
+  async _annotateCrashReport() {
+    if (!Services.appinfo.crashReporterEnabled) {
+      return;
+    }
+
+    await this.ready();
+    const activeEnrollments = this._manager.store
+      .getAll()
+      .filter(e => e.active)
+      .map(e => `${e.slug}:${e.branch.slug}`)
+      .join(",");
+
+    Services.appinfo.annotateCrashReport(
+      "NimbusEnrollments",
+      activeEnrollments
+    );
   },
 
   /**
@@ -269,21 +349,11 @@ export const ExperimentAPI = {
   },
 
   recordExposureEvent({ featureId, experimentSlug, branchSlug }) {
-    Services.telemetry.setEventRecordingEnabled(EXPOSURE_EVENT_CATEGORY, true);
-    try {
-      Services.telemetry.recordEvent(
-        EXPOSURE_EVENT_CATEGORY,
-        EXPOSURE_EVENT_METHOD,
-        EXPOSURE_EVENT_OBJECT,
-        experimentSlug,
-        {
-          branchSlug,
-          featureId,
-        }
-      );
-    } catch (e) {
-      console.error(e);
-    }
+    Glean.normandy.exposeNimbusExperiment.record({
+      value: experimentSlug,
+      branchSlug,
+      featureId,
+    });
     Glean.nimbusEvents.exposure.record({
       experiment: experimentSlug,
       branch: branchSlug,
@@ -652,14 +722,31 @@ export class _ExperimentFeature {
   }
 }
 
+ExperimentAPI._annotateCrashReport =
+  ExperimentAPI._annotateCrashReport.bind(ExperimentAPI);
+
+if (CRASHREPORTER_ENABLED) {
+  lazy.CleanupManager.addCleanupHandler(() => {
+    if (initialized) {
+      ExperimentAPI._manager.store.off(
+        "update",
+        ExperimentAPI._annotateCrashReport
+      );
+    }
+  });
+}
+
 ChromeUtils.defineLazyGetter(ExperimentAPI, "_manager", function () {
   return lazy.ExperimentManager;
 });
 
-ChromeUtils.defineLazyGetter(ExperimentAPI, "_store", function () {
-  return IS_MAIN_PROCESS
-    ? lazy.ExperimentManager.store
-    : new lazy.ExperimentStore();
+Object.defineProperty(ExperimentAPI, "_store", {
+  configurable: true,
+  get: () => ExperimentAPI._manager.store,
+});
+
+ChromeUtils.defineLazyGetter(ExperimentAPI, "_rsLoader", function () {
+  return lazy.RemoteSettingsExperimentLoader;
 });
 
 ChromeUtils.defineLazyGetter(

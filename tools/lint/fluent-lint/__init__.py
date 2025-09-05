@@ -221,7 +221,7 @@ class Linter(visitor.Visitor):
             self.add_error(
                 node,
                 "ID01",
-                "Identifiers may only contain lowercase characters and -",
+                f"Identifiers may only contain lowercase characters and - (ID: {node.name})",
             )
         if (
             len(node.name) < self.minimum_id_length
@@ -231,7 +231,7 @@ class Linter(visitor.Visitor):
             self.add_error(
                 node,
                 "ID02",
-                f"Identifiers must be at least {self.minimum_id_length} characters long",
+                f"Identifiers must be at least {self.minimum_id_length} characters long (ID: {node.name}",
             )
 
     def visit_TextElement(self, node):
@@ -281,7 +281,7 @@ class Linter(visitor.Visitor):
             ):
                 found_brands = []
                 for brand in self.brand_names:
-                    if brand in text:
+                    if re.search(rf"\b{re.escape(brand)}\b", text):
                         found_brands.append(brand)
                 if found_brands:
                     self.add_error(
@@ -335,7 +335,7 @@ class Linter(visitor.Visitor):
         # Store the variable used for the SelectExpression, excluding functions
         # like PLATFORM()
         if (
-            type(node.selector) == ast.VariableReference
+            type(node.selector) is ast.VariableReference
             and node.selector.id.name not in self.state["variables"]
         ):
             self.state["variables"].append(node.selector.id.name)

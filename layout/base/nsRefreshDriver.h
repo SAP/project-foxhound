@@ -371,8 +371,6 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   static void DispatchIdleTaskAfterTickUnlessExists(mozilla::Task* aTask);
   static void CancelIdleTask(mozilla::Task* aTask);
 
-  void NotifyDOMContentLoaded();
-
   // Schedule a refresh so that any delayed events will run soon.
   void RunDelayedEventsSoon();
 
@@ -406,6 +404,11 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void EnsureResizeObserverUpdateHappens() {
     EnsureTimerStarted();
     mNeedToUpdateResizeObservers = true;
+  }
+
+  void EnsureViewTransitionOperationsHappen() {
+    EnsureTimerStarted();
+    mNeedToUpdateViewTransitions = true;
   }
 
   void EnsureAnimationUpdate() {
@@ -444,6 +447,7 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
     eRootNeedsMoreTicksForUserInput = 1 << 9,
     eNeedsToUpdateAnimations = 1 << 10,
     eNeedsToRunFrameRequestCallbacks = 1 << 11,
+    eNeedsToUpdateViewTransitions = 1 << 12,
   };
 
   void AddForceNotifyContentfulPaintPresContext(nsPresContext* aPresContext);
@@ -496,7 +500,9 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   void RunFrameRequestCallbacks(const nsTArray<RefPtr<mozilla::dom::Document>>&,
                                 mozilla::TimeStamp aNowTime);
   void UpdateIntersectionObservations(mozilla::TimeStamp aNowTime);
+  void UpdateRemoteFrameEffects();
   void UpdateRelevancyOfContentVisibilityAutoFrames();
+  void PerformPendingViewTransitionOperations();
   MOZ_CAN_RUN_SCRIPT void
   DetermineProximityToViewportAndNotifyResizeObservers();
   void MaybeIncreaseMeasuredTicksSinceLoading();
@@ -636,16 +642,16 @@ class nsRefreshDriver final : public mozilla::layers::TransactionIdAllocator,
   // start of every tick.
   bool mResizeSuppressed : 1;
 
-  // True if the next tick should notify DOMContentFlushed.
-  bool mNotifyDOMContentFlushed : 1;
-
   // True if we need to flush in order to update intersection observations in
   // all our documents.
   bool mNeedToUpdateIntersectionObservations : 1;
 
-  // True if we need to flush in order to update intersection observations in
-  // all our documents.
+  // True if we need to flush in order to update resize observations in all
+  // our documents.
   bool mNeedToUpdateResizeObservers : 1;
+
+  // True if we may need to perform pending view transition operations.
+  bool mNeedToUpdateViewTransitions : 1;
 
   // True if we may need to run any frame callback.
   bool mNeedToRunFrameRequestCallbacks : 1;

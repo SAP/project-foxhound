@@ -57,23 +57,7 @@ uint8_t CodecTypeToPayloadType(VideoCodecType codec_type) {
   }
   return {};
 }
-std::string CodecTypeToCodecName(VideoCodecType codec_type) {
-  switch (codec_type) {
-    case VideoCodecType::kVideoCodecGeneric:
-      return "";
-    case VideoCodecType::kVideoCodecVP8:
-      return cricket::kVp8CodecName;
-    case VideoCodecType::kVideoCodecVP9:
-      return cricket::kVp9CodecName;
-    case VideoCodecType::kVideoCodecH264:
-      return cricket::kH264CodecName;
-    case VideoCodecType::kVideoCodecH265:
-      return cricket::kH265CodecName;
-    default:
-      RTC_DCHECK_NOTREACHED();
-  }
-  return {};
-}
+
 VideoEncoderConfig::ContentType ConvertContentType(
     VideoStreamConfig::Encoder::ContentType content_type) {
   switch (content_type) {
@@ -224,19 +208,6 @@ VideoEncoderConfig CreateVideoEncoderConfig(VideoStreamConfig config) {
       std::vector<VideoStream>(encoder_config.number_of_streams);
   encoder_config.min_transmit_bitrate_bps = config.stream.pad_to_rate.bps();
 
-  std::string cricket_codec = CodecTypeToCodecName(config.encoder.codec);
-  if (!cricket_codec.empty()) {
-    bool screenshare = config.encoder.content_type ==
-                       VideoStreamConfig::Encoder::ContentType::kScreen;
-    encoder_config.video_stream_factory =
-        rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-            cricket_codec, cricket::kDefaultVideoMaxQpVpx, screenshare,
-            screenshare, encoder_info);
-  } else {
-    encoder_config.video_stream_factory =
-        rtc::make_ref_counted<DefaultVideoStreamFactory>();
-  }
-
   // TODO(srte): Base this on encoder capabilities.
   encoder_config.max_bitrate_bps =
       config.encoder.max_data_rate.value_or(DataRate::KilobitsPerSec(10000))
@@ -292,7 +263,7 @@ std::unique_ptr<FrameGeneratorInterface> CreateFrameGenerator(
     case Capture::kGenerator:
       return CreateSquareFrameGenerator(
           source.generator.width, source.generator.height,
-          source.generator.pixel_format, /*num_squares*/ absl::nullopt);
+          source.generator.pixel_format, /*num_squares*/ std::nullopt);
     case Capture::kVideoFile:
       RTC_CHECK(source.video_file.width && source.video_file.height);
       return CreateFromYuvFileFrameGenerator(
@@ -484,7 +455,7 @@ void SendVideoStream::UpdateConfig(
 }
 
 void SendVideoStream::UpdateActiveLayers(std::vector<bool> active_layers) {
-  sender_->task_queue_.PostTask([=] {
+  sender_->task_queue_.PostTask([this, active_layers] {
     MutexLock lock(&mutex_);
     VideoEncoderConfig encoder_config = CreateVideoEncoderConfig(config_);
     RTC_CHECK_EQ(encoder_config.simulcast_layers.size(), active_layers.size());

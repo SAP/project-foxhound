@@ -339,10 +339,13 @@ void nsDisplayCanvasBackgroundImage::Paint(nsDisplayListBuilder* aBuilder,
 bool nsDisplayCanvasBackgroundImage::IsSingleFixedPositionImage(
     nsDisplayListBuilder* aBuilder, const nsRect& aClipRect,
     gfxRect* aDestRect) {
-  if (!mBackgroundStyle) return false;
-
-  if (mBackgroundStyle->StyleBackground()->mImage.mLayers.Length() != 1)
+  if (!mBackgroundStyle) {
     return false;
+  }
+
+  if (mBackgroundStyle->StyleBackground()->mImage.mLayers.Length() != 1) {
+    return false;
+  }
 
   nsPresContext* presContext = mFrame->PresContext();
   uint32_t flags = aBuilder->GetBackgroundPaintFlags();
@@ -350,13 +353,17 @@ bool nsDisplayCanvasBackgroundImage::IsSingleFixedPositionImage(
   const nsStyleImageLayers::Layer& layer =
       mBackgroundStyle->StyleBackground()->mImage.mLayers[mLayer];
 
-  if (layer.mAttachment != StyleImageLayerAttachment::Fixed) return false;
+  if (layer.mAttachment != StyleImageLayerAttachment::Fixed) {
+    return false;
+  }
 
   nsBackgroundLayerState state = nsCSSRendering::PrepareImageLayer(
       presContext, mFrame, flags, borderArea, aClipRect, layer);
 
   // We only care about images here, not gradients.
-  if (!mIsRasterImage) return false;
+  if (!mIsRasterImage) {
+    return false;
+  }
 
   int32_t appUnitsPerDevPixel = presContext->AppUnitsPerDevPixel();
   *aDestRect =
@@ -379,13 +386,14 @@ void nsDisplayCanvasThemedBackground::Paint(nsDisplayListBuilder* aBuilder,
  *
  * The only reason this can't use nsDisplayGeneric is overriding GetBounds.
  */
-class nsDisplayCanvasFocus : public nsPaintedDisplayItem {
+class nsDisplayCanvasFocus final : public nsPaintedDisplayItem {
  public:
   nsDisplayCanvasFocus(nsDisplayListBuilder* aBuilder, nsCanvasFrame* aFrame)
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvasFocus);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayCanvasFocus)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayCanvasFocus)
 
   virtual nsRect GetBounds(nsDisplayListBuilder* aBuilder,
                            bool* aSnap) const override {
@@ -576,9 +584,13 @@ void nsCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
     BuildDisplayListForChild(aBuilder, kid, aLists);
   }
 
-  if (!mDoPaintFocus) return;
+  if (!mDoPaintFocus) {
+    return;
+  }
   // Only paint the focus if we're visible
-  if (!StyleVisibility()->IsVisible()) return;
+  if (!StyleVisibility()->IsVisible()) {
+    return;
+  }
 
   aLists.Outlines()->AppendNewToTop<nsDisplayCanvasFocus>(aBuilder, this);
 }
@@ -601,11 +613,11 @@ void nsCanvasFrame::PaintFocus(DrawTarget* aDrawTarget, nsPoint aPt) {
                              text->mColor.ToColor());
 }
 
-nscoord nsCanvasFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsCanvasFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                       IntrinsicISizeType aType) {
   return mFrames.IsEmpty()
              ? 0
-             : mFrames.FirstChild()->IntrinsicISize(aContext, aType);
+             : mFrames.FirstChild()->IntrinsicISize(aInput, aType);
 }
 
 void nsCanvasFrame::Reflow(nsPresContext* aPresContext,

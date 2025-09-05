@@ -63,7 +63,7 @@ class TracingStateWatcher {
    * @param {String} reason
    *        Optional string to justify why the tracer stopped.
    */
-  onTracingToggled(enabled, reason) {
+  async onTracingToggled(enabled, reason) {
     const tracerActor = this.targetActor.getTargetScopedActor("tracer");
     const logMethod = tracerActor?.getLogMethod();
 
@@ -81,10 +81,11 @@ class TracingStateWatcher {
         logMethod,
         profile:
           logMethod == TRACER_LOG_METHODS.PROFILER && !enabled
-            ? tracerActor.getProfile()
+            ? await tracerActor.getProfile()
             : undefined,
         timeStamp: ChromeUtils.dateNow(),
         reason,
+        traceValues: tracerActor.traceValues,
       },
     ]);
   }

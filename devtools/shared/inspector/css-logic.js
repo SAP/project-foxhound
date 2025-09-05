@@ -166,23 +166,19 @@ exports.shortSource = function (sheet) {
         : dataUrl[1];
   } else {
     // We try, in turn, the filename, filePath, query string, whole thing
-    let url = {};
-    try {
-      url = new URL(sheet.href);
-    } catch (ex) {
-      // Some UA-provided stylesheets are not valid URLs.
-    }
-
-    if (url.pathname) {
-      const index = url.pathname.lastIndexOf("/");
-      if (index !== -1 && index < url.pathname.length) {
-        name = url.pathname.slice(index + 1);
-      } else {
-        name = url.pathname;
+    const url = URL.parse(sheet.href);
+    if (url) {
+      if (url.pathname) {
+        const index = url.pathname.lastIndexOf("/");
+        if (index !== -1 && index < url.pathname.length) {
+          name = url.pathname.slice(index + 1);
+        } else {
+          name = url.pathname;
+        }
+      } else if (url.query) {
+        name = url.query;
       }
-    } else if (url.query) {
-      name = url.query;
-    }
+    } // else some UA-provided stylesheets are not valid URLs.
   }
 
   try {
@@ -559,16 +555,16 @@ function getBindingElementAndPseudo(node) {
 exports.getBindingElementAndPseudo = getBindingElementAndPseudo;
 
 /**
- * Returns css style rules for a given a node.
+ * Returns css rules for a given a node.
  * This function can handle ::before or ::after pseudo element as well as
  * normal element.
  */
-function getCSSStyleRules(node) {
+function getMatchingCSSRules(node) {
   const { bindingElement, pseudo } = getBindingElementAndPseudo(node);
-  const rules = InspectorUtils.getCSSStyleRules(bindingElement, pseudo);
+  const rules = InspectorUtils.getMatchingCSSRules(bindingElement, pseudo);
   return rules;
 }
-exports.getCSSStyleRules = getCSSStyleRules;
+exports.getMatchingCSSRules = getMatchingCSSRules;
 
 /**
  * Returns true if the given node has visited state.

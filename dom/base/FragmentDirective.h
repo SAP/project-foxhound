@@ -9,7 +9,7 @@
 
 #include "js/TypeDecls.h"
 #include "mozilla/dom/BindingDeclarations.h"
-
+#include "mozilla/UniquePtr.h"
 #include "mozilla/dom/fragmentdirectives_ffi_generated.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsStringFwd.h"
@@ -20,7 +20,9 @@ class nsIURI;
 class nsRange;
 namespace mozilla::dom {
 class Document;
+class Promise;
 class Text;
+class TextDirectiveFinder;
 
 /**
  * @brief The `FragmentDirective` class is the C++ representation of the
@@ -32,7 +34,8 @@ class Text;
  * `FragmentDirective::FindTextFragmentsInDocument()`.
  * To avoid Text Directives being applied multiple times, this class implements
  * the `uninvoked directive` mechanism, which in the spec is defined to be part
- * of the `Document` [0].
+ * of the `Document` [0], by encapsuling the code in a lazily constructed
+ * helper, which is destroyed when all text directives have been found.
  *
  * [0]
  * https://wicg.github.io/scroll-to-text-fragment/#document-uninvoked-directives
@@ -44,13 +47,9 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
 
  public:
   explicit FragmentDirective(Document* aDocument);
-  FragmentDirective(Document* aDocument,
-                    nsTArray<TextDirective>&& aTextDirectives)
-      : mDocument(aDocument),
-        mUninvokedTextDirectives(std::move(aTextDirectives)) {}
 
  protected:
-  ~FragmentDirective() = default;
+  ~FragmentDirective();
 
  public:
   Document* GetParentObject() const { return mDocument; };
@@ -61,19 +60,15 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
   /**
    * @brief Sets Text Directives as "uninvoked directive".
    */
-  void SetTextDirectives(nsTArray<TextDirective>&& aTextDirectives) {
-    mUninvokedTextDirectives = std::move(aTextDirectives);
-  }
+  void SetTextDirectives(nsTArray<TextDirective>&& aTextDirectives);
 
   /** Returns true if there are Text Directives that have not been applied to
    * the `Document`.
    */
-  bool HasUninvokedDirectives() const {
-    return !mUninvokedTextDirectives.IsEmpty();
-  };
+  bool HasUninvokedDirectives() const;
 
   /** Clears all uninvoked directives. */
-  void ClearUninvokedDirectives() { mUninvokedTextDirectives.Clear(); }
+  void ClearUninvokedDirectives();
 
   /** Inserts all text directive ranges into a `eTargetText` `Selection`. */
   MOZ_CAN_RUN_SCRIPT
@@ -88,8 +83,7 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
    *
    * This method tries to follow the specification as close as possible in how
    * to find a matching range for a text directive. However, instead of using
-   * collator-based search, a standard case-insensitive search is used
-   * (`nsString::find()`).
+   * collator-based search, the Gecko find-in-page algorithm is used (`nsFind`).
    */
   nsTArray<RefPtr<nsRange>> FindTextFragmentsInDocument();
 
@@ -116,6 +110,12 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
       nsCString& aFragment, nsTArray<TextDirective>* aTextDirectives = nullptr,
       nsIURI* aURI = nullptr);
 
+  /** Utility function than returns a string for `aURI` ignoring all fragment
+   * directives.
+   */
+  static nsresult GetSpecIgnoringFragmentDirective(
+      nsCOMPtr<nsIURI>& aURI, nsACString& aSpecIgnoringFragmentDirective);
+
   /** Performs various checks to determine if a text directive is allowed to be
    * scrolled to.
    *
@@ -125,16 +125,31 @@ class FragmentDirective final : public nsISupports, public nsWrapperCache {
    */
   bool IsTextDirectiveAllowedToBeScrolledTo();
 
- private:
-  RefPtr<nsRange> FindRangeForTextDirective(
-      const TextDirective& aTextDirective);
-  RefPtr<nsRange> FindStringInRange(nsRange* aSearchRange,
-                                    const nsAString& aQuery,
-                                    bool aWordStartBounded,
-                                    bool aWordEndBounded);
+  /** Return an array of all current text directive ranges.
+   *
+   * This is exposed as a Chrome-Only API.
+   */
+  void GetTextDirectiveRanges(nsTArray<RefPtr<nsRange>>& aRanges) const;
 
+  /** Removes all text directive ranges.
+   *
+   * Under the hood this method only calls `Selection::RemoveAllRanges()`.
+   * This is exposed as a Chrome-Only API.
+   */
+  MOZ_CAN_RUN_SCRIPT void RemoveAllTextDirectives(ErrorResult& aRv);
+
+  /** Creates a text directive string from a given range.
+   *
+   * @param aRange  The input range.
+   *
+   * @return Returns the created text directive as resolved promise, or a
+   *         rejected promise in case of an error.
+   */
+  already_AddRefed<Promise> CreateTextDirective(nsRange& aRange);
+
+ private:
   RefPtr<Document> mDocument;
-  nsTArray<TextDirective> mUninvokedTextDirectives;
+  UniquePtr<TextDirectiveFinder> mFinder;
 };
 
 }  // namespace mozilla::dom

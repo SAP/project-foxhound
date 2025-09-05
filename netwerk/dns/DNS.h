@@ -130,12 +130,12 @@ union NetAddr {
   bool operator==(const NetAddr& other) const;
   bool operator<(const NetAddr& other) const;
 
-  inline NetAddr& operator=(const NetAddr& other) {
-    memcpy(this, &other, sizeof(NetAddr));
-    return *this;
-  }
+  // Use the default copy constructor/assignment operator, which will memmove
+  // under the hood.
+  NetAddr(const NetAddr&) = default;
+  inline NetAddr& operator=(const NetAddr& other) = default;
 
-  NetAddr() { memset(this, 0, sizeof(NetAddr)); }
+  NetAddr() { memset((void*)this, 0, sizeof(NetAddr)); }
   explicit NetAddr(const PRNetAddr* prAddr);
 
   // Will parse aString into a NetAddr using PR_StringToNetAddr.
@@ -154,6 +154,7 @@ union NetAddr {
   nsresult GetPort(uint16_t* aResult) const;
   bool ToStringBuffer(char* buf, uint32_t bufSize) const;
   nsCString ToString() const;
+  void ToAddrPortString(nsACString& aOutput) const;
 };
 
 enum class DNSResolverType : uint32_t { Native = 0, TRR };

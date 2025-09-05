@@ -153,6 +153,20 @@ class ArrayBufferDataStream {
       this.pos += size;
       return value;
     }
+
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(value) {
+      this.writeUint32(value.length);
+      value.forEach((elt) => {
+        this.writeUint8(elt);
+      })
+    }
 }
 
 function handleRustResult(result, liftCallback, liftErrCallback) {
@@ -212,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -254,12 +299,38 @@ export class FfiConverterString extends FfiConverter {
 }
 
 
+/**
+ * Enumeration for the different types of device.
+ *
+ * Firefox Accounts separates devices into broad categories for display purposes,
+ * such as distinguishing a desktop PC from a mobile phone. Upon signin, the
+ * application should inspect the device it is running on and select an appropriate
+ * [`DeviceType`] to include in its device registration record.
+ */
 export const DeviceType = {
+    /**
+     * DESKTOP
+     */
     DESKTOP: 1,
+    /**
+     * MOBILE
+     */
     MOBILE: 2,
+    /**
+     * TABLET
+     */
     TABLET: 3,
+    /**
+     * VR
+     */
     VR: 4,
+    /**
+     * TV
+     */
     TV: 5,
+    /**
+     * UNKNOWN
+     */
     UNKNOWN: 6,
 };
 

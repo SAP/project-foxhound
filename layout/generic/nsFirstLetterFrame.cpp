@@ -109,23 +109,23 @@ nsresult nsFirstLetterFrame::GetChildFrameContainingOffset(
 // Needed for non-floating first-letter frames and for the continuations
 // following the first-letter that we also use nsFirstLetterFrame for.
 /* virtual */
-void nsFirstLetterFrame::AddInlineMinISize(gfxContext* aRenderingContext,
+void nsFirstLetterFrame::AddInlineMinISize(const IntrinsicSizeInput& aInput,
                                            InlineMinISizeData* aData) {
-  DoInlineMinISize(aRenderingContext, aData);
+  DoInlineMinISize(aInput, aData);
 }
 
 // Needed for non-floating first-letter frames and for the continuations
 // following the first-letter that we also use nsFirstLetterFrame for.
 /* virtual */
-void nsFirstLetterFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
+void nsFirstLetterFrame::AddInlinePrefISize(const IntrinsicSizeInput& aInput,
                                             InlinePrefISizeData* aData) {
-  DoInlinePrefISize(aRenderingContext, aData);
+  DoInlinePrefISize(aInput, aData);
 }
 
 // Needed for floating first-letter frames.
-nscoord nsFirstLetterFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsFirstLetterFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                            IntrinsicISizeType aType) {
-  return IntrinsicISizeFromInline(aContext, aType);
+  return IntrinsicISizeFromInline(aInput, aType);
 }
 
 /* virtual */
@@ -170,14 +170,13 @@ bool nsFirstLetterFrame::UseTightBounds() const {
   }
 
   const auto wm = GetWritingMode();
-  const auto& margin = StyleMargin()->mMargin;
-  const auto& bStart = margin.GetBStart(wm);
+  const auto& bStart = StyleMargin()->GetMargin(LogicalSide::BStart, wm);
   // Currently, we only check for margins with negative *length* values;
   // negative percentages seem unlikely to be used/useful in this context.
   if (bStart.ConvertsToLength() && bStart.ToLength() < 0) {
     return false;
   }
-  const auto& bEnd = margin.GetBEnd(wm);
+  const auto& bEnd = StyleMargin()->GetMargin(LogicalSide::BEnd, wm);
   if (bEnd.ConvertsToLength() && bEnd.ToLength() < 0) {
     return false;
   }
@@ -223,6 +222,8 @@ void nsFirstLetterFrame::Reflow(nsPresContext* aPresContext,
     ReflowInput rs(aPresContext, aReflowInput, kid, kidAvailSize);
     nsLineLayout ll(aPresContext, nullptr, aReflowInput, nullptr, nullptr);
 
+    // This frame does not get constructed for an empty inline frame, so
+    // `CollapseEmptyInlineFramesInLine` should not matter.
     ll.BeginLineReflow(
         bp.IStart(wm), bp.BStart(wm), availSize.ISize(wm), NS_UNCONSTRAINEDSIZE,
         false, true, kidWritingMode,

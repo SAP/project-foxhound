@@ -39,8 +39,10 @@
 namespace webrtc {
 namespace ios_adm {
 
-AudioDeviceModuleIOS::AudioDeviceModuleIOS(bool bypass_voice_processing)
+AudioDeviceModuleIOS::AudioDeviceModuleIOS(bool bypass_voice_processing,
+                                           MutedSpeechEventHandler muted_speech_event_handler)
     : bypass_voice_processing_(bypass_voice_processing),
+      muted_speech_event_handler_(muted_speech_event_handler),
       task_queue_factory_(CreateDefaultTaskQueueFactory()) {
   RTC_LOG(LS_INFO) << "current platform is IOS";
   RTC_LOG(LS_INFO) << "iPhone Audio APIs will be utilized.";
@@ -72,7 +74,8 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(bool bypass_voice_processing)
       return 0;
 
     audio_device_buffer_.reset(new webrtc::AudioDeviceBuffer(task_queue_factory_.get()));
-    audio_device_.reset(new ios_adm::AudioDeviceIOS(bypass_voice_processing_));
+    audio_device_.reset(
+        new ios_adm::AudioDeviceIOS(bypass_voice_processing_, muted_speech_event_handler_));
     RTC_CHECK(audio_device_);
 
     this->AttachAudioBuffer();
@@ -646,6 +649,13 @@ AudioDeviceModuleIOS::AudioDeviceModuleIOS(bool bypass_voice_processing)
     CHECKinitialized_();
     int32_t ok = audio_device_->GetPlayoutUnderrunCount();
     return ok;
+  }
+
+  std::optional<AudioDeviceModule::Stats> AudioDeviceModuleIOS::GetStats() const {
+    if (audio_device_ == nullptr) {
+      return std::nullopt;
+    };
+    return audio_device_->GetStats();
   }
 
 #if defined(WEBRTC_IOS)

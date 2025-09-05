@@ -9,7 +9,11 @@ const { MegalistViewModel } = ChromeUtils.importESModule(
 
 const EXPECTED_SNAPSHOTS_DATA = [
   // header data
-  { lineIndex: 0, value: { total: 3, alerts: 0 }, field: undefined },
+  {
+    lineIndex: 0,
+    value: { total: 3, alerts: 0, count: 3 },
+    field: undefined,
+  },
 
   // first record
   { lineIndex: 1, value: "example1.com", field: "origin" },
@@ -30,7 +34,7 @@ const EXPECTED_SNAPSHOTS_DATA = [
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
-      ["browser.megalist.enabled", true],
+      ["browser.contextual-password-manager.enabled", true],
       ["signon.rememberSignons", true],
     ],
   });

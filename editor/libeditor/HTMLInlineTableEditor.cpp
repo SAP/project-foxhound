@@ -31,6 +31,12 @@ NS_IMETHODIMP HTMLEditor::GetInlineTableEditingEnabled(bool* aIsEnabled) {
   return NS_OK;
 }
 
+NS_IMETHODIMP HTMLEditor::GetIsInlineTableEditingActive(bool* aIsActive) {
+  MOZ_ASSERT(aIsActive);
+  *aIsActive = !!mInlineEditedCell;
+  return NS_OK;
+}
+
 nsresult HTMLEditor::ShowInlineTableEditingUIInternal(Element& aCellElement) {
   if (NS_WARN_IF(!HTMLEditUtils::IsTableCell(&aCellElement))) {
     return NS_OK;
@@ -204,10 +210,10 @@ void HTMLEditor::HideInlineTableEditingUIInternal() {
 }
 
 nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
-  nsAutoString anonclass;
-  aElement.GetAttr(nsGkAtoms::_moz_anonclass, anonclass);
+  nsAutoString classList;
+  aElement.GetAttr(nsGkAtoms::_class, classList);
 
-  if (!StringBeginsWith(anonclass, u"mozTable"_ns)) {
+  if (!StringBeginsWith(classList, u"mozTable"_ns)) {
     return NS_OK;
   }
 
@@ -239,7 +245,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
   bool hideUI = false;
   bool hideResizersWithInlineTableUI = (mResizedObject == tableElement);
 
-  if (anonclass.EqualsLiteral("mozTableAddColumnBefore")) {
+  if (classList.EqualsLiteral("mozTableAddColumnBefore")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eInsertTableColumn);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -256,7 +262,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
         NS_SUCCEEDED(rvIgnored),
         "HTMLEditor::InsertTableColumnsWithTransaction("
         "EditorDOMPoint(mInlineEditedCell), 1) failed, but ignored");
-  } else if (anonclass.EqualsLiteral("mozTableAddColumnAfter")) {
+  } else if (classList.EqualsLiteral("mozTableAddColumnAfter")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eInsertTableColumn);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -284,7 +290,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
         NS_SUCCEEDED(rvIgnored),
         "HTMLEditor::InsertTableColumnsWithTransaction("
         "EditorDOMPoint(nextCellElement), 1) failed, but ignored");
-  } else if (anonclass.EqualsLiteral("mozTableAddRowBefore")) {
+  } else if (classList.EqualsLiteral("mozTableAddRowBefore")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eInsertTableRowElement);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -301,7 +307,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
         NS_SUCCEEDED(rvIgnored),
         "HTMLEditor::InsertTableRowsWithTransaction(targetCellElement, 1, "
         "InsertPosition::eBeforeSelectedCell) failed, but ignored");
-  } else if (anonclass.EqualsLiteral("mozTableAddRowAfter")) {
+  } else if (classList.EqualsLiteral("mozTableAddRowAfter")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eInsertTableRowElement);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -318,7 +324,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
         NS_SUCCEEDED(rvIgnored),
         "HTMLEditor::InsertTableRowsWithTransaction(targetCellElement, 1, "
         "InsertPosition::eAfterSelectedCell) failed, but ignored");
-  } else if (anonclass.EqualsLiteral("mozTableRemoveColumn")) {
+  } else if (classList.EqualsLiteral("mozTableRemoveColumn")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eRemoveTableColumn);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();
@@ -335,7 +341,7 @@ nsresult HTMLEditor::DoInlineTableEditingAction(const Element& aElement) {
         "HTMLEditor::DeleteSelectedTableColumnsWithTransaction(1) failed, but "
         "ignored");
     hideUI = (colCount == 1);
-  } else if (anonclass.EqualsLiteral("mozTableRemoveRow")) {
+  } else if (classList.EqualsLiteral("mozTableRemoveRow")) {
     AutoEditActionDataSetter editActionData(*this,
                                             EditAction::eRemoveTableRowElement);
     nsresult rv = editActionData.CanHandleAndMaybeDispatchBeforeInputEvent();

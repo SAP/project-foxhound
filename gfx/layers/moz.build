@@ -28,8 +28,8 @@ EXPORTS += [
 if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
     SOURCES += [
         "D3D11ShareHandleImage.cpp",
-        "D3D11TextureIMFSampleImage.cpp",
         "D3D11YCbCrImage.cpp",
+        "D3D11ZeroCopyTextureImage.cpp",
     ]
     UNIFIED_SOURCES += [
         "IMFYCbCrImage.cpp",
@@ -44,6 +44,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "d3d11/ShaderDefinitionsD3D11.h",
         "d3d11/TextureD3D11.h",
         "d3d11/TextureHostWrapperD3D11.h",
+        "d3d11/VideoProcessorD3D11.h",
     ]
     UNIFIED_SOURCES += [
         "d3d11/FenceD3D11.cpp",
@@ -51,6 +52,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "d3d11/GpuProcessD3D11TextureMap.cpp",
         "d3d11/TextureD3D11.cpp",
         "d3d11/TextureHostWrapperD3D11.cpp",
+        "d3d11/VideoProcessorD3D11.cpp",
     ]
     SOURCES += [
         "d3d11/CompositorD3D11.cpp",
@@ -139,10 +141,11 @@ EXPORTS.mozilla.layers += [
     "CompositorAnimationStorage.h",
     "CompositorTypes.h",
     "D3D11ShareHandleImage.h",
-    "D3D11TextureIMFSampleImage.h",
     "D3D11YCbCrImage.h",
+    "D3D11ZeroCopyTextureImage.h",
     "DirectionUtils.h",
     "Effects.h",
+    "GpuFence.h",
     "ImageDataSerializer.h",
     "ipc/ActiveResource.h",
     "ipc/APZChild.h",
@@ -261,6 +264,7 @@ if CONFIG["MOZ_WAYLAND"]:
 
 if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
     EXPORTS.mozilla.layers += [
+        "GpuFenceMTLSharedEvent.h",
         "NativeLayerCA.h",
         "SurfacePoolCA.h",
     ]
@@ -273,6 +277,7 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] in ("cocoa", "uikit"):
         "SurfacePoolCA.mm",
     ]
     SOURCES += [
+        "GpuFenceMTLSharedEvent.cpp",
         "MacIOSurfaceHelpers.cpp",
         "MacIOSurfaceImage.cpp",
     ]
@@ -318,7 +323,6 @@ UNIFIED_SOURCES += [
     "apz/src/KeyboardMap.cpp",
     "apz/src/KeyboardScrollAction.cpp",
     "apz/src/OverscrollHandoffState.cpp",
-    "apz/src/OvershootDetector.cpp",
     "apz/src/PotentialCheckerboardDurationTracker.cpp",
     "apz/src/QueuedInput.cpp",
     "apz/src/SampledAPZCState.cpp",

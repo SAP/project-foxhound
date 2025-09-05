@@ -7,71 +7,44 @@
 
 "use strict";
 
-const { EnterprisePolicyTesting } = ChromeUtils.importESModule(
-  "resource://testing-common/EnterprisePolicyTesting.sys.mjs"
-);
-
-const CONFIG_V2 = [
+const CONFIG = [
   {
-    recordType: "engine",
-    identifier: "engine",
-    base: {
-      name: "Test search engine",
-      urls: {
-        search: {
-          base: "https://www.google.com/search",
-          params: [
-            {
-              name: "channel",
-              searchAccessPoint: {
-                addressbar: "fflb",
-                contextmenu: "rcs",
-              },
-            },
-          ],
-          searchTermParamName: "q",
-        },
-        suggestions: {
-          base: "https://suggestqueries.google.com/complete/search?output=firefox&client=firefox",
-          searchTermParamName: "q",
-        },
-      },
-    },
-    variants: [
-      {
-        environment: { allRegionsAndLocales: true },
-      },
-    ],
-  },
-  {
-    recordType: "defaultEngines",
-    globalDefault: "engine",
-    specificDefaults: [],
-  },
-  {
-    recordType: "engineOrders",
-    orders: [],
+    identifier: "appDefault",
+    base: { name: "Application Default" },
   },
 ];
 
 add_setup(async function () {
-  useHttpServer("opensearch");
-  await SearchTestUtils.useTestEngines("data", null, CONFIG_V2);
+  useHttpServer();
+  SearchTestUtils.setRemoteSettingsConfig(CONFIG);
   await Services.search.init();
 });
 
-add_task(async function test_add_on_engine_id() {
-  let addOnEngine = Services.search.defaultEngine;
+add_task(async function test_app_provided_engine_id() {
+  let appDefault = Services.search.defaultEngine;
 
   Assert.equal(
-    addOnEngine.name,
-    "Test search engine",
-    "Should have installed the Test search engine as default."
+    appDefault.name,
+    "Application Default",
+    "Should have installed the application engine as default."
   );
-  Assert.ok(addOnEngine.id, "The Addon Search Engine should have an id.");
   Assert.equal(
-    addOnEngine.id,
-    "engine@search.mozilla.orgdefault",
+    appDefault.id,
+    "appDefault",
+    "The application id should match the configuration."
+  );
+});
+
+add_task(async function test_addon_engine_id() {
+  await SearchTestUtils.installSearchExtension({
+    name: "AddonEngine",
+    id: "addon@tests.mozilla.org",
+  });
+
+  let addonEngine = Services.search.getEngineByName("AddonEngine");
+  Assert.equal(
+    addonEngine.id,
+    "addon@tests.mozilla.orgdefault",
     "The Addon Search Engine id should be the webextension id + the locale."
   );
 });
@@ -102,7 +75,7 @@ add_task(async function test_user_engine_id() {
 
 add_task(async function test_open_search_engine_id() {
   let openSearchEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: gDataUrl + "simple.xml",
+    url: `${gHttpURL}/opensearch/simple.xml`,
   });
 
   Assert.ok(openSearchEngine, "Should have installed the Open Search Engine.");
@@ -142,23 +115,3 @@ add_task(async function test_enterprise_policy_engine_id() {
     "The Policy Engine id should be 'policy-' + 'the name of the policy engine'."
   );
 });
-
-/**
- * Loads a new enterprise policy, and re-initialise the search service
- * with the new policy. Also waits for the search service to write the settings
- * file to disk.
- *
- * @param {object} policy
- *   The enterprise policy to use.
- */
-async function setupPolicyEngineWithJson(policy) {
-  Services.search.wrappedJSObject.reset();
-
-  await EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
-
-  let settingsWritten = SearchTestUtils.promiseSearchNotification(
-    "write-settings-to-disk-complete"
-  );
-  await Services.search.init();
-  await settingsWritten;
-}

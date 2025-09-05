@@ -33,8 +33,6 @@ enum LiFlags {
 };
 
 struct ImmShiftedTag : public ImmWord {
-  explicit ImmShiftedTag(JSValueShiftedTag shtag) : ImmWord((uintptr_t)shtag) {}
-
   explicit ImmShiftedTag(JSValueType type)
       : ImmWord(uintptr_t(JSValueShiftedTag(JSVAL_TYPE_TO_SHIFTED_TAG(type)))) {
   }
@@ -183,6 +181,7 @@ class MacroAssemblerLOONG64 : public Assembler {
 
   void ma_cmp_set(Register dst, Register lhs, ImmWord imm, Condition c);
   void ma_cmp_set(Register dst, Register lhs, ImmPtr imm, Condition c);
+  void ma_cmp_set(Register dst, Address address, Register rhs, Condition c);
   void ma_cmp_set(Register dst, Address address, Imm32 imm, Condition c);
   void ma_cmp_set(Register dst, Address address, ImmWord imm, Condition c);
 
@@ -364,14 +363,12 @@ class MacroAssemblerLOONG64 : public Assembler {
     MOZ_CRASH("Not supported for this target");
   }
 
-  void outOfLineWasmTruncateToInt32Check(FloatRegister input, Register output,
-                                         MIRType fromType, TruncFlags flags,
-                                         Label* rejoin,
-                                         wasm::BytecodeOffset trapOffset);
-  void outOfLineWasmTruncateToInt64Check(FloatRegister input, Register64 output,
-                                         MIRType fromType, TruncFlags flags,
-                                         Label* rejoin,
-                                         wasm::BytecodeOffset trapOffset);
+  void outOfLineWasmTruncateToInt32Check(
+      FloatRegister input, Register output, MIRType fromType, TruncFlags flags,
+      Label* rejoin, const wasm::TrapSiteDesc& trapSiteDesc);
+  void outOfLineWasmTruncateToInt64Check(
+      FloatRegister input, Register64 output, MIRType fromType,
+      TruncFlags flags, Label* rejoin, const wasm::TrapSiteDesc& trapSiteDesc);
 
  protected:
   void wasmLoadImpl(const wasm::MemoryAccessDesc& access, Register memoryBase,
@@ -511,9 +508,15 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
     ma_push(scratch2);
   }
   void push(Register reg) { ma_push(reg); }
-  void push(FloatRegister reg) { ma_push(reg); }
+  void push(FloatRegister reg) {
+    MOZ_ASSERT(reg.isDouble(), "float32 and simd128 not supported");
+    ma_push(reg);
+  }
   void pop(Register reg) { ma_pop(reg); }
-  void pop(FloatRegister reg) { ma_pop(reg); }
+  void pop(FloatRegister reg) {
+    MOZ_ASSERT(reg.isDouble(), "float32 and simd128 not supported");
+    ma_pop(reg);
+  }
 
   // Emit a branch that can be toggled to a non-operation. On LOONG64 we use
   // "andi" instruction to toggle the branch.
@@ -610,7 +613,7 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
     }
     ScratchRegisterScope scratch(asMasm());
     MOZ_ASSERT(scratch != src);
-    mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), scratch);
+    mov(ImmShiftedTag(type), scratch);
     as_xor(dest, src, scratch);
   }
 
@@ -819,7 +822,7 @@ class MacroAssemblerLOONG64Compat : public MacroAssemblerLOONG64 {
       bind(&upper32BitsSignExtended);
     }
 #endif
-    ma_li(dest, ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)));
+    ma_li(dest, ImmShiftedTag(type));
     if (type == JSVAL_TYPE_INT32 || type == JSVAL_TYPE_BOOLEAN) {
       as_bstrins_d(dest, src, 31, 0);
     } else {

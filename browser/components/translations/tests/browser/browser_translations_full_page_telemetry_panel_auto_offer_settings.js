@@ -25,6 +25,8 @@ add_task(async function test_translations_panel_auto_offer_settings() {
   });
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
   await FullPageTranslationsTestUtils.openTranslationsSettingsMenu();
@@ -57,6 +59,8 @@ add_task(async function test_translations_panel_auto_offer_settings() {
   );
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
   await FullPageTranslationsTestUtils.assertIsAlwaysOfferTranslationsEnabled(
@@ -106,6 +110,10 @@ add_task(async function test_translations_panel_auto_offer_settings() {
       opened_from: "translationsButton",
       document_language: "es",
     },
+  });
+
+  await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+    expectedEventCount: 0,
   });
 
   await cleanup();

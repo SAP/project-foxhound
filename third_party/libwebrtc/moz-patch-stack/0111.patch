@@ -1,72 +1,82 @@
-From: Jan Grulich <jgrulich@redhat.com>
-Date: Wed, 5 Jun 2024 08:18:00 +0000
-Subject: Bug 1900057 - WebRTC backport: Video capture PipeWire: always capture
- latest processed buffer r=pehrsons,webrtc-reviewers
+From: Andreas Pehrson <apehrson@mozilla.com>
+Date: Tue, 27 Aug 2024 10:01:00 +0000
+Subject: Bug 1914835 - With ScreenCaptureKit embed the mouse cursor directly.
+ r=webrtc-reviewers,ng
 
-This is a simple backport of an WebRTC upstream change.
+The MouseCursorMonitor on macOS is rather expensive, as for every pulled frame
+it compares all pixels of the cursors used for the current and last frames.
+Getting to the pixels may also incur a conversion.
 
-Upstream commit: 848980198ebdc7fd9257ff64faace33eada44798
+Note that this comparison happens even if the backend reports it had embedded
+the cursor already, as the embedding only affects composing the monitored cursor
+into a captured frame.
 
-Differential Revision: https://phabricator.services.mozilla.com/D212281
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/c49870c644509b14e9de0e0ab9bb0bbc8e01e93b
+Differential Revision: https://phabricator.services.mozilla.com/D220092
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/8ca7b371646d8aa40b2c3faf54570fcd1331a677
 ---
- .../linux/wayland/shared_screencast_stream.cc  | 18 +++++++++++++++---
- 1 file changed, 15 insertions(+), 3 deletions(-)
+ .../desktop_capture/mac/screen_capturer_sck.h   |  3 +++
+ .../desktop_capture/mac/screen_capturer_sck.mm  | 17 ++++++++++++++---
+ 2 files changed, 17 insertions(+), 3 deletions(-)
 
-diff --git a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
-index dbd0f83e64..e321956ef7 100644
---- a/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
-+++ b/modules/desktop_capture/linux/wayland/shared_screencast_stream.cc
-@@ -90,6 +90,9 @@ class SharedScreenCastStreamPrivate {
-   webrtc::Mutex queue_lock_;
-   ScreenCaptureFrameQueue<SharedDesktopFrame> queue_
-       RTC_GUARDED_BY(&queue_lock_);
-+  webrtc::Mutex latest_frame_lock_;
-+  SharedDesktopFrame* latest_available_frame_
-+      RTC_GUARDED_BY(&latest_frame_lock_) = nullptr;
-   std::unique_ptr<MouseCursor> mouse_cursor_;
-   DesktopVector mouse_cursor_position_ = DesktopVector(-1, -1);
+diff --git a/modules/desktop_capture/mac/screen_capturer_sck.h b/modules/desktop_capture/mac/screen_capturer_sck.h
+index 2c5241d33e..105cbf0783 100644
+--- a/modules/desktop_capture/mac/screen_capturer_sck.h
++++ b/modules/desktop_capture/mac/screen_capturer_sck.h
+@@ -18,6 +18,9 @@
  
-@@ -613,13 +616,13 @@ void SharedScreenCastStreamPrivate::StopAndCleanupStream() {
+ namespace webrtc {
  
- std::unique_ptr<SharedDesktopFrame>
- SharedScreenCastStreamPrivate::CaptureFrame() {
--  webrtc::MutexLock lock(&queue_lock_);
-+  webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
- 
--  if (!pw_stream_ || !queue_.current_frame()) {
-+  if (!pw_stream_ || !latest_available_frame_) {
-     return std::unique_ptr<SharedDesktopFrame>{};
-   }
- 
--  std::unique_ptr<SharedDesktopFrame> frame = queue_.current_frame()->Share();
-+  std::unique_ptr<SharedDesktopFrame> frame = latest_available_frame_->Share();
-   if (use_damage_region_) {
-     frame->mutable_updated_region()->Swap(&damage_region_);
-     damage_region_.Clear();
-@@ -852,6 +855,8 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
-     if (observer_) {
-       observer_->OnFailedToProcessBuffer();
-     }
-+    webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
-+    latest_available_frame_ = nullptr;
-     return;
-   }
- 
-@@ -870,9 +875,16 @@ void SharedScreenCastStreamPrivate::ProcessBuffer(pw_buffer* buffer) {
-     observer_->OnDesktopFrameChanged();
-   }
- 
-+  // We have to hold the lock over the latest_frame here already, since
-+  // we are going to update damage region, which corresponds to the latest
-+  // frame and is accessed in CaptureFrame()
-+  webrtc::MutexLock latest_frame_lock(&latest_frame_lock_);
++// Returns true if the ScreenCaptureKit capturer is available.
++bool ScreenCapturerSckAvailable();
 +
-   UpdateFrameUpdatedRegions(spa_buffer, *queue_.current_frame());
-   queue_.current_frame()->set_may_contain_cursor(is_cursor_embedded_);
+ // A DesktopCapturer implementation that uses ScreenCaptureKit.
+ std::unique_ptr<DesktopCapturer> CreateScreenCapturerSck(
+     const DesktopCaptureOptions& options);
+diff --git a/modules/desktop_capture/mac/screen_capturer_sck.mm b/modules/desktop_capture/mac/screen_capturer_sck.mm
+index 9e2d9047e6..6bd08e52ce 100644
+--- a/modules/desktop_capture/mac/screen_capturer_sck.mm
++++ b/modules/desktop_capture/mac/screen_capturer_sck.mm
+@@ -24,6 +24,8 @@
  
-+  latest_available_frame_ = queue_.current_frame();
+ using webrtc::DesktopFrameIOSurface;
+ 
++#define SCK_AVAILABLE @available(macOS 14.0, *)
 +
-   if (callback_) {
-     std::unique_ptr<SharedDesktopFrame> frame = queue_.current_frame()->Share();
-     frame->set_capturer_id(DesktopCapturerId::kWaylandCapturerLinux);
+ namespace webrtc {
+ class ScreenCapturerSck;
+ }  // namespace webrtc
+@@ -48,6 +50,14 @@ API_AVAILABLE(macos(14.0))
+ 
+ namespace webrtc {
+ 
++bool ScreenCapturerSckAvailable() {
++  bool sonomaOrHigher = false;
++  if (SCK_AVAILABLE) {
++    sonomaOrHigher = true;
++  }
++  return sonomaOrHigher;
++}
++
+ class API_AVAILABLE(macos(14.0)) ScreenCapturerSck final : public DesktopCapturer {
+  public:
+   explicit ScreenCapturerSck(const DesktopCaptureOptions& options);
+@@ -353,11 +363,10 @@ void ScreenCapturerSck::StartOrReconfigureCapturer() {
+ }
+ 
+ std::unique_ptr<DesktopCapturer> CreateScreenCapturerSck(const DesktopCaptureOptions& options) {
+-  if (@available(macOS 14.0, *)) {
++  if (SCK_AVAILABLE) {
+     return std::make_unique<ScreenCapturerSck>(options);
+-  } else {
+-    return nullptr;
+   }
++  return nullptr;
+ }
+ 
+ }  // namespace webrtc
+@@ -419,3 +428,5 @@ std::unique_ptr<DesktopCapturer> CreateScreenCapturerSck(const DesktopCaptureOpt
+ }
+ 
+ @end
++
++#undef SCK_AVAILABLE

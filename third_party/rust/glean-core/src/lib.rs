@@ -64,12 +64,13 @@ pub use crate::error_recording::{test_get_num_recorded_errors, ErrorType};
 pub use crate::histogram::HistogramType;
 pub use crate::metrics::labeled::{
     AllowLabeled, LabeledBoolean, LabeledCounter, LabeledCustomDistribution,
-    LabeledMemoryDistribution, LabeledMetric, LabeledMetricData, LabeledString,
+    LabeledMemoryDistribution, LabeledMetric, LabeledMetricData, LabeledQuantity, LabeledString,
     LabeledTimingDistribution,
 };
 pub use crate::metrics::{
     BooleanMetric, CounterMetric, CustomDistributionMetric, Datetime, DatetimeMetric,
-    DenominatorMetric, DistributionData, EventMetric, MemoryDistributionMetric, MemoryUnit,
+    DenominatorMetric, DistributionData, EventMetric, LocalCustomDistribution,
+    LocalMemoryDistribution, LocalTimingDistribution, MemoryDistributionMetric, MemoryUnit,
     NumeratorMetric, ObjectMetric, PingType, QuantityMetric, Rate, RateMetric, RecordedEvent,
     RecordedExperiment, StringListMetric, StringMetric, TextMetric, TimeUnit, TimerId,
     TimespanMetric, TimingDistributionMetric, UrlMetric, UuidMetric,
@@ -98,6 +99,7 @@ static PRE_INIT_SOURCE_TAGS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 
 /// Keep track of pings registered before Glean is initialized.
 static PRE_INIT_PING_REGISTRATION: Mutex<Vec<metrics::PingType>> = Mutex::new(Vec::new());
+static PRE_INIT_PING_ENABLED: Mutex<Vec<(metrics::PingType, bool)>> = Mutex::new(Vec::new());
 
 /// Global singleton of the handles of the glean.init threads.
 /// For joining. For tests.
@@ -143,6 +145,11 @@ pub struct InternalConfiguration {
     /// Maps a ping name to a list of pings to schedule along with it.
     /// Only used if the ping's own ping schedule list is empty.
     pub ping_schedule: HashMap<String, Vec<String>>,
+
+    /// Write count threshold when to auto-flush. `0` disables it.
+    pub ping_lifetime_threshold: u64,
+    /// After what time to auto-flush. 0 disables it.
+    pub ping_lifetime_max_time: u64,
 }
 
 /// How to specify the rate at which pings may be uploaded before they are throttled.
@@ -435,6 +442,10 @@ fn initialize_inner(
                 for ping in pings.iter() {
                     glean.register_ping_type(ping);
                 }
+                let pings = PRE_INIT_PING_ENABLED.lock().unwrap();
+                for (ping, enabled) in pings.iter() {
+                    glean.set_ping_enabled(ping, *enabled);
+                }
 
                 // If this is the first time ever the Glean SDK runs, make sure to set
                 // some initial core metrics in case we need to generate early pings.
@@ -695,7 +706,9 @@ pub fn shutdown() {
     });
 }
 
-/// Asks the database to persist ping-lifetime data to disk. Probably expensive to call.
+/// Asks the database to persist ping-lifetime data to disk.
+///
+/// Probably expensive to call.
 /// Only has effect when Glean is configured with `delay_ping_lifetime_io: true`.
 /// If Glean hasn't been initialized this will dispatch and return Ok(()),
 /// otherwise it will block until the persist is done and return its Result.
@@ -811,7 +824,10 @@ pub extern "C" fn glean_enable_logging() {
     }
 }
 
-/// Sets whether upload is enabled or not.
+/// **DEPRECATED** Sets whether upload is enabled or not.
+///
+/// **DEPRECATION NOTICE**:
+/// This API is deprecated. Use `set_collection_enabled` instead.
 pub fn glean_set_upload_enabled(enabled: bool) {
     if !was_initialize_called() {
         return;
@@ -844,6 +860,28 @@ pub fn glean_set_upload_enabled(enabled: bool) {
     })
 }
 
+/// Sets whether collection is enabled or not.
+///
+/// This replaces `set_upload_enabled`.
+pub fn glean_set_collection_enabled(enabled: bool) {
+    glean_set_upload_enabled(enabled)
+}
+
+/// Enable or disable a ping.
+///
+/// Disabling a ping causes all data for that ping to be removed from storage
+/// and all pending pings of that type to be deleted.
+pub fn set_ping_enabled(ping: &PingType, enabled: bool) {
+    let ping = ping.clone();
+    if was_initialize_called() {
+        crate::launch_with_glean_mut(move |glean| glean.set_ping_enabled(&ping, enabled));
+    } else {
+        let m = &PRE_INIT_PING_ENABLED;
+        let mut lock = m.lock().unwrap();
+        lock.push((ping, enabled));
+    }
+}
+
 /// Register a new [`PingType`](PingType).
 pub(crate) fn register_ping_type(ping: &PingType) {
     // If this happens after Glean.initialize is called (and returns),
@@ -864,6 +902,22 @@ pub(crate) fn register_ping_type(ping: &PingType) {
         let mut lock = m.lock().unwrap();
         lock.push(ping.clone());
     }
+}
+
+/// Gets a list of currently registered ping names.
+///
+/// # Returns
+///
+/// The list of ping names that are currently registered.
+pub fn glean_get_registered_ping_names() -> Vec<String> {
+    block_on_dispatcher();
+    core::with_glean(|glean| {
+        glean
+            .get_registered_ping_names()
+            .iter()
+            .map(|ping| ping.to_string())
+            .collect()
+    })
 }
 
 /// Indicate that an experiment is running.  Glean will then add an
@@ -964,6 +1018,16 @@ pub fn glean_set_debug_view_tag(tag: String) -> bool {
     }
 }
 
+/// Gets the currently set debug view tag.
+///
+/// # Returns
+///
+/// Return the value for the debug view tag or [`None`] if it hasn't been set.
+pub fn glean_get_debug_view_tag() -> Option<String> {
+    block_on_dispatcher();
+    core::with_glean(|glean| glean.debug_view_tag().map(|tag| tag.to_string()))
+}
+
 /// Sets source tags.
 ///
 /// Overrides any existing source tags.
@@ -1008,6 +1072,16 @@ pub fn glean_set_log_pings(value: bool) {
     } else {
         PRE_INIT_LOG_PINGS.store(value, Ordering::SeqCst);
     }
+}
+
+/// Gets the current log pings value.
+///
+/// # Returns
+///
+/// Return the value for the log pings debug option.
+pub fn glean_get_log_pings() -> bool {
+    block_on_dispatcher();
+    core::with_glean(|glean| glean.log_pings())
 }
 
 /// Performs the collection/cleanup operations required by becoming active.
@@ -1224,6 +1298,8 @@ pub fn glean_enable_logging_to_fd(_fd: u64) {
 }
 
 #[allow(missing_docs)]
+// uniffi-generated code should not be checked.
+#[allow(clippy::all)]
 mod ffi {
     use super::*;
     uniffi::include_scaffolding!("glean");

@@ -105,6 +105,10 @@ UrlClassifierRemoteSettingsService.prototype = {
 
         // Construct the payload
         payload += "i:" + reqTableName + "\n";
+        // Add adddel directive to clear the old chunks.
+        if (reqChunkNum) {
+          payload += "ad:" + reqChunkNum.toString() + "\n";
+        }
         payload += strData;
       } catch (e) {
         downloadError = true;
@@ -123,7 +127,7 @@ UrlClassifierRemoteSettingsService.prototype = {
     let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
       Ci.nsIStringInputStream
     );
-    stream.setData(payload, payload.length);
+    stream.setByteStringData(payload);
 
     try {
       aListener.onStartRequest(null);

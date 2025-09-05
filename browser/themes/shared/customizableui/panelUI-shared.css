@@ -5,12 +5,10 @@
 :root {
   --panelui-subview-transition-duration: 150ms;
 
-  --panel-item-hover-bgcolor: var(--button-hover-bgcolor);
-  --panel-item-active-bgcolor: var(--button-active-bgcolor);
-  --panel-banner-item-color: var(--button-color);
-  --panel-banner-item-background-color: var(--button-bgcolor);
-  --panel-banner-item-hover-bgcolor: var(--button-hover-bgcolor);
-  --panel-banner-item-active-bgcolor: var(--button-active-bgcolor);
+  --panel-banner-item-color: var(--button-text-color);
+  --panel-banner-item-background-color: var(--button-background-color);
+  --panel-banner-item-hover-bgcolor: var(--button-background-color-hover);
+  --panel-banner-item-active-bgcolor: var(--button-background-color-active);
   --panel-banner-item-update-supported-bgcolor: light-dark(#2ac3a2, #54ffbd);
   --panel-banner-item-info-icon-bgcolor: light-dark(#0090ed, #80ebff);
 
@@ -91,7 +89,6 @@ menupopup {
   &[badge-status="update-available"],
   &[badge-status="update-downloading"],
   &[badge-status="update-manual"],
-  &[badge-status="update-other-instance"],
   &[badge-status="update-restart"],
   &[badge-status="update-unsupported"] {
     > .toolbarbutton-badge-stack > .toolbarbutton-badge {
@@ -110,7 +107,6 @@ menupopup {
   &[badge-status="update-available"],
   &[badge-status="update-downloading"],
   &[badge-status="update-manual"],
-  &[badge-status="update-other-instance"],
   &[badge-status="update-restart"] {
     > .toolbarbutton-badge-stack > .toolbarbutton-badge {
       fill: var(--panel-banner-item-update-supported-bgcolor);
@@ -127,7 +123,6 @@ menupopup {
   &[notificationid="update-available"],
   &[notificationid="update-downloading"],
   &[notificationid="update-manual"],
-  &[notificationid="update-other-instance"],
   &[notificationid="update-restart"] {
     > .toolbarbutton-icon {
       background-image: url(chrome://browser/skin/update-badge.svg);
@@ -162,7 +157,19 @@ menupopup {
   }
 }
 
-#fxa-toolbar-menu-button[badge-status="login_failed"] > .toolbarbutton-badge-stack > .toolbarbutton-badge {
+#fxa-toolbar-menu-button[badge-status="sync-disabled"] > .toolbarbutton-badge-stack > .toolbarbutton-badge {
+  box-shadow: none;
+  min-width: 12px;
+  min-height: 12px;
+  -moz-context-properties: stroke, fill;
+  background: url(chrome://browser/skin/notification-fill-12.svg) no-repeat center;
+  background-size: 12px;
+  stroke: var(--arrowpanel-background);
+  fill: var(--warning-icon-bgcolor);
+  filter: drop-shadow(0 0 5px var(--warning-icon-bgcolor));
+}
+
+#fxa-toolbar-menu-button:is([badge-status="login_failed"], [badge-status="sync-disabled"]) > .toolbarbutton-badge-stack > .toolbarbutton-badge {
   display: flex;
 }
 
@@ -237,7 +244,8 @@ panelview {
 
 .panel-info-button {
   appearance: none;
-  color: inherit;
+  color: var(--button-text-color-ghost);
+  background-color: var(--button-background-color-ghost);
   padding: 0;
   border-radius: var(--toolbarbutton-border-radius);
   flex-shrink: 0;
@@ -247,12 +255,14 @@ panelview {
   }
 
   &:hover {
-    background-color: var(--panel-item-hover-bgcolor);
+    color: var(--button-text-color-ghost-hover);
+    background-color: var(--button-background-color-ghost-hover);
   }
 
   &:not(:hover)[checked],
   &:hover:active {
-    background-color: var(--panel-item-active-bgcolor);
+    color: var(--button-text-color-ghost-active);
+    background-color: var(--button-background-color-ghost-active);
   }
 
   &:focus-visible {
@@ -302,16 +312,18 @@ panelview {
 
   :is(menu, menuitem) {
     &[disabled] {
-      color: var(--panel-disabled-color);
+      color: var(--button-text-color-ghost-disabled);
+      background-color: var(--button-background-color-ghost-disabled);
+      opacity: var(--button-opacity-disabled);
     }
 
     &:not([disabled])[_moz-menuactive] {
-      color: inherit;
-      background-color: var(--panel-item-hover-bgcolor);
+      color: var(--button-text-color-ghost-hover);
+      background-color: var(--button-background-color-ghost-hover);
 
       &:active {
-        color: inherit;
-        background-color: var(--panel-item-active-bgcolor);
+        color: var(--button-text-color-ghost-active);
+        background-color: var(--button-background-color-ghost-active);
       }
     }
 
@@ -474,10 +486,6 @@ menupopup[emptyplacesresult] > .hide-if-empty-places-result {
       opacity: 1;
     }
   }
-}
-
-panelview[id^=PanelUI-webext-] {
-  overflow: hidden;
 }
 
 .cui-widget-panel {
@@ -652,6 +660,22 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 /* Handle different UI states. */
 
+#appMenu-mainView:not([showing-fxa-menu-message]) #appMenu-fxa-menu-message,
+#PanelUI-fxa:not([showing-fxa-menu-message]) #PanelUI-fxa-menu-message {
+  display: none;
+}
+
+#appMenu-mainView[showing-fxa-menu-message] {
+  & #appMenu-fxa-status2,
+  & #appMenu-fxa-separator {
+    display: none;
+  }
+}
+
+#PanelUI-fxa[showing-fxa-menu-message] #fxa-manage-account-button {
+  display: none
+}
+
 :root:not([fxastatus="signedin"]) #PanelUI-fxa-menu-syncnow-button {
   display: none;
 }
@@ -671,16 +695,19 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
     > #appMenu-fxa-label2 {
       padding: 6px 12px;
-      background-color: var(--button-bgcolor);
+      color: var(--button-text-color);
+      background-color: var(--button-background-color);
       font-size: 0.8em;
       font-weight: 600;
 
       &:hover {
-        background-color: var(--button-hover-bgcolor);
+        color: var(--button-text-color-hover);
+        background-color: var(--button-background-color-hover);
       }
 
       &:hover:active {
-        background-color: var(--button-active-bgcolor);
+        color: var(--button-text-color-active);
+        background-color: var(--button-background-color-active);
       }
     }
   }
@@ -709,13 +736,18 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   margin: 0;
 }
 
-#PanelUI-fxa-cta-menu .fxa-cta-button {
-  margin: var(--space-xsmall);
+#PanelUI-fxa-cta-menu,
+#PanelUI-fxa-menu-services {
+  .fxa-cta-button {
+    margin: var(--space-xsmall);
+  }
 }
 
+.PanelUI-fxa-menu-section-title,
 .PanelUI-remotetabs-clientcontainer > label[itemtype="client"] {
+  /* FIXME: these elements should use the subview-subheader class */
   color: var(--text-color-deemphasized);
-  font-size: 11px;
+  font-size: 0.9em;
   margin-top: 6px;
   margin-bottom: 2px;
 }
@@ -734,6 +766,63 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   }
 }
 
+.PanelUI-fxa-menu-setup-sync {
+  padding: 16px;
+}
+
+.sync-setup-icon,
+.sync-status-indicator {
+  width: 20px;
+  height: 20px;
+  box-shadow: none;
+  -moz-context-properties: fill;
+  fill: currentColor;
+}
+
+.sync-setup-icon {
+  list-style-image: url("chrome://browser/skin/sync-off.svg");
+}
+
+.sync-status-indicator {
+  background: url("chrome://browser/skin/notification-fill-12.svg") no-repeat center;
+  margin-inline-end: var(--space-xsmall);
+  fill: var(--warning-icon-bgcolor);
+  background-size: 18px;
+}
+
+.sync-setup-title {
+  font-size: 1.1em;
+  font-weight: 400;
+  margin-block: auto;
+}
+
+.sync-setup-description {
+  padding: var(--space-large) 0;
+}
+
+#PanelUI-fxa-menu-setup-sync-button-new,
+.sync-status-container {
+  margin-inline-start: var(--space-small);
+}
+
+#PanelUI-fxa-menu-setup-sync-button-new {
+  padding: 6px 12px;
+  background-color: var(--button-background-color);
+  font-size: 0.9em;
+  font-weight: 500;
+  max-width: fit-content;
+  border-radius: var(--button-border-radius);
+
+  &:hover {
+    background-color: var(--button-background-color-hover);
+  }
+
+  &:hover:active {
+    background-color: var(--button-background-color-active);
+  }
+}
+
+
 /* Firefox Account Toolbar Panel */
 
 #fxa-avatar-image {
@@ -748,12 +837,80 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
     --avatar-image-url: url(chrome://browser/skin/fxa/avatar-empty.svg);
   }
 
+  /**
+   * If we're not showing the glowing badge, we'll switch to the cutout variant
+   * of avatar-empty. If we ARE showing the glowing badge, we don't want the
+   * cutout to appear.
+   */
+  &[fxastatus="not_configured"][fxa-avatar-icon-variant="human-circle"] {
+    #fxa-toolbar-menu-button {
+      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-empty-circle.svg);
+    }
+
+    #fxa-toolbar-menu-button[showing-callout] {
+      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-empty.svg);
+    }
+  }
+
+  /**
+   * Similar to the above for the fox variant of the icon, we only want to show
+   * the cutout variant if we're showing the glowing badge.
+   */
+  &[fxastatus="not_configured"][fxa-avatar-icon-variant="fox-circle"] {
+    #fxa-toolbar-menu-button {
+      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox-circle.svg);
+    }
+
+    #fxa-toolbar-menu-button[showing-callout] {
+      --avatar-image-url: url(chrome://browser/skin/fxa/avatar-fox.svg);
+    }
+  }
+
+  /**
+   * This overrides the hidden state of the badge so that we can repurpose it
+   * for the "circle" that fills the little cut-out in the -circle avatar
+   * variants. We only do this if we're not currently showing the glowing badge
+   * on the button.
+   *
+   * This is pretty gross, but it's just for the signed-out avatar experiment,
+   * and I'm hoping we're okay accepting this until we decide whether or not
+   * one of these variants should be the default signed-out avatar. At that
+   * point, I'm hoping we can shift to something less gross (bug 1938106).
+   */
+  &[fxastatus="not_configured"][fxa-avatar-icon-variant$="-circle"] #fxa-toolbar-menu-button:not([showing-callout]) {
+    #fxa-avatar-image:-moz-locale-dir(rtl) {
+      transform: scaleX(-1);
+    }
+
+    .toolbarbutton-badge {
+      background-color: transparent;
+      border: 0;
+      box-shadow: none;
+      position: relative;
+      display: block;
+      height: 6px;
+      width: 6px;
+      background-image: url(chrome://browser/skin/fxa/circle.svg);
+      background-repeat: no-repeat;
+      background-position: center;
+      top: 15px;
+      inset-inline-start: 2px;
+      fill: var(--toolbarbutton-icon-fill);
+      color: unset;
+      opacity: 0.43;
+
+      @media (prefers-color-scheme: dark) {
+        opacity: 0.67;
+      }
+    }
+  }
+
   &:not([fxatoolbarmenu]) #fxa-toolbar-menu-button {
     display: none;
   }
 
   /* stylelint-disable-next-line media-query-no-invalid */
-  @media not (-moz-bool-pref: "identity.fxaccounts.toolbar.defaultVisible") {
+  @media not -moz-pref("identity.fxaccounts.toolbar.defaultVisible") {
     /* Hide the FxA toolbar button when its in the nav-bar, until in use */
     &[fxastatus="not_configured"] #widget-overflow-list > #fxa-toolbar-menu-button,
     &[fxastatus="not_configured"] #nav-bar-customization-target > #fxa-toolbar-menu-button {
@@ -767,12 +924,11 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   }
 
   &:not([fxastatus="signedin"]) #PanelUI-fxa-menu-connect-device-button {
-    color: var(--panel-disabled-color);
+    color: var(--text-color-disabled);
   }
 }
 
-#fxa-avatar-image,
-#PanelUI-fxa-menu-account-settings-button {
+#fxa-avatar-image {
   list-style-image: var(--avatar-image-url);
 }
 
@@ -790,11 +946,13 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 
 #fxa-menu-header-title {
   color: var(--arrowpanel-color);
+  text-wrap: wrap;
 }
 
 #fxa-menu-header-description {
   color: var(--text-color-deemphasized);
   font-weight: var(--font-weight-bold);
+  text-wrap: wrap;
 }
 
 #cta-menu-header-description {
@@ -821,7 +979,8 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
   list-style-image: url(chrome://browser/skin/fxa/monitor.svg);
 }
 
-#PanelUI-fxa-menu-relay-button {
+#PanelUI-fxa-menu-relay-button,
+#PanelUI-services-menu-relay-button {
   list-style-image: url(chrome://browser/content/logos/relay.svg);
 }
 
@@ -832,7 +991,7 @@ toolbarbutton[constrain-size="true"][cui-areatype="panel"] > .toolbarbutton-badg
 }
 
 :root:not([fxastatus="signedin"]) #PanelUI-fxa-menu-connect-device-button {
-  color: var(--panel-disabled-color);
+  color: var(--text-color-disabled);
 }
 
 /* From the FxA menu -> synced tabs, we don't need to clutter the view with
@@ -1034,7 +1193,7 @@ panelview .toolbarbutton-1,
 }
 
 .subview-subheader {
-  font-size: 11px;
+  font-size: 0.9em;
   font-weight: inherit;
   color: var(--text-color-deemphasized);
   padding-block: 4px;
@@ -1044,10 +1203,6 @@ panelview .toolbarbutton-1,
 .subviewbutton {
   /* toolbarbuttons default to centered, but we don't want that for subviews. */
   justify-content: flex-start;
-
-  &[disabled="true"] {
-    color: var(--panel-disabled-color);
-  }
 
   /* We don't always display: none this item, and if it has forced width (like above)
   * or margin, that impacts the position of the label. Fix:
@@ -1066,10 +1221,8 @@ panelview .toolbarbutton-1,
     display: flex;
   }
 
-  @media not (prefers-contrast) {
-    &[shortcut]:not([disabled])::after {
-      color: var(--panel-disabled-color);
-    }
+  &[shortcut]:not([disabled])::after {
+    color: var(--text-color-deemphasized);
   }
 
   &[shortcut]::after,
@@ -1108,11 +1261,29 @@ panelview .toolbarbutton-1,
   padding-inline-start: 8px;
 }
 
-.subviewbutton-iconic > .toolbarbutton-icon {
-  width: 16px;
-  height: 16px;
+.subviewbutton-iconic {
   -moz-context-properties: fill;
   fill: currentColor;
+
+  > .toolbarbutton-icon {
+    width: 16px;
+    height: 16px;
+  }
+}
+
+#appMenu-profiles-button,
+#PanelUI-fxa-menu-profiles-button {
+  justify-content: space-between;
+}
+
+/* Set the --appmenu-profiles-theme-bg and --appmenu-profiles-theme-fg
+ * variables inline on the toolbarbutton */
+#appMenu-profiles-button.subviewbutton-iconic > .toolbarbutton-icon,
+#PanelUI-fxa-menu-profiles-button.subviewbutton-iconic > .toolbarbutton-icon,
+.subviewbutton-iconic.profile-item > .toolbarbutton-icon {
+  -moz-context-properties: fill, stroke;
+  fill: var(--appmenu-profiles-theme-bg);
+  stroke: var(--appmenu-profiles-theme-fg);
 }
 
 /* Adjust the Zoom toolbaritem padding to have its height the same as other toolbarbuttons,
@@ -1141,14 +1312,27 @@ panelview .toolbarbutton-1,
   outline: var(--focus-outline);
 }
 
-#appMenu-zoomReduce-button2 > .toolbarbutton-icon,
-#appMenu-zoomEnlarge-button2 > .toolbarbutton-icon {
-  -moz-context-properties: fill, stroke;
-  fill: var(--button-color);
-  /* the stroke color is used to fill the circle in the icon */
-  stroke: var(--button-bgcolor);
-  border-radius: 50%;
-  padding: 0;
+#appMenu-zoomReduce-button2,
+#appMenu-zoomEnlarge-button2 {
+  > .toolbarbutton-icon {
+    -moz-context-properties: fill, stroke;
+    color: var(--button-text-color);
+    fill: currentColor;
+    /* the stroke color is used to fill the circle in the icon */
+    stroke: var(--button-background-color);
+    border-radius: 50%;
+    padding: 0;
+  }
+
+  &:not([disabled]):hover > .toolbarbutton-icon {
+    color: var(--button-text-color-hover);
+    stroke: var(--button-background-color-hover);
+  }
+
+  &:not([disabled]):active:hover > .toolbarbutton-icon {
+    color: var(--button-text-color-hover);
+    stroke: var(--button-background-color-active);
+  }
 }
 
 #appMenu-zoomReset-button2 > .toolbarbutton-text,
@@ -1158,37 +1342,20 @@ panelview .toolbarbutton-1,
 
 #appMenu-fullscreen-button2 > .toolbarbutton-icon {
   padding: 1px;
-  background-color: var(--button-bgcolor);
-}
-
-#appMenu-zoomReduce-button2:not([disabled]):hover > .toolbarbutton-icon,
-#appMenu-zoomEnlarge-button2:not([disabled]):hover > .toolbarbutton-icon {
-  stroke: var(--panel-item-hover-bgcolor);
+  color: var(--button-text-color);
+  background-color: var(--button-background-color);
 }
 
 #appMenu-zoomReset-button2:not([disabled]):hover > .toolbarbutton-text,
 #appMenu-fullscreen-button2:not([disabled]):hover > .toolbarbutton-icon {
-  background-color: var(--panel-item-hover-bgcolor);
+  color: var(--button-text-color-hover);
+  background-color: var(--button-background-color-hover);
 }
 
-#appMenu-zoomReset-button2:not([disabled]):active:hover > .toolbarbutton-text,
-#appMenu-fullscreen-button2:not([disabled]):active:hover > .toolbarbutton-icon {
-  background-color: var(--panel-item-active-bgcolor);
-}
-
-#appMenu-zoomReduce-button2:not([disabled]),
-#appMenu-zoomEnlarge-button2:not([disabled]) {
-  &:hover {
-    > .toolbarbutton-icon {
-      stroke: var(--panel-item-hover-bgcolor);
-    }
-  }
-
-  &:active:hover {
-    > .toolbarbutton-icon {
-      stroke: var(--panel-item-active-bgcolor);
-    }
-  }
+#appMenu-zoomReset-button2:not([disabled]):hover:active > .toolbarbutton-text,
+#appMenu-fullscreen-button2:not([disabled]):hover:active > .toolbarbutton-icon {
+  color: var(--button-text-color-active);
+  background-color: var(--button-background-color-active);
 }
 
 /**
@@ -1306,20 +1473,27 @@ panelview .toolbarbutton-1 {
     [overflowedItem=true]
   ) > toolbarbutton
 ) {
+  color: var(--button-text-color-ghost);
+  background-color: var(--button-background-color-ghost);
+
   &:focus-visible {
     outline: var(--focus-outline);
     outline-offset: var(--focus-outline-inset);
   }
 
-  /* hover styles for not-disabled, not-active buttons */
-  &:not([disabled]):hover {
-    color: inherit;
-    background-color: var(--panel-item-hover-bgcolor);
+  &[disabled] {
+    color: var(--button-text-color-ghost-disabled);
+    background-color: var(--button-background-color-ghost-disabled);
+    opacity: var(--button-opacity-disabled);
+  }
 
-    /* hovered-and-active styles for not-disabled buttons */
+  &:not([disabled]):hover {
+    color: var(--button-text-color-ghost-hover);
+    background-color: var(--button-background-color-ghost-hover);
+
     &:active {
-      color: inherit;
-      background-color: var(--panel-item-active-bgcolor);
+      color: var(--button-text-color-ghost-active);
+      background-color: var(--button-background-color-ghost-active);
       box-shadow: 0 1px 0 hsla(210,4%,10%,.03) inset;
     }
   }
@@ -1349,7 +1523,8 @@ panelview .toolbarbutton-1 {
   }
 }
 
-#PanelUI-fxa-remotetabs-tabspane {
+#PanelUI-fxa-remotetabs-tabspane,
+#PanelUI-remotetabs-tabspane {
   min-width: 0;
 }
 
@@ -1396,10 +1571,6 @@ toolbarbutton[itemtype="showmorebutton"],
 .remote-tabs-undo-button {
   font-size: 0.8em;
   font-weight: var(--font-weight-bold);
-}
-
-#PanelUI-fxa-menu-account-settings-button > .toolbarbutton-icon {
-  border-radius: 50%;
 }
 
 .toolbaritem-combined-buttons {
@@ -1522,11 +1693,11 @@ toolbarbutton[itemtype="showmorebutton"],
   border: 1px solid transparent;
 
   &:hover {
-    background-color: var(--button-hover-bgcolor);
+    background-color: var(--button-background-color-hover);
   }
 
   &:is([selected], [selected]:hover, :hover:active) {
-    background-color: var(--button-active-bgcolor);
+    background-color: var(--button-background-color-active);
   }
 
   > .radio-check {
@@ -1579,7 +1750,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   }
 }
 
-#PanelUI-panic-actionlist-history::before {
+#PanelUI-panic-actionlist-newwindow::before {
   background-position-x: 16px;
 }
 
@@ -1587,7 +1758,7 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   background-position-x: 32px;
 }
 
-#PanelUI-panic-actionlist-newwindow::before {
+#PanelUI-panic-actionlist-history::before {
   background-position-x: 48px;
 }
 
@@ -1600,20 +1771,24 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 #PanelUI-panic-view-button {
   appearance: none;
-  background-color: var(--buttons-destructive-bgcolor);
-  color: var(--buttons-destructive-color);
+  background-color: var(--button-background-color-destructive);
+  color: var(--button-text-color-destructive);
   margin: 5px 15px 11px;
-  border: 1px solid transparent;
+  border: 1px solid var(--button-border-color-destructive);
   border-radius: 4px;
   font-weight: 600;
   padding: 10px;
 
   &:hover {
-    background-color: var(--buttons-destructive-hover-bgcolor);
+    background-color: var(--button-background-color-destructive-hover);
+    color: var(--button-text-color-destructive-hover);
+    border-color: var(--button-border-color-destructive-hover);
   }
 
   &:hover:active {
-    background-color: var(--buttons-destructive-active-bgcolor);
+    background-color: var(--button-background-color-destructive-active);
+    color: var(--button-text-color-destructive-active);
+    border-color: var(--button-border-color-destructive-active);
   }
 
   &:focus-visible {
@@ -1628,8 +1803,8 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 }
 
 #panic-button-success-closebutton {
-  background-color: var(--button-bgcolor);
-  color: var(--button-color);
+  background-color: var(--button-background-color);
+  color: var(--button-text-color);
   margin: 5px 0 0;
   border: 1px solid transparent;
   border-radius: 4px;
@@ -1638,9 +1813,9 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   appearance: none;
 
   &:hover {
-    background-color: var(--button-hover-bgcolor);
+    background-color: var(--button-background-color-hover);
     &:active {
-      background-color: var(--button-active-bgcolor);
+      background-color: var(--button-background-color-active);
     }
   }
 }
@@ -1808,10 +1983,6 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
   &[isinfocollapsed="false"] {
     background: radial-gradient(circle farthest-side at top right, #03b1f4, #0556cd);
     color: #fff;
-    /* Set custom hover/focus/active states on the info button,
-       to make them more visible on the header background */
-    --panel-item-hover-bgcolor: #0005;
-    --panel-item-active-bgcolor: #0007;
 
      &:-moz-locale-dir(rtl) {
       background: radial-gradient(circle farthest-side at top left, #03b1f4, #0556cd);
@@ -1913,16 +2084,16 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 .PanelUI-profiler-button {
   appearance: none;
-  background-color: var(--button-bgcolor);
+  background-color: var(--button-background-color);
   border-radius: 4px;
-  color: var(--button-color);
+  color: var(--button-text-color);
   padding: 8px;
   margin: 0 5px;
 
   &:hover {
-    background-color: var(--button-hover-bgcolor);
+    background-color: var(--button-background-color-hover);
     &:active {
-      background-color: var(--button-active-bgcolor);
+      background-color: var(--button-background-color-active);
     }
   }
 
@@ -1933,13 +2104,13 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 }
 
 .PanelUI-profiler-button-primary {
-  background-color: var(--button-primary-bgcolor);
-  color: var(--button-primary-color);
+  background-color: var(--color-accent-primary);
+  color: var(--button-text-color-primary);
 
   &:hover {
-    background-color: var(--button-primary-hover-bgcolor);
+    background-color: var(--color-accent-primary-hover);
     &:active {
-      background-color: var(--button-primary-active-bgcolor);
+      background-color: var(--color-accent-primary-active);
     }
   }
 }
@@ -2101,32 +2272,81 @@ radiogroup:focus-visible > .subviewradio[focused="true"] {
 
 /* ----- Profiles panels ----- */
 
-#profiles-edit-this-delete-button {
-  list-style-image: url("chrome://global/skin/icons/edit.svg");
+#PanelUI-profiles > toolbarseparator {
+  display: none;
 }
 
-#profiles-delete-this-profile-button {
-  list-style-image: url("chrome://global/skin/icons/delete.svg");
+#profiles-header-title {
+  margin-inline-end: 0;
+}
+
+#profiles-header-content {
+  max-width: 16em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#profiles-edit-this-profile-button {
+  list-style-image: url("chrome://global/skin/icons/edit-outline.svg");
+  opacity: 1;
+  padding: var(--arrowpanel-header-back-icon-padding);
+  margin: 0;
+}
+
+#profiles-edit-this-profile-button > .toolbarbutton-text {
+  display: none;
+}
+
+#profiles-create-profile-button {
+  list-style-image: url("chrome://global/skin/icons/plus.svg");
 }
 
 #profile-icon-image {
   width: 75px;
   height: 75px;
-}
-
-#profile-name {
-  font-size: 1.667rem;
-  padding-block-start: var(--space-medium);
-}
-
-#this-profile-buttons {
-  justify-content: center;
+  -moz-context-properties: fill, stroke;
+  fill: var(--appmenu-profiles-theme-bg);
+  stroke: var(--appmenu-profiles-theme-fg);
+  border: 4px solid var(--panel-background);
+  border-radius: 40px;
 }
 
 #current-profile {
   align-items: center;
-  padding: var(--space-xxlarge) 0 var(--space-medium);
   gap: var(--space-small);
+  position: relative;
+}
+
+#half-height-profile {
+  background: var(--appmenu-profiles-theme-bg);
+  width: 100%;
+  height: 50%;
+  z-index: -1;
+  position: absolute;
+  top: 0;
+}
+
+#PanelUI-profiles > .panel-subview-body {
+  padding-block-start: 0;
+}
+
+/* ----- Profiles FxA panel ----- */
+
+panelmultiview[mainViewId="PanelUI-fxa"]  {
+  #PanelUI-profiles-header {
+    padding-block-start: 0;
+    padding-block-end: 0;
+    padding-inline-end: 0;
+  }
+
+  #profiles-edit-this-profile-button {
+    padding-inline-start: 0;
+
+    &:hover {
+      background-color: inherit;
+    }
+  }
 }
 
 /* ----- Content Analysis indicator panel ----- */

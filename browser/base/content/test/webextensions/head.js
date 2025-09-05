@@ -1,5 +1,6 @@
 ChromeUtils.defineESModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  ExtensionsUI: "resource:///modules/ExtensionsUI.sys.mjs",
 });
 
 const BASE = getRootDirectory(gTestPath).replace(
@@ -222,17 +223,11 @@ function isDefaultIcon(icon) {
  * @param {boolean} sideloaded
  *        Whether the notification is for a sideloaded extenion.
  */
-function checkNotification(
-  panel,
-  checkIcon,
-  permissions,
-  sideloaded,
-  expectIncognitoCheckboxHidden
-) {
+function checkNotification(panel, checkIcon, permissions, sideloaded) {
   let icon = panel.getAttribute("icon");
+  let learnMoreLink = panel.querySelector(".popup-notification-learnmore-link");
   let ul = document.getElementById("addon-webext-perm-list");
   let singleDataEl = document.getElementById("addon-webext-perm-single-entry");
-  let learnMoreLink = document.getElementById("addon-webext-perm-info");
 
   if (checkIcon instanceof RegExp) {
     ok(
@@ -259,63 +254,51 @@ function checkNotification(
   ok(description.startsWith(exp.at(0)), "Description is the expected one");
   ok(description.endsWith(exp.at(-1)), "Description is the expected one");
 
-  const expectIncognitoCheckbox =
-    !ExtensionsUI.POSTINSTALL_PRIVATEBROWSING_CHECKBOX &&
-    !expectIncognitoCheckboxHidden;
-
-  is(
-    learnMoreLink.hidden,
-    !permissions.length && !expectIncognitoCheckbox,
-    "Permissions learn more is hidden if there are no permissions"
+  const hasPBCheckbox = !!(
+    singleDataEl.querySelector("checkbox") || ul.querySelector("checkbox")
   );
 
-  if (!permissions.length) {
+  is(
+    BrowserTestUtils.isHidden(learnMoreLink),
+    !permissions.length && !hasPBCheckbox,
+    "Permissions learn more is hidden if there are no permissions and no private browsing checkbox"
+  );
+
+  if (!permissions.length && !hasPBCheckbox) {
     ok(ul.hidden, "Permissions list is hidden");
-    if (expectIncognitoCheckbox) {
-      ok(
-        !singleDataEl.hidden,
-        "Expect a single permission entry for the private browsing checkbox to not be hidden"
-      );
-      ok(
-        singleDataEl.querySelector("checkbox"),
-        "Expect a checkbox inside the single permission entry"
-      );
-      ok(
-        singleDataEl.textContent,
-        "Single entry text content should not empty"
-      );
-      is(ul.childElementCount, 0, "Permission list should have no entries");
-    } else {
-      ok(singleDataEl.hidden, "Single permission data entry is hidden");
-      ok(
-        !(ul.childElementCount || singleDataEl.textContent),
-        "Permission list and single permission element have no entries"
-      );
-    }
-  } else if (permissions.length === 1) {
-    if (expectIncognitoCheckbox) {
-      ok(singleDataEl.hidden, "Single permission data entry is hidden");
-      ok(!ul.hidden, "Permissions list to not be hidden");
-      is(ul.childElementCount, 2, "Expect 2 entries in the permissions list");
-      is(
-        ul.children[0].textContent,
-        formatExtValue(permissions[0]),
-        "First Permission entry is correct"
-      );
-      const lastEntry = ul.children[permissions.length];
-      ok(
-        lastEntry.classList.contains("webext-perm-privatebrowsing"),
-        "Expect last permissions list entry to be the private browsing checkbox"
-      );
-      ok(
-        lastEntry.querySelector("checkbox"),
-        "Expect a checkbox inside the last permissions list entry"
-      );
-    } else {
-      ok(ul.hidden, "Permissions list is hidden");
-      ok(!ul.childElementCount, "Permission list has no entries");
-      ok(singleDataEl.textContent, "Single permission data label has been set");
-    }
+    ok(singleDataEl.hidden, "Expect a single permission entry to be hidden");
+  } else if (!permissions.length) {
+    ok(ul.hidden, "Permissions list is hidden");
+    ok(
+      !singleDataEl.hidden,
+      "Expect a single permission entry for the private browsing checkbox to not be hidden"
+    );
+    ok(
+      singleDataEl.querySelector("checkbox"),
+      "Expect a checkbox inside the single permission entry"
+    );
+    ok(singleDataEl.textContent, "Single entry text content should not empty");
+    is(ul.childElementCount, 0, "Permission list should have no entries");
+  } else if (permissions.length === 1 && hasPBCheckbox) {
+    ok(!ul.hidden, "Permissions list to not be hidden");
+    is(ul.childElementCount, 2, "Expect 2 entries in the permissions list");
+    is(
+      ul.children[0].textContent,
+      formatExtValue(permissions[0]),
+      "First Permission entry is correct"
+    );
+    const lastEntry = ul.children[permissions.length];
+    ok(
+      lastEntry.classList.contains("webext-perm-privatebrowsing"),
+      "Expect last permissions list entry to be the private browsing checkbox"
+    );
+    ok(
+      lastEntry.querySelector("checkbox"),
+      "Expect a checkbox inside the last permissions list entry"
+    );
+  } else if (permissions.length === 1 && !hasPBCheckbox) {
+    ok(ul.hidden, "Permissions list to be hidden");
+    ok(!ul.childElementCount, "Permission list has no entries");
   } else {
     ok(singleDataEl.hidden, "Single permission data entry is hidden");
     ok(
@@ -326,21 +309,22 @@ function checkNotification(
     for (let i in permissions) {
       let [key, param] = permissions[i];
       const expected = formatExtValue(key, param);
-      is(
-        ul.children[i].textContent,
-        expected,
-        `Permission number ${i + 1} is correct`
-      );
+      // If the permissions list entry has a label child element then
+      // we expect the permission string to be set as the label element
+      // value (in particular this is the case when the permission dialog
+      // is going to show multiple host permissions as a single permission
+      // entry and a nested ul listing all those domains).
+      const permDescriptionEl = ul.children[i].querySelector("label")
+        ? ul.children[i].firstElementChild.value
+        : ul.children[i].textContent;
+      is(permDescriptionEl, expected, `Permission number ${i + 1} is correct`);
     }
-    if (expectIncognitoCheckbox) {
+
+    if (hasPBCheckbox) {
       const lastEntry = ul.children[permissions.length];
       ok(
         lastEntry.classList.contains("webext-perm-privatebrowsing"),
         "Expect last permissions list entry to be the private browsing checkbox"
-      );
-      ok(
-        lastEntry.querySelector("checkbox"),
-        "Expect a checkbox inside the last permissions list entry"
       );
     }
   }
@@ -413,18 +397,37 @@ async function testInstallMethod(installFn) {
 
     let panel = await promisePopupNotificationShown("addon-webext-permissions");
     if (filename == PERMS_XPI) {
+      // Account for both:
+      // - host permissions to be listed as a single permission
+      //   entry (new dialog design, enabled when ExtensionsUI.SHOW_FULL_DOMAINS_LIST
+      //   getter returns true)
+      // - host permissions for wildcard and non wildcards host
+      //   permissions to be listed as separate permissions entries
+      //   (old dialog design, enabled when ExtensionsUI.SHOW_FULL_DOMAINS_LIST
+      //   getter returns false)
+      const hostPermissions = !ExtensionsUI.SHOW_FULL_DOMAINS_LIST
+        ? [
+            [
+              "webext-perms-host-description-wildcard",
+              { domain: "wildcard.domain" },
+            ],
+            [
+              "webext-perms-host-description-one-site",
+              { domain: "singlehost.domain" },
+            ],
+          ]
+        : [
+            [
+              "webext-perms-host-description-multiple-domains",
+              { domainCount: 2 },
+            ],
+          ];
+
       // The icon should come from the extension, don't bother with the precise
       // path, just make sure we've got a jar url pointing to the right path
       // inside the jar.
       checkNotification(panel, /^jar:file:\/\/.*\/icon\.png$/, [
-        [
-          "webext-perms-host-description-wildcard",
-          { domain: "wildcard.domain" },
-        ],
-        [
-          "webext-perms-host-description-one-site",
-          { domain: "singlehost.domain" },
-        ],
+        ...hostPermissions,
         ["webext-perms-description-nativeMessaging"],
         // The below permissions are deliberately in this order as permissions
         // are sorted alphabetically by the permission string to match AMO.
@@ -720,12 +723,7 @@ add_setup(async function head_setup() {
     }
 
     for (let addon of await AddonManager.getAllAddons()) {
-      // Builtin search extensions may have been installed by SearchService
-      // during the test run, ignore those.
-      if (
-        !existingAddons.has(addon.id) &&
-        !(addon.isBuiltin && addon.id.endsWith("@search.mozilla.org"))
-      ) {
+      if (!existingAddons.has(addon.id)) {
         ok(
           false,
           `Addon ${addon.id} was left installed at the end of the test`

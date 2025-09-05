@@ -82,7 +82,8 @@ static mozilla::LazyLogModule sTaskbarConcealerLog("TaskbarConcealer");
 // Map of all relevant Gecko windows, along with the monitor on which each
 // window was last known to be located.
 /* static */
-nsTHashMap<HWND, HMONITOR> nsWindow::TaskbarConcealer::sKnownWindows;
+MOZ_RUNINIT nsTHashMap<HWND, HMONITOR>
+    nsWindow::TaskbarConcealer::sKnownWindows;
 
 // Returns Nothing if the window in question is irrelevant (for any reason),
 // or Some(the window's current state) otherwise.
@@ -305,6 +306,20 @@ void nsWindow::TaskbarConcealer::OnFocusAcquired(nsWindow* aWin) {
   UpdateAllState();
 }
 
+void nsWindow::TaskbarConcealer::OnWindowMaximized(nsWindow* aWin) {
+  MOZ_LOG(sTaskbarConcealerLog, LogLevel::Info,
+          ("==> OnWindowMaximized() for HWND %p on HMONITOR %p", aWin->mWnd,
+           ::MonitorFromWindow(aWin->mWnd, MONITOR_DEFAULTTONULL)));
+
+  // Mark this window, and only this window, as not-fullscreen. Everything else
+  // can stay as it is. (This matches what UpdateAllState would do, if called.)
+  //
+  // Note: this is an unjustified hack. According to the documentation of
+  // `ITaskbarList2::MarkFullscreenWindow()`, it should have no effect, but
+  // testing confirms that it does. See bug 1949079.
+  (TaskbarConcealerImpl{}).MarkAsHidingTaskbar(aWin->mWnd, false);
+}
+
 void nsWindow::TaskbarConcealer::OnFullscreenChanged(nsWindow* aWin,
                                                      bool enteredFullscreen) {
   MOZ_LOG(sTaskbarConcealerLog, LogLevel::Info,
@@ -316,7 +331,7 @@ void nsWindow::TaskbarConcealer::OnFullscreenChanged(nsWindow* aWin,
 
 void nsWindow::TaskbarConcealer::OnWindowPosChanged(nsWindow* aWin) {
   // Optimization: don't bother updating the state if the window hasn't moved
-  // (including appearances and disappearances).
+  // from its monitor (including appearances and disappearances).
   const HWND myHwnd = aWin->mWnd;
   const HMONITOR oldMonitor = sKnownWindows.Get(myHwnd);  // or nullptr
   const HMONITOR newMonitor = GetWindowState(myHwnd)

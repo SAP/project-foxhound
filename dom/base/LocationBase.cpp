@@ -131,7 +131,7 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
                               ? CallerType::System
                               : CallerType::NonSystem;
 
-  nsresult rv = bc->CheckLocationChangeRateLimit(callerType);
+  nsresult rv = bc->CheckNavigationRateLimit(callerType);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return;
@@ -192,7 +192,7 @@ void LocationBase::SetURI(nsIURI* aURI, nsIPrincipal& aSubjectPrincipal,
   }
 }
 
-void LocationBase::SetHref(const nsAString& aHref,
+void LocationBase::SetHref(const nsACString& aHref,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
 
   // Foxhound: location.href sink
@@ -201,7 +201,7 @@ void LocationBase::SetHref(const nsAString& aHref,
   DoSetHref(aHref, aSubjectPrincipal, false, aRv);
 }
 
-void LocationBase::DoSetHref(const nsAString& aHref,
+void LocationBase::DoSetHref(const nsACString& aHref,
                              nsIPrincipal& aSubjectPrincipal, bool aReplace,
                              ErrorResult& aRv) {
   // Get the source of the caller
@@ -209,7 +209,7 @@ void LocationBase::DoSetHref(const nsAString& aHref,
   SetHrefWithBase(aHref, base, aSubjectPrincipal, aReplace, aRv);
 }
 
-void LocationBase::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
+void LocationBase::SetHrefWithBase(const nsACString& aHref, nsIURI* aBase,
                                    nsIPrincipal& aSubjectPrincipal,
                                    bool aReplace, ErrorResult& aRv) {
   nsresult result;
@@ -223,8 +223,7 @@ void LocationBase::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
   }
 
   if (NS_FAILED(result) || !newUri) {
-    aRv.ThrowSyntaxError("'"_ns + NS_ConvertUTF16toUTF8(aHref) +
-                         "' is not a valid URL."_ns);
+    aRv.ThrowSyntaxError("'"_ns + aHref + "' is not a valid URL."_ns);
     return;
   }
 
@@ -259,7 +258,7 @@ void LocationBase::SetHrefWithBase(const nsAString& aHref, nsIURI* aBase,
   SetURI(newUri, aSubjectPrincipal, aRv, aReplace || inScriptTag);
 }
 
-void LocationBase::Replace(const nsAString& aUrl,
+void LocationBase::Replace(const nsACString& aUrl,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
 
   // Foxhound: location.assign sink

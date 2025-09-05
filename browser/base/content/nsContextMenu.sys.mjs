@@ -23,7 +23,6 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ReaderMode: "resource://gre/modules/ReaderMode.sys.mjs",
   ShortcutUtils: "resource://gre/modules/ShortcutUtils.sys.mjs",
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
-  WebNavigationFrames: "resource://gre/modules/WebNavigationFrames.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
@@ -38,21 +37,10 @@ ChromeUtils.defineLazyGetter(lazy, "ReferrerInfo", () =>
   )
 );
 
-XPCOMUtils.defineLazyServiceGetters(lazy, {
-  BrowserHandler: ["@mozilla.org/browser/clh;1", "nsIBrowserHandler"],
-});
-
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "SCREENSHOT_BROWSER_COMPONENT",
   "screenshots.browser.component.enabled",
-  false
-);
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "REVEAL_PASSWORD_ENABLED",
-  "layout.forms.reveal-password-context-menu.enabled",
   false
 );
 
@@ -67,6 +55,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
   "STRIP_ON_SHARE_ENABLED",
   "privacy.query_stripping.strip_on_share.enabled",
+  false
+);
+
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "STRIP_ON_SHARE_CAN_DISABLE",
+  "privacy.query_stripping.strip_on_share.canDisable",
   false
 );
 
@@ -87,115 +82,12 @@ XPCOMUtils.defineLazyServiceGetter(
 const PASSWORD_FIELDNAME_HINTS = ["current-password", "new-password"];
 const USERNAME_FIELDNAME_HINT = "username";
 
-export function openContextMenu(aMessage, aBrowser, aActor) {
-  if (lazy.BrowserHandler.kiosk) {
-    // Don't display context menus in kiosk mode
-    return;
-  }
-  let data = aMessage.data;
-  let browser = aBrowser;
-  let actor = aActor;
-  let wgp = actor.manager;
-
-  if (!wgp.isCurrentGlobal) {
-    // Don't display context menus for unloaded documents
-    return;
-  }
-
-  // NOTE: We don't use `wgp.documentURI` here as we want to use the failed
-  // channel URI in the case we have loaded an error page.
-  let documentURIObject = wgp.browsingContext.currentURI;
-
-  let frameReferrerInfo = data.frameReferrerInfo;
-  if (frameReferrerInfo) {
-    frameReferrerInfo =
-      lazy.E10SUtils.deserializeReferrerInfo(frameReferrerInfo);
-  }
-
-  let linkReferrerInfo = data.linkReferrerInfo;
-  if (linkReferrerInfo) {
-    linkReferrerInfo = lazy.E10SUtils.deserializeReferrerInfo(linkReferrerInfo);
-  }
-
-  let frameID = lazy.WebNavigationFrames.getFrameId(wgp.browsingContext);
-
-  nsContextMenu.contentData = {
-    context: data.context,
-    browser,
-    actor,
-    editFlags: data.editFlags,
-    spellInfo: data.spellInfo,
-    principal: wgp.documentPrincipal,
-    storagePrincipal: wgp.documentStoragePrincipal,
-    documentURIObject,
-    docLocation: documentURIObject.spec,
-    charSet: data.charSet,
-    referrerInfo: lazy.E10SUtils.deserializeReferrerInfo(data.referrerInfo),
-    frameReferrerInfo,
-    linkReferrerInfo,
-    contentType: data.contentType,
-    contentDisposition: data.contentDisposition,
-    frameID,
-    frameOuterWindowID: frameID,
-    frameBrowsingContext: wgp.browsingContext,
-    selectionInfo: data.selectionInfo,
-    disableSetDesktopBackground: data.disableSetDesktopBackground,
-    showRelay: data.showRelay,
-    loginFillInfo: data.loginFillInfo,
-    userContextId: wgp.browsingContext.originAttributes.userContextId,
-    webExtContextData: data.webExtContextData,
-    cookieJarSettings: wgp.cookieJarSettings,
-  };
-
-  let popup = browser.ownerDocument.getElementById("contentAreaContextMenu");
-  let context = nsContextMenu.contentData.context;
-
-  // Fill in some values in the context from the WindowGlobalParent actor.
-  context.principal = wgp.documentPrincipal;
-  context.storagePrincipal = wgp.documentStoragePrincipal;
-  context.frameID = frameID;
-  context.frameOuterWindowID = wgp.outerWindowId;
-  context.frameBrowsingContextID = wgp.browsingContext.id;
-
-  let win = browser.ownerGlobal;
-
-  // We don't have access to the original event here, as that happened in
-  // another process. Therefore we synthesize a new MouseEvent to propagate the
-  // inputSource to the subsequently triggered popupshowing event.
-  let newEvent = new PointerEvent("contextmenu", {
-    bubbles: true,
-    cancelable: true,
-    screenX: context.screenXDevPx / win.devicePixelRatio,
-    screenY: context.screenYDevPx / win.devicePixelRatio,
-    button: 2,
-    pointerType: (() => {
-      switch (context.inputSource) {
-        case MouseEvent.MOZ_SOURCE_MOUSE:
-          return "mouse";
-        case MouseEvent.MOZ_SOURCE_PEN:
-          return "pen";
-        case MouseEvent.MOZ_SOURCE_ERASER:
-          return "eraser";
-        case MouseEvent.MOZ_SOURCE_CURSOR:
-          return "cursor";
-        case MouseEvent.MOZ_SOURCE_TOUCH:
-          return "touch";
-        case MouseEvent.MOZ_SOURCE_KEYBOARD:
-          return "keyboard";
-        default:
-          return "";
-      }
-    })(),
-  });
-  popup.openPopupAtScreen(newEvent.screenX, newEvent.screenY, true, newEvent);
-}
-
 export class nsContextMenu {
   /**
    * A promise to retrieve the translations language pair
    * if the context menu was opened in a context relevant to
    * open the SelectTranslationsPanel.
-   * @type {Promise<{fromLanguage: string, toLanguage: string}>}
+   * @type {Promise<{sourceLanguage: string, targetLanguage: string}>}
    */
   #translationsLangPairPromise;
 
@@ -414,6 +306,9 @@ export class nsContextMenu {
       let canSpell = InlineSpellCheckerUI.canSpellCheck && this.canSpellCheck;
       this.showItem("spell-check-enabled", canSpell);
     }
+
+    this.hasTextFragments = context.hasTextFragments;
+    this.textFragmentURL = null;
   } // setContext
 
   hiding(aXulMenu) {
@@ -459,6 +354,7 @@ export class nsContextMenu {
     this.initScreenshotItem();
     this.initPasswordControlItems();
     this.initPDFItems();
+    this.initTextFragmentItems();
 
     this.showHideSeparators(aXulMenu);
     if (!aXulMenu.showHideSeparators) {
@@ -532,6 +428,71 @@ export class nsContextMenu {
     );
     this.setItemAttr("context-pdfjs-selectall", "disabled", isEmpty);
     this.setItemAttr("context-sep-pdfjs-selectall", "disabled", isEmpty);
+  }
+
+  initTextFragmentItems() {
+    const shouldShow =
+      Services.prefs.getBoolPref(
+        "dom.text_fragments.create_text_fragment.enabled",
+        false
+      ) &&
+      lazy.STRIP_ON_SHARE_ENABLED &&
+      !(this.inPDFViewer || this.inFrame || this.onEditable) &&
+      this.isContentSelected;
+    this.showItem("context-copy-link-to-highlight", shouldShow);
+    this.showItem("context-copy-clean-link-to-highlight", shouldShow);
+
+    // disables both options by default, while API tries to build a text fragment
+    this.setItemAttr("context-copy-link-to-highlight", "disabled", true);
+    this.setItemAttr("context-copy-clean-link-to-highlight", "disabled", true);
+
+    // Only show remove option if there are text fragments on the page.
+    this.showItem("context-sep-highlights", this.hasTextFragments);
+    this.showItem("context-remove-all-highlights", this.hasTextFragments);
+  }
+
+  async getTextDirective() {
+    if (
+      !Services.prefs.getBoolPref(
+        "dom.text_fragments.create_text_fragment.enabled",
+        false
+      )
+    ) {
+      return;
+    }
+    this.textFragmentURL = await this.actor.getTextDirective();
+
+    // enable menu items when a text fragment can be built
+    if (this.textFragmentURL) {
+      this.setItemAttr("context-copy-link-to-highlight", "disabled", false);
+
+      // only enables the clean link based on preference and canStripForShare()
+      // this follows the same pattern as https://bugzilla.mozilla.org/show_bug.cgi?id=1895334
+      let canNotStripTextFragmentParams =
+        lazy.STRIP_ON_SHARE_CAN_DISABLE &&
+        !this.#canStripParams(this.getLinkURI(this.textFragmentURL));
+
+      this.setItemAttr(
+        "context-copy-clean-link-to-highlight",
+        "disabled",
+        canNotStripTextFragmentParams
+      );
+    }
+  }
+
+  async removeAllTextFragments() {
+    await this.actor.removeAllTextFragments();
+  }
+
+  copyLinkToHighlight(stripSiteTracking = false) {
+    if (this.textFragmentURL) {
+      if (stripSiteTracking) {
+        const uri = this.getLinkURI(this.textFragmentURL);
+        this.copyStrippedLink(uri);
+      } else {
+        this.copyLink(this.textFragmentURL);
+      }
+    }
   }
 
   initOpenItems() {
@@ -1141,12 +1102,17 @@ export class nsContextMenu {
     this.showItem(
       "context-stripOnShareLink",
       lazy.STRIP_ON_SHARE_ENABLED &&
-        this.onLink &&
+        (this.onLink || this.onPlainTextLink) &&
         !this.onMailtoLink &&
         !this.onTelLink &&
         !this.onMozExtLink &&
         !this.isSecureAboutPage()
     );
+
+    let canNotStrip =
+      lazy.STRIP_ON_SHARE_CAN_DISABLE && !this.#canStripParams();
+
+    this.setItemAttr("context-stripOnShareLink", "disabled", canNotStrip);
 
     let copyLinkSeparator = this.document.getElementById(
       "context-sep-copylink"
@@ -1386,7 +1352,7 @@ export class nsContextMenu {
       if (!onViewSource) {
         return;
       }
-      check().then(checked => this.setItemAttr(fullId, "checked", checked));
+      this.setItemAttr(fullId, "checked", check());
       this.setItemAttr(fullId, "label", getString(`context_${id}_label`));
       if (accesskey) {
         this.setItemAttr(
@@ -1399,14 +1365,12 @@ export class nsContextMenu {
 
     const onViewSource = this.browser.currentURI.schemeIs("view-source");
 
-    showViewSourceItem("goToLine", async () => false, true);
+    showViewSourceItem("goToLine", () => false, true);
     showViewSourceItem("wrapLongLines", () =>
-      this.window.gViewSourceUtils.getPageActor(this.browser).queryIsWrapping()
+      Services.prefs.getBoolPref("view_source.wrap_long_lines", false)
     );
     showViewSourceItem("highlightSyntax", () =>
-      this.window.gViewSourceUtils
-        .getPageActor(this.browser)
-        .queryIsSyntaxHighlighting()
+      Services.prefs.getBoolPref("view_source.syntax_highlight", false)
     );
   }
 
@@ -1475,7 +1439,7 @@ export class nsContextMenu {
   }
 
   initPasswordControlItems() {
-    let shouldShow = this.onPassword && lazy.REVEAL_PASSWORD_ENABLED;
+    let shouldShow = this.onPassword;
     if (shouldShow) {
       let revealPassword = this.document.getElementById(
         "context-reveal-password"
@@ -1495,7 +1459,7 @@ export class nsContextMenu {
 
   openPasswordManager() {
     lazy.LoginHelper.openPasswordManager(this.window, {
-      entryPoint: "contextmenu",
+      entryPoint: "Contextmenu",
     });
   }
 
@@ -1680,7 +1644,7 @@ export class nsContextMenu {
       Services.obs.notifyObservers(
         this.window,
         "menuitem-screenshot",
-        "context_menu"
+        "ContextMenu"
       );
     } else {
       Services.obs.notifyObservers(
@@ -2058,7 +2022,7 @@ export class nsContextMenu {
         if (aStatusCode == NS_ERROR_SAVE_LINK_AS_TIMEOUT) {
           // do it the old fashioned way, which will pick the best filename
           // it can without waiting.
-          this.window.saveURL(
+          this._window.saveURL(
             linkURL,
             null,
             linkText,
@@ -2332,9 +2296,9 @@ export class nsContextMenu {
     );
   }
 
-  copyLink() {
+  copyLink(url = this.linkURL) {
     // If we're in a view source tab, remove the view-source: prefix
-    let linkURL = this.linkURL.replace(/^view-source:/, "");
+    let linkURL = url.replace(/^view-source:/, "");
     lazy.clipboard.copyString(
       linkURL,
       this.actor.manager.browsingContext.currentWindowGlobal
@@ -2342,12 +2306,12 @@ export class nsContextMenu {
   }
 
   /**
-   * Copies a stripped version of this.linkURI to the clipboard.
+   * Copies a stripped version of a URI to the clipboard.
    * 'Stripped' means that query parameters for tracking/ link decoration
    * that are known to us will be removed from the URI.
    */
-  copyStrippedLink() {
-    let strippedLinkURI = this.getStrippedLink();
+  copyStrippedLink(uri = this.linkURI) {
+    let strippedLinkURI = this.getStrippedLink(uri);
     let strippedLinkURL =
       Services.io.createExposableURI(strippedLinkURI)?.displaySpec;
     if (strippedLinkURL) {
@@ -2434,9 +2398,9 @@ export class nsContextMenu {
     return node;
   }
 
-  getLinkURI() {
+  getLinkURI(url = this.linkURL) {
     try {
-      return this.window.makeURI(this.linkURL);
+      return this.window.makeURI(url);
     } catch (ex) {
       // e.g. empty URL string
     }
@@ -2450,23 +2414,38 @@ export class nsContextMenu {
    * or the original URI if we could not strip any query parameter.
    *
    */
-  getStrippedLink() {
-    if (!this.linkURI) {
+  getStrippedLink(uri = this.linkURI) {
+    if (!uri) {
       return null;
     }
     let strippedLinkURI = null;
     try {
-      strippedLinkURI = lazy.QueryStringStripper.stripForCopyOrShare(
-        this.linkURI
-      );
+      strippedLinkURI = lazy.QueryStringStripper.stripForCopyOrShare(uri);
     } catch (e) {
-      console.warn(`stripForCopyOrShare: ${e.message}`);
-      return this.linkURI;
+      console.warn(`getStrippedLink: ${e.message}`);
+      return uri;
     }
 
     // If nothing can be stripped, we return the original URI
     // so the feature can still be used.
-    return strippedLinkURI ?? this.linkURI;
+    return strippedLinkURI ?? uri;
+  }
+
+  /**
+   * Checks if there is a query parameter that can be stripped
+   * @returns {Boolean}
+   *
+   */
+  #canStripParams(uri = this.linkURI) {
+    if (!uri) {
+      return false;
+    }
+    try {
+      return lazy.QueryStringStripper.canStripForShare(uri);
+    } catch (e) {
+      console.warn("canStripForShare failed!", e);
+      return false;
+    }
   }
 
   /**
@@ -2658,23 +2637,22 @@ export class nsContextMenu {
    * @returns {Promise<void>}
    */
   async localizeTranslateSelectionItem(translateSelectionItem) {
-    const { toLanguage } = await this.#translationsLangPairPromise;
+    const { targetLanguage } = await this.#translationsLangPairPromise;
 
-    if (toLanguage) {
+    if (targetLanguage) {
       // A valid to-language exists, so localize the menuitem for that language.
       let displayName;
 
       try {
-        const displayNames = new Services.intl.DisplayNames(undefined, {
-          type: "language",
-        });
-        displayName = displayNames.of(toLanguage);
+        const languageDisplayNames =
+          lazy.TranslationsParent.createLanguageDisplayNames();
+        displayName = languageDisplayNames.of(targetLanguage);
       } catch {
-        // Services.intl.DisplayNames.of threw, do nothing.
+        // languageDisplayNames.of threw, do nothing.
       }
 
       if (displayName) {
-        translateSelectionItem.setAttribute("target-language", toLanguage);
+        translateSelectionItem.setAttribute("target-language", targetLanguage);
         this.document.l10n.setAttributes(
           translateSelectionItem,
           this.isTextSelected
@@ -2714,12 +2692,9 @@ export class nsContextMenu {
       return "";
     }
 
-    try {
-      // If the underlying link text is a URL, we should not offer to translate.
-      new URL(linkText);
+    if (URL.canParse(linkText)) {
+      // The underlying link text is a URL, we should not offer to translate.
       return "";
-    } catch {
-      // A URL could not be parsed from the unerlying link text.
     }
 
     // Since the underlying link text is not a URL, we should offer to translate it.
@@ -2767,7 +2742,7 @@ export class nsContextMenu {
     let menuItemPrivate = document.getElementById(
       "context-searchselect-private"
     );
-    if (!Services.search.isInitialized) {
+    if (!Services.search.hasSuccessfullyInitialized) {
       menuItem.hidden = true;
       menuItemPrivate.hidden = true;
       return;

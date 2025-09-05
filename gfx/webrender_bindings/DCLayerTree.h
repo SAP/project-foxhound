@@ -60,6 +60,7 @@ namespace wr {
 
 class DCTile;
 class DCSurface;
+class DCSwapChain;
 class DCSurfaceVideo;
 class DCSurfaceHandle;
 class RenderTextureHost;
@@ -138,6 +139,9 @@ class DCLayerTree {
   void Unbind();
   void CreateSurface(wr::NativeSurfaceId aId, wr::DeviceIntPoint aVirtualOffset,
                      wr::DeviceIntSize aTileSize, bool aIsOpaque);
+  void CreateSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize,
+                              bool aIsOpaque);
+  void ResizeSwapChainSurface(wr::NativeSurfaceId aId, wr::DeviceIntSize aSize);
   void CreateExternalSurface(wr::NativeSurfaceId aId, bool aIsOpaque);
   void DestroySurface(NativeSurfaceId aId);
   void CreateTile(wr::NativeSurfaceId aId, int32_t aX, int32_t aY);
@@ -148,6 +152,8 @@ class DCLayerTree {
                   const wr::CompositorSurfaceTransform& aTransform,
                   wr::DeviceIntRect aClipRect,
                   wr::ImageRendering aImageRendering);
+  void BindSwapChain(wr::NativeSurfaceId aId);
+  void PresentSwapChain(wr::NativeSurfaceId aId);
 
   gl::GLContext* GetGLContext() const { return mGL; }
   EGLConfig GetEGLConfig() const { return mEGLConfig; }
@@ -178,6 +184,8 @@ class DCLayerTree {
   bool SupportsSwapChainTearing();
 
   void SetUsedOverlayTypeInFrame(DCompOverlayTypes aTypes);
+
+  int GetFrameId() { return mCurrentFrame; }
 
  protected:
   bool Initialize(HWND aHwnd, nsACString& aError);
@@ -259,7 +267,6 @@ class DCLayerTree {
   mutable Maybe<color::ColorProfileDesc> mOutputColorProfile;
 
   DCompOverlayTypes mUsedOverlayTypesInFrame = DCompOverlayTypes::NO_OVERLAY;
-  int mSlowCommitCount = 0;
 
  public:
   const color::ColorProfileDesc& OutputColorProfile() const {
@@ -289,7 +296,7 @@ class DCSurface {
                      bool aIsOpaque, DCLayerTree* aDCLayerTree);
   virtual ~DCSurface();
 
-  bool Initialize();
+  virtual bool Initialize();
   void CreateTile(int32_t aX, int32_t aY);
   void DestroyTile(int32_t aX, int32_t aY);
 
@@ -323,6 +330,7 @@ class DCSurface {
 
   virtual DCSurfaceVideo* AsDCSurfaceVideo() { return nullptr; }
   virtual DCSurfaceHandle* AsDCSurfaceHandle() { return nullptr; }
+  virtual DCSwapChain* AsDCSwapChain() { return nullptr; }
 
  protected:
   DCLayerTree* mDCLayerTree;
@@ -351,6 +359,30 @@ class DCSurface {
   std::unordered_map<TileKey, UniquePtr<DCTile>, TileKeyHashFn> mDCTiles;
   wr::DeviceIntPoint mVirtualOffset;
   RefPtr<IDCompositionVirtualSurface> mVirtualSurface;
+};
+
+class DCSwapChain : public DCSurface {
+ public:
+  DCSwapChain(wr::DeviceIntSize aSize, bool aIsOpaque,
+              DCLayerTree* aDCLayerTree)
+      : DCSurface(wr::DeviceIntSize{}, wr::DeviceIntPoint{}, false, aIsOpaque,
+                  aDCLayerTree),
+        mSize(aSize),
+        mEGLSurface(EGL_NO_SURFACE) {}
+  ~DCSwapChain();
+
+  bool Initialize() override;
+
+  void Bind();
+  void Resize(wr::DeviceIntSize aSize);
+  void Present();
+
+  DCSwapChain* AsDCSwapChain() override { return this; }
+
+ private:
+  wr::DeviceIntSize mSize;
+  RefPtr<IDXGISwapChain1> mSwapChain;
+  EGLSurface mEGLSurface;
 };
 
 /**
@@ -392,10 +424,9 @@ class DCSurfaceVideo : public DCSurface {
   void AttachExternalImage(wr::ExternalImageId aExternalImage) override;
   bool CalculateSwapChainSize(gfx::Matrix& aTransform);
   void PresentVideo();
+  void OnCompositorEndFrame(int aFrameId, uint32_t aDurationMs);
 
   DCSurfaceVideo* AsDCSurfaceVideo() override { return this; }
-
-  void DisableVideoOverlay();
 
  protected:
   virtual ~DCSurfaceVideo();
@@ -418,7 +449,6 @@ class DCSurfaceVideo : public DCSurface {
   RefPtr<RenderTextureHost> mRenderTextureHost;
   RefPtr<RenderTextureHost> mPrevTexture;
   RefPtr<RenderTextureHostUsageInfo> mRenderTextureHostUsageInfo;
-  int mSlowPresentCount = 0;
   bool mFirstPresent = true;
   const UINT mSwapChainBufferCount;
   bool mUseVpAutoHDR = false;

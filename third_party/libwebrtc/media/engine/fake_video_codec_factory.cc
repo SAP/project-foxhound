@@ -12,7 +12,9 @@
 
 #include <memory>
 
+#include "absl/container/inlined_vector.h"
 #include "api/environment/environment.h"
+#include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/sdp_video_format.h"
 #include "api/video_codecs/video_decoder.h"
 #include "api/video_codecs/video_encoder.h"
@@ -33,13 +35,20 @@ namespace webrtc {
 
 std::vector<SdpVideoFormat> FakeVideoEncoderFactory::GetSupportedFormats()
     const {
+  const absl::InlinedVector<webrtc::ScalabilityMode,
+                            webrtc::kScalabilityModeCount>
+      kSupportedScalabilityModes = {webrtc::ScalabilityMode::kL1T1,
+                                    webrtc::ScalabilityMode::kL1T2,
+                                    webrtc::ScalabilityMode::kL1T3};
+
   return std::vector<SdpVideoFormat>(
-      1, SdpVideoFormat(kFakeCodecFactoryCodecName));
+      1, SdpVideoFormat(kFakeCodecFactoryCodecName, {},
+                        kSupportedScalabilityModes));
 }
 
 std::unique_ptr<VideoEncoder> FakeVideoEncoderFactory::Create(
     const Environment& env,
-    const SdpVideoFormat& format) {
+    const SdpVideoFormat& /* format */) {
   return std::make_unique<test::FakeEncoder>(env);
 }
 
@@ -57,8 +66,8 @@ std::vector<SdpVideoFormat> FakeVideoDecoderFactory::GetSupportedFormats()
 }
 
 std::unique_ptr<VideoDecoder> FakeVideoDecoderFactory::Create(
-    const Environment& env,
-    const SdpVideoFormat& format) {
+    const Environment& /* env */,
+    const SdpVideoFormat& /* format */) {
   return std::make_unique<test::FakeDecoder>();
 }
 

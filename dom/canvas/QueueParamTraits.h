@@ -13,7 +13,7 @@
 #include "mozilla/Assertions.h"
 #include "mozilla/IntegerRange.h"
 #include "mozilla/ipc/ProtocolUtils.h"
-#include "mozilla/ipc/SharedMemoryBasic.h"
+#include "mozilla/ipc/SharedMemory.h"
 #include "mozilla/Logging.h"
 #include "mozilla/TimeStamp.h"
 #include "nsExceptionHandler.h"
@@ -383,7 +383,7 @@ struct QueueParamTraits<webgl::TexUnpackBlobDesc> {
   static bool Write(ProducerView<U>& view, const ParamType& in) {
     MOZ_RELEASE_ASSERT(!in.image);
     MOZ_RELEASE_ASSERT(!in.sd);
-    const bool isDataSurf = bool(in.dataSurf);
+    const bool isDataSurf = bool(in.sourceSurf);
     if (!view.WriteParam(in.imageTarget) || !view.WriteParam(in.size) ||
         !view.WriteParam(in.srcAlphaType) || !view.WriteParam(in.unpacking) ||
         !view.WriteParam(in.cpuData) || !view.WriteParam(in.pboOffset) ||
@@ -393,7 +393,11 @@ struct QueueParamTraits<webgl::TexUnpackBlobDesc> {
       return false;
     }
     if (isDataSurf) {
-      const auto& surf = in.dataSurf;
+      const RefPtr<gfx::DataSourceSurface> surf =
+          in.sourceSurf->GetDataSurface();
+      if (!surf) {
+        return false;
+      }
       gfx::DataSourceSurface::ScopedMap map(surf, gfx::DataSourceSurface::READ);
       if (!map.IsMapped()) {
         return false;
@@ -441,9 +445,9 @@ struct QueueParamTraits<webgl::TexUnpackBlobDesc> {
 
       // DataSourceSurface demands pointer-to-mutable.
       const auto bytes = const_cast<uint8_t*>(range->begin().get());
-      out->dataSurf = gfx::Factory::CreateWrappingDataSourceSurface(
+      out->sourceSurf = gfx::Factory::CreateWrappingDataSourceSurface(
           bytes, stride, surfSize, format);
-      MOZ_ASSERT(out->dataSurf);
+      MOZ_ASSERT(out->sourceSurf);
     }
     return true;
   }

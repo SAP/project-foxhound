@@ -73,6 +73,7 @@
 
 #ifdef XP_WIN
 #  include "mozilla/PreXULSkeletonUI.h"
+#  include "mozilla/WindowsVersion.h"
 #  include "nsIWindowsUIUtils.h"
 #endif
 
@@ -210,10 +211,9 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   }
 
   mWindow->SetWidgetListener(&mWidgetListenerDelegate);
-  rv = mWindow->Create((nsIWidget*)parentWidget,  // Parent nsIWidget
-                       nullptr,                   // Native parent widget
-                       deskRect,                  // Widget dimensions
-                       &widgetInitData);          // Widget initialization data
+  rv = mWindow->Create(parentWidget.get(),  // Parent nsIWidget
+                       deskRect,            // Widget dimensions
+                       &widgetInitData);    // Widget initialization data
   NS_ENSURE_SUCCESS(rv, rv);
 
   LayoutDeviceIntRect r = mWindow->GetClientBounds();
@@ -225,7 +225,7 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   // to pass in the opener window here. The opener is set later, if needed, by
   // nsWindowWatcher.
   RefPtr<BrowsingContext> browsingContext =
-      BrowsingContext::CreateIndependent(BrowsingContext::Type::Chrome);
+      BrowsingContext::CreateIndependent(BrowsingContext::Type::Chrome, false);
 
   // Create web shell
   mDocShell = nsDocShell::Create(browsingContext);
@@ -238,9 +238,9 @@ nsresult AppWindow::Initialize(nsIAppWindow* aParent, nsIAppWindow* aOpener,
   mDocShell->SetTreeOwner(mChromeTreeOwner);
 
   r.MoveTo(0, 0);
-  NS_ENSURE_SUCCESS(mDocShell->InitWindow(nullptr, mWindow, r.X(), r.Y(),
-                                          r.Width(), r.Height()),
-                    NS_ERROR_FAILURE);
+  NS_ENSURE_SUCCESS(
+      mDocShell->InitWindow(mWindow, r.X(), r.Y(), r.Width(), r.Height()),
+      NS_ERROR_FAILURE);
 
   // Attach a WebProgress listener.during initialization...
   mDocShell->AddProgressListener(this, nsIWebProgress::NOTIFY_STATE_NETWORK);
@@ -386,7 +386,7 @@ static LayoutDeviceIntSize GetOuterToInnerSizeDifference(nsIWidget* aWindow) {
   if (!aWindow) {
     return LayoutDeviceIntSize();
   }
-  return aWindow->ClientToWindowSizeDifference();
+  return aWindow->NormalSizeModeClientToWindowSizeDifference();
 }
 
 static CSSIntSize GetOuterToInnerSizeDifferenceInCSSPixels(
@@ -397,17 +397,25 @@ static CSSIntSize GetOuterToInnerSizeDifferenceInCSSPixels(
 
 NS_IMETHODIMP
 AppWindow::GetOuterToInnerHeightDifferenceInCSSPixels(uint32_t* aResult) {
-  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
-                 mWindow, UnscaledDevicePixelsPerCSSPixel())
-                 .height;
+  if (mWindow && mWindow->PersistClientBounds()) {
+    *aResult = 0;
+  } else {
+    *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
+                   mWindow, UnscaledDevicePixelsPerCSSPixel())
+                   .height;
+  }
   return NS_OK;
 }
 
 NS_IMETHODIMP
 AppWindow::GetOuterToInnerWidthDifferenceInCSSPixels(uint32_t* aResult) {
-  *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
-                 mWindow, UnscaledDevicePixelsPerCSSPixel())
-                 .width;
+  if (mWindow && mWindow->PersistClientBounds()) {
+    *aResult = 0;
+  } else {
+    *aResult = GetOuterToInnerSizeDifferenceInCSSPixels(
+                   mWindow, UnscaledDevicePixelsPerCSSPixel())
+                   .width;
+  }
   return NS_OK;
 }
 
@@ -492,8 +500,7 @@ NS_IMETHODIMP AppWindow::RollupAllPopups() {
 // AppWindow::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP AppWindow::InitWindow(nativeWindow aParentNativeWindow,
-                                    nsIWidget* parentWidget, int32_t x,
+NS_IMETHODIMP AppWindow::InitWindow(nsIWidget* parentWidget, int32_t x,
                                     int32_t y, int32_t cx, int32_t cy) {
   // XXX First Check In
   NS_ASSERTION(false, "Not Yet Implemented");
@@ -745,7 +752,9 @@ NS_IMETHODIMP AppWindow::Center(nsIAppWindow* aRelative, bool aScreen,
     return NS_OK;
   }
 
-  if (!aScreen && !aRelative) return NS_ERROR_INVALID_ARG;
+  if (!aScreen && !aRelative) {
+    return NS_ERROR_INVALID_ARG;
+  }
 
   nsCOMPtr<nsIScreenManager> screenmgr =
       do_GetService("@mozilla.org/gfx/screenmanager;1", &result);
@@ -826,28 +835,6 @@ NS_IMETHODIMP AppWindow::SetParentWidget(nsIWidget* aParentWidget) {
   return NS_OK;
 }
 
-NS_IMETHODIMP AppWindow::GetParentNativeWindow(
-    nativeWindow* aParentNativeWindow) {
-  NS_ENSURE_ARG_POINTER(aParentNativeWindow);
-
-  nsCOMPtr<nsIWidget> parentWidget;
-  NS_ENSURE_SUCCESS(GetParentWidget(getter_AddRefs(parentWidget)),
-                    NS_ERROR_FAILURE);
-
-  if (parentWidget) {
-    *aParentNativeWindow = parentWidget->GetNativeData(NS_NATIVE_WIDGET);
-  }
-
-  return NS_OK;
-}
-
-NS_IMETHODIMP AppWindow::SetParentNativeWindow(
-    nativeWindow aParentNativeWindow) {
-  // XXX First Check In
-  NS_ASSERTION(false, "Not Yet Implemented");
-  return NS_OK;
-}
-
 NS_IMETHODIMP AppWindow::GetNativeHandle(nsAString& aNativeHandle) {
   nsCOMPtr<nsIWidget> mainWidget;
   NS_ENSURE_SUCCESS(GetMainWidget(getter_AddRefs(mainWidget)),
@@ -895,10 +882,26 @@ NS_IMETHODIMP AppWindow::SetVisibility(bool aVisibility) {
   mDocShell->SetVisibility(aVisibility);
   // Store locally so it doesn't die on us. 'Show' can result in the window
   // being closed with AppWindow::Destroy being called. That would set
-  // mWindow to null and posibly destroy the nsIWidget while its Show method
+  // mWindow to null and possibly destroy the nsIWidget while its Show method
   // is on the stack. We need to keep it alive until Show finishes.
   nsCOMPtr<nsIWidget> window = mWindow;
   window->Show(aVisibility);
+
+  // NOTE(emilio): A bit hacky, but we need to synchronously trigger resizes
+  // for remote frames here if we're a sized popup (mDominantClientSize=true).
+  //
+  // This is because what we do to show a popup window with a specified size is
+  // to wait until the chrome loads (and gets sized, and thus laid out at a
+  // particular pre-size), then size the window, and call Show(), which ends up
+  // here.
+  //
+  // After bug 1917458, that remote browser resize would happen asynchronously,
+  // which means content might be able to observe the old size unexpectedly.
+  if (aVisibility && mDominantClientSize) {
+    if (RefPtr doc = mDocShell->GetDocument()) {
+      doc->SynchronouslyUpdateRemoteBrowserDimensions();
+    }
+  }
 
   nsCOMPtr<nsIWindowMediator> windowMediator(
       do_GetService(NS_WINDOWMEDIATOR_CONTRACTID));
@@ -1156,11 +1159,14 @@ static Maybe<int32_t> ReadIntAttribute(const Element& aElement,
 // to fit to the screen when staggering windows; if they're negative,
 // we use the window's current size instead.
 bool AppWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight) {
-  bool gotPosition = false;
-
   // if we're the hidden window, don't try to validate our size/position. We're
   // special.
   if (mIsHiddenWindow) {
+    return false;
+  }
+
+  // If we're not in the normal sizemode, don't move the window around.
+  if (mWindow->SizeMode() != nsSizeMode_Normal) {
     return false;
   }
 
@@ -1189,6 +1195,7 @@ bool AppWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight) {
 
   // Obtain the position information from the <xul:window> element.
   DesktopIntPoint specPoint = curPoint;
+  bool gotPosition = false;
 
   // Also read lowercase screenx/y because the front-end sometimes sets these
   // via setAttribute on HTML documents like about:blank, and stuff gets
@@ -1224,7 +1231,6 @@ bool AppWindow::LoadPositionFromXUL(int32_t aSpecWidth, int32_t aSpecHeight) {
   if (specPoint != curPoint) {
     SetPositionDesktopPix(specPoint.x, specPoint.y);
   }
-
   return gotPosition;
 }
 
@@ -1240,7 +1246,7 @@ static Maybe<int32_t> ReadSize(const Element& aElement, nsAtom* aAttr,
   int32_t max = ReadIntAttribute(aElement, aMaxAttr)
                     .valueOr(std::numeric_limits<int32_t>::max());
 
-  return Some(std::min(max, std::max(*attr, min)));
+  return Some(std::clamp(*attr, min, max));
 }
 
 bool AppWindow::LoadSizeFromXUL(int32_t& aSpecWidth, int32_t& aSpecHeight) {
@@ -1506,7 +1512,7 @@ void AppWindow::SyncAttributesToWidget() {
 
   nsAutoString attr;
 
-  // Some attributes can change the client size (e.g. chromemargin on Windows
+  // Some attributes can change the client size (e.g. customtitlebar on Windows
   // and MacOS). But we might want to keep it.
   const LayoutDeviceIntSize oldClientSize = mWindow->GetClientSize();
   // We have to check now whether we want to restore the client size, as any
@@ -1514,21 +1520,26 @@ void AppWindow::SyncAttributesToWidget() {
   bool maintainClientSize = mDominantClientSize;
 
   // "hidechrome" attribute
-  if (windowElement->AttrValueIs(kNameSpaceID_None, nsGkAtoms::hidechrome,
-                                 nsGkAtoms::_true, eCaseMatters)) {
+  // FIXME(emilio): This should arguably be
+  // HideWindowChrome(windowElement->GetBoolAttr(...)), but that has
+  // side-effects in some platforms.
+  if (windowElement->GetBoolAttr(nsGkAtoms::hidechrome)) {
     mWindow->HideWindowChrome(true);
+  }
+  NS_ENSURE_TRUE_VOID(mWindow);
+
+  // "customtitlebar" attribute
+  // FIXME(emilio): This should arguably be
+  // SetCustomTitlebar(windowElement->GetBoolAttr(...)), but that breaks with
+  // the early blank window which sets the custom titlebar via
+  // nsIDOMWindowUtils...
+  if (windowElement->GetBoolAttr(nsGkAtoms::customtitlebar)) {
+    mWindow->SetCustomTitlebar(true);
   }
 
   NS_ENSURE_TRUE_VOID(mWindow);
 
-  // "chromemargin" attribute
-  nsIntMargin margins;
-  windowElement->GetAttribute(u"chromemargin"_ns, attr);
-  if (nsContentUtils::ParseIntMarginValue(attr, margins)) {
-    mWindow->SetNonClientMargins(
-        LayoutDeviceIntMargin::FromUnknownMargin(margins));
-  }
-
+  mWindow->SetMicaBackdrop(windowElement->GetBoolAttr(nsGkAtoms::windowsmica));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "windowtype", "windowclass", "windowname" attributes
@@ -1555,18 +1566,17 @@ void AppWindow::SyncAttributesToWidget() {
   }
 
   // "drawtitle" attribute
-  windowElement->GetAttribute(u"drawtitle"_ns, attr);
-  mWindow->SetDrawsTitle(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetDrawsTitle(windowElement->GetBoolAttr(nsGkAtoms::drawtitle));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "toggletoolbar" attribute
-  windowElement->GetAttribute(u"toggletoolbar"_ns, attr);
-  mWindow->SetShowsToolbarButton(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetShowsToolbarButton(
+      windowElement->HasAttribute(u"toggletoolbar"_ns));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macnativefullscreen" attribute
-  windowElement->GetAttribute(u"macnativefullscreen"_ns, attr);
-  mWindow->SetSupportsNativeFullscreen(attr.LowerCaseEqualsLiteral("true"));
+  mWindow->SetSupportsNativeFullscreen(
+      windowElement->HasAttribute(u"macnativefullscreen"_ns));
   NS_ENSURE_TRUE_VOID(mWindow);
 
   // "macanimationtype" attribute
@@ -1820,13 +1830,19 @@ nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
   settings.rtlEnabled = intl::LocaleService::GetInstance()->IsAppLocaleRTL();
 
   bool isInTabletMode = false;
-  bool autoTouchModePref =
+  bool const autoTouchModePref =
       Preferences::GetBool("browser.touchmode.auto", false);
   if (autoTouchModePref) {
     nsCOMPtr<nsIWindowsUIUtils> uiUtils(
         do_GetService("@mozilla.org/windows-ui-utils;1"));
     if (!NS_WARN_IF(!uiUtils)) {
-      uiUtils->GetInTabletMode(&isInTabletMode);
+      // We switch to the touch-optimized layout in both Win10 and Win11 tablet-
+      // modes, since only the input mechanism is relevant. (See bug 1819421.)
+      if (IsWin11OrLater()) {
+        uiUtils->GetInWin11TabletMode(&isInTabletMode);
+      } else {
+        uiUtils->GetInWin10TabletMode(&isInTabletMode);
+      }
     }
   }
 
@@ -1849,6 +1865,8 @@ nsresult AppWindow::MaybeSaveEarlyWindowPersistentValues(
       }
     }
   }
+
+  settings.verticalTabs = Preferences::GetBool("sidebar.verticalTabs", false);
 
   Unused << PersistPreXULSkeletonUIValues(settings);
 #endif
@@ -1905,6 +1923,8 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
     return;
   }
 
+  const bool isClient = mWindow->PersistClientBounds();
+
   // we use CSS pixels for size, but desktop pixels for position
   CSSToLayoutDeviceScale sizeScale = UnscaledDevicePixelsPerCSSPixel();
   DesktopToLayoutDeviceScale posScale = DevicePixelsPerDesktopPixel();
@@ -1940,8 +1960,8 @@ void AppWindow::MaybeSavePersistentPositionAndSize(
   }
 
   if (aAttributes.contains(PersistentAttribute::Size)) {
-    LayoutDeviceIntRect innerRect =
-        rect - GetOuterToInnerSizeDifference(mWindow);
+    const LayoutDeviceIntRect innerRect =
+        isClient ? rect : rect - GetOuterToInnerSizeDifference(mWindow);
     if (aPersistString.Find(u"width") >= 0) {
       sizeString.Truncate();
       sizeString.AppendInt(NSToIntRound(innerRect.Width() / sizeScale.scale));
@@ -2343,7 +2363,7 @@ NS_IMETHODIMP
 AppWindow::BeforeStartLayout() {
   ApplyChromeFlags();
   // Ordering here is important, loading width/height values in
-  // LoadPersistentWindowState() depends on the chromemargin attribute (since
+  // LoadPersistentWindowState() depends on the customtitlebar attribute (since
   // we need to translate outer to inner sizes).
   SyncAttributesToWidget();
   LoadPersistentWindowState();
@@ -2420,7 +2440,7 @@ void AppWindow::IntrinsicallySizeShell(const CSSIntSize& aWindowDiff,
       // TODO: Make this more generic perhaps?
       if (prefWidthAttr.EqualsLiteral("min-width")) {
         if (auto* f = element->GetPrimaryFrame(FlushType::Frames)) {
-          const auto& coord = f->StylePosition()->mMinWidth;
+          const auto& coord = f->StylePosition()->GetMinWidth();
           if (coord.ConvertsToLength()) {
             prefWidth = CSSPixel::FromAppUnitsRounded(coord.ToLength());
           }
@@ -2516,7 +2536,7 @@ void AppWindow::SizeShell() {
 
   if (mChromeLoaded && mCenterAfterLoad && !positionSet &&
       mWindow->SizeMode() == nsSizeMode_Normal) {
-    Center(parentWindow, parentWindow ? false : true, false);
+    Center(parentWindow, !parentWindow, false);
   }
 }
 
@@ -2560,15 +2580,6 @@ void AppWindow::SizeShellToWithLimit(int32_t aDesiredWidth,
   // define the final size.
   SetSize(winWidth, winHeight, true);
   mDominantClientSize = true;
-}
-
-nsresult AppWindow::GetTabCount(uint32_t* aResult) {
-  if (mXULBrowserWindow) {
-    return mXULBrowserWindow->GetTabCount(aResult);
-  }
-
-  *aResult = 0;
-  return NS_OK;
 }
 
 nsresult AppWindow::GetInitialOpenWindowInfo(
@@ -2876,7 +2887,7 @@ static bool sWaitingForHiddenWindowToLoadNativeMenus =
 #  endif
     ;
 
-static nsTArray<LoadNativeMenusListener> sLoadNativeMenusListeners;
+MOZ_RUNINIT static nsTArray<LoadNativeMenusListener> sLoadNativeMenusListeners;
 
 static void BeginLoadNativeMenus(Document* aDoc, nsIWidget* aParentWindow);
 

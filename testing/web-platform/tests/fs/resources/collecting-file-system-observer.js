@@ -7,6 +7,10 @@
 // getRecords() with the records it collected.
 class CollectingFileSystemObserver {
   #observer = new FileSystemObserver(this.#collectRecordsCallback.bind(this));
+  #notificationObserver =
+      new FileSystemObserver(this.#notificationCallback.bind(this));
+
+  #callback;
 
   #records_promise_and_resolvers = Promise.withResolvers();
   #collected_records = [];
@@ -15,12 +19,14 @@ class CollectingFileSystemObserver {
   #notification_file_count = 0;
   #received_changes_since_last_notification = true;
 
-  constructor(test, root_dir) {
+  constructor(test, root_dir, callback) {
     test.add_cleanup(() => {
-      this.#observer.disconnect();
+      this.disconnect();
+      this.#notificationObserver.disconnect();
     });
 
     this.#setupCollectNotification(root_dir);
+    this.#callback = callback ?? (() => {return {}});
   }
 
   #getCollectNotificationName() {
@@ -30,7 +36,7 @@ class CollectingFileSystemObserver {
   async #setupCollectNotification(root_dir) {
     this.#notification_dir_handle =
         await root_dir.getDirectoryHandle(getUniqueName(), {create: true});
-    await this.#observer.observe(this.#notification_dir_handle);
+    await this.#notificationObserver.observe(this.#notification_dir_handle);
     await this.#createCollectNotification();
   }
 
@@ -51,37 +57,36 @@ class CollectingFileSystemObserver {
     }
   }
 
-  #groupRecords(records) {
-    return Object.groupBy(records, record => {
-      if (record.relativePathComponents[0] ==
-          this.#getCollectNotificationName()) {
-        return 'notification';
-      } else {
-        return 'nonNotifications';
-      }
+  #notificationCallback(records) {
+    this.#finishCollectingIfReady(records);
+  }
+
+  #collectRecordsCallback(records, observer) {
+    this.#collected_records.push({
+      ...this.#callback(records, observer),
+      records,
     });
+
+    this.#received_changes_since_last_notification = true;
   }
 
-  #collectRecordsCallback(records) {
-    const {notification, nonNotifications} = this.#groupRecords(records);
-
-    if (nonNotifications) {
-      this.#collected_records.push(...nonNotifications);
-
-      this.#received_changes_since_last_notification = true;
-    }
-
-    if (notification) {
-      this.#finishCollectingIfReady(records)
-    }
+  async getRecords() {
+    return (await this.#records_promise_and_resolvers.promise)
+        .map(record => record.records)
+        .flat();
   }
 
-  getRecords() {
+  getRecordsWithCallbackInfo() {
     return this.#records_promise_and_resolvers.promise;
   }
 
-  observe(handles) {
-    return Promise.all(handles.map(handle => this.#observer.observe(handle)));
+  observe(handles, options) {
+    return Promise.all(
+        handles.map(handle => this.#observer.observe(handle, options)));
+  }
+
+  disconnect() {
+    this.#observer.disconnect();
   }
 }
 
@@ -114,10 +119,17 @@ async function assert_records_equal(root, actual, expected) {
           'A record\'s relativePathMovedFrom was set when it shouldn\'t be');
     }
 
-    assert_true(
-        await actual_record.changedHandle.isSameEntry(
-            expected_record.changedHandle),
-        'A record\'s changedHandle didn\'t match the expected changedHandle');
+    if (expected_record.changedHandle) {
+      assert_true(
+          await actual_record.changedHandle.isSameEntry(
+              expected_record.changedHandle),
+          'A record\'s changedHandle didn\'t match the expected changedHandle');
+    } else {
+      assert_equals(
+          actual_record.changedHandle, null,
+          'A record\'s changedHandle was set when it shouldn\'t be');
+    }
+
     assert_true(
         await actual_record.root.isSameEntry(root),
         'A record\'s root didn\'t match the expected root');
@@ -126,4 +138,22 @@ async function assert_records_equal(root, actual, expected) {
 
 function modifiedEvent(changedHandle, relativePathComponents) {
   return {type: 'modified', changedHandle, relativePathComponents};
+}
+
+function appearedEvent(changedHandle, relativePathComponents) {
+  return {type: 'appeared', changedHandle, relativePathComponents};
+}
+
+function disappearedEvent(relativePathComponents) {
+  return {type: 'disappeared', changedHandle: null, relativePathComponents};
+}
+
+function movedEvent(
+    changedHandle, relativePathComponents, relativePathMovedFrom) {
+  return {
+    type: 'moved',
+    changedHandle,
+    relativePathComponents,
+    relativePathMovedFrom
+  };
 }

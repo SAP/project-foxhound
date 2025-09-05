@@ -167,22 +167,24 @@
                 <menuseparator/>
 #ifdef XP_MACOSX
                 <menuitem id="enterFullScreenItem"
-                          key="key_enterFullScreen" data-l10n-id="menu-view-enter-full-screen">
-                  <observes element="View:FullScreen" attribute="oncommand"/>
+                          key="key_enterFullScreen"
+                          command="View:FullScreen"
+                          data-l10n-id="menu-view-enter-full-screen">
                 </menuitem>
                 <menuitem id="exitFullScreenItem"
                           key="key_exitFullScreen"
+                          command="View:FullScreen"
                           hidden="true" data-l10n-id="menu-view-exit-full-screen">
-                  <observes element="View:FullScreen" attribute="oncommand"/>
                 </menuitem>
 #else
                 <menuitem id="fullScreenItem"
                           key="key_enterFullScreen"
                           type="checkbox"
-                          observes="View:FullScreen" data-l10n-id="menu-view-full-screen"/>
+                          command="View:FullScreen"
+                          data-l10n-id="menu-view-full-screen"/>
 #endif
                 <menuitem id="menu_readerModeItem"
-                          observes="View:ReaderView"
+                          command="View:ReaderView"
                           key="key_toggleReaderMode"
                           data-l10n-id="menu-view-enter-readerview"
                           hidden="true"/>
@@ -244,9 +246,8 @@
 # If the menu is actually opened, we'll clear this out and replace
 # it with a "real" entry.
 # See bug 492320 for the nasty details.
-                    <menuitem key="key_undoCloseWindow"
-                              oncommand="undoCloseWindow(0)"
-                              />
+                    <menuitem id="hiddenUndoCloseWindow"
+                              key="key_undoCloseWindow"/>
 #endif
                   </menupopup>
                 </menu>
@@ -256,9 +257,6 @@
             </menu>
 
   <menu id="bookmarksMenu"
-        ondragenter="PlacesMenuDNDHandler.onDragEnter(event);"
-        ondragover="PlacesMenuDNDHandler.onDragOver(event);"
-        ondrop="PlacesMenuDNDHandler.onDrop(event);"
         data-l10n-id="menu-bookmarks-menu">
     <menupopup id="bookmarksMenuPopup"
 #ifndef XP_MACOSX
@@ -267,9 +265,6 @@
 #endif
                context="placesContext"
                openInTabs="children"
-               onmouseup="BookmarksEventHandler.onMouseUp(event);"
-               oncommand="BookmarksEventHandler.onCommand(event);"
-               onclick="BookmarksEventHandler.onClick(event, this.parentNode._placesView);"
                tooltip="bhTooltip" popupsinherittooltip="true">
       <menuitem id="bookmarksShowAll"
                 command="Browser:ShowAllBookmarks"
@@ -325,6 +320,11 @@
       </menu>
       <menuseparator id="bookmarksMenuItemsSeparator"/>
       <!-- Bookmarks menu items -->
+    </menupopup>
+  </menu>
+
+  <menu id="profiles-menu" data-l10n-id="menu-profiles" hidden="true">
+    <menupopup id="menu_ProfilesPopup">
     </menupopup>
   </menu>
 
@@ -406,7 +406,7 @@
                    data-l10n-id="menu-window-menu">
                 <menupopup id="windowPopup">
                     <menuseparator/>
-                    <menuitem command="minimizeWindow" key="key_minimizeWindow"/>
+                    <menuitem command="cmd_minimizeWindow" key="key_minimizeWindow" data-l10n-id="window-minimize-command" />
                     <menuitem command="zoomWindow"/>
                     <!-- decomment when "BringAllToFront" is implemented
                         <menuseparator/>
@@ -422,11 +422,7 @@
                 <menuitem id="menu_openHelp"
                           data-l10n-id="menu-get-help"
                           appmenu-data-l10n-id="appmenu-get-help"
-#ifdef XP_MACOSX
-                          key="key_openHelpMac"/>
-#else
                           />
-#endif
                 <menuitem id="help_reportBrokenSite"
                           command="cmd_reportBrokenSite"
                           data-l10n-id="menu-report-broken-site"

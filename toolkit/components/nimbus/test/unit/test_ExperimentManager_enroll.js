@@ -21,6 +21,9 @@ const { TelemetryEnvironment } = ChromeUtils.importESModule(
 const { TelemetryEvents } = ChromeUtils.importESModule(
   "resource://normandy/lib/TelemetryEvents.sys.mjs"
 );
+const { RemoteSettingsExperimentLoader } = ChromeUtils.importESModule(
+  "resource://nimbus/lib/RemoteSettingsExperimentLoader.sys.mjs"
+);
 
 const { SYNC_DATA_PREF_BRANCH, SYNC_DEFAULTS_PREF_BRANCH } = ExperimentStore;
 
@@ -107,6 +110,56 @@ add_task(async function test_add_rollout_to_store() {
   await assertEmptyStore(manager.store);
 });
 
+/**
+ * Tests the logic arms (if/else) when enrolling an opt-in recipe
+ */
+add_task(async function test_enroll_optin_recipe_branch_selection() {
+  const sandbox = sinon.createSandbox();
+  const manager = ExperimentFakes.manager();
+
+  // stubbing this to return true since we don't want to actually enroll
+  // just assert on the call
+  let enrollStub = sandbox.stub(manager, "_enroll").returns(true);
+
+  await manager.onStartup();
+
+  const optInRecipe = ExperimentFakes.recipe("opt-in-recipe", {
+    isFirefoxLabsOptIn: true,
+    branches: [
+      {
+        slug: "opt-in-recipe-branch-slug",
+        ratio: 1,
+        features: [{ featureId: "optin", value: {} }],
+      },
+    ],
+  });
+
+  // Call with missing optInRecipeBranchSlug argument
+  await Assert.rejects(
+    manager.enroll(optInRecipe, "test"),
+    /Branch slug not provided for Firefox Labs opt in recipe: "opt-in-recipe"/,
+    "Should not enroll an opt-in recipe with missing optInBranchSlug"
+  );
+
+  // Call with incorrect optInRecipeBranchSlug for the optin recipe
+  await Assert.rejects(
+    manager.enroll(optInRecipe, "test", { branchSlug: "invalid-slug" }),
+    /Invalid branch slug provided for Firefox Labs opt in recipe: "opt-in-recipe"/,
+    "Should not enroll an opt-in recipe with invalid branch slug"
+  );
+
+  // Call with the correct branch slug
+  await manager.enroll(optInRecipe, "test", {
+    branchSlug: optInRecipe.branches[0].slug,
+  });
+  Assert.ok(
+    enrollStub.calledOnceWith(optInRecipe, optInRecipe.branches[0], "test"),
+    "should call ._enroll() with the correct arguments"
+  );
+
+  await assertEmptyStore(manager.store);
+});
+
 add_task(
   async function test_setExperimentActive_sendEnrollmentTelemetry_called() {
     const manager = ExperimentFakes.manager();
@@ -130,7 +183,7 @@ add_task(
     );
 
     // Check that there aren't any Glean enrollment events yet
-    var enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue();
+    var enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue("events");
     Assert.equal(
       undefined,
       enrollmentEvents,
@@ -164,7 +217,7 @@ add_task(
     );
 
     // Check that the Glean enrollment event was recorded.
-    enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue();
+    enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue("events");
     // We expect only one event
     Assert.equal(1, enrollmentEvents.length);
     // And that one event matches the expected enrolled experiment
@@ -220,7 +273,7 @@ add_task(async function test_setRolloutActive_sendEnrollmentTelemetry_called() {
   );
 
   // Check that there aren't any Glean enrollment events yet
-  var enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue();
+  var enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue("events");
   Assert.equal(
     undefined,
     enrollmentEvents,
@@ -282,7 +335,7 @@ add_task(async function test_setRolloutActive_sendEnrollmentTelemetry_called() {
   );
 
   // Check that the Glean enrollment event was recorded.
-  enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue();
+  enrollmentEvents = Glean.nimbusEvents.enrollment.testGetValue("events");
   // We expect only one event
   Assert.equal(1, enrollmentEvents.length);
   // And that one event matches the expected enrolled experiment
@@ -326,7 +379,7 @@ add_task(async function test_failure_name_conflict() {
   await manager.onStartup();
 
   // Check that there aren't any Glean enroll_failed events yet
-  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   Assert.equal(
     undefined,
     failureEvents,
@@ -353,7 +406,7 @@ add_task(async function test_failure_name_conflict() {
   );
 
   // Check that the Glean enrollment event was recorded.
-  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   // We expect only one event
   Assert.equal(1, failureEvents.length);
   // And that one event matches the expected enrolled experiment
@@ -384,7 +437,7 @@ add_task(async function test_failure_group_conflict() {
   await manager.onStartup();
 
   // Check that there aren't any Glean enroll_failed events yet
-  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   Assert.equal(
     undefined,
     failureEvents,
@@ -395,10 +448,12 @@ add_task(async function test_failure_group_conflict() {
   // These should not be allowed to exist simultaneously.
   const existingBranch = {
     slug: "treatment",
+    ratio: 1,
     features: [{ featureId: "pink", value: {} }],
   };
   const newBranch = {
     slug: "treatment",
+    ratio: 1,
     features: [{ featureId: "pink", value: {} }],
   };
 
@@ -431,7 +486,7 @@ add_task(async function test_failure_group_conflict() {
   );
 
   // Check that the Glean enroll_failed event was recorded.
-  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   // We expect only one event
   Assert.equal(1, failureEvents.length);
   // And that event matches the expected experiment and reason
@@ -468,7 +523,7 @@ add_task(async function test_rollout_failure_group_conflict() {
   await manager.onStartup();
 
   // Check that there aren't any Glean enroll_failed events yet
-  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   Assert.equal(
     undefined,
     failureEvents,
@@ -495,7 +550,7 @@ add_task(async function test_rollout_failure_group_conflict() {
   );
 
   // Check that the Glean enroll_failed event was recorded.
-  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   // We expect only one event
   Assert.equal(1, failureEvents.length);
   // And that event matches the expected experiment and reason
@@ -529,7 +584,7 @@ add_task(async function test_rollout_experiment_no_conflict() {
   await manager.onStartup();
 
   // Check that there aren't any Glean enroll_failed events yet
-  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  var failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   Assert.equal(
     undefined,
     failureEvents,
@@ -559,7 +614,7 @@ add_task(async function test_rollout_experiment_no_conflict() {
   );
 
   // Check that there aren't any Glean enroll_failed events
-  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue();
+  failureEvents = Glean.nimbusEvents.enrollFailed.testGetValue("events");
   Assert.equal(
     undefined,
     failureEvents,
@@ -810,10 +865,9 @@ add_task(async function test_forceEnroll() {
   sinon
     .stub(loader.remoteSettingsClients.experiments, "get")
     .resolves([experiment1, experiment2, rollout1, rollout2]);
-  sinon.stub(loader, "setTimer");
 
-  await loader.init();
   await manager.onStartup();
+  await loader.enable();
 
   for (const { enroll, expected } of TEST_CASES) {
     for (const recipe of enroll) {
@@ -1042,4 +1096,204 @@ add_task(async function test_randomizationUnit() {
     await manager.isInBucketAllocation(groupIdBucketing),
     "in bucketing using group_id"
   );
+});
+
+add_task(async function test_group_enrollment() {
+  // We need multiple instances of manager to simulate multiple profiles
+  const store1 = ExperimentFakes.store();
+  const manager1 = ExperimentFakes.manager(store1);
+
+  const enrollPromise1 = new Promise(resolve =>
+    manager1.store.on("update:group_enroll", resolve)
+  );
+
+  await manager1.onStartup();
+
+  const groupId = "cedc1378-b806-4664-8c3e-2090f2f46e00";
+  const clientId1 = "clientid1";
+  const clientId2 = "clientid2";
+  const branchA = {
+    slug: "branchA",
+    ratio: 1,
+    features: [{ featureId: "pink", value: {} }],
+  };
+  const branchB = {
+    slug: "branchB",
+    ratio: 1,
+    features: [{ featureId: "pink", value: {} }],
+  };
+  const recipe = {
+    ...ExperimentFakes.recipe("group_enroll"),
+    branches: [branchA, branchB],
+    isRollout: false,
+    active: true,
+    bucketConfig: {
+      namespace: "nimbus-test-utils",
+      randomizationUnit: "group_id",
+      start: 0,
+      count: 1000,
+      total: 1000,
+    },
+  };
+
+  // set the group ID
+  await ClientID.setProfileGroupID(groupId);
+  // enroll the first clientID in the experiment
+  Services.prefs.setStringPref("app.normandy.user_id", clientId1);
+
+  await manager1.enroll(recipe, "test_group_enrollment");
+  await enrollPromise1;
+
+  const experiment1 = manager1.store.get("group_enroll");
+  let clientId1branch = experiment1.branch;
+
+  // create the second manager && enroll the second clientID
+  const store2 = ExperimentFakes.store();
+  const manager2 = ExperimentFakes.manager(store2);
+
+  const enrollPromise2 = new Promise(resolve =>
+    manager2.store.on("update:group_enroll", resolve)
+  );
+
+  await manager2.onStartup();
+
+  Services.prefs.setStringPref("app.normandy.user_id", clientId2);
+
+  await manager2.enroll(recipe, "test_group_enrollment");
+  await enrollPromise2;
+
+  const experiment2 = manager2.store.get("group_enroll");
+  let clientId2branch = experiment2.branch;
+
+  Assert.equal(
+    clientId1branch,
+    clientId2branch,
+    "should have enrolled in the same branch"
+  );
+
+  // Cleanup
+  manager1.unenroll("group_enroll", "test-cleanup");
+  await assertEmptyStore(manager1.store);
+
+  manager2.unenroll("group_enroll", "test-cleanup");
+  await assertEmptyStore(manager2.store);
+});
+
+add_task(async function test_getSingleOptInRecipe() {
+  const sandbox = sinon.createSandbox();
+  const manager = ExperimentFakes.manager();
+  const optInRecipes = [
+    ExperimentFakes.recipe("opt-in-one", { isFirefoxLabsOptIn: true }),
+    ExperimentFakes.recipe("opt-in-two", { isFirefoxLabsOptIn: true }),
+  ];
+
+  manager.optInRecipes = optInRecipes;
+
+  sandbox.stub(RemoteSettingsExperimentLoader, "finishedUpdating").resolves();
+
+  Assert.equal(
+    await manager.getSingleOptInRecipe(optInRecipes[0].slug),
+    optInRecipes[0],
+    "should return the correct opt in recipe with the slug opt-in-one"
+  );
+
+  Assert.equal(
+    await manager.getSingleOptInRecipe("non-existent"),
+    undefined,
+    "should return undefined if no opt in recipe exists with the slug non-existent"
+  );
+
+  await Assert.rejects(
+    manager.getSingleOptInRecipe(),
+    /Slug required for .getSingleOptInRecipe/,
+    "Should throw when .getSingleOptInRecipe is called without a slug argument"
+  );
+
+  sandbox.restore();
+  await assertEmptyStore(manager.store);
+});
+
+add_task(async function test_getAllOptInRecipes() {
+  const sandbox = sinon.createSandbox();
+  const manager = ExperimentFakes.manager();
+
+  const optInRecipesWithTargetMatchingAndBucketing = [
+    ExperimentFakes.recipe("opt-in-one", {
+      targeting: "true",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {
+        ...ExperimentFakes.recipe.bucketConfig,
+        count: 1000,
+      },
+    }),
+    ExperimentFakes.recipe("opt-in-two", {
+      targeting: "true",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {
+        ...ExperimentFakes.recipe.bucketConfig,
+        count: 1000,
+      },
+    }),
+  ];
+
+  const optInRecipesWithTargetMatchingOnly = [
+    ExperimentFakes.recipe("opt-in-one", {
+      targeting: "true",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {},
+    }),
+    ExperimentFakes.recipe("opt-in-two", {
+      targeting: "true",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {},
+    }),
+  ];
+
+  const optInRecipesWithBucketingMatchingOnly = [
+    ExperimentFakes.recipe("opt-in-one", {
+      targeting: "false",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {
+        ...ExperimentFakes.recipe.bucketConfig,
+        count: 1000,
+      },
+    }),
+    ExperimentFakes.recipe("opt-in-two", {
+      targeting: "false",
+      isFirefoxLabsOptIn: true,
+      bucketConfig: {
+        ...ExperimentFakes.recipe.bucketConfig,
+        count: 1000,
+      },
+    }),
+  ];
+
+  sandbox.stub(RemoteSettingsExperimentLoader, "finishedUpdating").resolves();
+
+  // Happy path, opt in recipes meet targeting and bucketing criteria.
+  manager.optInRecipes = optInRecipesWithTargetMatchingAndBucketing;
+  Assert.deepEqual(
+    await manager.getAllOptInRecipes(),
+    optInRecipesWithTargetMatchingAndBucketing,
+    "should return the correct opt in recipes with targeting and bucketing match"
+  );
+
+  // Unhappy path, opt in recipes meet only targeting criteria.
+  manager.optInRecipes = optInRecipesWithTargetMatchingOnly;
+  Assert.deepEqual(
+    await manager.getAllOptInRecipes(),
+    [],
+    "should return an empty array for recipes with a targeting match only"
+  );
+
+  // Unhappy path, opt in recipes meet only bucketing criteria.
+  manager.optInRecipes = optInRecipesWithBucketingMatchingOnly;
+  Assert.deepEqual(
+    await manager.getAllOptInRecipes(),
+    [],
+    "should return an empty array for recipes with a bucketing match only"
+  );
+
+  sandbox.restore();
+  await assertEmptyStore(manager.store);
 });

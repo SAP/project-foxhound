@@ -90,7 +90,12 @@ add_setup(async function init() {
   ok(PopupNotifications.panel, "PopupNotifications panel exists");
 
   await SpecialPowers.pushPrefEnv({
-    set: [["test.events.async.enabled", true]],
+    set: [
+      ["test.events.async.enabled", true],
+      // This test aims to synthesize mousemove events at specific times, so
+      // disable the automatically synthesized mousemove events during reflow.
+      ["layout.reflow.synthMouseMove", false],
+    ],
   });
 
   info(`Show notification to get its size and position`);
@@ -113,6 +118,7 @@ add_task(async function test_mouseout_chrome() {
     info(`Showing notification should generate mouseout event on browser`);
     let mouseoutPromise = waitForMouseEvent("mouseout", browser);
     let { notification } = await showNotification(browser, "Test#Chrome");
+    synthesizeMouseAtCenter(notificationRect);
     let mouseoutCoordinate = await mouseoutPromise;
     info(`mouseout event: ${JSON.stringify(mouseoutCoordinate)}`);
 
@@ -140,7 +146,8 @@ add_task(async function test_mouseout_content() {
     let mouseoutPromise = waitForRemoteMouseEvent("mouseout", browser);
     // Ensure the event listener is registered in remote before showing notification.
     await executeSoonRemote(browser);
-    showNotification(browser, "Test#Content");
+    let { notification } = await showNotification(browser, "Test#Content");
+    synthesizeMouseAtCenter(notificationRect);
     let mouseoutCoordinate = await mouseoutPromise;
     info(`remote mouseout event: ${JSON.stringify(mouseoutCoordinate)}`);
 
@@ -149,5 +156,7 @@ add_task(async function test_mouseout_content() {
       mousemoveCoordinate,
       "Test event coordinate"
     );
+    info(`Remove notification`);
+    PopupNotifications.remove(notification);
   });
 });

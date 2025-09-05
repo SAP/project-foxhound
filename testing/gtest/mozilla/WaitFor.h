@@ -11,7 +11,6 @@
 #include "mozilla/media/MediaUtils.h"
 #include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
-#include "mozilla/ResultVariant.h"
 #include "mozilla/SpinEventLoopUntil.h"
 
 namespace mozilla {
@@ -27,11 +26,21 @@ namespace mozilla {
  * caller to create the needed tasks, as JS would. A noteworthy API that relies
  * on stable state is MediaTrackGraph::GetInstance.
  */
-template <typename T>
-T WaitFor(MediaEventSource<T>& aEvent) {
-  Maybe<T> value;
+template <ListenerPolicy Lp, typename First, typename... Rest>
+inline auto WaitFor(MediaEventSourceImpl<Lp, First, Rest...>& aEvent) {
+  constexpr size_t num_params = 1 + sizeof...(Rest);
+  using Storage =
+      std::conditional_t<num_params == 1, First, std::tuple<First, Rest...>>;
+  Maybe<Storage> value;
   MediaEventListener listener = aEvent.Connect(
-      AbstractThread::GetCurrent(), [&](T aValue) { value = Some(aValue); });
+      AbstractThread::GetCurrent(), [&value](First&& aFirst, Rest&&... aRest) {
+        if constexpr (num_params == 1) {
+          value = Some<Storage>(std::forward<First>(aFirst));
+        } else {
+          value = Some<Storage>(
+              {std::forward<First>(aFirst), std::forward<Rest...>(aRest...)});
+        }
+      });
   SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
       "WaitFor(MediaEventSource<T>& aEvent)"_ns,
       [&] { return value.isSome(); });
@@ -42,14 +51,22 @@ T WaitFor(MediaEventSource<T>& aEvent) {
 /**
  * Specialization of WaitFor<T> for void.
  */
-void WaitFor(MediaEventSource<void>& aEvent);
+template <ListenerPolicy Lp>
+inline void WaitFor(MediaEventSourceImpl<Lp, void>& aEvent) {
+  bool done = false;
+  MediaEventListener listener =
+      aEvent.Connect(AbstractThread::GetCurrent(), [&] { done = true; });
+  SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
+      "WaitFor(MediaEventSource<void>& aEvent)"_ns, [&] { return done; });
+  listener.Disconnect();
+}
 
 /**
  * Variant of WaitFor that blocks the caller until a MozPromise has either been
  * resolved or rejected.
  */
 template <typename R, typename E, bool Exc>
-Result<R, E> WaitFor(const RefPtr<MozPromise<R, E, Exc>>& aPromise) {
+inline Result<R, E> WaitFor(const RefPtr<MozPromise<R, E, Exc>>& aPromise) {
   Maybe<R> success;
   Maybe<E> error;
   aPromise->Then(
@@ -69,8 +86,9 @@ Result<R, E> WaitFor(const RefPtr<MozPromise<R, E, Exc>>& aPromise) {
  * A variation of WaitFor that takes a callback to be called each time aEvent is
  * raised. Blocks the caller until the callback function returns true.
  */
-template <typename... Args, typename CallbackFunction>
-void WaitUntil(MediaEventSource<Args...>& aEvent, CallbackFunction&& aF) {
+template <ListenerPolicy Lp, typename... Args, typename CallbackFunction>
+inline void WaitUntil(MediaEventSourceImpl<Lp, Args...>& aEvent,
+                      CallbackFunction&& aF) {
   bool done = false;
   MediaEventListener listener =
       aEvent.Connect(AbstractThread::GetCurrent(), [&](Args... aValue) {
@@ -88,30 +106,27 @@ template <typename... Args>
 using TakeNPromise = MozPromise<std::vector<std::tuple<Args...>>, bool, true>;
 
 template <ListenerPolicy Lp, typename... Args>
-auto TakeN(MediaEventSourceImpl<Lp, Args...>& aEvent,
-           size_t aN) -> RefPtr<TakeNPromise<Args...>> {
+inline auto TakeN(MediaEventSourceImpl<Lp, Args...>& aEvent,
+                  size_t aN) -> RefPtr<TakeNPromise<Args...>> {
   using Storage = std::vector<std::tuple<Args...>>;
   using Promise = TakeNPromise<Args...>;
+  using Holder = media::Refcountable<MozPromiseHolder<Promise>>;
   using Values = media::Refcountable<Storage>;
   using Listener = media::Refcountable<MediaEventListener>;
-  RefPtr<Values> values = MakeRefPtr<Values>();
+  auto values = MakeRefPtr<Values>();
   values->reserve(aN);
-  RefPtr<Listener> listener = MakeRefPtr<Listener>();
-  auto promise = InvokeAsync(
-      AbstractThread::GetCurrent(), __func__, [values, aN]() mutable {
-        SpinEventLoopUntil<ProcessFailureBehavior::IgnoreAndContinue>(
-            "TakeN(MediaEventSourceImpl<Lp, Args...>& aEvent, size_t aN)"_ns,
-            [&] { return values->size() == aN; });
-        return Promise::CreateAndResolve(std::move(*values), __func__);
-      });
+  auto listener = MakeRefPtr<Listener>();
+  auto holder = MakeRefPtr<Holder>();
   *listener = aEvent.Connect(AbstractThread::GetCurrent(),
-                             [values, listener, aN](Args... aValue) {
+                             [values, listener, aN, holder](Args... aValue) {
                                values->push_back({aValue...});
                                if (values->size() == aN) {
                                  listener->Disconnect();
+                                 holder->Resolve(std::move(*values),
+                                                 "TakeN listener callback");
                                }
                              });
-  return promise;
+  return holder->Ensure(__func__);
 }
 
 /**

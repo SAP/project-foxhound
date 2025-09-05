@@ -38,19 +38,22 @@ Preferences.addAll([
   { id: "privacy.cpd.siteSettings", type: "bool" },
   { id: "privacy.sanitize.timeSpan", type: "int" },
   { id: "privacy.clearOnShutdown.history", type: "bool" },
-  { id: "privacy.clearHistory.historyFormDataAndDownloads", type: "bool" },
+  { id: "privacy.clearHistory.browsingHistoryAndDownloads", type: "bool" },
   { id: "privacy.clearHistory.cookiesAndStorage", type: "bool" },
   { id: "privacy.clearHistory.cache", type: "bool" },
   { id: "privacy.clearHistory.siteSettings", type: "bool" },
-  { id: "privacy.clearSiteData.historyFormDataAndDownloads", type: "bool" },
+  { id: "privacy.clearHistory.formdata", type: "bool" },
+  { id: "privacy.clearSiteData.browsingHistoryAndDownloads", type: "bool" },
   { id: "privacy.clearSiteData.cookiesAndStorage", type: "bool" },
   { id: "privacy.clearSiteData.cache", type: "bool" },
   { id: "privacy.clearSiteData.siteSettings", type: "bool" },
+  { id: "privacy.clearSiteData.formdata", type: "bool" },
   {
-    id: "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+    id: "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
     type: "bool",
   },
   { id: "privacy.clearOnShutdown.formdata", type: "bool" },
+  { id: "privacy.clearOnShutdown_v2.formdata", type: "bool" },
   { id: "privacy.clearOnShutdown.downloads", type: "bool" },
   { id: "privacy.clearOnShutdown_v2.downloads", type: "bool" },
   { id: "privacy.clearOnShutdown.cookies", type: "bool" },
@@ -162,10 +165,27 @@ var gSanitizePromptDialog = {
     document.l10n.setAttributes(OKButton, okButtonl10nID);
 
     if (!lazy.USE_OLD_DIALOG) {
+      this._sinceMidnightSanitizeDurationOption = document.getElementById(
+        "sanitizeSinceMidnight"
+      );
       this._cookiesAndSiteDataCheckbox =
         document.getElementById("cookiesAndStorage");
       this._cacheCheckbox = document.getElementById("cache");
+
+      let midnightTime = Intl.DateTimeFormat(navigator.language, {
+        hour: "numeric",
+        minute: "numeric",
+      }).format(new Date().setHours(0, 0, 0, 0));
+      document.l10n.setAttributes(
+        this._sinceMidnightSanitizeDurationOption,
+        "clear-time-duration-value-since-midnight",
+        { midnightTime }
+      );
     }
+
+    document
+      .getElementById("sanitizeDurationChoice")
+      .addEventListener("select", () => this.selectByTimespan());
 
     document.addEventListener("dialogaccept", e => {
       if (this._inClearOnShutdownNewDialog) {
@@ -507,6 +527,7 @@ var gSanitizePromptDialog = {
 
     // make sure l10n updates are completed
     await document.l10n.translateElements([
+      this._sinceMidnightSanitizeDurationOption,
       this._cookiesAndSiteDataCheckbox,
       this._cacheCheckbox,
     ]);
@@ -521,7 +542,7 @@ var gSanitizePromptDialog = {
   /**
    * Get all items to clear based on checked boxes
    *
-   * @returns {string[]} array of items ["cache", "historyFormDataAndDownloads"...]
+   * @returns {string[]} array of items ["cache", "browsingHistoryAndDownloads"...]
    */
   getItemsToClear() {
     // the old dialog uses the preferences to decide what to clear
@@ -557,12 +578,13 @@ var gSanitizePromptDialog = {
       let selectedOptions = this.getItemsToClear();
       Glean.privacySanitize.clear.record({
         context: contextOpenedIn,
-        history_form_data_downloads: selectedOptions.includes(
-          "historyFormDataAndDownloads"
+        history_and_downloads: selectedOptions.includes(
+          "browsingHistoryAndDownloads"
         ),
         cookies_and_storage: selectedOptions.includes("cookiesAndStorage"),
         cache: selectedOptions.includes("cache"),
         site_settings: selectedOptions.includes("siteSettings"),
+        form_data: selectedOptions.includes("formdata"),
       });
     }
     // if the dialog was just opened, just report which context it was opened in

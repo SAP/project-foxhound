@@ -25,8 +25,13 @@ support-files = [
 ["browser_sanitize-history.js"]
 
 ["browser_sanitize-offlineData.js"]
+skip-if = [
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64' && opt", # Bug 1775635
+]
 
 ["browser_sanitize-passwordDisabledHosts.js"]
+
+["browser_sanitize-siteDataExceptAddons.js"]
 
 ["browser_sanitize-sitepermissions.js"]
 

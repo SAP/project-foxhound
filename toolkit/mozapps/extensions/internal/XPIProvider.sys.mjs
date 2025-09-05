@@ -117,9 +117,19 @@ const STARTUP_MTIME_SCOPES = [
 const NOTIFICATION_FLUSH_PERMISSIONS = "flush-pending-permissions";
 const XPI_PERMISSION = "install";
 
+// This preference name is from UpdateTimerManager.sys.mjs; it stores the
+// timestamp (seconds) of the last periodic signature check.
+const PREF_LAST_SIGNATURE_CHECK_TIME =
+  "app.update.lastUpdateTime.xpi-signature-verification";
+const PREF_LAST_SIGNATURE_CHECKPOINT = "extensions.signatureCheckpoint";
+// SIGNATURE_CHECKPOINT should be incremented whenever an implementation change
+// happens that affects the validity of add-on signatures of already-installed
+// add-ons. This forces all add-on signatures to be verified again.
+const XPI_SIGNATURE_CHECKPOINT = 1;
+
 const XPI_SIGNATURE_CHECK_PERIOD = 24 * 60 * 60;
 
-const DB_SCHEMA = 36;
+const DB_SCHEMA = 37;
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
@@ -435,6 +445,7 @@ function migrateAddonLoader(addon) {
  * as stored in the addonStartup.json file.
  */
 const JSON_FIELDS = Object.freeze([
+  "blocklistState",
   "dependencies",
   "enabled",
   "file",
@@ -529,6 +540,7 @@ class XPIState {
    */
   toJSON() {
     let json = {
+      blocklistState: this.blocklistState,
       dependencies: this.dependencies,
       enabled: this.enabled,
       lastModifiedTime: this.lastModifiedTime,
@@ -639,6 +651,7 @@ class XPIState {
     this.file = aDBAddon._sourceBundle;
     this.rootURI = aDBAddon.rootURI;
     this.recommendationState = aDBAddon.recommendationState;
+    this.blocklistState = aDBAddon.blocklistState;
 
     if ((aUpdated || mustGetMod) && this.file) {
       this.getModTime(this.file);
@@ -1807,6 +1820,13 @@ class BootstrapScope {
         }
       }
 
+      // NOTE: Make sure the properties meant to be consistently passed to
+      // the bootstrap startup method to be part of the XPIStates JSON_FIELDS
+      // and to have been propagated from the db properties stored in the DB
+      // to the startupCache XPIStates by the syncWithDB method (because of
+      // browser startup the properties for the already installed addons
+      // are going to be retrieved from the XPIStates before the addonDB
+      // has been fully loaded).
       let params = {
         id: addon.id,
         version: addon.version,
@@ -1819,6 +1839,7 @@ class BootstrapScope {
         isPrivileged: addon.isPrivileged,
         locationHidden: addon.location.hidden,
         recommendationState: addon.recommendationState,
+        blocklistState: addon.blocklistState,
       };
 
       if (aMethod == "startup" && addon.startupData) {
@@ -2533,9 +2554,10 @@ export var XPIProvider = {
           AddonManagerPrivate.notifyAddonChanged(null, "theme")
         );
       }
+      // Keep version in sync with toolkit/mozapps/extensions/default-theme/manifest.json
       this.maybeInstallBuiltinAddon(
         "default-theme@mozilla.org",
-        "1.3",
+        "1.4.1",
         "resource://default-theme/"
       );
 
@@ -2715,6 +2737,23 @@ export var XPIProvider = {
 
       AddonManagerPrivate.recordTimestamp("XPI_startup_end");
 
+      if (
+        Services.prefs.getIntPref(PREF_LAST_SIGNATURE_CHECKPOINT, 0) !==
+        XPI_SIGNATURE_CHECKPOINT
+      ) {
+        Services.prefs.setIntPref(
+          PREF_LAST_SIGNATURE_CHECKPOINT,
+          XPI_SIGNATURE_CHECKPOINT
+        );
+        if (aAppChanged !== undefined) {
+          XPIExports.XPIDatabase.verifySignatures();
+
+          // Mark timer as fired so that timerManager won't also retrigger the
+          // same validation for the next XPI_SIGNATURE_CHECKPOINT seconds.
+          const NOW_SECS = Math.round(Date.now() / 1000);
+          Services.prefs.setIntPref(PREF_LAST_SIGNATURE_CHECK_TIME, NOW_SECS);
+        }
+      }
       lazy.timerManager.registerTimer(
         "xpi-signature-verification",
         () => {
@@ -3272,6 +3311,14 @@ export var XPIProvider = {
     }
 
     return { addons: result, fullData: false };
+  },
+
+  shouldShowBlocklistAttention() {
+    return XPIExports.XPIDatabase.shouldShowBlocklistAttention();
+  },
+
+  getBlocklistAttentionInfo() {
+    return XPIExports.XPIDatabase.getBlocklistAttentionInfo();
   },
 
   /*

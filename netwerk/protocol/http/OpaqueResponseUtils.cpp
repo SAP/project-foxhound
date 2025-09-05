@@ -464,7 +464,7 @@ OpaqueResponseBlocker::EnsureOpaqueResponseIsAllowedAfterJavaScriptValidation(
 
   return aChannel->BlockOrFilterOpaqueResponse(
       this, u"Javascript validation failed"_ns,
-      OpaqueResponseBlockedTelemetryReason::JS_VALIDATION_FAILED,
+      OpaqueResponseBlockedTelemetryReason::eJsValidationFailed,
       "Javascript validation failed");
 }
 
@@ -500,12 +500,11 @@ static void RecordTelemetry(const TimeStamp& aStartOfValidation,
       MarkerTiming::Interval(aStartOfJavaScriptValidation, now),
       nsPrintfCString("JS Validation (%s)", key.get()));
 
-  Telemetry::AccumulateTimeDelta(Telemetry::ORB_RECEIVE_DATA_FOR_VALIDATION_MS,
-                                 key, aStartOfValidation,
-                                 aStartOfJavaScriptValidation);
+  glean::orb::receive_data_for_validation.Get(key).AccumulateRawDuration(
+      aStartOfJavaScriptValidation - aStartOfValidation);
 
-  Telemetry::AccumulateTimeDelta(Telemetry::ORB_JAVASCRIPT_VALIDATION_MS, key,
-                                 aStartOfJavaScriptValidation, now);
+  glean::orb::javascript_validation.Get(key).AccumulateRawDuration(
+      now - aStartOfJavaScriptValidation);
 }
 
 // The specification for ORB is currently being written:
@@ -535,9 +534,7 @@ nsresult OpaqueResponseBlocker::ValidateJavaScript(HttpBaseChannel* aChannel,
     return rv;
   }
 
-  Telemetry::ScalarAdd(
-      Telemetry::ScalarID::OPAQUE_RESPONSE_BLOCKING_JAVASCRIPT_VALIDATION_COUNT,
-      1);
+  glean::opaque_response_blocking::javascript_validation_count.Add(1);
 
   LOGORB("Send %s to the validator", aURI->GetSpecOrDefault().get());
   // https://whatpr.org/fetch/1442.html#orb-algorithm, step 15

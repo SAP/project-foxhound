@@ -62,6 +62,7 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
                   (gen->outerInfo().nargs() + 1) * sizeof(Value)),
       returnLabel_(),
       inboundStackArgBytes_(0),
+      safepointIndices_(gen->alloc()),
       nativeToBytecodeMap_(nullptr),
       nativeToBytecodeMapSize_(0),
       nativeToBytecodeTableOffset_(0),
@@ -99,7 +100,6 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
       // argument stack depth separately.
       MOZ_ASSERT(graph->argumentSlotCount() == 0);
 
-#ifdef ENABLE_WASM_TAIL_CALLS
       // An MWasmCall does not align the stack pointer at calls sites but
       // instead relies on the a priori stack adjustment. We need to insert
       // padding so that pushing the callee's frame maintains frame alignment.
@@ -114,15 +114,6 @@ CodeGeneratorShared::CodeGeneratorShared(MIRGenerator* gen, LIRGraph* graph,
 
       // Add the callee frame padding and stack args to frameDepth.
       frameDepth_ += calleeFramePadding + stackArgsWithPadding;
-#else
-      frameDepth_ += gen->wasmMaxStackArgBytes();
-
-      // An MWasmCall does not align the stack pointer at calls sites but
-      // instead relies on the a priori stack adjustment. This must be the
-      // last adjustment of frameDepth_.
-      frameDepth_ += ComputeByteAlignment(sizeof(wasm::Frame) + frameDepth_,
-                                          WasmStackAlignment);
-#endif
     }
 
 #ifdef JS_CODEGEN_ARM64
@@ -204,11 +195,11 @@ bool CodeGeneratorShared::generateOutOfLineCode() {
   // instead of the block corresponding to the OOL path.
   current = nullptr;
 
-  for (size_t i = 0; i < outOfLineCode_.length(); i++) {
-    // Add native => bytecode mapping entries for OOL sites.
+  for (OutOfLineCode* ool : outOfLineCode_) {
+    // Add native => bytecode mapping entries for OOL->sites.
     // Not enabled on wasm yet since it doesn't contain bytecode mappings.
     if (!gen->compilingWasm()) {
-      if (!addNativeToBytecodeEntry(outOfLineCode_[i]->bytecodeSite())) {
+      if (!addNativeToBytecodeEntry(ool->bytecodeSite())) {
         return false;
       }
     }
@@ -219,10 +210,10 @@ bool CodeGeneratorShared::generateOutOfLineCode() {
 
     JitSpew(JitSpew_Codegen, "# Emitting out of line code");
 
-    masm.setFramePushed(outOfLineCode_[i]->framePushed());
-    outOfLineCode_[i]->bind(&masm);
+    masm.setFramePushed(ool->framePushed());
+    ool->bind(&masm);
 
-    outOfLineCode_[i]->generate(this);
+    ool->generate(this);
   }
 
   return !masm.oom();
@@ -239,7 +230,7 @@ void CodeGeneratorShared::addOutOfLineCode(OutOfLineCode* code,
   MOZ_ASSERT_IF(!gen->compilingWasm(), site->script()->containsPC(site->pc()));
   code->setFramePushed(masm.framePushed());
   code->setBytecodeSite(site);
-  masm.propagateOOM(outOfLineCode_.append(code));
+  outOfLineCode_.pushBack(code);
 }
 
 bool CodeGeneratorShared::addNativeToBytecodeEntry(const BytecodeSite* site) {
@@ -447,6 +438,9 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
 
       MOZ_DIAGNOSTIC_ASSERT(payload->isMemory() || payload->isRegister());
       if (payload->isMemory()) {
+        MOZ_ASSERT_IF(payload->isStackSlot(),
+                      payload->toStackSlot()->width() ==
+                          LStackSlot::width(LDefinition::TypeFrom(type)));
         alloc = RValueAllocation::Typed(valueType, ToStackIndex(payload));
       } else if (payload->isGeneralReg()) {
         alloc = RValueAllocation::Typed(valueType, ToRegister(payload));
@@ -457,8 +451,7 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
       }
       break;
     }
-    case MIRType::Float32:
-    case MIRType::Simd128: {
+    case MIRType::Float32: {
       LAllocation* payload = snapshot->payloadOfSlot(*allocIndex);
       if (payload->isConstant()) {
         MConstant* constant = mir->toConstant();
@@ -471,9 +464,54 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
 
       MOZ_ASSERT(payload->isMemory() || payload->isFloatReg());
       if (payload->isFloatReg()) {
-        alloc = RValueAllocation::AnyFloat(ToFloatRegister(payload));
+        alloc = RValueAllocation::Float32(ToFloatRegister(payload));
       } else {
-        alloc = RValueAllocation::AnyFloat(ToStackIndex(payload));
+        MOZ_ASSERT_IF(payload->isStackSlot(),
+                      payload->toStackSlot()->width() ==
+                          LStackSlot::width(LDefinition::TypeFrom(type)));
+        alloc = RValueAllocation::Float32(ToStackIndex(payload));
+      }
+      break;
+    }
+    case MIRType::IntPtr: {
+      LAllocation* payload = snapshot->payloadOfSlot(*allocIndex);
+      if (payload->isConstant()) {
+        intptr_t constant = mir->toConstant()->toIntPtr();
+#if !defined(JS_64BIT)
+        uint32_t index;
+        masm.propagateOOM(
+            graph.addConstantToPool(Int32Value(constant), &index));
+
+        alloc = RValueAllocation::IntPtrConstant(index);
+#else
+        uint32_t lowIndex;
+        masm.propagateOOM(
+            graph.addConstantToPool(Int32Value(constant), &lowIndex));
+
+        uint32_t highIndex;
+        masm.propagateOOM(
+            graph.addConstantToPool(Int32Value(constant >> 32), &highIndex));
+
+        alloc = RValueAllocation::IntPtrConstant(lowIndex, highIndex);
+#endif
+        break;
+      }
+
+      MOZ_ASSERT(payload->isMemory() || payload->isGeneralReg());
+      if (payload->isGeneralReg()) {
+        alloc = RValueAllocation::IntPtr(ToRegister(payload));
+      } else if (payload->isStackSlot()) {
+        LStackSlot::Width width = payload->toStackSlot()->width();
+        MOZ_ASSERT(width == LStackSlot::width(LDefinition::GENERAL) ||
+                   width == LStackSlot::width(LDefinition::INT32));
+
+        if (width == LStackSlot::width(LDefinition::GENERAL)) {
+          alloc = RValueAllocation::IntPtr(ToStackIndex(payload));
+        } else {
+          alloc = RValueAllocation::IntPtrInt32(ToStackIndex(payload));
+        }
+      } else {
+        alloc = RValueAllocation::IntPtr(ToStackIndex(payload));
       }
       break;
     }
@@ -499,6 +537,64 @@ void CodeGeneratorShared::encodeAllocation(LSnapshot* snapshot,
       Value v = MagicValue(why);
       masm.propagateOOM(graph.addConstantToPool(v, &index));
       alloc = RValueAllocation::ConstantPool(index);
+      break;
+    }
+    case MIRType::Int64: {
+      LAllocation* payload = snapshot->payloadOfSlot(*allocIndex);
+      if (payload->isConstant()) {
+        int64_t constant = mir->toConstant()->toInt64();
+
+        uint32_t lowIndex;
+        masm.propagateOOM(
+            graph.addConstantToPool(Int32Value(constant), &lowIndex));
+
+        uint32_t highIndex;
+        masm.propagateOOM(
+            graph.addConstantToPool(Int32Value(constant >> 32), &highIndex));
+
+        alloc = RValueAllocation::Int64Constant(lowIndex, highIndex);
+        break;
+      }
+      MOZ_ASSERT(payload->isMemory() || payload->isRegister());
+
+#ifdef JS_NUNBOX32
+      LAllocation* type = snapshot->typeOfSlot(*allocIndex);
+      MOZ_ASSERT(type->isMemory() || type->isRegister());
+
+      MOZ_ASSERT_IF(payload->isStackSlot(),
+                    payload->toStackSlot()->width() ==
+                        LStackSlot::width(LDefinition::GENERAL));
+      MOZ_ASSERT_IF(type->isStackSlot(),
+                    type->toStackSlot()->width() ==
+                        LStackSlot::width(LDefinition::GENERAL));
+
+      if (payload->isRegister()) {
+        if (type->isRegister()) {
+          alloc =
+              RValueAllocation::Int64(ToRegister(type), ToRegister(payload));
+        } else {
+          alloc =
+              RValueAllocation::Int64(ToStackIndex(type), ToRegister(payload));
+        }
+      } else {
+        if (type->isRegister()) {
+          alloc =
+              RValueAllocation::Int64(ToRegister(type), ToStackIndex(payload));
+        } else {
+          alloc = RValueAllocation::Int64(ToStackIndex(type),
+                                          ToStackIndex(payload));
+        }
+      }
+#elif JS_PUNBOX64
+      if (payload->isRegister()) {
+        alloc = RValueAllocation::Int64(ToRegister(payload));
+      } else {
+        MOZ_ASSERT_IF(payload->isStackSlot(),
+                      payload->toStackSlot()->width() ==
+                          LStackSlot::width(LDefinition::GENERAL));
+        alloc = RValueAllocation::Int64(ToStackIndex(payload));
+      }
+#endif
       break;
     }
     default: {
@@ -877,18 +973,15 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   Register dest_;
   bool widenFloatToDouble_;
   wasm::BytecodeOffset bytecodeOffset_;
-  bool preserveInstance_;
 
  public:
-  OutOfLineTruncateSlow(
-      FloatRegister src, Register dest, bool widenFloatToDouble = false,
-      wasm::BytecodeOffset bytecodeOffset = wasm::BytecodeOffset(),
-      bool preserveInstance = false)
+  OutOfLineTruncateSlow(FloatRegister src, Register dest,
+                        bool widenFloatToDouble,
+                        wasm::BytecodeOffset bytecodeOffset)
       : src_(src),
         dest_(dest),
         widenFloatToDouble_(widenFloatToDouble),
-        bytecodeOffset_(bytecodeOffset),
-        preserveInstance_(preserveInstance) {}
+        bytecodeOffset_(bytecodeOffset) {}
 
   void accept(CodeGeneratorShared* codegen) override {
     codegen->visitOutOfLineTruncateSlow(this);
@@ -896,17 +989,16 @@ class OutOfLineTruncateSlow : public OutOfLineCodeBase<CodeGeneratorShared> {
   FloatRegister src() const { return src_; }
   Register dest() const { return dest_; }
   bool widenFloatToDouble() const { return widenFloatToDouble_; }
-  bool preserveInstance() const { return preserveInstance_; }
   wasm::BytecodeOffset bytecodeOffset() const { return bytecodeOffset_; }
 };
 
 OutOfLineCode* CodeGeneratorShared::oolTruncateDouble(
     FloatRegister src, Register dest, MInstruction* mir,
-    wasm::BytecodeOffset bytecodeOffset, bool preserveInstance) {
+    wasm::BytecodeOffset bytecodeOffset) {
   MOZ_ASSERT_IF(IsCompilingWasm(), bytecodeOffset.isValid());
 
-  OutOfLineTruncateSlow* ool = new (alloc()) OutOfLineTruncateSlow(
-      src, dest, /* float32 */ false, bytecodeOffset, preserveInstance);
+  OutOfLineTruncateSlow* ool = new (alloc())
+      OutOfLineTruncateSlow(src, dest, /* float32 */ false, bytecodeOffset);
   addOutOfLineCode(ool, mir);
   return ool;
 }
@@ -916,8 +1008,8 @@ void CodeGeneratorShared::emitTruncateDouble(FloatRegister src, Register dest,
   MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
   wasm::BytecodeOffset bytecodeOffset =
       mir->isTruncateToInt32()
-          ? mir->toTruncateToInt32()->bytecodeOffset()
-          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+          ? mir->toTruncateToInt32()->trapSiteDesc().bytecodeOffset
+          : mir->toWasmBuiltinTruncateToInt32()->trapSiteDesc().bytecodeOffset;
   OutOfLineCode* ool = oolTruncateDouble(src, dest, mir, bytecodeOffset);
 
   masm.branchTruncateDoubleMaybeModUint32(src, dest, ool->entry());
@@ -929,8 +1021,8 @@ void CodeGeneratorShared::emitTruncateFloat32(FloatRegister src, Register dest,
   MOZ_ASSERT(mir->isTruncateToInt32() || mir->isWasmBuiltinTruncateToInt32());
   wasm::BytecodeOffset bytecodeOffset =
       mir->isTruncateToInt32()
-          ? mir->toTruncateToInt32()->bytecodeOffset()
-          : mir->toWasmBuiltinTruncateToInt32()->bytecodeOffset();
+          ? mir->toTruncateToInt32()->trapSiteDesc().bytecodeOffset
+          : mir->toWasmBuiltinTruncateToInt32()->trapSiteDesc().bytecodeOffset;
   OutOfLineTruncateSlow* ool = new (alloc())
       OutOfLineTruncateSlow(src, dest, /* float32 */ true, bytecodeOffset);
   addOutOfLineCode(ool, mir);
@@ -994,10 +1086,10 @@ Label* CodeGeneratorShared::getJumpLabelForBranch(MBasicBlock* block) {
   return skipTrivialBlocks(block)->lir()->label();
 }
 
-// This function is not used for MIPS/MIPS64/LOONG64. They have
+// This function is not used for MIPS64/LOONG64/RISCV64. They have
 // branchToBlock.
-#if !defined(JS_CODEGEN_MIPS32) && !defined(JS_CODEGEN_MIPS64) && \
-    !defined(JS_CODEGEN_LOONG64) && !defined(JS_CODEGEN_RISCV64)
+#if !defined(JS_CODEGEN_MIPS64) && !defined(JS_CODEGEN_LOONG64) && \
+    !defined(JS_CODEGEN_RISCV64)
 void CodeGeneratorShared::jumpToBlock(MBasicBlock* mir,
                                       Assembler::Condition cond) {
   // Skip past trivial blocks.

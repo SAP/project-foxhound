@@ -8,7 +8,7 @@
 #define mozilla_LoadInfo_h
 
 #include "mozilla/dom/FeaturePolicy.h"
-#include "nsIContentSecurityPolicy.h"
+#include "mozilla/dom/UserNavigationInvolvement.h"
 #include "nsIInterceptionInfo.h"
 #include "nsILoadInfo.h"
 #include "nsIPrincipal.h"
@@ -48,6 +48,7 @@ nsresult LoadInfoArgsToLoadInfo(const mozilla::net::LoadInfoArgs& aLoadInfoArgs,
                                 const nsACString& aOriginRemoteType,
                                 nsINode* aCspToInheritLoadingContext,
                                 net::LoadInfo** outLoadInfo);
+
 }  // namespace ipc
 
 namespace net {
@@ -94,8 +95,7 @@ class LoadInfo final : public nsILoadInfo {
                Maybe<mozilla::dom::ClientInfo>(),
            const Maybe<mozilla::dom::ServiceWorkerDescriptor>& aController =
                Maybe<mozilla::dom::ServiceWorkerDescriptor>(),
-           uint32_t aSandboxFlags = 0,
-           bool aSkipCheckForBrokenURLOrZeroSized = 0);
+           uint32_t aSandboxFlags = 0);
 
   // Constructor used for TYPE_DOCUMENT loads which have a different
   // loadingContext than other loads. This ContextForTopLevelLoad is
@@ -236,8 +236,8 @@ class LoadInfo final : public nsILoadInfo {
       uint64_t aBrowsingContextID, uint64_t aFrameBrowsingContextID,
       bool aInitialSecurityCheckDone, bool aIsThirdPartyContext,
       const Maybe<bool>& aIsThirdPartyContextToTopWindow,
-      bool aIsFormSubmission, bool aSendCSPViolationEvents,
-      const OriginAttributes& aOriginAttributes,
+      bool aIsOn3PCBExceptionList, bool aIsFormSubmission, bool aIsGETRequest,
+      bool aSendCSPViolationEvents, const OriginAttributes& aOriginAttributes,
       RedirectHistoryArray&& aRedirectChainIncludingInternalRedirects,
       RedirectHistoryArray&& aRedirectChain,
       nsTArray<nsCOMPtr<nsIPrincipal>>&& aAncestorPrincipals,
@@ -253,14 +253,17 @@ class LoadInfo final : public nsILoadInfo {
       bool aIsSameDocumentNavigation, bool aAllowDeprecatedSystemRequests,
       bool aIsInDevToolsContext, bool aParserCreatedScript,
       nsILoadInfo::StoragePermissionState aStoragePermission,
-      const Maybe<RFPTarget>& aOverriddenFingerprintingSettings,
+      const Maybe<RFPTargetSet>& aOverriddenFingerprintingSettings,
       bool aIsMetaRefresh, uint32_t aRequestBlockingReason,
       nsINode* aLoadingContext,
       nsILoadInfo::CrossOriginEmbedderPolicy aLoadingEmbedderPolicy,
       bool aIsOriginTrialCoepCredentiallessEnabledForTopLevel,
       nsIURI* aUnstrippedURI, nsIInterceptionInfo* aInterceptionInfo,
-      bool aHasInjectedCookieForCookieBannerHandling, bool aWasSchemelessInput,
-      nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry);
+      bool aHasInjectedCookieForCookieBannerHandling,
+      nsILoadInfo::SchemelessInputType aSchemelessInput,
+      nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry,
+      bool aIsNewWindowTarget,
+      dom::UserNavigationInvolvement aUserNavigationInvolvement);
 
   LoadInfo(const LoadInfo& rhs);
 
@@ -346,7 +349,9 @@ class LoadInfo final : public nsILoadInfo {
   // NB: TYPE_DOCUMENT implies !third-party.
   bool mIsThirdPartyContext = false;
   Maybe<bool> mIsThirdPartyContextToTopWindow;
+  bool mIsOn3PCBExceptionList = false;
   bool mIsFormSubmission = false;
+  bool mIsGETRequest = true;
   bool mSendCSPViolationEvents = true;
   OriginAttributes mOriginAttributes;
   RedirectHistoryArray mRedirectChainIncludingInternalRedirects;
@@ -376,7 +381,7 @@ class LoadInfo final : public nsILoadInfo {
   bool mParserCreatedScript = false;
   nsILoadInfo::StoragePermissionState mStoragePermission =
       nsILoadInfo::NoStoragePermission;
-  Maybe<RFPTarget> mOverriddenFingerprintingSettings;
+  Maybe<RFPTargetSet> mOverriddenFingerprintingSettings;
 #ifdef DEBUG
   // A boolean used to ensure the mOverriddenFingerprintingSettings is set
   // before use it.
@@ -396,8 +401,6 @@ class LoadInfo final : public nsILoadInfo {
   // See nsILoadInfo.isFromObjectOrEmbed
   bool mIsFromObjectOrEmbed = false;
 
-  bool mSkipCheckForBrokenURLOrZeroSized = false;
-
   // The cross origin embedder policy that the loading need to respect.
   // If the value is nsILoadInfo::EMBEDDER_POLICY_REQUIRE_CORP, CORP checking
   // must be performed for the loading.
@@ -412,10 +415,17 @@ class LoadInfo final : public nsILoadInfo {
   nsCOMPtr<nsIInterceptionInfo> mInterceptionInfo;
 
   bool mHasInjectedCookieForCookieBannerHandling = false;
-  bool mWasSchemelessInput = false;
+  nsILoadInfo::SchemelessInputType mSchemelessInput =
+      nsILoadInfo::SchemelessInputTypeUnset;
 
   nsILoadInfo::HTTPSUpgradeTelemetryType mHttpsUpgradeTelemetry =
       nsILoadInfo::NOT_INITIALIZED;
+
+  dom::UserNavigationInvolvement mUserNavigationInvolvement =
+      dom::UserNavigationInvolvement::None;
+
+  bool mIsNewWindowTarget = false;
+  bool mSkipHTTPSUpgrade = false;
 };
 
 // This is exposed solely for testing purposes and should not be used outside of

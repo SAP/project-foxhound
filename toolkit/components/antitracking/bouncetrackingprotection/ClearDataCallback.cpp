@@ -3,7 +3,8 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "ClearDataCallback.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/AntitrackingBouncetrackingprotectionMetrics.h"
+#include "nsIBounceTrackingProtection.h"
 #include "nsIURIClassifier.h"
 #include "mozilla/net/UrlClassifierFeatureFactory.h"
 #include "nsNetCID.h"
@@ -25,7 +26,7 @@ static constexpr nsLiteralCString kUrlClassifierFeatures[] = {
     "socialtracking-protection"_ns,
     "tracking-protection"_ns,
 };
-static_assert(ArrayLength(kUrlClassifierFeatures) > 0,
+static_assert(std::size(kUrlClassifierFeatures) > 0,
               "At least one URL classifier feature must be defined");
 
 // List of features for classifying bounce trackers that have been purged.
@@ -37,15 +38,17 @@ NS_IMPL_ISUPPORTS(ClearDataCallback, nsIClearDataCallback,
                   nsIUrlClassifierFeatureCallback);
 
 ClearDataCallback::ClearDataCallback(ClearDataMozPromise::Private* aPromise,
+                                     const OriginAttributes& aOriginAttributes,
                                      const nsACString& aHost,
                                      PRTime aBounceTime)
-    : mHost(aHost),
-      mBounceTime(aBounceTime),
-      mPromise(aPromise),
-      mClearDurationTimer(0) {
+    : mPromise(aPromise), mClearDurationTimer(0) {
   MOZ_ASSERT(!aHost.IsEmpty(), "Host must not be empty");
 
-  if (!StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode()) {
+  mEntry =
+      new BounceTrackingPurgeEntry(aOriginAttributes, aHost, aBounceTime, 0);
+
+  if (StaticPrefs::privacy_bounceTrackingProtection_mode() ==
+      nsIBounceTrackingProtection::MODE_ENABLED) {
     // Only collect timing information when actually performing the deletion
     mClearDurationTimer =
         glean::bounce_tracking_protection::purge_duration.Start();
@@ -89,8 +92,11 @@ NS_IMETHODIMP ClearDataCallback::OnDataDeleted(uint32_t aFailedFlags) {
   } else {
     MOZ_LOG(gBounceTrackingProtectionLog, LogLevel::Debug,
             ("%s: Cleared host: %s, bounceTime: %" PRIu64, __FUNCTION__,
-             mHost.get(), mBounceTime));
-    mPromise->Resolve(mHost, __func__);
+             PromiseFlatCString(mEntry->SiteHostRef()).get(),
+             mEntry->TimeStampRef()));
+
+    mEntry->PurgeTimeRef() = PR_Now();
+    mPromise->Resolve(mEntry, __func__);
 
     // Only record classifications on successful deletion.
     RecordURLClassifierTelemetry();
@@ -112,7 +118,8 @@ void ClearDataCallback::RecordClearDurationTelemetry() {
 }
 
 void ClearDataCallback::RecordPurgeCountTelemetry(bool aFailed) {
-  if (StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode()) {
+  if (StaticPrefs::privacy_bounceTrackingProtection_mode() ==
+      nsIBounceTrackingProtection::MODE_ENABLED_DRY_RUN) {
     MOZ_ASSERT(aFailed == 0, "Dry-run purge can't fail");
     glean::bounce_tracking_protection::purge_count.Get("dry"_ns).Add(1);
   } else if (aFailed) {
@@ -130,7 +137,7 @@ void ClearDataCallback::RecordURLClassifierTelemetry() {
   NS_ENSURE_TRUE_VOID(uriClassifier);
 
   // Create a copy of the site host because we might have to mutate it.
-  nsAutoCString siteHost(mHost);
+  nsAutoCString siteHost(mEntry->SiteHostRef());
   nsContentUtils::MaybeFixIPv6Host(siteHost);
 
   // Create URI from siteHost
@@ -143,7 +150,8 @@ void ClearDataCallback::RecordURLClassifierTelemetry() {
 
   MOZ_ASSERT(sUrlClassifierFeatures);
   rv = uriClassifier->AsyncClassifyLocalWithFeatures(
-      uri, *sUrlClassifierFeatures, nsIUrlClassifierFeature::blocklist, this);
+      uri, *sUrlClassifierFeatures, nsIUrlClassifierFeature::blocklist, this,
+      false);
   NS_ENSURE_SUCCESS_VOID(rv);
 }
 
@@ -169,7 +177,7 @@ ClearDataCallback::OnClassifyComplete(
 
     nsresult rv = obsSvc->NotifyObservers(
         nullptr, TEST_OBSERVER_MSG_RECORDED_PURGE_TELEMETRY,
-        NS_ConvertUTF8toUTF16(mHost).get());
+        NS_ConvertUTF8toUTF16(mEntry->SiteHostRef()).get());
     NS_ENSURE_SUCCESS(rv, rv);
   }
 
@@ -179,10 +187,10 @@ ClearDataCallback::OnClassifyComplete(
 void ClearDataCallback::RecordPurgeEventTelemetry(bool aSuccess) {
   // Record a glean event for the clear action.
   glean::bounce_tracking_protection::PurgeActionExtra extra = {
-      .bounceTime = Some(mBounceTime / PR_USEC_PER_SEC),
-      .isDryRun = Some(
-          StaticPrefs::privacy_bounceTrackingProtection_enableDryRunMode()),
-      .siteHost = Some(mHost),
+      .bounceTime = Some(mEntry->TimeStampRef() / PR_USEC_PER_SEC),
+      .isDryRun = Some(StaticPrefs::privacy_bounceTrackingProtection_mode() ==
+                       nsIBounceTrackingProtection::MODE_ENABLED_DRY_RUN),
+      .siteHost = Some(nsAutoCString(mEntry->SiteHostRef())),
       .success = Some(aSuccess),
   };
   glean::bounce_tracking_protection::purge_action.Record(Some(extra));

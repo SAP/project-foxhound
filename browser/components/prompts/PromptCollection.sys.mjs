@@ -2,6 +2,12 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+const lazy = {};
+ChromeUtils.defineESModuleGetters(lazy, {
+  SelectableProfileService:
+    "resource:///modules/profiles/SelectableProfileService.sys.mjs",
+});
+
 /**
  * Implements nsIPromptCollection
  *
@@ -72,9 +78,13 @@ export class PromptCollection {
       return true;
     }
 
-    const isPDFjs =
-      browsingContext.embedderElement?.contentPrincipal.originNoSuffix ===
-      "resource://pdf.js";
+    let originNoSuffix =
+      browsingContext.embedderElement?.contentPrincipal.originNoSuffix;
+    const isPDFjs = originNoSuffix === "resource://pdf.js";
+    const isProfilePage =
+      originNoSuffix === "about:newprofile" ||
+      originNoSuffix === "about:editprofile";
+
     let title, message, leaveLabel, stayLabel, buttonFlags;
     let args = {
       // Tell the prompt service that this is a permit unload prompt
@@ -97,7 +107,30 @@ export class PromptCollection {
           (Ci.nsIPrompt.BUTTON_TITLE_CANCEL * Ci.nsIPrompt.BUTTON_POS_1) |
           (Ci.nsIPrompt.BUTTON_TITLE_DONT_SAVE * Ci.nsIPrompt.BUTTON_POS_2);
         args.useTitle = true;
-        args.headerIconURL = "chrome://branding/content/document_pdf.svg";
+        args.headerIconCSSValue =
+          "url('chrome://branding/content/document_pdf.svg')";
+      } else if (isProfilePage) {
+        title = this.stringBundles.dom.GetStringFromName(
+          "OnBeforeUnloadAboutNewProfileTitle"
+        );
+        let defaultName = lazy.SelectableProfileService.currentProfile.name;
+        message = this.stringBundles.dom.formatStringFromName(
+          "OnBeforeUnloadAboutNewProfileMessage",
+          [defaultName]
+        );
+        leaveLabel = this.stringBundles.dom.GetStringFromName(
+          "OnBeforeUnloadAboutNewProfileLeaveButton"
+        );
+        stayLabel = this.stringBundles.dom.GetStringFromName(
+          "OnBeforeUnloadAboutNewProfileStayButton"
+        );
+        buttonFlags =
+          Ci.nsIPromptService.BUTTON_POS_0_DEFAULT |
+          (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
+            Ci.nsIPromptService.BUTTON_POS_0) |
+          (Ci.nsIPromptService.BUTTON_TITLE_IS_STRING *
+            Ci.nsIPromptService.BUTTON_POS_1);
+        args.useTitle = true;
       } else {
         title = this.stringBundles.dom.GetStringFromName("OnBeforeUnloadTitle");
         message = this.stringBundles.dom.GetStringFromName(
@@ -157,6 +190,21 @@ export class PromptCollection {
         await savePdfPromise;
       }
       return buttonNumClicked !== 1;
+    } else if (isProfilePage) {
+      if (buttonNumClicked === 0) {
+        Services.prefs.setBoolPref(
+          "browser.profiles.profile-name.updated",
+          true
+        );
+      }
+      let gleanFn =
+        originNoSuffix === "about:newprofile"
+          ? "profilesNew"
+          : "profilesExisting";
+      let value = buttonNumClicked === 0 ? "leave" : "cancel";
+      Glean[gleanFn].alert.record({ value });
+
+      return buttonNumClicked !== 1;
     }
 
     return buttonNumClicked === 0;
@@ -194,7 +242,7 @@ export class PromptCollection {
         Services.prompt.MODAL_TYPE_TAB,
         title,
         message,
-        buttonFlags,
+        buttonFlags | Ci.nsIPrompt.BUTTON_DELAY_ENABLE,
         acceptLabel,
         null,
         null,

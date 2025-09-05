@@ -8,14 +8,14 @@
 
 #include "gfx2DGlue.h"
 #include "gfxPlatform.h"
+#include "mozilla/dom/SVGPathSegment.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/Types.h"
 #include "mozilla/gfx/Point.h"
 #include "mozilla/RefPtr.h"
 #include "nsError.h"
 #include "nsString.h"
-#include "SVGPathDataParser.h"
-#include <stdarg.h>
+#include "SVGArcConverter.h"
 #include "nsStyleConsts.h"
 #include "SVGContentUtils.h"
 #include "SVGGeometryElement.h"
@@ -70,6 +70,21 @@ bool SVGPathData::GetDistancesFromOriginToEndsOfVisibleSegments(
   }
 
   return true;
+}
+
+/* static */
+already_AddRefed<dom::SVGPathSegment> SVGPathData::GetPathSegmentAtLength(
+    dom::SVGPathElement* aPathElement, Span<const StylePathCommand> aPath,
+    float aDistance) {
+  SVGPathTraversalState state;
+
+  for (const auto& cmd : aPath) {
+    SVGPathSegUtils::TraversePathSegment(cmd, state);
+    if (state.length >= aDistance) {
+      return do_AddRef(new dom::SVGPathSegment(aPathElement, cmd));
+    }
+  }
+  return nullptr;
 }
 
 /**

@@ -83,21 +83,6 @@ cert_verifier:
       - OneCRL
       - ShortValidity
 
-  cert_trust_evaluation_time:
-    type: timing_distribution
-    time_unit: nanosecond
-    description: >
-      Measures how long we take to evaluate the trust status of a certificate.
-    data_sensitivity:
-      - technical
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1888420
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1888420
-    notification_emails:
-      - jschanck@mozilla.com
-    expires: 132
-
   trust_obj_count:
     type: quantity
     description: >
@@ -106,9 +91,60 @@ cert_verifier:
       - interaction
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1890795
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1912179
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1890795
     notification_emails:
       - jschanck@mozilla.com
-    expires: 132
+    expires: 144
     unit: trust objects
+
+cert_signature_cache:
+  hits:
+    type: rate
+    description: >
+      How often a certificate signature to be verified is in the cache already.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1918279
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1918279
+    notification_emails:
+      - dkeeler@mozilla.com
+    expires: never
+    denominator_metric: cert_signature_cache.total
+  total:
+    type: counter
+    description: >
+      How many certificate signature verifications are performed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1918279
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1918279
+    notification_emails:
+      - dkeeler@mozilla.com
+    expires: never
+
+cert_trust_cache:
+  hits:
+    type: rate
+    description: >
+      How often a certificate's trust is in the cache already.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1922074
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1922074
+    notification_emails:
+      - dkeeler@mozilla.com
+    expires: never
+    denominator_metric: cert_trust_cache.total
+  total:
+    type: counter
+    description: >
+      How many certificate trust lookups are performed.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1922074
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1922074
+    notification_emails:
+      - dkeeler@mozilla.com
+    expires: never

@@ -9,25 +9,14 @@ ChromeUtils.defineESModuleGetters(this, {
   UrlbarUtils: "resource:///modules/UrlbarUtils.sys.mjs",
 });
 
-let defaultTestEngine;
-
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [["browser.urlbar.showSearchTerms.featureGate", true]],
   });
-
-  await SearchTestUtils.installSearchExtension(
-    {
-      name: "MozSearch",
-      search_url: "https://www.example.com/",
-      search_url_get_params: "q={searchTerms}",
-    },
-    { setAsDefault: true }
-  );
-  defaultTestEngine = Services.search.getEngineByName("MozSearch");
-
+  let cleanup = await installPersistTestEngines();
   registerCleanupFunction(async function () {
     await PlacesUtils.history.clear();
+    cleanup();
   });
 });
 
@@ -59,7 +48,7 @@ add_task(async function search_strings() {
   for (let searchString of searches) {
     info("Search for term:", searchString);
     let [searchUrl] = UrlbarUtils.getSearchQueryUrl(
-      defaultTestEngine,
+      Services.search.defaultEngine,
       searchString
     );
     let browserLoadedPromise = BrowserTestUtils.browserLoaded(

@@ -43,6 +43,9 @@ class SearchEngineFragment : PreferenceFragmentCompat() {
         requirePreference<Preference>(R.string.pref_key_learn_about_fx_suggest).apply {
             isVisible = context.settings().enableFxSuggest
         }
+        requirePreference<CheckBoxPreference>(R.string.pref_key_show_trending_search_suggestions).apply {
+            isVisible = context.settings().isTrendingSearchesVisible
+        }
 
         view?.hideKeyboard()
     }
@@ -63,6 +66,14 @@ class SearchEngineFragment : PreferenceFragmentCompat() {
                 isChecked = context.settings().shouldShowSearchSuggestions
             }
 
+        val trendingSearchSuggestionsPreference =
+            requirePreference<CheckBoxPreference>(R.string.pref_key_show_trending_search_suggestions).apply {
+                isVisible = context.settings().isTrendingSearchesVisible
+                isEnabled = requireContext().components.core.store.state.search
+                    .selectedOrDefaultSearchEngine?.trendingUrl != null &&
+                    context.settings().shouldShowSearchSuggestions
+            }
+
         val autocompleteURLsPreference =
             requirePreference<SwitchPreference>(R.string.pref_key_enable_autocomplete_urls).apply {
                 isChecked = context.settings().shouldAutocompleteInAwesomebar
@@ -70,7 +81,7 @@ class SearchEngineFragment : PreferenceFragmentCompat() {
 
         val searchSuggestionsInPrivatePreference =
             requirePreference<CheckBoxPreference>(R.string.pref_key_show_search_suggestions_in_private).apply {
-                isChecked = context.settings().shouldShowSearchSuggestionsInPrivate
+                isEnabled = context.settings().shouldShowSearchSuggestions
             }
 
         val showHistorySuggestions =
@@ -122,6 +133,7 @@ class SearchEngineFragment : PreferenceFragmentCompat() {
         showSyncedTabsSuggestions.onPreferenceChangeListener = SharedPreferenceUpdater()
         showClipboardSuggestions.onPreferenceChangeListener = SharedPreferenceUpdater()
         searchSuggestionsInPrivatePreference.onPreferenceChangeListener = SharedPreferenceUpdater()
+        trendingSearchSuggestionsPreference.onPreferenceChangeListener = SharedPreferenceUpdater()
         showVoiceSearchPreference.onPreferenceChangeListener = object : Preference.OnPreferenceChangeListener {
             override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
                 val newBooleanValue = newValue as? Boolean ?: return false
@@ -135,10 +147,10 @@ class SearchEngineFragment : PreferenceFragmentCompat() {
         autocompleteURLsPreference.onPreferenceChangeListener = SharedPreferenceUpdater()
 
         searchSuggestionsPreference.setOnPreferenceClickListener {
-            if (!searchSuggestionsPreference.isChecked) {
-                searchSuggestionsInPrivatePreference.isChecked = false
-                searchSuggestionsInPrivatePreference.callChangeListener(false)
-            }
+            searchSuggestionsInPrivatePreference.isEnabled = searchSuggestionsPreference.isChecked
+            trendingSearchSuggestionsPreference.isEnabled =
+                requireContext().components.core.store.state.search.selectedOrDefaultSearchEngine
+                    ?.trendingUrl != null && searchSuggestionsPreference.isChecked
             true
         }
 

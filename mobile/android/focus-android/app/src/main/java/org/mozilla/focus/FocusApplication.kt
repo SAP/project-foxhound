@@ -123,6 +123,9 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
     protected open fun initializeTelemetry() {
         components.metrics.initialize(this)
         FactsProcessor.initialize()
+        if (components.settings.isDailyUsagePingEnabled) {
+            components.usageReportingMetricsService.start()
+        }
     }
 
     /**
@@ -206,9 +209,8 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
     }
 
     private fun enableStrictMode() {
-        // Android/WebView sometimes commit strict mode violations, see e.g.
-        // https://github.com/mozilla-mobile/focus-android/issues/660
-        if (AppConstants.isReleaseBuild || AppConstants.isBetaBuild) {
+        // Only enable StrictMode in debug builds
+        if (!AppConstants.isDevBuild) {
             return
         }
 
@@ -219,6 +221,14 @@ open class FocusApplication : LocaleAwareApplication(), Provider, CoroutineScope
             .detectLeakedClosableObjects()
             .detectLeakedRegistrationObjects()
             .detectLeakedSqlLiteObjects()
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            vmPolicyBuilder.detectNonSdkApiUsage()
+        }
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            vmPolicyBuilder.detectUnsafeIntentLaunch()
+        }
 
         threadPolicyBuilder.penaltyLog()
         vmPolicyBuilder.penaltyLog()

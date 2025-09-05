@@ -1,6 +1,6 @@
 #!/usr/bin/env perl
 ##
-## Copyright (c) 2017, Alliance for Open Media. All rights reserved
+## Copyright (c) 2017, Alliance for Open Media. All rights reserved.
 ##
 ## This source code is subject to the terms of the BSD 2 Clause License and
 ## the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
@@ -58,13 +58,15 @@ open CONFIG_FILE, $opts{config} or
 
 my %config = ();
 while (<CONFIG_FILE>) {
-  next if !/^#define\s+(?:CONFIG_|HAVE_)/;
+  # TODO(aomedia:349428506,349436249,349450845,349455146): remove AOM_ARCH_
+  # after armv7 SIGBUS issues are fixed.
+  next if !/^#define\s+(?:AOM_ARCH_|CONFIG_|HAVE_)/;
   chomp;
   my @line_components = split /\s/;
   scalar @line_components > 2 or
     die "Invalid input passed to rtcd.pl via $opts{config}.";
   # $line_components[0] = #define
-  # $line_components[1] = flag name (CONFIG_SOMETHING or HAVE_SOMETHING)
+  # $line_components[1] = flag name ({AOM_ARCH,CONFIG,HAVE}_SOMETHING)
   # $line_components[2] = flag value (0 or 1)
   $config{$line_components[1]} = "$line_components[2]" eq "1" ? "yes" : "";
 }
@@ -219,7 +221,20 @@ sub filter {
 #
 sub common_top() {
   my $include_guard = uc($opts{sym})."_H_";
+  my @time = localtime;
+  my $year = $time[5] + 1900;
   print <<EOF;
+/*
+ * Copyright (c) ${year}, Alliance for Open Media. All rights reserved.
+ *
+ * This source code is subject to the terms of the BSD 2 Clause License and
+ * the Alliance for Open Media Patent License 1.0. If the BSD 2 Clause License
+ * was not distributed with this source code in the LICENSE file, you can
+ * obtain it at www.aomedia.org/license/software. If the Alliance for Open
+ * Media Patent License 1.0 was not distributed with this source code in the
+ * PATENTS file, you can obtain it at www.aomedia.org/license/patent.
+ */
+
 // This file is generated. Do not edit.
 #ifndef ${include_guard}
 #define ${include_guard}
@@ -249,13 +264,14 @@ EOF
 }
 
 sub common_bottom() {
+  my $include_guard = uc($opts{sym})."_H_";
   print <<EOF;
 
 #ifdef __cplusplus
 }  // extern "C"
 #endif
 
-#endif
+#endif  // ${include_guard}
 EOF
 }
 
@@ -354,6 +370,36 @@ EOF
   common_bottom;
 }
 
+sub riscv() {
+  determine_indirection("c", @ALL_ARCHS);
+
+  # Assign the helper variable for each enabled extension
+  foreach my $opt (@ALL_ARCHS) {
+    my $opt_uc = uc $opt;
+    eval "\$have_${opt}=\"flags & HAS_${opt_uc}\"";
+  }
+
+  common_top;
+  print <<EOF;
+#ifdef RTCD_C
+#include "aom_ports/riscv.h"
+static void setup_rtcd_internal(void)
+{
+    int flags = riscv_simd_caps();
+
+    (void)flags;
+
+EOF
+
+  set_function_pointers("c", @ALL_ARCHS);
+
+  print <<EOF;
+}
+#endif
+EOF
+  common_bottom;
+}
+
 sub unoptimized() {
   determine_indirection "c";
   common_top;
@@ -399,6 +445,9 @@ if ($opts{arch} eq 'x86') {
 } elsif ($opts{arch} eq 'ppc') {
   @ALL_ARCHS = filter(qw/vsx/);
   ppc;
+} elsif ($opts{arch} eq 'riscv') {
+  @ALL_ARCHS = filter(qw/rvv/);
+  riscv;
 } else {
   unoptimized;
 }

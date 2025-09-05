@@ -95,16 +95,10 @@ export class ViewPageContent extends MozLitElement {
   }
 
   recordContextMenuTelemetry(menuAction, event) {
-    Services.telemetry.recordEvent(
-      "firefoxview_next",
-      "context_menu",
-      "tabs",
-      null,
-      {
-        menu_action: menuAction,
-        data_type: event.target.panel.dataset.tabType,
-      }
-    );
+    Glean.firefoxviewNext.contextMenuTabs.record({
+      menu_action: menuAction,
+      data_type: event.target.panel.dataset.tabType,
+    });
   }
 
   shouldUpdate(changedProperties) {
@@ -207,7 +201,9 @@ export class ViewPage extends ViewPageContent {
     let tabLists = [];
     if (!isOpenTabs) {
       cards = this.shadowRoot.querySelectorAll("card-container");
-      tabLists = this.shadowRoot.querySelectorAll("fxview-tab-list");
+      tabLists = this.shadowRoot.querySelectorAll(
+        "fxview-tab-list, syncedtabs-tab-list"
+      );
     } else {
       this.viewCards.forEach(viewCard => {
         if (viewCard.cardEl) {

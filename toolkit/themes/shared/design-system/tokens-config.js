@@ -24,8 +24,10 @@ const TOKEN_SECTIONS = {
   "Input - Space": "input-space",
   Link: "link",
   "Outline Color": "outline-color",
+  Page: "page",
   Size: "size",
   Space: "space",
+  "Table Row": "table-row",
   Text: "text",
   Unspecified: "",
 };
@@ -481,7 +483,7 @@ const SINGULAR_TABLE_CATEGORIES = [
 ];
 
 function getTableName(tokenName) {
-  let replacePattern = /^(button-|input-text-|focus-|checkbox-)/;
+  let replacePattern = /^(button-|input-text-|focus-|checkbox-|table-row-)/;
   if (tokenName.match(replacePattern)) {
     tokenName = tokenName.replace(replacePattern, "");
   }

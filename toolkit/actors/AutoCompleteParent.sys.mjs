@@ -2,16 +2,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
+import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 
 const lazy = {};
-
-XPCOMUtils.defineLazyPreferenceGetter(
-  lazy,
-  "DELEGATE_AUTOCOMPLETE",
-  "toolkit.autocomplete.delegate",
-  false
-);
 
 ChromeUtils.defineESModuleGetters(lazy, {
   GeckoViewAutocomplete: "resource://gre/modules/GeckoViewAutocomplete.sys.mjs",
@@ -331,7 +324,9 @@ export class AutoCompleteParent extends JSWindowActorParent {
       return accumulated;
     }, rawExtraData);
 
-    // Convert extra values to strings since recordEvent requires that.
+    // Even though Glean events do not require converting extra values to
+    // strings, keep doing it so booleans keep being encoded as they were for
+    // Telemetry recordEvent.
     let extraStrings = Object.fromEntries(
       Object.entries(rawExtraData).map(([key, val]) => {
         let stringVal = "";
@@ -344,14 +339,8 @@ export class AutoCompleteParent extends JSWindowActorParent {
       })
     );
 
-    Services.telemetry.recordEvent(
-      "form_autocomplete",
-      "show",
-      "logins",
-      // Convert to a string
-      duration + "",
-      extraStrings
-    );
+    extraStrings.value = duration;
+    Glean.formAutocomplete.showLogins.record(extraStrings);
   }
 
   invalidate(results) {
@@ -382,7 +371,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
 
     if (
       !browser ||
-      (!lazy.DELEGATE_AUTOCOMPLETE && !browser.autoCompletePopup)
+      (!AppConstants.MOZ_GECKOVIEW && !browser.autoCompletePopup)
     ) {
       // If there is no browser or popup, just make sure that the popup has been closed.
       if (this.openedPopup) {
@@ -418,7 +407,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
       case "AutoComplete:MaybeOpenPopup": {
         let { results, rect, dir, inputElementIdentifier, formOrigin } =
           message.data;
-        if (lazy.DELEGATE_AUTOCOMPLETE) {
+        if (AppConstants.MOZ_GECKOVIEW) {
           lazy.GeckoViewAutocomplete.delegateSelection({
             browsingContext: this.browsingContext,
             options: results,
@@ -443,7 +432,7 @@ export class AutoCompleteParent extends JSWindowActorParent {
       }
 
       case "AutoComplete:ClosePopup": {
-        if (lazy.DELEGATE_AUTOCOMPLETE) {
+        if (AppConstants.MOZ_GECKOVIEW) {
           lazy.GeckoViewAutocomplete.delegateDismiss();
           break;
         }

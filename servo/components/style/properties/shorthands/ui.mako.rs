@@ -351,9 +351,14 @@ macro_rules! try_parse_one {
                 //
                 // https://drafts.csswg.org/css-animations-2/#animation-shorthand
                 //
-                // FIXME: Bug 1804574. The initial value of duration should be auto, per
-                // css-animations-2.
-                let has_duration = !self.animation_duration.0[i].is_zero();
+                // Note: animation-timeline is not serialized for now because it is always the
+                // initial value in this loop. Therefore, animation-duration is always resolved as
+                // 0s if it is auto because animation-timeline is the initial value, i.e.
+                // time-driven animations. In conclusion, we don't serialize animation-duration if
+                // it is auto (for specified value) or if it is 0s (for resolved value).
+                // https://drafts.csswg.org/css-animations-2/#animation-duration
+                let has_duration = !self.animation_duration.0[i].is_auto()
+                    && !self.animation_duration.0[i].is_zero();
                 let has_timing_function = !self.animation_timing_function.0[i].is_ease();
                 let has_delay = !self.animation_delay.0[i].is_zero();
                 let has_iteration_count = !self.animation_iteration_count.0[i].is_one();
@@ -368,7 +373,7 @@ macro_rules! try_parse_one {
 
                 let mut writer = SequenceWriter::new(dest, " ");
 
-                // To avoid ambiguity, we have to serialize duration if both duration is initial
+                // To avoid ambiguity, we have to serialize duration if duration is initial
                 // but delay is not. (In other words, it's ambiguous if we serialize delay only.)
                 if has_duration || has_delay {
                     writer.item(&self.animation_duration.0[i])?;

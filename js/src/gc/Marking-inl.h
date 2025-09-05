@@ -15,6 +15,7 @@
 #include <type_traits>
 
 #include "gc/RelocationOverlay.h"
+#include "gc/Zone.h"
 #include "js/Id.h"
 #include "js/Value.h"
 #include "vm/StringType.h"
@@ -37,11 +38,6 @@ struct TaggedPtr<JS::Value> {
     if (!obj) {
       return JS::NullValue();
     }
-#ifdef ENABLE_RECORD_TUPLE
-    if (MaybeForwardedIsExtendedPrimitive(*obj)) {
-      return JS::ExtendedPrimitiveValue(*obj);
-    }
-#endif
     return JS::ObjectValue(*obj);
   }
   static JS::Value wrap(JSString* str) { return JS::StringValue(str); }

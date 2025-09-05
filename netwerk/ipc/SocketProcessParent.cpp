@@ -11,6 +11,7 @@
 #include "HttpTransactionParent.h"
 #include "SocketProcessHost.h"
 #include "TLSClientAuthCertSelection.h"
+#include "mozilla/Atomics.h"
 #include "mozilla/Components.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/FOGIPC.h"
@@ -45,7 +46,7 @@
 namespace mozilla {
 namespace net {
 
-static SocketProcessParent* sSocketProcessParent;
+static Atomic<SocketProcessParent*> sSocketProcessParent;
 
 SocketProcessParent::SocketProcessParent(SocketProcessHost* aHost)
     : mHost(aHost) {
@@ -57,17 +58,14 @@ SocketProcessParent::SocketProcessParent(SocketProcessHost* aHost)
 }
 
 SocketProcessParent::~SocketProcessParent() {
-  MOZ_ASSERT(NS_IsMainThread());
-
   MOZ_COUNT_DTOR(SocketProcessParent);
   sSocketProcessParent = nullptr;
 }
 
 /* static */
-SocketProcessParent* SocketProcessParent::GetSingleton() {
-  MOZ_ASSERT(NS_IsMainThread());
-
-  return sSocketProcessParent;
+already_AddRefed<SocketProcessParent> SocketProcessParent::GetSingleton() {
+  RefPtr<SocketProcessParent> parent(sSocketProcessParent);
+  return parent.forget();
 }
 
 void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
@@ -87,7 +85,7 @@ void SocketProcessParent::ActorDestroy(ActorDestroyReason aWhy) {
 #endif  // defined(MOZ_WIDGET_ANDROID)
 
   if (aWhy == AbnormalShutdown) {
-    GenerateCrashReport(OtherPid());
+    GenerateCrashReport();
     MaybeTerminateProcess();
   }
 

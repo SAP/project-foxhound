@@ -31,6 +31,7 @@ var gSyncPane = {
   init() {
     this._setupEventListeners();
     this.setupEnginesUI();
+    this.updateSyncUI();
 
     document
       .getElementById("weavePrefsDeck")
@@ -119,6 +120,12 @@ var gSyncPane = {
     // Notify observers that the UI is now ready
     Services.obs.notifyObservers(window, "sync-pane-loaded");
 
+    this._maybeShowSyncAction();
+  },
+
+  // Check if the user is coming from a call to action
+  // and show them the correct additional panel
+  _maybeShowSyncAction() {
     if (
       location.hash == "#sync" &&
       UIState.get().status == UIState.STATUS_SIGNED_IN
@@ -258,6 +265,27 @@ var gSyncPane = {
     });
   },
 
+  updateSyncUI() {
+    const state = UIState.get();
+    const isSyncEnabled = state.syncEnabled;
+    let syncStatusTitle = document.getElementById("syncStatusTitle");
+    let syncNowButton = document.getElementById("syncNow");
+    let syncNotConfiguredEl = document.getElementById("syncNotConfigured");
+    let syncConfiguredEl = document.getElementById("syncConfigured");
+
+    if (isSyncEnabled) {
+      syncStatusTitle.setAttribute("data-l10n-id", "prefs-syncing-on");
+      syncNowButton.hidden = false;
+      syncConfiguredEl.hidden = false;
+      syncNotConfiguredEl.hidden = true;
+    } else {
+      syncStatusTitle.setAttribute("data-l10n-id", "prefs-syncing-off");
+      syncNowButton.hidden = true;
+      syncConfiguredEl.hidden = true;
+      syncNotConfiguredEl.hidden = false;
+    }
+  },
+
   async _chooseWhatToSync(isAlreadySyncing) {
     // Assuming another device is syncing and we're not,
     // we update the engines selection so the correct
@@ -284,12 +312,20 @@ var gSyncPane = {
             fxAccounts.telemetry
               .recordConnection(["sync"], "ui")
               .then(() => {
+                this.updateSyncUI();
                 return Weave.Service.configure();
               })
               .catch(err => {
                 console.error("Failed to enable sync", err);
               });
           }
+          // When the modal closes we want to remove any query params
+          // so it doesn't open on subsequent visits (and will reload)
+          const browser = window.docShell.chromeEventHandler;
+          browser.loadURI(Services.io.newURI("about:preferences#sync"), {
+            triggeringPrincipal:
+              Services.scriptSecurityManager.getSystemPrincipal(),
+          });
         },
       },
       params /* aParams */
@@ -396,12 +432,10 @@ var gSyncPane = {
           .setAttribute("href", accountsManageURI);
       });
     // and the actual sync state.
-    let eltSyncStatus = document.getElementById("syncStatus");
+    let eltSyncStatus = document.getElementById("syncStatusContainer");
     eltSyncStatus.hidden = !syncReady;
-    eltSyncStatus.selectedIndex = state.syncEnabled
-      ? SYNC_CONNECTED
-      : SYNC_DISCONNECTED;
     this._updateSyncNow(state.syncing);
+    this.updateSyncUI();
   },
 
   _getEntryPoint() {

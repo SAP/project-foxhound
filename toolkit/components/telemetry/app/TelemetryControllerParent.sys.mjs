@@ -52,7 +52,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
     "resource://gre/modules/UntrustedModulesPing.sys.mjs",
   UninstallPing: "resource://gre/modules/UninstallPing.sys.mjs",
   UpdatePing: "resource://gre/modules/UpdatePing.sys.mjs",
-  jwcrypto: "resource://services-crypto/jwcrypto.sys.mjs",
+  UsageReporting: "resource://gre/modules/UsageReporting.sys.mjs",
 });
 
 if (
@@ -380,16 +380,6 @@ var Impl = {
    *                 client id to the provided value. Implies aOptions.addClientId=true.
    * @param {String} [aOptions.overrideProfileGroupId=undefined] if set, override the
    *                 profile group id to the provided value. Implies aOptions.addClientId=true.
-   * @param {Boolean} [aOptions.useEncryption=false] if true, encrypt data client-side before sending.
-   * @param {Object}  [aOptions.publicKey=null] the public key to use if encryption is enabled (JSON Web Key).
-   * @param {String}  [aOptions.encryptionKeyId=null] the public key ID to use if encryption is enabled.
-   * @param {String}  [aOptions.studyName=null] the study name to use.
-   * @param {String}  [aOptions.schemaName=null] the schema name to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaNamespace=null] the schema namespace to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaVersion=null] the schema version to use if encryption is enabled.
-   * @param {Boolean} [aOptions.addPioneerId=false] true if the ping should contain the Pioneer id, false otherwise.
-   * @param {Boolean} [aOptions.overridePioneerId=undefined] if set, override the
-   *                  pioneer id to the provided value. Only works if aOptions.addPioneerId=true.
    * @returns {Object} An object that contains the assembled ping data.
    */
   assemblePing: function assemblePing(aType, aPayload, aOptions = {}) {
@@ -459,16 +449,6 @@ var Impl = {
    *                  environment data.
    * @param {Object}  [aOptions.overrideEnvironment=null] set to override the environment data.
    * @param {Boolean} [aOptions.usePingSender=false] if true, send the ping using the PingSender.
-   * @param {Boolean} [aOptions.useEncryption=false] if true, encrypt data client-side before sending.
-   * @param {Object}  [aOptions.publicKey=null] the public key to use if encryption is enabled (JSON Web Key).
-   * @param {String}  [aOptions.encryptionKeyId=null] the public key ID to use if encryption is enabled.
-   * @param {String}  [aOptions.studyName=null] the study name to use.
-   * @param {String}  [aOptions.schemaName=null] the schema name to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaNamespace=null] the schema namespace to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaVersion=null] the schema version to use if encryption is enabled.
-   * @param {Boolean} [aOptions.addPioneerId=false] true if the ping should contain the Pioneer id, false otherwise.
-   * @param {Boolean} [aOptions.overridePioneerId=undefined] if set, override the
-   *                  pioneer id to the provided value. Only works if aOptions.addPioneerId=true.
    * @param {String} [aOptions.overrideClientId=undefined] if set, override the
    *                 client id to the provided value. Implies aOptions.addClientId=true.
    * @param {String} [aOptions.overrideProfileGroupId=undefined] if set, override the
@@ -491,9 +471,7 @@ var Impl = {
       this._log.trace(
         "_submitPingLogic - Waiting on client id or profile group id"
       );
-      Services.telemetry
-        .getHistogramById("TELEMETRY_PING_SUBMISSION_WAITING_CLIENTID")
-        .add();
+      Glean.telemetry.pingSubmissionWaitingClientid.add(1);
       // We can safely call |getClientID| here and during initialization: we would still
       // spawn and return one single loading task.
       this._clientID = await lazy.ClientID.getClientID();
@@ -502,58 +480,6 @@ var Impl = {
 
     let pingData = this.assemblePing(aType, aPayload, aOptions);
     this._log.trace("submitExternalPing - ping assembled, id: " + pingData.id);
-
-    if (aOptions.useEncryption === true) {
-      try {
-        if (!aOptions.publicKey) {
-          throw new Error("Public key is required when using encryption.");
-        }
-
-        if (
-          !(
-            aOptions.schemaName &&
-            aOptions.schemaNamespace &&
-            aOptions.schemaVersion
-          )
-        ) {
-          throw new Error(
-            "Schema name, namespace, and version are required when using encryption."
-          );
-        }
-
-        const payload = {};
-        payload.encryptedData = await lazy.jwcrypto.generateJWE(
-          aOptions.publicKey,
-          new TextEncoder().encode(JSON.stringify(aPayload))
-        );
-
-        payload.schemaVersion = aOptions.schemaVersion;
-        payload.schemaName = aOptions.schemaName;
-        payload.schemaNamespace = aOptions.schemaNamespace;
-
-        payload.encryptionKeyId = aOptions.encryptionKeyId;
-
-        if (aOptions.addPioneerId === true) {
-          if (aOptions.overridePioneerId) {
-            // The caller provided a substitute id, let's use that
-            // instead of querying the pref.
-            payload.pioneerId = aOptions.overridePioneerId;
-          } else {
-            // This will throw if there is no pioneer ID set.
-            payload.pioneerId = Services.prefs.getStringPref(
-              "toolkit.telemetry.pioneerId"
-            );
-          }
-          payload.studyName = aOptions.studyName;
-        }
-
-        pingData.payload = payload;
-      } catch (e) {
-        this._log.error("_submitPingLogic - Unable to encrypt ping", e);
-        // Do not attempt to continue
-        throw e;
-      }
-    }
 
     // Always persist the pings if we are allowed to. We should not yield on any of the
     // following operations to keep this function synchronous for the majority of the calls.
@@ -588,16 +514,6 @@ var Impl = {
    *                  environment data.
    * @param {Object}  [aOptions.overrideEnvironment=null] set to override the environment data.
    * @param {Boolean} [aOptions.usePingSender=false] if true, send the ping using the PingSender.
-   * @param {Boolean} [aOptions.useEncryption=false] if true, encrypt data client-side before sending.
-   * @param {Object}  [aOptions.publicKey=null] the public key to use if encryption is enabled (JSON Web Key).
-   * @param {String}  [aOptions.encryptionKeyId=null] the public key ID to use if encryption is enabled.
-   * @param {String}  [aOptions.studyName=null] the study name to use.
-   * @param {String}  [aOptions.schemaName=null] the schema name to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaNamespace=null] the schema namespace to use if encryption is enabled.
-   * @param {String}  [aOptions.schemaVersion=null] the schema version to use if encryption is enabled.
-   * @param {Boolean} [aOptions.addPioneerId=false] true if the ping should contain the Pioneer id, false otherwise.
-   * @param {Boolean} [aOptions.overridePioneerId=undefined] if set, override the
-   *                  pioneer id to the provided value. Only works if aOptions.addPioneerId=true.
    * @param {String} [aOptions.overrideClientId=undefined] if set, override the
    *                 client id to the provided value. Implies aOptions.addClientId=true.
    * @param {String} [aOptions.overrideProfileGroupId=undefined] if set, override the
@@ -625,10 +541,7 @@ var Impl = {
     const typeUuid = /^[a-z0-9][a-z0-9-]+[a-z0-9]$/i;
     if (!typeUuid.test(aType)) {
       this._log.error("submitExternalPing - invalid ping type: " + aType);
-      let histogram = Services.telemetry.getKeyedHistogramById(
-        "TELEMETRY_INVALID_PING_TYPE_SUBMITTED"
-      );
-      histogram.add(aType, 1);
+      Glean.telemetry.invalidPingTypeSubmitted[aType].add(1);
       return Promise.reject(new Error("Invalid type string submitted."));
     }
     // Enforce that the payload is an object.
@@ -640,10 +553,7 @@ var Impl = {
       this._log.error(
         "submitExternalPing - invalid payload type: " + typeof aPayload
       );
-      let histogram = Services.telemetry.getHistogramById(
-        "TELEMETRY_INVALID_PAYLOAD_SUBMITTED"
-      );
-      histogram.add(1);
+      Glean.telemetry.invalidPayloadSubmitted.add(1);
       return Promise.reject(new Error("Invalid payload type submitted."));
     }
 
@@ -1065,6 +975,9 @@ var Impl = {
         if (aData == TelemetryUtils.Preferences.FhrUploadEnabled) {
           return this._onUploadPrefChange();
         }
+        if (aData == "datareporting.usage.uploadEnabled") {
+          return lazy.UsageReporting._onUsagePrefChange();
+        }
     }
     return undefined;
   },
@@ -1115,9 +1028,11 @@ var Impl = {
       // Generate a new client ID and make sure this module uses the new version
       let p = (async () => {
         await lazy.ClientID.resetIdentifiers();
+        // For the time being this is tied to the telemetry upload preference.
+        await lazy.ClientID.resetUsageProfileIdentifier();
         this._clientID = await lazy.ClientID.getClientID();
         this._profileGroupID = await lazy.ClientID.getProfileGroupID();
-        Services.telemetry.scalarSet("telemetry.data_upload_optin", true);
+        Glean.telemetry.dataUploadOptin.set(true);
 
         await this.saveUninstallPing().catch(e =>
           this._log.warn("_onUploadPrefChange - saveUninstallPing failed", e)
@@ -1191,16 +1106,20 @@ var Impl = {
     );
   },
 
-  QueryInterface: ChromeUtils.generateQI(["nsISupportsWeakReference"]),
+  QueryInterface: ChromeUtils.generateQI(["nsIObserver"]),
 
   _attachObservers() {
     if (TelemetryControllerBase.IS_UNIFIED_TELEMETRY) {
       // Watch the FHR upload setting to trigger "deletion-request" pings.
       Services.prefs.addObserver(
         TelemetryUtils.Preferences.FhrUploadEnabled,
-        this,
-        true
+        this
       );
+    }
+    if (AppConstants.MOZ_APP_NAME == "firefox") {
+      // Firefox-only: watch the usage reporting setting to enable, disable, and
+      // trigger "usage-deletion-request" pings.
+      Services.prefs.addObserver("datareporting.usage.uploadEnabled", this);
     }
   },
 
@@ -1213,6 +1132,9 @@ var Impl = {
         TelemetryUtils.Preferences.FhrUploadEnabled,
         this
       );
+    }
+    if (AppConstants.MOZ_APP_NAME == "firefox") {
+      Services.prefs.removeObserver("datareporting.usage.uploadEnabled", this);
     }
   },
 

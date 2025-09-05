@@ -2,6 +2,7 @@
 tags = "condprof"
 prefs = [
   "formhelper.autozoom.force-disable.test-only=true",
+  "network.http.referer.sendFromRefresh=false",
   "plugins.rewrite_youtube_embeds=true",
 ]
 support-files = [
@@ -295,7 +296,10 @@ skip-if = [
 ["test_anonymousContent_append_after_reflow.html"]
 
 ["test_anonymousContent_canvas.html"]
-skip-if = ["headless"] # Bug 1405867
+skip-if = [
+  "headless", # Bug 1405867
+  "os == 'android' && processor == 'x86_64' && debug", # Bug 1908272
+]
 
 ["test_anonymousContent_insert.html"]
 
@@ -752,6 +756,7 @@ skip-if = [
   "verify && !debug && os == 'linux'", #bug 687032
   "http3",
   "http2",
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1936460
 ]
 
 ["test_bug590870.html"]
@@ -1183,17 +1188,17 @@ skip-if = [
   "headless", #bug 904183
 ]
 
-["test_copypaste_shadow_dom.html"]
-skip-if = [
-  "os == 'android'",
-  "headless", #bug 904183
-]
-
 ["test_copypaste.xhtml"]
 skip-if = ["headless"]  #bug 904183
 
 ["test_copypaste_disabled.html"]
 support-files = ["!/gfx/layers/apz/test/mochitest/apz_test_utils.js"]
+
+["test_copypaste_shadow_dom.html"]
+skip-if = [
+  "os == 'android'",
+  "headless", #bug 904183
+]
 
 ["test_createHTMLDocument.html"]
 
@@ -1242,6 +1247,8 @@ skip-if = [
 
 ["test_domwindowutils.html"]
 skip-if = ["os == 'android'"] # Bug 1525959
+
+["test_drag_drop_shadow_crossing_selection.html"]
 
 ["test_element.matches.html"]
 
@@ -1409,9 +1416,10 @@ skip-if = [
 
 ["test_lock_orientation_with_pending_fullscreen.html"]
 skip-if = [
-  "os == 'mac'",
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'",
   "os == 'linux'",
   "headless",
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929448
 ]
 
 ["test_meta_refresh_referrer.html"]
@@ -1700,6 +1708,10 @@ skip-if = [
   "verify",
   "os == 'android'", # The test needs to run reasonably fast.
 ]
+
+["test_text-fragments-create-text-directive.html"]
+
+["test_text-fragments-get-text-directive-ranges.html"]
 
 ["test_text_wholeText.html"]
 

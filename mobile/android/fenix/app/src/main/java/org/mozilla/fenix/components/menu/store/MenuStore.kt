@@ -39,6 +39,11 @@ private fun reducer(state: MenuState, action: MenuAction): MenuState {
         is MenuAction.ToggleReaderView,
         is MenuAction.CustomizeReaderView,
         is MenuAction.Navigate,
+        is MenuAction.SaveMenuClicked,
+        is MenuAction.ToolsMenuClicked,
+        is MenuAction.OnCFRShown,
+        is MenuAction.OpenInRegularTab,
+        is MenuAction.OnCFRDismiss,
         -> state
 
         is MenuAction.RequestDesktopSite -> state.copy(isDesktopMode = true)
@@ -51,12 +56,48 @@ private fun reducer(state: MenuState, action: MenuAction): MenuState {
             )
         }
 
+        is MenuAction.UpdateWebExtensionBrowserMenuItems -> state.copyWithExtensionMenuState {
+            it.copy(browserWebExtensionMenuItem = action.webExtensionBrowserMenuItem)
+        }
+
         is MenuAction.UpdateBookmarkState -> state.copyWithBrowserMenuState {
             it.copy(bookmarkState = action.bookmarkState)
         }
 
         is MenuAction.UpdatePinnedState -> state.copyWithBrowserMenuState {
             it.copy(isPinned = action.isPinned)
+        }
+
+        is MenuAction.UpdateInstallAddonInProgress -> state.copyWithExtensionMenuState {
+            it.copy(addonInstallationInProgress = action.addon)
+        }
+
+        is MenuAction.InstallAddonFailed -> state.copyWithExtensionMenuState {
+            it.copy(addonInstallationInProgress = null)
+        }
+
+        is MenuAction.InstallAddonSuccess -> state.copyWithExtensionMenuState { extensionState ->
+            extensionState.copy(
+                recommendedAddons = state.extensionMenuState.recommendedAddons.filter { it != action.addon },
+                availableAddons = state.extensionMenuState.availableAddons.plus(action.addon),
+                addonInstallationInProgress = null,
+            )
+        }
+
+        is MenuAction.UpdateShowExtensionsOnboarding -> state.copyWithExtensionMenuState { extensionState ->
+            extensionState.copy(showExtensionsOnboarding = action.showExtensionsOnboarding)
+        }
+
+        is MenuAction.UpdateShowDisabledExtensionsOnboarding -> state.copyWithExtensionMenuState { extensionState ->
+            extensionState.copy(showDisabledExtensionsOnboarding = action.showDisabledExtensionsOnboarding)
+        }
+
+        is MenuAction.UpdateManageExtensionsMenuItemVisibility -> state.copyWithExtensionMenuState {
+            it.copy(shouldShowManageExtensionsMenuItem = action.isVisible)
+        }
+
+        is MenuAction.UpdateAvailableAddons -> state.copyWithExtensionMenuState {
+            it.copy(availableAddons = action.availableAddons)
         }
     }
 }

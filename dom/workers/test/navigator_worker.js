@@ -9,6 +9,7 @@ var supportedProps = [
   "appName",
   "appVersion",
   "globalPrivacyControl",
+  { name: "gpu", isNightly: true, isSecureContext: true },
   "platform",
   "product",
   "userAgent",
@@ -20,6 +21,8 @@ var supportedProps = [
   "hardwareConcurrency",
   { name: "storage", isSecureContext: true },
   "connection",
+  "permissions",
+  { name: "serviceWorker", isSecureContext: true },
 ];
 
 self.onmessage = function (event) {

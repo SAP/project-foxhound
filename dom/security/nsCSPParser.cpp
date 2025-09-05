@@ -7,6 +7,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_security.h"
@@ -813,9 +814,10 @@ void nsCSPParser::reportGroup(nsCSPDirective* aDir) {
   while (!atEnd()) {
     if (isGroupDelim(*mCurChar) ||
         nsContentUtils::IsHTMLWhitespace(*mCurChar)) {
-      AutoTArray<nsString, 1> params = {mCurToken};
+      nsString badChar(mozilla::Span(mCurChar, 1));
+      AutoTArray<nsString, 2> params = {mCurToken, badChar};
       logWarningErrorToConsole(nsIScriptError::warningFlag,
-                               "invalidGroupSyntax", params);
+                               "ignoringInvalidGroupSyntax", params);
       delete aDir;
       return;
     }
@@ -866,10 +868,6 @@ void nsCSPParser::sandboxFlagList(nsCSPDirective* aDir) {
   aDir->addSrcs(srcs);
   mPolicy->addDirective(aDir);
 }
-
-// https://w3c.github.io/trusted-types/dist/spec/#integration-with-content-security-policy
-static constexpr nsLiteralString kValidRequireTrustedTypesForDirectiveValue =
-    u"'script'"_ns;
 
 static bool IsValidRequireTrustedTypesForDirectiveValue(
     const nsAString& aToken) {
@@ -1435,7 +1433,9 @@ nsCSPPolicy* nsCSPParser::parseContentSecurityPolicy(
   if (aReportOnly) {
     policy->setReportOnlyFlag(true);
     if (!policy->hasDirective(nsIContentSecurityPolicy::REPORT_TO_DIRECTIVE) &&
-        !policy->hasDirective(nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE)) {
+        !policy->hasDirective(nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE) &&
+        !aSelfURI->GetSpecOrDefault().EqualsLiteral(
+            "chrome://browser/content/browser.xhtml")) {
       nsAutoCString prePath;
       nsresult rv = aSelfURI->GetPrePath(prePath);
       NS_ENSURE_SUCCESS(rv, policy);

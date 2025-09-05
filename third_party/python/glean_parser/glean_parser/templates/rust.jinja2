@@ -15,13 +15,13 @@ Jinja2 template is not. Please file bugs! #}
     {{ generate_structure(name ~ "Item", struct["items"]) }}
 
 {% elif struct.type == "object" %}
-    #[derive(Debug, Hash, Eq, PartialEq, ::glean::traits::__serde::Serialize, ::glean::traits::__serde::Deserialize)]
+    #[derive(Debug, Hash, Eq, PartialEq, Clone, ::glean::traits::__serde::Serialize, ::glean::traits::__serde::Deserialize)]
     #[serde(crate = "::glean::traits::__serde")]
     #[serde(deny_unknown_fields)]
     pub struct {{ name }} {
         {% for itemname, val in struct.properties.items() %}
           {% if val.type == "array" %}
-          #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new")]
+          #[serde(skip_serializing_if = "Vec::is_empty", default = "Vec::new", deserialize_with = "::glean::traits::__serde_helper::vec_null")]
           pub {{itemname|snake_case}}: {{ name ~ itemname|Camelize }},
           {% elif val.type == "object" %}
           #[serde(skip_serializing_if = "Option::is_none")]
@@ -74,7 +74,7 @@ impl ExtraKeys for {{ obj.name|Camelize }}{{ suffix }} {
     fn into_ffi_extra(self) -> ::std::collections::HashMap<::std::string::String, ::std::string::String> {
         let mut map = ::std::collections::HashMap::new();
         {% for key, _ in obj|attr(name) %}
-        self.{{key|snake_case}}.and_then(|val| map.insert("{{key}}".to_string(), val));
+        self.{{key|snake_case}}.and_then(|val| map.insert("{{key}}".to_string(), val.to_string()));
         {% endfor %}
         map
     }
@@ -97,7 +97,7 @@ CommonMetricData {
 /// {{ obj.description|wordwrap() | replace('\n', '\n/// ') }}
 #[rustfmt::skip]
 pub static {{ obj.name|snake_case }}: ::glean::private::__export::Lazy<::glean::private::PingType> =
-    ::glean::private::__export::Lazy::new(|| ::glean::private::PingType::new("{{ obj.name }}", {{ obj.include_client_id|rust }}, {{ obj.send_if_empty|rust }}, {{ obj.precise_timestamps|rust }}, {{ obj.include_info_sections|rust }}, {{ obj.enabled|rust }}, {{ obj.schedules_pings|rust }}, {{ obj.reason_codes|rust }}));
+    ::glean::private::__export::Lazy::new(|| ::glean::private::PingType::new("{{ obj.name }}", {{ obj.include_client_id|rust }}, {{ obj.send_if_empty|rust }}, {{ obj.precise_timestamps|rust }}, {{ obj.include_info_sections|rust }}, {{ obj.enabled|rust }}, {{ obj.schedules_pings|rust }}, {{ obj.reason_codes|rust }}, {{ obj.follows_collection_enabled|rust }}));
 {% endfor %}
 {% else %}
 pub mod {{ category.name|snake_case }} {

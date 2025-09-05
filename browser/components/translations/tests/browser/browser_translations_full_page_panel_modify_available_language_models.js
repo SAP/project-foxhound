@@ -26,6 +26,8 @@ add_task(
     await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -45,10 +47,12 @@ add_task(
     info("Publishing Japanese as a source language in Remote Settings.");
     await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
       recordsToCreate: recordsForJaEn,
-      expectedCreatedRecordsCount: FILES_PER_LANGUAGE_PAIR,
+      expectedCreatedRecordsCount: RECORDS_PER_LANGUAGE_PAIR,
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -65,10 +69,12 @@ add_task(
     info("Removing Japanese as a source language from Remote Settings.");
     await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
       recordsToDelete: recordsForJaEn,
-      expectedDeletedRecordsCount: FILES_PER_LANGUAGE_PAIR,
+      expectedDeletedRecordsCount: RECORDS_PER_LANGUAGE_PAIR,
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -85,10 +91,12 @@ add_task(
     info("Publishing Japanese as a target language in Remote Settings.");
     await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
       recordsToCreate: recordsForEnJa,
-      expectedCreatedRecordsCount: FILES_PER_LANGUAGE_PAIR,
+      expectedCreatedRecordsCount: RECORDS_PER_LANGUAGE_PAIR,
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -105,10 +113,12 @@ add_task(
     info("Republishing Japanese as a source language in Remote Settings.");
     await modifyRemoteSettingsRecords(remoteClients.translationModels.client, {
       recordsToCreate: recordsForJaEn,
-      expectedCreatedRecordsCount: FILES_PER_LANGUAGE_PAIR,
+      expectedCreatedRecordsCount: RECORDS_PER_LANGUAGE_PAIR,
     });
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedFromLanguage: "es",
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
     });
     ok(
@@ -120,14 +130,16 @@ add_task(
       "The FullPageTranslationsPanel still has an item for Japanese in the to-menu-list."
     );
 
-    await FullPageTranslationsTestUtils.changeSelectedToLanguage("ja");
+    await FullPageTranslationsTestUtils.changeSelectedToLanguage({
+      langTag: "ja",
+    });
     await FullPageTranslationsTestUtils.clickTranslateButton();
 
-    await FullPageTranslationsTestUtils.assertPageIsTranslated(
-      "es",
-      "ja",
-      runInPage
-    );
+    await FullPageTranslationsTestUtils.assertPageIsTranslated({
+      fromLanguage: "es",
+      toLanguage: "ja",
+      runInPage,
+    });
 
     await cleanup();
   }

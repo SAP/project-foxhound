@@ -6,6 +6,8 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   TranslationsParent: "resource://gre/actors/TranslationsParent.sys.mjs",
+  TranslationsUtils:
+    "chrome://global/content/translations/TranslationsUtils.mjs",
 });
 
 import { GeckoViewModule } from "resource://gre/modules/GeckoViewModule.sys.mjs";
@@ -39,35 +41,37 @@ export class GeckoViewTranslations extends GeckoViewModule {
   onEvent(aEvent, aData, aCallback) {
     debug`onEvent: event=${aEvent}, data=${aData}`;
     switch (aEvent) {
-      case "GeckoView:Translations:Translate":
+      case "GeckoView:Translations:Translate": {
         try {
-          const fromLanguage =
-            GeckoViewTranslationsSettings._checkValidLanguageTagAndMinimize(
-              aData.fromLanguage
-            );
-          const toLanguage =
-            GeckoViewTranslationsSettings._checkValidLanguageTagAndMinimize(
-              aData.toLanguage
-            );
-          try {
+          const { sourceLanguage, targetLanguage } = aData;
+
+          if (
+            lazy.TranslationsUtils.isLangTagValid(sourceLanguage) &&
+            lazy.TranslationsUtils.isLangTagValid(targetLanguage)
+          ) {
             this.getActor("Translations")
               .translate(
-                fromLanguage,
-                toLanguage,
+                {
+                  sourceLanguage,
+                  targetLanguage,
+                  // Model variants are not currently supported. See Bug 1943444.
+                },
                 /* reportAsAutoTranslate */ false
               )
-              .then(() => {
-                aCallback.onSuccess();
-              });
-          } catch (error) {
-            aCallback.onError(`Could not translate: ${error}`);
+              .then(
+                () => aCallback.onSuccess(),
+                error => aCallback.onError(`Could not translate: ${error}`)
+              );
+          } else {
+            aCallback.onError(
+              `The language tag ${sourceLanguage} or ${targetLanguage} is not valid.`
+            );
           }
         } catch (error) {
-          aCallback.onError(
-            `The language tag ${aData.fromLanguage} or ${aData.toLanguage} is not valid: ${error}`
-          );
+          aCallback.onError(`Could not translate: ${error}`);
         }
         break;
+      }
 
       case "GeckoView:Translations:RestorePage":
         try {
@@ -112,7 +116,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
       case "TranslationsParent:LanguageState": {
         const {
           detectedLanguages,
-          requestedTranslationPair,
+          requestedLanguagePair,
           hasVisibleChange,
           error,
           isEngineReady,
@@ -120,7 +124,7 @@ export class GeckoViewTranslations extends GeckoViewModule {
 
         const data = {
           detectedLanguages,
-          requestedTranslationPair,
+          requestedLanguagePair,
           hasVisibleChange,
           error,
           isEngineReady,
@@ -158,13 +162,6 @@ export const GeckoViewTranslationsSettings = {
       setting = "never";
     }
     return setting;
-  },
-
-  // Helper method to validate BCP 47 tags and reduced to only the language portion. For example, en-US will be reduced to en.
-  _checkValidLanguageTagAndMinimize(langTag) {
-    // Formats the langTag into a locale, may throw an error
-    const canonicalTag = new Intl.Locale(Intl.getCanonicalLocales(langTag)[0]);
-    return canonicalTag.minimize().toString();
   },
   /* eslint-disable complexity */
   async onEvent(aEvent, aData, aCallback) {
@@ -291,16 +288,17 @@ export const GeckoViewTranslationsSettings = {
         ) {
           const mockResult = {
             languagePairs: [
-              { fromLang: "en", toLang: "es" },
-              { fromLang: "es", toLang: "en" },
+              { sourceLanguage: "en", targetLanguage: "es" },
+              { sourceLanguage: "es", targetLanguage: "en" },
+              { sourceLanguage: "en", targetLanguage: "es", variant: "base" },
             ],
-            fromLanguages: [
-              { langTag: "en", displayName: "English" },
-              { langTag: "es", displayName: "Spanish" },
+            sourceLanguages: [
+              { langTag: "en", langTagKey: "en", displayName: "English" },
+              { langTag: "es", langTagKey: "es", displayName: "Spanish" },
             ],
-            toLanguages: [
-              { langTag: "en", displayName: "English" },
-              { langTag: "es", displayName: "Spanish" },
+            targetLanguages: [
+              { langTag: "en", langTagKey: "en", displayName: "English" },
+              { langTag: "es", langTagKey: "en", displayName: "Spanish" },
             ],
           };
           aCallback.onSuccess(mockResult);
@@ -396,8 +394,7 @@ export const GeckoViewTranslationsSettings = {
                     aCallback.onError(
                       `An issue occurred while aggregating information: ${recordError}`
                     );
-                  },
-                  language
+                  }
                 );
               results.push(recordsResult);
             });
@@ -486,12 +483,8 @@ export const GeckoViewTranslationsSettings = {
         let { language, languageSetting } = aData;
         languageSetting = languageSetting.toLowerCase();
 
-        try {
-          language = this._checkValidLanguageTagAndMinimize(language);
-        } catch (error) {
-          aCallback.onError(
-            `The language tag ${language} is not valid: ${error}`
-          );
+        if (!lazy.TranslationsUtils.isLangTagValid(aData.language)) {
+          aCallback.onError(`The language tag ${language} is not valid.`);
           return;
         }
 
@@ -579,30 +572,30 @@ export const GeckoViewTranslationsSettings = {
           return;
         }
 
-        try {
-          const fromLanguage = this._checkValidLanguageTagAndMinimize(
-            aData.fromLanguage
-          );
-          const toLanguage = this._checkValidLanguageTagAndMinimize(
-            aData.toLanguage
-          );
-
-          lazy.TranslationsParent.getExpectedTranslationDownloadSize(
-            fromLanguage,
-            toLanguage
-          ).then(
-            function (bytes) {
-              aCallback.onSuccess({ bytes });
-            },
-            function (error) {
-              aCallback.onError(`Could not get the download size: ${error}`);
-            }
-          );
-        } catch (error) {
+        const fromLangValid = lazy.TranslationsUtils.isLangTagValid(
+          aData.fromLanguage
+        );
+        const toLangValid = lazy.TranslationsUtils.isLangTagValid(
+          aData.toLanguage
+        );
+        if (!fromLangValid || !toLangValid) {
           aCallback.onError(
-            `The language tag ${aData.fromLanguage} or ${aData.toLanguage} is not valid: ${error}`
+            `The language tag ${aData.fromLanguage} or ${aData.toLanguage} is not valid.`
           );
+          return;
         }
+
+        lazy.TranslationsParent.getExpectedTranslationDownloadSize(
+          aData.fromLanguage,
+          aData.toLanguage
+        ).then(
+          function (bytes) {
+            aCallback.onSuccess({ bytes });
+          },
+          function (error) {
+            aCallback.onError(`Could not get the download size: ${error}`);
+          }
+        );
         break;
       }
     }

@@ -16,10 +16,16 @@
 namespace mozilla::glean {
 
 typedef std::function<void(const nsACString& aReason)> PingTestCallback;
+typedef std::function<nsresult(const nsACString& aReason)>
+    FalliblePingTestCallback;
+
+class GleanPing;
 
 namespace impl {
 
 class Ping {
+  friend class ::mozilla::glean::GleanPing;
+
  public:
   constexpr explicit Ping(uint32_t aId) : mId(aId) {}
 
@@ -58,8 +64,21 @@ class Ping {
    * @param aCallback - The callback to call on the next submit.
    */
   void TestBeforeNextSubmit(PingTestCallback&& aCallback) const;
+  void TestBeforeNextSubmitFallible(FalliblePingTestCallback&& aCallback) const;
+
+  /**
+   * Enable or disable a ping.
+   *
+   * Disabling a ping causes all data for that ping to be removed from storage
+   * and all pending pings of that type to be deleted.
+   *
+   * @param aValue When true, enable metric collection.
+   */
+  void SetEnabled(bool aValue) const;
 
  private:
+  nsresult SubmitInternal(const nsACString& aReason = nsCString()) const;
+
   const uint32_t mId;
 };
 

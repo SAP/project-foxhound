@@ -72,6 +72,10 @@ MALLOC_DECL(jemalloc_stats_internal, void, jemalloc_stats_t*,
 // Return the size of the jemalloc_bin_stats_t array.
 MALLOC_DECL(jemalloc_stats_num_bins, size_t)
 
+// Return some of the information that jemalloc_stats returns but works
+// off-main-thread and is faster.
+MALLOC_DECL(jemalloc_stats_lite, void, jemalloc_stats_lite_t*)
+
 // Tell jemalloc this is the main thread. jemalloc will use this to validate
 // that main thread only arenas are only used on the main thread.
 MALLOC_DECL(jemalloc_set_main_thread, void)
@@ -107,8 +111,20 @@ MALLOC_DECL(jemalloc_purge_freed_pages, void)
 // down subsequent allocations so it is recommended to use it only when
 // memory needs to be reclaimed at all costs (see bug 805855). This function
 // provides functionality similar to mallctl("arenas.purge") in jemalloc 3.
-// It may only be used from the main thread.
+// Note that if called on a different thread than the main thread, only arenas
+// that are not created with ARENA_FLAG_THREAD_MAIN_THREAD_ONLY will be purged.
 MALLOC_DECL(jemalloc_free_dirty_pages, void)
+
+// Free dirty pages until the max dirty pages threshold is satisfied. Useful
+// after lowering the max dirty pages threshold to get RSS back to normal.
+// This behaves just like a synchronous purge on all arenas.
+// Note that if called on a different thread than the main thread, only arenas
+// that are not created with ARENA_FLAG_THREAD_MAIN_THREAD_ONLY will be purged.
+MALLOC_DECL(jemalloc_free_excess_dirty_pages, void)
+
+// Change the value of opt_randomize_small to control small allocation
+// randomization and maybe perform a reinitialization of the arena's PRNG.
+MALLOC_DECL(jemalloc_reset_small_alloc_randomization, void, bool)
 
 // Opt in or out of a thread local arena (bool argument is whether to opt-in
 // (true) or out (false)).
@@ -134,6 +150,32 @@ MALLOC_DECL(moz_dispose_arena, void, arena_id_t)
 // applied to the value. Positive value is handled as <<, negative >>.
 // Arenas may override the default modifier.
 MALLOC_DECL(moz_set_max_dirty_page_modifier, void, int32_t)
+
+// Enable or disable deferred purging. Returns the former state.
+// If enabled, jemalloc will not purge anything until either
+// jemalloc_free_[excess]_dirty_pages or moz_may_purge_one_now are called
+// explicitly. Disabling it may cause an immediate synchronous purge of all
+// arenas.
+// Must be called only on the main thread.
+// Parameters:
+// bool:            enable/disable
+MALLOC_DECL(moz_enable_deferred_purge, bool, bool)
+
+// Execute at most one purge.
+// Returns a purge_result_t with the following meaning:
+// Done:       Purge has completed for all arenas.
+// NeedsMore:  There is at least one arena that needs to be purged now.
+// WantsLater: There is at least one arena that might want a purge later,
+//             according to aReuseGraceMS passed.
+// Parameters:
+// bool:      If the bool parameter aPeekOnly is true, it won't process
+//            any purge but just return if some is needed now or wanted later.
+// uint32_t:  aReuseGraceMS is the time to wait with purge after a significant
+//            re-use happened for an arena.
+// The cost of calling this when there is no pending purge is minimal: a mutex
+// lock/unlock and an isEmpty check. Note that the mutex is never held during
+// expensive operations and guards only that list.
+MALLOC_DECL(moz_may_purge_one_now, purge_result_t, bool, uint32_t)
 
 #  endif
 

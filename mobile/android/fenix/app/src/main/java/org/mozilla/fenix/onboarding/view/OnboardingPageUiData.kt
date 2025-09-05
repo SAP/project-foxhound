@@ -16,8 +16,13 @@ data class OnboardingPageUiData(
     val title: String,
     val description: String,
     val primaryButtonLabel: String,
-    val secondaryButtonLabel: String,
-    val privacyCaption: Caption?,
+    val secondaryButtonLabel: String? = null,
+    val privacyCaption: Caption? = null,
+    val addOns: List<OnboardingAddOn>? = null,
+    val toolbarOptions: List<ToolbarOption>? = null,
+    val themeOptions: List<ThemeOption>? = null,
+    val termsOfService: OnboardingTermsOfService? = null,
+    val marketingData: OnboardingMarketingData? = null,
 ) {
     /**
      * Model for different types of Onboarding Pages.
@@ -38,6 +43,21 @@ data class OnboardingPageUiData(
         ),
         NOTIFICATION_PERMISSION(
             telemetryId = "notification",
+        ),
+        ADD_ONS(
+            telemetryId = "add_ons",
+        ),
+        TOOLBAR_PLACEMENT(
+            telemetryId = "toolbar_placement",
+        ),
+        THEME_SELECTION(
+            telemetryId = "theme",
+        ),
+        TERMS_OF_SERVICE(
+            telemetryId = "terms_of_service",
+        ),
+        MARKETING_DATA(
+            telemetryId = "marketing_data",
         ),
     }
 }

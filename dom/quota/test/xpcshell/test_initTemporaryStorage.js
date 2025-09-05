@@ -21,7 +21,7 @@ async function testSteps() {
 
   info("Verifying initialization status");
 
-  await verifyInitializationStatus(true, false);
+  await verifyInitializationStatus(true, false, false);
 
   info("Creating an empty directory");
 
@@ -45,5 +45,5 @@ async function testSteps() {
 
   info("Verifying initialization status");
 
-  await verifyInitializationStatus(true, true);
+  await verifyInitializationStatus(true, false, true);
 }

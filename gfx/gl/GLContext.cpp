@@ -178,6 +178,10 @@ static const char* const sExtensionNames[] = {
     "GL_EXT_timer_query",
     "GL_EXT_transform_feedback",
     "GL_EXT_unpack_subimage",
+    "GL_EXT_semaphore",
+    "GL_EXT_semaphore_fd",
+    "GL_EXT_memory_object",
+    "GL_EXT_memory_object_fd",
     "GL_IMG_read_format",
     "GL_IMG_texture_compression_pvrtc",
     "GL_IMG_texture_npot",
@@ -1495,6 +1499,74 @@ void GLContext::LoadMoreSymbols(const SymbolLoader& loader) {
                                       }}},
                                      END_SYMBOLS};
     fnLoadForFeature(symbols, GLFeature::provoking_vertex);
+  }
+
+  if (IsExtensionSupported(EXT_semaphore)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fDeleteSemaphoresEXT,
+         {{"glDeleteSemaphoresEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fGenSemaphoresEXT, {{"glGenSemaphoresEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fGetSemaphoreParameterui64vEXT,
+         {{"glGetSemaphoreParameterui64vEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fIsSemaphoreEXT, {{"glIsSemaphoreEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fSemaphoreParameterui64vEXT,
+         {{"glSemaphoreParameterui64vEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fSignalSemaphoreEXT, {{"glSignalSemaphoreEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fWaitSemaphoreEXT, {{"glWaitSemaphoreEXT"}}},
+        END_SYMBOLS};
+    fnLoadForExt(symbols, EXT_semaphore);
+  }
+
+  if (IsExtensionSupported(EXT_semaphore_fd)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fImportSemaphoreFdEXT,
+         {{"glImportSemaphoreFdEXT"}}},
+        END_SYMBOLS};
+    fnLoadForExt(symbols, EXT_semaphore_fd);
+  }
+
+  if (IsExtensionSupported(EXT_memory_object)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fGetUnsignedBytevEXT,
+         {{"glGetUnsignedBytevEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fGetUnsignedBytei_vEXT,
+         {{"glGetUnsignedBytei_vEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fDeleteMemoryObjectsEXT,
+         {{"glDeleteMemoryObjectsEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fIsMemoryObjectEXT, {{"glIsMemoryObjectEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fCreateMemoryObjectsEXT,
+         {{"glCreateMemoryObjectsEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fMemoryObjectParameterivEXT,
+         {{"glMemoryObjectParameterivEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fGetMemoryObjectParameterivEXT,
+         {{"glGetMemoryObjectParameterivEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTexStorageMem2DEXT, {{"glTexStorageMem2DEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTexStorageMem2DMultisampleEXT,
+         {{"glTexStorageMem2DMultisampleEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTexStorageMem3DEXT, {{"glTexStorageMem3DEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTexStorageMem3DMultisampleEXT,
+         {{"glTexStorageMem3DMultisampleEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fBufferStorageMemEXT,
+         {{"glBufferStorageMemEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTextureStorageMem2DEXT,
+         {{"glTextureStorageMem2DEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTextureStorageMem2DMultisampleEXT,
+         {{"glTextureStorageMem2DMultisampleEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTextureStorageMem3DEXT,
+         {{"glTextureStorageMem3DEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fTextureStorageMem3DMultisampleEXT,
+         {{"glTextureStorageMem3DMultisampleEXT"}}},
+        {(PRFuncPtr*)&mSymbols.fNamedBufferStorageMemEXT,
+         {{"glNamedBufferStorageMemEXT"}}},
+        END_SYMBOLS};
+    fnLoadForExt(symbols, EXT_memory_object);
+  }
+
+  if (IsExtensionSupported(EXT_memory_object_fd)) {
+    const SymLoadStruct symbols[] = {
+        {(PRFuncPtr*)&mSymbols.fImportMemoryFdEXT, {{"glImportMemoryFdEXT"}}},
+        END_SYMBOLS};
+    fnLoadForExt(symbols, EXT_memory_object_fd);
   }
 
   // Load developer symbols, don't fail if we can't find them.

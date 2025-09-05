@@ -8,7 +8,7 @@ import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
-  ActivityStream: "resource://activity-stream/lib/ActivityStream.sys.mjs",
+  ActivityStream: "resource://newtab/lib/ActivityStream.sys.mjs",
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
 });
 
@@ -215,12 +215,10 @@ export const AboutNewTab = {
       return;
     }
 
-    const SCALAR_KEY = "timestamps.about_home_topsites_first_paint";
-
     let startupInfo = Services.startup.getStartupInfo();
     let processStartTs = startupInfo.process.getTime();
     let delta = Math.round(timestamp - processStartTs);
-    Services.telemetry.scalarSet(SCALAR_KEY, delta);
+    Glean.timestamps.aboutHomeTopsitesFirstPaint.set(delta);
     ChromeUtils.addProfilerMarker("aboutHomeTopsitesFirstPaint");
     this._alreadyRecordedTopsitesPainted = true;
   },

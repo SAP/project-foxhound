@@ -11,9 +11,7 @@ use std::{
 };
 
 #[cfg(windows)]
-use winapi::shared::minwindef::UINT;
-#[cfg(windows)]
-use winapi::um::timeapi::{timeBeginPeriod, timeEndPeriod};
+use windows::Win32::Media::{timeBeginPeriod, timeEndPeriod};
 
 /// A quantized `Duration`.  This currently just produces 16 discrete values
 /// corresponding to whole milliseconds.  Future implementations might choose
@@ -26,8 +24,8 @@ impl Period {
     const MIN: Self = Self(1);
 
     #[cfg(windows)]
-    fn as_uint(self) -> UINT {
-        UINT::from(self.0)
+    fn as_u32(self) -> u32 {
+        u32::from(self.0)
     }
 
     #[cfg(target_os = "macos")]
@@ -82,7 +80,7 @@ impl PeriodSet {
 #[cfg(target_os = "macos")]
 #[allow(non_camel_case_types)]
 mod mac {
-    use std::{mem::size_of, ptr::addr_of_mut};
+    use std::ptr::addr_of_mut;
 
     // These are manually extracted from the many bindings generated
     // by bindgen when provided with the simple header:
@@ -128,7 +126,7 @@ mod mac {
     const THREAD_TIME_CONSTRAINT_POLICY: thread_policy_flavor_t = 2;
     #[allow(clippy::cast_possible_truncation)]
     const THREAD_TIME_CONSTRAINT_POLICY_COUNT: mach_msg_type_number_t =
-        (size_of::<thread_time_constraint_policy>() / size_of::<integer_t>())
+        (std::mem::size_of::<thread_time_constraint_policy>() / std::mem::size_of::<integer_t>())
             as mach_msg_type_number_t;
 
     // These function definitions are taken from a comment in <thread_policy.h>.
@@ -287,36 +285,36 @@ impl Time {
         }
     }
 
-    #[allow(clippy::unused_self)] // Only on some platforms is it unused.
-    #[allow(clippy::missing_const_for_fn)] // Only const on some platforms where the function is empty.
+    #[cfg(target_os = "macos")]
     fn start(&self) {
-        #[cfg(target_os = "macos")]
-        {
-            if let Some(p) = self.active {
-                mac::set_realtime(p.scaled(self.scale));
-            } else {
-                mac::set_thread_policy(self.deflt);
-            }
-        }
-
-        #[cfg(windows)]
-        {
-            if let Some(p) = self.active {
-                _ = unsafe { timeBeginPeriod(p.as_uint()) };
-            }
+        if let Some(p) = self.active {
+            mac::set_realtime(p.scaled(self.scale));
+        } else {
+            mac::set_thread_policy(self.deflt);
         }
     }
 
-    #[allow(clippy::unused_self)] // Only on some platforms is it unused.
-    #[allow(clippy::missing_const_for_fn)] // Only const on some platforms where the function is empty.
+    #[cfg(target_os = "windows")]
+    fn start(&self) {
+        if let Some(p) = self.active {
+            _ = unsafe { timeBeginPeriod(p.as_u32()) };
+        }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
+    #[allow(clippy::unused_self)]
+    const fn start(&self) {}
+
+    #[cfg(windows)]
     fn stop(&self) {
-        #[cfg(windows)]
-        {
-            if let Some(p) = self.active {
-                _ = unsafe { timeEndPeriod(p.as_uint()) };
-            }
+        if let Some(p) = self.active {
+            _ = unsafe { timeEndPeriod(p.as_u32()) };
         }
     }
+
+    #[cfg(not(target_os = "windows"))]
+    #[allow(clippy::unused_self)]
+    const fn stop(&self) {}
 
     fn update(&mut self) {
         let next = self.periods.min();
@@ -372,12 +370,9 @@ impl Drop for Time {
     }
 }
 
-// Only run these tests in CI on platforms other than MacOS and Windows, where the timer
-// inaccuracies are too high to pass the tests.
-#[cfg(all(
-    test,
-    not(all(any(target_os = "macos", target_os = "windows"), feature = "ci"))
-))]
+// Only run these tests in CI on Linux, where the timer accuracies are OK enough to pass the tests,
+// but only when not running sanitizers.
+#[cfg(all(test, target_os = "linux", not(neqo_sanitize)))]
 mod test {
     use std::{
         thread::{sleep, spawn},

@@ -9,7 +9,6 @@ import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.prompt.PromptRequest
 import mozilla.components.feature.prompts.concept.PasswordPromptView
 import mozilla.components.feature.prompts.consumePromptFrom
-import mozilla.components.feature.prompts.dialog.emitGeneratedPasswordShownFact
 import mozilla.components.support.base.log.logger.Logger
 
 /**
@@ -30,7 +29,7 @@ internal class StrongPasswordPromptViewListener(
     var onGeneratedPasswordPromptClick: () -> Unit = { }
 
     init {
-        suggestStrongPasswordBar.listener = this
+        suggestStrongPasswordBar.passwordPromptListener = this
     }
 
     internal fun handleSuggestStrongPasswordRequest() {
@@ -65,6 +64,5 @@ internal class StrongPasswordPromptViewListener(
 
     override fun onGeneratedPasswordPromptClick() {
         onGeneratedPasswordPromptClick.invoke()
-        emitGeneratedPasswordShownFact()
     }
 }

@@ -192,8 +192,7 @@ nsresult NS_NewChannelInternal(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
-    bool aSkipCheckForBrokenURLOrZeroSized = false);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannelInternal(
@@ -250,8 +249,7 @@ nsresult NS_NewChannel(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
-    bool aSkipCheckForBrokenURLOrZeroSized = false);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannel(
@@ -262,8 +260,7 @@ nsresult NS_NewChannel(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
-    bool aSkipCheckForBrokenURLOrZeroSized = false);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 // See NS_NewChannelInternal for usage and argument description
 nsresult NS_NewChannel(
@@ -276,8 +273,7 @@ nsresult NS_NewChannel(
     nsILoadGroup* aLoadGroup = nullptr,
     nsIInterfaceRequestor* aCallbacks = nullptr,
     nsLoadFlags aLoadFlags = nsIRequest::LOAD_NORMAL,
-    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0,
-    bool aSkipCheckForBrokenURLOrZeroSized = false);
+    nsIIOService* aIoService = nullptr, uint32_t aSandboxFlags = 0);
 
 nsresult NS_GetIsDocumentChannel(nsIChannel* aChannel, bool* aIsDocument);
 
@@ -878,15 +874,6 @@ bool NS_SecurityCompareURIs(nsIURI* aSourceURI, nsIURI* aTargetURI,
 
 bool NS_URIIsLocalFile(nsIURI* aURI);
 
-// When strict file origin policy is enabled, SecurityCompareURIs will fail for
-// file URIs that do not point to the same local file. This call provides an
-// alternate file-specific origin check that allows target files that are
-// contained in the same directory as the source.
-//
-// https://developer.mozilla.org/en-US/docs/Same-origin_policy_for_file:_URIs
-bool NS_RelaxStrictFileOriginPolicy(nsIURI* aTargetURI, nsIURI* aSourceURI,
-                                    bool aAllowDirectoryTarget = false);
-
 bool NS_IsInternalSameURIRedirect(nsIChannel* aOldChannel,
                                   nsIChannel* aNewChannel, uint32_t aFlags);
 
@@ -1045,10 +1032,16 @@ nsresult NS_GetSecureUpgradedURI(nsIURI* aURI, nsIURI** aUpgradedURI);
 
 nsresult NS_CompareLoadInfoAndLoadContext(nsIChannel* aChannel);
 
+// The type of classification to perform.
+enum class ClassifyType : uint8_t {
+  SafeBrowsing,  // Perform Safe Browsing classification.
+  ETP,           // Perform URL Classification for Enhanced Tracking Protection.
+};
+
 /**
  * Return true if this channel should be classified by the URL classifier.
  */
-bool NS_ShouldClassifyChannel(nsIChannel* aChannel);
+bool NS_ShouldClassifyChannel(nsIChannel* aChannel, ClassifyType aType);
 
 /**
  * Helper to set the blocking reason on loadinfo of the channel.
@@ -1169,7 +1162,8 @@ enum ASDestination : uint8_t {
   DESTINATION_VIDEO,
   DESTINATION_WORKER,
   DESTINATION_XSLT,
-  DESTINATION_FETCH
+  DESTINATION_FETCH,
+  DESTINATION_JSON
 };
 
 void ParseAsValue(const nsAString& aValue, nsAttrValue& aResult);
@@ -1199,6 +1193,8 @@ bool IsCoepCredentiallessEnabled(bool aIsOriginTrialCoepCredentiallessEnabled);
 
 void ParseSimpleURISchemes(const nsACString& schemeList);
 
+nsresult AddExtraHeaders(nsIHttpChannel* aHttpChannel,
+                         const nsACString& aExtraHeaders, bool aMerge = true);
 }  // namespace net
 }  // namespace mozilla
 

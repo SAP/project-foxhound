@@ -42,12 +42,6 @@ NS_IMETHODIMP nsSystemAlertsService::ShowAlertNotification(
   return ShowAlert(alert, aAlertListener);
 }
 
-NS_IMETHODIMP nsSystemAlertsService::ShowPersistentNotification(
-    const nsAString& aPersistentData, nsIAlertNotification* aAlert,
-    nsIObserver* aAlertListener) {
-  return ShowAlert(aAlert, aAlertListener);
-}
-
 NS_IMETHODIMP nsSystemAlertsService::ShowAlert(nsIAlertNotification* aAlert,
                                                nsIObserver* aAlertListener) {
   NS_ENSURE_ARG(aAlert);
@@ -57,7 +51,7 @@ NS_IMETHODIMP nsSystemAlertsService::ShowAlert(nsIAlertNotification* aAlert,
   NS_ENSURE_SUCCESS(rv, rv);
 
   RefPtr<nsAlertsIconListener> alertListener =
-      new nsAlertsIconListener(this, alertName);
+      new nsAlertsIconListener(this, aAlert, alertName);
   if (!alertListener) return NS_ERROR_OUT_OF_MEMORY;
 
   if (mSuppressForScreenSharing) {

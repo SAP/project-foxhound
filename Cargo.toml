@@ -6,17 +6,18 @@
 # into `third_party/rust` by `mach vendor rust`.
 members = [
   "browser/app/nmhproxy/",
-  "js/src/frontend/smoosh",
   "js/src/rust",
   "netwerk/base/idna_glue",
   "netwerk/test/http3server",
-  "security/manager/ssl/builtins",
-  "security/manager/ssl/tests/unit/test_builtins",
   "security/manager/ssl/ipcclientcerts",
   "security/manager/ssl/osclientcerts",
+  "security/manager/ssl/trust_anchors",
+  "security/manager/ssl/tests/unit/test_trust_anchors",
+  "security/mls/mls_gk",
   "testing/geckodriver",
   "toolkit/components/uniffi-bindgen-gecko-js",
   "toolkit/crashreporter/client/app",
+  "toolkit/crashreporter/minidump-analyzer/android/export",
   "toolkit/crashreporter/mozwer-rust",
   "toolkit/crashreporter/rust_minidump_writer_linux",
   "toolkit/library/gtest/rust",
@@ -40,10 +41,12 @@ exclude = [
   "media/mp4parse-rust/mp4parse",
   "media/mp4parse-rust/mp4parse_capi",
   "xpcom/rust/gkrust_utils",
+  "toolkit/crashreporter/minidump-analyzer",
   "tools/lint/test/files/clippy",
   "tools/fuzzing/rust",
   "dom/base/rust",
   "dom/origin-trials/ffi",
+  "ipc/rust/ipdl_utils",
 
   # Excluded because we don't want to vendor their dependencies.
   "intl/l10n/rust/l10nregistry-tests",
@@ -53,14 +56,17 @@ exclude = [
 # This is required for 'third_party/rust/wgpu-hal'
 resolver = "2"
 
+[workspace.package]
+rust-version = "1.82.0"
+
 [workspace.dependencies]
 # Shared across multiple UniFFI consumers.
-uniffi = "0.27.3"
-uniffi_bindgen = "0.27.3"
+uniffi = "0.28.2"
+uniffi_bindgen = "0.28.2"
 # Shared across multiple application-services consumers.
 rusqlite = "0.31.0"
 # Shared across multiple glean consumers.
-glean = "=60.4.0"
+glean = "=63.1.0"
 
 # Explicitly specify what our profiles use.  The opt-level setting here is
 # a total fiction; see the setup of MOZ_RUST_DEFAULT_FLAGS for what the
@@ -146,13 +152,11 @@ backtrace = { path = "build/rust/backtrace" }
 # Patch bindgen 0.63 to 0.69
 bindgen_0_63 = { package = "bindgen", path = "build/rust/bindgen-0.63" }
 # Locally patch bindgen for https://github.com/rust-lang/rust-bindgen/pull/2824
+# and for bug 1945218
 bindgen = { path = "third_party/rust/bindgen" }
 
-# Patch nix 0.26 to 0.28
+# Patch nix 0.26 to 0.29
 nix = { path = "build/rust/nix" }
-
-# Patch indexmap 2.0 to 1.0
-indexmap = { path = "build/rust/indexmap" }
 
 # Patch derive_more 0.99 to 1.0.0-beta
 derive_more = { path = "build/rust/derive_more" }
@@ -172,11 +176,21 @@ hashbrown = { path = "build/rust/hashbrown" }
 # Patch `socket2` 0.4 to 0.5
 socket2 = { path = "build/rust/socket2" }
 
+# Patch `thiserror` 1 to 2.
+thiserror = { path = "build/rust/thiserror" }
+
 # The following overrides point to dummy projects, as a temporary measure until this is resolved:
 # https://github.com/rust-lang/cargo/issues/6179
 js-sys = { path = "build/rust/dummy-web/js-sys" }
 wasm-bindgen = { path = "build/rust/dummy-web/wasm-bindgen" }
 web-sys = { path = "build/rust/dummy-web/web-sys" }
+
+
+# Upgrade `core-foundation` 0.9.* to 0.10.
+core-foundation = { path = "build/rust/core-foundation" }
+
+# Patch `core-graphics-types` 0.1.* to 0.2.
+core-graphics-types = { path = "build/rust/core-graphics-types" }
 
 # Overrides to allow easier use of common internal crates.
 moz_asserts = { path = "mozglue/static/rust/moz_asserts" }
@@ -193,6 +207,7 @@ plist = { path = "third_party/rust/plist" }
 
 # To-be-published changes.
 unicode-bidi = { git = "https://github.com/servo/unicode-bidi", rev = "ca612daf1c08c53abe07327cb3e6ef6e0a760f0c" }
+nss-gk-api = { git = "https://github.com/beurdouche/nss-gk-api", rev = "e48a946811ffd64abc78de3ee284957d8d1c0d63" }
 
 # Other overrides
 any_all_workaround = { git = "https://github.com/hsivonen/any_all_workaround", rev = "7fb1b7034c9f172aade21ee1c8554e8d8a48af80" }
@@ -209,16 +224,18 @@ midir = { git = "https://github.com/mozilla/midir.git", rev = "85156e360a37d8517
 # in order to build standalone.
 malloc_size_of_derive = { path = "xpcom/rust/malloc_size_of_derive" }
 
-# application-services overrides to make updating them all simpler.
-interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-relevancy = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-sql-support = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-suggest = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-sync15 = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-tabs = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-viaduct = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
-webext-storage = { git = "https://github.com/mozilla/application-services", rev = "9fc8d02e6cc4751c08c75a7b3c5aee432b66116f" }
+# objc 0.2.7 + fa7ca43b862861dd1cd000d7ad01e6e0266cda13
+objc = { git = "https://github.com/glandium/rust-objc", rev = "4de89f5aa9851ceca4d40e7ac1e2759410c04324" }
 
-# Patch `gpu-descriptor` 0.3.0 to remove unnecessary `allocator-api2` dep.:
-# Still waiting for the now-merged <https://github.com/zakarumych/gpu-descriptor/pull/40> to be released.
-gpu-descriptor = { git = "https://github.com/zakarumych/gpu-descriptor", rev = "7b71a4e47c81903ad75e2c53deb5ab1310f6ff4d" }
+# application-services overrides to make updating them all simpler.
+interrupt-support = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+relevancy = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+search = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+sql-support = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+suggest = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+sync15 = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+tabs = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+viaduct = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+webext-storage = { git = "https://github.com/mozilla/application-services", rev = "25934715ecc08fc922c80797c637dea64ee742d1" }
+
+allocator-api2 = { path = "third_party/rust/allocator-api2" }

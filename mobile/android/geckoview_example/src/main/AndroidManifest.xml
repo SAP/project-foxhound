@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        android:maxSdkVersion="28" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.RECORD_AUDIO"/>
@@ -27,9 +29,8 @@
                 android:name=".GeckoViewActivity"
                 android:label="GeckoView Example"
                 android:launchMode="singleTop"
-                android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-                android:exported="true"
-                android:windowSoftInputMode="stateUnspecified|adjustResize">
+                android:theme="@style/GeckoViewTheme"
+                android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN"/>
 
@@ -53,15 +54,14 @@
         <activity
                 android:name=".SessionActivity"
                 android:label="GeckoView Example"
-                android:theme="@style/Theme.AppCompat.Light.NoActionBar"
-                android:exported="false"
-                android:windowSoftInputMode="stateUnspecified|adjustResize">
+                android:theme="@style/GeckoViewTheme"
+                android:exported="false">
         </activity>
         <activity
                 android:name=".SettingsActivity"
                 android:label="Settings"
                 android:exported="false"
-                android:theme="@style/Theme.AppCompat.Light.NoActionBar">
+                android:theme="@style/GeckoViewTheme">
         </activity>
 
         <service

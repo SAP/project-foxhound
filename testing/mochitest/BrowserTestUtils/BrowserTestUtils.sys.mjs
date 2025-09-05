@@ -247,6 +247,17 @@ export var BrowserTestUtils = {
     });
   },
 
+  showOnlyTheseTabs(tabbrowser, tabs) {
+    for (let tab of tabs) {
+      tabbrowser.showTab(tab);
+    }
+    for (let tab of tabbrowser.tabs) {
+      if (!tabs.includes(tab)) {
+        tabbrowser.hideTab(tab);
+      }
+    }
+  },
+
   /**
    * Checks if a DOM element is hidden.
    *
@@ -1879,27 +1890,40 @@ export var BrowserTestUtils = {
    *
    * @param {tab} tab
    *        The tab that will be reloaded.
-   * @param {Boolean} [includeSubFrames = false]
+   * @param {Object} [options]
+   *        Options for the reload.
+   * @param {Boolean} options.includeSubFrames = false [optional]
    *        A boolean indicating if loads from subframes should be included
    *        when waiting for the frame to reload.
+   * @param {Boolean} options.bypassCache = false [optional]
+   *        A boolean indicating if loads should bypass the cache.
+   *        If bypassCache is true, this skips some steps that normally happen
+   *        when a user reloads a tab.
    * @returns {Promise}
    * @resolves When the tab finishes reloading.
    */
-  reloadTab(tab, includeSubFrames = false) {
+  reloadTab(tab, options = {}) {
     const finished = BrowserTestUtils.browserLoaded(
       tab.linkedBrowser,
-      includeSubFrames
+      !!options.includeSubFrames
     );
-    tab.ownerGlobal.gBrowser.reloadTab(tab);
+    if (options.bypassCache) {
+      tab.linkedBrowser.reloadWithFlags(
+        Ci.nsIWebNavigation.LOAD_FLAGS_BYPASS_CACHE
+      );
+    } else {
+      tab.ownerGlobal.gBrowser.reloadTab(tab);
+    }
     return finished;
   },
 
   /**
    * Create enough tabs to cause a tab overflow in the given window.
-   * @param {Function} registerCleanupFunction
+   * @param {Function|null} registerCleanupFunction
    *    The test framework doesn't keep its cleanup stuff anywhere accessible,
    *    so the first argument is a reference to your cleanup registration
-   *    function, allowing us to clean up after you if necessary.
+   *    function, allowing us to clean up after you if necessary. This can be
+   *    null if you are using a temporary window for the test.
    * @param {Window} win
    *    The window where the tabs need to be overflowed.
    * @param {object} params [optional]
@@ -1917,28 +1941,48 @@ export var BrowserTestUtils = {
     if (!params.hasOwnProperty("overflowTabFactor")) {
       params.overflowTabFactor = 1.1;
     }
-    let index = params.overflowAtStart ? 0 : undefined;
     let { gBrowser } = win;
+    let overflowDirection = gBrowser.tabContainer.verticalMode
+      ? "height"
+      : "width";
+    let index = params.overflowAtStart ? 0 : undefined;
     let arrowScrollbox = gBrowser.tabContainer.arrowScrollbox;
+    if (arrowScrollbox.hasAttribute("overflowing")) {
+      return;
+    }
+    let promises = [];
+    promises.push(
+      BrowserTestUtils.waitForEvent(
+        arrowScrollbox,
+        "overflow",
+        false,
+        e => e.target == arrowScrollbox
+      )
+    );
     const originalSmoothScroll = arrowScrollbox.smoothScroll;
     arrowScrollbox.smoothScroll = false;
-    registerCleanupFunction(() => {
-      arrowScrollbox.smoothScroll = originalSmoothScroll;
-    });
-
-    let width = ele => ele.getBoundingClientRect().width;
-    let tabMinWidth = parseInt(
-      win.getComputedStyle(gBrowser.selectedTab).minWidth
-    );
-    let tabCountForOverflow = Math.ceil(
-      (width(arrowScrollbox) / tabMinWidth) * params.overflowTabFactor
-    );
-    while (gBrowser.tabs.length < tabCountForOverflow) {
-      BrowserTestUtils.addTab(gBrowser, "about:blank", {
-        skipAnimation: true,
-        index,
+    if (registerCleanupFunction) {
+      registerCleanupFunction(() => {
+        arrowScrollbox.smoothScroll = originalSmoothScroll;
       });
     }
+
+    let size = ele => ele.getBoundingClientRect()[overflowDirection];
+    let tabMinSize = gBrowser.tabContainer.verticalMode
+      ? size(gBrowser.selectedTab)
+      : parseInt(win.getComputedStyle(gBrowser.selectedTab).minWidth);
+    let tabCountForOverflow = Math.ceil(
+      (size(arrowScrollbox) / tabMinSize) * params.overflowTabFactor
+    );
+    while (gBrowser.tabs.length < tabCountForOverflow) {
+      promises.push(
+        BrowserTestUtils.addTab(gBrowser, "about:blank", {
+          skipAnimation: true,
+          index,
+        })
+      );
+    }
+    await Promise.all(promises);
   },
 
   /**
@@ -1958,7 +2002,7 @@ export var BrowserTestUtils = {
    *        top level context if not supplied.
    * @param (object?) options
    *        An object with any of the following fields:
-   *          crashType: "CRASH_INVALID_POINTER_DEREF" | "CRASH_OOM"
+   *          crashType: "CRASH_INVALID_POINTER_DEREF" | "CRASH_OOM" | "CRASH_SYSCALL"
    *            The type of crash. If unspecified, default to "CRASH_INVALID_POINTER_DEREF"
    *          asyncCrash: bool
    *            If specified and `true`, cause the crash asynchronously.
@@ -2627,9 +2671,6 @@ export var BrowserTestUtils = {
     if (!params.triggeringPrincipal) {
       params.triggeringPrincipal =
         Services.scriptSecurityManager.getSystemPrincipal();
-    }
-    if (!params.allowInheritPrincipal) {
-      params.allowInheritPrincipal = true;
     }
     if (beforeLoadFunc) {
       let window = tabbrowser.ownerGlobal;

@@ -21,7 +21,7 @@ def indented(s):
 
 
 def cpp(v):
-    if type(v) == bool:
+    if type(v) is bool:
         return "true" if v else "false"
     return str(v)
 
@@ -584,7 +584,7 @@ namespace detail {
 
     fd.write(
         """
-const uint16_t sInterfacesSize = mozilla::ArrayLength(sInterfaces);
+const uint16_t sInterfacesSize = std::size(sInterfaces);
 
 } // namespace detail
 } // namespace xpt

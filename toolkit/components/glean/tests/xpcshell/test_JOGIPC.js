@@ -40,14 +40,14 @@ const INVALID_COUNTERS = 7;
 // It is CRUCIAL that we register metrics in the same order in the parent and
 // in the child or their metric ids will not line up and ALL WILL EXPLODE.
 const METRICS = [
-  ["counter", "jog_ipc", "jog_counter", ["test-only"], `"ping"`, false],
-  ["string_list", "jog_ipc", "jog_string_list", ["test-only"], `"ping"`, false],
-  ["event", "jog_ipc", "jog_event_no_extra", ["test-only"], `"ping"`, false],
+  ["counter", "jog_ipc", "jog_counter", ["test-ping"], `"ping"`, false],
+  ["string_list", "jog_ipc", "jog_string_list", ["test-ping"], `"ping"`, false],
+  ["event", "jog_ipc", "jog_event_no_extra", ["test-ping"], `"ping"`, false],
   [
     "event",
     "jog_ipc",
     "jog_event",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ allowed_extra_keys: ["extra1"] }),
@@ -56,7 +56,7 @@ const METRICS = [
     "memory_distribution",
     "jog_ipc",
     "jog_memory_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ memory_unit: "megabyte" }),
@@ -65,7 +65,7 @@ const METRICS = [
     "timing_distribution",
     "jog_ipc",
     "jog_timing_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ time_unit: "nanosecond" }),
@@ -74,7 +74,7 @@ const METRICS = [
     "custom_distribution",
     "jog_ipc",
     "jog_custom_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({
@@ -88,7 +88,7 @@ const METRICS = [
     "labeled_counter",
     "jog_ipc",
     "jog_labeled_counter",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
   ],
@@ -96,7 +96,7 @@ const METRICS = [
     "labeled_counter",
     "jog_ipc",
     "jog_labeled_counter_err",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
   ],
@@ -104,7 +104,7 @@ const METRICS = [
     "labeled_counter",
     "jog_ipc",
     "jog_labeled_counter_with_labels",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ ordered_labels: ["label_1", "label_2"] }),
@@ -113,17 +113,17 @@ const METRICS = [
     "labeled_counter",
     "jog_ipc",
     "jog_labeled_counter_with_labels_err",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ ordered_labels: ["label_1", "label_2"] }),
   ],
-  ["rate", "jog_ipc", "jog_rate", ["test-only"], `"ping"`, false],
+  ["rate", "jog_ipc", "jog_rate", ["test-ping"], `"ping"`, false],
   [
     "labeled_custom_distribution",
     "jog_ipc",
     "jog_labeled_custom_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({
@@ -137,7 +137,7 @@ const METRICS = [
     "labeled_memory_distribution",
     "jog_ipc",
     "jog_labeled_memory_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ memory_unit: "megabyte" }),
@@ -146,10 +146,28 @@ const METRICS = [
     "labeled_timing_distribution",
     "jog_ipc",
     "jog_labeled_timing_dist",
-    ["test-only"],
+    ["test-ping"],
     `"ping"`,
     false,
     JSON.stringify({ time_unit: "nanosecond" }),
+  ],
+  [
+    "boolean",
+    "jog_ipc",
+    "jog_unordered_bool",
+    ["test-ping"],
+    `"ping"`,
+    false,
+    JSON.stringify({ permit_non_commutative_operations_over_ipc: true }),
+  ],
+  [
+    "labeled_boolean",
+    "jog_ipc",
+    "jog_unordered_labeled_bool",
+    ["test-ping"],
+    `"ping"`,
+    false,
+    JSON.stringify({ permit_non_commutative_operations_over_ipc: true }),
   ],
 ];
 
@@ -219,6 +237,10 @@ add_task({ skip_if: () => runningInParent }, async function run_child_stuff() {
 
   Glean.jogIpc.jogLabeledTimingDist.label1.stopAndAccumulate(l2); // 10ms
   Glean.jogIpc.jogLabeledTimingDist.label1.stopAndAccumulate(l3); // 5ms
+
+  Glean.jogIpc.jogUnorderedBool.set(true);
+
+  Glean.jogIpc.jogUnorderedLabeledBool.aLabel.set(true);
 });
 
 add_task(
@@ -347,5 +369,9 @@ add_task(
         0
       )
     );
+
+    Assert.ok(Glean.jogIpc.jogUnorderedBool.testGetValue());
+
+    Assert.ok(Glean.jogIpc.jogUnorderedLabeledBool.aLabel.testGetValue());
   }
 );

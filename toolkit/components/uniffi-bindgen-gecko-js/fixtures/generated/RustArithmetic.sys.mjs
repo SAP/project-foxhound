@@ -153,6 +153,20 @@ class ArrayBufferDataStream {
       this.pos += size;
       return value;
     }
+
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(value) {
+      this.writeUint32(value.length);
+      value.forEach((elt) => {
+        this.writeUint8(elt);
+      })
+    }
 }
 
 function handleRustResult(result, liftCallback, liftErrCallback) {
@@ -212,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -231,7 +276,7 @@ export class FfiConverterU64 extends FfiConverter {
             throw new UniFFITypeError(`${value} exceeds the U64 bounds`);
         }
     }
-    static computeSize() {
+    static computeSize(_value) {
         return 8;
     }
     static lift(value) {
@@ -250,7 +295,7 @@ export class FfiConverterU64 extends FfiConverter {
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterBool extends FfiConverter {
-    static computeSize() {
+    static computeSize(_value) {
         return 1;
     }
     static lift(value) {
@@ -307,9 +352,15 @@ export class FfiConverterString extends FfiConverter {
 
 
 
+/**
+ * ArithmeticError
+ */
 export class ArithmeticError extends Error {}
 
 
+/**
+ * INTEGER_OVERFLOW
+ */
 export class IntegerOverflow extends ArithmeticError {
 
     constructor(message, ...params) {
@@ -354,6 +405,10 @@ export class FfiConverterTypeArithmeticError extends FfiConverterArrayBuffer {
 
 
 
+/**
+ * add
+ * @returns {number}
+ */
 export function add(a,b) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -375,8 +430,8 @@ export function add(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                58, // arithmetic:uniffi_arithmetical_fn_func_add
+            return UniFFIScaffolding.callAsyncWrapper(
+                95, // arithmetic:uniffi_arithmetical_fn_func_add
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -388,6 +443,10 @@ export function add(a,b) {
         }
 }
 
+/**
+ * div
+ * @returns {number}
+ */
 export function div(dividend,divisor) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -409,8 +468,8 @@ export function div(dividend,divisor) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                59, // arithmetic:uniffi_arithmetical_fn_func_div
+            return UniFFIScaffolding.callAsyncWrapper(
+                96, // arithmetic:uniffi_arithmetical_fn_func_div
                 FfiConverterU64.lower(dividend),
                 FfiConverterU64.lower(divisor),
             )
@@ -422,6 +481,10 @@ export function div(dividend,divisor) {
         }
 }
 
+/**
+ * equal
+ * @returns {Boolean}
+ */
 export function equal(a,b) {
 
         const liftResult = (result) => FfiConverterBool.lift(result);
@@ -443,8 +506,8 @@ export function equal(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                60, // arithmetic:uniffi_arithmetical_fn_func_equal
+            return UniFFIScaffolding.callAsyncWrapper(
+                97, // arithmetic:uniffi_arithmetical_fn_func_equal
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )
@@ -456,6 +519,10 @@ export function equal(a,b) {
         }
 }
 
+/**
+ * sub
+ * @returns {number}
+ */
 export function sub(a,b) {
 
         const liftResult = (result) => FfiConverterU64.lift(result);
@@ -477,8 +544,8 @@ export function sub(a,b) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                61, // arithmetic:uniffi_arithmetical_fn_func_sub
+            return UniFFIScaffolding.callAsyncWrapper(
+                98, // arithmetic:uniffi_arithmetical_fn_func_sub
                 FfiConverterU64.lower(a),
                 FfiConverterU64.lower(b),
             )

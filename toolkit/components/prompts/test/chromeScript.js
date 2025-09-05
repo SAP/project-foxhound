@@ -136,6 +136,14 @@ function getPromptState(ui) {
       "ERROR: unexpected element focused: " + (e ? e.localName : "<null>");
   }
 
+  function checkIsExtra1Secondary() {
+    const buttonBox = ui.button1.parentNode;
+    const button1Index = Array.from(buttonBox.children).indexOf(ui.button1);
+    const button2Index = Array.from(buttonBox.children).indexOf(ui.button2);
+    return button1Index < button2Index;
+  }
+  state.isExtra1Secondary = checkIsExtra1Secondary();
+
   let treeOwner =
     ui.prompt && ui.prompt.docShell && ui.prompt.docShell.treeOwner;
   if (treeOwner && treeOwner.QueryInterface(Ci.nsIInterfaceRequestor)) {
@@ -204,12 +212,13 @@ function dismissPrompt(ui, action) {
     case 2:
       ui.button2.click();
       break;
-    case "ESC":
+    case "ESC": {
       // XXX This is assuming tab-modal.
       let browserWin = Services.wm.getMostRecentWindow("navigator:browser");
       EventUtils.synthesizeKey("KEY_Escape", {}, browserWin);
       break;
-    case "pollOK":
+    }
+    case "pollOK": {
       // Buttons are disabled at the moment, poll until they're reenabled.
       // Can't use setInterval here, because the window's in a modal state
       // and thus DOM events are suppressed.
@@ -221,6 +230,15 @@ function dismissPrompt(ui, action) {
         clearInterval(interval);
       }, 100);
       break;
+    }
+    case "abort_dialogs": {
+      let abortDialogEvent = new ui.prompt.CustomEvent("dialogclosing", {
+        bubbles: true,
+        detail: { abort: true },
+      });
+      ui.prompt.close(abortDialogEvent);
+      break;
+    }
     case "none":
       break;
 

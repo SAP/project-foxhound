@@ -3,7 +3,7 @@
 # file, # You can obtain one at http://mozilla.org/MPL/2.0/.
 
 import os
-from pathlib import PurePath
+from pathlib import Path, PurePath
 
 import sphinx
 import sphinx.ext.apidoc
@@ -18,7 +18,7 @@ from mozpack.manifests import InstallManifest
 here = os.path.abspath(os.path.dirname(__file__))
 build = MozbuildObject.from_environment(cwd=here)
 
-MAIN_DOC_PATH = os.path.normpath(os.path.join(build.topsrcdir, "docs"))
+MAIN_DOC_PATH = Path(build.topsrcdir) / "docs"
 
 logger = sphinx.util.logging.getLogger(__name__)
 
@@ -81,7 +81,7 @@ class _SphinxManager(object):
     NO_AUTODOC = False
 
     def __init__(self, topsrcdir, main_path):
-        self.topsrcdir = topsrcdir
+        self.topsrcdir = Path(topsrcdir)
         self.conf_py_path = os.path.join(main_path, "conf.py")
         self.index_path = os.path.join(main_path, "index.rst")
 
@@ -119,7 +119,12 @@ class _SphinxManager(object):
             dirs = {os.path.dirname(f[0]) for f in finder.find("**")}
 
             test_dirs = {"test", "tests"}
-            excludes = {d for d in dirs if set(PurePath(d).parts) & test_dirs}
+            # Exclude directories whose path components match any in 'test_dirs'.
+            excludes = {
+                os.path.join(full, d)
+                for d in dirs
+                if set(PurePath(d).parts) & test_dirs
+            }
 
             args = list(base_args)
             args.append(full)

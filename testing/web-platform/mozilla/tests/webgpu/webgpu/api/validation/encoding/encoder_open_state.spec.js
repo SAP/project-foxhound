@@ -79,6 +79,10 @@ const kEncoderCommandInfo =
 };
 const kEncoderCommands = keysOf(kEncoderCommandInfo);
 
+// MAINTENANCE_TODO: Remove multiDrawIndirect and multiDrawIndexedIndirect once https://github.com/gpuweb/gpuweb/pull/2315 is merged.
+
+
+
 
 const kRenderPassEncoderCommandInfo =
 
@@ -87,6 +91,8 @@ const kRenderPassEncoderCommandInfo =
   drawIndexed: {},
   drawIndexedIndirect: {},
   drawIndirect: {},
+  multiDrawIndexedIndirect: {},
+  multiDrawIndirect: {},
   setIndexBuffer: {},
   setBindGroup: {},
   setVertexBuffer: {},
@@ -169,29 +175,29 @@ beforeAllSubcases((t) => {
 fn((t) => {
   const { command, finishBeforeCommand } = t.params;
 
-  const srcBuffer = t.device.createBuffer({
+  const srcBuffer = t.createBufferTracked({
     size: 16,
     usage: GPUBufferUsage.COPY_SRC | GPUTextureUsage.COPY_DST
   });
-  const dstBuffer = t.device.createBuffer({
+  const dstBuffer = t.createBufferTracked({
     size: 16,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.QUERY_RESOLVE
   });
 
   const textureSize = { width: 1, height: 1 };
   const textureFormat = 'rgba8unorm';
-  const srcTexture = t.device.createTexture({
+  const srcTexture = t.createTextureTracked({
     size: textureSize,
     format: textureFormat,
     usage: GPUTextureUsage.COPY_SRC
   });
-  const dstTexture = t.device.createTexture({
+  const dstTexture = t.createTextureTracked({
     size: textureSize,
     format: textureFormat,
     usage: GPUTextureUsage.COPY_DST
   });
 
-  const querySet = t.device.createQuerySet({
+  const querySet = t.createQuerySetTracked({
     type: command === 'writeTimestamp' ? 'timestamp' : 'occlusion',
     count: 1
   });
@@ -298,14 +304,20 @@ combine('command', kRenderPassEncoderCommands).
 beginSubcases().
 combine('finishBeforeCommand', [false, true])
 ).
+beforeAllSubcases((t) => {
+  const { command } = t.params;
+  if (command === 'multiDrawIndirect' || command === 'multiDrawIndexedIndirect') {
+    t.selectDeviceOrSkipTestCase('chromium-experimental-multi-draw-indirect');
+  }
+}).
 fn((t) => {
   const { command, finishBeforeCommand } = t.params;
 
-  const querySet = t.device.createQuerySet({ type: 'occlusion', count: 1 });
+  const querySet = t.createQuerySetTracked({ type: 'occlusion', count: 1 });
   const encoder = t.device.createCommandEncoder();
   const renderPass = beginRenderPassWithQuerySet(t, encoder, querySet);
 
-  const buffer = t.device.createBuffer({
+  const buffer = t.createBufferTracked({
     size: 12,
     usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.VERTEX
   });
@@ -344,6 +356,18 @@ fn((t) => {
       case 'drawIndexedIndirect':
         {
           renderPass.drawIndexedIndirect(buffer, 0);
+        }
+        break;
+      case 'multiDrawIndirect':
+        {
+
+          renderPass.multiDrawIndirect(buffer, 0, 1);
+        }
+        break;
+      case 'multiDrawIndexedIndirect':
+        {
+
+          renderPass.multiDrawIndexedIndirect(buffer, 0, 1);
         }
         break;
       case 'setBindGroup':
@@ -436,7 +460,7 @@ combine('finishBeforeCommand', [false, true])
 fn((t) => {
   const { command, finishBeforeCommand } = t.params;
 
-  const buffer = t.device.createBuffer({
+  const buffer = t.createBufferTracked({
     size: 12,
     usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.VERTEX
   });
@@ -537,7 +561,7 @@ fn((t) => {
   const encoder = t.device.createCommandEncoder();
   const computePass = encoder.beginComputePass();
 
-  const indirectBuffer = t.device.createBuffer({
+  const indirectBuffer = t.createBufferTracked({
     size: 12,
     usage: GPUBufferUsage.INDIRECT
   });

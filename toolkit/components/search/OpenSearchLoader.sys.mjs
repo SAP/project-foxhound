@@ -48,18 +48,18 @@ const MOZSEARCH_LOCALNAME = "SearchPlugin";
  * @typedef {object} OpenSearchProperties
  * @property {string} name
  *   The display name of the engine.
- * @property {nsIURI} installURL
+ * @property {nsIURI} [installURL]
  *   The URL that the engine was initially loaded from.
  * @property {string} [description]
  *   The description of the engine.
  * @property {string} [queryCharset]
  *   The character set to use for encoding query values.
+ * @property {string} [searchForm]
+ *   Non-standard. The search form URL.
  * @property {string} [UpdateUrl]
  *   Non-standard. The update URL for the engine.
  * @property {number} [UpdateInterval]
  *   Non-standard. The update interval for the engine.
- * @property {string} [IconUpdateUrl]
- *   Non-standard. The update URL for the icon.
  * @property {OpenSearchURL[]} urls
  *   An array of URLs associated with the engine.
  * @property {OpenSearchImage[]} images
@@ -88,12 +88,8 @@ const MOZSEARCH_LOCALNAME = "SearchPlugin";
  * @typedef {object} OpenSearchImage
  * @property {string} url
  *   The source URL of the image.
- * @property {boolean} isPrefered
- *   If this image is of the preferred 16x16 size.
- * @property {width} width
- *   The reported width of the image.
- * @property {height} height
- *   The reported height of the image.
+ * @property {number} size
+ *   The reported width and height of the image.
  */
 
 /**
@@ -103,13 +99,12 @@ const MOZSEARCH_LOCALNAME = "SearchPlugin";
  *   The uri from which to load the OpenSearch engine data.
  * @param {string} [lastModified]
  *   The UTC date when the engine was last updated, if any.
- * @returns {OpenSearchProperties}
+ * @returns {Promise<OpenSearchProperties>}
  *   The properties of the loaded OpenSearch engine.
  */
 export async function loadAndParseOpenSearchEngine(sourceURI, lastModified) {
   if (!sourceURI) {
     throw Components.Exception(
-      sourceURI,
       "Must have URI when calling _install!",
       Cr.NS_ERROR_UNEXPECTED
     );
@@ -235,7 +230,7 @@ function parseXML(xmlData) {
  *   The properties of the OpenSearch engine.
  */
 function processXMLDocument(xmlDocument) {
-  let result = { urls: [], images: [] };
+  let result = { name: "", urls: [], images: [] };
 
   for (let i = 0; i < xmlDocument.children.length; ++i) {
     var child = xmlDocument.children[i];
@@ -269,14 +264,14 @@ function processXMLDocument(xmlDocument) {
         break;
 
       // Non-OpenSearch elements
+      case "SearchForm":
+        result.searchForm = child.textContent;
+        break;
       case "UpdateUrl":
         result.updateURL = child.textContent;
         break;
       case "UpdateInterval":
         result.updateInterval = parseInt(child.textContent);
-        break;
-      case "IconUpdateUrl":
-        result.iconUpdateURL = child.textContent;
         break;
     }
   }
@@ -358,27 +353,24 @@ function parseURL(element) {
 function parseImage(element) {
   let width = parseInt(element.getAttribute("width"), 10);
   let height = parseInt(element.getAttribute("height"), 10);
-  let isPrefered = width == 16 && height == 16;
 
-  if (isNaN(width) || isNaN(height) || width <= 0 || height <= 0) {
+  if (isNaN(width) || isNaN(height) || width <= 0 || width != height) {
     lazy.logConsole.warn(
-      "OpenSearch image element must have positive width and height."
+      "OpenSearch image element must have equal and positive width and height."
     );
     return null;
   }
 
   return {
     url: element.textContent,
-    isPrefered,
-    width,
-    height,
+    size: width,
   };
 }
 
 /**
  * Confirms if the document has the expected namespace.
  *
- * @param {DOMElement} element
+ * @param {Element} element
  *   The document to check.
  * @returns {boolean}
  *   True if the document matches the namespace.

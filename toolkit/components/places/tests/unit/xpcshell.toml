@@ -68,6 +68,8 @@ skip-if = ["os == 'linux'"] # Bug 821781
 
 ["test_PlacesUtils_isRootItem.js"]
 
+["test_PlacesUtils_unwrapNodes.js"]
+
 ["test_PlacesUtils_unwrapNodes_place.js"]
 
 ["test_asyncExecuteLegacyQueries.js"]
@@ -105,6 +107,12 @@ skip-if = ["os == 'linux'"] # Bug 821781
 ["test_childlessTags.js"]
 
 ["test_frecency_decay.js"]
+
+["test_frecency_interactions.js"]
+prefs = ["places.frecency.pages.alternative.featureGate=true"]
+
+["test_frecency_interactions_trigger_recalc.js"]
+prefs = ["places.frecency.pages.alternative.featureGate=true"]
 
 ["test_frecency_observers.js"]
 

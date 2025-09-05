@@ -60,16 +60,23 @@ def fetch_graph_and_labels(parameters, graph_config, task_group_id=None):
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
             except HTTPError as e:
-                if e.response.status_code != 404:  # type: ignore
+                if e.response.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 
-        namespace = "{}.v2.{}.pushlog-id.{}.actions".format(
+        # for backwards compatibility, look up actions via pushlog-id
+        pushlog_namespace = "{}.v2.{}.pushlog-id.{}.actions".format(
             graph_config["trust-domain"],
             parameters["project"],
             parameters["pushlog_id"],
         )
-        for task_id in list_tasks(namespace):
+        # ... but also look by revision, since github doesn't have pushlog-id
+        rev_namespace = "{}.v2.{}.revision.{}.actions".format(
+            graph_config["trust-domain"],
+            parameters["project"],
+            parameters["head_rev"],
+        )
+        for task_id in set(list_tasks(pushlog_namespace) + list_tasks(rev_namespace)):
             fetches.append(e.submit(fetch_action, task_id))
 
         # Similarly for cron tasks..
@@ -79,7 +86,7 @@ def fetch_graph_and_labels(parameters, graph_config, task_group_id=None):
                 run_label_to_id = get_artifact(task_id, "public/label-to-taskid.json")
                 label_to_taskid.update(run_label_to_id)
             except HTTPError as e:
-                if e.response.status_code != 404:  # type: ignore
+                if e.response.status_code != 404:
                     raise
                 logger.debug(f"No label-to-taskid.json found for {task_id}: {e}")
 
@@ -160,7 +167,8 @@ def create_tasks(
 
     target_graph = full_task_graph.graph.transitive_closure(to_run)
     target_task_graph = TaskGraph(
-        {l: modifier(full_task_graph[l]) for l in target_graph.nodes}, target_graph  # type: ignore
+        {l: modifier(full_task_graph[l]) for l in target_graph.nodes},
+        target_graph,
     )
     target_task_graph.for_each_task(update_parent)
     if decision_task_id and decision_task_id != os.environ.get("TASK_ID"):

@@ -9,9 +9,6 @@ const { ExperimentFakes, ExperimentTestUtils } = ChromeUtils.importESModule(
 const { TelemetryTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/TelemetryTestUtils.sys.mjs"
 );
-const { TelemetryEvents } = ChromeUtils.importESModule(
-  "resource://normandy/lib/TelemetryEvents.sys.mjs"
-);
 
 const LOCALIZATIONS = {
   "en-US": {
@@ -122,7 +119,6 @@ add_setup(function setup() {
   do_get_profile();
 
   Services.fog.initializeFOG();
-  TelemetryEvents.init();
 
   registerCleanupFunction(ExperimentTestUtils.addTestFeatures(FEATURE));
   registerCleanupFunction(resetTelemetry);
@@ -210,7 +206,6 @@ add_task(async function test_getLocalizedValue() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -219,6 +214,7 @@ add_task(async function test_getLocalizedValue() {
     branches: [
       {
         slug: "control",
+        ratio: 1,
         features: [
           {
             featureId: FEATURE_ID,
@@ -230,9 +226,8 @@ add_task(async function test_getLocalizedValue() {
     localizations: LOCALIZATIONS,
   });
 
-  const doExperimentCleanup = await ExperimentFakes.enrollmentHelper(
-    experiment
-  );
+  const doExperimentCleanup =
+    await ExperimentFakes.enrollmentHelper(experiment);
 
   const enrollment = manager.store.getExperimentForFeature(FEATURE_ID);
 
@@ -266,7 +261,6 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -275,6 +269,7 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     branches: [
       {
         slug: "control",
+        ratio: 1,
         features: [
           {
             featureId: FEATURE_ID,
@@ -310,7 +305,7 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     "Experiment should be unenrolled"
   );
 
-  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue("events");
   Assert.equal(gleanEvents.length, 1, "Should be one unenrollment event");
   Assert.equal(
     gleanEvents[0].extra.reason,
@@ -348,7 +343,6 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -357,6 +351,7 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     branches: [
       {
         slug: "control",
+        ratio: 1,
         features: [
           {
             featureId: FEATURE_ID,
@@ -394,7 +389,7 @@ add_task(async function test_getLocalizedValue_unenroll_missingEntry() {
     "Experiment should be unenrolled"
   );
 
-  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue("events");
   Assert.equal(gleanEvents.length, 1, "Should be one unenrollment event");
   Assert.equal(
     gleanEvents[0].extra.reason,
@@ -430,7 +425,6 @@ add_task(async function test_getVariables() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -439,6 +433,7 @@ add_task(async function test_getVariables() {
     branches: [
       {
         slug: "control",
+        ratio: 1,
         features: [
           {
             featureId: FEATURE_ID,
@@ -450,9 +445,8 @@ add_task(async function test_getVariables() {
     localizations: LOCALIZATIONS,
   });
 
-  const doExperimentCleanup = await ExperimentFakes.enrollmentHelper(
-    experiment
-  );
+  const doExperimentCleanup =
+    await ExperimentFakes.enrollmentHelper(experiment);
 
   Assert.deepEqual(
     FEATURE.getAllVariables(),
@@ -494,7 +488,6 @@ add_task(async function test_getVariables_fallback() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -513,6 +506,7 @@ add_task(async function test_getVariables_fallback() {
       branches: [
         {
           slug: "control",
+          ratio: 1,
           features: [
             {
               featureId: FEATURE_ID,
@@ -535,6 +529,7 @@ add_task(async function test_getVariables_fallback() {
       branches: [
         {
           slug: "control",
+          ratio: 1,
           features: [
             {
               featureId: FEATURE_ID,
@@ -719,7 +714,6 @@ add_task(async function test_getVariables_fallback_unenroll() {
   const manager = ExperimentFakes.manager();
 
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
 
   await manager.onStartup();
   await manager.store.ready();
@@ -746,6 +740,7 @@ add_task(async function test_getVariables_fallback_unenroll() {
       branches: [
         {
           slug: "control",
+          ratio: 1,
           features: [
             {
               featureId: FEATURE_ID,
@@ -764,6 +759,7 @@ add_task(async function test_getVariables_fallback_unenroll() {
       branches: [
         {
           slug: "control",
+          ratio: 1,
           features: [
             {
               featureId: FEATURE_ID,
@@ -803,7 +799,7 @@ add_task(async function test_getVariables_fallback_unenroll() {
     "Rollout should be unenrolled"
   );
 
-  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+  const gleanEvents = Glean.nimbusEvents.unenrollment.testGetValue("events");
   Assert.equal(gleanEvents.length, 2, "Should be two unenrollment events");
   Assert.equal(
     gleanEvents[0].extra.reason,
@@ -856,7 +852,6 @@ add_task(async function test_updateRecipes() {
 
   loader.manager = manager;
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
   sandbox.stub(manager, "onRecipe");
 
   const recipe = ExperimentFakes.recipe("foo", {
@@ -875,10 +870,9 @@ add_task(async function test_updateRecipes() {
     localizations: LOCALIZATIONS,
   });
 
-  await loader.init();
-
   await manager.onStartup();
   await manager.store.ready();
+  await loader.enable();
 
   sandbox
     .stub(loader.remoteSettingsClients.experiments, "get")
@@ -903,7 +897,6 @@ async function test_updateRecipes_missingLocale({
 
   loader.manager = manager;
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
   sandbox.stub(manager, "onRecipe");
   sandbox.spy(manager, "onFinalize");
 
@@ -924,17 +917,16 @@ async function test_updateRecipes_missingLocale({
     featureValidationOptOut,
   });
 
-  await loader.init();
-
   await manager.onStartup();
   await manager.store.ready();
+  await loader.enable();
 
   sandbox
     .stub(loader.remoteSettingsClients.experiments, "get")
     .resolves([recipe]);
   await loader.updateRecipes();
 
-  Assert.ok(!manager.onRecipe.called, "Did not enroll in the recipe");
+  Assert.ok(manager.onRecipe.notCalled, "Did not enroll in the recipe");
   Assert.ok(
     onFinalizeCalled(manager.onFinalize, "rs-loader", {
       recipeMismatches: [],
@@ -949,7 +941,8 @@ async function test_updateRecipes_missingLocale({
     "should call .onFinalize with missing locale"
   );
 
-  const gleanEvents = Glean.nimbusEvents.validationFailed.testGetValue();
+  const gleanEvents =
+    Glean.nimbusEvents.validationFailed.testGetValue("events");
   Assert.equal(gleanEvents.length, 1, "Should be one validationFailed event");
   Assert.equal(
     gleanEvents[0].extra.experiment,
@@ -991,7 +984,6 @@ add_task(async function test_updateRecipes_missingEntry() {
 
   loader.manager = manager;
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
   sandbox.stub(manager, "onRecipe");
   sandbox.spy(manager, "onFinalize");
 
@@ -1013,17 +1005,16 @@ add_task(async function test_updateRecipes_missingEntry() {
     },
   });
 
-  await loader.init();
-
   await manager.onStartup();
   await manager.store.ready();
+  await loader.enable();
 
   sandbox
     .stub(loader.remoteSettingsClients.experiments, "get")
     .resolves([recipe]);
   await loader.updateRecipes();
 
-  Assert.ok(!manager.onRecipe.called, "Did not enroll in the recipe");
+  Assert.ok(manager.onRecipe.notCalled, "Did not enroll in the recipe");
   Assert.ok(
     onFinalizeCalled(manager.onFinalize, "rs-loader", {
       recipeMismatches: [],
@@ -1038,7 +1029,8 @@ add_task(async function test_updateRecipes_missingEntry() {
     "should call .onFinalize with missing locale"
   );
 
-  const gleanEvents = Glean.nimbusEvents.validationFailed.testGetValue();
+  const gleanEvents =
+    Glean.nimbusEvents.validationFailed.testGetValue("events");
   Assert.equal(gleanEvents.length, 1, "Should be one validationFailed event");
   Assert.equal(
     gleanEvents[0].extra.experiment,
@@ -1104,7 +1096,6 @@ add_task(async function test_updateRecipes_unenroll_missingEntry() {
 
   loader.manager = manager;
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
   sandbox.spy(manager, "onRecipe");
   sandbox.spy(manager, "onFinalize");
   sandbox.spy(manager, "unenroll");
@@ -1125,10 +1116,9 @@ add_task(async function test_updateRecipes_unenroll_missingEntry() {
     localizations: LOCALIZATIONS,
   });
 
-  await loader.init();
-
   await manager.onStartup();
   await manager.store.ready();
+  await loader.enable();
 
   await ExperimentFakes.enrollmentHelper(recipe, { source: "rs-loader" });
   Assert.ok(
@@ -1168,7 +1158,7 @@ add_task(async function test_updateRecipes_unenroll_missingEntry() {
     "Should no longer be enrolled in the experiment"
   );
 
-  const unenrollEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+  const unenrollEvents = Glean.nimbusEvents.unenrollment.testGetValue("events");
   Assert.equal(unenrollEvents.length, 1, "Should be one unenroll event");
   Assert.equal(
     unenrollEvents[0].extra.experiment,
@@ -1182,7 +1172,7 @@ add_task(async function test_updateRecipes_unenroll_missingEntry() {
   );
 
   const validationFailedEvents =
-    Glean.nimbusEvents.validationFailed.testGetValue();
+    Glean.nimbusEvents.validationFailed.testGetValue("events");
   Assert.equal(
     validationFailedEvents.length,
     1,
@@ -1257,7 +1247,6 @@ add_task(async function test_updateRecipes_unenroll_missingLocale() {
 
   loader.manager = manager;
   sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
   sandbox.spy(manager, "onRecipe");
   sandbox.spy(manager, "onFinalize");
   sandbox.spy(manager, "unenroll");
@@ -1278,10 +1267,9 @@ add_task(async function test_updateRecipes_unenroll_missingLocale() {
     localizations: LOCALIZATIONS,
   });
 
-  await loader.init();
-
   await manager.onStartup();
   await manager.store.ready();
+  await loader.enable();
 
   await ExperimentFakes.enrollmentHelper(recipe, { source: "rs-loader" });
   Assert.ok(
@@ -1322,7 +1310,7 @@ add_task(async function test_updateRecipes_unenroll_missingLocale() {
     "Should no longer be enrolled in the experiment"
   );
 
-  const unenrollEvents = Glean.nimbusEvents.unenrollment.testGetValue();
+  const unenrollEvents = Glean.nimbusEvents.unenrollment.testGetValue("events");
   Assert.equal(unenrollEvents.length, 1, "Should be one unenroll event");
   Assert.equal(
     unenrollEvents[0].extra.experiment,
@@ -1336,7 +1324,7 @@ add_task(async function test_updateRecipes_unenroll_missingLocale() {
   );
 
   const validationFailedEvents =
-    Glean.nimbusEvents.validationFailed.testGetValue();
+    Glean.nimbusEvents.validationFailed.testGetValue("events");
   Assert.equal(
     validationFailedEvents.length,
     1,

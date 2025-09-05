@@ -16,7 +16,7 @@ use std::{
 
 use neqo_common::qwarn;
 
-use crate::packet::PacketNumber;
+use crate::{ecn, packet::PacketNumber};
 
 pub const MAX_PTO_COUNTS: usize = 16;
 
@@ -24,7 +24,6 @@ pub const MAX_PTO_COUNTS: usize = 16;
 #[cfg_attr(test, derive(PartialEq, Eq))]
 #[allow(clippy::module_name_repetitions)]
 pub struct FrameStats {
-    pub all: usize,
     pub ack: usize,
     pub largest_acknowledged: PacketNumber,
 
@@ -97,6 +96,34 @@ impl Debug for FrameStats {
     }
 }
 
+#[cfg(test)]
+impl FrameStats {
+    pub const fn all(&self) -> usize {
+        self.ack
+            + self.crypto
+            + self.stream
+            + self.reset_stream
+            + self.stop_sending
+            + self.ping
+            + self.padding
+            + self.max_streams
+            + self.streams_blocked
+            + self.max_data
+            + self.data_blocked
+            + self.max_stream_data
+            + self.stream_data_blocked
+            + self.new_connection_id
+            + self.retire_connection_id
+            + self.path_challenge
+            + self.path_response
+            + self.connection_close
+            + self.handshake_done
+            + self.new_token
+            + self.ack_frequency
+            + self.datagram
+    }
+}
+
 /// Datagram stats
 #[derive(Default, Clone)]
 #[allow(clippy::module_name_repetitions)]
@@ -112,7 +139,6 @@ pub struct DatagramStats {
 
 /// Connection statistics
 #[derive(Default, Clone)]
-#[allow(clippy::module_name_repetitions)]
 pub struct Stats {
     info: String,
 
@@ -142,6 +168,10 @@ pub struct Stats {
     pub pmtud_lost: usize,
     /// Number of times a path MTU changed unexpectedly.
     pub pmtud_change: usize,
+    /// MTU of the local interface used for the most recent path.
+    pub pmtud_iface_mtu: usize,
+    /// Probed PMTU of the current path.
+    pub pmtud_pmtu: usize,
 
     /// Whether the connection was resumed successfully.
     pub resumed: bool,
@@ -167,6 +197,23 @@ pub struct Stats {
     pub incoming_datagram_dropped: usize,
 
     pub datagram_tx: DatagramStats,
+
+    /// ECN path validation count, indexed by validation outcome.
+    pub ecn_path_validation: ecn::ValidationCount,
+    /// ECN counts for outgoing UDP datagrams, returned by remote through QUIC ACKs.
+    ///
+    /// Note: Given that QUIC ACKs only carry [`Ect0`], [`Ect1`] and [`Ce`], but
+    /// never [`NotEct`], the [`NotEct`] value will always be 0.
+    ///
+    /// See also <https://www.rfc-editor.org/rfc/rfc9000.html#section-19.3.2>.
+    ///
+    /// [`Ect0`]: neqo_common::tos::IpTosEcn::Ect0
+    /// [`Ect1`]: neqo_common::tos::IpTosEcn::Ect1
+    /// [`Ce`]: neqo_common::tos::IpTosEcn::Ce
+    /// [`NotEct`]: neqo_common::tos::IpTosEcn::NotEct
+    pub ecn_tx: ecn::Count,
+    /// ECN counts for incoming UDP datagrams, read from IP TOS header.
+    pub ecn_rx: ecn::Count,
 }
 
 impl Stats {
@@ -177,8 +224,8 @@ impl Stats {
     pub fn pkt_dropped(&mut self, reason: impl AsRef<str>) {
         self.dropped_rx += 1;
         qwarn!(
-            [self.info],
-            "Dropped received packet: {}; Total: {}",
+            "[{}] Dropped received packet: {}; Total: {}",
+            self.info,
             reason.as_ref(),
             self.dropped_rx
         );
@@ -216,14 +263,24 @@ impl Debug for Stats {
         )?;
         writeln!(
             f,
-            "  pmtud: {} sent {} acked {} lost {} change",
-            self.pmtud_tx, self.pmtud_ack, self.pmtud_lost, self.pmtud_change
+            "  pmtud: {} sent {} acked {} lost {} change {} iface_mtu {} pmtu",
+            self.pmtud_tx,
+            self.pmtud_ack,
+            self.pmtud_lost,
+            self.pmtud_change,
+            self.pmtud_iface_mtu,
+            self.pmtud_pmtu
         )?;
         writeln!(f, "  resumed: {}", self.resumed)?;
         writeln!(f, "  frames rx:")?;
         self.frame_rx.fmt(f)?;
         writeln!(f, "  frames tx:")?;
-        self.frame_tx.fmt(f)
+        self.frame_tx.fmt(f)?;
+        writeln!(
+            f,
+            "  ecn: {:?} for tx {:?} for rx {:?} path validation outcomes",
+            self.ecn_tx, self.ecn_rx, self.ecn_path_validation,
+        )
     }
 }
 

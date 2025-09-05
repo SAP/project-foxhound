@@ -50,9 +50,6 @@ add_setup(async function () {
           {
             url: "https://example.com/",
             isBlockable: true,
-            blockL10n: {
-              id: "urlbar-result-menu-dismiss-firefox-suggest",
-            },
           }
         ),
         // This ensures the result is sandwiched between the two history results
@@ -377,13 +374,13 @@ class TestProvider extends UrlbarTestUtils.TestProvider {
       {
         name: DISMISS_ONE_COMMAND,
         l10n: {
-          id: "firefox-suggest-weather-command-not-interested",
+          id: "firefox-suggest-command-not-interested",
         },
       },
       {
         name: DISMISS_ALL_COMMAND,
         l10n: {
-          id: "firefox-suggest-weather-command-not-interested",
+          id: "firefox-suggest-command-not-interested",
         },
       },
     ];

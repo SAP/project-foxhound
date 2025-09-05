@@ -62,6 +62,10 @@ namespace ios_adm {
 const UInt16 kFixedPlayoutDelayEstimate = 30;
 const UInt16 kFixedRecordDelayEstimate = 30;
 
+constexpr double kMsToSecond = 1.0 / 1000.0;
+constexpr double kSecondToMs = 1e3;
+constexpr int kHwLatencyUpdatePeriodSeconds = 5;
+
 using ios::CheckAndLogError;
 
 #if !defined(NDEBUG)
@@ -91,8 +95,11 @@ static void LogDeviceInfo() {
 }
 #endif  // !defined(NDEBUG)
 
-AudioDeviceIOS::AudioDeviceIOS(bool bypass_voice_processing)
+AudioDeviceIOS::AudioDeviceIOS(
+    bool bypass_voice_processing,
+    AudioDeviceModule::MutedSpeechEventHandler muted_speech_event_handler)
     : bypass_voice_processing_(bypass_voice_processing),
+      muted_speech_event_handler_(muted_speech_event_handler),
       audio_device_buffer_(nullptr),
       audio_unit_(nullptr),
       recording_(0),
@@ -102,9 +109,15 @@ AudioDeviceIOS::AudioDeviceIOS(bool bypass_voice_processing)
       is_interrupted_(false),
       has_configured_session_(false),
       num_detected_playout_glitches_(0),
+      total_playout_glitches_duration_ms_(0),
       last_playout_time_(0),
       num_playout_callbacks_(0),
-      last_output_volume_change_time_(0) {
+      last_output_volume_change_time_(0),
+      total_playout_samples_count_(0),
+      total_playout_samples_duration_ms_(0),
+      total_playout_delay_ms_(0),
+      hw_output_latency_(0),
+      last_hw_output_latency_update_sample_count_(0) {
   LOGI() << "ctor" << ios::GetCurrentThreadDescription()
          << ",bypass_voice_processing=" << bypass_voice_processing_;
   io_thread_checker_.Detach();
@@ -240,6 +253,7 @@ int32_t AudioDeviceIOS::StartPlayout() {
   playing_.store(1, std::memory_order_release);
   num_playout_callbacks_ = 0;
   num_detected_playout_glitches_ = 0;
+  total_playout_glitches_duration_ms_ = 0;
   return 0;
 }
 
@@ -257,11 +271,13 @@ int32_t AudioDeviceIOS::StopPlayout() {
 
   // Derive average number of calls to OnGetPlayoutData() between detected
   // audio glitches and add the result to a histogram.
+  int64_t num_detected_playout_glitches =
+      num_detected_playout_glitches_.load(std::memory_order_acquire);
   int average_number_of_playout_callbacks_between_glitches = 100000;
-  RTC_DCHECK_GE(num_playout_callbacks_, num_detected_playout_glitches_);
-  if (num_detected_playout_glitches_ > 0) {
+  RTC_DCHECK_GE(num_playout_callbacks_, num_detected_playout_glitches);
+  if (num_detected_playout_glitches > 0) {
     average_number_of_playout_callbacks_between_glitches =
-        num_playout_callbacks_ / num_detected_playout_glitches_;
+        num_playout_callbacks_ / num_detected_playout_glitches;
   }
   RTC_HISTOGRAM_COUNTS_100000("WebRTC.Audio.AveragePlayoutCallbacksBetweenGlitches",
                               average_number_of_playout_callbacks_between_glitches);
@@ -316,6 +332,7 @@ bool AudioDeviceIOS::Recording() const {
 }
 
 int32_t AudioDeviceIOS::PlayoutDelay(uint16_t& delayMS) const {
+  // TODO: Use the actual delay.
   delayMS = kFixedPlayoutDelayEstimate;
   return 0;
 }
@@ -462,19 +479,53 @@ OSStatus AudioDeviceIOS::OnGetPlayoutData(AudioUnitRenderActionFlags* flags,
       if (glitch_threshold < 120 && delta_time > 120) {
         RTCLog(@"Glitch warning is ignored. Probably caused by device switch.");
       } else {
-        thread_->PostTask(SafeTask(safety_, [this] { HandlePlayoutGlitchDetected(); }));
+        int64_t glitch_duration_ms = now_time - last_playout_time_;
+        thread_->PostTask(SafeTask(safety_, [this, glitch_duration_ms] {
+          HandlePlayoutGlitchDetected(glitch_duration_ms);
+        }));
       }
     }
   }
   last_playout_time_ = now_time;
+
+  uint16_t playout_delay_ms;
+  PlayoutDelay(playout_delay_ms);
+
+  if (last_hw_output_latency_update_sample_count_ >=
+      playout_parameters_.sample_rate() * kHwLatencyUpdatePeriodSeconds) {
+    // We update the hardware output latency every kHwLatencyUpdatePeriodSeconds seconds.
+    hw_output_latency_.store([RTC_OBJC_TYPE(RTCAudioSession) sharedInstance].outputLatency,
+                             std::memory_order_relaxed);
+    last_hw_output_latency_update_sample_count_ = 0;
+  }
+  double output_latency_ = hw_output_latency_.load(std::memory_order_relaxed) +
+      kMsToSecond * playout_parameters_.GetBufferSizeInMilliseconds();
 
   // Read decoded 16-bit PCM samples from WebRTC (using a size that matches
   // the native I/O audio unit) and copy the result to the audio buffer in the
   // `io_data` destination.
   fine_audio_buffer_->GetPlayoutData(
       rtc::ArrayView<int16_t>(static_cast<int16_t*>(audio_buffer->mData), num_frames),
-      kFixedPlayoutDelayEstimate);
+      playout_delay_ms);
+
+  last_hw_output_latency_update_sample_count_ += num_frames;
+  total_playout_samples_count_.fetch_add(num_frames, std::memory_order_relaxed);
+  total_playout_samples_duration_ms_.fetch_add(
+      num_frames * 1000 / playout_parameters_.sample_rate(), std::memory_order_relaxed);
+  total_playout_delay_ms_.fetch_add(output_latency_ * kSecondToMs * num_frames,
+                                    std::memory_order_relaxed);
   return noErr;
+}
+
+void AudioDeviceIOS::OnReceivedMutedSpeechActivity(AUVoiceIOSpeechActivityEvent event) {
+  RTCLog(@"Received muted speech activity %d.", event);
+  if (muted_speech_event_handler_ != 0) {
+    if (event == kAUVoiceIOSpeechActivityHasStarted) {
+      muted_speech_event_handler_(AudioDeviceModule::kMutedSpeechStarted);
+    } else if (event == kAUVoiceIOSpeechActivityHasEnded) {
+      muted_speech_event_handler_(AudioDeviceModule::kMutedSpeechEnded);
+    }
+  }
 }
 
 void AudioDeviceIOS::HandleInterruptionBegin() {
@@ -558,6 +609,8 @@ void AudioDeviceIOS::HandleSampleRateChange() {
          current_sample_rate,
          (unsigned long)current_frames_per_buffer);
 
+  hw_output_latency_.store(session.outputLatency, std::memory_order_relaxed);
+
   // Sample rate and buffer size are the same, no work to do.
   if (std::abs(current_sample_rate - new_sample_rate) <= DBL_EPSILON &&
       current_frames_per_buffer == new_frames_per_buffer) {
@@ -610,7 +663,7 @@ void AudioDeviceIOS::HandleSampleRateChange() {
   RTCLog(@"Successfully handled sample rate change.");
 }
 
-void AudioDeviceIOS::HandlePlayoutGlitchDetected() {
+void AudioDeviceIOS::HandlePlayoutGlitchDetected(uint64_t glitch_duration_ms) {
   RTC_DCHECK_RUN_ON(thread_);
   // Don't update metrics if we're interrupted since a "glitch" is expected
   // in this state.
@@ -626,9 +679,10 @@ void AudioDeviceIOS::HandlePlayoutGlitchDetected() {
     return;
   }
   num_detected_playout_glitches_++;
-  RTCLog(@"Number of detected playout glitches: %lld", num_detected_playout_glitches_);
+  total_playout_glitches_duration_ms_.fetch_add(glitch_duration_ms, std::memory_order_relaxed);
+  uint64_t glitch_count = num_detected_playout_glitches_.load(std::memory_order_acquire);
+  RTCLog(@"Number of detected playout glitches: %lld", glitch_count);
 
-  int64_t glitch_count = num_detected_playout_glitches_;
   dispatch_async(dispatch_get_main_queue(), ^{
     RTC_OBJC_TYPE(RTCAudioSession)* session = [RTC_OBJC_TYPE(RTCAudioSession) sharedInstance];
     [session notifyDidDetectPlayoutGlitch:glitch_count];
@@ -713,8 +767,9 @@ void AudioDeviceIOS::SetupAudioBuffersForActiveAudioSession() {
 
 bool AudioDeviceIOS::CreateAudioUnit() {
   RTC_DCHECK(!audio_unit_);
-
-  audio_unit_.reset(new VoiceProcessingAudioUnit(bypass_voice_processing_, this));
+  BOOL detect_mute_speech_ = (muted_speech_event_handler_ != 0);
+  audio_unit_.reset(
+      new VoiceProcessingAudioUnit(bypass_voice_processing_, detect_mute_speech_, this));
   if (!audio_unit_->Init()) {
     audio_unit_.reset();
     return false;
@@ -1030,13 +1085,20 @@ bool AudioDeviceIOS::MicrophoneIsInitialized() const {
 }
 
 int32_t AudioDeviceIOS::MicrophoneMuteIsAvailable(bool& available) {
-  available = false;
+  available = true;
   return 0;
 }
 
 int32_t AudioDeviceIOS::SetMicrophoneMute(bool enable) {
-  RTC_DCHECK_NOTREACHED() << "Not implemented";
-  return -1;
+  // Set microphone mute only if the audio unit is started.
+  if (audio_unit_ && audio_unit_->GetState() == VoiceProcessingAudioUnit::kStarted) {
+    BOOL result = audio_unit_->SetMicrophoneMute(enable);
+    if (!result) {
+      RTCLogError(@"Set microphone %s failed.", enable ? "mute" : "unmute");
+      return -1;
+    }
+  }
+  return 0;
 }
 
 int32_t AudioDeviceIOS::MicrophoneMute(bool& enabled) const {
@@ -1132,6 +1194,22 @@ int32_t AudioDeviceIOS::RecordingIsAvailable(bool& available) {
   available = true;
   return 0;
 }
+
+std::optional<AudioDeviceModule::Stats> AudioDeviceIOS::GetStats() const {
+  const uint64_t total_samples_count = total_playout_samples_count_.load(std::memory_order_acquire);
+
+  AudioDeviceModule::Stats playout_stats = {
+      .synthesized_samples_duration_s =
+          kMsToSecond * total_playout_glitches_duration_ms_.load(std::memory_order_acquire),
+      .synthesized_samples_events = num_detected_playout_glitches_.load(std::memory_order_acquire),
+      .total_samples_duration_s =
+          kMsToSecond * total_playout_samples_duration_ms_.load(std::memory_order_acquire),
+      .total_playout_delay_s =
+          kMsToSecond * total_playout_delay_ms_.load(std::memory_order_acquire),
+      .total_samples_count = total_samples_count,
+  };
+  return playout_stats;
+}  // namespace ios_adm
 
 }  // namespace ios_adm
 }  // namespace webrtc

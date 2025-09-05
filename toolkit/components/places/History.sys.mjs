@@ -1141,10 +1141,8 @@ var fetchAnnotatedPages = async function (db, annotations) {
   );
 
   for (let row of rows) {
-    let uri;
-    try {
-      uri = new URL(row.getResultByName("url"));
-    } catch (ex) {
+    let uri = URL.parse(row.getResultByName("url"));
+    if (!uri) {
       console.error("Invalid URL read from database in fetchAnnotatedPages");
       continue;
     }
@@ -1269,8 +1267,8 @@ var removeVisitsByFilter = async function (db, filter, onResult = null) {
     `SELECT v.id, place_id, visit_date / 1000 AS date, visit_type FROM moz_historyvisits v
              ${optionalJoin}
              WHERE ${conditions.join(" AND ")}${
-      args.limit ? " LIMIT :limit" : ""
-    }`,
+               args.limit ? " LIMIT :limit" : ""
+             }`,
     args,
     row => {
       let id = row.getResultByName("id");

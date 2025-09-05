@@ -229,7 +229,7 @@ MDefinition* MWasmBinaryBitwise::foldsTo(TempAllocator& alloc) {
       case SubOpcode::Or:
         return OnesOfType(alloc, type());
       case SubOpcode::Xor:
-        return MBitNot::New(alloc, argR);
+        return MBitNot::New(alloc, argR, type());
       default:
         MOZ_CRASH();
     }
@@ -243,7 +243,7 @@ MDefinition* MWasmBinaryBitwise::foldsTo(TempAllocator& alloc) {
       case SubOpcode::Or:
         return OnesOfType(alloc, type());
       case SubOpcode::Xor:
-        return MBitNot::New(alloc, argL);
+        return MBitNot::New(alloc, argL, type());
       default:
         MOZ_CRASH();
     }
@@ -763,23 +763,20 @@ MDefinition* MWasmUnsignedToFloat32::foldsTo(TempAllocator& alloc) {
   return this;
 }
 
-MWasmCallCatchable* MWasmCallCatchable::New(TempAllocator& alloc,
-                                            const wasm::CallSiteDesc& desc,
-                                            const wasm::CalleeDesc& callee,
-                                            const Args& args,
-                                            uint32_t stackArgAreaSizeUnaligned,
-                                            const MWasmCallTryDesc& tryDesc,
-                                            MDefinition* tableIndexOrRef) {
-  MOZ_ASSERT(tryDesc.inTry);
+MWasmCallCatchable* MWasmCallCatchable::New(
+    TempAllocator& alloc, const wasm::CallSiteDesc& desc,
+    const wasm::CalleeDesc& callee, const Args& args,
+    uint32_t stackArgAreaSizeUnaligned, uint32_t tryNoteIndex,
+    MBasicBlock* fallthroughBlock, MBasicBlock* prePadBlock,
+    MDefinition* tableAddressOrRef) {
+  MWasmCallCatchable* call = new (alloc)
+      MWasmCallCatchable(desc, callee, stackArgAreaSizeUnaligned, tryNoteIndex);
 
-  MWasmCallCatchable* call = new (alloc) MWasmCallCatchable(
-      desc, callee, stackArgAreaSizeUnaligned, tryDesc.tryNoteIndex);
+  call->setSuccessor(FallthroughBranchIndex, fallthroughBlock);
+  call->setSuccessor(PrePadBranchIndex, prePadBlock);
 
-  call->setSuccessor(FallthroughBranchIndex, tryDesc.fallthroughBlock);
-  call->setSuccessor(PrePadBranchIndex, tryDesc.prePadBlock);
-
-  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableIndexOrRef);
-  if (!call->initWithArgs(alloc, call, args, tableIndexOrRef)) {
+  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableAddressOrRef);
+  if (!call->initWithArgs(alloc, call, args, tableAddressOrRef)) {
     return nullptr;
   }
 
@@ -790,10 +787,12 @@ MWasmCallCatchable* MWasmCallCatchable::NewBuiltinInstanceMethodCall(
     TempAllocator& alloc, const wasm::CallSiteDesc& desc,
     const wasm::SymbolicAddress builtin, wasm::FailureMode failureMode,
     const ABIArg& instanceArg, const Args& args,
-    uint32_t stackArgAreaSizeUnaligned, const MWasmCallTryDesc& tryDesc) {
+    uint32_t stackArgAreaSizeUnaligned, uint32_t tryNoteIndex,
+    MBasicBlock* fallthroughBlock, MBasicBlock* prePadBlock) {
   auto callee = wasm::CalleeDesc::builtinInstanceMethod(builtin);
   MWasmCallCatchable* call = MWasmCallCatchable::New(
-      alloc, desc, callee, args, stackArgAreaSizeUnaligned, tryDesc, nullptr);
+      alloc, desc, callee, args, stackArgAreaSizeUnaligned, tryNoteIndex,
+      fallthroughBlock, prePadBlock, nullptr);
   if (!call) {
     return nullptr;
   }
@@ -807,12 +806,12 @@ MWasmCallCatchable* MWasmCallCatchable::NewBuiltinInstanceMethodCall(
 MWasmCallUncatchable* MWasmCallUncatchable::New(
     TempAllocator& alloc, const wasm::CallSiteDesc& desc,
     const wasm::CalleeDesc& callee, const Args& args,
-    uint32_t stackArgAreaSizeUnaligned, MDefinition* tableIndexOrRef) {
+    uint32_t stackArgAreaSizeUnaligned, MDefinition* tableAddressOrRef) {
   MWasmCallUncatchable* call =
       new (alloc) MWasmCallUncatchable(desc, callee, stackArgAreaSizeUnaligned);
 
-  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableIndexOrRef);
-  if (!call->initWithArgs(alloc, call, args, tableIndexOrRef)) {
+  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableAddressOrRef);
+  if (!call->initWithArgs(alloc, call, args, tableAddressOrRef)) {
     return nullptr;
   }
 
@@ -842,12 +841,12 @@ MWasmReturnCall* MWasmReturnCall::New(TempAllocator& alloc,
                                       const wasm::CalleeDesc& callee,
                                       const Args& args,
                                       uint32_t stackArgAreaSizeUnaligned,
-                                      MDefinition* tableIndexOrRef) {
+                                      MDefinition* tableAddressOrRef) {
   MWasmReturnCall* call =
       new (alloc) MWasmReturnCall(desc, callee, stackArgAreaSizeUnaligned);
 
-  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableIndexOrRef);
-  if (!call->initWithArgs(alloc, call, args, tableIndexOrRef)) {
+  MOZ_ASSERT_IF(callee.isTable() || callee.isFuncRef(), tableAddressOrRef);
+  if (!call->initWithArgs(alloc, call, args, tableAddressOrRef)) {
     return nullptr;
   }
 
@@ -964,4 +963,32 @@ MDefinition* MWasmRefIsSubtypeOfConcrete::foldsTo(TempAllocator& alloc) {
     return folded;
   }
   return this;
+}
+
+bool MWasmStructState::init() {
+  // Reserve the size for the number of fields.
+  return fields_.resize(
+      wasmStruct_->toWasmNewStructObject()->structType().fields_.length());
+}
+
+MWasmStructState* MWasmStructState::New(TempAllocator& alloc,
+                                        MDefinition* structObject) {
+  MWasmStructState* state = new (alloc) MWasmStructState(alloc, structObject);
+  if (!state->init()) {
+    return nullptr;
+  }
+  return state;
+}
+
+MWasmStructState* MWasmStructState::Copy(TempAllocator& alloc,
+                                         MWasmStructState* state) {
+  MDefinition* newWasmStruct = state->wasmStruct();
+  MWasmStructState* res = new (alloc) MWasmStructState(alloc, newWasmStruct);
+  if (!res || !res->init()) {
+    return nullptr;
+  }
+  for (size_t i = 0; i < state->numFields(); i++) {
+    res->setField(i, state->getField(i));
+  }
+  return res;
 }

@@ -49,7 +49,7 @@ pub use ffi::ffiserialize::FfiBufferElement;
 pub use ffi::*;
 pub use ffi_converter_traits::{
     ConvertError, FfiConverter, FfiConverterArc, HandleAlloc, Lift, LiftRef, LiftReturn, Lower,
-    LowerReturn,
+    LowerError, LowerReturn, TypeId,
 };
 pub use metadata::*;
 
@@ -64,13 +64,11 @@ pub mod deps {
     pub use static_assertions;
 }
 
-mod panichook;
-
 const PACKAGE_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 // For the significance of this magic number 10 here, and the reason that
 // it can't be a named constant, see the `check_compatible_version` function.
-static_assertions::const_assert!(PACKAGE_VERSION.as_bytes().len() < 10);
+static_assertions::const_assert!(PACKAGE_VERSION.len() < 10);
 
 /// Check whether the uniffi runtime version is compatible a given uniffi_bindgen version.
 ///
@@ -176,7 +174,7 @@ macro_rules! ffi_converter_rust_buffer_lift_and_lower {
             let mut buf = vec.as_slice();
             let value = <Self as $crate::FfiConverter<$uniffi_tag>>::try_read(&mut buf)?;
             match $crate::deps::bytes::Buf::remaining(&buf) {
-                0 => Ok(value),
+                0 => ::std::result::Result::Ok(value),
                 n => $crate::deps::anyhow::bail!(
                     "junk data left in buffer after lifting (count: {n})",
                 ),

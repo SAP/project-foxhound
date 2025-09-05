@@ -1,17 +1,23 @@
-use std::sync::Arc;
-
-use crate::{
-    binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
-    device::SHADER_STAGE_COUNT,
-    hal_api::HalApi,
-    pipeline::LateSizedBufferGroup,
-    resource::{Labeled, ResourceErrorIdent},
-};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 
 use arrayvec::ArrayVec;
 use thiserror::Error;
 
+use crate::{
+    binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
+    device::SHADER_STAGE_COUNT,
+    pipeline::LateSizedBufferGroup,
+    resource::{Labeled, ResourceErrorIdent},
+};
+
 mod compat {
+    use alloc::{
+        string::{String, ToString as _},
+        sync::{Arc, Weak},
+        vec::Vec,
+    };
+    use core::{num::NonZeroU32, ops::Range};
+
     use arrayvec::ArrayVec;
     use thiserror::Error;
     use wgt::{BindingType, ShaderStages};
@@ -19,13 +25,7 @@ mod compat {
     use crate::{
         binding_model::BindGroupLayout,
         error::MultiError,
-        hal_api::HalApi,
         resource::{Labeled, ParentDevice, ResourceErrorIdent},
-    };
-    use std::{
-        num::NonZeroU32,
-        ops::Range,
-        sync::{Arc, Weak},
     };
 
     pub(crate) enum Error {
@@ -38,12 +38,12 @@ mod compat {
     }
 
     #[derive(Debug, Clone)]
-    struct Entry<A: HalApi> {
-        assigned: Option<Arc<BindGroupLayout<A>>>,
-        expected: Option<Arc<BindGroupLayout<A>>>,
+    struct Entry {
+        assigned: Option<Arc<BindGroupLayout>>,
+        expected: Option<Arc<BindGroupLayout>>,
     }
 
-    impl<A: HalApi> Entry<A> {
+    impl Entry {
         fn empty() -> Self {
             Self {
                 assigned: None,
@@ -142,43 +142,38 @@ mod compat {
 
                         let mut errors = Vec::new();
 
-                        let mut expected_bgl_entries = expected_bgl.entries.iter();
-                        let mut assigned_bgl_entries = assigned_bgl.entries.iter();
-                        let zipped = crate::utils::ZipWithProperAdvance::new(
-                            &mut expected_bgl_entries,
-                            &mut assigned_bgl_entries,
-                        );
-
-                        for ((&binding, expected_entry), (_, assigned_entry)) in zipped {
-                            if assigned_entry.visibility != expected_entry.visibility {
-                                errors.push(EntryError::Visibility {
-                                    binding,
-                                    expected: expected_entry.visibility,
-                                    assigned: assigned_entry.visibility,
-                                });
-                            }
-                            if assigned_entry.ty != expected_entry.ty {
-                                errors.push(EntryError::Type {
-                                    binding,
-                                    expected: expected_entry.ty,
-                                    assigned: assigned_entry.ty,
-                                });
-                            }
-                            if assigned_entry.count != expected_entry.count {
-                                errors.push(EntryError::Count {
-                                    binding,
-                                    expected: expected_entry.count,
-                                    assigned: assigned_entry.count,
-                                });
+                        for (&binding, expected_entry) in expected_bgl.entries.iter() {
+                            if let Some(assigned_entry) = assigned_bgl.entries.get(binding) {
+                                if assigned_entry.visibility != expected_entry.visibility {
+                                    errors.push(EntryError::Visibility {
+                                        binding,
+                                        expected: expected_entry.visibility,
+                                        assigned: assigned_entry.visibility,
+                                    });
+                                }
+                                if assigned_entry.ty != expected_entry.ty {
+                                    errors.push(EntryError::Type {
+                                        binding,
+                                        expected: expected_entry.ty,
+                                        assigned: assigned_entry.ty,
+                                    });
+                                }
+                                if assigned_entry.count != expected_entry.count {
+                                    errors.push(EntryError::Count {
+                                        binding,
+                                        expected: expected_entry.count,
+                                        assigned: assigned_entry.count,
+                                    });
+                                }
+                            } else {
+                                errors.push(EntryError::ExtraExpected { binding });
                             }
                         }
 
-                        for (&binding, _) in expected_bgl_entries {
-                            errors.push(EntryError::ExtraExpected { binding });
-                        }
-
-                        for (&binding, _) in assigned_bgl_entries {
-                            errors.push(EntryError::ExtraAssigned { binding });
+                        for (&binding, _) in assigned_bgl.entries.iter() {
+                            if !expected_bgl.entries.contains_key(binding) {
+                                errors.push(EntryError::ExtraAssigned { binding });
+                            }
                         }
 
                         Err(Error::Incompatible {
@@ -197,29 +192,33 @@ mod compat {
     }
 
     #[derive(Debug, Default)]
-    pub(crate) struct BoundBindGroupLayouts<A: HalApi> {
-        entries: ArrayVec<Entry<A>, { hal::MAX_BIND_GROUPS }>,
+    pub(crate) struct BoundBindGroupLayouts {
+        entries: ArrayVec<Entry, { hal::MAX_BIND_GROUPS }>,
     }
 
-    impl<A: HalApi> BoundBindGroupLayouts<A> {
+    impl BoundBindGroupLayouts {
         pub fn new() -> Self {
             Self {
                 entries: (0..hal::MAX_BIND_GROUPS).map(|_| Entry::empty()).collect(),
             }
         }
-        fn make_range(&self, start_index: usize) -> Range<usize> {
+
+        pub fn num_valid_entries(&self) -> usize {
             // find first incompatible entry
-            let end = self
-                .entries
+            self.entries
                 .iter()
                 .position(|e| e.is_incompatible())
-                .unwrap_or(self.entries.len());
+                .unwrap_or(self.entries.len())
+        }
+
+        fn make_range(&self, start_index: usize) -> Range<usize> {
+            let end = self.num_valid_entries();
             start_index..end.max(start_index)
         }
 
         pub fn update_expectations(
             &mut self,
-            expectations: &[Arc<BindGroupLayout<A>>],
+            expectations: &[Arc<BindGroupLayout>],
         ) -> Range<usize> {
             let start_index = self
                 .entries
@@ -241,7 +240,7 @@ mod compat {
             self.make_range(start_index)
         }
 
-        pub fn assign(&mut self, index: usize, value: Arc<BindGroupLayout<A>>) -> Range<usize> {
+        pub fn assign(&mut self, index: usize, value: Arc<BindGroupLayout>) -> Range<usize> {
             self.entries[index].assigned = Some(value);
             self.make_range(index)
         }
@@ -253,6 +252,7 @@ mod compat {
                 .filter_map(|(i, e)| if e.is_active() { Some(i) } else { None })
         }
 
+        #[allow(clippy::result_large_err)]
         pub fn get_invalid(&self) -> Result<(), (usize, Error)> {
             for (index, entry) in self.entries.iter().enumerate() {
                 entry.check().map_err(|e| (index, e))?;
@@ -287,9 +287,9 @@ struct LateBufferBinding {
     bound_size: wgt::BufferAddress,
 }
 
-#[derive(Debug)]
-pub(super) struct EntryPayload<A: HalApi> {
-    pub(super) group: Option<Arc<BindGroup<A>>>,
+#[derive(Debug, Default)]
+pub(super) struct EntryPayload {
+    pub(super) group: Option<Arc<BindGroup>>,
     pub(super) dynamic_offsets: Vec<wgt::DynamicOffset>,
     late_buffer_bindings: Vec<LateBufferBinding>,
     /// Since `LateBufferBinding` may contain information about the bindings
@@ -297,18 +297,7 @@ pub(super) struct EntryPayload<A: HalApi> {
     pub(super) late_bindings_effective_count: usize,
 }
 
-impl<A: HalApi> Default for EntryPayload<A> {
-    fn default() -> Self {
-        Self {
-            group: None,
-            dynamic_offsets: Default::default(),
-            late_buffer_bindings: Default::default(),
-            late_bindings_effective_count: Default::default(),
-        }
-    }
-}
-
-impl<A: HalApi> EntryPayload<A> {
+impl EntryPayload {
     fn reset(&mut self) {
         self.group = None;
         self.dynamic_offsets.clear();
@@ -318,13 +307,13 @@ impl<A: HalApi> EntryPayload<A> {
 }
 
 #[derive(Debug, Default)]
-pub(super) struct Binder<A: HalApi> {
-    pub(super) pipeline_layout: Option<Arc<PipelineLayout<A>>>,
-    manager: compat::BoundBindGroupLayouts<A>,
-    payloads: [EntryPayload<A>; hal::MAX_BIND_GROUPS],
+pub(super) struct Binder {
+    pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
+    manager: compat::BoundBindGroupLayouts,
+    payloads: [EntryPayload; hal::MAX_BIND_GROUPS],
 }
 
-impl<A: HalApi> Binder<A> {
+impl Binder {
     pub(super) fn new() -> Self {
         Self {
             pipeline_layout: None,
@@ -342,9 +331,9 @@ impl<A: HalApi> Binder<A> {
 
     pub(super) fn change_pipeline_layout<'a>(
         &'a mut self,
-        new: &Arc<PipelineLayout<A>>,
+        new: &Arc<PipelineLayout>,
         late_sized_buffer_groups: &[LateSizedBufferGroup],
-    ) -> (usize, &'a [EntryPayload<A>]) {
+    ) -> (usize, &'a [EntryPayload]) {
         let old_id_opt = self.pipeline_layout.replace(new.clone());
 
         let mut bind_range = self.manager.update_expectations(&new.bind_group_layouts);
@@ -384,11 +373,9 @@ impl<A: HalApi> Binder<A> {
     pub(super) fn assign_group<'a>(
         &'a mut self,
         index: usize,
-        bind_group: &Arc<BindGroup<A>>,
+        bind_group: &Arc<BindGroup>,
         offsets: &[wgt::DynamicOffset],
-    ) -> &'a [EntryPayload<A>] {
-        log::trace!("\tBinding [{}] = group {}", index, bind_group.error_ident());
-
+    ) -> &'a [EntryPayload] {
         let payload = &mut self.payloads[index];
         payload.group = Some(bind_group.clone());
         payload.dynamic_offsets.clear();
@@ -418,11 +405,19 @@ impl<A: HalApi> Binder<A> {
         &self.payloads[bind_range]
     }
 
-    pub(super) fn list_active<'a>(&'a self) -> impl Iterator<Item = &'a Arc<BindGroup<A>>> + '_ {
+    pub(super) fn list_active<'a>(&'a self) -> impl Iterator<Item = &'a Arc<BindGroup>> + 'a {
         let payloads = &self.payloads;
         self.manager
             .list_active()
             .map(move |index| payloads[index].group.as_ref().unwrap())
+    }
+
+    #[cfg(feature = "indirect-validation")]
+    pub(super) fn list_valid<'a>(&'a self) -> impl Iterator<Item = (usize, &'a EntryPayload)> + 'a {
+        self.payloads
+            .iter()
+            .take(self.manager.num_valid_entries())
+            .enumerate()
     }
 
     pub(super) fn check_compatibility<T: Labeled>(

@@ -43,6 +43,9 @@ support-files = [
   "!/devtools/client/shared/test/shared-head.js",
   "!/devtools/client/shared/test/telemetry-test-helpers.js",
 ]
+prefs = [
+  "network.cookie.CHIPS.enabled=true",
+]
 
 ["browser_storage_basic.js"]
 
@@ -69,6 +72,7 @@ skip-if = ["win11_2009"] # Bug 1797751
 ["browser_storage_cookies_domain.js"]
 
 ["browser_storage_cookies_domain_port.js"]
+https_first_disabled = true
 
 ["browser_storage_cookies_edit.js"]
 
@@ -80,6 +84,8 @@ skip-if = ["win11_2009"] # Bug 1797751
 skip-if = [
   "os == 'linux' && debug && fission && socketprocess_networking", # high frequency intermittent
 ]
+
+["browser_storage_cookies_partitioned.js"]
 
 ["browser_storage_cookies_samesite.js"]
 skip-if = ["true"] # Bug 1448484 - sameSite1 is "Unset" - Got undefined, expected Unset
@@ -99,8 +105,6 @@ skip-if = ["a11y_checks"] # Bug 1858037 to investigate intermittent a11y_checks 
 tags = "usercontextid"
 
 ["browser_storage_dfpi.js"]
-
-["browser_storage_dfpi_always_partition_storage.js"]
 
 ["browser_storage_dynamic_updates_cookies.js"]
 
@@ -137,7 +141,10 @@ skip-if = [
 ]
 
 ["browser_storage_indexeddb_hide_internal_dbs.js"]
-skip-if = ["asan"] # Bug 1591064
+skip-if = [
+  "asan", # Bug 1591064
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1929421
+]
 
 ["browser_storage_indexeddb_navigation.js"]
 skip-if = [

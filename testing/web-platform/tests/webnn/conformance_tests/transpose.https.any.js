@@ -1,5 +1,5 @@
 // META: title=test WebNN API transpose operation
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -29,6 +29,29 @@ const getTransposePrecisionTolerance = (graphResources) => {
 
 const transposeTests = [
   {
+    'name': 'transpose float32 0D constant tensor default options',
+    'graph': {
+      'inputs': {
+        'transposeInput': {
+          'data': [-45.67443084716797],
+          'descriptor': {shape: [], dataType: 'float32'},
+          'constant': true
+        }
+      },
+      'operators': [{
+        'name': 'transpose',
+        'arguments': [{'input': 'transposeInput'}],
+        'outputs': 'transposeOutput'
+      }],
+      'expectedOutputs': {
+        'transposeOutput': {
+          'data': [-45.67443084716797],
+          'descriptor': {shape: [], dataType: 'float32'}
+        }
+      }
+    }
+  },
+  {
     'name': 'transpose float32 1D constant tensor default options',
     'graph': {
       'inputs': {
@@ -43,7 +66,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'},
+          'descriptor': {shape: [24], dataType: 'float32'},
           'constant': true
         }
       },
@@ -64,7 +87,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -84,7 +107,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -104,7 +127,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -124,7 +147,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -144,7 +167,7 @@ const transposeTests = [
             5.62217378616333,   38.466827392578125, -69.25324249267578,
             -84.74308776855469, -25.66281509399414, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [6, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [6, 4], dataType: 'float32'}
         }
       }
     }
@@ -164,7 +187,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -184,7 +207,7 @@ const transposeTests = [
             38.081748962402344,  -25.695144653320312, 92.8102798461914,
             -87.58920288085938,  -84.74308776855469,  2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 3, 2], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 3, 2], dataType: 'float32'}
         }
       }
     }
@@ -204,7 +227,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [1, 2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -224,7 +247,7 @@ const transposeTests = [
             38.081748962402344,  -25.695144653320312, 92.8102798461914,
             -87.58920288085938,  -84.74308776855469,  2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 3, 2, 1], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 3, 2, 1], dataType: 'float32'}
         }
       }
     }
@@ -244,7 +267,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [1, 2, 1, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 1, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -264,7 +287,7 @@ const transposeTests = [
             38.081748962402344,  -25.695144653320312, 92.8102798461914,
             -87.58920288085938,  -84.74308776855469,  2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 3, 1, 2, 1], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 3, 1, 2, 1], dataType: 'float32'}
         }
       }
     }
@@ -284,7 +307,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -305,7 +328,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -325,7 +348,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -346,7 +369,7 @@ const transposeTests = [
             5.62217378616333,   38.466827392578125, -69.25324249267578,
             -84.74308776855469, -25.66281509399414, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [6, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [6, 4], dataType: 'float32'}
         }
       }
     }
@@ -366,7 +389,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -388,7 +411,7 @@ const transposeTests = [
             38.081748962402344,  92.8102798461914,   -84.74308776855469,
             -25.695144653320312, -87.58920288085938, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [4, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 2, 3], dataType: 'float32'}
         }
       }
     }
@@ -408,7 +431,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [1, 2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -431,7 +454,7 @@ const transposeTests = [
             77.05838012695312,  -66.00990295410156,  57.46807861328125,
             38.466827392578125, -84.74308776855469,  2.1999382972717285
           ],
-          'descriptor': {'dimensions': [3, 4, 1, 2], 'dataType': 'float32'}
+          'descriptor': {shape: [3, 4, 1, 2], dataType: 'float32'}
         }
       }
     }
@@ -451,7 +474,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [1, 2, 1, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 1, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -474,7 +497,7 @@ const transposeTests = [
             99.46284484863281,   -87.58920288085938, -65.3779067993164,
             -66.00990295410156,  38.466827392578125, 2.1999382972717285
           ],
-          'descriptor': {'dimensions': [2, 3, 1, 4, 1], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 1, 4, 1], dataType: 'float32'}
         }
       }
     }
@@ -484,7 +507,7 @@ const transposeTests = [
 if (navigator.ml) {
   transposeTests.forEach((test) => {
     webnn_conformance_test(
-        buildGraphAndCompute, getTransposePrecisionTolerance, test);
+        buildAndExecuteGraph, getTransposePrecisionTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

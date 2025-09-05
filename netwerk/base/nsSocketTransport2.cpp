@@ -8,6 +8,8 @@
 
 #include "nsSocketTransport2.h"
 
+#include "MockNetworkLayer.h"
+#include "MockNetworkLayerController.h"
 #include "NSSErrorsService.h"
 #include "NetworkDataCountLayer.h"
 #include "QuicSocketControl.h"
@@ -863,7 +865,7 @@ nsresult nsSocketTransport::InitWithConnectedSocket(PRFileDesc* fd,
   }
   mPort = ntohs(port);
 
-  memcpy(&mNetAddr, addr, sizeof(NetAddr));
+  mNetAddr = *addr;
 
   mPollFlags = (PR_POLL_READ | PR_POLL_WRITE | PR_POLL_EXCEPT);
   mState = STATE_TRANSFERRING;
@@ -962,7 +964,7 @@ nsresult nsSocketTransport::ResolveHost() {
       // When not resolving mHost locally, we still want to ensure that
       // it only contains valid characters.  See bug 304904 for details.
       // Sometimes the end host is not yet known and mHost is *
-      if (!net_IsValidHostName(mHost) && !mHost.EqualsLiteral("*")) {
+      if (!net_IsValidDNSHost(mHost) && !mHost.EqualsLiteral("*")) {
         SOCKET_LOG(("  invalid hostname %s\n", mHost.get()));
         return NS_ERROR_UNKNOWN_HOST;
       }
@@ -1230,6 +1232,19 @@ nsresult nsSocketTransport::BuildSocket(PRFileDesc*& fd, bool& proxyTransparent,
   return rv;
 }
 
+static bool ShouldBlockAddress(const NetAddr& aAddr) {
+  if (!xpc::AreNonLocalConnectionsDisabled()) {
+    return false;
+  }
+
+  NetAddr overrideAddr;
+  bool hasOverride = FindNetAddrOverride(aAddr, overrideAddr);
+  const NetAddr& addrToCheck = hasOverride ? overrideAddr : aAddr;
+
+  return !(addrToCheck.IsIPAddrAny() || addrToCheck.IsIPAddrLocal() ||
+           addrToCheck.IsIPAddrShared() || addrToCheck.IsLoopbackAddr());
+}
+
 nsresult nsSocketTransport::InitiateSocket() {
   SOCKET_LOG(("nsSocketTransport::InitiateSocket [this=%p]\n", this));
   MOZ_ASSERT(OnSocketThread(), "not on socket thread");
@@ -1244,10 +1259,18 @@ nsresult nsSocketTransport::InitiateSocket() {
 
   // Since https://github.com/whatwg/fetch/pull/1763,
   // we need to disable access to 0.0.0.0 for non-test purposes
-  if (StaticPrefs::network_socket_ip_addr_any_disabled() &&
-      mNetAddr.IsIPAddrAny() && !mProxyTransparentResolvesHost) {
-    SOCKET_LOG(("connection refused NS_ERROR_CONNECTION_REFUSED\n"));
-    return NS_ERROR_CONNECTION_REFUSED;
+  if (mNetAddr.IsIPAddrAny() && !mProxyTransparentResolvesHost) {
+    if (StaticPrefs::network_socket_ip_addr_any_disabled()) {
+      mozilla::glean::networking::http_ip_addr_any_count
+          .Get("blocked_requests"_ns)
+          .Add(1);
+      SOCKET_LOG(("connection refused NS_ERROR_CONNECTION_REFUSED\n"));
+      return NS_ERROR_CONNECTION_REFUSED;
+    }
+
+    mozilla::glean::networking::http_ip_addr_any_count
+        .Get("not_blocked_requests"_ns)
+        .Add(1);
   }
 
   if (gIOService->IsOffline()) {
@@ -1263,9 +1286,7 @@ nsresult nsSocketTransport::InitiateSocket() {
     }
 #endif
 
-    if (NS_SUCCEEDED(mCondition) && xpc::AreNonLocalConnectionsDisabled() &&
-        !(mNetAddr.IsIPAddrAny() || mNetAddr.IsIPAddrLocal() ||
-          mNetAddr.IsIPAddrShared())) {
+    if (NS_SUCCEEDED(mCondition) && ShouldBlockAddress(mNetAddr)) {
       nsAutoCString ipaddr;
       RefPtr<nsNetAddr> netaddr = new nsNetAddr(&mNetAddr);
       netaddr->GetAddress(ipaddr);
@@ -1532,6 +1553,15 @@ nsresult nsSocketTransport::InitiateSocket() {
            this));
     }
   }
+  if (StaticPrefs::network_socket_attach_mock_network_layer() &&
+      xpc::AreNonLocalConnectionsDisabled()) {
+    if (NS_FAILED(AttachMockNetworkLayer(fd))) {
+      SOCKET_LOG(
+          ("nsSocketTransport::InitiateSocket "
+           "AttachMockNetworkLayer failed [this=%p]\n",
+           this));
+    }
+  }
 
   bool connectCalled = true;  // This is only needed for telemetry.
   status = PR_Connect(fd, &prAddr, NS_SOCKET_CONNECT_TIMEOUT);
@@ -1543,11 +1573,11 @@ nsresult nsSocketTransport::InitiateSocket() {
   if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
       connectStarted && connectCalled) {
     SendPRBlockingTelemetry(
-        connectStarted, Telemetry::PRCONNECT_BLOCKING_TIME_NORMAL,
-        Telemetry::PRCONNECT_BLOCKING_TIME_SHUTDOWN,
-        Telemetry::PRCONNECT_BLOCKING_TIME_CONNECTIVITY_CHANGE,
-        Telemetry::PRCONNECT_BLOCKING_TIME_LINK_CHANGE,
-        Telemetry::PRCONNECT_BLOCKING_TIME_OFFLINE);
+        connectStarted, glean::networking::prconnect_blocking_time_normal,
+        glean::networking::prconnect_blocking_time_shutdown,
+        glean::networking::prconnect_blocking_time_connectivity_change,
+        glean::networking::prconnect_blocking_time_link_change,
+        glean::networking::prconnect_blocking_time_offline);
   }
 
   if (status == PR_SUCCESS) {
@@ -1605,11 +1635,12 @@ nsresult nsSocketTransport::InitiateSocket() {
       if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
           connectStarted && connectCalled) {
         SendPRBlockingTelemetry(
-            connectStarted, Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_NORMAL,
-            Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_SHUTDOWN,
-            Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_CONNECTIVITY_CHANGE,
-            Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_LINK_CHANGE,
-            Telemetry::PRCONNECT_FAIL_BLOCKING_TIME_OFFLINE);
+            connectStarted,
+            glean::networking::prconnect_fail_blocking_time_normal,
+            glean::networking::prconnect_fail_blocking_time_shutdown,
+            glean::networking::prconnect_fail_blocking_time_connectivity_change,
+            glean::networking::prconnect_fail_blocking_time_link_change,
+            glean::networking::prconnect_fail_blocking_time_offline);
       }
 
       rv = ErrorAccordingToNSPR(code);
@@ -2151,11 +2182,13 @@ void nsSocketTransport::OnSocketReady(PRFileDesc* fd, int16_t outFlags) {
     if (gSocketTransportService->IsTelemetryEnabledAndNotSleepPhase() &&
         connectStarted) {
       SendPRBlockingTelemetry(
-          connectStarted, Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_NORMAL,
-          Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_SHUTDOWN,
-          Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_CONNECTIVITY_CHANGE,
-          Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_LINK_CHANGE,
-          Telemetry::PRCONNECTCONTINUE_BLOCKING_TIME_OFFLINE);
+          connectStarted,
+          glean::networking::prconnectcontinue_blocking_time_normal,
+          glean::networking::prconnectcontinue_blocking_time_shutdown,
+          glean::networking::
+              prconnectcontinue_blocking_time_connectivity_change,
+          glean::networking::prconnectcontinue_blocking_time_link_change,
+          glean::networking::prconnectcontinue_blocking_time_offline);
     }
 
     if (status == PR_SUCCESS) {
@@ -2586,7 +2619,7 @@ nsSocketTransport::GetPeerAddr(NetAddr* addr) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  memcpy(addr, &mNetAddr, sizeof(NetAddr));
+  *addr = mNetAddr;
   return NS_OK;
 }
 
@@ -2605,7 +2638,7 @@ nsSocketTransport::GetSelfAddr(NetAddr* addr) {
     return NS_ERROR_NOT_AVAILABLE;
   }
 
-  memcpy(addr, &mSelfAddr, sizeof(NetAddr));
+  *addr = mSelfAddr;
   return NS_OK;
 }
 
@@ -2619,8 +2652,7 @@ nsSocketTransport::Bind(NetAddr* aLocalAddr) {
     return NS_ERROR_FAILURE;
   }
 
-  mBindAddr = MakeUnique<NetAddr>();
-  memcpy(mBindAddr.get(), aLocalAddr, sizeof(NetAddr));
+  mBindAddr = MakeUnique<NetAddr>(*aLocalAddr);
 
   return NS_OK;
 }
@@ -3328,37 +3360,37 @@ void nsSocketTransport::CloseSocket(PRFileDesc* aFd, bool aTelemetryEnabled) {
 
   if (aTelemetryEnabled) {
     SendPRBlockingTelemetry(
-        closeStarted, Telemetry::PRCLOSE_TCP_BLOCKING_TIME_NORMAL,
-        Telemetry::PRCLOSE_TCP_BLOCKING_TIME_SHUTDOWN,
-        Telemetry::PRCLOSE_TCP_BLOCKING_TIME_CONNECTIVITY_CHANGE,
-        Telemetry::PRCLOSE_TCP_BLOCKING_TIME_LINK_CHANGE,
-        Telemetry::PRCLOSE_TCP_BLOCKING_TIME_OFFLINE);
+        closeStarted, glean::networking::prclose_tcp_blocking_time_normal,
+        glean::networking::prclose_tcp_blocking_time_shutdown,
+        glean::networking::prclose_tcp_blocking_time_connectivity_change,
+        glean::networking::prclose_tcp_blocking_time_link_change,
+        glean::networking::prclose_tcp_blocking_time_offline);
   }
 }
 
 void nsSocketTransport::SendPRBlockingTelemetry(
-    PRIntervalTime aStart, Telemetry::HistogramID aIDNormal,
-    Telemetry::HistogramID aIDShutdown,
-    Telemetry::HistogramID aIDConnectivityChange,
-    Telemetry::HistogramID aIDLinkChange, Telemetry::HistogramID aIDOffline) {
+    PRIntervalTime aStart,
+    const glean::impl::TimingDistributionMetric& aMetricNormal,
+    const glean::impl::TimingDistributionMetric& aMetricShutdown,
+    const glean::impl::TimingDistributionMetric& aMetricConnectivityChange,
+    const glean::impl::TimingDistributionMetric& aMetricLinkChange,
+    const glean::impl::TimingDistributionMetric& aMetricOffline) {
   PRIntervalTime now = PR_IntervalNow();
+  TimeDuration delta =
+      TimeDuration::FromMilliseconds(PR_IntervalToMilliseconds(now - aStart));
   if (gIOService->IsNetTearingDown()) {
-    Telemetry::Accumulate(aIDShutdown, PR_IntervalToMilliseconds(now - aStart));
-
+    aMetricShutdown.AccumulateRawDuration(delta);
   } else if (PR_IntervalToSeconds(now - gIOService->LastConnectivityChange()) <
              60) {
-    Telemetry::Accumulate(aIDConnectivityChange,
-                          PR_IntervalToMilliseconds(now - aStart));
+    aMetricConnectivityChange.AccumulateRawDuration(delta);
   } else if (PR_IntervalToSeconds(now - gIOService->LastNetworkLinkChange()) <
              60) {
-    Telemetry::Accumulate(aIDLinkChange,
-                          PR_IntervalToMilliseconds(now - aStart));
-
+    aMetricLinkChange.AccumulateRawDuration(delta);
   } else if (PR_IntervalToSeconds(now - gIOService->LastOfflineStateChange()) <
              60) {
-    Telemetry::Accumulate(aIDOffline, PR_IntervalToMilliseconds(now - aStart));
+    aMetricOffline.AccumulateRawDuration(delta);
   } else {
-    Telemetry::Accumulate(aIDNormal, PR_IntervalToMilliseconds(now - aStart));
+    aMetricNormal.AccumulateRawDuration(delta);
   }
 }
 

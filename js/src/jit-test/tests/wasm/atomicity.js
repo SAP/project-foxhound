@@ -1,6 +1,3 @@
-// |jit-test| skip-if: wasmExperimentalCompilePipelineEnabled()
-// TODO: temporarily skip lazy tiering to avoid a timeout
-
 // Test that wasm atomic operations implement correct mutual exclusion.
 //
 // We have several agents that attempt to hammer on a shared location with rmw
@@ -41,7 +38,7 @@ if (getCoreCount() < NUMAGENTS) {
 // too slow; avoid intermittent failures and timeouts.
 
 if (getBuildConfiguration("arm-simulator") || getBuildConfiguration("arm64-simulator") ||
-    getBuildConfiguration("mips32-simulator") || getBuildConfiguration("mips64-simulator"))
+    getBuildConfiguration("mips64-simulator"))
 {
     if (DEBUG > 0)
         print("Atomicity test disabled on simulator");

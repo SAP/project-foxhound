@@ -11,21 +11,38 @@
 #ifndef P2P_BASE_FAKE_ICE_TRANSPORT_H_
 #define P2P_BASE_FAKE_ICE_TRANSPORT_H_
 
+#include <cstddef>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "absl/algorithm/container.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
+#include "api/candidate.h"
 #include "api/ice_transport_interface.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
+#include "api/transport/enums.h"
 #include "api/units/time_delta.h"
+#include "p2p/base/candidate_pair_interface.h"
+#include "p2p/base/connection.h"
+#include "p2p/base/connection_info.h"
 #include "p2p/base/ice_transport_internal.h"
+#include "p2p/base/port.h"
+#include "p2p/base/transport_description.h"
+#include "rtc_base/async_packet_socket.h"
+#include "rtc_base/checks.h"
 #include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/logging.h"
 #include "rtc_base/network/received_packet.h"
+#include "rtc_base/network/sent_packet.h"
+#include "rtc_base/network_route.h"
+#include "rtc_base/socket.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
 
 namespace cricket {
@@ -46,6 +63,7 @@ class FakeIceTransport : public IceTransportInternal {
                                        : rtc::Thread::Current()) {
     RTC_DCHECK(network_thread_);
   }
+
   // Must be called either on the network thread, or after the network thread
   // has been shut down.
   ~FakeIceTransport() override {
@@ -147,10 +165,6 @@ class FakeIceTransport : public IceTransportInternal {
   // Fake IceTransportInternal implementation.
   const std::string& transport_name() const override { return name_; }
   int component() const override { return component_; }
-  uint64_t IceTiebreaker() const {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    return tiebreaker_;
-  }
   IceMode remote_ice_mode() const {
     RTC_DCHECK_RUN_ON(network_thread_);
     return remote_ice_mode_;
@@ -212,10 +226,6 @@ class FakeIceTransport : public IceTransportInternal {
     RTC_DCHECK_RUN_ON(network_thread_);
     return role_;
   }
-  void SetIceTiebreaker(uint64_t tiebreaker) override {
-    RTC_DCHECK_RUN_ON(network_thread_);
-    tiebreaker_ = tiebreaker;
-  }
   void SetIceParameters(const IceParameters& ice_params) override {
     RTC_DCHECK_RUN_ON(network_thread_);
     ice_parameters_ = ice_params;
@@ -248,6 +258,8 @@ class FakeIceTransport : public IceTransportInternal {
     ice_config_ = config;
   }
 
+  const IceConfig& config() const override { return ice_config_; }
+
   void AddRemoteCandidate(const Candidate& candidate) override {
     RTC_DCHECK_RUN_ON(network_thread_);
     remote_candidates_.push_back(candidate);
@@ -278,12 +290,11 @@ class FakeIceTransport : public IceTransportInternal {
     return true;
   }
 
-  absl::optional<int> GetRttEstimate() override { return absl::nullopt; }
+  std::optional<int> GetRttEstimate() override { return rtt_estimate_; }
 
   const Connection* selected_connection() const override { return nullptr; }
-  absl::optional<const CandidatePair> GetSelectedCandidatePair()
-      const override {
-    return absl::nullopt;
+  std::optional<const CandidatePair> GetSelectedCandidatePair() const override {
+    return std::nullopt;
   }
 
   // Fake PacketTransportInternal implementation.
@@ -310,19 +321,25 @@ class FakeIceTransport : public IceTransportInternal {
       return -1;
     }
 
-    send_packet_.AppendData(data, len);
-    if (!combine_outgoing_packets_ || send_packet_.size() > len) {
-      rtc::CopyOnWriteBuffer packet(std::move(send_packet_));
-      if (async_) {
-        network_thread_->PostDelayedTask(
-            SafeTask(task_safety_.flag(),
-                     [this, packet] {
-                       RTC_DCHECK_RUN_ON(network_thread_);
-                       FakeIceTransport::SendPacketInternal(packet);
-                     }),
-            TimeDelta::Millis(async_delay_ms_));
-      } else {
-        SendPacketInternal(packet);
+    if (packet_send_filter_func_ &&
+        packet_send_filter_func_(data, len, options, flags)) {
+      RTC_DLOG(LS_INFO) << name_ << ": dropping packet len=" << len
+                        << ", data[0]: " << static_cast<uint8_t>(data[0]);
+    } else {
+      send_packet_.AppendData(data, len);
+      if (!combine_outgoing_packets_ || send_packet_.size() > len) {
+        rtc::CopyOnWriteBuffer packet(std::move(send_packet_));
+        if (async_) {
+          network_thread_->PostDelayedTask(
+              SafeTask(task_safety_.flag(),
+                       [this, packet] {
+                         RTC_DCHECK_RUN_ON(network_thread_);
+                         FakeIceTransport::SendPacketInternal(packet);
+                       }),
+              TimeDelta::Millis(async_delay_ms_));
+        } else {
+          SendPacketInternal(packet);
+        }
       }
     }
     rtc::SentPacket sent_packet(options.packet_id, rtc::TimeMillis());
@@ -353,17 +370,49 @@ class FakeIceTransport : public IceTransportInternal {
     return last_sent_packet_;
   }
 
-  absl::optional<rtc::NetworkRoute> network_route() const override {
+  std::optional<rtc::NetworkRoute> network_route() const override {
     RTC_DCHECK_RUN_ON(network_thread_);
     return network_route_;
   }
-  void SetNetworkRoute(absl::optional<rtc::NetworkRoute> network_route) {
+  void SetNetworkRoute(std::optional<rtc::NetworkRoute> network_route) {
     RTC_DCHECK_RUN_ON(network_thread_);
     network_route_ = network_route;
     SendTask(network_thread_, [this] {
       RTC_DCHECK_RUN_ON(network_thread_);
       SignalNetworkRouteChanged(network_route_);
     });
+  }
+
+  // If `func` return TRUE means that packet will be dropped.
+  void set_packet_send_filter(
+      absl::AnyInvocable<bool(const char* data,
+                              size_t len,
+                              const rtc::PacketOptions& options,
+                              int /* flags */)> func) {
+    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DLOG(LS_INFO) << this << ": "
+                      << ((func == nullptr) ? "Clearing" : "Setting")
+                      << " packet send filter func";
+    packet_send_filter_func_ = std::move(func);
+  }
+
+  // If `func` return TRUE means that packet will be dropped.
+  void set_packet_recv_filter(
+      absl::AnyInvocable<bool(const rtc::CopyOnWriteBuffer& packet,
+                              uint32_t time_ms)> func) {
+    RTC_DCHECK_RUN_ON(network_thread_);
+    RTC_DLOG(LS_INFO) << this << ": "
+                      << ((func == nullptr) ? "Clearing" : "Setting")
+                      << " packet recv filter func";
+    packet_recv_filter_func_ = std::move(func);
+  }
+
+  void set_rtt_estimate(std::optional<int> value, bool set_async = false) {
+    rtt_estimate_ = value;
+    if (value && set_async) {
+      SetAsync(true);
+      SetAsyncDelay(*value / 2);
+    }
   }
 
  private:
@@ -393,8 +442,21 @@ class FakeIceTransport : public IceTransportInternal {
       RTC_EXCLUSIVE_LOCKS_REQUIRED(network_thread_) {
     if (dest_) {
       last_sent_packet_ = packet;
-      dest_->NotifyPacketReceived(rtc::ReceivedPacket::CreateFromLegacy(
-          packet.data(), packet.size(), rtc::TimeMicros()));
+      dest_->ReceivePacketInternal(packet);
+    }
+  }
+
+  void ReceivePacketInternal(const rtc::CopyOnWriteBuffer& packet) {
+    RTC_DCHECK_RUN_ON(network_thread_);
+    auto now = rtc::TimeMicros();
+    if (packet_recv_filter_func_ && packet_recv_filter_func_(packet, now)) {
+      RTC_DLOG(LS_INFO) << name_
+                        << ": dropping packet at receiver len=" << packet.size()
+                        << ", data[0]: "
+                        << static_cast<uint8_t>(packet.data()[0]);
+    } else {
+      NotifyPacketReceived(rtc::ReceivedPacket::CreateFromLegacy(
+          packet.data(), packet.size(), now));
     }
   }
 
@@ -406,14 +468,13 @@ class FakeIceTransport : public IceTransportInternal {
   Candidates remote_candidates_ RTC_GUARDED_BY(network_thread_);
   IceConfig ice_config_ RTC_GUARDED_BY(network_thread_);
   IceRole role_ RTC_GUARDED_BY(network_thread_) = ICEROLE_UNKNOWN;
-  uint64_t tiebreaker_ RTC_GUARDED_BY(network_thread_) = 0;
   IceParameters ice_parameters_ RTC_GUARDED_BY(network_thread_);
   IceParameters remote_ice_parameters_ RTC_GUARDED_BY(network_thread_);
   IceMode remote_ice_mode_ RTC_GUARDED_BY(network_thread_) = ICEMODE_FULL;
   size_t connection_count_ RTC_GUARDED_BY(network_thread_) = 0;
-  absl::optional<webrtc::IceTransportState> transport_state_
+  std::optional<webrtc::IceTransportState> transport_state_
       RTC_GUARDED_BY(network_thread_);
-  absl::optional<IceTransportState> legacy_transport_state_
+  std::optional<IceTransportState> legacy_transport_state_
       RTC_GUARDED_BY(network_thread_);
   IceGatheringState gathering_state_ RTC_GUARDED_BY(network_thread_) =
       kIceGatheringNew;
@@ -422,13 +483,20 @@ class FakeIceTransport : public IceTransportInternal {
   bool receiving_ RTC_GUARDED_BY(network_thread_) = false;
   bool combine_outgoing_packets_ RTC_GUARDED_BY(network_thread_) = false;
   rtc::CopyOnWriteBuffer send_packet_ RTC_GUARDED_BY(network_thread_);
-  absl::optional<rtc::NetworkRoute> network_route_
+  std::optional<rtc::NetworkRoute> network_route_
       RTC_GUARDED_BY(network_thread_);
   std::map<rtc::Socket::Option, int> socket_options_
       RTC_GUARDED_BY(network_thread_);
   rtc::CopyOnWriteBuffer last_sent_packet_ RTC_GUARDED_BY(network_thread_);
   rtc::Thread* const network_thread_;
   webrtc::ScopedTaskSafetyDetached task_safety_;
+  std::optional<int> rtt_estimate_;
+
+  // If filter func return TRUE means that packet will be dropped.
+  absl::AnyInvocable<bool(const char*, size_t, const rtc::PacketOptions&, int)>
+      packet_send_filter_func_ RTC_GUARDED_BY(network_thread_) = nullptr;
+  absl::AnyInvocable<bool(const rtc::CopyOnWriteBuffer&, uint64_t)>
+      packet_recv_filter_func_ RTC_GUARDED_BY(network_thread_) = nullptr;
 };
 
 class FakeIceTransportWrapper : public webrtc::IceTransportInterface {

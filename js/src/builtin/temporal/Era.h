@@ -4,6 +4,9 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+#ifndef builtin_temporal_Era_h
+#define builtin_temporal_Era_h
+
 #include "mozilla/Assertions.h"
 #include "mozilla/MathAlgorithms.h"
 
@@ -72,9 +75,6 @@ inline constexpr auto Ethiopian = {
     "incar"sv,
 };
 
-// Use "ethioaa" instead of "ethiopicaa".
-//
-// https://github.com/tc39/proposal-intl-era-monthcode/issues/17
 inline constexpr auto EthiopianInverse = {
     "ethioaa"sv,
     "ethiopic-amete-alem"sv,
@@ -294,3 +294,5 @@ constexpr EraYear CalendarEraYear(CalendarId id, int32_t year) {
 }
 
 }  // namespace js::temporal
+
+#endif /* builtin_temporal_Era_h */

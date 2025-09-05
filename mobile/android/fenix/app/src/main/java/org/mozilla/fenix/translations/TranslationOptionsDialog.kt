@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.translations
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -25,13 +26,13 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.concept.engine.translate.TranslationError
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.Divider
 import org.mozilla.fenix.compose.InfoCard
 import org.mozilla.fenix.compose.InfoType
 import org.mozilla.fenix.compose.SwitchWithLabel
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.theme.FirefoxTheme
 import java.util.Locale
@@ -211,7 +212,7 @@ fun getTranslationOptionsList(): List<TranslationSwitchItem> {
                 type = TranslationPageSettingsOption.AlwaysTranslateLanguage(),
                 textLabel = stringResource(
                     id = R.string.translation_option_bottom_sheet_always_translate_in_language,
-                    formatArgs = arrayOf(Locale("es").displayName),
+                    formatArgs = arrayOf(Locale.Builder().setLanguage("es").build().displayName),
                 ),
                 isChecked = false,
                 isEnabled = true,
@@ -223,7 +224,7 @@ fun getTranslationOptionsList(): List<TranslationSwitchItem> {
                 type = TranslationPageSettingsOption.NeverTranslateLanguage(),
                 textLabel = stringResource(
                     id = R.string.translation_option_bottom_sheet_never_translate_in_language,
-                    formatArgs = arrayOf(Locale("es").displayName),
+                    formatArgs = arrayOf(Locale.Builder().setLanguage("es").build().displayName),
                 ),
                 isChecked = true,
                 isEnabled = true,
@@ -246,7 +247,11 @@ fun getTranslationOptionsList(): List<TranslationSwitchItem> {
 @LightDarkPreview
 private fun TranslationSettingsPreview() {
     FirefoxTheme {
-        Column {
+        Column(
+            modifier = Modifier.background(
+                color = FirefoxTheme.colors.layer1,
+            ),
+        ) {
             TranslationOptionsDialog(
                 translationOptionsList = getTranslationOptionsList(),
                 showGlobalSettings = true,

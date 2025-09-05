@@ -60,11 +60,6 @@ export class DragChildContextBase {
   // dataTransfer?  Set as parameter to initialize.
   expectProtectedDataTransferAccess = false;
 
-  // Should events dragend events have access to the dataTransfer?  dragend
-  // access is also subject to expectProtectedDataTransferAccess.  Set as
-  // parameter to initialize.
-  expectProtectedDataTransferAccessDragendOnly = false;
-
   window = null;
 
   dragService = null;
@@ -169,7 +164,21 @@ export class DragChildContextBase {
 
   initializeElementInfo(aDragElementId) {
     this.dragElement = this.dragWindow.document.getElementById(aDragElementId);
-    this.ok(this.dragElement, "dragElement exists");
+    if (!this.dragElement) {
+      for (let shadowRoot of this.dragWindow.document.getConnectedShadowRoots()) {
+        if (shadowRoot.isUAWidget()) {
+          continue;
+        }
+
+        this.dragElement = shadowRoot.getElementById(aDragElementId);
+        if (this.dragElement) {
+          break;
+        }
+      }
+      this.ok(this.dragElement, "dragElement found in shadow DOM");
+    } else {
+      this.ok(this.dragElement, "dragElement found");
+    }
     let rect = this.dragElement.getBoundingClientRect();
     let rectStr =
       `left: ${rect.left}, top: ${rect.top}, ` +
@@ -232,49 +241,56 @@ export class DragChildContextBase {
       sandbox
     );
 
-    if (aEv.type == "dragstart") {
-      // Add some additional data to the DataTransfer so we can look for it
-      // as we get later events.
-      this.is(
-        getFromDataTransfer(),
-        "",
-        `[${aEv.type}]| DataTransfer didn't have kTestDataTransferType`
-      );
-      setInDataTransfer();
-      this.is(
-        getFromDataTransfer(),
-        kTestDataTransferData,
-        `[${aEv.type}]| Successfully added kTestDataTransferType to DataTransfer`
-      );
-    } else if (aEv.type == "drop") {
-      this.is(
-        getFromDataTransfer(),
-        kTestDataTransferData,
-        `[${aEv.type}]| Successfully read from DataTransfer`
-      );
-      clearDataTransfer();
-      this.is(
-        getFromDataTransfer(),
-        kTestDataTransferData,
-        `[${aEv.type}]| Properly failed to write to DataTransfer`
-      );
-    } else if (
-      aEv.type == "dragenter" ||
-      aEv.type == "dragover" ||
-      aEv.type == "dragleave" ||
-      aEv.type == "dragend"
-    ) {
-      let expectProtectedDataTransferAccess =
-        this.expectProtectedDataTransferAccess ||
-        (aEv.type == "dragend" &&
-          this.expectProtectedDataTransferAccessDragendOnly);
-      this.is(
-        getFromDataTransfer(),
-        expectProtectedDataTransferAccess ? kTestDataTransferData : "",
-        `[${aEv.type}]| ${
-          expectProtectedDataTransferAccess ? "Successfully" : "Unsuccessfully"
-        } read from DataTransfer`
-      );
+    try {
+      if (aEv.type == "dragstart") {
+        // Add some additional data to the DataTransfer so we can look for it
+        // as we get later events.
+        this.is(
+          getFromDataTransfer(),
+          "",
+          `[${aEv.type}]| DataTransfer didn't have kTestDataTransferType`
+        );
+        setInDataTransfer();
+        this.is(
+          getFromDataTransfer(),
+          kTestDataTransferData,
+          `[${aEv.type}]| Successfully added kTestDataTransferType to DataTransfer`
+        );
+      } else if (aEv.type == "drop") {
+        this.is(
+          getFromDataTransfer(),
+          kTestDataTransferData,
+          `[${aEv.type}]| Successfully read from DataTransfer`
+        );
+        try {
+          clearDataTransfer();
+          this.ok(false, "Writing to DataTransfer throws an exception");
+        } catch (ex) {
+          this.ok(true, "Got exception: " + ex);
+        }
+        this.is(
+          getFromDataTransfer(),
+          kTestDataTransferData,
+          `[${aEv.type}]| Properly failed to write to DataTransfer`
+        );
+      } else if (
+        aEv.type == "dragenter" ||
+        aEv.type == "dragover" ||
+        aEv.type == "dragleave" ||
+        aEv.type == "dragend"
+      ) {
+        this.is(
+          getFromDataTransfer(),
+          this.expectProtectedDataTransferAccess ? kTestDataTransferData : "",
+          `[${aEv.type}]| ${
+            this.expectProtectedDataTransferAccess
+              ? "Successfully"
+              : "Unsuccessfully"
+          } read from DataTransfer`
+        );
+      }
+    } catch (ex) {
+      this.ok(false, "Handler did not throw an uncaught exception: " + ex);
     }
 
     if (

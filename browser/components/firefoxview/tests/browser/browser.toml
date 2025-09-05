@@ -7,6 +7,7 @@ prefs = [
 ]
 
 ["browser_dragDrop_after_opening_fxViewTab.js"]
+skip-if = ["!headless"] # Bug 1936459
 
 ["browser_entrypoint_management.js"]
 
@@ -21,9 +22,7 @@ prefs = [
 ["browser_firefoxview_paused.js"]
 
 ["browser_firefoxview_search_telemetry.js"]
-skip-if = [
-   "os == 'linux' && os_version == '18.04' && !debug", # Bug 1880113
-]
+skip-if = ["os == 'linux' && os_version == '18.04' && processor == 'x86_64' && swgl"] # Bug 1880113
 
 ["browser_firefoxview_tab.js"]
 
@@ -45,8 +44,9 @@ skip-if = ["verify"] # Bug 1886017
 ["browser_opentabs_recency.js"]
 skip-if = [
   "os == 'mac'",
-  "os == 'linux'"
-] # macos times out, see bug 1857293, Bug 1875877 - frequent fails on linux.
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'",
+  "os == 'win' && opt",
+] # macos times out, see bug 1857293, Bug 1875877 - frequent fails on linux and windows opt
 
 ["browser_opentabs_search.js"]
 fail-if = ["a11y_checks"] # Bug 1850591 clicked moz-page-nav-button button is not focusable

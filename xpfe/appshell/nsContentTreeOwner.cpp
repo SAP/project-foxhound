@@ -287,16 +287,6 @@ nsContentTreeOwner::GetPersistence(bool* aPersistPosition, bool* aPersistSize,
 }
 
 NS_IMETHODIMP
-nsContentTreeOwner::GetTabCount(uint32_t* aResult) {
-  if (mAppWindow) {
-    return mAppWindow->GetTabCount(aResult);
-  }
-
-  *aResult = 0;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
 nsContentTreeOwner::GetHasPrimaryContent(bool* aResult) {
   NS_ENSURE_STATE(mAppWindow);
   return mAppWindow->GetHasPrimaryContent(aResult);
@@ -344,8 +334,7 @@ NS_IMETHODIMP nsContentTreeOwner::IsWindowModal(bool* _retval) {
 // nsContentTreeOwner::nsIBaseWindow
 //*****************************************************************************
 
-NS_IMETHODIMP nsContentTreeOwner::InitWindow(nativeWindow aParentNativeWindow,
-                                             nsIWidget* parentWidget, int32_t x,
+NS_IMETHODIMP nsContentTreeOwner::InitWindow(nsIWidget* parentWidget, int32_t x,
                                              int32_t y, int32_t cx,
                                              int32_t cy) {
   // Ignore wigdet parents for now.  Don't think those are a vaild thing to
@@ -446,18 +435,6 @@ NS_IMETHODIMP nsContentTreeOwner::GetParentWidget(nsIWidget** aParentWidget) {
 }
 
 NS_IMETHODIMP nsContentTreeOwner::SetParentWidget(nsIWidget* aParentWidget) {
-  NS_ASSERTION(false, "You can't call this");
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
-
-NS_IMETHODIMP nsContentTreeOwner::GetParentNativeWindow(
-    nativeWindow* aParentNativeWindow) {
-  NS_ENSURE_STATE(mAppWindow);
-  return mAppWindow->GetParentNativeWindow(aParentNativeWindow);
-}
-
-NS_IMETHODIMP nsContentTreeOwner::SetParentNativeWindow(
-    nativeWindow aParentNativeWindow) {
   NS_ASSERTION(false, "You can't call this");
   return NS_ERROR_NOT_IMPLEMENTED;
 }

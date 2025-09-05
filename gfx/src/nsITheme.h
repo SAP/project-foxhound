@@ -43,12 +43,8 @@ class IpcResourceUpdateQueue;
 
 // IID for the nsITheme interface
 // {7329f760-08cb-450f-8225-dae729096dec}
-#define NS_ITHEME_IID                                \
-  {                                                  \
-    0x7329f760, 0x08cb, 0x450f, {                    \
-      0x82, 0x25, 0xda, 0xe7, 0x29, 0x09, 0x6d, 0xec \
-    }                                                \
-  }
+#define NS_ITHEME_IID \
+  {0x7329f760, 0x08cb, 0x450f, {0x82, 0x25, 0xda, 0xe7, 0x29, 0x09, 0x6d, 0xec}}
 
 /**
  * nsITheme is a service that provides platform-specific native
@@ -158,8 +154,13 @@ class nsITheme : public nsISupports {
    * Get the preferred content-box size of a checkbox / radio button, in app
    * units.  Historically 9px.
    */
-  virtual nscoord GetCheckboxRadioPrefSize() {
-    return mozilla::CSSPixel::ToAppUnits(9);
+  virtual mozilla::CSSCoord GetCheckboxRadioPrefSize() {
+    return mozilla::CSSCoord(9.0f);
+  }
+
+  /** Get the border width of a checkbox / radio button. */
+  virtual mozilla::CSSCoord GetCheckboxRadioBorderWidth() {
+    return mozilla::CSSCoord(1.0f);
   }
 
   /**
@@ -171,22 +172,15 @@ class nsITheme : public nsISupports {
 
   enum Transparency { eOpaque = 0, eTransparent, eUnknownTransparency };
 
-  /**
-   * Returns what we know about the transparency of the widget.
-   */
+  /** Returns what we know about the transparency of the widget. */
   virtual Transparency GetWidgetTransparency(nsIFrame* aFrame,
                                              StyleAppearance aWidgetType) {
     return eUnknownTransparency;
   }
 
-  /**
-   * Sets |*aShouldRepaint| to indicate whether an attribute or content state
-   * change should trigger a repaint.  Call with null |aAttribute| (and
-   * null |aOldValue|) for content state changes.
-   */
-  NS_IMETHOD WidgetStateChanged(nsIFrame* aFrame, StyleAppearance aWidgetType,
-                                nsAtom* aAttribute, bool* aShouldRepaint,
-                                const nsAttrValue* aOldValue) = 0;
+  /** Returns whether an attribute change should trigger a repaint. */
+  virtual bool WidgetAttributeChangeRequiresRepaint(StyleAppearance,
+                                                    nsAtom* aAttribute) = 0;
 
   NS_IMETHOD ThemeChanged() = 0;
 

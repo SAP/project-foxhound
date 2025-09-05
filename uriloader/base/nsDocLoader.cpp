@@ -242,7 +242,7 @@ nsresult nsDocLoader::AddDocLoaderAsChildOfRoot(nsDocLoader* aDocLoader) {
 }
 
 // TODO: Convert this to MOZ_CAN_RUN_SCRIPT (bug 1415230)
-MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocLoader::Stop(void) {
+MOZ_CAN_RUN_SCRIPT_BOUNDARY NS_IMETHODIMP nsDocLoader::Stop() {
   nsresult rv = NS_OK;
 
   MOZ_LOG(gDocLoaderLog, LogLevel::Debug,
@@ -454,9 +454,8 @@ nsDocLoader::OnStartRequest(nsIRequest* request) {
       // Make sure that the document channel is null at this point...
       // (unless its been redirected)
       //
-      NS_ASSERTION(
-          (loadFlags & nsIChannel::LOAD_REPLACE) || !(mDocumentRequest.get()),
-          "Overwriting an existing document channel!");
+      NS_ASSERTION((loadFlags & nsIChannel::LOAD_REPLACE) || !mDocumentRequest,
+                   "Overwriting an existing document channel!");
 
       // This request is associated with the entire document...
       mDocumentRequest = request;
@@ -480,7 +479,7 @@ nsDocLoader::OnStartRequest(nsIRequest* request) {
                "mDocumentRequest MUST be set for the duration of a page load!");
 
   // This is the only way to catch document request start event after a redirect
-  // has occured without changing inherited Firefox behaviour significantly.
+  // has occurred without changing inherited Firefox behaviour significantly.
   // Problem description:
   // The combination of |STATE_START + STATE_IS_DOCUMENT| is only sent for
   // initial request (see |doStartDocumentLoad| call above).
@@ -1202,11 +1201,11 @@ NS_IMETHODIMP nsDocLoader::OnStatus(nsIRequest* aRequest, nsresult aStatus,
       }
     }
 
-    nsCOMPtr<nsIStringBundleService> sbs =
-        mozilla::components::StringBundle::Service();
-    if (!sbs) return NS_ERROR_FAILURE;
+    nsAutoString host;
+    host.Append(aStatusArg);
+
     nsAutoString msg;
-    nsresult rv = sbs->FormatStatusMessage(aStatus, aStatusArg, msg);
+    nsresult rv = FormatStatusMessage(aStatus, host, msg);
     if (NS_FAILED(rv)) return rv;
 
     // Keep around the message. In case a request finishes, we need to make sure
@@ -1239,6 +1238,76 @@ void nsDocLoader::ClearInternalProgress() {
   mCompletedTotalProgress = 0;
 
   mProgressStateFlags = nsIWebProgressListener::STATE_STOP;
+}
+
+/* static */
+mozilla::Maybe<nsLiteralCString> nsDocLoader::StatusCodeToL10nId(
+    nsresult aStatus) {
+  switch (aStatus) {
+    case NS_NET_STATUS_WRITING:
+      return mozilla::Some("network-connection-status-wrote"_ns);
+    case NS_NET_STATUS_READING:
+      return mozilla::Some("network-connection-status-read"_ns);
+    case NS_NET_STATUS_RESOLVING_HOST:
+      return mozilla::Some("network-connection-status-looking-up"_ns);
+    case NS_NET_STATUS_RESOLVED_HOST:
+      return mozilla::Some("network-connection-status-looked-up"_ns);
+    case NS_NET_STATUS_CONNECTING_TO:
+      return mozilla::Some("network-connection-status-connecting"_ns);
+    case NS_NET_STATUS_CONNECTED_TO:
+      return mozilla::Some("network-connection-status-connected"_ns);
+    case NS_NET_STATUS_TLS_HANDSHAKE_STARTING:
+      return mozilla::Some("network-connection-status-tls-handshake"_ns);
+    case NS_NET_STATUS_TLS_HANDSHAKE_ENDED:
+      return mozilla::Some(
+          "network-connection-status-tls-handshake-finished"_ns);
+    case NS_NET_STATUS_SENDING_TO:
+      return mozilla::Some("network-connection-status-sending-request"_ns);
+    case NS_NET_STATUS_WAITING_FOR:
+      return mozilla::Some("network-connection-status-waiting"_ns);
+    case NS_NET_STATUS_RECEIVING_FROM:
+      return mozilla::Some("network-connection-status-transferring-data"_ns);
+    default:
+      return mozilla::Nothing();
+  }
+}
+
+nsresult nsDocLoader::FormatStatusMessage(nsresult aStatus,
+                                          const nsAString& aHost,
+                                          nsAString& aRetVal) {
+  auto l10nId = StatusCodeToL10nId(aStatus);
+
+  if (!l10nId) {
+    return NS_ERROR_FAILURE;
+  }
+
+  nsAutoCString RetVal;
+  ErrorResult rv;
+  auto l10nArgs = dom::Optional<intl::L10nArgs>();
+  l10nArgs.Construct();
+
+  auto dirArg = l10nArgs.Value().Entries().AppendElement();
+  dirArg->mKey = "host";
+  dirArg->mValue.SetValue().SetAsUTF8String().Assign(
+      NS_ConvertUTF16toUTF8(aHost));
+
+  // Handle mL10n (necko.ftl) on demand
+  if (!mL10n) {
+    nsTArray<nsCString> resIds = {
+        "netwerk/necko.ftl"_ns,
+    };
+    mL10n = mozilla::intl::Localization::Create(resIds, true);
+  }
+  MOZ_LOG(gDocLoaderLog, LogLevel::Debug,
+          ("DocLoader:%p: FormatStatusMessage, [mL10n=%d]\n", this, !!mL10n));
+  MOZ_RELEASE_ASSERT(mL10n);
+
+  mL10n->FormatValueSync(*l10nId, l10nArgs, RetVal, rv);
+  aRetVal = NS_ConvertUTF8toUTF16(RetVal);
+  if (rv.Failed()) {
+    return rv.StealNSResult();
+  }
+  return NS_OK;
 }
 
 /**

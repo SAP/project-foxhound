@@ -18,6 +18,7 @@
 #include "nss.h"
 #include "pk11pub.h"
 
+#include "nsFmtString.h"
 #include "nsNetCID.h"
 #include "nsILoadContext.h"
 #include "nsEffectiveTLDService.h"
@@ -31,6 +32,7 @@
 #include "libwebrtcglue/AudioConduit.h"
 #include "libwebrtcglue/VideoConduit.h"
 #include "libwebrtcglue/WebrtcCallWrapper.h"
+#include "libwebrtcglue/WebrtcEnvironmentWrapper.h"
 #include "MediaTrackGraph.h"
 #include "transport/runnable_utils.h"
 #include "IPeerConnection.h"
@@ -53,6 +55,8 @@
 #include "mozilla/IntegerPrintfMacros.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/StaticPrefs_media.h"
+#include "mozilla/glean/DomMediaWebrtcMetrics.h"
+#include "mozilla/media/MediaUtils.h"
 
 #ifdef XP_WIN
 // We need to undef the MS macro for Document::CreateEvent
@@ -68,7 +72,7 @@
 #include "mozilla/dom/Promise.h"
 #include "mozilla/NullPrincipal.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomMediaWebrtcMetrics.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/PublicSSL.h"
 #include "nsXULAppAPI.h"
@@ -138,6 +142,9 @@
 
 using namespace mozilla;
 using namespace mozilla::dom;
+using glean::webrtc_signaling::AudioMsectionNegotiatedExtra;
+using glean::webrtc_signaling::SdpNegotiatedExtra;
+using glean::webrtc_signaling::VideoMsectionNegotiatedExtra;
 
 typedef PCObserverString ObString;
 
@@ -236,14 +243,11 @@ void PeerConnectionAutoTimer::UnregisterConnection(bool aContainedAV) {
   mRefCnt--;
   mUsedAV |= aContainedAV;
   if (mRefCnt == 0) {
+    TimeDuration sample = TimeStamp::Now() - mStart;
     if (mUsedAV) {
-      Telemetry::Accumulate(
-          Telemetry::WEBRTC_AV_CALL_DURATION,
-          static_cast<uint32_t>((TimeStamp::Now() - mStart).ToSeconds()));
+      glean::webrtc::av_call_duration.AccumulateRawDuration(sample);
     }
-    Telemetry::Accumulate(
-        Telemetry::WEBRTC_CALL_DURATION,
-        static_cast<uint32_t>((TimeStamp::Now() - mStart).ToSeconds()));
+    glean::webrtc::call_duration.AccumulateRawDuration(sample);
   }
 }
 
@@ -396,9 +400,9 @@ PeerConnectionImpl::PeerConnectionImpl(const GlobalObject* aGlobal)
                                              mEffectiveTLDPlus1);
       }
 
-      mRtxIsAllowed = !HostnameInPref(
+      mRtxIsAllowed = !media::HostnameInPref(
           "media.peerconnection.video.use_rtx.blocklist", mHostname);
-      mDuplicateFingerprintQuirk = HostnameInPref(
+      mDuplicateFingerprintQuirk = media::HostnameInPref(
           "media.peerconnection.sdp.quirk.duplicate_fingerprint.allowlist",
           mHostname);
     }
@@ -453,9 +457,9 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
 
   // We do callback handling on STS instead of main to avoid media jank.
   // Someday, we may have a dedicated thread for this.
-  mTransportHandler = MediaTransportHandler::Create(mSTSThread);
+  RefPtr transportHandler = MediaTransportHandler::Create(mSTSThread);
   if (mPrivateWindow) {
-    mTransportHandler->EnterPrivateMode();
+    transportHandler->EnterPrivateMode();
   }
 
   // Initialize NSS if we are in content process. For chrome process, NSS should
@@ -482,11 +486,8 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   nsAutoCString locationCStr;
 
   RefPtr<Location> location = mWindow->Location();
-  nsAutoString locationAStr;
-  res = location->ToString(locationAStr);
+  res = location->GetHref(locationCStr);
   NS_ENSURE_SUCCESS(res, res);
-
-  CopyUTF16toUTF8(locationAStr, locationCStr);
 
   SprintfLiteral(temp, "%s %" PRIu64 " (id=%" PRIu64 " url=%s)",
                  mHandle.c_str(), static_cast<uint64_t>(timestamp),
@@ -499,6 +500,10 @@ nsresult PeerConnectionImpl::Initialize(PeerConnectionObserver& aObserver,
   res = PeerConnectionCtx::InitializeGlobal();
   NS_ENSURE_SUCCESS(res, res);
 
+  // Only set mTransportHandler here, after the NS_ENSURE_ exit guards, to not
+  // leave it in an unusable state -- CreateIceCtx must have been called for
+  // other calls to work.
+  mTransportHandler = std::move(transportHandler);
   mTransportHandler->CreateIceCtx("PC:" + GetName());
 
   mJsepSession =
@@ -602,31 +607,30 @@ RefPtr<DtlsIdentity> PeerConnectionImpl::Identity() const {
 
 class CompareCodecPriority {
  public:
-  void SetPreferredCodec(int32_t preferredCodec) {
-    // This pref really ought to be a string, preferably something like
-    // "H264" or "VP8" instead of a payload type.
-    // Bug 1101259.
-    std::ostringstream os;
-    os << preferredCodec;
-    mPreferredCodec = os.str();
+  void SetPreferredCodec(const nsCString& preferredCodec) {
+    mPreferredCodec = preferredCodec;
   }
 
   bool operator()(const UniquePtr<JsepCodecDescription>& lhs,
                   const UniquePtr<JsepCodecDescription>& rhs) const {
-    if (!mPreferredCodec.empty() && lhs->mDefaultPt == mPreferredCodec &&
-        rhs->mDefaultPt != mPreferredCodec) {
-      return true;
+    // Do we have a preferred codec?
+    if (!mPreferredCodec.IsEmpty()) {
+      const bool lhsMatches = mPreferredCodec.EqualsIgnoreCase(lhs->mName) ||
+                              mPreferredCodec.EqualsIgnoreCase(lhs->mDefaultPt);
+      const bool rhsMatches = mPreferredCodec.EqualsIgnoreCase(rhs->mName) ||
+                              mPreferredCodec.EqualsIgnoreCase(rhs->mDefaultPt);
+      // If the only the left side matches, prefer it
+      if (lhsMatches && !rhsMatches) {
+        return true;
+      }
     }
-
-    if (lhs->mStronglyPreferred && !rhs->mStronglyPreferred) {
-      return true;
-    }
-
-    return false;
+    // If only the left side is strongly preferred, prefer it
+    return (lhs->mStronglyPreferred && !rhs->mStronglyPreferred);
   }
 
  private:
-  std::string mPreferredCodec;
+  // The preferred codec name or PT number
+  nsCString mPreferredCodec;
 };
 
 class ConfigureCodec {
@@ -637,6 +641,7 @@ class ConfigureCodec {
         mH264Enabled(false),
         mVP9Enabled(true),
         mVP9Preferred(false),
+        mAV1Enabled(StaticPrefs::media_webrtc_codec_video_av1_enabled()),
         mH264Level(13),   // minimum suggested for WebRTC spec
         mH264MaxBr(0),    // Unlimited
         mH264MaxMbps(0),  // Unlimited
@@ -650,17 +655,25 @@ class ConfigureCodec {
     mSoftwareH264Enabled = PeerConnectionCtx::GetInstance()->gmpHasH264();
 
     if (WebrtcVideoConduit::HasH264Hardware()) {
-      Telemetry::Accumulate(Telemetry::WEBRTC_HAS_H264_HARDWARE, true);
+      glean::webrtc::has_h264_hardware
+          .EnumGet(glean::webrtc::HasH264HardwareLabel::eTrue)
+          .Add();
       branch->GetBoolPref("media.webrtc.hw.h264.enabled",
                           &mHardwareH264Enabled);
     }
 
     mH264Enabled = mHardwareH264Enabled || mSoftwareH264Enabled;
-    Telemetry::Accumulate(Telemetry::WEBRTC_SOFTWARE_H264_ENABLED,
-                          mSoftwareH264Enabled);
-    Telemetry::Accumulate(Telemetry::WEBRTC_HARDWARE_H264_ENABLED,
-                          mHardwareH264Enabled);
-    Telemetry::Accumulate(Telemetry::WEBRTC_H264_ENABLED, mH264Enabled);
+    glean::webrtc::software_h264_enabled
+        .EnumGet(static_cast<glean::webrtc::SoftwareH264EnabledLabel>(
+            mSoftwareH264Enabled))
+        .Add();
+    glean::webrtc::hardware_h264_enabled
+        .EnumGet(static_cast<glean::webrtc::HardwareH264EnabledLabel>(
+            mHardwareH264Enabled))
+        .Add();
+    glean::webrtc::h264_enabled
+        .EnumGet(static_cast<glean::webrtc::H264EnabledLabel>(mH264Enabled))
+        .Add();
 
     branch->GetIntPref("media.navigator.video.h264.level", &mH264Level);
     mH264Level &= 0xFF;
@@ -751,6 +764,8 @@ class ConfigureCodec {
           }
           videoCodec.mConstraints.maxFs = mVP8MaxFs;
           videoCodec.mConstraints.maxFps = Some(mVP8MaxFr);
+        } else if (videoCodec.mName == "AV1") {
+          videoCodec.mEnabled = mAV1Enabled;
         }
 
         if (mUseTmmbr) {
@@ -776,6 +791,7 @@ class ConfigureCodec {
   bool mH264Enabled;
   bool mVP9Enabled;
   bool mVP9Preferred;
+  bool mAV1Enabled;
   int32_t mH264Level;
   int32_t mH264MaxBr;
   int32_t mH264MaxMbps;
@@ -810,15 +826,10 @@ nsresult PeerConnectionImpl::ConfigureJsepSessionCodecs() {
 
   // We use this to sort the list of codecs once everything is configured
   CompareCodecPriority comparator;
-
-  // Sort by priority
-  int32_t preferredCodec = 0;
-  branch->GetIntPref("media.navigator.video.preferred_codec", &preferredCodec);
-
-  if (preferredCodec) {
-    comparator.SetPreferredCodec(preferredCodec);
+  if (StaticPrefs::media_webrtc_codec_video_av1_experimental_preferred()) {
+    comparator.SetPreferredCodec(nsCString("av1"));
   }
-
+  // Sort by priority
   mJsepSession->SortCodecs(comparator);
   return NS_OK;
 }
@@ -2160,60 +2171,6 @@ void PeerConnectionImpl::DumpPacket_m(size_t level, dom::mozPacketDumpType type,
   mPCObserver->OnPacket(level, type, sending, arrayBuffer, jrv);
 }
 
-bool PeerConnectionImpl::HostnameInPref(const char* aPref,
-                                        const nsCString& aHostName) {
-  auto HostInDomain = [](const nsCString& aHost, const nsCString& aPattern) {
-    int32_t patternOffset = 0;
-    int32_t hostOffset = 0;
-
-    // Act on '*.' wildcard in the left-most position in a domain pattern.
-    if (StringBeginsWith(aPattern, nsCString("*."))) {
-      patternOffset = 2;
-
-      // Ignore the lowest level sub-domain for the hostname.
-      hostOffset = aHost.FindChar('.') + 1;
-
-      if (hostOffset <= 1) {
-        // Reject a match between a wildcard and a TLD or '.foo' form.
-        return false;
-      }
-    }
-
-    nsDependentCString hostRoot(aHost, hostOffset);
-    return hostRoot.EqualsIgnoreCase(aPattern.BeginReading() + patternOffset);
-  };
-
-  nsCString domainList;
-  nsresult rv = Preferences::GetCString(aPref, domainList);
-
-  if (NS_FAILED(rv)) {
-    return false;
-  }
-
-  domainList.StripWhitespace();
-
-  if (domainList.IsEmpty() || aHostName.IsEmpty()) {
-    return false;
-  }
-
-  // Test each domain name in the comma separated list
-  // after converting from UTF8 to ASCII. Each domain
-  // must match exactly or have a single leading '*.' wildcard.
-  for (const nsACString& each : domainList.Split(',')) {
-    nsCString domainPattern;
-    rv = NS_DomainToASCIIAllowAnyGlyphfulASCII(each, domainPattern);
-    if (NS_SUCCEEDED(rv)) {
-      if (HostInDomain(aHostName, domainPattern)) {
-        return true;
-      }
-    } else {
-      NS_WARNING("Failed to convert UTF-8 host to ASCII");
-    }
-  }
-
-  return false;
-}
-
 nsresult PeerConnectionImpl::EnablePacketDump(unsigned long level,
                                               dom::mozPacketDumpType type,
                                               bool sending) {
@@ -2240,8 +2197,6 @@ void PeerConnectionImpl::SendWarningToConsole(const nsCString& aWarning) {
 void PeerConnectionImpl::GetDefaultVideoCodecs(
     std::vector<UniquePtr<JsepCodecDescription>>& aSupportedCodecs,
     bool aUseRtx) {
-  const bool disableBaseline = Preferences::GetBool(
-      "media.navigator.video.disable_h264_baseline", false);
   // Supported video codecs.
   // Note: order here implies priority for building offers!
   aSupportedCodecs.emplace_back(
@@ -2253,6 +2208,9 @@ void PeerConnectionImpl::GetDefaultVideoCodecs(
   aSupportedCodecs.emplace_back(
       JsepVideoCodecDescription::CreateDefaultH264_0(aUseRtx));
 
+  const bool disableBaseline = Preferences::GetBool(
+      "media.navigator.video.disable_h264_baseline", false);
+
   // Only add Baseline if it hasn't been disabled.
   if (!disableBaseline) {
     aSupportedCodecs.emplace_back(
@@ -2261,11 +2219,24 @@ void PeerConnectionImpl::GetDefaultVideoCodecs(
         JsepVideoCodecDescription::CreateDefaultH264Baseline_0(aUseRtx));
   }
 
+  if (WebrtcVideoConduit::HasAv1() &&
+      StaticPrefs::media_webrtc_codec_video_av1_enabled()) {
+    aSupportedCodecs.emplace_back(
+        JsepVideoCodecDescription::CreateDefaultAV1(aUseRtx));
+  }
+
   aSupportedCodecs.emplace_back(
       JsepVideoCodecDescription::CreateDefaultUlpFec());
   aSupportedCodecs.emplace_back(
       JsepApplicationCodecDescription::CreateDefault());
   aSupportedCodecs.emplace_back(JsepVideoCodecDescription::CreateDefaultRed());
+
+  CompareCodecPriority comparator;
+  if (StaticPrefs::media_webrtc_codec_video_av1_experimental_preferred()) {
+    comparator.SetPreferredCodec(nsCString("av1"));
+  }
+  std::stable_sort(aSupportedCodecs.begin(), aSupportedCodecs.end(),
+                   comparator);
 }
 
 void PeerConnectionImpl::GetDefaultAudioCodecs(
@@ -2544,9 +2515,9 @@ void PeerConnectionImpl::StoreFinalStats(
         report->mCallDurationMs.WasPassed()) {
       double mins = report->mCallDurationMs.Value() / (1000 * 60);
       if (mins > 0) {
-        Accumulate(
-            WEBRTC_VIDEO_DECODER_DISCARDED_PACKETS_PER_CALL_PPM,
-            uint32_t(double(inboundRtpStats.mDiscardedPackets.Value()) / mins));
+        glean::webrtc::video_decoder_discarded_packets_per_call_ppm
+            .AccumulateSingleSample(uint32_t(
+                double(inboundRtpStats.mDiscardedPackets.Value()) / mins));
       }
     }
   }
@@ -2839,19 +2810,21 @@ void PeerConnectionImpl::RecordEndOfCallTelemetry() {
   static const uint32_t kDataChannelTypeMask = 4;
 
   // Report end-of-call Telemetry
-  Telemetry::Accumulate(Telemetry::WEBRTC_RENEGOTIATIONS,
-                        mJsepSession->GetNegotiations() - 1);
-  Telemetry::Accumulate(Telemetry::WEBRTC_MAX_VIDEO_SEND_TRACK,
-                        mMaxSending[SdpMediaSection::MediaType::kVideo]);
-  Telemetry::Accumulate(Telemetry::WEBRTC_MAX_VIDEO_RECEIVE_TRACK,
-                        mMaxReceiving[SdpMediaSection::MediaType::kVideo]);
-  Telemetry::Accumulate(Telemetry::WEBRTC_MAX_AUDIO_SEND_TRACK,
-                        mMaxSending[SdpMediaSection::MediaType::kAudio]);
-  Telemetry::Accumulate(Telemetry::WEBRTC_MAX_AUDIO_RECEIVE_TRACK,
-                        mMaxReceiving[SdpMediaSection::MediaType::kAudio]);
+  glean::webrtc::renegotiations.AccumulateSingleSample(
+      mJsepSession->GetNegotiations() - 1);
+  glean::webrtc::max_video_send_track.AccumulateSingleSample(
+      mMaxSending[SdpMediaSection::MediaType::kVideo]);
+  glean::webrtc::max_video_receive_track.AccumulateSingleSample(
+      mMaxReceiving[SdpMediaSection::MediaType::kVideo]);
+  glean::webrtc::max_audio_send_track.AccumulateSingleSample(
+      mMaxSending[SdpMediaSection::MediaType::kAudio]);
+  glean::webrtc::max_audio_receive_track.AccumulateSingleSample(
+      mMaxReceiving[SdpMediaSection::MediaType::kAudio]);
   // DataChannels appear in both Sending and Receiving
-  Telemetry::Accumulate(Telemetry::WEBRTC_DATACHANNEL_NEGOTIATED,
-                        mMaxSending[SdpMediaSection::MediaType::kApplication]);
+  glean::webrtc::datachannel_negotiated
+      .EnumGet(static_cast<glean::webrtc::DatachannelNegotiatedLabel>(
+          mMaxSending[SdpMediaSection::MediaType::kApplication]))
+      .Add();
   // Enumerated/bitmask: 1 = Audio, 2 = Video, 4 = DataChannel
   // A/V = 3, A/V/D = 7, etc
   uint32_t type = 0;
@@ -2866,7 +2839,7 @@ void PeerConnectionImpl::RecordEndOfCallTelemetry() {
   if (mMaxSending[SdpMediaSection::MediaType::kApplication]) {
     type |= kDataChannelTypeMask;
   }
-  Telemetry::Accumulate(Telemetry::WEBRTC_CALL_TYPE, type);
+  glean::webrtc::call_type.AccumulateSingleSample(type);
 
   MOZ_RELEASE_ASSERT(mWindow);
   auto found = sCallDurationTimers.find(mWindow->WindowID());
@@ -2878,6 +2851,132 @@ void PeerConnectionImpl::RecordEndOfCallTelemetry() {
     }
   }
   mCallTelemEnded = true;
+}
+
+void PeerConnectionImpl::RecordSignalingTelemetry() const {
+  uint16_t recvonly[SdpMediaSection::kMediaTypes];
+  uint16_t sendonly[SdpMediaSection::kMediaTypes];
+  uint16_t sendrecv[SdpMediaSection::kMediaTypes];
+  mJsepSession->CountTransceivers(recvonly, sendonly, sendrecv);
+
+  uint32_t numTransports = 0;
+  mJsepSession->ForEachTransceiver([&](const auto& aTransceiver) {
+    if (aTransceiver.HasOwnTransport()) {
+      ++numTransports;
+    }
+  });
+
+  SdpNegotiatedExtra extra = {
+      .bundlePolicy = (mJsConfiguration.mBundlePolicy.WasPassed()
+                           ? Some(mJsConfiguration.mBundlePolicy.Value())
+                           : Nothing())
+                          .map([](RTCBundlePolicy aPolicy) {
+                            return GetEnumString(aPolicy);
+                          }),
+      .iceTransportPolicy =
+          (mJsConfiguration.mIceTransportPolicy.WasPassed()
+               ? Some(mJsConfiguration.mIceTransportPolicy.Value())
+               : Nothing())
+              .map([](RTCIceTransportPolicy aPolicy) {
+                return GetEnumString(aPolicy);
+              }),
+      .isRemoteIceLite = Some(mJsepSession->RemoteIsIceLite()),
+      .negotiationCount = Some(mJsepSession->GetNegotiations()),
+      .numMsectionsAudioRecvonly = Some(recvonly[SdpMediaSection::kAudio]),
+      .numMsectionsAudioSendonly = Some(sendonly[SdpMediaSection::kAudio]),
+      .numMsectionsAudioSendrecv = Some(sendrecv[SdpMediaSection::kAudio]),
+      .numMsectionsData = Some(sendrecv[SdpMediaSection::kApplication]),
+      .numMsectionsVideoRecvonly = Some(recvonly[SdpMediaSection::kVideo]),
+      .numMsectionsVideoSendonly = Some(sendonly[SdpMediaSection::kVideo]),
+      .numMsectionsVideoSendrecv = Some(sendrecv[SdpMediaSection::kVideo]),
+      .numTransports = Some(numTransports),
+      .pcId = Some(nsCString(mHandle.c_str())),
+  };
+  glean::webrtc_signaling::sdp_negotiated.Record(Some(std::move(extra)));
+
+  mJsepSession->ForEachTransceiver([&](const JsepTransceiver& aTransceiver) {
+    if (const auto type = aTransceiver.GetMediaType();
+        type != SdpMediaSection::kAudio && type != SdpMediaSection::kVideo) {
+      return;
+    }
+    if (!aTransceiver.IsNegotiated()) {
+      return;
+    }
+    const bool sending = aTransceiver.mSendTrack.GetActive();
+    const bool receiving = aTransceiver.mRecvTrack.GetActive();
+    const nsFmtCString codecString =
+        ([](const JsepTrackNegotiatedDetails* aDetails) {
+          std::set<std::string> payload_names;
+          const size_t count = aDetails ? aDetails->GetEncodingCount() : 0;
+          for (size_t i = 0; i < count; ++i) {
+            const auto& encoding = aDetails->GetEncoding(i);
+            for (const auto& codec : encoding.GetCodecs()) {
+              if (codec->mEnabled) {
+                payload_names.insert(codec->mName);
+              }
+            }
+          }
+          return nsFmtCString{FMT_STRING("{}"), fmt::join(payload_names, ", ")};
+        })((sending ? aTransceiver.mSendTrack : aTransceiver.mRecvTrack)
+               .GetNegotiatedDetails());
+    const char* direction = ([&]() {
+      if (sending && receiving) {
+        return "sendrecv";
+      }
+      if (sending) {
+        return "sendonly";
+      }
+      if (receiving) {
+        return "recvonly";
+      }
+      return "inactive";
+    })();
+    const bool hasRtcpMux = aTransceiver.mTransport.mComponents == 1;
+    if (aTransceiver.GetMediaType() == SdpMediaSection::kVideo) {
+      VideoMsectionNegotiatedExtra extraVideo{
+          .codecs = Some(codecString),
+          .direction = Some(direction),
+          .hasRtcpMux = Some(hasRtcpMux),
+          .numSendSimulcastLayers =
+              sending ? Some(aTransceiver.mSendTrack.GetRids().size())
+                      : Nothing(),
+          .pcId = Some(nsCString(mHandle.c_str())),
+          .pcNegotiationCount = Some(mJsepSession->GetNegotiations()),
+          .preferredRecvCodec =
+              receiving ? Some(nsDependentCString(
+                              aTransceiver.mRecvTrack.GetVideoPreferredCodec()
+                                  .c_str()))
+                        : Nothing(),
+          .preferredSendCodec =
+              sending ? Some(nsDependentCString(
+                            aTransceiver.mSendTrack.GetVideoPreferredCodec()
+                                .c_str()))
+                      : Nothing(),
+      };
+      glean::webrtc_signaling::video_msection_negotiated.Record(
+          Some(extraVideo));
+    } else {
+      AudioMsectionNegotiatedExtra extraAudio{
+          .codecs = Some(codecString),
+          .direction = Some(direction),
+          .hasRtcpMux = Some(hasRtcpMux),
+          .pcId = Some(nsCString(mHandle.c_str())),
+          .pcNegotiationCount = Some(mJsepSession->GetNegotiations()),
+          .preferredRecvCodec =
+              receiving ? Some(nsDependentCString(
+                              aTransceiver.mRecvTrack.GetAudioPreferredCodec()
+                                  .c_str()))
+                        : Nothing(),
+          .preferredSendCodec =
+              sending ? Some(nsDependentCString(
+                            aTransceiver.mSendTrack.GetAudioPreferredCodec()
+                                .c_str()))
+                      : Nothing(),
+      };
+      glean::webrtc_signaling::audio_msection_negotiated.Record(
+          Some(extraAudio));
+    }
+  });
 }
 
 DOMMediaStream* PeerConnectionImpl::GetReceiveStream(
@@ -3210,6 +3309,13 @@ void PeerConnectionImpl::DoSetDescriptionSuccessPostProcessing(
         for (const auto& stream : newStreams) {
           pcObserver->FireStreamEvent(*stream, jrv);
         }
+
+        if (signalingStateChanged &&
+            mSignalingState == dom::RTCSignalingState::Stable &&
+            aSdpType != RTCSdpType::Rollback) {
+          RecordSignalingTelemetry();
+        }
+
         aP->MaybeResolveWithUndefined();
       }));
 }
@@ -3488,6 +3594,10 @@ bool PeerConnectionImpl::UpdateIceConnectionState() {
                static_cast<int>(mIceConnectionState),
                static_cast<int>(newState), this);
     mIceConnectionState = newState;
+    // Start call telemtry logging on connected.
+    if (mIceConnectionState == RTCIceConnectionState::Connected) {
+      StartCallTelem();
+    }
     if (mIceConnectionState != RTCIceConnectionState::Closed) {
       return true;
     }
@@ -4080,7 +4190,7 @@ void PeerConnectionImpl::StartCallTelem() {
   // NOTE: As of bug 1654248 landing we are no longer counting renegotiations
   // as separate calls. Expect numbers to drop compared to
   // WEBRTC_CALL_COUNT_2.
-  Telemetry::Accumulate(Telemetry::WEBRTC_CALL_COUNT_3, 1);
+  glean::webrtc::call_count_3.Add(1);
 }
 
 void PeerConnectionImpl::StunAddrsHandler::OnMDNSQueryComplete(
@@ -4452,7 +4562,7 @@ bool PeerConnectionImpl::GetPrefObfuscateHostAddresses() const {
       "media.peerconnection.ice.obfuscate_host_addresses", false);
   obfuscate_host_addresses &=
       !MediaManager::Get()->IsActivelyCapturingOrHasAPermission(winId);
-  obfuscate_host_addresses &= !PeerConnectionImpl::HostnameInPref(
+  obfuscate_host_addresses &= !media::HostnameInPref(
       "media.peerconnection.ice.obfuscate_host_addresses.blocklist", mHostname);
   obfuscate_host_addresses &= XRE_IsContentProcess();
 
@@ -4673,8 +4783,9 @@ already_AddRefed<dom::RTCRtpTransceiver> PeerConnectionImpl::CreateTransceiver(
     dom::MediaStreamTrack* aSendTrack, bool aAddTrackMagic, ErrorResult& aRv) {
   PeerConnectionCtx* ctx = PeerConnectionCtx::GetInstance();
   if (!mCall) {
+    auto envWrapper = WebrtcEnvironmentWrapper::Create(GetTimestampMaker());
     mCall = WebrtcCallWrapper::Create(
-        GetTimestampMaker(),
+        std::move(envWrapper), GetTimestampMaker(),
         media::ShutdownBlockingTicket::Create(
             u"WebrtcCallWrapper shutdown blocker"_ns,
             NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__),
@@ -4908,6 +5019,6 @@ std::unique_ptr<NrSocketProxyConfig> PeerConnectionImpl::GetProxyConfig()
       net::WebrtcProxyConfig(id, alpn, loadInfoArgs, mForceProxy)));
 }
 
-std::map<uint64_t, PeerConnectionAutoTimer>
+MOZ_RUNINIT std::map<uint64_t, PeerConnectionAutoTimer>
     PeerConnectionImpl::sCallDurationTimers;
 }  // namespace mozilla

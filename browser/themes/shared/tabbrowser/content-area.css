@@ -6,7 +6,7 @@
 
 :root {
   /* --tabpanel-background-color matches $in-content-page-background in newtab
-     (browser/components/newtab/content-src/styles/_variables.scss) */
+     (browser/extensions/newtab/content-src/styles/_variables.scss) */
   --tabpanel-background-color: #F9F9FB;
   @media (-moz-content-prefers-color-scheme: dark) {
     --tabpanel-background-color: #2B2A33;
@@ -19,13 +19,32 @@
     --tabpanel-background-color: #25003e !important;
 
     /* stylelint-disable-next-line media-query-no-invalid */
-    @media (-moz-bool-pref: "browser.privatebrowsing.felt-privacy-v1") {
+    @media -moz-pref("browser.privatebrowsing.felt-privacy-v1") {
       --tabpanel-background-color: linear-gradient(45deg, #722291 0%, #45278D 50%, #393473 100%) !important;
     }
   }
 }
 
-#appcontent,
+#navigator-toolbox {
+  border-bottom: 0.01px solid var(--chrome-content-separator-color);
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.revamp") {
+    /* This reserves space for the content area outline */
+    border-bottom-color: var(--toolbar-bgcolor);
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.verticalTabs") {
+    border-bottom-style: none;
+  }
+}
+
+/* Needed to ensure #sidebar-wrapper is full height when vertical tabs are not enabled */
+#browser {
+  position: relative;
+}
+
 #browser,
 #tabbrowser-tabbox,
 #tabbrowser-tabpanels,
@@ -33,6 +52,44 @@
   /* Allow devtools with large specified width/height to shrink */
   min-width: 0;
   min-height: 0;
+}
+
+#browser:not(.browser-toolbox-background) {
+  background-color: var(--toolbar-bgcolor);
+  color: var(--toolbar-color);
+
+  :root[lwtheme] & {
+    /* Ensure toolbar color displays on top of the frame/toolbox color to
+    * guarantee full opacity */
+    background-color: var(--lwt-accent-color);
+    background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
+  }
+}
+
+#tabbrowser-tabbox {
+  position: relative;
+  z-index: var(--browser-area-z-index-tabbox);
+  margin: 0;
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("sidebar.revamp") {
+    outline: 0.01px solid var(--chrome-content-separator-color);
+    box-shadow: var(--content-area-shadow);
+
+    /* stylelint-disable-next-line media-query-no-invalid */
+    @media -moz-pref("sidebar.revamp.round-content-area") {
+      :root:not([inDOMFullscreen]) &[sidebar-shown] {
+        overflow: clip;
+        border-start-end-radius: var(--border-radius-medium);
+
+        /* stylelint-disable-next-line media-query-no-invalid */
+        @media -moz-pref("sidebar.position_start") {
+          border-start-start-radius: var(--border-radius-medium);
+          border-start-end-radius: 0;
+        }
+      }
+    }
+  }
 }
 
 /* We set large flex on both containers to allow the devtools toolbox to
@@ -135,7 +192,7 @@
   }
 
   /* stylelint-disable-next-line media-query-no-invalid */
-  @media (-moz-bool-pref: "browser.tabs.hideStatusPanel") {
+  @media -moz-pref("browser.tabs.hideStatusPanel") {
     visibility: hidden;
   }
 }
@@ -180,34 +237,32 @@
 /**
  * Shortcuts
  */
-.content-shortcuts {
-  --shortcuts-left: calc(var(--shortcuts-x) + var(--shortcuts-offset));
-  --shortcuts-offset: 10px;
-  --shortcuts-top: calc(var(--shortcuts-y) + var(--shortcuts-offset));
-  background: var(--toolbar-bgcolor) url(chrome://mozapps/skin/extensions/category-discover.svg) center / 16px no-repeat;
-  border: 1px solid var(--arrowpanel-border-color);
-  border-radius: var(--arrowpanel-border-radius);
-  color: var(--arrowpanel-color);
-  -moz-context-properties: fill;
-  fill: currentColor;
-  height: 28px;
-  left: clamp(0px, var(--shortcuts-left), calc(100% - 28px));
-  position: absolute;
-  top: clamp(0px, var(--shortcuts-top), calc(100% - 28px));
-  width: 28px;
+#selection-shortcut-action-panel {
+  --panel-subview-body-padding: 0;
+ }
 
-  &:-moz-locale-dir(rtl) {
-    --shortcuts-left: calc(var(--shortcuts-x) - var(--shortcuts-offset) - 28px);
-  }
-
-  &[active] {
-    color: var(--color-accent-primary);
-  }
-
-  &:not([shown]) {
-    display: none;
-  }
+#ai-action-button {
+  --button-min-height: 34px;
+  --button-size-icon: 34px;
+  --button-border-radius: 7px;
+  margin: 1px;
 }
+
+
+#ask-chat-shortcuts {
+  max-width: 345px;
+}
+
+.ask-chat-shortcut-warning {
+  margin: var(--arrowpanel-menuitem-margin);
+  margin-bottom: var(--space-xsmall);
+}
+
+.ask-chat-shortcuts-custom-prompt {
+  margin: var(--arrowpanel-menuitem-margin);
+  margin-top: var(--space-small);
+}
+
 
 /**
  * Dialogs
@@ -251,6 +306,13 @@
   margin: 0 3vw;
   padding: 0;
   overflow-x: auto;
+
+  /* Ensure that dialog boxes are pixel-snapped, to keep their internal layout
+   * consistent, regardless of whether the surrounding layout places them at a
+   * fractional position. (This helps prevent arbitrary 1px shifts that could
+   * otherwise appear inside of a vertically-centered dialog when the
+   * viewport-height changes from being odd to even.) */
+  will-change: transform;
 
   &:not(.spotlightBox) {
     box-shadow: 0 2px 14px 0 rgba(0, 0, 0, 0.2);

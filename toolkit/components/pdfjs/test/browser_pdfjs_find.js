@@ -12,6 +12,13 @@ const TESTROOT = getRootDirectory(gTestPath).replace(
 const OS_PDF_URL = TESTROOT + "file_pdfjs_object_stream.pdf";
 const TEST_PDF_URL = TESTROOT + "file_pdfjs_test.pdf";
 
+var MockSound = SpecialPowers.MockSound;
+
+add_setup(() => {
+  MockSound.init();
+  registerCleanupFunction(() => MockSound.cleanup());
+});
+
 add_task(async function test_find_octet_stream_pdf() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
@@ -78,6 +85,13 @@ async function doFind(findbar, searchText, waitFunc) {
   return promise;
 }
 
+async function doFindNext(findbar, waitFunc) {
+  info("performing findNext");
+  let promise = waitFunc(findbar);
+  findbar.onFindAgainCommand();
+  return promise;
+}
+
 add_task(async function test_findbar_in_pdf() {
   await BrowserTestUtils.withNewTab(
     { gBrowser, url: "about:blank" },
@@ -91,6 +105,104 @@ add_task(async function test_findbar_in_pdf() {
         Ci.nsITypeAheadFind.FIND_FOUND,
         "The Mozilla string was found in the PDF document"
       );
+      await waitForPdfJSClose(browser);
+    }
+  );
+});
+
+add_task(async function test_findbar_in_pdf_with_notfound_sound() {
+  MockSound.reset();
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:blank" },
+    async browser => {
+      await waitForPdfJS(browser, TEST_PDF_URL);
+      const tab = gBrowser.getTabForBrowser(browser);
+      let findbar = await gBrowser.getFindBar(tab);
+      let findResult;
+
+      const steps = [
+        ["Mozoo", ["beep"]],
+        ["Mozxx", []], // silent if searchString has not increased its length
+        ["MozooO", ["beep"]],
+      ];
+
+      for (let index = 0; index < steps.length; index++) {
+        const [searchString, expectedPlayed] = steps[index];
+        MockSound.reset();
+        findResult = await doFind(findbar, searchString, waitForPdfjsResult);
+        is(
+          findResult.result,
+          Ci.nsITypeAheadFind.FIND_NOTFOUND,
+          `Step ${index + 1}, find "${searchString}"`
+        );
+        SimpleTest.isDeeply(
+          MockSound.played,
+          expectedPlayed,
+          `Step ${index + 1}, Not-found sound`
+        );
+      }
+
+      // Extra step for testing entireWord
+      findbar.toggleEntireWord(true);
+      MockSound.reset();
+      findResult = await doFind(findbar, "MozooOOX", waitForPdfjsResult);
+      is(
+        findResult.result,
+        Ci.nsITypeAheadFind.FIND_NOTFOUND,
+        'Find "MozooOOX" with entireWord on'
+      );
+      SimpleTest.isDeeply(
+        MockSound.played,
+        [],
+        "No sound when entireWord is on"
+      );
+
+      await waitForPdfJSClose(browser);
+      findbar.toggleEntireWord(false);
+    }
+  );
+});
+
+add_task(async function test_findbar_in_pdf_with_wrapped_sound() {
+  await SpecialPowers.pushPrefEnv({
+    set: [["accessibility.typeaheadfind.wrappedSoundURL", "beep"]],
+  });
+
+  await BrowserTestUtils.withNewTab(
+    { gBrowser, url: "about:blank" },
+    async browser => {
+      await waitForPdfJS(browser, TEST_PDF_URL);
+      const tab = gBrowser.getTabForBrowser(browser);
+      let findbar = await gBrowser.getFindBar(tab);
+      let findResult;
+
+      MockSound.reset();
+
+      // Known: "B2G" appears in the doc 2 times
+      findResult = await doFind(findbar, "B2G", waitForPdfjsResult);
+      is(findResult.result, Ci.nsITypeAheadFind.FIND_FOUND, 'Find 1st "B2G"');
+
+      findResult = await doFindNext(findbar, waitForPdfjsResult);
+      is(findResult.result, Ci.nsITypeAheadFind.FIND_FOUND, 'Find 2nd "B2G"');
+      SimpleTest.isDeeply(
+        MockSound.played,
+        [],
+        'No sound for first 2 "B2G" finding'
+      );
+
+      findResult = await doFindNext(findbar, waitForPdfjsResult);
+      is(
+        findResult.result,
+        Ci.nsITypeAheadFind.FIND_WRAPPED,
+        'Find "B2G" 3rd time'
+      );
+      SimpleTest.isDeeply(
+        MockSound.played,
+        ["beep"],
+        '"beep" for wrapped event'
+      );
+
       await waitForPdfJSClose(browser);
     }
   );

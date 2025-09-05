@@ -67,7 +67,7 @@ dependencies {
 
     testImplementation ComponentsDependencies.androidx_test_core
     testImplementation ComponentsDependencies.testing_coroutines
-    testImplementation ComponentsDependencies.testing_junit
+    testImplementation ComponentsDependencies.junit_vintage
     testImplementation ComponentsDependencies.testing_robolectric
     testImplementation ComponentsDependencies.kotlin_coroutines
 
@@ -84,4 +84,4 @@ dependencies {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

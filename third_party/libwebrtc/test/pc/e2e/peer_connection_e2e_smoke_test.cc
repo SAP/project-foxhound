@@ -22,6 +22,7 @@
 #include "api/test/pclf/media_quality_test_params.h"
 #include "api/test/pclf/peer_configurer.h"
 #include "api/test/peerconnection_quality_test_fixture.h"
+#include "media/base/media_constants.h"
 #include "system_wrappers/include/field_trial.h"
 #include "test/field_trial.h"
 #include "test/gtest.h"
@@ -403,10 +404,11 @@ TEST_F(PeerConnectionE2EQualityTestSmokeTest, MAYBE_Svc) {
     simulcast.emulated_sfu_config = EmulatedSFUConfig(1);
     alice->AddVideoConfig(std::move(simulcast));
 
-    AudioConfig audio("alice-audio");
-    audio.input_file_name =
-        test::ResourcePath("pc_quality_smoke_test_alice_source", "wav");
-    alice->SetAudioConfig(std::move(audio));
+    alice->SetAudioConfig({
+        .stream_label = "alice-audio",
+        .input_file_name =
+            test::ResourcePath("pc_quality_smoke_test_alice_source", "wav"),
+    });
     alice->SetVideoCodecs({VideoCodecConfig(cricket::kVp9CodecName)});
   });
   AddPeer(network_links.second, [](PeerConfigurer* bob) {

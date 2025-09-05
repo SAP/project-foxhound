@@ -192,13 +192,17 @@ class nsHttpTransaction final : public nsAHttpTransaction,
 
   void SetClassOfService(ClassOfService cos);
 
-  virtual nsresult OnHTTPSRRAvailable(
-      nsIDNSHTTPSSVCRecord* aHTTPSSVCRecord,
-      nsISVCBRecord* aHighestPriorityRecord) override;
+  virtual nsresult OnHTTPSRRAvailable(nsIDNSHTTPSSVCRecord* aHTTPSSVCRecord,
+                                      nsISVCBRecord* aHighestPriorityRecord,
+                                      const nsACString& aCname) override;
 
   void GetHashKeyOfConnectionEntry(nsACString& aResult);
 
-  bool IsForWebTransport() { return mIsForWebTransport; }
+  bool IsForWebTransport() override { return mIsForWebTransport; }
+  bool IsResettingForTunnelConn() override { return mIsResettingForTunnelConn; }
+  void SetResettingForTunnelConn(bool aValue) override {
+    mIsResettingForTunnelConn = aValue;
+  }
 
   nsAutoCString GetUrl() { return mUrl; }
 
@@ -218,16 +222,14 @@ class nsHttpTransaction final : public nsAHttpTransaction,
                                        uint32_t* contentRead,
                                        uint32_t* contentRemaining);
   [[nodiscard]] nsresult ProcessData(char*, uint32_t, uint32_t*);
+  void ReportResponseHeader(uint32_t aSubType);
   void DeleteSelfOnConsumerThread();
   void ReleaseBlockingTransaction();
-
   [[nodiscard]] static nsresult ReadRequestSegment(nsIInputStream*, void*,
                                                    const char*, uint32_t,
                                                    uint32_t, uint32_t*);
   [[nodiscard]] static nsresult WritePipeSegment(nsIOutputStream*, void*, char*,
                                                  uint32_t, uint32_t, uint32_t*);
-
-  bool TimingEnabled() const { return mCaps & NS_HTTP_TIMING_ENABLED; }
 
   bool ResponseTimeoutEnabled() const final;
 
@@ -564,7 +566,6 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   } mEarlyDataDisposition{EARLY_NONE};
 
   HttpTrafficCategory mTrafficCategory{HttpTrafficCategory::eInvalid};
-  bool mThroughCaptivePortal;
   Atomic<int32_t> mProxyConnectResponseCode{0};
 
   OnPushCallback mOnPushCallback;
@@ -584,10 +585,17 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   RefPtr<HTTPSRecordResolver> mResolver;
   TRANSACTION_RESTART_REASON mRestartReason = TRANSACTION_RESTART_NONE;
 
+  enum TRANSACTION_ECH_RETRY_COUNT : uint32_t {
+    TRANSACTION_ECH_RETRY_OTHERS_COUNT = 0,
+    TRANSACTION_ECH_RETRY_WITH_ECH_COUNT = 1,
+    TRANSACTION_ECH_RETRY_WITHOUT_ECH_COUNT = 2,
+    TRANSACTION_ECH_RETRY_ECH_FAILED_COUNT = 3,
+  };
   nsTHashMap<nsUint32HashKey, uint32_t> mEchRetryCounterMap;
 
   bool mSupportsHTTP3 = false;
   Atomic<bool, Relaxed> mIsForWebTransport{false};
+  bool mIsResettingForTunnelConn = false;
 
   bool mEarlyDataWasAvailable = false;
   bool ShouldRestartOn0RttError(nsresult reason);
@@ -599,6 +607,9 @@ class nsHttpTransaction final : public nsAHttpTransaction,
   // be associated with the connection entry whose hash key is not the same as
   // this transaction's.
   nsCString mHashKeyOfConnectionEntry;
+  // The CNAME of the host, or empty if none.
+  nsCString mCname;
+  nsCString mServerHeader;
 
   nsCOMPtr<WebTransportSessionEventListener> mWebTransportSessionEventListener;
 

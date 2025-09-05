@@ -102,6 +102,9 @@ skip-if(!xulRuntime.shell) script test262/built-ins/Array/prototype/methods-call
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-func-err-non-extensible.js
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-lex.js
 skip-if(!xulRuntime.shell) script test262/language/global-code/script-decl-var-err.js
+skip-if(!xulRuntime.shell) script test262/staging/sm/extensions/set-property-non-extensible.js
+skip-if(!xulRuntime.shell) script test262/staging/sm/global/adding-global-var-nonextensible-error.js
+skip-if(!xulRuntime.shell) script test262/staging/sm/regress/regress-633741.js
 
 # Global var-bindings are configurable in a browser environment.
 skip-if(!xulRuntime.shell) script test262/annexB/language/global-code/block-decl-global-existing-global-init.js
@@ -136,6 +139,9 @@ skip-if(!xulRuntime.shell) include test262/built-ins/Atomics/wait/jstests.list
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/byteLength/this-is-sharedarraybuffer.js
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/detached/this-is-sharedarraybuffer-resizable.js
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/detached/this-is-sharedarraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/maxByteLength/this-is-sharedarraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/resizable/this-is-sharedarraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/resize/this-is-sharedarraybuffer.js
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/slice/this-is-sharedarraybuffer.js
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/transfer/this-is-sharedarraybuffer.js
 fails-if(!xulRuntime.shell) script test262/built-ins/ArrayBuffer/prototype/transferToFixedLength/this-is-sharedarraybuffer.js
@@ -260,6 +266,40 @@ fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/byteLength/this-has-no-typedarrayname-internal.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/byteLength/this-is-arraybuffer.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/byteLength/this-is-not-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/descriptor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/extensible.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/grow-larger-size.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/grow-same-size.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/grow-smaller-size.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/length.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/name.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/new-length-excessive.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/new-length-negative.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/new-length-non-number.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/nonconstructor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/this-is-not-arraybuffer-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/this-is-not-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/this-is-not-resizable-arraybuffer-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/grow/this-is-sharedarraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/invoked-as-accessor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/invoked-as-func.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/length.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/name.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/prop-desc.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/return-growable.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/this-has-no-arraybufferdata-internal.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/this-is-arraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/growable/this-is-not-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/invoked-as-accessor.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/invoked-as-func.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/length.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/name.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/prop-desc.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/return-maxbytelength-growable.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/return-maxbytelength-non-growable.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/this-has-no-arraybufferdata-internal.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/this-is-arraybuffer.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/maxByteLength/this-is-not-object.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/slice/context-is-not-arraybuffer-object.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/slice/context-is-not-object.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype/slice/descriptor.js
@@ -302,6 +342,16 @@ fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/length-is
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/length.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/negative-length-throws.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/newtarget-prototype-is-not-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-allocation-limit.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-compared-before-object-creation.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-data-allocation-after-object-creation.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-diminuitive.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-excessive.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-negative.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-object.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-poisoned.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-maxbytelength-undefined.js
+fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/options-non-object.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/proto-from-ctor-realm.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/prototype-from-newtarget.js
 fails-if(!xulRuntime.shell) script test262/built-ins/SharedArrayBuffer/return-abrupt-from-length-symbol.js
@@ -387,6 +437,9 @@ fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/inte
 fails-if(!xulRuntime.shell) script test262/built-ins/TypedArrayConstructors/internals/Delete/indexed-value-sab-strict-strict.js
 fails-if(!xulRuntime.shell) script test262/language/expressions/class/subclass-builtins/subclass-SharedArrayBuffer.js
 fails-if(!xulRuntime.shell) script test262/language/statements/class/subclass-builtins/subclass-SharedArrayBuffer.js
+fails-if(!xulRuntime.shell) script test262/staging/built-ins/Object/preventExtensions/preventExtensions-variable-length-typed-arrays.js
+fails-if(!xulRuntime.shell) script test262/staging/sm/Atomics/cross-compartment.js
+fails-if(!xulRuntime.shell) script test262/staging/built-ins/Reflect/preventExtensions/preventExtensions-variable-length-typed-arrays.js
 
 # https://github.com/tc39/test262/pull/3955
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1892186
@@ -411,19 +464,6 @@ skip script test262/built-ins/Object/entries/order-after-define-property-with-fu
 
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1286997
 # Bug 1286997 probably doesn't cover all spec violations.
-skip script test262/language/expressions/assignment/S11.13.1_A5_T5.js
-skip script test262/language/expressions/assignment/S11.13.1_A7_T3.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.10_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.11_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.1_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.2_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.3_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.4_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.5_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.6_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.7_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.8_T5.js
-skip script test262/language/expressions/compound-assignment/S11.13.2_A5.9_T5.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.10_T1.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.10_T2.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.11_T1.js
@@ -446,16 +486,12 @@ skip script test262/language/expressions/compound-assignment/S11.13.2_A7.8_T1.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.8_T2.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.9_T1.js
 skip script test262/language/expressions/compound-assignment/S11.13.2_A7.9_T2.js
-skip script test262/language/expressions/postfix-decrement/S11.3.2_A5_T5.js
 skip script test262/language/expressions/postfix-decrement/S11.3.2_A6_T1.js
 skip script test262/language/expressions/postfix-decrement/S11.3.2_A6_T2.js
-skip script test262/language/expressions/postfix-increment/S11.3.1_A5_T5.js
 skip script test262/language/expressions/postfix-increment/S11.3.1_A6_T1.js
 skip script test262/language/expressions/postfix-increment/S11.3.1_A6_T2.js
-skip script test262/language/expressions/prefix-decrement/S11.4.5_A5_T5.js
 skip script test262/language/expressions/prefix-decrement/S11.4.5_A6_T1.js
 skip script test262/language/expressions/prefix-decrement/S11.4.5_A6_T2.js
-skip script test262/language/expressions/prefix-increment/S11.4.4_A5_T5.js
 skip script test262/language/expressions/prefix-increment/S11.4.4_A6_T1.js
 skip script test262/language/expressions/prefix-increment/S11.4.4_A6_T2.js
 skip script test262/language/expressions/logical-assignment/lgcl-nullish-assignment-operator-lhs-before-rhs.js
@@ -579,10 +615,6 @@ skip script test262/language/statements/with/cptn-nrml.js
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1339123
 skip script test262/annexB/language/function-code/block-decl-func-skip-arguments.js
 
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1407587
-skip script test262/language/expressions/assignment/destructuring/keyed-destructuring-property-reference-target-evaluation-order.js
-skip script test262/language/expressions/assignment/destructuring/iterator-destructuring-property-reference-target-evaluation-order.js
-
 # https://bugzilla.mozilla.org/show_bug.cgi?id=1321616
 skip script test262/annexB/built-ins/Function/createdynfn-no-line-terminator-html-close-comment-body.js
 
@@ -617,53 +649,17 @@ skip script test262/built-ins/AsyncGeneratorPrototype/return/return-state-comple
 skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedStart-broken-promise.js
 skip script test262/built-ins/AsyncGeneratorPrototype/return/return-suspendedYield-broken-promise-try-catch.js
 
-# Requires Unicode 15.1
-skip script test262/built-ins/RegExp/unicodeSets/generated/rgi-emoji-15.1.js
-
 # Time zone canonicalization proposal.
 skip script test262/intl402/DateTimeFormat/timezone-not-canonicalized.js
 skip script test262/intl402/DateTimeFormat/timezone-case-insensitive.js
 
-# Requires Unicode 15.1
-# https://github.com/tc39/test262/pull/3947
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1859752
-skip script test262/built-ins/RegExp/unicode_full_case_folding.js
-
-# Requires Unicode 15.1
-# https://github.com/tc39/test262/issues/3945
-skip script test262/built-ins/RegExp/property-escapes/generated/Alphabetic.js                                                                                                                                                                
-skip script test262/built-ins/RegExp/property-escapes/generated/Unified_Ideograph.js                                                                                                                                                         
-skip script test262/built-ins/RegExp/property-escapes/generated/XID_Start.js                                                                                                                                                                 
-skip script test262/built-ins/RegExp/property-escapes/generated/XID_Continue.js                                                                                                                                                              
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Letter.js                                                                                                                                                 
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Han.js                                                                                                                                                   
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Malayalam.js                                                                                                                                             
-skip script test262/built-ins/RegExp/property-escapes/generated/Ideographic.js                                                                                                                                                               
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Sinhala.js                                                                                                                                               
-skip script test262/built-ins/RegExp/property-escapes/generated/IDS_Binary_Operator.js
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other.js
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Letter.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Han.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Common.js
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Symbol.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_-_Common.js
-skip script test262/built-ins/RegExp/property-escapes/generated/ID_Continue.js
-skip script test262/built-ins/RegExp/property-escapes/generated/ID_Start.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Sentence_Terminal.js
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Unassigned.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Grapheme_Base.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Assigned.js
-skip script test262/built-ins/RegExp/property-escapes/generated/General_Category_-_Other_Symbol.js
-skip script test262/built-ins/RegExp/property-escapes/generated/Script_Extensions_-_Sharada.js
-skip script test262/built-ins/RegExp/property-escapes/generated/strings/RGI_Emoji_ZWJ_Sequence.js
-skip script test262/built-ins/RegExp/property-escapes/generated/strings/RGI_Emoji.js
-
-# Requires CLDR 44
-# https://github.com/tc39/test262/pull/3946
-# https://bugzilla.mozilla.org/show_bug.cgi?id=1859752
-skip script test262/intl402/Locale/likely-subtags.js
-skip script test262/intl402/Locale/prototype/minimize/removing-likely-subtags-first-adds-likely-subtags.js
-skip script test262/intl402/NumberFormat/prototype/format/useGrouping-extended-en-IN.js
+# https://github.com/tc39/test262/pull/4209
+skip script test262/language/statements/with/set-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js
+skip script test262/language/statements/with/set-mutable-binding-binding-deleted-with-typed-array-in-proto-chain-strict-mode.js
+skip script test262/language/statements/with/get-mutable-binding-binding-deleted-in-get-unscopables-strict-mode.js
+skip script test262/language/statements/with/set-mutable-binding-idref-with-proxy-env.js
+skip script test262/language/statements/with/get-binding-value-idref-with-proxy-env.js
+skip script test262/language/statements/with/set-mutable-binding-idref-compound-assign-with-proxy-env.js
 
 # Failures in AsyncFromSyncIteratorPrototype, see bug 1877862.
 skip script test262/built-ins/AsyncFromSyncIteratorPrototype/throw/throw-undefined-poisoned-return.js
@@ -681,9 +677,9 @@ skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/for-await-next
 skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/iterator-result-poisoned-wrapper.js
 skip script test262/built-ins/AsyncFromSyncIteratorPrototype/next/yield-next-rejected-promise-close.js
 
-# https://github.com/tc39/proposal-redeclarable-global-eval-vars
-skip script test262/language/global-code/script-decl-lex-var-declared-via-eval.js
-skip script test262/annexB/language/eval-code/direct/script-decl-lex-no-collision.js
+# https://bugzilla.mozilla.org/show_bug.cgi?id=1934808
+skip script test262/built-ins/Iterator/concat/fresh-iterator-result.js
+skip script test262/built-ins/Iterator/concat/next-method-returns-throwing-value.js
 
 
 ###########################################################
@@ -719,9 +715,41 @@ skip script non262/Tuple/prototype/concat/concat-with-array.js
 skip script test262/language/statements/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 skip script test262/language/expressions/class/decorator/syntax/class-valid/decorator-member-expr-private-identifier.js
 
-# https://github.com/tc39/test262/pull/4181
-skip script test262/built-ins/TypedArray/prototype/reduce/resizable-buffer-shrink-mid-iteration.js
-skip script test262/built-ins/TypedArray/prototype/reduce/resizable-buffer-grow-mid-iteration.js
+# https://github.com/tc39/test262/pull/4343
+skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/offset-time-zone-not-supported.js
+
+# https://github.com/tc39/test262/pull/4342
+skip script test262/staging/Intl402/Temporal/old/date-time-format.js
+
+# https://github.com/tc39/test262/pull/4101
+skip script test262/staging/Intl402/Temporal/old/islamic-calendars.js
+
+# https://github.com/tc39/test262/issues/4349
+skip script test262/intl402/NumberFormat/currency-digits-nonstandard-notation.js
+
+# https://github.com/tc39/test262/pull/4352
+skip script test262/staging/built-ins/Object/seal/seal-variable-length-typed-arrays.js
+
+# Incorrect feature tag.
+# https://github.com/tc39/test262/pull/4356
+skip include test262/staging/sm/AsyncIterator/jstests.list
+
+# https://github.com/tc39/test262/pull/4354
+skip script test262/staging/sm/lexical-environment/block-scoped-functions-hoisted-tdz.js
+skip script test262/staging/sm/lexical-environment/block-scoped-functions-deprecated-redecl.js
+skip script test262/staging/sm/lexical-environment/var-in-catch-body-annex-b-eval.js
+skip script test262/staging/sm/String/string-upper-lower-mapping.js
+skip script test262/staging/sm/Temporal/PlainMonthDay/from-gregory.js
+skip script test262/staging/sm/Temporal/PlainMonthDay/from-chinese-leap-month-uncommon.js
+skip script test262/staging/sm/Temporal/PlainDate/from-constrain-japanese.js
+
+# https://github.com/tc39/test262/issues/4359
+skip script test262/staging/sm/WeakMap/symbols.js
+
+# https://github.com/tc39/test262/pull/4358
+slow script test262/staging/sm/TypedArray/forEach.js
+slow script test262/staging/sm/TypedArray/every-and-some.js
+slow script test262/staging/sm/TypedArray/map-and-filter.js
 
 
 ##############################################
@@ -1090,216 +1118,12 @@ shell-option(--enable-iterator-helpers) script non262/Iterator/prototype/take/ta
 # Temporal                                   #
 ##############################################
 
-# https://github.com/tc39/proposal-temporal/pull/2762
-# https://github.com/tc39/proposal-temporal/pull/2759
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/wrapping-at-end-of-month.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/wrapping-at-end-of-month.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/since/wrapping-at-end-of-month.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/until/wrapping-at-end-of-month.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/since/wrapping-at-end-of-month.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/until/wrapping-at-end-of-month.js
-
-# Temporal.Calendar and Temporal.TimeZone removal
-skip script test262/staging/Temporal/removed-methods.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/transition-at-instant-boundaries.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/specific-tzdb-values.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/subtract-second-and-nanosecond-from-last-transition.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/result-type.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/nanoseconds-subtracted-or-added-at-dst-transition.js
-skip script test262/built-ins/Temporal/PlainMonthDay/calendar-iso-string.js
-skip script test262/built-ins/Temporal/PlainMonthDay/from/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainMonthDay/from/observable-get-overflow-argument-string-invalid.js
-skip script test262/built-ins/Temporal/PlainMonthDay/from/observable-get-overflow-argument-primitive.js
-skip script test262/built-ins/Temporal/PlainMonthDay/prototype/with/order-of-operations.js
-skip script test262/built-ins/Temporal/ZonedDateTime/timezone-iso-string.js
-skip script test262/built-ins/Temporal/ZonedDateTime/calendar-iso-string.js
-skip script test262/built-ins/Temporal/ZonedDateTime/from/observable-get-overflow-argument-string-invalid.js
-skip script test262/built-ins/Temporal/ZonedDateTime/from/order-of-operations.js
-skip script test262/built-ins/Temporal/ZonedDateTime/from/observable-get-overflow-argument-primitive.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/wrong-string.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/utc-no-transitions.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/length.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/prop-desc.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/not-a-constructor.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/offset-timezone-no-transitions.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/direction-undefined.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/branding.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/direction-wrong-type.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/builtin.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/getTimeZoneTransition/name.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/with/order-of-operations.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDate/calendar-iso-string.js
-skip script test262/built-ins/Temporal/PlainDate/from/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDate/from/observable-get-overflow-argument-string-invalid.js
-skip script test262/built-ins/Temporal/PlainDate/from/observable-get-overflow-argument-primitive.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/with/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/until/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/until/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDateTime/calendar-iso-string.js
-skip script test262/built-ins/Temporal/PlainDateTime/from/observable-get-overflow-argument-string-invalid.js
-skip script test262/built-ins/Temporal/PlainDateTime/from/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDateTime/from/observable-get-overflow-argument-primitive.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/with/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/until/order-of-operations.js
-skip script test262/built-ins/Temporal/Instant/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/Instant/prototype/until/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/calendar-iso-string.js
-skip script test262/built-ins/Temporal/PlainYearMonth/from/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/from/observable-get-overflow-argument-string-invalid.js
-skip script test262/built-ins/Temporal/PlainYearMonth/from/observable-get-overflow-argument-primitive.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/add/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/add/overflow-wrong-type.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/since/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/with/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/subtract/order-of-operations.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/subtract/overflow-wrong-type.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/until/order-of-operations.js
-
-# Unicode Minus Sign no longer allowed in offset strings.
-skip script test262/built-ins/Temporal/Instant/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/Instant/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/Instant/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/Instant/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/Instant/prototype/until/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/toPlainDateTime/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/until/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDate/prototype/toZonedDateTime/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/withPlainTime/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainDateTime/prototype/until/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainMonthDay/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainMonthDay/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainTime/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainTime/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainTime/prototype/until/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainYearMonth/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainYearMonth/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/PlainYearMonth/prototype/until/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/from/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/compare/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/withPlainTime/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/argument-string-minus-sign.js
-skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/argument-string-minus-sign.js
-
-
-##############################################
-# Temporal Intl tests                        #
-##############################################
-
-# Skip tests which require Intl.DateTimeFormat supporting Temporal objects.
-
-skip script test262/intl402/DateTimeFormat/prototype/format/temporal-objects-resolved-time-zone.js
-skip script test262/intl402/DateTimeFormat/prototype/formatRange/temporal-objects-resolved-time-zone.js
-skip script test262/intl402/DateTimeFormat/prototype/formatRangeToParts/temporal-objects-resolved-time-zone.js
-skip script test262/intl402/DateTimeFormat/prototype/formatToParts/temporal-objects-resolved-time-zone.js
-
-skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/options-conflict.js
-skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/Instant/prototype/toLocaleString/dateStyle.js
-
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/timezone-getoffsetnanosecondsfor-not-callable.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/options-conflict.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/resolved-time-zone.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/calendar-mismatch.js
-skip script test262/intl402/Temporal/PlainDate/prototype/toLocaleString/dateStyle.js
-
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/options-conflict.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/timezone-getoffsetnanosecondsfor-not-callable.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/resolved-time-zone.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/calendar-mismatch.js
-skip script test262/intl402/Temporal/PlainDateTime/prototype/toLocaleString/dateStyle.js
-
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/timezone-getoffsetnanosecondsfor-not-callable.js
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/resolved-time-zone.js
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/calendar-mismatch.js
-skip script test262/intl402/Temporal/PlainMonthDay/prototype/toLocaleString/dateStyle.js
-
-skip script test262/intl402/Temporal/PlainTime/prototype/toLocaleString/options-conflict.js
-skip script test262/intl402/Temporal/PlainTime/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/PlainTime/prototype/toLocaleString/timezone-getoffsetnanosecondsfor-not-callable.js
-skip script test262/intl402/Temporal/PlainTime/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/PlainTime/prototype/toLocaleString/resolved-time-zone.js
-
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/timezone-getoffsetnanosecondsfor-not-callable.js
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/resolved-time-zone.js
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/calendar-mismatch.js
-skip script test262/intl402/Temporal/PlainYearMonth/prototype/toLocaleString/dateStyle.js
-
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/locales-undefined.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/options-conflict.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/options-undefined.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/time-zone-canonicalized.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/options-timeZoneName-affects-instance-time-zone.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/custom-time-zone-name-not-supported.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/offset-time-zone-not-supported.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/calendar-mismatch.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/options-timeZone.js
-skip script test262/intl402/Temporal/ZonedDateTime/prototype/toLocaleString/dateStyle.js
-
-skip script test262/staging/Intl402/Temporal/old/date-time-format.js
-skip script test262/staging/Intl402/Temporal/old/date-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/time-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/zoneddatetime-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/yearmonth-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/datetime-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/monthday-toLocaleString.js
-skip script test262/staging/Intl402/Temporal/old/instant-toLocaleString.js
-
-# Test assumes CalendarMonthDayToISOReferenceDate modifies input |day| when no |monthCode| is given.
-# This case should be clarified more clearly in the spec.
-skip script test262/intl402/Temporal/PlainMonthDay/from/reference-year-1972.js
-
-# Calendar arithmetic not yet supported in ICU4X.
-#
-# https://github.com/unicode-org/icu4x/issues/3147
-skip script test262/intl402/Temporal/PlainDate/prototype/until/until-across-lunisolar-leap-months.js
-
-# Tailored to the Temporal polyfill. Not necessarily applicable for other implementations.
-skip script test262/staging/Intl402/Temporal/old/addition-across-lunisolar-leap-months.js
-skip script test262/staging/Intl402/Temporal/old/japanese-before-era.js
-skip script test262/staging/Intl402/Temporal/old/islamic-calendars.js
-
-# Time zone identifier canonicalization.
-skip script test262/intl402/Temporal/ZonedDateTime/from/do-not-canonicalize-iana-identifiers.js
-skip script test262/intl402/Temporal/ZonedDateTime/from/timezone-case-insensitive.js
-skip script test262/intl402/Temporal/ZonedDateTime/from/argument-valid.js
-skip script test262/intl402/Temporal/ZonedDateTime/from/etc-timezone.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-europe.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-etcetera.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-backzone.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-northamerica.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-backward.js
-skip script test262/intl402/Temporal/ZonedDateTime/etc-timezone.js
-skip script test262/intl402/Temporal/ZonedDateTime/iana-legacy-names.js
-skip script test262/intl402/Temporal/ZonedDateTime/timezone-ids-basic.js
-skip script test262/intl402/Temporal/ZonedDateTime/links-asia.js
-skip script test262/intl402/Temporal/ZonedDateTime/non-canonical-utc.js
-skip script test262/intl402/Temporal/ZonedDateTime/iana-legacy-names.js
-skip script test262/intl402/Temporal/ZonedDateTime/timezone-case-insensitive.js
-skip script test262/intl402/Temporal/ZonedDateTime/timezone-ids-basic.js
+# Unclear if minimum limit is correct, cf. <https://github.com/tc39/proposal-temporal/pull/3014>.
+skip script test262/built-ins/Temporal/Duration/compare/relativeto-string-limits.js
+skip script test262/built-ins/Temporal/Duration/prototype/total/relativeto-string-limits.js
+skip script test262/built-ins/Temporal/Duration/prototype/round/relativeto-string-limits.js
+skip script test262/built-ins/Temporal/ZonedDateTime/compare/argument-string-limits.js
+skip script test262/built-ins/Temporal/ZonedDateTime/from/argument-string-limits.js
+skip script test262/built-ins/Temporal/ZonedDateTime/prototype/equals/argument-string-limits.js
+skip script test262/built-ins/Temporal/ZonedDateTime/prototype/since/argument-string-limits.js
+skip script test262/built-ins/Temporal/ZonedDateTime/prototype/until/argument-string-limits.js

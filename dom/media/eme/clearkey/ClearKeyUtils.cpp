@@ -34,7 +34,6 @@
 #include "prerror.h"
 #include "secmodt.h"
 
-#include "ArrayUtils.h"
 #include "BigEndian.h"
 #include "ClearKeyBase64.h"
 #include "mozilla/Sprintf.h"
@@ -108,6 +107,11 @@ bool ClearKeyUtils::DecryptCbcs(const vector<uint8_t>& aKey,
   if (aKey.size() != CENC_KEY_LEN || aIV.size() != CENC_KEY_LEN) {
     CK_LOGE("Key and IV size should be 16!");
     return false;
+  }
+
+  if (aSubsample.Length() == 0) {
+    // Nothing to decrypt.
+    return true;
   }
 
   std::unique_ptr<PK11SlotInfo, MaybeDeleteHelper<PK11SlotInfo>> slot(
@@ -259,7 +263,7 @@ static bool EncodeBase64Web(vector<uint8_t> aBinary, string& aEncoded) {
     size_t idx = static_cast<size_t>(out[i]);
 
     // out of bounds index for 'sAlphabet'
-    assert(idx < MOZ_ARRAY_LENGTH(sAlphabet));
+    assert(idx < std::size(sAlphabet));
     out[i] = sAlphabet[idx];
   }
 

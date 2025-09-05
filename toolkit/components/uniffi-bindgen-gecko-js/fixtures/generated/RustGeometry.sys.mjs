@@ -153,6 +153,20 @@ class ArrayBufferDataStream {
       this.pos += size;
       return value;
     }
+
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(value) {
+      this.writeUint32(value.length);
+      value.forEach((elt) => {
+        this.writeUint8(elt);
+      })
+    }
 }
 
 function handleRustResult(result, liftCallback, liftErrCallback) {
@@ -212,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -222,7 +267,7 @@ UnitTestObjs.uniffiObjectPtr = uniffiObjectPtr;
 
 // Export the FFIConverter object to make external types work.
 export class FfiConverterF64 extends FfiConverter {
-    static computeSize() {
+    static computeSize(_value) {
         return 8;
     }
     static lift(value) {
@@ -272,8 +317,11 @@ export class FfiConverterString extends FfiConverter {
     }
 }
 
+/**
+ * Line
+ */
 export class Line {
-    constructor({ start, end } = {}) {
+    constructor({ start, end }) {
         try {
             FfiConverterTypePoint.checkType(start)
         } catch (e) {
@@ -290,9 +338,16 @@ export class Line {
             }
             throw e;
         }
+        /**
+         * @type {Point}
+         */
         this.start = start;
+        /**
+         * @type {Point}
+         */
         this.end = end;
     }
+
     equals(other) {
         return (
             this.start.equals(other.start) &&
@@ -345,8 +400,11 @@ export class FfiConverterTypeLine extends FfiConverterArrayBuffer {
     }
 }
 
+/**
+ * Point
+ */
 export class Point {
-    constructor({ coordX, coordY } = {}) {
+    constructor({ coordX, coordY }) {
         try {
             FfiConverterF64.checkType(coordX)
         } catch (e) {
@@ -363,9 +421,16 @@ export class Point {
             }
             throw e;
         }
+        /**
+         * @type {number}
+         */
         this.coordX = coordX;
+        /**
+         * @type {number}
+         */
         this.coordY = coordY;
     }
+
     equals(other) {
         return (
             this.coordX == other.coordX &&
@@ -434,7 +499,7 @@ export class FfiConverterOptionalTypePoint extends FfiConverterArrayBuffer {
             case 1:
                 return FfiConverterTypePoint.read(dataStream)
             default:
-                throw UniFFIError(`Unexpected code: ${code}`);
+                throw new UniFFIError(`Unexpected code: ${code}`);
         }
     }
 
@@ -459,6 +524,10 @@ export class FfiConverterOptionalTypePoint extends FfiConverterArrayBuffer {
 
 
 
+/**
+ * gradient
+ * @returns {number}
+ */
 export function gradient(ln) {
 
         const liftResult = (result) => FfiConverterF64.lift(result);
@@ -472,8 +541,8 @@ export function gradient(ln) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                69, // geometry:uniffi_uniffi_geometry_fn_func_gradient
+            return UniFFIScaffolding.callAsyncWrapper(
+                131, // geometry:uniffi_uniffi_geometry_fn_func_gradient
                 FfiConverterTypeLine.lower(ln),
             )
         }
@@ -484,6 +553,10 @@ export function gradient(ln) {
         }
 }
 
+/**
+ * intersection
+ * @returns {?Point}
+ */
 export function intersection(ln1,ln2) {
 
         const liftResult = (result) => FfiConverterOptionalTypePoint.lift(result);
@@ -505,8 +578,8 @@ export function intersection(ln1,ln2) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                70, // geometry:uniffi_uniffi_geometry_fn_func_intersection
+            return UniFFIScaffolding.callAsyncWrapper(
+                132, // geometry:uniffi_uniffi_geometry_fn_func_intersection
                 FfiConverterTypeLine.lower(ln1),
                 FfiConverterTypeLine.lower(ln2),
             )

@@ -4,8 +4,12 @@
 
 package org.mozilla.fenix.utils
 
+import android.content.Context
 import io.mockk.every
+import io.mockk.mockk
+import io.mockk.mockkStatic
 import io.mockk.spyk
+import mozilla.components.browser.state.search.SearchEngine
 import mozilla.components.concept.engine.Engine.HttpsOnlyMode.DISABLED
 import mozilla.components.concept.engine.Engine.HttpsOnlyMode.ENABLED
 import mozilla.components.concept.engine.Engine.HttpsOnlyMode.ENABLED_PRIVATE_ONLY
@@ -23,6 +27,8 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
+import org.mozilla.fenix.components.toolbar.ToolbarPosition
+import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.settings.PhoneFeature
 import org.mozilla.fenix.settings.deletebrowsingdata.DeleteBrowsingDataOnQuitType
@@ -864,15 +870,6 @@ class SettingsTest {
     }
 
     @Test
-    fun `GIVEN toolbarPositionTop is false, touchExplorationIsEnabled is true THEN shouldDefaultToBottomToolbar returns false`() {
-        val settings = spyk(settings)
-        every { settings.toolbarPositionTop } returns true
-        every { settings.touchExplorationIsEnabled } returns true
-
-        assertEquals(false, settings.shouldDefaultToBottomToolbar())
-    }
-
-    @Test
     fun `GIVEN Https-only mode is disabled THEN the engine mode is HttpsOnlyMode#DISABLED`() {
         settings.shouldUseHttpsOnly = false
 
@@ -1006,14 +1003,14 @@ class SettingsTest {
     }
 
     @Test
-    fun `GIVEN navigation toolbar is enabled  and microsurvey are enabled WHEN getBottomToolbarContainerHeight THEN returns the combined navbar & microsurvey height`() {
+    fun `GIVEN navigation toolbar is enabled and microsurvey are enabled WHEN getBottomToolbarContainerHeight THEN returns the combined navbar & microsurvey height`() {
         val settings = spyk(settings)
         every { settings.navigationToolbarEnabled } returns true
         every { settings.shouldShowMicrosurveyPrompt } returns true
 
         val bottomToolbarContainerHeight = settings.getBottomToolbarContainerHeight()
 
-        assertEquals(179, bottomToolbarContainerHeight)
+        assertEquals(180, bottomToolbarContainerHeight)
     }
 
     @Test
@@ -1023,7 +1020,7 @@ class SettingsTest {
 
         val bottomToolbarContainerHeight = settings.getBottomToolbarContainerHeight()
 
-        assertEquals(48, bottomToolbarContainerHeight)
+        assertEquals(49, bottomToolbarContainerHeight)
     }
 
     @Test
@@ -1046,5 +1043,174 @@ class SettingsTest {
         val bottomToolbarContainerHeight = settings.getBottomToolbarContainerHeight()
 
         assertEquals(0, bottomToolbarContainerHeight)
+    }
+
+    @Test
+    fun `GIVEN all of address bar, navbar and microsurvey are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns true
+        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns true
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(236, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN the navbar and the microsurvey are shown WHEN getBottomToolbarHeight THEN returns the combined height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns true
+        every { settings.toolbarPosition } returns ToolbarPosition.TOP
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns true
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(180, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN the address bar and the navbar are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns false
+        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns true
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(105, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN the address bar and the microsurvey are shown at bottom WHEN getBottomToolbarHeight THEN returns the combined height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns true
+        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns false
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(187, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN just the navbar is shown at bottom WHEN getBottomToolbarHeight THEN returns it's height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns false
+        every { settings.toolbarPosition } returns ToolbarPosition.TOP
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns true
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(49, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN just the microsurvey is shown at bottom WHEN getBottomToolbarHeight THEN returns it's height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns true
+        every { settings.toolbarPosition } returns ToolbarPosition.TOP
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns false
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(131, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN just the addressbar is shown at bottom WHEN getBottomToolbarHeight THEN returns it's height`() {
+        val settings = spyk(settings)
+        every { settings.shouldShowMicrosurveyPrompt } returns false
+        every { settings.toolbarPosition } returns ToolbarPosition.BOTTOM
+
+        mockkStatic(Context::shouldAddNavigationBar) {
+            every { any<Context>().shouldAddNavigationBar(true) } returns false
+
+            val bottomToolbarHeight = settings.getBottomToolbarHeight(testContext)
+
+            assertEquals(56, bottomToolbarHeight)
+        }
+    }
+
+    @Test
+    fun `GIVEN trending searches is enabled, visible and search engine supports it THEN should show trending searches`() {
+        val settings = spyk(settings)
+        val searchEngine: SearchEngine = mockk(relaxed = true)
+        every { settings.trendingSearchSuggestionsEnabled } returns true
+        every { settings.isTrendingSearchesVisible } returns true
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+        every { searchEngine.trendingUrl } returns "https://mozilla.org"
+
+        assertTrue(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertTrue(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+
+        every { settings.trendingSearchSuggestionsEnabled } returns false
+        every { settings.isTrendingSearchesVisible } returns true
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+
+        every { settings.trendingSearchSuggestionsEnabled } returns true
+        every { settings.isTrendingSearchesVisible } returns false
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+
+        every { settings.trendingSearchSuggestionsEnabled } returns false
+        every { settings.isTrendingSearchesVisible } returns false
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+    }
+
+    @Test
+    fun `GIVEN search engine does not supports trending search THEN should not show trending searches`() {
+        val settings = spyk(settings)
+        val searchEngine: SearchEngine = mockk(relaxed = true)
+        every { settings.trendingSearchSuggestionsEnabled } returns true
+        every { settings.isTrendingSearchesVisible } returns true
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+        every { searchEngine.trendingUrl } returns null
+
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+    }
+
+    @Test
+    fun `GIVEN is private tab THEN should show trending searches only if allowed`() {
+        val settings = spyk(settings)
+        val searchEngine: SearchEngine = mockk(relaxed = true)
+        every { settings.trendingSearchSuggestionsEnabled } returns true
+        every { settings.isTrendingSearchesVisible } returns true
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns true
+        every { searchEngine.trendingUrl } returns "abc"
+
+        assertTrue(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertTrue(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
+
+        every { settings.shouldShowSearchSuggestionsInPrivate } returns false
+        assertFalse(settings.shouldShowTrendingSearchSuggestions(true, searchEngine))
+        assertTrue(settings.shouldShowTrendingSearchSuggestions(false, searchEngine))
     }
 }

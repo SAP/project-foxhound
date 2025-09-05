@@ -14,7 +14,14 @@ use crate::ipc::need_ipc;
 ///
 /// Stores UUID values.
 pub enum UuidMetric {
-    Parent(glean::private::UuidMetric),
+    Parent {
+        /// The metric's ID. Used for testing and profiler markers. UUID
+        /// metrics canot be labeled, so we only store a MetricId. If this
+        /// changes, this should be changed to a MetricGetter to distinguish
+        /// between metrics and sub-metrics.
+        id: MetricId,
+        inner: glean::private::UuidMetric,
+    },
     Child(UuidMetricIpc),
 }
 
@@ -23,18 +30,21 @@ pub struct UuidMetricIpc;
 
 impl UuidMetric {
     /// Create a new UUID metric.
-    pub fn new(_id: MetricId, meta: CommonMetricData) -> Self {
+    pub fn new(id: MetricId, meta: CommonMetricData) -> Self {
         if need_ipc() {
             UuidMetric::Child(UuidMetricIpc)
         } else {
-            UuidMetric::Parent(glean::private::UuidMetric::new(meta))
+            UuidMetric::Parent {
+                id,
+                inner: glean::private::UuidMetric::new(meta),
+            }
         }
     }
 
     #[cfg(test)]
     pub(crate) fn child_metric(&self) -> Self {
         match self {
-            UuidMetric::Parent(_) => UuidMetric::Child(UuidMetricIpc),
+            UuidMetric::Parent { .. } => UuidMetric::Child(UuidMetricIpc),
             UuidMetric::Child(_) => panic!("Can't get a child metric from a child metric"),
         }
     }
@@ -49,7 +59,17 @@ impl glean::traits::Uuid for UuidMetric {
     /// * `value` - The UUID to set the metric to.
     pub fn set(&self, value: Uuid) {
         match self {
-            UuidMetric::Parent(p) => p.set(value.to_string()),
+            #[allow(unused)]
+            UuidMetric::Parent { id, inner } => {
+                let value = value.to_string();
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Uuid::set",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    super::profiler_utils::StringLikeMetricMarker::new((*id).into(), &value)
+                );
+                inner.set(value)
+            }
             UuidMetric::Child(_c) => {
                 log::error!("Unable to set the uuid metric in non-main process. This operation will be ignored.");
                 // If we're in automation we can panic so the instrumentor knows they've gone wrong.
@@ -68,7 +88,17 @@ impl glean::traits::Uuid for UuidMetric {
     /// a non-main process.
     pub fn generate_and_set(&self) -> Uuid {
         match self {
-            UuidMetric::Parent(p) => Uuid::parse_str(&p.generate_and_set()).unwrap(),
+            #[allow(unused)]
+            UuidMetric::Parent { id, inner } => {
+                let uuid = inner.generate_and_set();
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Uuid::generateAndSet",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    super::profiler_utils::StringLikeMetricMarker::new((*id).into(), &uuid)
+                );
+                Uuid::parse_str(&uuid).unwrap()
+            }
             UuidMetric::Child(_c) => {
                 log::error!("Unable to set the uuid metric in non-main process. This operation will be ignored.");
                 // If we're in automation we can panic so the instrumentor knows they've gone wrong.
@@ -95,7 +125,7 @@ impl glean::traits::Uuid for UuidMetric {
     pub fn test_get_value<'a, S: Into<Option<&'a str>>>(&self, storage_name: S) -> Option<Uuid> {
         let storage_name = storage_name.into().map(|s| s.to_string());
         match self {
-            UuidMetric::Parent(p) => p
+            UuidMetric::Parent { inner, .. } => inner
                 .test_get_value(storage_name)
                 .and_then(|s| Uuid::parse_str(&s).ok()),
             UuidMetric::Child(_c) => panic!("Cannot get test value for in non-main process!"),
@@ -117,7 +147,7 @@ impl glean::traits::Uuid for UuidMetric {
     /// The number of errors reported.
     pub fn test_get_num_recorded_errors(&self, error: glean::ErrorType) -> i32 {
         match self {
-            UuidMetric::Parent(p) => p.test_get_num_recorded_errors(error),
+            UuidMetric::Parent { inner, .. } => inner.test_get_num_recorded_errors(error),
             UuidMetric::Child(_c) => {
                 panic!("Cannot get test value for UuidMetric in non-main process!")
             }
@@ -138,7 +168,7 @@ mod test {
         let expected = Uuid::new_v4();
         metric.set(expected.clone());
 
-        assert_eq!(expected, metric.test_get_value("store1").unwrap());
+        assert_eq!(expected, metric.test_get_value("test-ping").unwrap());
     }
 
     #[test]
@@ -164,7 +194,7 @@ mod test {
 
         assert_eq!(
             expected,
-            parent_metric.test_get_value("store1").unwrap(),
+            parent_metric.test_get_value("test-ping").unwrap(),
             "UUID metrics should only work in the parent process"
         );
     }

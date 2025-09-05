@@ -24,6 +24,7 @@ import org.mozilla.fenix.NavHostActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.Components
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
+import org.mozilla.fenix.utils.isLargeScreenSize
 
 /**
  * Get the requireComponents of this application.
@@ -83,13 +84,6 @@ fun Fragment.redirectToReAuth(
         // https://issuetracker.google.com/issues/37125819
         activity?.invalidateOptionsMenu()
         when (currentLocation) {
-            R.id.loginDetailFragment,
-            R.id.editLoginFragment,
-            R.id.addLoginFragment,
-            R.id.savedLoginsFragment,
-            -> {
-                findNavController().popBackStack(R.id.savedLoginsAuthFragment, false)
-            }
             R.id.creditCardEditorFragment,
             R.id.creditCardsManagementFragment,
             -> {
@@ -154,10 +148,17 @@ fun Fragment.registerForActivityResult(
 }
 
 /**
- *  Checks whether the current fragment is running on a tablet.
+ *  Checks whether the current fragment is running on a large window.
  */
-fun Fragment.isTablet(): Boolean {
-    return resources.getBoolean(R.bool.tablet)
+fun Fragment.isLargeWindow(): Boolean {
+    return requireContext().isLargeWindow()
+}
+
+/**
+ * Checks whether the current fragment is running on a tablet.
+ */
+fun Fragment.isLargeScreenSize(): Boolean {
+    return requireContext().isLargeScreenSize()
 }
 
 /**

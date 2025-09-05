@@ -485,25 +485,16 @@ class FloatRegisters {
   static_assert(ShiftSingle == 0,
                 "Or the NonVolatileMask must be computed differently");
 
-  // s31 is the ScratchFloatReg.
   static constexpr SetType NonVolatileSingleMask =
       SetType((1 << FloatRegisters::s8) | (1 << FloatRegisters::s9) |
               (1 << FloatRegisters::s10) | (1 << FloatRegisters::s11) |
               (1 << FloatRegisters::s12) | (1 << FloatRegisters::s13) |
-              (1 << FloatRegisters::s14) | (1 << FloatRegisters::s15) |
-              (1 << FloatRegisters::s16) | (1 << FloatRegisters::s17) |
-              (1 << FloatRegisters::s18) | (1 << FloatRegisters::s19) |
-              (1 << FloatRegisters::s20) | (1 << FloatRegisters::s21) |
-              (1 << FloatRegisters::s22) | (1 << FloatRegisters::s23) |
-              (1 << FloatRegisters::s24) | (1 << FloatRegisters::s25) |
-              (1 << FloatRegisters::s26) | (1 << FloatRegisters::s27) |
-              (1 << FloatRegisters::s28) | (1 << FloatRegisters::s29) |
-              (1 << FloatRegisters::s30));
+              (1 << FloatRegisters::s14) | (1 << FloatRegisters::s15));
 
+  // Note: only the bottom 64 bits of v8-v15 will be preserved.
   static constexpr SetType NonVolatileMask =
       (NonVolatileSingleMask << ShiftSingle) |
-      (NonVolatileSingleMask << ShiftDouble) |
-      (NonVolatileSingleMask << ShiftSimd128);
+      (NonVolatileSingleMask << ShiftDouble);
 
   static constexpr SetType VolatileMask = AllMask & ~NonVolatileMask;
 

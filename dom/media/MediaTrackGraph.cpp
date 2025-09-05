@@ -437,8 +437,10 @@ void MediaTrackGraphImpl::CheckDriver() {
   CubebUtils::AudioDeviceID inputDevice = native ? native->mDeviceId : nullptr;
   uint32_t inputChannelCount = AudioInputChannelCount(inputDevice);
   AudioInputType inputPreference = AudioInputDevicePreference(inputDevice);
-  cubeb_input_processing_params inputProcessingParams =
-      RequestedAudioInputProcessingParams(inputDevice);
+  Maybe<AudioInputProcessingParamsRequest> processingRequest =
+      ToMaybeRef(native).map([](auto& native) {
+        return native.UpdateRequestedProcessingParams();
+      });
 
   uint32_t primaryOutputChannelCount = PrimaryOutputChannelCount();
   if (!audioCallbackDriver) {
@@ -446,11 +448,16 @@ void MediaTrackGraphImpl::CheckDriver() {
       AudioCallbackDriver* driver = new AudioCallbackDriver(
           this, CurrentDriver(), mSampleRate, primaryOutputChannelCount,
           inputChannelCount, PrimaryOutputDeviceID(), inputDevice,
-          inputPreference, inputProcessingParams);
+          inputPreference, processingRequest);
       SwitchAtNextIteration(driver);
     }
     return;
   }
+
+  bool needInputProcessingParamUpdate =
+      processingRequest &&
+      processingRequest->mGeneration !=
+          audioCallbackDriver->RequestedInputProcessingParams().mGeneration;
 
   // Check if this graph should switch to a different number of output channels.
   // Generally, a driver switch is explicitly made by an event (e.g., setting
@@ -459,16 +466,23 @@ void MediaTrackGraphImpl::CheckDriver() {
   // of the media determines how many channels to output, and it can change
   // dynamically.
   if (primaryOutputChannelCount != audioCallbackDriver->OutputChannelCount()) {
+    if (needInputProcessingParamUpdate) {
+      needInputProcessingParamUpdate = false;
+    }
     AudioCallbackDriver* driver = new AudioCallbackDriver(
         this, CurrentDriver(), mSampleRate, primaryOutputChannelCount,
         inputChannelCount, PrimaryOutputDeviceID(), inputDevice,
-        inputPreference, inputProcessingParams);
+        inputPreference, processingRequest);
     SwitchAtNextIteration(driver);
   }
 
-  if (native) {
-    audioCallbackDriver->SetRequestedInputProcessingParams(
-        inputProcessingParams);
+  if (needInputProcessingParamUpdate) {
+    needInputProcessingParamUpdate = false;
+    LOG(LogLevel::Debug,
+        ("%p: Setting on the fly requested processing params %s (Gen %d)", this,
+         CubebUtils::ProcessingParamsToString(processingRequest->mParams).get(),
+         processingRequest->mGeneration));
+    audioCallbackDriver->RequestInputProcessingParams(*processingRequest);
   }
 }
 
@@ -770,7 +784,7 @@ void MediaTrackGraphImpl::OpenAudioInputImpl(DeviceInputTrack* aTrack) {
         this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
         AudioInputChannelCount(aTrack->mDeviceId), PrimaryOutputDeviceID(),
         aTrack->mDeviceId, AudioInputDevicePreference(aTrack->mDeviceId),
-        aTrack->RequestedProcessingParams());
+        Some(aTrack->UpdateRequestedProcessingParams()));
     LOG(LogLevel::Debug,
         ("%p OpenAudioInputImpl: starting new AudioCallbackDriver(input) %p",
          this, driver));
@@ -843,7 +857,7 @@ void MediaTrackGraphImpl::CloseAudioInputImpl(DeviceInputTrack* aTrack) {
         this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
         AudioInputChannelCount(aTrack->mDeviceId), PrimaryOutputDeviceID(),
         nullptr, AudioInputDevicePreference(aTrack->mDeviceId),
-        aTrack->RequestedProcessingParams());
+        Some(aTrack->UpdateRequestedProcessingParams()));
     SwitchAtNextIteration(driver);
   } else if (CurrentDriver()->AsAudioCallbackDriver()) {
     LOG(LogLevel::Debug,
@@ -939,8 +953,7 @@ void MediaTrackGraphImpl::NotifyInputData(const AudioDataValue* aBuffer,
 }
 
 void MediaTrackGraphImpl::NotifySetRequestedInputProcessingParamsResult(
-    AudioCallbackDriver* aDriver,
-    cubeb_input_processing_params aRequestedParams,
+    AudioCallbackDriver* aDriver, int aGeneration,
     Result<cubeb_input_processing_params, int>&& aResult) {
   MOZ_ASSERT(NS_IsMainThread());
   NativeInputTrack* native =
@@ -949,7 +962,7 @@ void MediaTrackGraphImpl::NotifySetRequestedInputProcessingParamsResult(
     return;
   }
   QueueControlMessageWithNoShutdown([this, self = RefPtr(this),
-                                     driver = RefPtr(aDriver), aRequestedParams,
+                                     driver = RefPtr(aDriver), aGeneration,
                                      result = std::move(aResult)]() mutable {
     NativeInputTrack* native =
         mDeviceInputTrackManagerGraphThread.GetNativeInputTrack();
@@ -959,8 +972,7 @@ void MediaTrackGraphImpl::NotifySetRequestedInputProcessingParamsResult(
     if (driver != mDriver) {
       return;
     }
-    native->NotifySetRequestedProcessingParamsResult(this, aRequestedParams,
-                                                     result);
+    native->NotifySetRequestedProcessingParamsResult(this, aGeneration, result);
   });
 }
 
@@ -1021,7 +1033,8 @@ void MediaTrackGraphImpl::DeviceChanged() {
 
   // Dispatch to the bg thread to do the (potentially expensive) query of the
   // maximum channel count, and then dispatch back to the main thread, then to
-  // the graph, with the new info.
+  // the graph, with the new info. The "special case" above is to be handled
+  // back on the main thread as well for the same reasons.
   RefPtr<MediaTrackGraphImpl> self = this;
   NS_DispatchBackgroundTask(NS_NewRunnableFunction(
       "MaxChannelCountUpdateOnBgThread", [self{std::move(self)}]() {
@@ -1043,6 +1056,13 @@ void MediaTrackGraphImpl::DeviceChanged() {
                 MediaTrackGraphImpl* mGraphImpl;
                 uint32_t mMaxChannelCount;
               };
+
+              if (self->mMainThreadTrackCount == 0 &&
+                  self->mMainThreadPortCount == 0) {
+                // See comments above.
+                return;
+              }
+
               self->AppendMessage(
                   MakeUnique<MessageToGraph>(self, maxChannelCount));
             }));
@@ -1142,7 +1162,8 @@ void MediaTrackGraphImpl::ReevaluateInputDevice(CubebUtils::AudioDeviceID aID) {
     AudioCallbackDriver* newDriver = new AudioCallbackDriver(
         this, CurrentDriver(), mSampleRate, PrimaryOutputChannelCount(),
         AudioInputChannelCount(aID), PrimaryOutputDeviceID(), aID,
-        AudioInputDevicePreference(aID), track->RequestedProcessingParams());
+        AudioInputDevicePreference(aID),
+        Some(track->UpdateRequestedProcessingParams()));
     SwitchAtNextIteration(newDriver);
   }
 }
@@ -1388,9 +1409,9 @@ void MediaTrackGraphImpl::UpdateGraph(GraphTime aEndBlockingDecisions) {
                MediaTimeToSeconds(track->GetEnd()),
                MediaTimeToSeconds(
                    track->GraphTimeToTrackTime(aEndBlockingDecisions))));
-          MOZ_DIAGNOSTIC_ASSERT(false,
-                                "A non-ended SourceMediaTrack wasn't fed "
-                                "enough data by NotifyPull");
+          MOZ_DIAGNOSTIC_CRASH(
+              "A non-ended SourceMediaTrack wasn't fed "
+              "enough data by NotifyPull");
         }
       }
 #endif /* MOZ_DIAGNOSTIC_ASSERT_ENABLED */
@@ -1607,9 +1628,10 @@ bool MediaTrackGraphImpl::UpdateMainThreadState() {
   return false;
 }
 
-auto MediaTrackGraphImpl::OneIteration(
-    GraphTime aStateTime, GraphTime aIterationEnd,
-    MixerCallbackReceiver* aMixerReceiver) -> IterationResult {
+auto MediaTrackGraphImpl::OneIteration(GraphTime aStateTime,
+                                       GraphTime aIterationEnd,
+                                       MixerCallbackReceiver* aMixerReceiver)
+    -> IterationResult {
   if (mGraphRunner) {
     return mGraphRunner->OneIteration(aStateTime, aIterationEnd,
                                       aMixerReceiver);
@@ -2362,6 +2384,8 @@ void MediaTrack::Destroy() {
   mMainThreadDestroyed = true;
 }
 
+uint64_t MediaTrack::GetWindowId() const { return GraphImpl()->mWindowID; }
+
 TrackTime MediaTrack::GetEnd() const {
   return mSegment ? mSegment->GetDuration() : 0;
 }
@@ -2919,10 +2943,7 @@ static void MoveToSegment(SourceMediaTrack* aTrack, MediaSegment* aIn,
       if (!last || last->mTimeStamp.IsNull()) {
         // This is the first frame, or the last frame pushed to `out` has been
         // all consumed. Just append and we deal with its duration later.
-        out->AppendFrame(do_AddRef(c->mFrame.GetImage()),
-                         c->mFrame.GetIntrinsicSize(),
-                         c->mFrame.GetPrincipalHandle(),
-                         c->mFrame.GetForceBlack(), c->mTimeStamp);
+        out->AppendFrame(*c);
         if (c->GetDuration() > 0) {
           out->ExtendLastFrameBy(c->GetDuration());
         }
@@ -2939,10 +2960,7 @@ static void MoveToSegment(SourceMediaTrack* aTrack, MediaSegment* aIn,
       }
 
       // Append the current frame (will have duration 0).
-      out->AppendFrame(do_AddRef(c->mFrame.GetImage()),
-                       c->mFrame.GetIntrinsicSize(),
-                       c->mFrame.GetPrincipalHandle(),
-                       c->mFrame.GetForceBlack(), c->mTimeStamp);
+      out->AppendFrame(*c);
       if (c->GetDuration() > 0) {
         out->ExtendLastFrameBy(c->GetDuration());
       }
@@ -3126,10 +3144,7 @@ void SourceMediaTrack::AddDirectListenerImpl(
       continue;
     }
     ++videoFrames;
-    bufferedData.AppendFrame(do_AddRef(iter->mFrame.GetImage()),
-                             iter->mFrame.GetIntrinsicSize(),
-                             iter->mFrame.GetPrincipalHandle(),
-                             iter->mFrame.GetForceBlack(), iter->mTimeStamp);
+    bufferedData.AppendFrame(*iter);
   }
 
   VideoSegment& video = static_cast<VideoSegment&>(*mUpdateTrack->mData);
@@ -3137,10 +3152,7 @@ void SourceMediaTrack::AddDirectListenerImpl(
        iter.Next()) {
     ++videoFrames;
     MOZ_ASSERT(!iter->mTimeStamp.IsNull());
-    bufferedData.AppendFrame(do_AddRef(iter->mFrame.GetImage()),
-                             iter->mFrame.GetIntrinsicSize(),
-                             iter->mFrame.GetPrincipalHandle(),
-                             iter->mFrame.GetForceBlack(), iter->mTimeStamp);
+    bufferedData.AppendFrame(*iter);
   }
 
   LOG(LogLevel::Info,
@@ -3487,7 +3499,7 @@ void MediaTrackGraphImpl::Init(GraphDriverType aDriverRequested,
       // for the input channel.
       mDriver = new AudioCallbackDriver(
           this, nullptr, mSampleRate, aChannelCount, 0, PrimaryOutputDeviceID(),
-          nullptr, AudioInputType::Unknown, CUBEB_INPUT_PROCESSING_PARAM_NONE);
+          nullptr, AudioInputType::Unknown, Nothing());
     } else {
       mDriver = new SystemClockDriver(this, nullptr, mSampleRate);
     }
@@ -4281,15 +4293,6 @@ AudioInputType MediaTrackGraphImpl::AudioInputDevicePreference(
       mDeviceInputTrackManagerGraphThread.GetDeviceInputTrack(aID);
   return t && t->HasVoiceInput() ? AudioInputType::Voice
                                  : AudioInputType::Unknown;
-}
-
-cubeb_input_processing_params
-MediaTrackGraphImpl::RequestedAudioInputProcessingParams(
-    CubebUtils::AudioDeviceID aID) {
-  MOZ_ASSERT(OnGraphThreadOrNotRunning());
-  DeviceInputTrack* t =
-      mDeviceInputTrackManagerGraphThread.GetDeviceInputTrack(aID);
-  return t ? t->RequestedProcessingParams() : CUBEB_INPUT_PROCESSING_PARAM_NONE;
 }
 
 void MediaTrackGraphImpl::SetNewNativeInput() {

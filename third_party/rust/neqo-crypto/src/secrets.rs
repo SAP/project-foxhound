@@ -70,7 +70,6 @@ pub struct Secrets {
 }
 
 impl Secrets {
-    #[allow(clippy::unused_self)]
     unsafe extern "C" fn secret_available(
         _fd: *mut PRFileDesc,
         epoch: u16,
@@ -89,7 +88,7 @@ impl Secrets {
     }
 
     fn put(&mut self, dir: SecretDirection, epoch: Epoch, key: SymKey) {
-        qdebug!("{:?} secret available for {:?}: {:?}", dir, epoch, key);
+        qdebug!("{dir:?} secret available for {epoch:?}: {key:?}");
         let keys = match dir {
             SecretDirection::Read => &mut self.r,
             SecretDirection::Write => &mut self.w,

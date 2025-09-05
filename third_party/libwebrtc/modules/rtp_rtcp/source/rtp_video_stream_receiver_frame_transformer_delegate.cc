@@ -16,20 +16,21 @@
 
 #include "absl/memory/memory.h"
 #include "modules/rtp_rtcp/source/rtp_descriptor_authentication.h"
+#include "modules/rtp_rtcp/source/rtp_sender_video_frame_transformer_delegate.h"
 #include "rtc_base/checks.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/thread.h"
 
 namespace webrtc {
 
-namespace {
 class TransformableVideoReceiverFrame
     : public TransformableVideoFrameInterface {
  public:
   TransformableVideoReceiverFrame(std::unique_ptr<RtpFrameObject> frame,
                                   uint32_t ssrc,
                                   RtpVideoFrameReceiver* receiver)
-      : frame_(std::move(frame)),
+      : TransformableVideoFrameInterface(Passkey()),
+        frame_(std::move(frame)),
         metadata_(frame_->GetRtpVideoHeader().GetAsMetadata()),
         receiver_(receiver) {
     metadata_.SetSsrc(ssrc);
@@ -94,7 +95,6 @@ class TransformableVideoReceiverFrame
   VideoFrameMetadata metadata_;
   RtpVideoFrameReceiver* receiver_;
 };
-}  // namespace
 
 RtpVideoStreamReceiverFrameTransformerDelegate::
     RtpVideoStreamReceiverFrameTransformerDelegate(
@@ -211,7 +211,8 @@ void RtpVideoStreamReceiverFrameTransformerDelegate::ManageFrame(
         /*rtp_timestamp=*/transformed_frame->GetTimestamp(),
         /*ntp_time_ms=*/0, timing, transformed_frame->GetPayloadType(),
         metadata.GetCodec(), metadata.GetRotation(), metadata.GetContentType(),
-        video_header, video_header.color_space, RtpPacketInfos(),
+        video_header, video_header.color_space,
+        video_header.frame_instrumentation_data, RtpPacketInfos(),
         EncodedImageBuffer::Create(data.data(), data.size())));
   }
 }

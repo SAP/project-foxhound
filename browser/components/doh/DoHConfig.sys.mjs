@@ -19,7 +19,20 @@ ChromeUtils.defineESModuleGetters(lazy, {
 });
 
 const kGlobalPrefBranch = "doh-rollout";
-var kRegionPrefBranch;
+function regionPrefBranch() {
+  let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
+  if (!homeRegion) {
+    return undefined;
+  }
+  return `${kGlobalPrefBranch}.${homeRegion.toLowerCase()}`;
+}
+
+function currentRegion() {
+  if (lazy.Region.current) {
+    return lazy.Region.current;
+  }
+  return lazy.Region.home;
+}
 
 const kConfigPrefs = {
   kEnabledPref: "enabled",
@@ -37,7 +50,7 @@ const gProvidersCollection = RemoteSettings("doh-providers");
 const gConfigCollection = RemoteSettings("doh-config");
 
 function getPrefValueRegionFirst(prefName) {
-  let regionalPrefName = `${kRegionPrefBranch}.${prefName}`;
+  let regionalPrefName = `${regionPrefBranch()}.${prefName}`;
   let regionalPrefValue = lazy.Preferences.get(regionalPrefName);
   if (regionalPrefValue !== undefined) {
     return regionalPrefValue;
@@ -177,21 +190,19 @@ export const DoHConfigController = {
 
       let homeRegion = lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`);
       if (homeRegion) {
-        kRegionPrefBranch = `${kGlobalPrefBranch}.${homeRegion.toLowerCase()}`;
         resolve();
         return;
       }
 
       let updateRegionAndResolve = () => {
-        kRegionPrefBranch = `${kGlobalPrefBranch}.${lazy.Region.home.toLowerCase()}`;
         lazy.Preferences.set(
           `${kGlobalPrefBranch}.home-region`,
-          lazy.Region.home
+          currentRegion()
         );
         resolve();
       };
 
-      if (lazy.Region.home) {
+      if (currentRegion()) {
         updateRegionAndResolve();
         return;
       }
@@ -210,7 +221,8 @@ export const DoHConfigController = {
     await this.loadRegion();
 
     Services.prefs.addObserver(`${kGlobalPrefBranch}.`, this, true);
-    Services.obs.addObserver(this, lazy.Region.REGION_TOPIC);
+    Services.obs.addObserver(this, "idle-daily", true);
+    Services.obs.addObserver(this, "default-timezone-changed", true);
 
     gProvidersCollection.on("sync", this.updateFromRemoteSettings);
     gConfigCollection.on("sync", this.updateFromRemoteSettings);
@@ -223,7 +235,8 @@ export const DoHConfigController = {
     await this.initComplete;
 
     Services.prefs.removeObserver(`${kGlobalPrefBranch}`, this);
-    Services.obs.removeObserver(this, lazy.Region.REGION_TOPIC);
+    Services.obs.removeObserver(this, "idle-daily");
+    Services.obs.removeObserver(this, "default-timezone-changed");
 
     gProvidersCollection.off("sync", this.updateFromRemoteSettings);
     gConfigCollection.off("sync", this.updateFromRemoteSettings);
@@ -231,6 +244,19 @@ export const DoHConfigController = {
     this.initComplete = new Promise(resolve => {
       this._resolveInitComplete = resolve;
     });
+  },
+
+  // Performs a region check when the timezone changes
+  async getRegionAndNotify() {
+    await lazy.Region._fetchRegion();
+    if (
+      currentRegion() &&
+      currentRegion() !=
+        lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
+    ) {
+      lazy.Preferences.set(`${kGlobalPrefBranch}.home-region`, currentRegion());
+      this.notifyNewConfig();
+    }
   },
 
   observe(subject, topic, data) {
@@ -242,7 +268,7 @@ export const DoHConfigController = {
         if (
           !allowedPrefs.some(pref =>
             [
-              `${kRegionPrefBranch}.${pref}`,
+              `${regionPrefBranch()}.${pref}`,
               `${kGlobalPrefBranch}.${pref}`,
             ].includes(data)
           )
@@ -251,8 +277,21 @@ export const DoHConfigController = {
         }
         this.notifyNewConfig();
         break;
-      case lazy.Region.REGION_TOPIC:
-        lazy.Preferences.set(`${kGlobalPrefBranch}.home-region-changed`, true);
+      case "idle-daily":
+        if (
+          currentRegion() &&
+          currentRegion() !=
+            lazy.Preferences.get(`${kGlobalPrefBranch}.home-region`)
+        ) {
+          lazy.Preferences.set(
+            `${kGlobalPrefBranch}.home-region`,
+            currentRegion()
+          );
+          this.notifyNewConfig();
+        }
+        break;
+      case "default-timezone-changed":
+        this.getRegionAndNotify();
         break;
     }
   },

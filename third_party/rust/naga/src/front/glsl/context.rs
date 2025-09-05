@@ -8,9 +8,9 @@ use super::{
     Frontend, Result,
 };
 use crate::{
-    front::Typifier, proc::Emitter, AddressSpace, Arena, BinaryOperator, Block, Expression,
-    FastHashMap, FunctionArgument, Handle, Literal, LocalVariable, RelationalFunction, Scalar,
-    Span, Statement, Type, TypeInner, VectorSize,
+    front::Typifier, proc::Emitter, proc::Layouter, AddressSpace, Arena, BinaryOperator, Block,
+    Expression, FastHashMap, FunctionArgument, Handle, Literal, LocalVariable, RelationalFunction,
+    Scalar, Span, Statement, Type, TypeInner, VectorSize,
 };
 use std::ops::Index;
 
@@ -72,6 +72,7 @@ pub struct Context<'a> {
 
     pub const_typifier: Typifier,
     pub typifier: Typifier,
+    layouter: Layouter,
     emitter: Emitter,
     stmt_ctx: Option<StmtContext>,
     pub body: Block,
@@ -103,6 +104,7 @@ impl<'a> Context<'a> {
 
             const_typifier: Typifier::new(),
             typifier: Typifier::new(),
+            layouter: Layouter::default(),
             emitter: Emitter::default(),
             stmt_ctx: Some(StmtContext::new()),
             body: Block::new(),
@@ -260,12 +262,14 @@ impl<'a> Context<'a> {
             crate::proc::ConstantEvaluator::for_glsl_module(
                 self.module,
                 self.global_expression_kind_tracker,
+                &mut self.layouter,
             )
         } else {
             crate::proc::ConstantEvaluator::for_glsl_function(
                 self.module,
                 &mut self.expressions,
                 &mut self.local_expression_kind_tracker,
+                &mut self.layouter,
                 &mut self.emitter,
                 &mut self.body,
             )
@@ -630,7 +634,8 @@ impl<'a> Context<'a> {
                             frontend.errors.push(Error {
                                 kind: ErrorKind::SemanticError(
                                     format!(
-                                        "Cannot apply operation to {left_inner:?} and {right_inner:?}"
+                                        "Cannot apply operation to {:?} and {:?}",
+                                        left_inner, right_inner
                                     )
                                     .into(),
                                 ),
@@ -828,7 +833,8 @@ impl<'a> Context<'a> {
                             frontend.errors.push(Error {
                                 kind: ErrorKind::SemanticError(
                                     format!(
-                                        "Cannot apply operation to {left_inner:?} and {right_inner:?}"
+                                        "Cannot apply operation to {:?} and {:?}",
+                                        left_inner, right_inner
                                     )
                                     .into(),
                                 ),
@@ -908,7 +914,8 @@ impl<'a> Context<'a> {
                             frontend.errors.push(Error {
                                 kind: ErrorKind::SemanticError(
                                     format!(
-                                        "Cannot apply operation to {left_inner:?} and {right_inner:?}"
+                                        "Cannot apply operation to {:?} and {:?}",
+                                        left_inner, right_inner
                                     )
                                     .into(),
                                 ),

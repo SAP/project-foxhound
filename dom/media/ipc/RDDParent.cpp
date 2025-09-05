@@ -26,7 +26,7 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/dom/MemoryReportRequest.h"
 #include "mozilla/gfx/gfxVars.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/GleanTestsTestMetrics.h"
 #include "mozilla/ipc/CrashReporterClient.h"
 #include "mozilla/ipc/ProcessChild.h"
 
@@ -56,6 +56,10 @@
 #if defined(XP_MACOSX) || defined(XP_LINUX)
 #  include "VideoUtils.h"
 #endif
+
+namespace TelemetryScalar {
+void Set(mozilla::Telemetry::ScalarID aId, uint32_t aValue);
+}
 
 namespace mozilla {
 
@@ -284,7 +288,7 @@ mozilla::ipc::IPCResult RDDParent::RecvTestTriggerMetrics(
 
 mozilla::ipc::IPCResult RDDParent::RecvTestTelemetryProbes() {
   const uint32_t kExpectedUintValue = 42;
-  Telemetry::ScalarSet(Telemetry::ScalarID::TELEMETRY_TEST_RDD_ONLY_UINT,
+  TelemetryScalar::Set(Telemetry::ScalarID::TELEMETRY_TEST_RDD_ONLY_UINT,
                        kExpectedUintValue);
   return IPC_OK();
 }

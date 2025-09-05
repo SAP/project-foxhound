@@ -28,7 +28,7 @@ toolbar[overflowable][customizing] > .customization-target {
 #customization-container {
   flex-direction: column;
   min-height: 0;
-  background-color: var(--toolbar-non-lwt-bgcolor);
+  background-color: var(--toolbar-bgcolor);
   color: var(--toolbar-color);
   color-scheme: var(--toolbar-color-scheme);
 
@@ -39,15 +39,10 @@ toolbar[overflowable][customizing] > .customization-target {
   }
 
   :root[lwtheme] & {
-    /* Ensure this displays on top of the non-lwt bgcolor, to make sure it's not
-     * semi-transparent */
+    /* Ensure toolbar color displays on top of the frame/toolbox color to
+     * guarantee full opacity */
+    background-color: var(--lwt-accent-color);
     background-image: linear-gradient(var(--toolbar-bgcolor), var(--toolbar-bgcolor));
-  }
-
-  :root[lwtheme-image] & {
-    background-image: none;
-    color: var(--toolbar-non-lwt-textcolor);
-    text-shadow: none;
   }
 }
 
@@ -131,7 +126,6 @@ toolbar[overflowable][customizing] > .customization-target {
       height: var(--panel-and-palette-icon-size);
       min-width: var(--panel-and-palette-icon-size);
       min-height: var(--panel-and-palette-icon-size);
-      margin: 0;
       padding: 0;
     }
   }
@@ -373,11 +367,11 @@ toolbarpaletteitem {
 }
 
 .customization-uidensity-menuitem:is(:hover, :focus-visible) {
-  background-color: var(--button-hover-bgcolor);
+  background-color: var(--button-background-color-hover);
 }
 
 .customization-uidensity-menuitem:is(:hover:active, [active="true"]) {
-  background-color: var(--button-active-bgcolor);
+  background-color: var(--button-background-color-active);
 }
 
 .customization-uidensity-menuitem > .menu-iconic-text {

@@ -432,43 +432,33 @@ void nsTableRowFrame::ResetBSize() {
   mMaxCellDescent = 0;
 }
 
-void nsTableRowFrame::UpdateBSize(nscoord aBSize, nscoord aAscent,
-                                  nscoord aDescent, nsTableFrame* aTableFrame,
+void nsTableRowFrame::UpdateBSize(nscoord aBSize, nsTableFrame* aTableFrame,
                                   nsTableCellFrame* aCellFrame) {
   if (!aTableFrame || !aCellFrame) {
-    NS_ASSERTION(false, "invalid call");
+    MOZ_ASSERT_UNREACHABLE("Invalid call");
     return;
   }
 
   if (aBSize == NS_UNCONSTRAINEDSIZE) {
     return;
   }
-  if (!aCellFrame->HasVerticalAlignBaseline()) {
-    // only the cell's height matters
-    if (GetInitialBSize() < aBSize) {
-      int32_t rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
-      if (rowSpan == 1) {
-        SetContentBSize(aBSize);
+
+  if (GetInitialBSize() < aBSize &&
+      aTableFrame->GetEffectiveRowSpan(*aCellFrame) == 1) {
+    SetContentBSize(aBSize);
+  }
+
+  if (aCellFrame->HasVerticalAlignBaseline()) {
+    if (auto ascent = aCellFrame->GetCellBaseline()) {
+      // see if this is a long ascender
+      if (mMaxCellAscent < *ascent) {
+        mMaxCellAscent = *ascent;
       }
-    }
-  } else {  // the alignment on the baseline can change the bsize
-    NS_ASSERTION(
-        aAscent != NS_UNCONSTRAINEDSIZE && aDescent != NS_UNCONSTRAINEDSIZE,
-        "invalid call");
-    // see if this is a long ascender
-    if (mMaxCellAscent < aAscent) {
-      mMaxCellAscent = aAscent;
-    }
-    // see if this is a long descender and without rowspan
-    if (mMaxCellDescent < aDescent) {
-      int32_t rowSpan = aTableFrame->GetEffectiveRowSpan(*aCellFrame);
-      if (rowSpan == 1) {
-        mMaxCellDescent = aDescent;
+      nscoord descent = aBSize - *ascent;
+      if (mMaxCellDescent < descent &&
+          aTableFrame->GetEffectiveRowSpan(*aCellFrame) == 1) {
+        mMaxCellDescent = descent;
       }
-    }
-    // keep the tallest bsize in sync
-    if (GetInitialBSize() < mMaxCellAscent + mMaxCellDescent) {
-      SetContentBSize(mMaxCellAscent + mMaxCellDescent);
     }
   }
 }
@@ -499,18 +489,7 @@ nscoord nsTableRowFrame::CalcBSize(const ReflowInput& aReflowInput) {
         !GetPrevInFlow()) {
       desSize.BSize(wm) = CalcCellActualBSize(kidFrame, desSize.BSize(wm), wm);
     }
-    // bsize may have changed, adjust descent to absorb any excess difference
-    nscoord ascent;
-    if (!kidFrame->PrincipalChildList()
-             .FirstChild()
-             ->PrincipalChildList()
-             .FirstChild()) {
-      ascent = desSize.BSize(wm);
-    } else {
-      ascent = kidFrame->GetCellBaseline();
-    }
-    nscoord descent = desSize.BSize(wm) - ascent;
-    UpdateBSize(desSize.BSize(wm), ascent, descent, tableFrame, kidFrame);
+    UpdateBSize(desSize.BSize(wm), tableFrame, kidFrame);
   }
   return GetInitialBSize();
 }
@@ -643,8 +622,9 @@ static nscoord GetSpaceBetween(int32_t aPrevColIndex, int32_t aColIndex,
       const nsStyleVisibility* groupVis = cgFrame->StyleVisibility();
       bool collapseGroup = StyleVisibility::Collapse == groupVis->mVisible;
       isCollapsed = collapseCol || collapseGroup;
-      if (!isCollapsed)
+      if (!isCollapsed) {
         space += fifTable->GetColumnISizeFromFirstInFlow(colIdx);
+      }
     }
     if (!isCollapsed && aTableFrame.ColumnHasCellSpacingBefore(colIdx)) {
       space += aTableFrame.GetColSpacing(colIdx - 1);
@@ -812,18 +792,7 @@ void nsTableRowFrame::ReflowChildren(nsPresContext* aPresContext,
         }
         // bsize may have changed, adjust descent to absorb any excess
         // difference
-        nscoord ascent;
-        if (!kidFrame->PrincipalChildList()
-                 .FirstChild()
-                 ->PrincipalChildList()
-                 .FirstChild()) {
-          ascent = desiredSize.BSize(wm);
-        } else {
-          ascent = kidFrame->GetCellBaseline();
-        }
-        nscoord descent = desiredSize.BSize(wm) - ascent;
-        UpdateBSize(desiredSize.BSize(wm), ascent, descent, &aTableFrame,
-                    kidFrame);
+        UpdateBSize(desiredSize.BSize(wm), &aTableFrame, kidFrame);
       } else {
         cellMaxBSize = std::max(cellMaxBSize, desiredSize.BSize(wm));
         int32_t rowSpan = aTableFrame.GetEffectiveRowSpan(*kidFrame);

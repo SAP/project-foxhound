@@ -21,14 +21,16 @@ document.addEventListener(
             .promptAndGoToLine();
           break;
         case "context-viewsource-wrapLongLines":
-          gViewSourceUtils
-            .getPageActor(gContextMenu.browser)
-            .sendAsyncMessage("ViewSource:ToggleWrapping");
+          Services.prefs.setBoolPref(
+            "view_source.wrap_long_lines",
+            !Services.prefs.getBoolPref("view_source.wrap_long_lines", false)
+          );
           break;
         case "context-viewsource-highlightSyntax":
-          gViewSourceUtils
-            .getPageActor(gContextMenu.browser)
-            .sendAsyncMessage("ViewSource:ToggleSyntaxHighlighting");
+          Services.prefs.setBoolPref(
+            "view_source.syntax_highlight",
+            !Services.prefs.getBoolPref("view_source.syntax_highlight", false)
+          );
           break;
         case "spell-add-to-dictionary":
           InlineSpellCheckerUI.addToDictionary();
@@ -215,7 +217,8 @@ document.addEventListener(
           break;
         case "context-searchselect": {
           let { searchTerms, usePrivate, principal, csp } = event.target;
-          BrowserSearch.loadSearchFromContext(
+          SearchUIUtils.loadSearchFromContext(
+            window,
             searchTerms,
             usePrivate,
             principal,
@@ -226,7 +229,8 @@ document.addEventListener(
         }
         case "context-searchselect-private": {
           let { searchTerms, principal, csp } = event.target;
-          BrowserSearch.loadSearchFromContext(
+          SearchUIUtils.loadSearchFromContext(
+            window,
             searchTerms,
             true,
             principal,
@@ -293,22 +297,56 @@ document.addEventListener(
         case "context-media-eme-learnmore":
           gContextMenu.drmLearnMore(event);
           break;
+        case "context-copy-link-to-highlight":
+          gContextMenu.copyLinkToHighlight();
+          break;
+        case "context-copy-clean-link-to-highlight":
+          gContextMenu.copyLinkToHighlight(/* stripSiteTracking */ true);
+          break;
+        case "context-remove-all-highlights":
+          gContextMenu.removeAllTextFragments();
+          break;
       }
     });
     contextMenuPopup.addEventListener("popupshowing", event => {
-      if (event.target != contextMenuPopup) {
-        return;
-      }
+      switch (event.target.id) {
+        case "contentAreaContextMenu": {
+          // eslint-disable-next-line no-global-assign
+          gContextMenu = new nsContextMenu(contextMenuPopup, event.shiftKey);
+          if (!gContextMenu.shouldDisplay) {
+            event.preventDefault();
+            return;
+          }
 
-      // eslint-disable-next-line no-global-assign
-      gContextMenu = new nsContextMenu(contextMenuPopup, event.shiftKey);
-      if (!gContextMenu.shouldDisplay) {
-        event.preventDefault();
-        return;
-      }
+          if (!IS_WEBEXT_PANELS) {
+            updateEditUIVisibility();
+          }
 
-      if (!IS_WEBEXT_PANELS) {
-        updateEditUIVisibility();
+          // attempts to generate the text fragment directive of selected text
+          // Note: This is kicking off an async operation that might update
+          // the context menu while it's open (enables an entry).
+          if (gContextMenu.isContentSelected) {
+            gContextMenu.getTextDirective();
+          }
+          break;
+        }
+        case "context-openlinkinusercontext-popup":
+          gContextMenu.createContainerMenu(event);
+          break;
+        case "context-sendlinktodevice-popup":
+          gSync.populateSendTabToDevicesMenu(
+            event.target,
+            gContextMenu.linkURI,
+            gContextMenu.linkTextStr
+          );
+          break;
+        case "context-sendpagetodevice-popup":
+          gSync.populateSendTabToDevicesMenu(
+            event.target,
+            gBrowser.currentURI,
+            gBrowser.contentTitle
+          );
+          break;
       }
     });
     contextMenuPopup.addEventListener("popuphiding", event => {
@@ -323,6 +361,14 @@ document.addEventListener(
         updateEditUIVisibility();
       }
     });
+
+    // The command events bubble up to the popup element.
+    let userContextPopup = document.getElementById(
+      "context-openlinkinusercontext-popup"
+    );
+    userContextPopup.addEventListener("command", event =>
+      gContextMenu.openLinkInTab(event)
+    );
   },
   { once: true }
 );

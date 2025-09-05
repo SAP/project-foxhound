@@ -26,7 +26,6 @@
 #include "nsIScriptLoaderObserver.h"
 #include "nsURIHashKey.h"
 #include "mozilla/CORSMode.h"
-#include "mozilla/dom/JSExecutionContext.h"  // JSExecutionContext
 #include "ModuleLoader.h"
 #include "mozilla/MaybeOneOf.h"
 #include "mozilla/MozPromise.h"
@@ -38,6 +37,7 @@ class nsIContent;
 class nsIIncrementalStreamLoader;
 class nsIPrincipal;
 class nsIScriptGlobalObject;
+class nsITimer;
 class nsIURI;
 
 namespace JS {
@@ -361,7 +361,7 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   /**
    * Processes any pending requests that are ready for processing.
    */
-  void ProcessPendingRequests();
+  void ProcessPendingRequests(bool aAllowBypassingParserBlocking = false);
 
   /**
    * Starts deferring deferred scripts and puts them in the mDeferredRequests
@@ -471,6 +471,11 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
       const SRIMetadata& aIntegrity, ReferrerPolicy aReferrerPolicy,
       JS::loader::ParserMetadata aParserMetadata, RequestType requestType);
 
+  void NotifyObserversForCachedScript(
+      nsIURI* aURI, nsINode* aContext, nsIPrincipal* aTriggeringPrincipal,
+      nsSecurityFlags aSecurityFlags, nsContentPolicyType aContentPolicyType,
+      SubResourceNetworkMetadataHolder* aNetworkMetadata);
+
   /**
    * Unblocks the creator parser of the parser-blocking scripts.
    */
@@ -572,6 +577,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
    */
   virtual void ProcessPendingRequestsAsync();
 
+  void ProcessPendingRequestsAsyncBypassParserBlocking();
+
   /**
    * If true, the loader is ready to execute parser-blocking scripts, and so are
    * all its ancestors.  If the loader itself is ready but some ancestor is not,
@@ -630,21 +637,32 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   //   * text source
   //   * encoded bytecode
   //   * cached stencil
-  nsresult InstantiateClassicScriptFromAny(JSContext* aCx,
-                                           JSExecutionContext& aExec,
-                                           ScriptLoadRequest* aRequest);
+  void InstantiateClassicScriptFromAny(
+      JSContext* aCx, JS::CompileOptions& aCompileOptions,
+      ScriptLoadRequest* aRequest, JS::MutableHandle<JSScript*> aScript,
+      JS::Handle<JS::Value> aDebuggerPrivateValue,
+      JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv);
 
   // Instantiate classic script from one of the following data:
   //   * text source
   //   * encoded bytecode
-  nsresult InstantiateClassicScriptFromMaybeEncodedSource(
-      JSContext* aCx, JSExecutionContext& aExec, ScriptLoadRequest* aRequest);
+  //
+  // aStencilOut is set to the compiled stencil.
+  void InstantiateClassicScriptFromMaybeEncodedSource(
+      JSContext* aCx, JS::CompileOptions& aCompileOptions,
+      ScriptLoadRequest* aRequest, JS::MutableHandle<JSScript*> aScript,
+      RefPtr<JS::Stencil>& aStencilOut,
+      JS::Handle<JS::Value> aDebuggerPrivateValue,
+      JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv);
 
   // Instantiate classic script from the following data:
   //   * cached stencil
-  nsresult InstantiateClassicScriptFromCachedStencil(
-      JSContext* aCx, JSExecutionContext& aExec, ScriptLoadRequest* aRequest,
-      JS::Stencil* aStencil);
+  void InstantiateClassicScriptFromCachedStencil(
+      JSContext* aCx, JS::CompileOptions& aCompileOptions,
+      ScriptLoadRequest* aRequest, JS::Stencil* aStencil,
+      JS::MutableHandle<JSScript*> aScript,
+      JS::Handle<JS::Value> aDebuggerPrivateValue,
+      JS::Handle<JSScript*> aDebuggerIntroductionScript, ErrorResult& aRv);
 
   static nsCString& BytecodeMimeTypeFor(ScriptLoadRequest* aRequest);
 
@@ -812,6 +830,8 @@ class ScriptLoader final : public JS::loader::ScriptLoaderInterface {
   nsTArray<RefPtr<ModuleLoader>> mShadowRealmModuleLoaders;
 
   RefPtr<SharedScriptCache> mCache;
+
+  nsCOMPtr<nsITimer> mProcessPendingRequestsAsyncBypassParserBlocking;
 
   // Logging
  public:

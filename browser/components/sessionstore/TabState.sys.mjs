@@ -13,31 +13,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
 /**
  * Module that contains tab state collection methods.
  */
-export var TabState = Object.freeze({
-  update(permanentKey, data) {
-    TabStateInternal.update(permanentKey, data);
-  },
-
-  collect(tab, extData) {
-    return TabStateInternal.collect(tab, extData);
-  },
-
-  clone(tab, extData) {
-    return TabStateInternal.clone(tab, extData);
-  },
-
-  copyFromCache(permanentKey, tabData, options) {
-    TabStateInternal.copyFromCache(permanentKey, tabData, options);
-  },
-});
-
-var TabStateInternal = {
+class _TabState {
   /**
    * Processes a data update sent by the content script.
    */
   update(permanentKey, { data }) {
     lazy.TabStateCache.update(permanentKey, data);
-  },
+  }
 
   /**
    * Collect data related to a single tab, synchronously.
@@ -47,13 +29,13 @@ var TabStateInternal = {
    * @param [extData]
    *        optional dictionary object, containing custom tab values.
    *
-   * @returns {TabData} An object with the data for this tab.  If the
+   * @returns {TabStateData} An object with the data for this tab.  If the
    * tab has not been invalidated since the last call to
    * collect(aTab), the same object is returned.
    */
   collect(tab, extData) {
-    return this._collectBaseTabData(tab, { extData });
-  },
+    return this.#collectBaseTabData(tab, { extData });
+  }
 
   /**
    * Collect data related to a single tab, including private data.
@@ -69,8 +51,8 @@ var TabStateInternal = {
    *                   up-to-date.
    */
   clone(tab, extData) {
-    return this._collectBaseTabData(tab, { extData, includePrivateData: true });
-  },
+    return this.#collectBaseTabData(tab, { extData, includePrivateData: true });
+  }
 
   /**
    * Collects basic tab data for a given tab.
@@ -81,9 +63,9 @@ var TabStateInternal = {
    *        {extData: object} optional dictionary object, containing custom tab values
    *        {includePrivateData: true} to always include private data
    *
-   * @returns {object} An object with the basic data for this tab.
+   * @returns {TabStateData} An object with the basic data for this tab.
    */
-  _collectBaseTabData(tab, options) {
+  #collectBaseTabData(tab, options) {
     let tabData = { entries: [], lastAccessed: tab.lastAccessed };
     let browser = tab.linkedBrowser;
 
@@ -96,6 +78,10 @@ var TabStateInternal = {
     if (browser.audioMuted) {
       tabData.muted = true;
       tabData.muteReason = tab.muteReason;
+    }
+
+    if (tab.group) {
+      tabData.groupId = tab.group.id;
     }
 
     tabData.searchMode = tab.ownerGlobal.gURLBar.getSearchMode(browser, true);
@@ -141,7 +127,7 @@ var TabStateInternal = {
     }
 
     return tabData;
-  },
+  }
 
   /**
    * Copy data for the given |browser| from the cache to |tabData|.
@@ -200,5 +186,7 @@ var TabStateInternal = {
         tabData[key] = value;
       }
     }
-  },
-};
+  }
+}
+
+export const TabState = new _TabState();

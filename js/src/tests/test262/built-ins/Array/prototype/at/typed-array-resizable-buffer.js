@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-arraybuffer-resizable) skip-if(!ArrayBuffer.prototype.resize||!xulRuntime.shell) -- resizable-arraybuffer is not enabled unconditionally, requires shell-options
 // Copyright 2023 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -25,7 +24,7 @@ for (let ctor of ctors) {
   // Write some data into the array.
   let ta_write = new ctor(rab);
   for (let i = 0; i < 4; ++i) {
-    WriteToTypedArray(ta_write, i, i);
+    ta_write[i] = MayNeedBigInt(ta_write, i);
   }
   assert.sameValue(ArrayAtHelper(fixedLength, -1), 3);
   assert.sameValue(ArrayAtHelper(lengthTracking, -1), 3);

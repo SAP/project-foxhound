@@ -49,7 +49,9 @@ static inline Maybe<dom::MediaControlKey> GetMediaControlKey(
       {"Pause", dom::MediaControlKey::Pause},
       {"PlayPause", dom::MediaControlKey::Playpause},
       {"Stop", dom::MediaControlKey::Stop},
-      {"Play", dom::MediaControlKey::Play}};
+      {"Play", dom::MediaControlKey::Play},
+      {"SetPosition", dom::MediaControlKey::Seekto},
+      {"Seek", dom::MediaControlKey::Seekforward}};
 
   auto it = map.find(aMethodName);
   return it == map.end() ? Nothing() : Some(it->second);
@@ -73,8 +75,33 @@ static void HandleMethodCall(GDBusConnection* aConnection, const gchar* aSender,
     return;
   }
 
+  dom::SeekDetails seekDetails{};
+  if (key.value() == dom::MediaControlKey::Seekto ||
+      key.value() == dom::MediaControlKey::Seekforward) {
+    RefPtr<GVariant> child = dont_AddRef(g_variant_get_child_value(
+        aParameters, key.value() == dom::MediaControlKey::Seekto));
+    double seekValue;
+    if (g_variant_is_of_type(child, G_VARIANT_TYPE_INT64)) {
+      seekValue = (double)g_variant_get_int64(child) / 1000000.0;
+    } else {
+      g_dbus_method_invocation_return_error(
+          aInvocation, G_DBUS_ERROR, G_DBUS_ERROR_INVALID_ARGS,
+          "Invalid arguments for %s.%s.%s", aObjectPath, aInterfaceName,
+          aMethodName);
+      return;
+    }
+    if (key.value() == dom::MediaControlKey::Seekto) {
+      seekDetails = dom::SeekDetails(seekValue, false /* fast seek */);
+    } else if (seekValue > 0.0) {
+      seekDetails = dom::SeekDetails(seekValue);
+    } else {
+      key = Some(dom::MediaControlKey::Seekbackward);
+      seekDetails = dom::SeekDetails(-1 * seekValue);
+    }
+  }
+
   MPRISServiceHandler* handler = static_cast<MPRISServiceHandler*>(aUserData);
-  if (handler->PressKey(key.value())) {
+  if (handler->PressKey(dom::MediaControlAction(key.value(), seekDetails))) {
     g_dbus_method_invocation_return_value(aInvocation, nullptr);
   } else {
     g_dbus_method_invocation_return_error(
@@ -100,6 +127,7 @@ enum class Property : uint8_t {
   eCanControl,
   eGetPlaybackStatus,
   eGetMetadata,
+  eGetPosition,
 };
 
 static inline Maybe<dom::MediaControlKey> GetPairedKey(Property aProperty) {
@@ -114,6 +142,8 @@ static inline Maybe<dom::MediaControlKey> GetPairedKey(Property aProperty) {
       return Some(dom::MediaControlKey::Play);
     case Property::eCanPause:
       return Some(dom::MediaControlKey::Pause);
+    case Property::eCanSeek:
+      return Some(dom::MediaControlKey::Seekto);
     default:
       return Nothing();
   }
@@ -137,7 +167,8 @@ static inline Maybe<Property> GetProperty(const gchar* aPropertyName) {
       {"CanSeek", Property::eCanSeek},
       {"CanControl", Property::eCanControl},
       {"PlaybackStatus", Property::eGetPlaybackStatus},
-      {"Metadata", Property::eGetMetadata}};
+      {"Metadata", Property::eGetMetadata},
+      {"Position", Property::eGetPosition}};
 
   auto it = map.find(aPropertyName);
   return (it == map.end() ? Nothing() : Some(it->second));
@@ -170,13 +201,17 @@ static GVariant* HandleGetProperty(GDBusConnection* aConnection,
       return handler->GetPlaybackStatus();
     case Property::eGetMetadata:
       return handler->GetMetadataAsGVariant();
+    case Property::eGetPosition: {
+      CheckedInt64 position =
+          CheckedInt64((int64_t)handler->GetPositionSeconds()) * 1000000;
+      return g_variant_new_int64(position.isValid() ? position.value() : 0);
+    }
     case Property::eIdentity:
       return g_variant_new_string(handler->Identity());
     case Property::eDesktopEntry:
       return g_variant_new_string(handler->DesktopEntry());
     case Property::eHasTrackList:
     case Property::eCanQuit:
-    case Property::eCanSeek:
       return g_variant_new_boolean(false);
     // Play/Pause would be blocked if CanControl is false
     case Property::eCanControl:
@@ -186,6 +221,7 @@ static GVariant* HandleGetProperty(GDBusConnection* aConnection,
     case Property::eCanGoPrevious:
     case Property::eCanPlay:
     case Property::eCanPause:
+    case Property::eCanSeek:
       Maybe<dom::MediaControlKey> key = GetPairedKey(property.value());
       MOZ_ASSERT(key.isSome());
       return g_variant_new_boolean(handler->IsMediaKeySupported(key.value()));
@@ -427,8 +463,7 @@ void MPRISServiceHandler::InitIdentity() {
   mIdentity.Append(' ');
   mIdentity.Append(mDesktopEntry);
 
-  // Compute the desktop entry name like nsAppRunner does for g_set_prgname
-  ToLowerCase(mDesktopEntry);
+  LOGMPRIS("InitIdentity() MPRIS desktop ID %s", mDesktopEntry.get());
 }
 
 const char* MPRISServiceHandler::Identity() const {
@@ -443,14 +478,16 @@ const char* MPRISServiceHandler::DesktopEntry() const {
   return mDesktopEntry.get();
 }
 
-bool MPRISServiceHandler::PressKey(dom::MediaControlKey aKey) const {
+bool MPRISServiceHandler::PressKey(
+    const dom::MediaControlAction& aAction) const {
   MOZ_ASSERT(mInitialized);
-  if (!IsMediaKeySupported(aKey)) {
-    LOGMPRIS("%s is not supported", dom::GetEnumString(aKey).get());
+  if (!IsMediaKeySupported(aAction.mKey.value())) {
+    LOGMPRIS("%s is not supported",
+             dom::GetEnumString(aAction.mKey.value()).get());
     return false;
   }
-  LOGMPRIS("Press %s", dom::GetEnumString(aKey).get());
-  EmitEvent(aKey);
+  LOGMPRIS("Press %s", dom::GetEnumString(aAction.mKey.value()).get());
+  EmitEvent(aAction);
   return true;
 }
 
@@ -644,10 +681,13 @@ bool MPRISServiceHandler::RenewLocalImageFile(const char* aImageData,
 
   MOZ_ASSERT(mLocalImageFile);
   nsCOMPtr<nsIOutputStream> out;
-  NS_NewLocalFileOutputStream(getter_AddRefs(out), mLocalImageFile,
-                              PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE);
+  nsresult rv =
+      NS_NewLocalFileOutputStream(getter_AddRefs(out), mLocalImageFile,
+                                  PR_RDWR | PR_CREATE_FILE | PR_TRUNCATE);
   uint32_t written;
-  nsresult rv = out->Write(aImageData, aDataSize, &written);
+  if (NS_SUCCEEDED(rv)) {
+    rv = out->Write(aImageData, aDataSize, &written);
+  }
   if (NS_FAILED(rv) || written != aDataSize) {
     LOGMPRIS("Failed to write an image file");
     RemoveAllLocalImages();
@@ -718,7 +758,7 @@ bool MPRISServiceHandler::InitLocalImageFolder() {
     // The XDG_DATA_HOME points to the same location in the host and guest
     // filesystem.
     if (const auto* xdgDataHome = g_getenv("XDG_DATA_HOME")) {
-      rv = NS_NewNativeLocalFile(nsDependentCString(xdgDataHome), true,
+      rv = NS_NewNativeLocalFile(nsDependentCString(xdgDataHome),
                                  getter_AddRefs(mLocalImageFolder));
     }
   } else {
@@ -808,13 +848,27 @@ GVariant* MPRISServiceHandler::GetMetadataAsGVariant() const {
                           g_variant_new_string(static_cast<const gchar*>(
                               mMPRISMetadata.mArtUrl.get())));
   }
+  if (!mMPRISMetadata.mUrl.IsEmpty()) {
+    g_variant_builder_add(&builder, "{sv}", "xesam:url",
+                          g_variant_new_string(static_cast<const gchar*>(
+                              mMPRISMetadata.mUrl.get())));
+  }
+  if (mPositionState.isSome()) {
+    CheckedInt64 length =
+        CheckedInt64((int64_t)mPositionState.value().mDuration) * 1000000;
+    if (length.isValid()) {
+      g_variant_builder_add(&builder, "{sv}", "mpris:length",
+                            g_variant_new_int64(length.value()));
+    }
+  }
 
   return g_variant_builder_end(&builder);
 }
 
-void MPRISServiceHandler::EmitEvent(dom::MediaControlKey aKey) const {
+void MPRISServiceHandler::EmitEvent(
+    const dom::MediaControlAction& aAction) const {
   for (const auto& listener : mListeners) {
-    listener->OnActionPerformed(dom::MediaControlAction(aKey));
+    listener->OnActionPerformed(aAction);
   }
 }
 
@@ -822,7 +876,8 @@ struct InterfaceProperty {
   const char* interface;
   const char* property;
 };
-static const std::unordered_map<dom::MediaControlKey, InterfaceProperty>
+MOZ_RUNINIT static const std::unordered_map<dom::MediaControlKey,
+                                            InterfaceProperty>
     gKeyProperty = {
         {dom::MediaControlKey::Focus, {DBUS_MPRIS_INTERFACE, "CanRaise"}},
         {dom::MediaControlKey::Nexttrack,
@@ -858,6 +913,18 @@ void MPRISServiceHandler::SetSupportedMediaKeys(
       EmitSupportedKeyChanged(it.first, keyIsSupported);
     }
   }
+}
+
+void MPRISServiceHandler::SetPositionState(
+    const Maybe<dom::PositionState>& aState) {
+  mPositionState = aState;
+}
+
+double MPRISServiceHandler::GetPositionSeconds() const {
+  if (mPositionState.isSome()) {
+    return mPositionState.value().CurrentPlaybackPosition();
+  }
+  return 0.0;
 }
 
 bool MPRISServiceHandler::IsMediaKeySupported(dom::MediaControlKey aKey) const {

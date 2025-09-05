@@ -146,32 +146,6 @@ enum class StyleShapeSourceType : uint8_t {
   Path,  // SVG path function
 };
 
-// user-focus
-enum class StyleUserFocus : uint8_t {
-  None,
-  Ignore,
-  Normal,
-};
-
-// user-input
-enum class StyleUserInput : uint8_t {
-  None,
-  Auto,
-};
-
-// user-modify
-enum class StyleUserModify : uint8_t {
-  ReadOnly,
-  ReadWrite,
-  WriteOnly,
-};
-
-// -moz-inert
-enum class StyleInert : uint8_t {
-  None,
-  Inert,
-};
-
 // -moz-window-dragging
 enum class StyleWindowDragging : uint8_t {
   Default,
@@ -205,9 +179,6 @@ enum class StyleMaskMode : uint8_t { Alpha = 0, Luminance, MatchSource };
 
 // See nsStyleTable
 enum class StyleBorderCollapse : uint8_t { Collapse, Separate };
-
-// border-image-repeat
-enum class StyleBorderImageRepeat : uint8_t { Stretch, Repeat, Round, Space };
 
 // See nsStyleVisibility
 enum class StyleDirection : uint8_t { Ltr, Rtl };
@@ -281,15 +252,6 @@ enum class StyleMathVariant : uint8_t {
 // See nsStyleFont::mMathStyle
 enum class StyleMathStyle : uint8_t { Compact = 0, Normal = 1 };
 
-// See nsStyleDisplay.mPosition
-enum class StylePositionProperty : uint8_t {
-  Static,
-  Relative,
-  Absolute,
-  Fixed,
-  Sticky,
-};
-
 enum class FrameBorderProperty : uint8_t { Yes, No, One, Zero };
 
 enum class ScrollingAttribute : uint8_t {
@@ -334,20 +296,6 @@ enum class ListStyle : uint8_t {
 // See nsStyleList
 enum class StyleListStylePosition : uint8_t { Inside, Outside };
 
-// See nsStyleVisibility
-enum class StylePointerEvents : uint8_t {
-  None,
-  Visiblepainted,
-  Visiblefill,
-  Visiblestroke,
-  Visible,
-  Painted,
-  Fill,
-  Stroke,
-  All,
-  Auto,
-};
-
 enum class StyleIsolation : uint8_t {
   Auto,
   Isolate,
@@ -384,7 +332,7 @@ enum class StyleTextSecurity : uint8_t {
 // See nsStyleDisplay
 enum class StyleTopLayer : uint8_t {
   None,
-  Top,
+  Auto,
 };
 
 // See nsStyleVisibility

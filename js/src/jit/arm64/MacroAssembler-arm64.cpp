@@ -463,7 +463,7 @@ void MacroAssemblerCompat::wasmLoadImpl(const wasm::MemoryAccessDesc& access,
                                         Register memoryBase_, Register ptr_,
                                         AnyRegister outany, Register64 out64) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
 
   MOZ_ASSERT(memoryBase_ != ptr_);
 
@@ -617,7 +617,7 @@ void MacroAssemblerCompat::wasmStoreImpl(const wasm::MemoryAccessDesc& access,
                                          AnyRegister valany, Register64 val64,
                                          Register memoryBase_, Register ptr_) {
   access.assertOffsetInGuardPages();
-  uint32_t offset = access.offset();
+  uint32_t offset = access.offset32();
 
   ARMRegister memoryBase(memoryBase_, 64);
   ARMRegister ptr(ptr_, 64);
@@ -1451,6 +1451,26 @@ void MacroAssembler::patchCallToNop(uint8_t* call) {
   nop(instr);
 }
 
+CodeOffset MacroAssembler::move32WithPatch(Register dest) {
+  AutoForbidPoolsAndNops afp(this,
+                             /* max number of instructions in scope = */ 3);
+  CodeOffset offs = CodeOffset(currentOffset());
+  movz(ARMRegister(dest, 64), 0, 0);
+  movk(ARMRegister(dest, 64), 0, 16);
+  return offs;
+}
+
+void MacroAssembler::patchMove32(CodeOffset offset, Imm32 n) {
+  Instruction* i1 = getInstructionAt(BufferOffset(offset.offset()));
+  MOZ_ASSERT(i1->IsMovz());
+  i1->SetInstructionBits(i1->InstructionBits() | ImmMoveWide(n.value & 0xFFFF));
+
+  Instruction* i2 = getInstructionAt(BufferOffset(offset.offset() + 4));
+  MOZ_ASSERT(i2->IsMovk());
+  i2->SetInstructionBits(i2->InstructionBits() |
+                         ImmMoveWide((n.value >> 16) & 0xFFFF));
+}
+
 void MacroAssembler::pushReturnAddress() {
   MOZ_RELEASE_ASSERT(!sp.Is(GetStackPointer64()), "Not valid");
   push(lr);
@@ -1624,30 +1644,6 @@ bool MacroAssemblerCompat::buildOOLFakeExitFrame(void* fakeReturnAddr) {
 // ===============================================================
 // Move instructions
 
-void MacroAssembler::moveValue(const TypedOrValueRegister& src,
-                               const ValueOperand& dest) {
-  if (src.hasValue()) {
-    moveValue(src.valueReg(), dest);
-    return;
-  }
-
-  MIRType type = src.type();
-  AnyRegister reg = src.typedReg();
-
-  if (!IsFloatingPointType(type)) {
-    boxNonDouble(ValueTypeFromMIRType(type), reg.gpr(), dest);
-    return;
-  }
-
-  ScratchDoubleScope scratch(*this);
-  FloatRegister freg = reg.fpu();
-  if (type == MIRType::Float32) {
-    convertFloat32ToDouble(freg, scratch);
-    freg = scratch;
-  }
-  boxDouble(freg, dest, scratch);
-}
-
 void MacroAssembler::moveValue(const ValueOperand& src,
                                const ValueOperand& dest) {
   if (src == dest) {
@@ -1723,11 +1719,30 @@ void MacroAssembler::branchValueIsNurseryCellImpl(Condition cond,
 void MacroAssembler::branchTestValue(Condition cond, const ValueOperand& lhs,
                                      const Value& rhs, Label* label) {
   MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  MOZ_ASSERT(!rhs.isNaN());
   vixl::UseScratchRegisterScope temps(this);
   const ARMRegister scratch64 = temps.AcquireX();
   MOZ_ASSERT(scratch64.asUnsized() != lhs.valueReg());
   moveValue(rhs, ValueOperand(scratch64.asUnsized()));
   Cmp(ARMRegister(lhs.valueReg(), 64), scratch64);
+  B(label, cond);
+}
+
+void MacroAssembler::branchTestNaNValue(Condition cond, const ValueOperand& val,
+                                        Register temp, Label* label) {
+  MOZ_ASSERT(cond == Equal || cond == NotEqual);
+  vixl::UseScratchRegisterScope temps(this);
+  const ARMRegister scratch64 = temps.AcquireX();
+  MOZ_ASSERT(scratch64.asUnsized() != val.valueReg());
+
+  // When testing for NaN, we want to ignore the sign bit.
+  And(ARMRegister(temp, 64), ARMRegister(val.valueReg(), 64),
+      Operand(~mozilla::FloatingPoint<double>::kSignBit));
+
+  // Compare against a NaN with sign bit 0.
+  static_assert(JS::detail::CanonicalizedNaNSignBit == 0);
+  moveValue(DoubleValue(JS::GenericNaN()), ValueOperand(scratch64.asUnsized()));
+  Cmp(ARMRegister(temp, 64), scratch64);
   B(label, cond);
 }
 
@@ -1939,14 +1954,12 @@ void MacroAssembler::wasmTruncateFloat32ToInt64(
   }
 }
 
-void MacroAssembler::oolWasmTruncateCheckF32ToI32(FloatRegister input,
-                                                  Register output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF32ToI32(
+    FloatRegister input, Register output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   Label notNaN;
   branchFloat(Assembler::DoubleOrdered, input, input, &notNaN);
-  wasmTrap(wasm::Trap::InvalidConversionToInteger, off);
+  wasmTrap(wasm::Trap::InvalidConversionToInteger, trapSiteDesc);
   bind(&notNaN);
 
   Label isOverflow;
@@ -1966,17 +1979,15 @@ void MacroAssembler::oolWasmTruncateCheckF32ToI32(FloatRegister input,
     branchFloat(Assembler::DoubleGreaterThanOrEqual, input, fpscratch, rejoin);
   }
   bind(&isOverflow);
-  wasmTrap(wasm::Trap::IntegerOverflow, off);
+  wasmTrap(wasm::Trap::IntegerOverflow, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF64ToI32(FloatRegister input,
-                                                  Register output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF64ToI32(
+    FloatRegister input, Register output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   Label notNaN;
   branchDouble(Assembler::DoubleOrdered, input, input, &notNaN);
-  wasmTrap(wasm::Trap::InvalidConversionToInteger, off);
+  wasmTrap(wasm::Trap::InvalidConversionToInteger, trapSiteDesc);
   bind(&notNaN);
 
   Label isOverflow;
@@ -1996,17 +2007,15 @@ void MacroAssembler::oolWasmTruncateCheckF64ToI32(FloatRegister input,
     branchDouble(Assembler::DoubleGreaterThan, input, fpscratch, rejoin);
   }
   bind(&isOverflow);
-  wasmTrap(wasm::Trap::IntegerOverflow, off);
+  wasmTrap(wasm::Trap::IntegerOverflow, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF32ToI64(FloatRegister input,
-                                                  Register64 output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF32ToI64(
+    FloatRegister input, Register64 output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   Label notNaN;
   branchFloat(Assembler::DoubleOrdered, input, input, &notNaN);
-  wasmTrap(wasm::Trap::InvalidConversionToInteger, off);
+  wasmTrap(wasm::Trap::InvalidConversionToInteger, trapSiteDesc);
   bind(&notNaN);
 
   Label isOverflow;
@@ -2026,17 +2035,15 @@ void MacroAssembler::oolWasmTruncateCheckF32ToI64(FloatRegister input,
     branchFloat(Assembler::DoubleGreaterThanOrEqual, input, fpscratch, rejoin);
   }
   bind(&isOverflow);
-  wasmTrap(wasm::Trap::IntegerOverflow, off);
+  wasmTrap(wasm::Trap::IntegerOverflow, trapSiteDesc);
 }
 
-void MacroAssembler::oolWasmTruncateCheckF64ToI64(FloatRegister input,
-                                                  Register64 output,
-                                                  TruncFlags flags,
-                                                  wasm::BytecodeOffset off,
-                                                  Label* rejoin) {
+void MacroAssembler::oolWasmTruncateCheckF64ToI64(
+    FloatRegister input, Register64 output, TruncFlags flags,
+    const wasm::TrapSiteDesc& trapSiteDesc, Label* rejoin) {
   Label notNaN;
   branchDouble(Assembler::DoubleOrdered, input, input, &notNaN);
-  wasmTrap(wasm::Trap::InvalidConversionToInteger, off);
+  wasmTrap(wasm::Trap::InvalidConversionToInteger, trapSiteDesc);
   bind(&notNaN);
 
   Label isOverflow;
@@ -2056,7 +2063,7 @@ void MacroAssembler::oolWasmTruncateCheckF64ToI64(FloatRegister input,
     branchDouble(Assembler::DoubleGreaterThanOrEqual, input, fpscratch, rejoin);
   }
   bind(&isOverflow);
-  wasmTrap(wasm::Trap::IntegerOverflow, off);
+  wasmTrap(wasm::Trap::IntegerOverflow, trapSiteDesc);
 }
 
 void MacroAssembler::wasmLoad(const wasm::MemoryAccessDesc& access,
@@ -2109,6 +2116,46 @@ void MacroAssembler::enterFakeExitFrameForWasm(Register cxreg, Register scratch,
 
 void MacroAssembler::widenInt32(Register r) {
   move32To64ZeroExtend(r, Register64(r));
+}
+
+CodeOffset MacroAssembler::sub32FromMemAndBranchIfNegativeWithPatch(
+    Address address, Label* label) {
+  vixl::UseScratchRegisterScope temps(this);
+  const ARMRegister value32 = temps.AcquireW();
+  MOZ_ASSERT(value32.asUnsized() != address.base);
+  Ldr(value32, toMemOperand(address));
+  // -128 is arbitrary, but makes `*address` count upwards, which may help
+  // to identify cases where the subsequent ::patch..() call was forgotten.
+  Subs(value32, value32, Operand(-128));
+  // Points immediately after the insn to patch
+  CodeOffset patchPoint = CodeOffset(currentOffset());
+  // This assumes that Str does not change the condition codes.
+  Str(value32, toMemOperand(address));
+  B(label, Assembler::Signed);
+  return patchPoint;
+}
+
+void MacroAssembler::patchSub32FromMemAndBranchIfNegative(CodeOffset offset,
+                                                          Imm32 imm) {
+  int32_t val = imm.value;
+  // Patching it to zero would make the insn pointless
+  MOZ_RELEASE_ASSERT(val >= 1 && val <= 127);
+  Instruction* instrPtr = getInstructionAt(BufferOffset(offset.offset() - 4));
+  // 31   27   23 21    9  4
+  // |    |    |  |     |  |
+  // 0011 0001 00 imm12 Rn Rd = ADDS Wd, Wn|WSP, #imm12 // (expected)
+  // 0111 0001 00 imm12 Rn Rd = SUBS Wd, Wn|WSP, #imm12 // (replacement)
+  vixl::Instr oldInstr = instrPtr->InstructionBits();
+  // Check opcode bits and imm field are as expected
+  MOZ_ASSERT((oldInstr & 0b1111'1111'11'000000000000'00000'00000U) ==
+             0b0011'0001'00'000000000000'00000'00000U);
+  MOZ_RELEASE_ASSERT((oldInstr & 0b0000'0000'00'111111111111'00000'00000U) ==
+                     (128 << 10));  // 128 as created above
+  vixl::Instr newInstr =
+      0b0111'0001'00'000000000000'00000'00000U |  // opcode bits
+      (oldInstr & 0b11111'11111) |                // existing register fields
+      ((val & 0b111111111111) << 10);             // #val
+  instrPtr->SetInstructionBits(newInstr);
 }
 
 // ========================================================================
@@ -2908,10 +2955,18 @@ void MacroAssembler::atomicEffectOpJS(Scalar::Type arrayType,
                        value, temp, temp);
 }
 
+void MacroAssembler::atomicPause() { Isb(); }
+
 void MacroAssembler::flexibleQuotient32(Register rhs, Register srcDest,
                                         bool isUnsigned,
                                         const LiveRegisterSet&) {
   quotient32(rhs, srcDest, isUnsigned);
+}
+
+void MacroAssembler::flexibleQuotientPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  quotient64(rhs, srcDest, isUnsigned);
 }
 
 void MacroAssembler::flexibleRemainder32(Register rhs, Register srcDest,
@@ -2920,11 +2975,16 @@ void MacroAssembler::flexibleRemainder32(Register rhs, Register srcDest,
   remainder32(rhs, srcDest, isUnsigned);
 }
 
+void MacroAssembler::flexibleRemainderPtr(
+    Register rhs, Register srcDest, bool isUnsigned,
+    const LiveRegisterSet& volatileLiveRegs) {
+  remainder64(rhs, srcDest, isUnsigned);
+}
+
 void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
                                       Register remOutput, bool isUnsigned,
                                       const LiveRegisterSet&) {
   vixl::UseScratchRegisterScope temps(this);
-  ARMRegister scratch = temps.AcquireW();
   ARMRegister src = temps.AcquireW();
 
   // Preserve src for remainder computation
@@ -2935,9 +2995,10 @@ void MacroAssembler::flexibleDivMod32(Register rhs, Register srcDest,
   } else {
     Sdiv(ARMRegister(srcDest, 32), src, ARMRegister(rhs, 32));
   }
-  // Compute remainder
-  Mul(scratch, ARMRegister(srcDest, 32), ARMRegister(rhs, 32));
-  Sub(ARMRegister(remOutput, 32), src, scratch);
+
+  // Compute the remainder: remOutput = src - (srcDest * rhs).
+  Msub(/* result= */ ARMRegister(remOutput, 32), ARMRegister(srcDest, 32),
+       ARMRegister(rhs, 32), src);
 }
 
 CodeOffset MacroAssembler::moveNearAddressWithPatch(Register dest) {
@@ -3424,8 +3485,7 @@ void MacroAssembler::shiftIndex32AndAdd(Register indexTemp32, int shift,
       Operand(ARMRegister(indexTemp32, 64), vixl::LSL, shift));
 }
 
-#ifdef ENABLE_WASM_TAIL_CALLS
-void MacroAssembler::wasmMarkSlowCall() { Mov(x28, x28); }
+void MacroAssembler::wasmMarkCallAsSlow() { Mov(x28, x28); }
 
 const int32_t SlowCallMarker = 0xaa1c03fc;
 
@@ -3436,7 +3496,14 @@ void MacroAssembler::wasmCheckSlowCallsite(Register ra, Label* notSlow,
   Cmp(W(temp2), Operand(SlowCallMarker));
   B(Assembler::NotEqual, notSlow);
 }
-#endif  // ENABLE_WASM_TAIL_CALLS
+
+CodeOffset MacroAssembler::wasmMarkedSlowCall(const wasm::CallSiteDesc& desc,
+                                              const Register reg) {
+  AutoForbidPoolsAndNops afp(this, !GetStackPointer64().Is(vixl::sp) ? 3 : 2);
+  CodeOffset offset = call(desc, reg);
+  wasmMarkCallAsSlow();
+  return offset;
+}
 
 //}}} check_macroassembler_style
 

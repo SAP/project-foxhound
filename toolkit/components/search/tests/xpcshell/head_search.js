@@ -3,6 +3,9 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
+  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  EnterprisePolicyTesting:
+    "resource://testing-common/EnterprisePolicyTesting.sys.mjs",
   ExtensionTestUtils:
     "resource://testing-common/ExtensionXPCShellUtils.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
@@ -11,17 +14,21 @@ ChromeUtils.defineESModuleGetters(this, {
   RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   RemoteSettingsClient:
     "resource://services-settings/RemoteSettingsClient.sys.mjs",
+  SearchEngineClassification: "resource://gre/modules/RustSearch.sys.mjs",
   SearchEngineSelector: "resource://gre/modules/SearchEngineSelector.sys.mjs",
   SearchService: "resource://gre/modules/SearchService.sys.mjs",
   SearchSettings: "resource://gre/modules/SearchSettings.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   TestUtils: "resource://testing-common/TestUtils.sys.mjs",
-  clearTimeout: "resource://gre/modules/Timer.sys.mjs",
   updateAppInfo: "resource://testing-common/AppInfo.sys.mjs",
+  Utils: "resource://services-settings/Utils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
   sinon: "resource://testing-common/Sinon.sys.mjs",
 });
+
+// Expose Remote Settings utils with an explicit name.
+const RemoteSettingsUtils = Utils;
 
 // We need Services.appinfo.name set up to allow the hashes to work with a
 // consistent name.
@@ -220,24 +227,22 @@ function isSubObjectOf(expectedObj, actualObj, skipProp) {
 }
 
 /**
- * After useHttpServer() is called, this string contains the URL of the "data"
- * directory, including the final slash.
+ * After useHttpServer() is called, this string contains the URL test directory,
+ * excluding the final slash.
  */
-var gDataUrl;
+var gHttpURL;
 
 /**
  * Initializes the HTTP server and ensures that it is terminated when tests end.
  *
- * @param {string} dir
- *   The test sub-directory to use for the engines.
  * @returns {HttpServer}
  *   The HttpServer object in case further customization is needed.
  */
-function useHttpServer(dir = "data") {
+function useHttpServer() {
   let httpServer = new HttpServer();
   httpServer.start(-1);
   httpServer.registerDirectory("/", do_get_cwd());
-  gDataUrl = `http://localhost:${httpServer.identity.primaryPort}/${dir}/`;
+  gHttpURL = `http://localhost:${httpServer.identity.primaryPort}`;
   registerCleanupFunction(async function cleanup_httpServer() {
     await new Promise(resolve => {
       httpServer.stop(resolve);
@@ -275,25 +280,6 @@ function checkCountryResultTelemetry(aExpectedValue) {
 }
 
 /**
- * Provides a basic set of remote settings for use in tests.
- */
-async function setupRemoteSettings() {
-  const settings = await RemoteSettings("hijack-blocklists");
-  sinon.stub(settings, "get").returns([
-    {
-      id: "load-paths",
-      matches: ["[addon]searchignore@mozilla.com"],
-      _status: "synced",
-    },
-    {
-      id: "submission-urls",
-      matches: ["ignore=true"],
-      _status: "synced",
-    },
-  ]);
-}
-
-/**
  * Reads the specified file from the data directory and returns its contents as
  * an Uint8Array.
  *
@@ -303,7 +289,7 @@ async function setupRemoteSettings() {
  *   The contents of the file in an Uint8Array.
  */
 async function getFileDataBuffer(filename) {
-  return IOUtils.read(PathUtils.join(do_get_cwd().path, "data", filename));
+  return IOUtils.read(PathUtils.join(do_get_cwd().path, "icons", filename));
 }
 
 /**
@@ -321,6 +307,8 @@ async function getFileDataBuffer(filename) {
  *   The ID to use for the record. If not provided, a new UUID will be generated.
  * @param {number} [item.lastModified]
  *   The last modified time for the record. Defaults to the current time.
+ * @returns {object}
+ *   An object containing the record and attachment.
  */
 async function mockRecordWithAttachment({
   filename,
@@ -487,6 +475,41 @@ async function assertGleanDefaultEngine(expected) {
 }
 
 /**
+ * Loads a new enterprise policy, and re-initialise the search service
+ * with the new policy. Also waits for the search service to write the settings
+ * file to disk.
+ *
+ * @param {object} policy
+ *   The enterprise policy to use.
+ */
+async function setupPolicyEngineWithJson(policy) {
+  Services.search.wrappedJSObject.reset();
+
+  await this.EnterprisePolicyTesting.setupPolicyEngineWithJson(policy);
+
+  let settingsWritten = SearchTestUtils.promiseSearchNotification(
+    "write-settings-to-disk-complete"
+  );
+  await Services.search.init();
+  await settingsWritten;
+}
+
+/**
+ * Makes Services.policies.isEnterprise return true by loading an enterprise
+ * policy and re-initialise the search service with the new policy. Also waits
+ * for the search service to write the settings file to disk.
+ */
+async function enableEnterprise() {
+  await setupPolicyEngineWithJson({
+    // Use any policy.
+    policies: {
+      BlockAboutSupport: true,
+    },
+  });
+  Assert.ok(Services.policies.isEnterprise, "isEnterprise");
+}
+
+/**
  * A simple observer to ensure we get only the expected notifications.
  */
 class SearchObserver {
@@ -597,3 +620,82 @@ registerCleanupFunction(async () => {
     }
   }
 });
+
+/**
+ * This function asserts if the actual engines returned equals the expected
+ * engines.
+ *
+ * @param {SearchEngineSelector} engineSelector
+ *   The search engine selector to use for the test.
+ * @param {object} config
+ *   A fake search config containing engines.
+ * @param {object} userEnv
+ *   A fake user's environment including locale and region, experiment, etc.
+ * @param {Array} expectedEngines
+ *   The array of expected engines to be returned from the fake config.
+ * @param {string} message
+ *   The assertion message.
+ */
+async function assertSelectorEnginesEqualsExpected(
+  engineSelector,
+  config,
+  userEnv,
+  expectedEngines,
+  message
+) {
+  engineSelector._configuration = null;
+  SearchTestUtils.setRemoteSettingsConfig(config);
+
+  if (expectedEngines.length) {
+    let { engines } = await engineSelector.fetchEngineConfiguration(userEnv);
+
+    if (SearchUtils.rustSelectorFeatureGate) {
+      // Add default parameters to match the selector output.
+      for (let i = 0; i < expectedEngines.length; i++) {
+        expectedEngines[i] = {
+          aliases: [],
+          charset: "UTF-8",
+          optional: false,
+          partnerCode: "",
+          telemetrySuffix: "",
+          orderHint: null,
+          ...expectedEngines[i],
+        };
+        expectedEngines[i].classification =
+          expectedEngines[i].classification == "general"
+            ? SearchEngineClassification.GENERAL
+            : SearchEngineClassification.UNKNOWN;
+
+        expectedEngines[i].urls = {
+          suggestions: null,
+          trending: null,
+          searchForm: null,
+          ...expectedEngines[i].urls,
+        };
+        expectedEngines[i].urls.search = {
+          method: "GET",
+          ...expectedEngines[i].urls.search,
+        };
+        if (!expectedEngines[i].urls.search.params) {
+          expectedEngines[i].urls.search.params = [];
+        }
+        for (let j = 0; j < expectedEngines[i].urls.search.params.length; j++) {
+          expectedEngines[i].urls.search.params[j] = {
+            enterpriseValue: null,
+            experimentConfig: null,
+            value: null,
+            ...expectedEngines[i].urls.search.params[j],
+          };
+        }
+      }
+    }
+
+    Assert.deepEqual(engines, expectedEngines, message);
+  } else {
+    await Assert.rejects(
+      engineSelector.fetchEngineConfiguration(userEnv),
+      /Could not find any engines in the filtered configuration/,
+      message
+    );
+  }
+}

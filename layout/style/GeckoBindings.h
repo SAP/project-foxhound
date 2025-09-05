@@ -36,6 +36,7 @@ class StyleSheet;
 enum class PseudoStyleType : uint8_t;
 enum class PointerCapabilities : uint8_t;
 enum class UpdateAnimationsTasks : uint8_t;
+enum class StyleColorGamut : uint8_t;
 struct Keyframe;
 struct StyleStylesheetContents;
 
@@ -44,7 +45,6 @@ class LoaderReusableStyleSheets;
 }
 namespace dom {
 enum class CompositeOperationOrAuto : uint8_t;
-enum class ScreenColorGamut : uint8_t;
 }  // namespace dom
 }  // namespace mozilla
 
@@ -179,6 +179,9 @@ const mozilla::StyleLockedDeclarationBlock* Gecko_GetStyleAttrDeclarationBlock(
     const mozilla::dom::Element* element);
 
 void Gecko_UnsetDirtyStyleAttr(const mozilla::dom::Element* element);
+
+const mozilla::StyleLockedDeclarationBlock* Gecko_GetViewTransitionDynamicRule(
+    const mozilla::dom::Element* element);
 
 const mozilla::StyleLockedDeclarationBlock*
 Gecko_GetHTMLPresentationAttrDeclarationBlock(
@@ -318,8 +321,8 @@ void Gecko_CopyImageOrientationFrom(nsStyleVisibility* aDst,
 // list-style-image style.
 void Gecko_SetListStyleImageNone(nsStyleList* style_struct);
 
-void Gecko_SetListStyleImageImageValue(
-    nsStyleList* style_struct, const mozilla::StyleComputedImageUrl* url);
+void Gecko_SetListStyleImageImageValue(nsStyleList* style_struct,
+                                       const mozilla::StyleComputedUrl* url);
 
 void Gecko_CopyListStyleImageFrom(nsStyleList* dest, const nsStyleList* src);
 
@@ -333,9 +336,11 @@ bool Gecko_AnimationNameMayBeReferencedFromStyle(const nsPresContext*,
 
 float Gecko_GetScrollbarInlineSize(const nsPresContext*);
 
-// Incremental restyle.
-mozilla::PseudoStyleType Gecko_GetImplementedPseudo(
+// Retrive pseudo type from an element.
+mozilla::PseudoStyleType Gecko_GetImplementedPseudoType(
     const mozilla::dom::Element*);
+// Retrive pseudo identifier from an element if any.
+nsAtom* Gecko_GetImplementedPseudoIdentifier(const mozilla::dom::Element*);
 
 // We'd like to return `nsChangeHint` here, but bindgen bitfield enums don't
 // work as return values with the Linux 32-bit ABI at the moment because
@@ -423,9 +428,6 @@ void Gecko_nsStyleSVG_CopyContextProperties(nsStyleSVG* dst,
 void Gecko_GetComputedURLSpec(const mozilla::StyleComputedUrl* url,
                               nsCString* spec);
 
-void Gecko_GetComputedImageURLSpec(const mozilla::StyleComputedUrl* url,
-                                   nsCString* spec);
-
 // Return true if the given image MIME type is supported
 bool Gecko_IsSupportedImageMimeType(const uint8_t* mime_type,
                                     const uint32_t len);
@@ -476,9 +478,7 @@ GeckoFontMetrics Gecko_GetFontMetrics(const nsPresContext*, bool is_vertical,
                                       bool use_user_font_set,
                                       bool retrieve_math_scales);
 
-mozilla::StyleSheet* Gecko_StyleSheet_Clone(
-    const mozilla::StyleSheet* aSheet,
-    const mozilla::StyleSheet* aNewParentSheet);
+mozilla::StyleSheet* Gecko_StyleSheet_Clone(const mozilla::StyleSheet* aSheet);
 
 void Gecko_StyleSheet_AddRef(const mozilla::StyleSheet* aSheet);
 void Gecko_StyleSheet_Release(const mozilla::StyleSheet* aSheet);
@@ -494,10 +494,10 @@ GeckoImplicitScopeRoot Gecko_StyleSheet_ImplicitScopeRoot(
 bool Gecko_IsDocumentBody(const mozilla::dom::Element* element);
 
 bool Gecko_IsDarkColorScheme(const mozilla::dom::Document*,
-                             const mozilla::StyleColorScheme*);
+                             const mozilla::StyleColorSchemeFlags*);
 nscolor Gecko_ComputeSystemColor(mozilla::StyleSystemColor,
                                  const mozilla::dom::Document*,
-                                 const mozilla::StyleColorScheme*);
+                                 const mozilla::StyleColorSchemeFlags*);
 
 // We use an int32_t here instead of a LookAndFeel::IntID/FloatID because
 // forward-declaring a nested enum/struct is impossible.
@@ -553,7 +553,8 @@ const nsTArray<mozilla::dom::Element*>* Gecko_Document_GetElementsWithId(
 const nsTArray<mozilla::dom::Element*>* Gecko_ShadowRoot_GetElementsWithId(
     const mozilla::dom::ShadowRoot*, nsAtom* aId);
 
-bool Gecko_ComputeBoolPrefMediaQuery(nsAtom*);
+bool Gecko_EvalMozPrefFeature(nsAtom*,
+                              const mozilla::StyleComputedMozPrefFeatureValue*);
 
 // Check whether font format/tech is supported.
 bool Gecko_IsFontFormatSupported(
@@ -585,7 +586,7 @@ bool Gecko_MediaFeatures_UseOverlayScrollbars(const mozilla::dom::Document*);
 int32_t Gecko_MediaFeatures_GetColorDepth(const mozilla::dom::Document*);
 int32_t Gecko_MediaFeatures_GetMonochromeBitsPerPixel(
     const mozilla::dom::Document*);
-mozilla::dom::ScreenColorGamut Gecko_MediaFeatures_ColorGamut(
+mozilla::StyleColorGamut Gecko_MediaFeatures_ColorGamut(
     const mozilla::dom::Document*);
 
 void Gecko_MediaFeatures_GetDeviceSize(const mozilla::dom::Document*,

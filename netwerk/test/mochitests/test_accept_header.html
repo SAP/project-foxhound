@@ -26,7 +26,7 @@ function test_iframe() {
   let ifr = document.createElement("iframe");
   ifr.src = "test_accept_header.sjs?iframe";
   ifr.onload = () => {
-    test_last_request_and_continue("iframe", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/png,image/svg+xml,*/*;q=0.8");
+    test_last_request_and_continue("iframe", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8");
   };
   document.body.appendChild(ifr);
 }
@@ -59,11 +59,22 @@ function test_worker() {
   }
 }
 
+function test_json_modules() {
+  let script = document.createElement("script");
+  script.src = "test_import_json_module.mjs";
+  script.type = "module";
+  script.onload = () => {
+    test_last_request_and_continue("json", "application/json,*/*;q=0.5");
+  }
+  document.body.appendChild(script);
+}
+
 let tests = [
   test_iframe,
   test_image,
   test_style,
   test_worker,
+  test_json_modules,
 ];
 
 function next() {

@@ -7,26 +7,29 @@ package org.mozilla.fenix.components.menu.compose
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.header.SubmenuHeader
-import org.mozilla.fenix.compose.Divider
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
 
-internal const val TOOLS_MENU_ROUTE = "tools_menu"
-
-@Suppress("LongParameterList")
+@Suppress("LongParameterList", "LongMethod")
 @Composable
 internal fun ToolsSubmenu(
+    isPdf: Boolean,
+    isWebCompatEnabled: Boolean,
+    isWebCompatReporterSupported: Boolean,
     isReaderable: Boolean,
     isReaderViewActive: Boolean,
     isTranslated: Boolean,
     isTranslationSupported: Boolean,
+    isOpenInRegularTabSupported: Boolean,
     hasExternalApp: Boolean,
     externalAppName: String,
     translatedLanguage: String,
@@ -37,11 +40,16 @@ internal fun ToolsSubmenu(
     onPrintMenuClick: () -> Unit,
     onShareMenuClick: () -> Unit,
     onOpenInAppMenuClick: () -> Unit,
+    onWebCompatReporterClick: () -> Unit,
+    onOpenInRegularTabClick: () -> Unit,
 ) {
     MenuScaffold(
         header = {
             SubmenuHeader(
                 header = stringResource(id = R.string.browser_menu_tools),
+                backButtonContentDescription = stringResource(
+                    id = R.string.browser_menu_back_button_content_description,
+                ),
                 onClick = onBackButtonClick,
             )
         },
@@ -54,6 +62,8 @@ internal fun ToolsSubmenu(
             )
 
             if (isReaderViewActive) {
+                Divider(color = FirefoxTheme.colors.borderSecondary)
+
                 MenuItem(
                     label = stringResource(id = R.string.browser_menu_customize_reader_view_2),
                     beforeIconPainter = painterResource(id = R.drawable.mozac_ic_reader_view_customize_24),
@@ -65,10 +75,32 @@ internal fun ToolsSubmenu(
                 Divider(color = FirefoxTheme.colors.borderSecondary)
 
                 TranslationMenuItem(
+                    isPdf = isPdf,
                     isTranslated = isTranslated,
                     isReaderViewActive = isReaderViewActive,
                     translatedLanguage = translatedLanguage,
                     onClick = onTranslatePageMenuClick,
+                )
+            }
+
+            if (isOpenInRegularTabSupported) {
+                Divider(color = FirefoxTheme.colors.borderSecondary)
+
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_open_in_normal_tab),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_external_link_24),
+                    onClick = onOpenInRegularTabClick,
+                )
+            }
+
+            if (isWebCompatReporterSupported) {
+                Divider(color = FirefoxTheme.colors.borderSecondary)
+
+                MenuItem(
+                    label = stringResource(id = R.string.browser_menu_webcompat_reporter),
+                    beforeIconPainter = painterResource(id = R.drawable.mozac_ic_lightbulb_24),
+                    state = if (isWebCompatEnabled) MenuItemState.ENABLED else MenuItemState.DISABLED,
+                    onClick = onWebCompatReporterClick,
                 )
             }
         }
@@ -137,6 +169,7 @@ private fun ReaderViewMenuItem(
 
 @Composable
 private fun TranslationMenuItem(
+    isPdf: Boolean,
     isTranslated: Boolean,
     isReaderViewActive: Boolean,
     translatedLanguage: String,
@@ -148,15 +181,15 @@ private fun TranslationMenuItem(
                 id = R.string.browser_menu_translated_to,
                 translatedLanguage,
             ),
-            beforeIconPainter = painterResource(id = R.drawable.mozac_ic_translate_24),
-            state = if (isReaderViewActive) MenuItemState.DISABLED else MenuItemState.ENABLED,
+            beforeIconPainter = painterResource(id = R.drawable.mozac_ic_translate_active_24),
+            state = if (isReaderViewActive || isPdf) MenuItemState.DISABLED else MenuItemState.ACTIVE,
             onClick = onClick,
         )
     } else {
         MenuItem(
             label = stringResource(id = R.string.browser_menu_translate_page),
             beforeIconPainter = painterResource(id = R.drawable.mozac_ic_translate_24),
-            state = if (isReaderViewActive) MenuItemState.DISABLED else MenuItemState.ENABLED,
+            state = if (isReaderViewActive || isPdf) MenuItemState.DISABLED else MenuItemState.ENABLED,
             onClick = onClick,
         )
     }
@@ -170,11 +203,15 @@ private fun ToolsSubmenuPreview() {
             modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
         ) {
             ToolsSubmenu(
+                isPdf = false,
+                isWebCompatEnabled = true,
+                isWebCompatReporterSupported = false,
                 isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
                 isTranslationSupported = false,
                 hasExternalApp = true,
+                isOpenInRegularTabSupported = true,
                 externalAppName = "Pocket",
                 translatedLanguage = "",
                 onBackButtonClick = {},
@@ -184,6 +221,8 @@ private fun ToolsSubmenuPreview() {
                 onPrintMenuClick = {},
                 onShareMenuClick = {},
                 onOpenInAppMenuClick = {},
+                onWebCompatReporterClick = {},
+                onOpenInRegularTabClick = {},
             )
         }
     }
@@ -197,11 +236,15 @@ private fun ToolsSubmenuPrivatePreview() {
             modifier = Modifier.background(color = FirefoxTheme.colors.layer3),
         ) {
             ToolsSubmenu(
+                isPdf = false,
+                isWebCompatEnabled = true,
+                isWebCompatReporterSupported = true,
                 isReaderable = true,
                 isReaderViewActive = false,
                 isTranslated = false,
                 isTranslationSupported = true,
                 hasExternalApp = true,
+                isOpenInRegularTabSupported = true,
                 externalAppName = "Pocket",
                 translatedLanguage = "",
                 onBackButtonClick = {},
@@ -211,6 +254,8 @@ private fun ToolsSubmenuPrivatePreview() {
                 onPrintMenuClick = {},
                 onShareMenuClick = {},
                 onOpenInAppMenuClick = {},
+                onWebCompatReporterClick = {},
+                onOpenInRegularTabClick = {},
             )
         }
     }

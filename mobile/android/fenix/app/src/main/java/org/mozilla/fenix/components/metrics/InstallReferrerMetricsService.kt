@@ -45,7 +45,6 @@ class InstallReferrerMetricsService(private val context: Context) : MetricsServi
                 override fun onInstallReferrerSetupFinished(responseCode: Int) {
                     PlayStoreAttribution.attributionTime.stopAndAccumulate(timerId)
                     val firstSession = FirstSessionPing(context)
-
                     when (responseCode) {
                         InstallReferrerClient.InstallReferrerResponse.OK -> {
                             // Connection established.
@@ -67,7 +66,7 @@ class InstallReferrerMetricsService(private val context: Context) : MetricsServi
                             PlayStoreAttribution.installReferrerResponse.set(installReferrerResponse)
 
                             val utmParams = UTMParams.parseUTMParameters(installReferrerResponse)
-                            if (FeatureFlags.metaAttributionEnabled) {
+                            if (FeatureFlags.META_ATTRIBUTION_ENABLED) {
                                 MetaParams.extractMetaAttribution(utmParams.content)
                                     ?.recordMetaAttribution()
                             }

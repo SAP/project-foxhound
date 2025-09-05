@@ -9,7 +9,8 @@ use crate::values::animated::{Context as AnimatedContext, ToAnimatedValue};
 use crate::values::computed::{NonNegativeNumber, Zoom};
 use crate::values::generics::length as generics;
 use crate::values::generics::length::{
-    GenericLengthOrNumber, GenericLengthPercentageOrNormal, GenericMaxSize, GenericSize,
+    GenericAnchorSizeFunction, GenericLengthOrNumber, GenericLengthPercentageOrNormal,
+    GenericMaxSize, GenericSize,
 };
 use crate::values::generics::NonNegative;
 use crate::values::resolved::{Context as ResolvedContext, ToResolvedValue};
@@ -211,7 +212,8 @@ impl Size {
             Self::MozAvailable |
             Self::WebkitFillAvailable |
             Self::Stretch |
-            Self::FitContentFunction(_) => false,
+            Self::FitContentFunction(_) |
+            Self::AnchorSizeFunction(_) => false,
         }
     }
 }
@@ -560,5 +562,11 @@ pub type NonNegativeLengthOrNumber = GenericLengthOrNumber<NonNegativeLength, No
 /// A computed value for `min-width`, `min-height`, `width` or `height` property.
 pub type Size = GenericSize<NonNegativeLengthPercentage>;
 
-/// A computed value for `max-width` or `min-height` property.
+/// A computed value for `max-width` or `max-height` property.
 pub type MaxSize = GenericMaxSize<NonNegativeLengthPercentage>;
+
+/// A computed value for `anchor-size` runction.
+pub type AnchorSizeFunction = GenericAnchorSizeFunction<LengthPercentage>;
+
+/// A computed type for `margin` properties.
+pub type Margin = generics::GenericMargin<LengthPercentage>;

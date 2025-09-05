@@ -59,10 +59,28 @@ export const MultiStageAboutWelcome = props => {
 
       didFilter.current = true;
 
+      // After completing screen filtering, trigger any unhandled campaign
+      // action present in the attribution campaign data. This updates the
+      // "trailhead.firstrun.didHandleCampaignAction" preference, marking the
+      // actions as complete to prevent them from being handled on subsequent
+      // visits to about:welcome. Do not await getting the action to avoid
+      // blocking the thread.
+      window
+        .AWGetUnhandledCampaignAction?.()
+        .then(action => {
+          if (typeof action === "string") {
+            AboutWelcomeUtils.handleCampaignAction(action, props.message_id);
+          }
+        })
+        .catch(error => {
+          console.error("Failed to get unhandled campaign action:", error);
+        });
+
       const screenInitials = filteredScreens
         .map(({ id }) => id?.split("_")[1]?.[0])
         .join("");
       // Send impression ping when respective screen first renders
+      // eslint-disable-next-line no-shadow
       filteredScreens.forEach((screen, order) => {
         if (index === order) {
           const messageId = `${props.message_id}_${order}_${screen.id}_${screenInitials}`;
@@ -181,6 +199,12 @@ export const MultiStageAboutWelcome = props => {
   // multi select screen.
   const [activeMultiSelects, setActiveMultiSelects] = useState({});
 
+  // Save the active single select state for each screen as string value keyed
+  // by screen id. Similar to above, this allows us to remember the state of
+  // each screen's single select picker when navigating back and forth between
+  // screens.
+  const [activeSingleSelects, setActiveSingleSelects] = useState({});
+
   // Get the active theme so the rendering code can make it selected
   // by default.
   const [activeTheme, setActiveTheme] = useState(null);
@@ -219,58 +243,88 @@ export const MultiStageAboutWelcome = props => {
         className={`outer-wrapper onboardingContainer proton transition-${transition}`}
         style={props.backdrop ? { background: props.backdrop } : {}}
       >
-        {screens.map((screen, order) => {
-          const isFirstScreen = screen === screens[0];
-          const isLastScreen = screen === screens[screens.length - 1];
+        {screens.map((currentScreen, order) => {
+          const isFirstScreen = currentScreen === screens[0];
+          const isLastScreen = currentScreen === screens[screens.length - 1];
           const totalNumberOfScreens = screens.length;
           const isSingleScreen = totalNumberOfScreens === 1;
 
-          const setActiveMultiSelect = valueOrFn =>
-            setActiveMultiSelects(prevState => ({
+          const setActiveMultiSelect = (valueOrFn, multiSelectId) => {
+            setActiveMultiSelects(prevState => {
+              const currentScreenSelections = prevState[currentScreen.id] || {};
+
+              return {
+                ...prevState,
+                [currentScreen.id]: {
+                  ...currentScreenSelections,
+                  [multiSelectId]:
+                    typeof valueOrFn === "function"
+                      ? valueOrFn(currentScreenSelections[multiSelectId])
+                      : valueOrFn,
+                },
+              };
+            });
+          };
+
+          const setScreenMultiSelects = (valueOrFn, multiSelectId) => {
+            setMultiSelects(prevState => {
+              const currentMultiSelects = prevState[currentScreen.id] || {};
+
+              return {
+                ...prevState,
+                [currentScreen.id]: {
+                  ...currentMultiSelects,
+                  [multiSelectId]:
+                    typeof valueOrFn === "function"
+                      ? valueOrFn(currentMultiSelects[multiSelectId])
+                      : valueOrFn,
+                },
+              };
+            });
+          };
+
+          const setActiveSingleSelect = valueOrFn =>
+            setActiveSingleSelects(prevState => ({
               ...prevState,
-              [screen.id]:
+              [currentScreen.id]:
                 typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[screen.id])
-                  : valueOrFn,
-            }));
-          const setScreenMultiSelects = valueOrFn =>
-            setMultiSelects(prevState => ({
-              ...prevState,
-              [screen.id]:
-                typeof valueOrFn === "function"
-                  ? valueOrFn(prevState[screen.id])
+                  ? valueOrFn(prevState[currentScreen.id])
                   : valueOrFn,
             }));
 
           return index === order ? (
             <WelcomeScreen
-              key={screen.id + order}
-              id={screen.id}
+              key={currentScreen.id + order}
+              id={currentScreen.id}
               totalNumberOfScreens={totalNumberOfScreens}
               isFirstScreen={isFirstScreen}
               isLastScreen={isLastScreen}
               isSingleScreen={isSingleScreen}
               order={order}
               previousOrder={previousOrder}
-              content={screen.content}
+              content={currentScreen.content}
               navigate={handleTransition}
-              messageId={`${props.message_id}_${order}_${screen.id}`}
+              messageId={`${props.message_id}_${order}_${currentScreen.id}`}
               UTMTerm={props.utm_term}
               flowParams={flowParams}
               activeTheme={activeTheme}
               initialTheme={initialTheme}
               setActiveTheme={setActiveTheme}
               setInitialTheme={setInitialTheme}
-              screenMultiSelects={multiSelects[screen.id]}
+              screenMultiSelects={multiSelects[currentScreen.id]}
               setScreenMultiSelects={setScreenMultiSelects}
-              activeMultiSelect={activeMultiSelects[screen.id]}
+              activeMultiSelect={activeMultiSelects[currentScreen.id]}
               setActiveMultiSelect={setActiveMultiSelect}
-              autoAdvance={screen.auto_advance}
+              autoAdvance={currentScreen.auto_advance}
+              activeSingleSelect={activeSingleSelects[currentScreen.id]}
+              setActiveSingleSelect={setActiveSingleSelect}
               negotiatedLanguage={negotiatedLanguage}
               langPackInstallPhase={langPackInstallPhase}
-              forceHideStepsIndicator={screen.force_hide_steps_indicator}
+              forceHideStepsIndicator={currentScreen.force_hide_steps_indicator}
               ariaRole={props.ariaRole}
-              aboveButtonStepsIndicator={screen.above_button_steps_indicator}
+              aboveButtonStepsIndicator={
+                currentScreen.above_button_steps_indicator
+              }
               installedAddons={installedAddons}
               setInstalledAddons={setInstalledAddons}
             />
@@ -303,11 +357,24 @@ export const SecondaryCTA = props => {
     className += " split-button-container";
   }
   const isDisabled = React.useCallback(
-    disabledValue =>
-      disabledValue === "hasActiveMultiSelect"
-        ? !(props.activeMultiSelect?.length > 0)
-        : disabledValue,
-    [props.activeMultiSelect?.length]
+    disabledValue => {
+      if (disabledValue === "hasActiveMultiSelect") {
+        if (!props.activeMultiSelect) {
+          return true;
+        }
+
+        for (const key in props.activeMultiSelect) {
+          if (props.activeMultiSelect[key]?.length > 0) {
+            return false;
+          }
+        }
+
+        return true;
+      }
+
+      return disabledValue;
+    },
+    [props.activeMultiSelect]
   );
 
   if (isTextLink) {
@@ -443,13 +510,15 @@ export class WelcomeScreen extends React.PureComponent {
 
     let actionResult;
     if (["OPEN_URL", "SHOW_FIREFOX_ACCOUNTS"].includes(action.type)) {
-      actionResult = await this.handleOpenURL(
+      actionResult = this.handleOpenURL(
         action,
         props.flowParams,
         props.UTMTerm
       );
     } else if (action.type) {
-      actionResult = await AboutWelcomeUtils.handleUserAction(action);
+      actionResult = action.needsAwait
+        ? await AboutWelcomeUtils.handleUserAction(action)
+        : AboutWelcomeUtils.handleUserAction(action);
       if (action.type === "FXA_SIGNIN_FLOW") {
         AboutWelcomeUtils.sendActionTelemetry(
           props.messageId,
@@ -474,20 +543,16 @@ export class WelcomeScreen extends React.PureComponent {
           ? event.currentTarget.value
           : this.props.initialTheme || action.theme;
       this.props.setActiveTheme(themeToUse);
-      if (props.content.tiles?.category?.type === "wallpaper") {
-        const theme = themeToUse.split("-")?.[1];
-        let actionWallpaper = { ...props.content.tiles.category.action };
-        actionWallpaper.data.actions.forEach(async wpAction => {
-          if (wpAction.data.pref.name?.includes("dark")) {
-            wpAction.data.pref.value = `dark-${theme}`;
-          } else {
-            wpAction.data.pref.value = `light-${theme}`;
-          }
-          await AboutWelcomeUtils.handleUserAction(actionWallpaper);
-        });
-      } else {
-        window.AWSelectTheme(themeToUse);
-      }
+      window.AWSelectTheme(themeToUse);
+    }
+
+    if (action.picker) {
+      let options = props.content.tiles.data;
+      options.forEach(opt => {
+        if (opt.id === value) {
+          AboutWelcomeUtils.handleUserAction(opt.action);
+        }
+      });
     }
 
     // If the action has persistActiveTheme: true, we set the initial theme to the currently active theme
@@ -499,8 +564,20 @@ export class WelcomeScreen extends React.PureComponent {
     // `navigate` and `dismiss` can be true/false/undefined, or they can be a
     // string "actionResult" in which case we should use the actionResult
     // (boolean resolved by handleUserAction)
-    const shouldDoBehavior = behavior =>
-      behavior === "actionResult" ? actionResult : behavior;
+    const shouldDoBehavior = behavior => {
+      if (behavior !== "actionResult") {
+        return behavior;
+      }
+
+      if (action.needsAwait) {
+        return actionResult;
+      }
+
+      console.error(
+        "actionResult is only supported for actions with needsAwait"
+      );
+      return false;
+    };
 
     if (shouldDoBehavior(action.navigate)) {
       props.navigate();
@@ -535,27 +612,55 @@ export class WelcomeScreen extends React.PureComponent {
     // 2. checkbox action 2
     // 3. radio action
     // 4. CTA action (which perhaps depends on the radio action)
+    // Note, this order is only guaranteed if action.data has the
+    // `orderedExecution` flag set to true.
     let multiSelectActions = [];
-    for (const checkbox of props.content?.tiles?.data ?? []) {
-      let checkboxAction;
-      if (props.activeMultiSelect?.includes(checkbox.id)) {
-        checkboxAction = checkbox.checkedAction ?? checkbox.action;
-      } else {
-        checkboxAction = checkbox.uncheckedAction;
+
+    const processTile = (tile, tileIndex) => {
+      if (tile?.type !== "multiselect" || !Array.isArray(tile.data)) {
+        return;
       }
 
-      if (checkboxAction) {
-        multiSelectActions.push(checkboxAction);
+      const multiSelectId = `tile-${tileIndex}`;
+
+      const activeSelections = props.activeMultiSelect[multiSelectId] || [];
+
+      for (const checkbox of tile.data) {
+        let checkboxAction;
+        if (activeSelections.includes(checkbox.id)) {
+          checkboxAction = checkbox.checkedAction ?? checkbox.action;
+        } else {
+          checkboxAction = checkbox.uncheckedAction;
+        }
+
+        if (checkboxAction) {
+          multiSelectActions.push(checkboxAction);
+        }
+      }
+    };
+
+    // Process tiles (this may be a single tile object or an array consisting of
+    // tile objects)
+    if (props.content?.tiles) {
+      if (Array.isArray(props.content.tiles)) {
+        props.content.tiles.forEach(processTile);
+      } else {
+        // Handle case where tiles is a single tile object
+        processTile(props.content.tiles, 0);
       }
     }
+
+    // Prepend the collected multi-select actions to the CTA's actions array
     action.data.actions.unshift(...multiSelectActions);
 
-    // Send telemetry with selected checkbox ids
-    AboutWelcomeUtils.sendActionTelemetry(
-      props.messageId,
-      props.activeMultiSelect,
-      "SELECT_CHECKBOX"
-    );
+    for (const value of Object.values(props.activeMultiSelect)) {
+      // Send telemetry with selected checkbox ids
+      AboutWelcomeUtils.sendActionTelemetry(
+        props.messageId,
+        value.flat(),
+        "SELECT_CHECKBOX"
+      );
+    }
   }
 
   render() {
@@ -571,6 +676,8 @@ export class WelcomeScreen extends React.PureComponent {
         setScreenMultiSelects={this.props.setScreenMultiSelects}
         activeMultiSelect={this.props.activeMultiSelect}
         setActiveMultiSelect={this.props.setActiveMultiSelect}
+        activeSingleSelect={this.props.activeSingleSelect}
+        setActiveSingleSelect={this.props.setActiveSingleSelect}
         totalNumberOfScreens={this.props.totalNumberOfScreens}
         appAndSystemLocaleInfo={this.props.appAndSystemLocaleInfo}
         negotiatedLanguage={this.props.negotiatedLanguage}

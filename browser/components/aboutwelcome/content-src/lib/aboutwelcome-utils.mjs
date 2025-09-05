@@ -70,6 +70,26 @@ export const AboutWelcomeUtils = {
   getLoadingStrategyFor(url) {
     return url?.startsWith("http") ? "lazy" : "eager";
   },
+  handleCampaignAction(action, messageId) {
+    window.AWSendToParent("HANDLE_CAMPAIGN_ACTION", action).then(handled => {
+      if (handled) {
+        this.sendActionTelemetry(messageId, "CAMPAIGN_ACTION");
+      }
+    });
+  },
+  getValidStyle(style, validStyles, allowVars) {
+    if (!style) {
+      return null;
+    }
+    return Object.keys(style)
+      .filter(
+        key => validStyles.includes(key) || (allowVars && key.startsWith("--"))
+      )
+      .reduce((obj, key) => {
+        obj[key] = style[key];
+        return obj;
+      }, {});
+  },
 };
 
 export const DEFAULT_RTAMO_CONTENT = {

@@ -78,13 +78,58 @@ prefFlips:
     path: toolkit/components/nimbus/schemas/PrefFlipsFeature.schema.json
 
 
-# `search` is for search engine experimentation features which do not require
-# isEarlyStartup to be set.
 search:
-  description: Search engine experimentation support and testing features.
+  description: Search service related features.
   owner: search-and-suggest-program@mozilla.com
   hasExposure: false
   variables:
+    scotchBonnetEnableOverride:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.urlbar.scotchBonnet.enableOverride
+      description: >-
+        Whether or not enabling scotch bonnet feature.
+        If this variable is true, the following features are available as default.
+        * Unified search button
+        * Secondary action buttons
+        * Search term persistence
+        * Intuitive search keywords
+        * HTTP swap
+    trendingRequireSearchMode:
+      type: boolean
+      setPref:
+        branch: default
+        pref: browser.urlbar.trending.requireSearchMode
+      description: Controls whether trending suggestions are only shown in search mode or not.
+    trendingMaxResultsNoSearchMode:
+      type: int
+      setPref:
+        branch: default
+        pref: browser.urlbar.trending.maxResultsNoSearchMode
+      description: The maximum number of trending results mode outside search mode.
+    targetExperiment:
+      type: string
+      description: >-
+        Recorded in SERP telemetry, this is the slug of the experiment someone
+        is requesting enrollment and branch information for. (Note that the
+        featureId needs to be set to "search".)
+
+searchConfiguration:
+  description: >-
+    Search experimentation support for the engine configuration. Some of these
+    options may cause an additional reload to occur during the startup phase.
+  owner: search-and-suggest-program@mozilla.com
+  hasExposure: false
+  variables:
+    experiment:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.search.experiment
+      description: >-
+        Used to activate only matching configurations that contain the value in
+        `experiment`
     extraParams:
       type: json
       description: >-
@@ -102,11 +147,10 @@ search:
 
         This is matched to a section in the search configuration:
 
-        "extraParams": [
+        "params": [
           {
             "name": "channel",
-            "pref": "google_channel_row",
-            "condition": "pref"
+            "experimentConfig": "google_channel_row"
           }
         ],
 
@@ -114,75 +158,22 @@ search:
         `&channel=foo` added to the URL when doing searches.
 
         If the key is not referenced in the search configuration, then no parameter
-        will be added. Only the search team can update the configuration.
-    richSuggestionsFeatureGate:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.urlbar.richSuggestions.featureGate
-      description: >-
-        Feature gate that controls whether Rich Suggestions are enabled.
-    serpEventTelemetryCategorizationEnabled:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.search.serpEventTelemetryCategorization.enabled
-      description: Whether the Glean SERP event telemetry for SERP categorization is enabled.
-    trendingEnabled:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.urlbar.trending.featureGate
-      description: Feature gate that controls whether trending suggestions are enabled.
-    trendingRequireSearchMode:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.urlbar.trending.requireSearchMode
-      description: Controls whether trending suggestions are only shown in search mode or not.
-    trendingMaxResultsNoSearchMode:
-      type: int
-      setPref:
-        branch: default
-        pref: browser.urlbar.trending.maxResultsNoSearchMode
-      description: The maximum number of trending results mode outside search mode.
-    newSearchConfigEnabled:
+        will be added. If the parameter is in the search configuration, but there
+        is no experiment, or the experiment does not set a value, then the
+        parameter will not be included in the search url.
+
+        Only the search team can update the configuration.
+    separatePrivateDefaultUIEnabled:
       type: boolean
       setPref:
         branch: user
-        pref: browser.search.newSearchConfig.enabled
-      description: >-
-        Whether search-config-v2 is enabled for the user. This will only take
-        effect when the user restarts.
-        Obsolete. This is kept until all multi-feature roll-outs using it are
-        ended to prevent un-enrollment.
-    targetExperiment:
-      type: string
-      description: >-
-        The slug of the experiment someone is requesting enrollment and branch
-        information for. (Note that the featureId needs to be set to "search".)
-
-# `searchConfiguration` is for search experiment features for items that require
-# isEarlyStartup to be true. These items may require a reload of the search
-# engine configuration, and an additional reload may happen during the startup
-# process.
-searchConfiguration:
-  description: Search experimentation support for the engine configuration
-  owner: search-and-suggest-program@mozilla.com
-  isEarlyStartup: true
-  hasExposure: false
-  variables:
-    experiment:
-      type: string
-      fallbackPref: browser.search.experiment
-      description: >-
-        Used to activate only matching configurations that contain the value in
-        `experiment`
-    seperatePrivateDefaultUIEnabled:
-      type: boolean
+        pref: browser.search.separatePrivateDefault.ui.enabled
       description: Whether the UI for the separate private default feature is enabled.
-    seperatePrivateDefaultUrlbarResultEnabled:
+    separatePrivateDefaultUrlbarResultEnabled:
       type: boolean
+      setPref:
+        branch: user
+        pref: browser.search.separatePrivateDefault.urlbarResult.enabled
       description: Whether the urlbar result for the separate private default is shown.
 
 urlbar:
@@ -194,6 +185,11 @@ urlbar:
     the event is recorded once per app session when the user first encounters
     the UI of the experiment in which they're enrolled.
   variables:
+    actionsOnboardingTimesToShow:
+      type: int
+      fallbackPref: browser.urlbar.quickactions.timesToShowOnboardingLabel
+      description: >-
+        The number of times a user should be shown the actions onboarding label.
     addonsFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.addons.featureGate
@@ -207,6 +203,15 @@ urlbar:
         will be able to click the "Show less frequently" command for addon
         suggestions. If undefined or zero, the user will be able to click the
         command without any limit.
+    ampMatchingStrategy:
+      type: int
+      fallbackPref: browser.urlbar.quicksuggest.ampMatchingStrategy
+      description: >-
+        The matching strategy for AMP suggestions. Leave undefined or set to
+        zero to use the usual default exact-keyword strategy. Otherwise set to
+        an integer value defined on `AmpMatchingStrategy` in
+        `RustSuggest.sys.mjs` (corresponding to the `AmpMatchingStrategy` enum
+        in the Rust component coerced to a 1-based integer value).
     autoFillAdaptiveHistoryEnabled:
       type: boolean
       fallbackPref: browser.urlbar.autoFill.adaptiveHistory.enabled
@@ -218,12 +223,6 @@ urlbar:
     autoFillAdaptiveHistoryUseCountThreshold:
       type: string
       description: This value assumes float expression like "0.47". Threshold for use count of input history that we handle as adaptive history autofill. If the use count is this value or more, it will be a candidate.
-    experimentType:
-      type: string
-      description: The type of the experiment (or rollout). If "best-match", then the Nimbus exposure event will be recorded when the user first triggers a best match (or would have triggered a best match, for users in the control group). If empty, the event will be recorded when the user first triggers any type of Suggest suggestion.
-      enum:
-        - best-match
-        - ""
     fakespotFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.fakespot.featureGate
@@ -249,6 +248,21 @@ urlbar:
       description: >-
         The index of Fakespot results within the Firefox Suggest section. A
         negative index is relative to the end of the section.
+    keywordExposureResults:
+      type: string
+      setPref:
+        pref: browser.urlbar.keywordExposureResults
+        branch: user
+      description: >-
+        Comma-separated list of result types that should trigger
+        keyword-exposure telemetry. Keyword exposures can be recorded along with
+        result exposures. To enable keyword exposures for a result type, you
+        must add it both to this variable and to `exposureResults`. The only
+        exception is the "rust_exposure" result type, which can be added to this
+        variable even if it's not in `exposureResults` since it's enabled by
+        setting the `quickSuggestExposureSuggestionTypes` variable. Keyword
+        exposures are recorded in the `urlbar-keyword-exposure` ping. See that
+        ping's description for more.
     mdnFeatureGate:
       type: boolean
       setPref:
@@ -282,15 +296,20 @@ urlbar:
     exposureResults:
       type: string
       setPref:
-        branch: default
         pref: browser.urlbar.exposureResults
+        branch: user
       description: >-
-        Comma-separated list of result type combinations, that are used to determine if an exposure event should be fired.
+        Comma-separated list of result types that should trigger exposure
+        telemetry, which is recorded in the `exposure` event. By default
+        exposure results are visible like usual, but they can be hidden by
+        setting the `showExposureResults` variable to false. To also record
+        keyword exposures for a result type, include it in the
+        `keywordExposureResults` variable as well.
     showExposureResults:
       type: boolean
       setPref:
-        branch: default
         pref: browser.urlbar.showExposureResults
+        branch: user
       description: >-
         Boolean used to determine if the results defined in `exposureResults` should be shown in search results. Should be false for Control branch of an experiment.
     pocketFeatureGate:
@@ -311,35 +330,51 @@ urlbar:
       description: >-
         The group-relative suggestedIndex of Pocket suggestions within the Firefox
         Suggest section.
-    potentialExposureKeywords:
-      type: json
-      fallbackPref: browser.urlbar.potentialExposureKeywords
+    quickSuggestAmpTopPickCharThreshold:
+      type: int
+      fallbackPref: browser.urlbar.quicksuggest.ampTopPickCharThreshold
       description: >-
-        An array of keyword strings that will trigger the
-        `urlbar-potential-exposure` ping when the user types one during a urlbar
-        session.
-    quickSuggestAllowPositionInSuggestions:
-      type: boolean
-      fallbackPref: browser.urlbar.quicksuggest.allowPositionInSuggestions
-      description: Whether quick suggest results can be shown in position specified in the suggestions.
+        Character-count threshold (inclusive) for showing AMP suggestions as top
+        picks. If an AMP suggestion is triggered by a keyword at least this many
+        characters long, it will be shown as a top pick. When this variable is
+        set, full keywords will also show AMP suggestions as top picks even if
+        they have fewer characters than this threshold.
     quickSuggestContextualOptInEnabled:
       type: boolean
       setPref:
         branch: default
         pref: browser.urlbar.quicksuggest.contextualOptIn
-      description: Whether the Firefox Suggest contextual opt-in result is enabled. If true, this implicitly disables shouldShowOnboardingDialog.
-    quickSuggestContextualOptInSayHello:
-      type: boolean
+      description: Whether the Firefox Suggest contextual opt-in result is enabled.
+    quickSuggestContextualOptInFirstReshowAfterPeriodDays:
+      type: int
       setPref:
         branch: default
-        pref: browser.urlbar.quicksuggest.contextualOptIn.sayHello
-      description: Controls which variant of the copy is used for the Firefox Suggest contextual opt-in result.
-    quickSuggestContextualOptInTopPosition:
-      type: boolean
+        pref: browser.urlbar.quicksuggest.contextualOptIn.firstReshowAfterPeriodDays
+      description: Period until reshow the Firefox Suggest contextual opt-in result when first dismissed.
+    quickSuggestContextualOptInSecondReshowAfterPeriodDays:
+      type: int
       setPref:
         branch: default
-        pref: browser.urlbar.quicksuggest.contextualOptIn.topPosition
-      description: Controls whether the Firefox Suggest contextual opt-in result appears at the top of results or at the bottom, after one-off buttons.
+        pref: browser.urlbar.quicksuggest.contextualOptIn.secondReshowAfterPeriodDays
+      description: Period until reshow the Firefox Suggest contextual opt-in result when second dismissed.
+    quickSuggestContextualOptInThirdReshowAfterPeriodDays:
+      type: int
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn.thirdReshowAfterPeriodDays
+      description: Period until reshow the Firefox Suggest contextual opt-in result when third dismissed.
+    quickSuggestContextualOptInImpressionLimit:
+      type: int
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn.impressionLimit
+      description: Limit for impression to dismiss the Firefox Suggest contextual opt-in result.
+    quickSuggestContextualOptInImpressionDaysLimit:
+      type: int
+      setPref:
+        branch: default
+        pref: browser.urlbar.quicksuggest.contextualOptIn.impressionDaysLimit
+      description: Days until dismiss the Firefox Suggest contextual opt-in result after first impression.
     quickSuggestDataCollectionEnabled:
       type: boolean
       description: Whether data collection should be enabled by default. If this variable is specified, it will override the value implied by the scenario. It will never override the user's local preference to disable (or enable) data collection, if the user has already toggled that preference.
@@ -347,6 +382,25 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.enabled
       description: Gate for the Firefox Suggest feature as a whole. If false, the Firefox Suggest preferences UI and Suggest suggestions will not be shown. If true, the preferences UI will be shown, and the user can turn suggestions on or off.
+    quickSuggestExposureSuggestionTypes:
+      type: string
+      setPref:
+        pref: browser.urlbar.quicksuggest.exposureSuggestionTypes
+        branch: user
+      description: >-
+        Comma-separated list of Suggest exposure suggestion types to enable.
+        Exposure suggestions are used to test potential exposures. They trigger
+        exposure telemetry based on a set of keywords you provide but they are
+        never visible. Set this variable to the `suggestion_type` defined in the
+        remote settings record(s) that contains your keywords. If you want to
+        test multiple suggestion types, separate them with commas, but also
+        consider using one experiment branch per type, especially if you are
+        also enabling keyword exposures. Exposure suggestions are recorded in
+        telemetry with the "rust_exposure" result type. It's not necessary to
+        include "rust_exposure" in `exposureResults`. Unless you are testing
+        other results in the same experiment branch, it's also not necessary to
+        set `showExposureResults: false`. To also record keyword exposures,
+        include "rust_exposure" in `keywordExposureResults`.
     quickSuggestImpressionCapsSponsoredEnabled:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.impressionCaps.sponsoredEnabled
@@ -355,6 +409,11 @@ urlbar:
       type: boolean
       fallbackPref: browser.urlbar.quicksuggest.impressionCaps.nonSponsoredEnabled
       description: Whether non-sponsored suggestions are subject to impression frequency caps. If false, non-sponsored suggestions can be shown an unlimited number of times over any given period. If true, non-sponsored suggestion impressions will be subject to the caps in the remote settings configuration.
+    quickSuggestMlEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.quicksuggest.mlEnabled
+      description: >-
+        Whether Suggest will use the ML backend in addition to Rust.
     quickSuggestNonSponsoredEnabled:
       type: boolean
       description: Whether non-sponsored suggestions should be enabled by default. If this variable is specified, it will override the value implied by the scenario. It will never override the user's local preference to disable (or enable) non-sponsored suggestions, if the user has already toggled that preference.
@@ -364,27 +423,21 @@ urlbar:
       description: >-
         The index of non-sponsored QuickSuggest results within the general
         group. A negative index is relative to the end of the group
-    quickSuggestOnboardingDialogVariation:
+    quickSuggestRankingMode:
       type: string
+      fallbackPref: browser.urlbar.quicksuggest.rankingMode
       description: >-
-        Specify the messages/UI variation for QuickSuggest onboarding dialog. This value is case insensitive.
-    quickSuggestRemoteSettingsDataType:
-      type: string
-      description: The `type` of the suggestions data in remote settings. If not specified, "data" is used.
-    quickSuggestRustEnabled:
-      type: boolean
-      fallbackPref: browser.urlbar.quicksuggest.rustEnabled
-      description: >-
-        Whether Firefox Suggest will use the new Rust backend instead of the
-        original JS backend.
-    quickSuggestScenario:
-      # IMPORTANT: This should not have a fallbackPref. See UrlbarPrefs.sys.mjs.
-      type: string
-      description: The Firefox Suggest scenario in which the user is enrolled
+        Specify the ranking mode for QuickSuggest.
+          - "default": ranking by static scores specified by individual providers.
+          - "interest": ranking by relevance scores provided by `ContentRelevancyManager`.
+          - "random": ranking by randomly selecting a winner out of candidates.
+        Note that this ranking mode can still be overridden by `quickSuggestScoreMap`.
+        If the ranking mode is unspecified or set to any unknown values, it will default
+        to the static score based ranking.
       enum:
-        - history
-        - offline
-        - online
+        - default
+        - interest
+        - random
     quickSuggestScoreMap:
       type: json
       description: >-
@@ -395,14 +448,17 @@ urlbar:
         the scores in this map will override scores that are set in remote
         settings and Merino as well as scores that are hardcoded in the client.
         Example entries: `"amo": 0.5`, `"adm_sponsored": 0.9`
-    quickSuggestShouldShowOnboardingDialog:
-      type: boolean
-      fallbackPref: browser.urlbar.quicksuggest.shouldShowOnboardingDialog
-      description: Whether or not to show the QuickSuggest onboarding dialog
-    quickSuggestShowOnboardingDialogAfterNRestarts:
+    quickSuggestSettingsUi:
       type: int
-      fallbackPref: browser.urlbar.quicksuggest.showOnboardingDialogAfterNRestarts
-      description: Show QuickSuggest onboarding dialog after N browser restarts
+      fallbackPref: browser.urlbar.quicksuggest.settingsUi
+      description: >-
+        When Suggest is enabled, this determines the Suggest settings that will
+        be visible in the settings UI (about:preferences). When Suggest is
+        disabled, this is ignored and Suggest settings are hidden. Possible
+        values:
+        0: (default) Full, all settings will be shown.
+        1: None, no settings will be shown.
+        2: Offline only, settings that pertain to online will be hidden.
     quickSuggestSponsoredEnabled:
       type: boolean
       description: Whether sponsored suggestions should be enabled by default. If this variable is specified, it will override the value implied by the scenario. It will never override the user's local preference to disable (or enable) sponsored suggestions, if the user has already toggled that preference.
@@ -435,33 +491,20 @@ urlbar:
         branch: default
         pref: browser.urlbar.recentsearches.maxResults
       description: The maximum number of recent searches to show.
-    recordNavigationalSuggestionTelemetry:
+    suggestCalculator:
       type: boolean
-      description: Whether to record navigational suggestion telemetry. Defaults to false.
-    showSearchTermsFeatureGate:
-      type: boolean
-      fallbackPref: browser.urlbar.showSearchTerms.featureGate
-      description: Gate for the show search terms feature. If false, the preference#search will not show the search terms feature checkbox, and search terms will never persist in the urlbar. If true, the preference checkbox will be shown on preferences#search, and the user can choose to persist search terms on or off in the urlbar.
+      setPref:
+        branch: user
+        pref: browser.urlbar.suggest.calculator
+      description: >-
+        Whether or not to show calculator results when a user types a valid
+        calculation string into the urlbar.
     weatherFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.weather.featureGate
       description: >-
         Feature gate that controls whether all aspects of the weather suggestion
-        feature are exposed to the user. See also `weatherKeywords` and
-        `weatherKeywordsMinimumLength`. In summary: To enable the weather
-        suggestion, set `weatherFeatureGate` to true, `weatherKeywords` to an
-        array of full keyword strings, and `weatherKeywordsMinimumLength` to a
-        non-zero integer. To disable the weather suggestion, leave out all
-        weather-related variables.
-    weatherKeywords:
-      type: json
-      description: >-
-        An array of full keyword strings that will trigger the weather
-        suggestion when the user types them in the address bar. If absent or
-        null, Firefox will fall back to the weather keywords defined in remote
-        settings. If neither Nimbus nor remote settings defines any keywords,
-        the weather suggestion will be disabled. See also
-        `weatherKeywordsMinimumLength`.
+        feature are exposed to the user.
     weatherKeywordsMinimumLength:
       type: int
       description: >-
@@ -470,32 +513,33 @@ urlbar:
         `weatherKeywordsMinimumLength` characters long. If this variable is
         absent or zero, Firefox will fall back to the minimum length defined in
         remote settings. If neither Nimbus nor remote settings defines a minimum
-        length, only full keywords will trigger the suggestion. See also
-        `weatherKeywords`.
-    weatherKeywordsMinimumLengthCap:
+        length, only full keywords will trigger the suggestion.
+    weatherShowLessFrequentlyCap:
       type: int
       description: >-
-        If defined and non-zero, the user will not be able to increment the
-        minimum keyword length beyond this value. e.g., if this value is 6, the
-        current minimum length is 5, and the user clicks "Show less frequently",
-        then the minimum length will be incremented to 6, the "Show less
-        frequently" command will be hidden, and the user can continue to trigger
-        the weather suggestion by typing 6 characters, but they will not be able
-        to increment the minimum length any further. If this variable is absent
-        or zero, Firefox will fall back to the cap defined in remote settings.
-        If neither Nimbus nor remote settings defines a cap, no cap will be
-        used, and the user will be able to increment the minimum length without
-        any limit.
-    weatherSimpleUI:
-      type: boolean
+        If defined and non-zero, this is the maximum number of times the user
+        will be able to click the "Show less frequently" command for weather
+        suggestions. If undefined or zero, the user will be able to click the
+        command without any limit.
+    weatherUiTreatment:
+      type: int
+      fallbackPref: browser.urlbar.weather.uiTreatment
       description: >-
-        If true, show the weather suggestion by simple UI edition as follows.
-        * Remove the forcast text from the summary text.
+        The UI treatment to use for weather suggestions. Possible values:
+        0: (default) Simplest UI with current temperature and location
+        1: Simpler UI, adds current conditions, high/low, and URL
+        2: Full UI, adds forecast
     yelpMinKeywordLength:
       type: int
       description: >-
         The minimum prefix length of a Yelp keyword the user must type to
         trigger the suggestion.
+    yelpMlEnabled:
+      type: boolean
+      fallbackPref: browser.urlbar.yelp.mlEnabled
+      description: >-
+        Whether Yelp suggestions will be served from the Suggest ML backend
+        instead of Rust.
     yelpFeatureGate:
       type: boolean
       fallbackPref: browser.urlbar.yelp.featureGate
@@ -566,6 +610,46 @@ urlbar:
       setPref:
         branch: user
         pref: "places.frecency.pages.alternative.halfLifeDays"
+    pagesMaxVisitGap:
+      description: >-
+        The maximum allowed time (in seconds) between when a visit was recorded
+        and when an interaction occurs for them to be paired. This accounts
+        for slight discrepancies in their timestamps.
+      type: int
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.interactions.maxVisitGapSeconds"
+    pagesViewTimeSeconds:
+      description: >-
+        The minimum allowed time (in seconds) a page was viewed before upgrading
+        the score of a visit.
+      type: int
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.interactions.viewTimeSeconds"
+    pageViewTimeIfManyKeypressesSeconds:
+      description: >-
+        The minimum allowed time (in seconds) a page was viewed before checking
+        the manyKeypresses threshold.
+      type: int
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.interactions.viewTimeIfManyKeypressesSeconds"
+    manyKeypresses:
+      description: >-
+        The minimum number of keypresses typed before upgrading the score
+        of a visit.
+      type: int
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.interactions.manyKeypresses"
+    pagesVeryHighWeight:
+      description: >-
+        The weight to use for the very high importance bucket.
+      type: int
+      setPref:
+        branch: user
+        pref: "places.frecency.pages.alternative.veryHighWeight"
     pagesHighWeight:
       description: >-
         The weight to use for the high importance bucket.
@@ -620,11 +704,6 @@ aboutwelcome:
     transitions:
       type: boolean
       description: Enable transition effect between screens
-    showModal:
-      type: boolean
-      fallbackPref: browser.aboutwelcome.showModal
-      description: >-
-        Should users see window modal onboarding
     backdrop:
       type: string
       fallbackPref: browser.aboutwelcome.backdrop
@@ -637,6 +716,55 @@ aboutwelcome:
         pref: browser.aboutwelcome.toolbarButtonEnabled
       description: >-
         Should the return to about:welcome toolbar button be shown
+
+preonboarding:
+  description: "A modal that shows on first startup, typically on top of about:welcome"
+  owner: omc@mozilla.com
+  # Exposure is recorded by the spotlight feature used to show the modal
+  hasExposure: false
+  # Needed at `sessionstore-windows-restored`.
+  isEarlyStartup: true
+  variables:
+    enabled:
+      type: boolean
+      fallbackPref: browser.preonboarding.enabled
+      description: >-
+        Should users see the preonboarding modal?
+    screens:
+      type: json
+      fallbackPref: browser.preonboarding.screens
+      description: Content to show in the onboarding flow
+    requireAction:
+      type: boolean
+      fallbackPref: browser.preonboarding.requireAction
+      description: >-
+        When showModal is enabled, should action be required to proceed (show as a window modal with dismiss using the ESC key disabled)?
+    currentPolicyVersion:
+      type: int
+      fallbackPref: datareporting.policy.currentPolicyVersion
+      description: >-
+        The current policy version displayed by this preonboarding modal.
+    minimumPolicyVersion:
+      type: int
+      fallbackPref: datareporting.policy.minimumPolicyVersion
+      description: >-
+        The minimum policy version which the user must have accepted to not see the preonboarding modal.
+    firstRunURL:
+      type: string
+      fallbackPref: datareporting.policy.firstRunURL
+      description: >-
+        URL of browser tab to be opened on first run instead of infobar.
+    onTrainRolloutEnabled:
+      type: boolean
+      fallbackPref: browser.preonboarding.onTrainRolloutEnabled
+      description: >-
+        If an on-train limited rollout is enabled for Mac, Linux, and Windows MSIX
+    onTrainRolloutPopulation:
+      type: int
+      fallbackPref: browser.preonboarding.onTrainRolloutPopulation
+      description: >-
+        If an on-train limited rollout is enabled, the percentage of the population to enroll
+
 
 moreFromMozilla:
   description: "New page on about:preferences to suggest more Mozilla products"
@@ -723,9 +851,50 @@ newtab:
       type: boolean
       description: Allow Contile to use additonal sponsored top sites
 
+newtabUnifiedAds:
+  description: Mozilla Ad Routing Service (MARS) unified ads service
+  owner: mcrawford@mozilla.com, sdowne@mozilla.com
+  hasExposure: false
+  variables:
+    unifiedAdsEndpoint:
+      description: The URL for the MARS API endpoint.
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.unifiedAds.endpoint
+    unifiedAdsSpocsEnabled:
+      type: boolean
+      description: >-
+          Enable MARS endpoint to serve ads for recommended stories
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.unifiedAds.spocs.enabled
+    unifiedAdsTilesEnabled:
+      type: boolean
+      description: >-
+          Enable MARS endpoint to serve content for top sites tiles
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.unifiedAds.tiles.enabled
+    unifiedAdsFeedEnabled:
+      type: boolean
+      description: >-
+          Enable AdsFeed to manage all ads request/serving logic
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.unifiedAds.adsFeed.enabled
+    unifiedAdsFeedTilesEnabled:
+      type: boolean
+      description: >-
+          Enable AdsFeed to query MARS server to fetch/serve top sites tiles
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.unifiedAds.adsFeed.tiles.enabled
+
+
 newtabSpocsCache:
   description: The about:newtab sponsored content cache.
-  owner: sdowne@getpocket.com
+  owner: sdowne@mozilla.com
   hasExposure: false
   variables:
     spocsCacheTimeout:
@@ -742,6 +911,163 @@ newtabSpocsCache:
         pref: browser.newtabpage.activity-stream.discoverystream.spocs.startupCache.enabled
       description: >-
         Controls if spocs should be included in startup cache.
+
+newtabAdSizingExperiment:
+  description: >-
+    Change the default ad size and UI for certain ad formats.
+  owner: achurchwell@mozilla.com, sdowne@mozilla.com
+  hasExposure: false
+  variables:
+    variantA:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.variant-a
+      description: >-
+        Variant A ad size and UI.
+    variantB:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.variant-b
+      description: >-
+        Variant B ad size and UI.
+    leaderboard:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.leaderboard
+      description: >-
+        Leaderboard ad size and UI.
+    leaderboard_position:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.leaderboard.position
+      description: >-
+        Leaderboard row position.
+    billboard:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.billboard
+      description: >-
+        Billboard ad size and UI.
+    billboard_position:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabAdSize.billboard.position
+      description: >-
+        Billboard row position.
+
+newtabInlineTopicSelection:
+  description: >-
+      Adds Inline topic selection to sections layout
+  owner: nbarrett@mozilla.com
+  hasExposure: false
+  variables:
+    TopicSelectionEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.sections.interestPicker.enabled
+      description: >-
+        Enables inline topic selection
+
+
+newtabLayoutExperiment:
+  description: >-
+    Change the default layout of new tab by adjusting sizes and spacing of elements.
+  owner: achurchwell@mozilla.com, sdowne@mozilla.com
+  hasExposure: false
+  variables:
+    variantA:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabLayouts.variant-a
+      description: >-
+        Variant A in layouts experiment.
+    variantB:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabLayouts.variant-b
+      description: >-
+        Variant B in layouts experiment.
+
+newtabCustomWallpaper:
+  description: >-
+    Modify the wallpaper selection feature to support user-uploaded custom wallpaper images
+  owner: mcrawford@mozilla.com
+  hasExposure: false
+  variables:
+    uploadWallpaper:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabWallpapers.customWallpaper.enabled
+      description: >-
+        Turns on and off ability to upload a custom wallpaper.
+    colorPicker:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabWallpapers.customColor.enabled
+      description: >-
+        Turns on and off background color picker.
+
+newtabShortcutsExperiment:
+  description: >-
+    Adjusting sizes and spacing of new tab shortcuts.
+  owner: sdowne@mozilla.com
+  hasExposure: false
+  variables:
+    refresh:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabShortcuts.refresh
+      description: >-
+        Adjusting sizes and spacing of new tab shortcuts.
+
+newtabSponsoredContent:
+  description: >-
+    Change and control the sponsored content on newtab.
+  owner: sdowne@mozilla.com
+  hasExposure: false
+  variables:
+    spocPositions:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.spoc-positions
+      description: CSV string of spoc position indexes on newtab Pocket grid
+    spocPlacements:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.placements.spocs
+      description: CSV string of spoc placement ids on newtab Pocket grid. A placement id tells our ad server where the ads are intended to be displayed.
+    spocCounts:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.placements.spocs.counts
+      description: CSV string of spoc placement counts on newtab Pocket grid. The count tells the ad server how many ads to return for this position and placement.
+    tilesPlacements:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.placements.tiles
+      description: CSV string of tiles placement ids on newtab tiles section. A placement id tells our ad server where the ads are intended to be displayed.
+    tilesCounts:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.placements.tiles.counts
+      description: CSV string of tiles placement counts on newtab tiles section. The count tells the ad server how many ads to return for this position and placement.
 
 newtabTopicSelection:
   description: the about:newtab topic selection experience.
@@ -781,17 +1107,129 @@ newtabTopicSelection:
       setPref:
         branch: user
         pref: browser.newtabpage.activity-stream.discoverystream.topicSelection.locale-topics-config
+    regionTopicLabelConfig:
+      description: A comma-separated list of regions that get topic labels by default.
+      type: string
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.topicLabels.region-topic-label-config
+    localeTopicLabelConfig:
+      description: A comma-separated list of locales that get topic Labels by default.
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.topicLabels.locale-topic-label-config
+
+newtabContextualContent:
+  description: about:newtab contextual content feed
+  owner: nbarrett@mozilla.com
+  hasExposure: false
+  variables:
+    contextualContentEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.contextualContent.enabled
+      description: >-
+        Override the contextual content enabled value set via region/locale
+    localeContextualContentConfig:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.contextualContent.locale-content-config
+      description: >-
+        A comma-separated list of locales that get contextual content by default.
+    regionContextualContentConfig:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.contextualContent.region-content-config
+      description: >-
+        A comma-separated list of regions that get contextual content by default.
+    contextualContentFeeds:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.contextualContent.feeds
+      description: >-
+        CSV list of possible feeds for the contextual content feed
+    contextualContentSelectedFeed:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.contextualContent.selectedFeed
+      description: >-
+        currently selected feed to display in the Contextual Content component
+
+newTabSectionsExperiment:
+  description: about:newtab section UI update
+  owner: nbarrett@mozilla.com, mcrawford@mozilla.com
+  hasExposure: false
+  variables:
+    sectionsEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.sections.enabled
+      description: >-
+        Enable the Section UI for recommended stories on newtab
+    cardRefreshThumbsUpDownEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.sections.cards.thumbsUpDown.enabled
+      description: >-
+        Enable the thumbs up/down buttons in the revised pocket story
+        card UI in recommended stories on newtab
+    cardRefreshEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.sections.cards.enabled
+      description: >-
+        Enable the revised pocket story card UI in recommended stories on newtab
+    personalizationInferredEnabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref:  browser.newtabpage.activity-stream.discoverystream.sections.personalization.inferred.enabled
+      description: >-
+        Enable the inferred personalization for topics
+    localeSectionstConfig:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.sections.locale-content-config
+      description: >-
+        A comma-separated list of locales that get contextual content by default.
+    regionSectionsConfig:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.sections.region-content-config
+      description: >-
+        A comma-separated list of regions that get contextual content by default.
+    sectionsPersonalization:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.sections.personalization.enabled
+      description: >-
+        Enable personalized sections layout. Allow users to follow/unfollow topic sections.
+    sectionsCustomizeMenuPanel:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.sections.customizeMenuPanel.enabled
+      description: >-
+        Enable personalized sections menu panel. Allow users to follow/unfollow topic sections.
 
 pocketNewtab:
   description: The Pocket section in newtab
-  owner: sdowne@getpocket.com
+  owner: sdowne@mozilla.com
   hasExposure: false
   isEarlyStartup: true
   variables:
-    spocPositions:
-      type: string
-      fallbackPref: browser.newtabpage.activity-stream.discoverystream.spoc-positions
-      description: CSV string of spoc position indexes on newtab Pocket grid
     spocTopsitesPositions:
       type: string
       fallbackPref: browser.newtabpage.activity-stream.discoverystream.spoc-topsites-positions
@@ -987,6 +1425,13 @@ pocketNewtab:
         pref: browser.newtabpage.activity-stream.newtabWallpapers.highlightCtaText
       description: >-
         Changes the wallpaper feature highlight cta
+    currentWallpaper:
+      type: string
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.newtabWallpapers.wallpaper
+      description:  >-
+        Changes the currently selected wallpaper
     weatherLocationSearch:
       type: boolean
       setPref:
@@ -1083,13 +1528,15 @@ pocketNewtab:
     regionWeatherConfig:
       description: A comma-separated list of regions that get weather by default.
       type: string
-      fallbackPref: >-
-        browser.newtabpage.activity-stream.discoverystream.region-weather-config
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.region-weather-config
     localeWeatherConfig:
       description: A comma-separated list of locales that weather widget supports.
       type: string
-      fallbackPref: >-
-        browser.newtabpage.activity-stream.discoverystream.locale-weather-config
+      setPref:
+        branch: user
+        pref: browser.newtabpage.activity-stream.discoverystream.locale-weather-config
     topSitesMaxSponsored:
       # Defined under `pocketNewtab` as it needs to be used along with other variables
       type: int
@@ -1146,7 +1593,7 @@ pocketNewtab:
 
 saveToPocket:
   description: The save to Pocket feature
-  owner: sdowne@getpocket.com
+  owner: sdowne@mozilla.com
   hasExposure: false
   variables:
     emailButton:
@@ -1189,17 +1636,24 @@ password-autocomplete:
       type: boolean
       description: Enable direct migration?
 
-cm-csv-import:
-  description: Importing logins from CSV files
-  owner: issozi@mozilla.com
-  hasExposure: false
+# Experiment for different Relay UI treatments. Variations at:
+# https://www.figma.com/design/gnyElr1Wtce3RdQT54y8kS/Relay-%26-Firefox-Integration?node-id=316-2024&node-type=canvas&t=A3iAuevSTtwXeFxb-0
+email-autocomplete-relay:
+  description: Relay UI for email fields.
+  exposureDescription: Exposure is sent each time a user sees the Relay autocomplete dropdown item
+  hasExposure: true
+  owner: lcrouch@mozilla.com
   variables:
-    csvImport:
+    firstOfferVersion:
+      type: string
+      description: Which Relay UI treatment to show
+      fallbackPref: signon.firefoxRelay.firstOfferVersionFallback
+    showToAllBrowsers:
       type: boolean
-      description: Can show CSV Import in about:logins or Migration Wizard
       setPref:
-        branch: default
-        pref: "signon.management.page.fileImport.enabled"
+        branch: user
+        pref: signon.firefoxRelay.showToAllBrowsers
+      description: Whether to show Relay to Firefox users who are NOT signed into FXA.
 
 # This feature flag mirrors the one used for ios
 # https://github.com/mozilla-mobile/firefox-ios/blob/main/nimbus-features/addressAutofillFeature.yaml
@@ -1214,6 +1668,18 @@ address-autofill-feature:
         branch: default
         pref: extensions.formautofill.addresses.experiments.enabled
       description: If true, we will allow user to use address autofill
+
+creditcards-autofill-enabled:
+  description: Credit card autofill is enabled in all regions
+  owner: issozi@mozilla.com
+  hasExposure: false
+  variables:
+   creditcardsSupported:
+      description: Enable credit card autofill in all regions
+      type: string
+      setPref:
+        branch: default
+        pref: extensions.formautofill.creditCards.supported
 
 shellService:
   description: "Interface with OS, e.g., pinning and set default"
@@ -1366,12 +1832,6 @@ pdfjs:
   exposureDescription: >-
     Exposure is sent each time a pdf is displayed.
   variables:
-    addHighlight:
-      description: Set to true to highlight some text or something else in an existing pdf.
-      type: boolean
-      setPref:
-        branch: default
-        pref: pdfjs.enableHighlightEditor
     enableAltText:
       description: Set to true to enable alt text generation.
       type: boolean
@@ -1390,6 +1850,12 @@ pdfjs:
       setPref:
         branch: default
         pref: browser.ml.enable
+    enableSignatureEditor:
+      description: Set to true to enable the signature editor
+      type: boolean
+      setPref:
+        branch: default
+        pref: pdfjs.enableSignatureEditor
 
 # fxms-message-* placeholder feature ids
 #
@@ -1516,6 +1982,50 @@ fxms-message-10:
 
 fxms-message-11:
   description: "Firefox Messaging System message 11"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  schema:
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+fxms-message-12:
+  description: "Firefox Messaging System message 12"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  schema:
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+fxms-message-13:
+  description: "Firefox Messaging System message 13"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  schema:
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+fxms-message-14:
+  description: "Firefox Messaging System message 14"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  schema:
+    uri: "chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json"
+    path: "browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json"
+  variables: {}
+
+fxms-message-15:
+  description: "Firefox Messaging System message 15"
   owner: omc@mozilla.com
   hasExposure: true
   exposureDescription: >-
@@ -1685,21 +2195,6 @@ browserLowMemoryPrefs:
         branch: default
         pref: "browser.tabs.unloadOnLowMemory"
 
-scriptLoaderPrefs:
-  description: Prefs that control the script loader.
-  owner: npierron@mozilla.com
-  hasExposure: false
-  variables:
-    delazificationStrategy:
-      description: >-
-        Selects which parsing/delazification strategy should be used while
-        parsing scripts off-main-thread. See DelazificationOption in
-        CompileOptions.h for values.
-      type: int
-      setPref:
-        branch: default
-        pref: "dom.script_loader.delazification.strategy"
-
 echPrefs:
   description: Prefs that control Encrypted Client Hello.
   owner: djackson@mozilla.com
@@ -1783,18 +2278,12 @@ dohPrefs:
       setPref:
         branch: default
         pref: "doh-rollout.uri"
-    enableFallbackWarningPage:
-      description: Whether DoH fallback warning page will be displayed when DoH doesn't work in TRR first mode.
-      type: boolean
+    dohProviderList:
+      description: An override of the rollout provider-list json
+      type: string
       setPref:
         branch: default
-        pref: "network.trr.display_fallback_warning"
-    showFallbackCheckbox:
-      description: Whether the checkbox to enable the fallback warning page is displayed in the settings UI.
-      type: boolean
-      setPref:
-        branch: default
-        pref: "network.trr_ui.show_fallback_warning_option"
+        pref: "doh-rollout.provider-list"
     nativeHTTPSRecords:
       description: Whether we can perform native DNS HTTPS lookups
       type: boolean
@@ -1933,6 +2422,18 @@ networking:
       setPref:
         branch: default
         pref: "network.http.speculative-parallel-limit"
+    chipsEnabled:
+      description: Whether CHIPS is enabled or not
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.cookie.CHIPS.enabled"
+    chipsMigrationTarget:
+      description: What CHIPS migration count target the browser should reach.
+      type: int
+      setPref:
+        branch: default
+        pref: "network.cookie.CHIPS.migrateDatabaseTarget"
     chipsPartitionLimitEnabled:
       description: Whether we enforce CHIPS partition limit
       type: boolean
@@ -1951,6 +2452,37 @@ networking:
       setPref:
         branch: default
         pref: "network.cookie.chips.partitionLimitByteCapacity"
+    dnsGracePeriod:
+      description: The grace period allows the DNS cache to use expired entries, while kicking off a revalidation in the background.
+      type: int
+      setPref:
+        branch: default
+        pref: "network.dnsCacheExpirationGracePeriod"
+    maxDnsCacheEntries:
+      description: This is the number of dns cache entries allowed
+      type: int
+      setPref:
+        branch: default
+        pref: "network.dnsCacheEntries"
+    http3UseNSPRForIO:
+      description: true by default using legacy UDP IO via NSPR. When set to false, uses new UDP IO via Fast UDP for Firefox project.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http3.use_nspr_for_io"
+
+disableHttp3:
+  description: "Whether HTTP/3 is disabled"
+  owner: kershaw@mozilla.com
+  hasExposure: false
+  variables:
+    withThirdPartyRoots:
+      description: If third party roots are detected, disable HTTP/3
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http3.disable_when_third_party_roots_found"
+
 
 networkPrioritization:
   description: "Network request prioritization"
@@ -1975,6 +2507,18 @@ networkPrioritization:
       setPref:
         branch: default
         pref: "network.http.http3.priority"
+    sendNoRFC7540Setting:
+      description: Whether to send the SETTINGS_NO_RFC7540_PRIORITIES for the HTTP2 session.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http2.send_NO_RFC7540_PRI"
+    h2deps:
+      description: Whether RFC7540 priorities / stream dependencies are enabled
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.http2.enabled.deps"
     h3BackgroundTabDeprioritization:
       description: Lowers the priority when the tab is in the background. Potential privacy concerns.
       type: boolean
@@ -2215,6 +2759,48 @@ networkPrioritization:
       setPref:
         branch: default
         pref: "network.fetchpriority.adjustments.images.auto"
+    lowerTrackersPriority:
+      description: Whether to lower priority of resources on the tracking protection list
+      type: boolean
+      setPref:
+        branch: default
+        pref: "privacy.trackingprotection.lower_network_priority"
+    enableHttpTailing:
+      description: Whether certain requests, mainly trackers, are put to the "tail", behind other requests
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.http.tailing.enabled"
+    httpTailingUrgency:
+      description: Priority urgency of tailed request
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.tailing.urgency"
+    httpTailingDelayQuantum:
+      description: When the page load has not yet reached DOMContentLoaded point, tail requestes are delayed by (non-tailed requests count + 1) * delay-quantum milliseconds.
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.tailing.delay-quantum"
+    httpTailingDelayQuantumAfterDCL:
+      description: After the page load reached DOMContentLoaded point, tail requestes are delayed by (non-tailed requests count + 1) * delay-quantum-after-domcontentloaded milliseconds.
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.tailing.delay-quantum-after-domcontentloaded"
+    httpTailingMaxDelay:
+      description:  Upper limit for the calculated delay, prevents long standing and comet-like requests
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.tailing.delay-max"
+    httpTailingTotalMaxDelay:
+      description: Total limit we delay tailed requests since page load start
+      type: int
+      setPref:
+        branch: default
+        pref: "network.http.tailing.total-max"
 
 networkingAuth:
   description: "Firefox Networking (Necko) Authentication"
@@ -2271,6 +2857,36 @@ dapTelemetry:
       type: json
       description: A list of experiments with URLs for which we want to count visits.
 
+dapAggregators:
+  description: Aggregator server configuration to use for submitting DAP reports.
+  owner: tcampbell@mozilla.com
+  hasExposure: false
+  variables:
+    leader_url:
+      description: The URL of the DAP Leader server where reports are submitted.
+      type: string
+      setPref:
+        branch: default
+        pref: "toolkit.telemetry.dap.leader.url"
+    leader_hpke:
+      description: The base64-encode HPKE key to encrypt leader shares with.
+      type: string
+      setPref:
+        branch: default
+        pref: "toolkit.telemetry.dap.leader.hpke"
+    helper_url:
+      description: The URL of the DAP Helper server.
+      type: string
+      setPref:
+        branch: default
+        pref: "toolkit.telemetry.dap.helper.url"
+    helper_hpke:
+      description: The base64-encode HPKE key to encrypt helper shares with.
+      type: string
+      setPref:
+        branch: default
+        pref: "toolkit.telemetry.dap.helper.hpke"
+
 etpLevel2PBMPref:
   description: The pref that controls the ETP level 2 list in the private browsing mode
   owner: tihuang@mozilla.com
@@ -2282,6 +2898,48 @@ etpLevel2PBMPref:
       setPref:
         branch: default
         pref: "privacy.annotate_channels.strict_list.pbmode.enabled"
+
+etpStrictFeatures:
+  description: Prefs to control the strict ETP features
+  owner: tihuang@mozilla.com
+  hasExposure: false
+  variables:
+    features:
+      description: The list of strict ETP features to enable in ETP strict mode.
+      type: string
+      setPref:
+        branch: default
+        pref: "browser.contentblocking.features.strict"
+
+thirdPartyCookieBlocking:
+  description: Prefs to control third-party cookie blocking
+  owner: tihuang@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: Whether to enable third-party cookie blocking
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.cookie.cookieBehavior.optInPartitioning"
+    enabledPBM:
+      description: Whether to enable third-party cookie blocking in private browsing mode
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.cookie.cookieBehavior.optInPartitioning.pbmode"
+
+thirdPartyTrackerCookieBlocking:
+  description: Prefs to control third-party tracker cookie blocking
+  owner: tihuang@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      description: Whether to enable third-party tracker cookie blocking.
+      type: boolean
+      setPref:
+        branch: default
+        pref: "network.cookie.cookieBehavior.trackerCookieBlocking"
 
 fxaButtonVisibility:
   description: Prefs to control the visibility of the Firefox Accounts toolbar button when not signed in.
@@ -2323,6 +2981,32 @@ fxaButtonVisibility:
       setPref:
         branch: user
         pref: identity.fxaccounts.toolbar.pxiToolbarEnabled.vpnEnabled
+    avatarIconVariant:
+      description: >-
+        Controls the icon that appears in the toolbar button when in the
+        signed-out state.
+
+        One of the following values:
+          - control
+          - human-circle
+          - fox-circle
+      type: string
+
+syncSetupFlow:
+  description: Prefs to control the updated Mozilla account panel flow for users without sync enabled.
+  owner: skhamis@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is recorded when the user is enrolled in an experiment using this
+    feature and the avatar menu or app (hamburger) menu -> account on Firefox Desktop is opened
+  variables:
+    enabled:
+      description: True if we should show the user the updated sync set-up UI
+      type: boolean
+      setPref:
+        branch: user
+        pref: identity.fxaccounts.toolbar.syncSetup.enabled
+
 
 fxaClientAssociation:
   description: Prefs to control the client association ping.
@@ -2336,6 +3020,46 @@ fxaClientAssociation:
       setPref:
         branch: user
         pref: identity.fxaccounts.telemetry.clientAssociationPing.enabled
+
+fxaAppMenuItem:
+  description: >-
+    Prefs to control the appearance and copy of the FxA sign-in button in the
+    AppMenu when signed out.
+  owner: mconley@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is recorded when the user is enrolled in an experiment using this
+    feature and the AppMenu on Firefox Desktop is opened.
+  variables:
+    ctaCopyVariant:
+      description: >-
+        One of the following values:
+          - control
+          - sync-devices
+          - backup-data
+          - backup-sync
+          - mobile
+      type: string
+
+fxaAvatarMenuItem:
+  description: >-
+    Prefs to control the appearance and copy of the FxA sign-in button in the
+    FxA avatar menu when signed out.
+  owner: mconley@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is recorded when the user is enrolled in an experiment using this
+    feature and the FxA avatar menu on Firefox Desktop is opened.
+  variables:
+    ctaCopyVariant:
+      description: >-
+        One of the following values:
+          - control
+          - sync-devices
+          - backup-data
+          - backup-sync
+          - mobile
+      type: string
 
 legacyHeartbeat:
   description: Normandy Heartbeat exposed to Nimbus
@@ -2351,7 +3075,7 @@ legacyHeartbeat:
 
 queryStripping:
   description: Query parameter stripping anti-tracking feature.
-  owner: pbz@mozilla.com
+  owner: emz@mozilla.com
   hasExposure: false
   variables:
     enabledNormalBrowsing:
@@ -2439,6 +3163,25 @@ fingerprintingProtection:
         pref: javascript.options.use_fdlibm_for_sin_cos_tan
       description: >-
         Uses a different math backend for Math.sin/cos/tan in JavaScript that exposes less entropy
+    canvas_random_use_siphash:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.resistFingerprinting.randomization.canvas.use_siphash
+      description: >-
+        Uses the SipHash function for canvas randomization.
+
+userCharacteristics:
+  description: Control user characteristic data collection
+  owner: tihuang@mozilla.com
+  hasExposure: false
+  variables:
+    currentVersion:
+      type: int
+      setPref:
+        branch: user
+        pref: toolkit.telemetry.user_characteristics_ping.current_version
+      description: The current collection version of the user characteristics.
 
 migrationWizard:
   description: Prefs to control the Migration Wizard UI.
@@ -2982,10 +3725,16 @@ bookmarks:
         branch: user
         pref: browser.toolbars.bookmarks.visibility
       description: If the bookmarks toolbar should never, always, or only show on newtab.
+    showOtherBookmarks:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.toolbars.bookmarks.showOtherBookmarks
+      description: Display state of the "Other Bookmarks" toolbar button.
 
 cookieBannerHandling:
   description: Automatically handle cookie banners on the user's behalf.
-  owner: pbz@mozilla.com
+  owner: emz@mozilla.com
   hasExposure: false
   variables:
     modeNormalBrowsing:
@@ -3204,14 +3953,29 @@ nimbusIsReady:
 
 nimbusTelemetry:
   description: A feature that enables or disables Nimbus telemetry.
-  owner: chumphreys@mozilla.com
+  owner: nimbus-team@mozilla.com
   hasExposure: false
   applications:
     - firefox-desktop
   variables:
     gleanMetricConfiguration:
-      description: A Glean metric configuration JSON blob.
+      description: >
+       A Glean metric configuration JSON blob.
+
+       This is limited to configuring the following categories:
+       - nimbus_events
+       - nimbus_targeting_context
+       - nimbus_targeting_environment
       type: json
+
+    nimbusTargetingEnvironment:
+      description: >
+        Configuration for the nimbus_targeting_environment telemetry category.
+      type: json
+
+  schema:
+    uri: resource://nimbus/schemas/NimbusTelemetryFeature.schema.json
+    path: toolkit/components/nimbus/schemas/NimbusTelemetryFeature.schema.json
 
 httpsFirst:
   description: >-
@@ -3282,19 +4046,6 @@ contentRelevancy:
       type: boolean
       fallbackPref: toolkit.contentRelevancy.ingestEnabled
 
-tabPreview:
-  description: Prefs to control Tab Previews
-  owner: dwalker@mozilla.com
-  hasExposure: false
-  variables:
-    tabPreviewsEnabled:
-      type: boolean
-      setPref:
-        branch: default
-        pref: browser.tabs.hoverPreview.enabled
-      description: >-
-        When true, users will see the new card preview when hovering a tab, instead of the standard tooltip
-
 backupService:
   description: Prefs to control the profile backup service
   owner: mconley@mozilla.com
@@ -3353,20 +4104,20 @@ pqcrypto:
   owner: jschanck@mozilla.com
   hasExposure: false
   variables:
-    tlsEnableXyber:
+    tlsEnableMlkem:
       type: boolean
       setPref:
         branch: default
         pref: security.tls.enable_kyber
       description: >-
-        Whether to enable Xyber768 for TLS.
-    h3EnableXyber:
+        Whether to enable mlkem768x25519 for TLS.
+    h3EnableMlkem:
       type: boolean
       setPref:
         branch: default
         pref: network.http.http3.enable_kyber
       description: >-
-        Whether to enable Xyber768 for H3/QUIC.
+        Whether to enable mlkem768x25519 for H3/QUIC.
     sendP256:
       type: boolean
       setPref:
@@ -3374,6 +4125,14 @@ pqcrypto:
         pref: security.tls.client_hello.send_p256_keyshare
       description: >-
         Whether to send a P256 share in the client hello in QUIC and TLS.
+    dtlsWebRTCEnableMlkem:
+      type: boolean
+      setPref:
+        branch: default
+        pref: media.webrtc.enable_pq_dtls
+      description: >-
+        Whether to enable mlkem768x25519 for DTLS in WebRTC.
+
 
 dtlsWebRTC:
   description: Pref that controls the use of DTLS.
@@ -3417,25 +4176,31 @@ certCompression:
 
 bounceTrackingProtection:
   description: Controls the Bounce Tracking Protection feature.
-  owner: pbz@mozilla.com
-  hasExposure: false
+  owner: emz@mozilla.com
+  isEarlyStartup: true
+  hasExposure: true
+  exposureDescription: >-
+    Exposure is recored after every purge run which purged at least one tracker.
+    Exposure is only recorded when the feature is fully enabled and not in
+    dry-run mode.
   variables:
-    enabled:
-      type: boolean
+    mode:
+      type: int
       setPref:
         branch: default
-        pref: privacy.bounceTrackingProtection.enabled
-      description: Main flag to enable / disable the feature.
-    enableDryRunMode:
-      type: boolean
-      setPref:
-        branch: default
-        pref: privacy.bounceTrackingProtection.enableDryRunMode
+        pref: privacy.bounceTrackingProtection.mode
       description: >-
-        Enables a mode where if bounce tracking protection is enabled it
-        classifies but does not purge trackers. This mode is helpful for testing
-        the feature without risking data loss. Telemetry is still collected
-        normally.
+        Mode to run the feature in. See nsIBounceTrackingProtection.idl for
+        documentation.
+    requireStatefulBounces:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.bounceTrackingProtection.requireStatefulBounces
+      description: >-
+        If true, only bounce redirects where the middle hop/s access cookies or
+        storage will be considered to be bounce trackers. If false, all
+        redirects that fit the bounce tracker heuristic will be considered.
 
 remoteTabManagement:
   description: >
@@ -3477,18 +4242,49 @@ crlite:
         pref: security.pki.crlite_mode
       description: >-
         How CRLite results will be interpreted.
+    timestamps_for_coverage:
+      type: int
+      setPref:
+        branch: default
+        pref: security.pki.crlite_timestamps_for_coverage
+      description: >-
+        How many covered timestamps do we need to see before we enforce a CRLite result.
 
 chatbot:
   description: AI chatbot feature configuration
   owner: elee@mozilla.com
   hasExposure: false
   variables:
+    minVersion:
+      type: string
+      description: Minimum Firefox version to apply prefs
     prefs:
       type: json
       description: >-
         The prefs to set under browser.ml.chat.* with object keys as the
         sub-pref and values objects indicating the desired branch and value
         defaulting to clearing the user branch value.
+
+sidebar:
+  description: Sidebar feature configuration
+  owner: elee@mozilla.com
+  hasExposure: false
+  variables:
+    minVersion:
+      type: string
+      description: Minimum Firefox version to apply prefs
+    main.tools:
+      type: string
+      description: sidebar.main.tools pref value to set on user branch; which tools for sidebar panels show in the launcher
+    revamp:
+      type: boolean
+      description: sidebar.revamp pref value to set on user branch; true for new experience
+    verticalTabs:
+      type: boolean
+      description: sidebar.verticalTabs pref value to set on user branch; true to enable vertical tabs
+    visibility:
+      type: string
+      description: sidebar.visibility pref value ("hide" or "always-show") to set on user branch
 
 fxms_bmb_button:
   description: A feature for the Firefox Messaging System Bookmarks Bar button surface
@@ -3501,3 +4297,196 @@ fxms_bmb_button:
     uri: chrome://browser/content/asrouter/schemas/MessagingExperiment.schema.json
     path: browser/components/asrouter/content-src/schemas/MessagingExperiment.schema.json
   variables: {}
+
+contentProcessSandbox:
+  description: Prefs that control the content process sandbox.
+  owner: bowen@mozilla.com
+  hasExposure: false
+  variables:
+    Level:
+      description: Content process sandbox level
+      type: int
+      setPref:
+        branch: user
+        pref: security.sandbox.content.level
+
+certificateTransparency:
+  description: Certificate Transparency configuration
+  owner: dkeeler@mozilla.com
+  hasExposure: false
+  variables:
+    mode:
+      type: int
+      setPref:
+        branch: default
+        pref: security.pki.certificate_transparency.mode
+      description: >-
+        What mode Certificate Transparency is in (0=disable, 1=telemetry only,
+        2=enforce).
+
+setToDefaultPrompt:
+  description: "Experimental set to default spotlight"
+  owner: omc@mozilla.com
+  hasExposure: true
+  exposureDescription: >-
+    "Exposure is sent if the message is about to be shown after trigger and targeting conditions on the message matched."
+  variables:
+    showSpotlightPrompt:
+      description: Show experimental set to default spotlight message instead of default prompt
+      type: boolean
+    message:
+      description: Message to show instead of the default prompt
+      type: json
+
+tabGroups:
+  description: Prefs to control Tab Groups
+  owner: dao@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: user
+        pref: browser.tabs.groups.enabled
+      description: Controls whether users can create new tab groups via drag and drop or the tab context menu
+
+smartblockEmbeds:
+  description: Pref to control Smartblock Embeds
+  owner: emz@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      setPref:
+        branch: default
+        pref: extensions.webcompat.smartblockEmbeds.enabled
+      description: >-
+        Controls whether smartblock embed placeholders and protections panel toggles will be shown to the user.
+
+selectableProfiles:
+  description: "Multiple profile management using selectableProfileService"
+  owner: jhirsch@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Enables the multiple profiles feature when true. Turning off this variable will not disable the feature.
+
+storageAccessHeuristics:
+  description: Heuristics that grant cookie access automatically for foreign resources
+  owner: bvandersloot@mozilla.com
+  hasExposure: false
+  variables:
+    popup_past_interaction:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.restrict3rdpartystorage.heuristic.window_open
+      description: >-
+        Do we grant cookie access to a third party when it is opened in a popup if it has
+        been interacted with in the recent past?
+    popup_interaction:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.restrict3rdpartystorage.heuristic.opened_window_after_interaction
+      description: >-
+        Do we grant cookie access to a third party when it is opened in a popup if it has
+        the opener relationship and the user interacts with the popup?
+    navigation:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.restrict3rdpartystorage.heuristic.navigation
+      description: >-
+        Do we grant cookie access to a third party when it is interacted with earlier in this
+        tab's history, and the current first party is even further back in the history?
+    redirect:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.restrict3rdpartystorage.heuristic.recently_visited
+      description: >-
+        Do we grant cookie access to a third party when it has been interacted with in the recent
+        past, has been visited in the past few minutes, and redirects itself to another top level
+        site?
+    redirect_tracker:
+      type: boolean
+      setPref:
+        branch: default
+        pref: privacy.restrict3rdpartystorage.heuristic.redirect
+      description: >-
+        Do we grant cookie access to a tracker third party when it has been interacted with in the
+        recent past and redirects itself to another top level site?
+
+auto-pip:
+  description: "Automatic Picture-in-Picture"
+  owner: mconley@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether or not to auto-open PiP when switching tabs.
+      setPref:
+        branch: user
+        pref: "media.videocontrols.picture-in-picture.enable-when-switching-tabs.enabled"
+
+urlbar-ime-search:
+  description: "Urlbar IME"
+  owner: search-and-suggest-program@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether or not to keep the urlbar panel open during IME composition.
+      setPref:
+        branch: user
+        pref: "browser.urlbar.keepPanelOpenDuringImeComposition"
+
+web-rtc-global-mute-toggles:
+  description: "WebRTC Global Mute Toggles"
+  owner: mconley@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether or not to enable global mute toggles to the WebRTC indicator.
+      setPref:
+        branch: user
+        pref: "privacy.webrtc.globalMuteToggles"
+
+jpeg-xl:
+  description: "JPEG-XL"
+  owner: krosylight@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether or not to enable JPEG-XL support.
+      setPref:
+        branch: user
+        pref: "image.jxl.enabled"
+
+css-masonry:
+  description: "CSS Masonry Layout"
+  owner: dholbert@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether or not to enable CSS masonry layout.
+      setPref:
+        branch: user
+        pref: "layout.css.grid-template-masonry-value.enabled"
+
+h1-in-section-styles:
+  description: "H1 in section user agent styles"
+  owner: zcorpan@mozilla.com
+  hasExposure: false
+  variables:
+    enabled:
+      type: boolean
+      description: Whether to enable H1 in section UA styles, see https://github.com/whatwg/html/issues/7867.
+      setPref:
+        branch: user
+        pref: layout.css.h1-in-section-ua-styles.enabled

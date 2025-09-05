@@ -67,6 +67,7 @@ impl crate::TypeInner {
                 let base = base.to_wgsl(gctx);
                 match size {
                     crate::ArraySize::Constant(size) => format!("array<{base}, {size}>"),
+                    crate::ArraySize::Pending(_) => unreachable!(),
                     crate::ArraySize::Dynamic => format!("array<{base}>"),
                 }
             }
@@ -123,6 +124,7 @@ impl crate::TypeInner {
                 let base = member_type.name.as_deref().unwrap_or("unknown");
                 match size {
                     crate::ArraySize::Constant(size) => format!("binding_array<{base}, {size}>"),
+                    crate::ArraySize::Pending(_) => unreachable!(),
                     crate::ArraySize::Dynamic => format!("binding_array<{base}>"),
                 }
             }
@@ -175,7 +177,8 @@ impl crate::StorageFormat {
             Sf::Bgra8Unorm => "bgra8unorm",
             Sf::Rgb10a2Uint => "rgb10a2uint",
             Sf::Rgb10a2Unorm => "rgb10a2unorm",
-            Sf::Rg11b10Float => "rg11b10float",
+            Sf::Rg11b10Ufloat => "rg11b10float",
+            Sf::R64Uint => "r64uint",
             Sf::Rg32Uint => "rg32uint",
             Sf::Rg32Sint => "rg32sint",
             Sf::Rg32Float => "rg32float",

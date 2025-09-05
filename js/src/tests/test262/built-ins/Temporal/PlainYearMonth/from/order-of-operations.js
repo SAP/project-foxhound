@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
+// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
 // Copyright (C) 2020 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -9,11 +9,14 @@ includes: [compareArray.js, temporalHelpers.js]
 features: [Temporal]
 ---*/
 
-const expected = [
-  // CopyDataProperties
+const expectedOptionsReading = [
+  // GetTemporalOverflowOption
   "get options.overflow",
   "get options.overflow.toString",
   "call options.overflow.toString",
+];
+
+const expected = [
   // GetTemporalCalendarSlotValueWithISODefault
   "get fields.calendar",
   // PrepareTemporalFields
@@ -26,7 +29,7 @@ const expected = [
   "get fields.year",
   "get fields.year.valueOf",
   "call fields.year.valueOf",
-];
+].concat(expectedOptionsReading);
 const actual = [];
 
 const fields = TemporalHelpers.propertyBagObserver(actual, {
@@ -43,5 +46,15 @@ const options = TemporalHelpers.propertyBagObserver(actual, {
 
 Temporal.PlainYearMonth.from(fields, options);
 assert.compareArray(actual, expected, "order of operations");
+
+actual.splice(0);  // clear for next test
+
+Temporal.PlainYearMonth.from(new Temporal.PlainYearMonth(2000, 5), options);
+assert.compareArray(actual, expectedOptionsReading, "order of operations when cloning a PlainYearMonth instance");
+
+actual.splice(0);
+
+Temporal.PlainYearMonth.from("2000-05", options);
+assert.compareArray(actual, expectedOptionsReading, "order of operations when parsing a string");
 
 reportCompare(0, 0);

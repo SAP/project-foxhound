@@ -333,7 +333,7 @@ function applyRegexSubstitution(uri, matchedRule) {
 
   let redirectUrl = regexSubstitution.replace(/\\(.)/g, (_, char) => {
     // #checkActionRedirect ensures that every \ is followed by a \ or digit.
-    return char === "\\" ? char : matches[char] ?? "";
+    return char === "\\" ? char : (matches[char] ?? "");
   });
 
   // Throws if the URL is invalid:
@@ -1514,11 +1514,11 @@ class RequestDetails {
     let i = 0;
     // Reminder: domain cannot start with a dot, nor contain consecutive dots.
     while ((i = domain.indexOf(".", i) + 1) !== 0) {
-      domain = domain.slice(i);
+      const superdomain = domain.slice(i);
       // A full domain can end with a dot (FQDN) such as "example.com.", in
       // which case the last domain should be "com." and not "".
-      if (domain) {
-        domains.push(domain);
+      if (superdomain) {
+        domains.push(superdomain);
       }
     }
     return domains;

@@ -11,6 +11,8 @@ import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
 ChromeUtils.defineESModuleGetters(lazy, {
   IndexedDB: "resource://gre/modules/IndexedDB.sys.mjs",
   DAPTelemetrySender: "resource://gre/modules/DAPTelemetrySender.sys.mjs",
+  HPKEConfigManager: "resource://gre/modules/HPKEConfigManager.sys.mjs",
+  setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
 XPCOMUtils.defineLazyPreferenceGetter(
@@ -27,6 +29,17 @@ XPCOMUtils.defineLazyPreferenceGetter(
   true
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gOhttpRelayUrl",
+  "toolkit.shopping.ohttpRelayURL"
+);
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "gOhttpGatewayKeyUrl",
+  "toolkit.shopping.ohttpConfigURL"
+);
+
 const MAX_CONVERSIONS = 2;
 const DAY_IN_MILLI = 1000 * 60 * 60 * 24;
 const CONVERSION_RESET_MILLI = 7 * DAY_IN_MILLI;
@@ -36,10 +49,16 @@ const DAP_TIMEOUT_MILLI = 30000;
  *
  */
 export class PrivateAttributionService {
-  constructor({ dapTelemetrySender, dateProvider, testForceEnabled } = {}) {
+  constructor({
+    dapTelemetrySender,
+    dateProvider,
+    testForceEnabled,
+    testDapOptions,
+  } = {}) {
     this._dapTelemetrySender = dapTelemetrySender;
     this._dateProvider = dateProvider ?? Date;
     this._testForceEnabled = testForceEnabled;
+    this._testDapOptions = testDapOptions;
 
     this.dbName = "PrivateAttribution";
     this.impressionStoreName = "impressions";
@@ -81,14 +100,10 @@ export class PrivateAttributionService {
       impression.index = index;
       impression.lastImpression = now;
       impression[prop] = now;
-      const _prop = this.camelToSnake(prop);
-      Glean.privateAttribution.saveImpression[_prop].add(1);
 
       await this.updateImpression(impressionStore, ad, impression);
-      Glean.privateAttribution.saveImpression.success.add(1);
     } catch (e) {
       console.error(e);
-      Glean.privateAttribution.saveImpression.error.add(1);
     }
   }
 
@@ -128,10 +143,8 @@ export class PrivateAttributionService {
 
       await this.updateBudget(budget, value, targetHost);
       await this.sendDapReport(task, index, histogramSize, value);
-      Glean.privateAttribution.measureConversion.success.add(1);
     } catch (e) {
       console.error(e);
-      Glean.privateAttribution.measureConversion.error.add(1);
     }
   }
 
@@ -153,8 +166,6 @@ export class PrivateAttributionService {
 
     // Set attribution model properties
     const prop = this.getModelProp(model);
-    const _prop = this.camelToSnake(prop);
-    Glean.privateAttribution.measureConversion[_prop].add(1);
 
     // Find the most relevant impression
     const lookbackWindow = now - days * DAY_IN_MILLI;
@@ -243,7 +254,6 @@ export class PrivateAttributionService {
     try {
       return await this.openDatabase();
     } catch {
-      Glean.privateAttribution.database.reset.add(1);
       await lazy.IndexedDB.deleteDatabase(this.dbName);
       return this.openDatabase();
     }
@@ -269,11 +279,35 @@ export class PrivateAttributionService {
     const measurement = new Array(size).fill(0);
     measurement[index] = value;
 
+    let options = {
+      timeout: DAP_TIMEOUT_MILLI,
+      ohttp_relay: lazy.gOhttpRelayUrl,
+      ...this._testDapOptions,
+    };
+
+    if (options.ohttp_relay) {
+      // Fetch the OHTTP-Gateway-HPKE key if not provided yet.
+      if (!options.ohttp_hpke) {
+        const controller = new AbortController();
+        lazy.setTimeout(() => controller.abort(), DAP_TIMEOUT_MILLI);
+
+        options.ohttp_hpke = await lazy.HPKEConfigManager.get(
+          lazy.gOhttpGatewayKeyUrl,
+          {
+            maxAge: DAY_IN_MILLI,
+            abortSignal: controller.signal,
+          }
+        );
+      }
+    } else if (!this._testForceEnabled) {
+      // Except for testing, do no allow PPA to bypass OHTTP.
+      throw new Error("PPA requires an OHTTP relay for submission");
+    }
+
     await this.dapTelemetrySender.sendDAPMeasurement(
       task,
       measurement,
-      DAP_TIMEOUT_MILLI,
-      "conversion"
+      options
     );
   }
 
@@ -288,13 +322,6 @@ export class PrivateAttributionService {
         AppConstants.MOZ_TELEMETRY_REPORTING &&
         lazy.gIsPPAEnabled)
     );
-  }
-
-  camelToSnake(camelStr) {
-    const snakeStr = camelStr.replace(/([A-Z])/g, function (match) {
-      return "_" + match.toLowerCase();
-    });
-    return snakeStr;
   }
 
   QueryInterface = ChromeUtils.generateQI([Ci.nsIPrivateAttributionService]);

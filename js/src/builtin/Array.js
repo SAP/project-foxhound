@@ -520,7 +520,7 @@ function CreateArrayIterator(obj, kind) {
   var iterator = NewArrayIterator();
   UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_TARGET, iteratedObject);
   UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_NEXT_INDEX, 0);
-  UnsafeSetReservedSlot(iterator, ITERATOR_SLOT_ITEM_KIND, kind);
+  UnsafeSetReservedSlot(iterator, ARRAY_ITERATOR_SLOT_ITEM_KIND, kind);
   return iterator;
 }
 
@@ -552,7 +552,7 @@ function ArrayIteratorNext() {
   var index = UnsafeGetReservedSlot(obj, ITERATOR_SLOT_NEXT_INDEX);
 
   // Step 7.
-  var itemKind = UnsafeGetInt32FromReservedSlot(obj, ITERATOR_SLOT_ITEM_KIND);
+  var itemKind = UnsafeGetInt32FromReservedSlot(obj, ARRAY_ITERATOR_SLOT_ITEM_KIND);
 
   // Step 8-9.
   var len;
@@ -681,9 +681,7 @@ function ArrayFromAsync(asyncItems, mapfn = undefined, thisArg = undefined) {
       //     Step 3.e.i. Let A be ? Construct(C).
       // Step 3.f. Else,
       //     Step 3.f.i. Let A be ! ArrayCreate(0).
-      var A = IsConstructor(C) ?
-        (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C)) : [];
-
+      var A = IsConstructor(C) ? constructContentFunction(C, C) : [];
 
       // Step 3.j.i. Let k be 0.
       var k = 0;
@@ -751,7 +749,7 @@ function ArrayFromAsync(asyncItems, mapfn = undefined, thisArg = undefined) {
     //     Step 3.k.iv.1. Let A be ? Construct(C, « 𝔽(len) »).
     // Step 3.k.v. Else,
     //     Step 3.k.v.1. Let A be ? ArrayCreate(len).
-    var A = IsConstructor(C) ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C, len)) : std_Array(len);
+    var A = IsConstructor(C) ? constructContentFunction(C, C, len) : std_Array(len);
 
     // Step 3.k.vi. Let k be 0.
     var k = 0;
@@ -815,7 +813,7 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
     }
 
     // Steps 5.a-b.
-    var A = IsConstructor(C) ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C)) : [];
+    var A = IsConstructor(C) ? constructContentFunction(C, C) : [];
 
     // Step 5.d.
     var k = 0;
@@ -858,7 +856,7 @@ function ArrayFrom(items, mapfn = undefined, thisArg = undefined) {
 
   // Steps 12-14.
   var A = IsConstructor(C)
-    ? (ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_II), constructContentFunction(C, C, len))
+    ? constructContentFunction(C, C, len)
     : std_Array(len);
 
   // Steps 15-16.
@@ -1032,9 +1030,6 @@ function ArraySpeciesCreate(originalArray, length) {
   }
 
   // Step 8.
-  if (C !== originalConstructor) {
-    ReportUsageCounter(C, SUBCLASS_ARRAY_TYPE_III);
-  }
   return constructContentFunction(C, C, length);
 }
 

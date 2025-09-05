@@ -16,6 +16,7 @@
 #include "gfxFontVariations.h"
 #include "gfxRect.h"
 #include "gfxTypes.h"
+#include "gfxFontFeatures.h"
 #include "harfbuzz/hb.h"
 #include "mozilla/AlreadyAddRefed.h"
 #include "mozilla/Assertions.h"
@@ -44,7 +45,6 @@ class gfxSVGGlyphs;
 class gfxUserFontData;
 class nsAtom;
 struct FontListSizes;
-struct gfxFontFeature;
 struct gfxFontStyle;
 enum class eFontPresentation : uint8_t;
 
@@ -232,7 +232,9 @@ class gfxFontEntry {
   bool IsLocalUserFont() const { return mIsLocalUserFont; }
   bool IsFixedPitch() const { return mFixedPitch; }
   bool IsItalic() const { return SlantStyle().Min().IsItalic(); }
-  bool IsOblique() const { return SlantStyle().Min().IsOblique(); }
+  // IsOblique returns true if the oblique angle is non-zero; 'oblique 0deg'
+  // is synonymous with 'normal' and will return false here.
+  bool IsOblique() const { return !IsUpright() && !IsItalic(); }
   bool IsUpright() const { return SlantStyle().Min().IsNormal(); }
   inline bool SupportsItalic();  // defined below, because of RangeFlags use
   inline bool SupportsBold();

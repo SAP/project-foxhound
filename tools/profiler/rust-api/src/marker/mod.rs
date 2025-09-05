@@ -77,7 +77,7 @@
 //! #[derive(Serialize, Deserialize, Debug)]
 //! pub struct TestMarker {
 //!     a: u32,
-//!     b: String,
+//!     b: CowString,
 //! }
 //!
 //! // Please see the documentation of [`ProfilerMarker`].
@@ -96,7 +96,7 @@
 //!     }
 //!     fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
 //!         json_writer.int_property("a", self.a.into());
-//!         json_writer.string_property("b", &self.b);
+//!         json_writer.string_property("b", self.b.as_ref());
 //!     }
 //! }
 //! ```
@@ -129,7 +129,12 @@ use crate::json_writer::JSONWriter;
 use crate::marker::deserializer_tags_state::get_or_insert_deserializer_tag;
 use crate::ProfilerTime;
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use std::borrow::Cow;
 use std::os::raw::c_char;
+
+/// Can be serialized/deserialized but does not allocate if built from
+/// a `&'static str`.
+pub type CowString = Cow<'static, str>;
 
 /// Marker API to add a new simple marker without any payload.
 /// Please see the module documentation on how to add a marker with this API.
@@ -237,7 +242,7 @@ impl<'a> Drop for AutoProfilerTextMarker<'a> {
 ///     "BlobRasterization",
 ///     gecko_profiler_category!(Graphics),
 ///     Default::default(),
-///     "Webrender".to_string()
+///     "Webrender".into()
 /// );
 /// ```
 ///
@@ -307,7 +312,7 @@ pub fn add_marker<T>(
     mut options: MarkerOptions,
     payload: T,
 ) where
-    T: ProfilerMarker,
+    T: ProfilerMarker + 'static,
 {
     if !crate::profiler_state::can_accept_markers() {
         // Nothing to do.
@@ -316,7 +321,7 @@ pub fn add_marker<T>(
 
     let encoded_payload: Vec<u8> = bincode::serialize(&payload).unwrap();
     let payload_size = encoded_payload.len();
-    let maker_tag = get_or_insert_deserializer_tag::<T>();
+    let marker_tag = get_or_insert_deserializer_tag::<T>();
 
     unsafe {
         bindings::gecko_profiler_add_marker(
@@ -325,18 +330,92 @@ pub fn add_marker<T>(
             category.to_cpp_enum_value(),
             options.timing.0.as_mut_ptr(),
             options.stack,
-            maker_tag,
+            marker_tag,
             encoded_payload.as_ptr(),
             payload_size,
         )
     }
 }
 
+/// Record a marker using the Rust `add_marker` API, but delay evaluation of
+/// arguments until we're sure that the profiler can accept markers.
+///
+/// This macro is equivalent to testing `gecko_profiler::can_accept_markers`
+/// before calling `gecko_profiler::add_marker`. Note that
+/// `gecko_profiler::add_marker` already performs this check, but after
+/// arguments to the function have already been evaluated, which is too late
+/// if constructing the payload is expensive.
+///
+/// This macro is equivalent in interface to `add_marker`, but with two
+/// additional overloads which allow for the `options` and `category`
+/// arguments to be optional:
+///
+/// lazy_add_marker!(name, category, options, payload)
+///
+/// lazy_add_marker!(name, category, payload)
+///
+/// lazy_add_marker!(name, payload)
+///
+/// In the latter two overloads, the `options` are set to Default::default,
+/// and in the last the category is set to `Other`. Note that eliding the
+/// category but *not* the options is not possible, due to how we're able to
+/// define macros in Rust.
+///
+#[cfg(feature = "enabled")]
+#[macro_export]
+macro_rules! lazy_add_marker {
+    ($name:expr, $category:expr, $options:expr, $payload:expr) => {
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker($name, $category, $options, $payload);
+        }
+    };
+    // Macros are one of the few places that let us do "overloading" in rust,
+    // so take advantage of that to provide a version that drops the
+    // `options` argument, and gives a default value instead.
+    ($name: expr, $category:expr, $payload:expr) => {
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker($name, $category, Default::default(), $payload);
+        }
+    };
+    // Take advantage of overloading to provide a version that drops the
+    // category as well.
+    ($name: expr, $payload:expr) => {
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker(
+                $name,
+                gecko_profiler::ProfilingCategoryPair::Other(None),
+                Default::default(),
+                $payload,
+            );
+        }
+    };
+}
+
+#[cfg(not(feature = "enabled"))]
+#[macro_export]
+macro_rules! lazy_add_marker {
+    ($name:expr, $category:expr, $options:expr, $text:expr) => {
+        // Do nothing if the profiler is not enabled
+    };
+    ($name: expr, $category:expr, $payload:expr) => {
+        // Do nothing if the profiler is not enabled
+    };
+    ($name: expr, $payload:expr) => {
+        // Do nothing if the profiler is not enabled
+    };
+}
+
 /// Tracing marker type for Rust code.
 /// This must be kept in sync with the `mozilla::baseprofiler::markers::Tracing`
 /// C++ counterpart.
 #[derive(Serialize, Deserialize, Debug)]
-pub struct Tracing(pub String);
+pub struct Tracing(pub CowString);
+
+impl Tracing {
+    pub fn from_str(s: &'static str) -> Self {
+        Tracing(Cow::Borrowed(s))
+    }
+}
 
 impl ProfilerMarker for Tracing {
     fn marker_type_name() -> &'static str {
@@ -373,7 +452,7 @@ pub struct AutoProfilerTracingMarker<'a> {
     name: &'a str,
     category: ProfilingCategoryPair,
     options: MarkerOptions,
-    payload: String,
+    payload: CowString,
 }
 
 impl<'a> AutoProfilerTracingMarker<'a> {
@@ -381,7 +460,7 @@ impl<'a> AutoProfilerTracingMarker<'a> {
         name: &'a str,
         category: ProfilingCategoryPair,
         options: MarkerOptions,
-        payload: String,
+        payload: CowString,
     ) -> Option<AutoProfilerTracingMarker<'a>> {
         if !crate::profiler_state::can_accept_markers() {
             return None;

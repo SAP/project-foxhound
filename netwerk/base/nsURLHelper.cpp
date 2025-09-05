@@ -208,7 +208,7 @@ nsresult net_ParseFileURL(const nsACString& inURL, nsACString& outDirectory,
 // Replace all /./ with a / while resolving URLs
 // But only till #?
 mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
-    netCoalesceFlags flags, char* path) {
+    char* path) {
   /* Stolen from the old netlib's mkparse.c.
    *
    * modifies a url of the form   /foo/../foo1  ->  /foo1
@@ -217,26 +217,17 @@ mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
    */
   char* fwdPtr = path;
   char* urlPtr = path;
-  uint32_t traversal = 0;
-  uint32_t special_ftp_len = 0;
 
   MOZ_ASSERT(*path == '/', "We expect the path to begin with /");
   if (*path != '/') {
     return Nothing();
   }
 
-  /* Remember if this url is a special ftp one: */
-  if (flags & NET_COALESCE_DOUBLE_SLASH_IS_ROOT) {
-    /* some schemes (for example ftp) have the speciality that
-       the path can begin // or /%2F to mark the root of the
-       servers filesystem, a simple / only marks the root relative
-       to the user loging in. We remember the length of the marker */
-    if (nsCRT::strncasecmp(path, "/%2F", 4) == 0) {
-      special_ftp_len = 4;
-    } else if (strncmp(path, "//", 2) == 0) {
-      special_ftp_len = 2;
-    }
-  }
+  // This function checks if the character terminates the path segment,
+  // meaning it is / or ? or # or null.
+  auto isSegmentEnd = [](char aChar) {
+    return aChar == '/' || aChar == '?' || aChar == '#' || aChar == '\0';
+  };
 
   // replace all %2E, %2e, %2e%2e, %2e%2E, %2E%2e, %2E%2E, etc with . or ..
   // respectively if between two "/"s or "/" and NULL terminator
@@ -247,8 +238,7 @@ mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
     // Assuming that we are currently at '/'
     if (*fwdPtr == '/' &&
         nsCRT::strncasecmp(fwdPtr + 1, "%2e", PERCENT_2E_LENGTH) == 0 &&
-        (*(fwdPtr + PERCENT_2E_LENGTH + 1) == '\0' ||
-         *(fwdPtr + PERCENT_2E_LENGTH + 1) == '/')) {
+        isSegmentEnd(*(fwdPtr + PERCENT_2E_LENGTH + 1))) {
       *urlPtr++ = '/';
       *urlPtr++ = '.';
       fwdPtr += PERCENT_2E_LENGTH;
@@ -257,8 +247,7 @@ mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
     else if (*fwdPtr == '/' &&
              nsCRT::strncasecmp(fwdPtr + 1, "%2e%2e", PERCENT_2E_LENGTH * 2) ==
                  0 &&
-             (*(fwdPtr + PERCENT_2E_LENGTH * 2 + 1) == '\0' ||
-              *(fwdPtr + PERCENT_2E_LENGTH * 2 + 1) == '/')) {
+             isSegmentEnd(*(fwdPtr + PERCENT_2E_LENGTH * 2 + 1))) {
       *urlPtr++ = '/';
       *urlPtr++ = '.';
       *urlPtr++ = '.';
@@ -270,8 +259,7 @@ mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
                                  PERCENT_2E_WITH_PERIOD_LENGTH) == 0 ||
               nsCRT::strncasecmp(fwdPtr + 1, ".%2e",
                                  PERCENT_2E_WITH_PERIOD_LENGTH) == 0) &&
-             (*(fwdPtr + PERCENT_2E_WITH_PERIOD_LENGTH + 1) == '\0' ||
-              *(fwdPtr + PERCENT_2E_WITH_PERIOD_LENGTH + 1) == '/')) {
+             isSegmentEnd(*(fwdPtr + PERCENT_2E_WITH_PERIOD_LENGTH + 1))) {
       *urlPtr++ = '/';
       *urlPtr++ = '.';
       *urlPtr++ = '.';
@@ -295,60 +283,25 @@ mozilla::Maybe<mozilla::CompactPair<uint32_t, uint32_t>> net_CoalesceDirs(
       // remove . followed by slash
       ++fwdPtr;
     } else if (*fwdPtr == '/' && *(fwdPtr + 1) == '.' && *(fwdPtr + 2) == '.' &&
-               (*(fwdPtr + 3) == '/' ||
-                *(fwdPtr + 3) == '\0' ||  // This will take care of
-                *(fwdPtr + 3) == '?' ||   // something like foo/bar/..#sometag
-                *(fwdPtr + 3) == '#')) {
+               isSegmentEnd(*(fwdPtr + 3))) {
+      // This will take care of something like foo/bar/..#sometag
       // remove foo/..
       // reverse the urlPtr to the previous slash if possible
       // if url does not allow relative root then drop .. above root
       // otherwise retain them in the path
-      if (traversal > 0 || !(flags & NET_COALESCE_ALLOW_RELATIVE_ROOT)) {
-        if (urlPtr != path) urlPtr--;  // we must be going back at least by one
-        for (; *urlPtr != '/' && urlPtr != path; urlPtr--) {
-          ;  // null body
-        }
-        --traversal;  // count back
-        // forward the fwdPtr past the ../
-        fwdPtr += 2;
-        // if we have reached the beginning of the path
-        // while searching for the previous / and we remember
-        // that it is an url that begins with /%2F then
-        // advance urlPtr again by 3 chars because /%2F already
-        // marks the root of the path
-        if (urlPtr == path && special_ftp_len > 3) {
-          ++urlPtr;
-          ++urlPtr;
-          ++urlPtr;
-        }
-        // special case if we have reached the end
-        // to preserve the last /
-        if (*fwdPtr == '.' && *(fwdPtr + 1) == '\0') ++urlPtr;
-      } else {
-        // there are to much /.. in this path, just copy them instead.
-        // forward the urlPtr past the /.. and copying it
-
-        // However if we remember it is an url that starts with
-        // /%2F and urlPtr just points at the "F" of "/%2F" then do
-        // not overwrite it with the /, just copy .. and move forward
-        // urlPtr.
-        if (special_ftp_len > 3 && urlPtr == path + special_ftp_len - 1) {
-          ++urlPtr;
-        } else {
-          *urlPtr++ = *fwdPtr;
-        }
-        ++fwdPtr;
-        *urlPtr++ = *fwdPtr;
-        ++fwdPtr;
-        *urlPtr++ = *fwdPtr;
+      if (urlPtr != path) urlPtr--;  // we must be going back at least by one
+      for (; *urlPtr != '/' && urlPtr != path; urlPtr--) {
+        ;  // null body
+      }
+      // forward the fwdPtr past the ../
+      fwdPtr += 2;
+      // special case if we have reached the end
+      // to preserve the last /
+      if (*fwdPtr == '.' && (*(fwdPtr + 1) == '\0' || *(fwdPtr + 1) == '?' ||
+                             *(fwdPtr + 1) == '#')) {
+        ++urlPtr;
       }
     } else {
-      // count the hierachie, but only if we do not have reached
-      // the root of some special urls with a special root marker
-      if (*fwdPtr == '/' && *(fwdPtr + 1) != '.' &&
-          (special_ftp_len != 2 || *(fwdPtr + 1) != '/')) {
-        traversal++;
-      }
       // copy the url incrementaly
       *urlPtr++ = *fwdPtr;
     }
@@ -920,7 +873,7 @@ void net_ParseRequestContentType(const nsACString& aHeaderStr,
   *aHadCharset = hadCharset;
 }
 
-bool net_IsValidHostName(const nsACString& host) {
+bool net_IsValidDNSHost(const nsACString& host) {
   // The host name is limited to 253 ascii characters.
   if (host.Length() > 253) {
     return false;

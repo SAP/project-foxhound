@@ -1,5 +1,4 @@
 import { MockRegistrar } from "resource://testing-common/MockRegistrar.sys.mjs";
-import { NON_SPLIT_ENGINE_IDS } from "resource://gre/modules/SearchService.sys.mjs";
 
 const lazy = {};
 
@@ -88,6 +87,9 @@ class _SearchTestUtils {
    *   The options for the new search engine.
    * @param {string} options.url
    *   The URL of the engine to add.
+   * @param {string} [options.faviconURL]
+   *   The icon to be used for the open search engine, if not specified in the
+   *   OpenSearch engine data.
    * @param {boolean} [options.setAsDefault]
    *   Whether or not to set the engine as default automatically. If this is
    *   true, the engine will be set as default, and the previous default engine
@@ -103,13 +105,14 @@ class _SearchTestUtils {
    */
   async installOpenSearchEngine({
     url,
+    faviconURL,
     setAsDefault = false,
     setAsDefaultPrivate = false,
     skipReset = false,
   }) {
     // OpenSearch engines can only be added via http protocols.
     url = url.replace("chrome://mochitests/content", "https://example.com");
-    let engine = await Services.search.addOpenSearchEngine(url, "");
+    let engine = await Services.search.addOpenSearchEngine(url, faviconURL);
     let previousEngine = Services.search.defaultEngine;
     let previousPrivateEngine = Services.search.defaultPrivateEngine;
     if (setAsDefault) {
@@ -171,38 +174,6 @@ class _SearchTestUtils {
         Services.tm.dispatchToMainThread(() => resolve(aSubject));
       }, topic);
     });
-  }
-
-  /**
-   * For xpcshell tests, configures loading engines from test data located in
-   * particular folders. Will be replaced by `setRemoteSettingsConfig`.
-   *
-   * @param {string} [folder]
-   *   The folder name to use.
-   * @param {string} [subFolder]
-   *   The subfolder to use, if any.
-   * @param {Array} [configData]
-   *   An array which contains the configuration to set.
-   */
-  async useTestEngines(folder = "data", subFolder = null, configData = null) {
-    if (configData) {
-      this.#stubConfig(lazy.SearchUtils.SETTINGS_KEY, configData);
-      return;
-    }
-
-    let workDir = Services.dirsvc.get("CurWorkD", Ci.nsIFile);
-    let configFileName =
-      "file://" +
-      PathUtils.join(
-        workDir.path,
-        folder,
-        subFolder ?? "",
-        "search-config-v2.json"
-      );
-
-    let response = await fetch(configFileName);
-    let json = await response.json();
-    this.#stubConfig(lazy.SearchUtils.SETTINGS_KEY, json.data);
   }
 
   /**
@@ -275,11 +246,12 @@ class _SearchTestUtils {
             obj.base.classification = "general";
           }
           if (!obj.base.urls) {
-            obj.base.urls = {
-              search: {
-                base: "https://www.example.com/search",
-                searchTermParamName: "q",
-              },
+            obj.base.urls = {};
+          }
+          if (!obj.base.urls.search) {
+            obj.base.urls.search = {
+              base: "https://www.example.com/search",
+              searchTermParamName: "q",
             };
           }
 
@@ -365,35 +337,13 @@ class _SearchTestUtils {
    *
    * @param {Array} engineConfigurations
    *   An array of engine configurations.
+   * @returns {AppProvidedSearchEngine[]}
+   *   An array of app provided search engine objects.
    */
   async searchConfigToEngines(engineConfigurations) {
-    let engines = [];
-
-    for (let e of engineConfigurations) {
-      if (!e.webExtension) {
-        e.webExtension = {};
-      }
-      e.webExtension.locale =
-        e.webExtension.locale ?? lazy.SearchUtils.DEFAULT_TAG;
-
-      // TODO Bug 1875912 - Remove the webextension.id and webextension.locale when
-      // we're ready to remove old search-config and use search-config-v2 for all
-      // clients. The id in appProvidedSearchEngine should be changed to
-      // engine.identifier.
-      let identifierComponents = NON_SPLIT_ENGINE_IDS.includes(e.identifier)
-        ? [e.identifier]
-        : e.identifier.split("-");
-
-      e.webExtension.locale =
-        identifierComponents.slice(1).join("-") || "default";
-      e.webExtension.id = identifierComponents[0] + "@search.mozilla.org";
-    }
-
-    for (let config of engineConfigurations) {
-      let engine = new lazy.AppProvidedSearchEngine({ config });
-      engines.push(engine);
-    }
-    return engines;
+    return engineConfigurations.map(
+      config => new lazy.AppProvidedSearchEngine({ config })
+    );
   }
 
   /**
@@ -727,6 +677,29 @@ class _SearchTestUtils {
 
     this.idleService._fireObservers("idle");
     await reloadObserved;
+  }
+
+  /**
+   * Fetches a URL and converts the content to a data URL.
+   *
+   * @param {string} url
+   *   The URL of the file that should be fetched.
+   * @returns {Promise<string>}
+   *   The content of the file as a data URL.
+   */
+  async fetchAsDataUrl(url) {
+    let res = await fetch(url);
+    let blob = await res.blob();
+    let reader = new FileReader();
+    return new Promise((resolve, reject) => {
+      reader.onload = () => {
+        resolve(reader.result);
+      };
+      reader.onerror = () => {
+        reject(new Error("Failed to read blob."));
+      };
+      reader.readAsDataURL(blob);
+    });
   }
 }
 

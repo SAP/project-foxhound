@@ -32,9 +32,10 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.storage.BookmarksStorage
 import mozilla.components.feature.top.sites.PinnedSiteStorage
-import mozilla.components.feature.webcompat.reporter.WebCompatReporterFeature
 import mozilla.components.lib.state.ext.flowScoped
 import mozilla.components.support.ktx.android.content.getColorFromAttr
+import mozilla.components.support.ktx.kotlin.isAboutUrl
+import mozilla.components.support.ktx.kotlin.isContentUrl
 import mozilla.components.support.ktx.kotlinx.coroutines.flow.ifAnyChanged
 import org.mozilla.fenix.Config
 import org.mozilla.fenix.R
@@ -161,7 +162,16 @@ open class DefaultToolbarMenu(
     // Predicates that need to be repeatedly called as the session changes
     @VisibleForTesting(otherwise = PRIVATE)
     fun canAddToHomescreen(): Boolean =
-        selectedSession != null && isPinningSupported
+        selectedSession != null && isPinningSupported &&
+            !context.components.useCases.webAppUseCases.isInstallable()
+
+    /**
+     * Should the menu item to install as PWA be visible?
+     */
+    @VisibleForTesting(otherwise = PRIVATE)
+    fun canAddAppToHomescreen(): Boolean =
+        selectedSession != null && isPinningSupported &&
+            context.components.useCases.webAppUseCases.isInstallable()
 
     /**
      * Should the "Open in regular tab" menu item be visible?
@@ -200,6 +210,16 @@ open class DefaultToolbarMenu(
             isEngineSupported == true &&
                 FxNimbus.features.translations.value().mainFlowBrowserMenuEnabled
         } ?: false
+    }
+
+    /**
+     * Return whether Report Broken Site menu item is visible
+     */
+    private fun shouldShowWebCompatReporter(): Boolean {
+        val url = store.state.selectedTab?.content?.url
+        val isAboutUrl = url?.isAboutUrl() ?: false
+        val isContentUrl = url?.isContentUrl() ?: false
+        return !isAboutUrl && !isContentUrl
     }
     // End of predicates //
 
@@ -294,22 +314,22 @@ open class DefaultToolbarMenu(
         onItemTapped.invoke(ToolbarMenu.Item.OpenInApp)
     }
 
-    private val reportSiteIssuePlaceholder = WebExtensionPlaceholderMenuItem(
-        id = WebCompatReporterFeature.WEBCOMPAT_REPORTER_EXTENSION_ID,
-        iconTintColorResource = primaryTextColor(),
-    )
-
     private val addToHomeScreenItem = BrowserMenuImageText(
         label = context.getString(R.string.browser_menu_add_to_homescreen),
         imageResource = R.drawable.mozac_ic_add_to_homescreen_24,
         iconTintColorResource = primaryTextColor(),
         isCollapsingMenuLimit = true,
     ) {
-        if (context.components.useCases.webAppUseCases.isInstallable()) {
-            onItemTapped.invoke(ToolbarMenu.Item.InstallPwaToHomeScreen)
-        } else {
-            onItemTapped.invoke(ToolbarMenu.Item.AddToHomeScreen)
-        }
+        onItemTapped.invoke(ToolbarMenu.Item.AddToHomeScreen)
+    }
+
+    private val addAppToHomeScreenItem = BrowserMenuImageText(
+        label = context.getString(R.string.browser_menu_add_app_to_homescreen),
+        imageResource = R.drawable.mozac_ic_add_to_homescreen_24,
+        iconTintColorResource = primaryTextColor(),
+        isCollapsingMenuLimit = true,
+    ) {
+        onItemTapped.invoke(ToolbarMenu.Item.InstallPwaToHomeScreen)
     }
 
     private val addRemoveTopSitesItem = TwoStateBrowserMenuImageText(
@@ -403,6 +423,14 @@ open class DefaultToolbarMenu(
         }
     }
 
+    private val reportBrokenSite = BrowserMenuImageText(
+        label = context.getString(R.string.browser_menu_webcompat_reporter),
+        imageResource = R.drawable.mozac_ic_lightbulb_24,
+        iconTintColorResource = primaryTextColor(),
+    ) {
+        onItemTapped.invoke(ToolbarMenu.Item.ReportBrokenSite)
+    }
+
     @VisibleForTesting(otherwise = PRIVATE)
     val coreMenuItems by lazy {
         val menuItems =
@@ -423,9 +451,10 @@ open class DefaultToolbarMenu(
                 openInRegularTabItem.apply { visible = ::shouldShowOpenInRegularTab },
                 customizeReaderView.apply { visible = ::shouldShowReaderViewCustomization },
                 openInApp.apply { visible = ::shouldShowOpenInApp },
-                reportSiteIssuePlaceholder,
+                reportBrokenSite.apply { visible = ::shouldShowWebCompatReporter },
                 BrowserMenuDivider(),
                 addToHomeScreenItem.apply { visible = ::canAddToHomescreen },
+                addAppToHomeScreenItem.apply { visible = ::canAddAppToHomescreen },
                 if (shouldShowTopSites) addRemoveTopSitesItem else null,
                 saveToCollectionItem,
                 if (FxNimbus.features.print.value().browserPrintEnabled) printPageItem else null,

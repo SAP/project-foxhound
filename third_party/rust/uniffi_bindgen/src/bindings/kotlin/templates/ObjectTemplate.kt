@@ -111,7 +111,7 @@
 
 {%- call kt::docstring(obj, 0) %}
 {% if (is_error) %}
-open class {{ impl_class_name }} : Exception, Disposable, AutoCloseable, {{ interface_name }} {
+open class {{ impl_class_name }} : kotlin.Exception, Disposable, AutoCloseable, {{ interface_name }} {
 {% else -%}
 open class {{ impl_class_name }}: Disposable, AutoCloseable, {{ interface_name }} {
 {%- endif %}
@@ -262,6 +262,9 @@ open class {{ impl_class_name }}: Disposable, AutoCloseable, {{ interface_name }
 {% include "CallbackInterfaceImpl.kt" %}
 {%- endif %}
 
+/**
+ * @suppress
+ */
 public object {{ ffi_converter_name }}: FfiConverter<{{ type_name }}, Pointer> {
     {%- if obj.has_callback_interface() %}
     internal val handleMap = UniffiHandleMap<{{ type_name }}>()

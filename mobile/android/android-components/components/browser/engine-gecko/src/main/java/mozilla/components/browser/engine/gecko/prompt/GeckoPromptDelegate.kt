@@ -282,15 +282,14 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
         return geckoResult
     }
 
-    @Suppress("MaxLineLength")
     override fun onLoginSelect(
         session: GeckoSession,
         prompt: AutocompleteRequest<Autocomplete.LoginSelectOption>,
     ): GeckoResult<PromptResponse>? {
         val promptOptions = prompt.options
 
-        val generatedPassword =
-            promptOptions.firstOrNull { option -> option.hint == Autocomplete.SelectOption.Hint.GENERATED }?.value?.password
+        val generatedPassword = promptOptions
+            .firstOrNull { option -> option.hint == Autocomplete.SelectOption.Hint.GENERATED }?.value?.password
 
         val geckoResult = GeckoResult<PromptResponse>()
         val onConfirmSelect: (Login) -> Unit = { login ->
@@ -701,8 +700,12 @@ internal class GeckoPromptDelegate(private val geckoEngineSession: GeckoEngineSe
             }
         }
 
+        val onDismiss: () -> Unit = {
+            geckoPrompt.dismissSafely(geckoResult)
+        }
+
         geckoEngineSession.notifyObservers {
-            onPromptRequest(PromptRequest.BeforeUnload(title, onAllow, onDeny))
+            onPromptRequest(PromptRequest.BeforeUnload(title, onAllow, onDeny, onDismiss))
         }
 
         return geckoResult

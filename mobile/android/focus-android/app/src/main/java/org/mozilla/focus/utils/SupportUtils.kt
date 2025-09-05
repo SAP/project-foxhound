@@ -47,6 +47,7 @@ object SupportUtils {
         AUTOCOMPLETE("autofill-domain-android"),
         TRACKERS("trackers"),
         USAGE_DATA("usage-data"),
+        USAGE_PING_SETTINGS("usage-ping-settings-mobile"),
         SEARCH_SUGGESTIONS("search-suggestions-focus-android"),
         ALLOWLIST("focus-android-allowlist"),
         STUDIES("how-opt-out-studies-firefox-focus-android"),
@@ -85,11 +86,11 @@ object SupportUtils {
     }
 
     /**
-     * Returns the version name of this package.
+     * Returns the version name of this package or an empty string if versionName is null.
      */
     fun getAppVersion(context: Context): String {
         try {
-            return context.packageManager.getPackageInfoCompat(context.packageName, 0).versionName
+            return context.packageManager.getPackageInfoCompat(context.packageName, 0).versionName ?: ""
         } catch (e: PackageManager.NameNotFoundException) {
             // This should be impossible - we should always be able to get information about ourselves:
             throw IllegalStateException("Unable find package details for Focus", e)

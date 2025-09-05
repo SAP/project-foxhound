@@ -15,10 +15,16 @@ import org.mozilla.experiments.nimbus.NimbusMessagingHelperInterface
 import org.mozilla.experiments.nimbus.StringHolder
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.nimbus.AddOnData
+import org.mozilla.fenix.nimbus.CustomizationThemeData
+import org.mozilla.fenix.nimbus.ExtraCardData
 import org.mozilla.fenix.nimbus.FxNimbus
 import org.mozilla.fenix.nimbus.JunoOnboarding
 import org.mozilla.fenix.nimbus.OnboardingCardData
 import org.mozilla.fenix.nimbus.OnboardingCardType
+import org.mozilla.fenix.nimbus.TermsOfServiceData
+import org.mozilla.fenix.nimbus.ThemeType
+import org.mozilla.fenix.onboarding.store.OnboardingAddonStatus
 
 class OnboardingMapperTest {
 
@@ -172,6 +178,265 @@ class OnboardingMapperTest {
                 jexlConditions = jexlConditions,
                 func = evalFunction,
             ),
+        )
+    }
+
+    @Test
+    fun themeSelectionCardHasExtraData_toPageUiData_returnsConvertedPage() {
+        // Page UI values
+        val imageRes = R.drawable.ic_pick_a_theme
+        val title = "Pick a theme"
+        val description = "See the web in the best light."
+        val primaryButtonLabel = "Save and continue"
+        val secondaryButtonLabel = "Skip"
+
+        // Theme data values
+        val themeLabel = "System auto"
+        val themeImage = R.drawable.ic_pick_a_theme_system_auto
+
+        // The onboarding card data object containing extraData.
+        val themeSelectionCardData = OnboardingCardData(
+            cardType = OnboardingCardType.THEME_SELECTION,
+            imageRes = imageRes,
+            title = StringHolder(null, title),
+            body = StringHolder(null, description),
+            primaryButtonLabel = StringHolder(null, primaryButtonLabel),
+            secondaryButtonLabel = StringHolder(null, secondaryButtonLabel),
+            ordering = 45,
+            extraData = ExtraCardData(
+                customizationThemeData = listOf(
+                    CustomizationThemeData(
+                        label = StringHolder(null, themeLabel),
+                        imageRes = themeImage,
+                        themeType = ThemeType.THEME_SYSTEM,
+                    ),
+                ),
+            ),
+        )
+
+        // Expected converted page UI data, matching the themeSelectionCardData object
+        val expected = OnboardingPageUiData(
+            type = OnboardingPageUiData.Type.THEME_SELECTION,
+            imageRes = imageRes,
+            title = title,
+            description = description,
+            primaryButtonLabel = primaryButtonLabel,
+            secondaryButtonLabel = secondaryButtonLabel,
+            themeOptions = listOf(
+                ThemeOption(
+                    label = themeLabel,
+                    imageRes = themeImage,
+                    themeType = ThemeOptionType.THEME_SYSTEM,
+                ),
+            ),
+        )
+
+        assertEquals(
+            expected,
+            listOf(defaultBrowserCardData, themeSelectionCardData).toPageUiData(
+                privacyCaption = privacyCaption,
+                showDefaultBrowserPage = true,
+                showNotificationPage = false,
+                showAddWidgetPage = false,
+                jexlConditions = jexlConditions,
+                func = evalFunction,
+            ).last(),
+        )
+    }
+
+    @Test
+    fun themeSelectedCardNoExtraData_toPageUiData_convertedPageDoesNotIncludeThemeSelectedCard() {
+        val themeSelectionCardData = OnboardingCardData(
+            cardType = OnboardingCardType.THEME_SELECTION,
+            imageRes = R.drawable.ic_pick_a_theme,
+            title = StringHolder(null, "Pick a theme"),
+            body = StringHolder(null, "See the web in the best light."),
+            primaryButtonLabel = StringHolder(null, "Save and continue"),
+            secondaryButtonLabel = StringHolder(null, "Skip"),
+            ordering = 45,
+        )
+
+        assertEquals(
+            defaultBrowserPageUiDataWithPrivacyCaption,
+            listOf(defaultBrowserCardData, themeSelectionCardData).toPageUiData(
+                privacyCaption = privacyCaption,
+                showDefaultBrowserPage = true,
+                showNotificationPage = false,
+                showAddWidgetPage = false,
+                jexlConditions = jexlConditions,
+                func = evalFunction,
+            ).last(),
+        )
+    }
+
+    @Test
+    fun termsOfServiceData_toPageUiData_returnsConvertedPage() {
+        val imageRes = R.drawable.ic_extensions_onboarding
+        val title = "Terms of service card title"
+        val description = "Terms of service card body"
+        val primaryButtonLabel = "add-ons card primary button text"
+
+        val lineOneText = "By continuing, you agree to the %1\$s."
+        val lineOneLinkText = "Firefox Terms of Use"
+        val lineOneLinkUrl = "LinkOne"
+        val lineTwoText = "Firefox cares about your privacy. Learn more in our %1\$s."
+        val lineTwoLinkText = "Privacy Notice"
+        val lineTwoLinkUrl = "LinkTwo"
+        val lineThreeText = "To help improve the browser, Firefox sends diagnostic and interaction data to Mozilla. %1\$s"
+        val lineThreeLinkText = "Manage"
+
+        val expected = OnboardingPageUiData(
+            type = OnboardingPageUiData.Type.TERMS_OF_SERVICE,
+            imageRes = imageRes,
+            title = title,
+            description = description,
+            primaryButtonLabel = primaryButtonLabel,
+            termsOfService = OnboardingTermsOfService(
+                lineOneText = lineOneText,
+                lineOneLinkText = lineOneLinkText,
+                lineOneLinkUrl = lineOneLinkUrl,
+                lineTwoText = lineTwoText,
+                lineTwoLinkText = lineTwoLinkText,
+                lineTwoLinkUrl = lineTwoLinkUrl,
+                lineThreeText = lineThreeText,
+                lineThreeLinkText = lineThreeLinkText,
+            ),
+        )
+
+        val nimbusTermsOfServiceData = TermsOfServiceData(
+            lineOneText = StringHolder(R.string.onboarding_term_of_service_line_one_2, ""),
+            lineOneLinkText = StringHolder(R.string.onboarding_term_of_service_line_one_link_text_2, ""),
+            lineOneLinkUrl = StringHolder(null, lineOneLinkUrl),
+            lineTwoText = StringHolder(R.string.onboarding_term_of_service_line_two_2, ""),
+            lineTwoLinkText = StringHolder(R.string.onboarding_term_of_service_line_two_link_text, ""),
+            lineTwoLinkUrl = StringHolder(null, lineTwoLinkUrl),
+            lineThreeText = StringHolder(R.string.onboarding_term_of_service_line_three, ""),
+            lineThreeLinkText = StringHolder(R.string.onboarding_term_of_service_line_three_link_text, ""),
+        )
+
+        val termsOfServiceCardData = OnboardingCardData(
+            cardType = OnboardingCardType.TERMS_OF_SERVICE,
+            imageRes = imageRes,
+            title = StringHolder(null, title),
+            body = StringHolder(null, description),
+            primaryButtonLabel = StringHolder(null, primaryButtonLabel),
+            ordering = 30,
+            extraData = ExtraCardData(
+                termOfServiceData = nimbusTermsOfServiceData,
+            ),
+        )
+
+        assertEquals(
+            expected,
+            listOf(defaultBrowserCardData, termsOfServiceCardData).toPageUiData(
+                privacyCaption = privacyCaption,
+                showDefaultBrowserPage = true,
+                showNotificationPage = false,
+                showAddWidgetPage = false,
+                jexlConditions = jexlConditions,
+                func = evalFunction,
+            ).last(),
+        )
+    }
+
+    @Test
+    fun addOnsCardHasExtraData_toPageUiData_returnsConvertedPage() {
+        val imageRes = R.drawable.ic_extensions_onboarding
+        val title = "add-ons card title"
+        val description = "add-ons card body"
+        val primaryButtonLabel = "add-ons card primary button text"
+
+        // Add-ons
+        val addOnIconRes = R.drawable.ic_extensions_onboarding
+        val id = "add-on-1"
+        val addOnName = "test add-on"
+        val addOnDescription = "test add-on description"
+        val addOnAverageRating = "5"
+        val addOnReviewCount = "1234"
+        val addOnInstallUrl = "test.addon.org"
+        val status = OnboardingAddonStatus.NOT_INSTALLED
+
+        val expected = OnboardingPageUiData(
+            type = OnboardingPageUiData.Type.ADD_ONS,
+            imageRes = imageRes,
+            title = title,
+            description = description,
+            primaryButtonLabel = primaryButtonLabel,
+            addOns = listOf(
+                OnboardingAddOn(
+                    id = id,
+                    iconRes = addOnIconRes,
+                    name = addOnName,
+                    description = addOnDescription,
+                    averageRating = addOnAverageRating,
+                    reviewCount = addOnReviewCount,
+                    installUrl = addOnInstallUrl,
+                    status = status,
+                ),
+            ),
+        )
+
+        val addOnsCardData = OnboardingCardData(
+            cardType = OnboardingCardType.ADD_ONS,
+            imageRes = imageRes,
+            title = StringHolder(null, title),
+            body = StringHolder(null, description),
+            primaryButtonLabel = StringHolder(null, primaryButtonLabel),
+            ordering = 30,
+            extraData = ExtraCardData(
+                addOnsData = listOf(
+                    AddOnData(
+                        id = StringHolder(null, id),
+                        iconRes = addOnIconRes,
+                        name = StringHolder(null, addOnName),
+                        description = StringHolder(null, addOnDescription),
+                        averageRating = addOnAverageRating,
+                        reviewCount = addOnReviewCount,
+                        installUrl = StringHolder(null, addOnInstallUrl),
+                    ),
+                ),
+            ),
+        )
+
+        assertEquals(
+            expected,
+            listOf(defaultBrowserCardData, addOnsCardData).toPageUiData(
+                privacyCaption = privacyCaption,
+                showDefaultBrowserPage = true,
+                showNotificationPage = false,
+                showAddWidgetPage = false,
+                jexlConditions = jexlConditions,
+                func = evalFunction,
+            ).last(),
+        )
+    }
+
+    @Test
+    fun addOnsCardNoExtraData_toPageUiData_convertedPageDoesNotIncludeAddOnsCard() {
+        val imageRes = R.drawable.ic_extensions_onboarding
+        val title = "add-ons card title"
+        val description = "add-ons card body"
+        val primaryButtonLabel = "add-ons card primary button text"
+
+        val addOnsCardData = OnboardingCardData(
+            cardType = OnboardingCardType.ADD_ONS,
+            imageRes = imageRes,
+            title = StringHolder(null, title),
+            body = StringHolder(null, description),
+            primaryButtonLabel = StringHolder(null, primaryButtonLabel),
+            ordering = 30,
+        )
+
+        assertEquals(
+            defaultBrowserPageUiDataWithPrivacyCaption,
+            listOf(defaultBrowserCardData, addOnsCardData).toPageUiData(
+                privacyCaption = privacyCaption,
+                showDefaultBrowserPage = true,
+                showNotificationPage = false,
+                showAddWidgetPage = false,
+                jexlConditions = jexlConditions,
+                func = evalFunction,
+            ).last(),
         )
     }
 

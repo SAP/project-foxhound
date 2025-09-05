@@ -153,6 +153,7 @@ const MESSAGE_TYPE_LIST = [
   "INFOBAR_TELEMETRY",
   "SPOTLIGHT_TELEMETRY",
   "TOAST_NOTIFICATION_TELEMETRY",
+  "MENU_MESSAGE_TELEMETRY",
   "AS_ROUTER_TELEMETRY_USER_EVENT",
 
   // Admin types
@@ -499,7 +500,7 @@ const ImpressionsItem = ({
 /******/ 	
 /************************************************************************/
 var __webpack_exports__ = {};
-// This entry need to be wrapped in an IIFE because it need to be isolated against other modules in the chunk.
+// This entry needs to be wrapped in an IIFE because it needs to be isolated against other modules in the chunk.
 (() => {
 __webpack_require__.r(__webpack_exports__);
 /* harmony export */ __webpack_require__.d(__webpack_exports__, {
@@ -736,7 +737,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
   }
   onChangeTargetingParameters(event) {
     const {
-      name
+      name: eventName
     } = event.target;
     const {
       value
@@ -746,10 +747,10 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       JSON.parse(value);
       event.target.classList.remove("errorState");
     } catch (e) {
-      console.error(`Error parsing value of parameter ${name}`);
+      console.error(`Error parsing value of parameter ${eventName}`);
       event.target.classList.add("errorState");
       targetingParametersError = {
-        id: name
+        id: eventName
       };
     }
     this.setState(({
@@ -758,7 +759,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       const updatedParameters = {
         ...stringTargetingParameters
       };
-      updatedParameters[name] = value;
+      updatedParameters[eventName] = value;
       return {
         copiedToClipboard: false,
         evaluationStatus: {},
@@ -922,7 +923,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
     const impressions = this.state.messageImpressions[msg.id] ? this.state.messageImpressions[msg.id].length : 0;
     const isCollapsed = this.state.collapsedMessages.includes(msg.id);
     const isModified = this.state.modifiedMessages.includes(msg.id);
-    const aboutMessagePreviewSupported = ["infobar", "spotlight", "cfr_doorhanger", "feature_callout"].includes(msg.template);
+    const aboutMessagePreviewSupported = ["infobar", "spotlight", "cfr_doorhanger", "feature_callout", "pb_newtab"].includes(msg.template);
     let itemClassName = "message-item";
     if (isBlocked) {
       itemClassName += " blocked";
@@ -1085,7 +1086,9 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       className: "row"
     }, this.state.messages ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("div", null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("h3", null, "Templates"), /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("div", {
       className: "col"
-    }, this.state.messages.map(message => message.template).filter((value, index, self) => self.indexOf(value) === index).map(template => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("label", {
+    }, this.state.messages.map(message => message.template).filter(
+    // eslint-disable-next-line no-shadow
+    (value, index, self) => self.indexOf(value) === index).map(template => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("label", {
       key: template
     }, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("input", {
       type: "checkbox",
@@ -1293,22 +1296,16 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
     }, this.state.copiedToClipboard ? "Parameters copied!" : "Copy parameters"))), this.state.stringTargetingParameters && Object.keys(this.state.stringTargetingParameters).map((param, i) => {
       const value = this.state.stringTargetingParameters[param];
       const errorState = this.state.targetingParametersError && this.state.targetingParametersError.id === param;
-      const className = `monospace no-margins${errorState ? " errorState" : ""}`;
-      const inputComp = (value && value.length) > 30 ? /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("textarea", {
+      const largeEditor = value?.length > 30 || value?.match(/[\nR]/);
+      const className = `monospace no-margins targeting-editor${errorState ? " errorState" : ""}${largeEditor ? " large" : " small"}`;
+      const inputComp = /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("textarea", {
         name: param,
         className: className,
         value: value,
-        rows: "10",
-        cols: "60",
+        rows: largeEditor ? "10" : "1",
+        cols: largeEditor ? "60" : "28",
         onChange: this.onChangeTargetingParameters,
         spellCheck: "false"
-      }) : /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("input", {
-        type: "text",
-        size: "30",
-        name: param,
-        className: className,
-        value: value,
-        onChange: this.onChangeTargetingParameters
       });
       return /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement("tr", {
         key: i
@@ -1390,7 +1387,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
   }
   onChangeAttributionParameters(event) {
     const {
-      name,
+      name: eventName,
       value
     } = event.target;
     this.setState(({
@@ -1399,7 +1396,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
       const updatedParameters = {
         ...attributionParameters
       };
-      updatedParameters[name] = value;
+      updatedParameters[eventName] = value;
       return {
         attributionParameters: updatedParameters
       };
@@ -1515,7 +1512,7 @@ class ASRouterAdminInner extends (react__WEBPACK_IMPORTED_MODULE_1___default().P
 }
 const ASRouterAdmin = props => /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement(_SimpleHashRouter__WEBPACK_IMPORTED_MODULE_3__.SimpleHashRouter, null, /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement(ASRouterAdminInner, props));
 function renderASRouterAdmin() {
-  react_dom__WEBPACK_IMPORTED_MODULE_2___default().render( /*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement(ASRouterAdmin, null), document.getElementById("root"));
+  react_dom__WEBPACK_IMPORTED_MODULE_2___default().render(/*#__PURE__*/react__WEBPACK_IMPORTED_MODULE_1___default().createElement(ASRouterAdmin, null), document.getElementById("root"));
 }
 })();
 

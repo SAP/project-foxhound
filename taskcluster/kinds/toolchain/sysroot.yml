@@ -18,8 +18,9 @@ sysroot-i686-linux-gnu:
     worker:
         env:
             PACKAGES_TASKS: {task-reference: '<gcc-8>'}
+            GCC_VERSION: '8'
     treeherder:
-        symbol: TL(sysroot32)
+        symbol: TL32(sysroot)
     dependencies:
         gcc-8: packages-deb8-32-gcc-8
     run:
@@ -34,8 +35,9 @@ sysroot-x86_64-linux-gnu:
     worker:
         env:
             PACKAGES_TASKS: {task-reference: '<gcc-8>'}
+            GCC_VERSION: '8'
     treeherder:
-        symbol: TL(sysroot64)
+        symbol: TL(sysroot)
     dependencies:
         gcc-8: packages-deb8-gcc-8
     run:
@@ -50,8 +52,9 @@ sysroot-x86_64-linux-gnu-x11:
     worker:
         env:
             PACKAGES_TASKS: {task-reference: '<gcc-8> <gtk3>'}
+            GCC_VERSION: '8'
     treeherder:
-        symbol: TL(sysroot64-x11)
+        symbol: TL(sysroot-x11)
     dependencies:
         gcc-8: packages-deb8-gcc-8
         gtk3: packages-deb8-gtk3
@@ -77,12 +80,12 @@ sysroot-wasm32-wasi-clang-8.0:
             - linux64-clang-8.0
             - wasm32-wasi-compiler-rt-8.0
 
-sysroot-wasm32-wasi-clang-18:
+sysroot-wasm32-wasi-clang-19:
     description: "Sysroot for wasi"
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-wasi-18)
+        symbol: TL(sysroot-wasi-19)
     run:
         script: build-sysroot-wasi.sh
         arguments:
@@ -96,11 +99,32 @@ sysroot-wasm32-wasi-clang-18:
         toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
     fetches:
         fetch:
-            - clang-18
+            - clang-19
             - wasi-sdk
         toolchain:
-            - linux64-clang-18-stage1
-            - wasm32-wasi-compiler-rt-18
+            - linux64-clang-19-stage1
+            - wasm32-wasi-compiler-rt-19
+
+sysroot-wasm32-wasi-clang-20:
+    description: "Sysroot for wasi"
+    attributes:
+        local-toolchain: true
+    treeherder:
+        symbol: TL(sysroot-wasi-20)
+    run:
+        script: build-sysroot-wasi.sh
+        arguments:
+            - wasi-sdk.patch
+        resources:
+            - taskcluster/scripts/misc/wasi-sdk.patch
+        toolchain-artifact: public/build/sysroot-wasm32-wasi.tar.zst
+    fetches:
+        fetch:
+            - clang-20
+            - wasi-sdk
+        toolchain:
+            - linux64-clang-20-stage1
+            - wasm32-wasi-compiler-rt-20
 
 sysroot-wasm32-wasi-clang-trunk:
     description: "Sysroot for wasi"
@@ -132,7 +156,7 @@ sysroot-aarch64-linux-gnu:
     attributes:
         local-toolchain: true
     treeherder:
-        symbol: TL(sysroot-aarch64)
+        symbol: TLA64(sysroot)
     run:
         toolchain-artifact: public/build/sysroot-aarch64-linux-gnu.tar.zst
         arguments:
@@ -143,8 +167,9 @@ linux32-toolchain-sysroot:
     worker:
         env:
             PACKAGES_TASKS: {task-reference: '<gcc-8>'}
+            GCC_VERSION: '8'
     treeherder:
-        symbol: TL(sysroot32-toolchain)
+        symbol: TL32(sysroot-toolchain)
     dependencies:
         gcc-8: packages-deb8-32-gcc-8
     run:
@@ -165,8 +190,9 @@ linux64-toolchain-sysroot:
     worker:
         env:
             PACKAGES_TASKS: {task-reference: '<gcc-8>'}
+            GCC_VERSION: '8'
     treeherder:
-        symbol: TL(sysroot64-toolchain)
+        symbol: TL(sysroot-toolchain)
     dependencies:
         gcc-8: packages-deb8-gcc-8
     run:
@@ -183,3 +209,16 @@ linux64-toolchain-sysroot:
             - libbz2-dev
             # For msix-package
             - libicu-dev
+            # For libdmg-hfsplus
+            - liblzma-dev
+
+linux64-aarch64-toolchain-sysroot:
+    description: "Sysroot for aarch64 linux64 toolchain builds"
+    treeherder:
+        symbol: TLA64(sysroot-toolchain)
+    run:
+        arguments:
+            - arm64
+            # For clang
+            - binutils-dev
+            - libxml2-dev

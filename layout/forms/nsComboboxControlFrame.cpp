@@ -47,7 +47,9 @@ using namespace mozilla::gfx;
 
 NS_IMETHODIMP
 nsComboboxControlFrame::RedisplayTextEvent::Run() {
-  if (mControlFrame) mControlFrame->HandleRedisplayTextEvent();
+  if (mControlFrame) {
+    mControlFrame->HandleRedisplayTextEvent();
+  }
   return NS_OK;
 }
 
@@ -170,7 +172,7 @@ nscoord nsComboboxControlFrame::GetLongestOptionISize(
   return maxOptionSize;
 }
 
-nscoord nsComboboxControlFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsComboboxControlFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                                IntrinsicISizeType aType) {
   Maybe<nscoord> containISize = ContainIntrinsicISize(NS_UNCONSTRAINEDSIZE);
   if (containISize && *containISize != NS_UNCONSTRAINEDSIZE) {
@@ -179,7 +181,7 @@ nscoord nsComboboxControlFrame::IntrinsicISize(gfxContext* aContext,
 
   nscoord displayISize = 0;
   if (!containISize && !StyleContent()->mContent.IsNone()) {
-    displayISize += GetLongestOptionISize(aContext);
+    displayISize += GetLongestOptionISize(aInput.mContext);
   }
 
   // Add room for the dropmarker button (if there is one).

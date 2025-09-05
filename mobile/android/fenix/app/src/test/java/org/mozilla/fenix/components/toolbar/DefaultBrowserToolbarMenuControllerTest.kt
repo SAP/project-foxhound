@@ -51,7 +51,6 @@ import mozilla.components.support.test.ext.joinBlocking
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
 import mozilla.components.support.test.rule.runTestOnMain
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -61,6 +60,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mozilla.fenix.BrowserDirection
 import org.mozilla.fenix.GleanMetrics.Collections
 import org.mozilla.fenix.GleanMetrics.Events
 import org.mozilla.fenix.GleanMetrics.ReaderMode
@@ -73,16 +73,18 @@ import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.browser.readermode.ReaderModeController
 import org.mozilla.fenix.collections.SaveCollectionStep
 import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.TabCollectionStorage
 import org.mozilla.fenix.components.accounts.AccountState
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
 import org.mozilla.fenix.components.appstate.AppAction.ShortcutAction
+import org.mozilla.fenix.compose.snackbar.Snackbar
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.directionsEq
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.settings.deletebrowsingdata.deleteAndQuit
 import org.mozilla.fenix.utils.Settings
+import org.mozilla.fenix.webcompat.WEB_COMPAT_REPORTER_URL
 
 @RunWith(FenixRobolectricTestRunner::class)
 class DefaultBrowserToolbarMenuControllerTest {
@@ -91,7 +93,7 @@ class DefaultBrowserToolbarMenuControllerTest {
     val coroutinesTestRule = MainCoroutineRule()
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @MockK private lateinit var snackbarParent: ViewGroup
 
@@ -113,7 +115,7 @@ class DefaultBrowserToolbarMenuControllerTest {
 
     @RelaxedMockK private lateinit var browserAnimator: BrowserAnimator
 
-    @RelaxedMockK private lateinit var snackbar: FenixSnackbar
+    @RelaxedMockK private lateinit var snackbar: Snackbar
 
     @RelaxedMockK private lateinit var tabCollectionStorage: TabCollectionStorage
 
@@ -143,8 +145,8 @@ class DefaultBrowserToolbarMenuControllerTest {
         )
         every { deleteAndQuit(any(), any()) } just Runs
 
-        mockkObject(FenixSnackbar.Companion)
-        every { FenixSnackbar.make(any(), any(), any()) } returns snackbar
+        mockkObject(Snackbar.Companion)
+        every { Snackbar.make(any(), any()) } returns snackbar
 
         every { activity.components.useCases.sessionUseCases } returns sessionUseCases
         every { activity.components.useCases.customTabsUseCases } returns customTabUseCases
@@ -171,7 +173,7 @@ class DefaultBrowserToolbarMenuControllerTest {
     @After
     fun tearDown() {
         unmockkStatic("org.mozilla.fenix.settings.deletebrowsingdata.DeleteAndQuitKt")
-        unmockkObject(FenixSnackbar.Companion)
+        unmockkObject(Snackbar.Companion)
     }
 
     @Test
@@ -255,7 +257,7 @@ class DefaultBrowserToolbarMenuControllerTest {
             customTabSessionId = customTab.id,
         )
 
-        val item = ToolbarMenu.Item.OpenInFenix
+        val item = ToolbarMenu.Item.OpenInFenix()
 
         every { activity.startActivity(any()) } just Runs
         controller.handleToolbarItemInteraction(item)
@@ -892,6 +894,45 @@ class DefaultBrowserToolbarMenuControllerTest {
             assertEquals("main_flow_browser", telemetry?.extra?.get("item"))
         }
 
+    @Test
+    fun `GIVEN telemetry is enabled WHEN the Report broken site menu item is pressed THEN navigate to the web compat reporter AND post telemetry`() =
+        runTest {
+            val item = ToolbarMenu.Item.ReportBrokenSite
+            every { settings.isTelemetryEnabled } returns true
+
+            createController(scope = this, store = browserStore).handleToolbarItemInteraction(item)
+
+            verify {
+                navController.navigate(
+                    directions =
+                    BrowserFragmentDirections.actionBrowserFragmentToWebCompatReporterFragment(
+                        tabUrl = selectedTab.content.url,
+                    ),
+                )
+            }
+
+            val telemetry = Events.browserMenuAction.testGetValue()?.firstOrNull()
+            assertEquals("report_broken_site", telemetry?.extra?.get("item"))
+        }
+
+    @Test
+    fun `GIVEN telemetry is disabled WHEN the Report broken site menu item is pressed THEN navigate to the web compat reporter web page`() =
+        runTest {
+            val item = ToolbarMenu.Item.ReportBrokenSite
+            every { settings.isTelemetryEnabled } returns false
+            val controller = createController(scope = this, store = browserStore)
+
+            controller.handleToolbarItemInteraction(item)
+
+            verify {
+                activity.openToBrowserAndLoad(
+                    searchTermOrURL = "$WEB_COMPAT_REPORTER_URL${selectedTab.content.url}",
+                    newTab = true,
+                    from = BrowserDirection.FromGlobal,
+                )
+            }
+        }
+
     private fun createController(
         scope: CoroutineScope,
         store: BrowserStore,
@@ -917,8 +958,6 @@ class DefaultBrowserToolbarMenuControllerTest {
         sessionFeature = sessionFeatureWrapper,
         topSitesStorage = topSitesStorage,
         pinnedSiteStorage = pinnedSiteStorage,
-        onShowPinVerification = {},
-        onBiometricAuthenticationSuccessful = {},
     ).apply {
         ioScope = scope
     }

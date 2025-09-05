@@ -3,9 +3,9 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 <%namespace name="helpers" file="/helpers.mako.rs" />
-<% from data import ALL_SIDES, DEFAULT_RULES, DEFAULT_RULES_AND_PAGE, maybe_moz_logical_alias %>
+<% from data import ALL_SIDES, DEFAULT_RULES, DEFAULT_RULES_AND_PAGE, POSITION_TRY_RULE, maybe_moz_logical_alias %>
 
-% for side in ALL_SIDES:
+% for index, side in enumerate(ALL_SIDES):
     <%
         spec = "https://drafts.csswg.org/css-box/#propdef-margin-%s" % side[0]
         if side[1]:
@@ -13,15 +13,16 @@
     %>
     ${helpers.predefined_type(
         "margin-%s" % side[0],
-        "LengthPercentageOrAuto",
-        "computed::LengthPercentageOrAuto::zero()",
+        "Margin",
+        "computed::Margin::zero()",
         engines="gecko servo",
         aliases=maybe_moz_logical_alias(engine, side, "-moz-margin-%s"),
         allow_quirks="No" if side[1] else "Yes",
         logical=side[1],
         logical_group="margin",
+        gecko_ffi_name="mMargin.{}".format(index),
         spec=spec,
-        rule_types_allowed=DEFAULT_RULES if side[1] else DEFAULT_RULES_AND_PAGE,
+        rule_types_allowed=(DEFAULT_RULES if side[1] else DEFAULT_RULES_AND_PAGE) | POSITION_TRY_RULE,
         servo_restyle_damage="reflow",
         affects="layout",
     )}
@@ -37,7 +38,7 @@ ${helpers.predefined_type(
     affects="overflow",
 )}
 
-% for side in ALL_SIDES:
+% for index, side in enumerate(ALL_SIDES):
     ${helpers.predefined_type(
         "scroll-margin-%s" % side[0],
         "Length",
@@ -45,6 +46,7 @@ ${helpers.predefined_type(
         engines="gecko",
         logical=side[1],
         logical_group="scroll-margin",
+        gecko_ffi_name="mScrollMargin.{}".format(index),
         spec="https://drafts.csswg.org/css-scroll-snap-1/#propdef-scroll-margin-%s" % side[0],
         affects="",
     )}

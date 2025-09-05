@@ -86,6 +86,13 @@ XPCOMUtils.defineLazyServiceGetter(
   "@mozilla.org/content-pref/service;1",
   "nsIContentPrefService2"
 );
+
+ChromeUtils.defineLazyGetter(lazy, "gBrandBundle", function () {
+  return Services.strings.createBundle(
+    "chrome://branding/locale/brand.properties"
+  );
+});
+
 ChromeUtils.defineLazyGetter(lazy, "gBrowserBundle", function () {
   return Services.strings.createBundle(
     "chrome://browser/locale/browser.properties"
@@ -249,6 +256,17 @@ class PermissionPrompt {
    */
   get message() {
     throw new Error("Not implemented.");
+  }
+
+  /**
+   * The hint text to show to the user in the PopupNotification, see
+   * `PopupNotifications_show` in PopupNotifications.sys.mjs.
+   * By default, no hint is shown.
+   *
+   * @return {string}
+   */
+  get hintText() {
+    return undefined;
   }
 
   /**
@@ -462,10 +480,7 @@ class PermissionPrompt {
                 promptAction.action,
                 scope
               );
-            } else if (promptAction.action == lazy.SitePermissions.BLOCK) {
-              // Temporarily store BLOCK permissions only
-              // SitePermissions does not consider subframes when storing temporary
-              // permissions on a tab, thus storing ALLOW could be exploited.
+            } else {
               lazy.SitePermissions.setForPrincipal(
                 this.principal,
                 this.permissionKey,
@@ -482,19 +497,13 @@ class PermissionPrompt {
               this.cancel();
             }
           } else if (this.permissionKey) {
-            // TODO: Add support for permitTemporaryAllow
-            if (promptAction.action == lazy.SitePermissions.BLOCK) {
-              // Temporarily store BLOCK permissions.
-              // We don't consider subframes when storing temporary
-              // permissions on a tab, thus storing ALLOW could be exploited.
-              lazy.SitePermissions.setForPrincipal(
-                null,
-                this.permissionKey,
-                promptAction.action,
-                lazy.SitePermissions.SCOPE_TEMPORARY,
-                this.browser
-              );
-            }
+            lazy.SitePermissions.setForPrincipal(
+              null,
+              this.permissionKey,
+              promptAction.action,
+              lazy.SitePermissions.SCOPE_TEMPORARY,
+              this.browser
+            );
           }
         },
       };
@@ -616,6 +625,7 @@ class PermissionPrompt {
       return false;
     };
 
+    options.hintText = this.hintText;
     // Post-prompts show up as dismissed.
     options.dismissed = postPrompt;
 
@@ -740,6 +750,14 @@ class GeolocationPermissionPrompt extends PermissionPromptForRequest {
   constructor(request) {
     super();
     this.request = request;
+    let types = request.types.QueryInterface(Ci.nsIArray);
+    let perm = types.queryElementAt(0, Ci.nsIContentPermissionType);
+    if (perm.options.length) {
+      this.systemPermissionMsg = perm.options.queryElementAt(
+        0,
+        Ci.nsISupportsString
+      );
+    }
   }
 
   get type() {
@@ -806,6 +824,26 @@ class GeolocationPermissionPrompt extends PermissionPromptForRequest {
       "geolocation.shareWithSite4",
       ["<>"]
     );
+  }
+
+  get hintText() {
+    let productName = lazy.gBrandBundle.GetStringFromName("brandShortName");
+
+    if (this.systemPermissionMsg == "sysdlg") {
+      return lazy.gBrowserBundle.formatStringFromName(
+        "geolocation.systemWillRequestPermission",
+        [productName]
+      );
+    }
+
+    if (this.systemPermissionMsg == "syssetting") {
+      return lazy.gBrowserBundle.formatStringFromName(
+        "geolocation.needsSystemSetting",
+        [productName]
+      );
+    }
+
+    return undefined;
   }
 
   get promptActions() {

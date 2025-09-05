@@ -15,7 +15,7 @@
 #include "mozilla/MouseEvents.h"
 #include "mozilla/StaticPrefs_intl.h"
 #include "mozilla/StaticPrefs_widget.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/WidgetCocoaMetrics.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/ToString.h"
@@ -545,9 +545,11 @@ bool TISInputSourceWrapper::IsDeadKey(NSEvent* aNativeKeyEvent) {
     return false;
   }
 
-  // Assmue that if control key or command key is pressed, it's not a dead key.
+  // Assume that if the control key, command key or Fn key is pressed, it's not
+  // a dead key.
   NSUInteger cocoaState = [aNativeKeyEvent modifierFlags];
-  if (cocoaState & (NSEventModifierFlagControl | NSEventModifierFlagCommand)) {
+  if (cocoaState & (NSEventModifierFlagControl | NSEventModifierFlagCommand |
+                    NSEventModifierFlagFunction)) {
     return false;
   }
 
@@ -1821,13 +1823,12 @@ bool TextInputHandler::HandleKeyDownEvent(NSEvent* aNativeEvent,
        GetCharacters([aNativeEvent characters]),
        GetCharacters([aNativeEvent charactersIgnoringModifiers])));
 
-  // Except when Command key is pressed, we should hide mouse cursor until
-  // next mousemove.  Handling here means that:
-  // - Don't hide mouse cursor at pressing modifier key
-  // - Hide mouse cursor even if the key event will be handled by IME (i.e.,
-  //   even without dispatching eKeyPress events)
-  // - Hide mouse cursor even when a plugin has focus
-  if (!([aNativeEvent modifierFlags] & NSEventModifierFlagCommand)) {
+  // We should hide the mouse cursor until the next mousemove, unless we aren't
+  // dealing with editable content or the Command key was pressed. We hide the
+  // mouse cursor even if the key event will be handled by IME (i.e., even
+  // without dispatching eKeyPress events).
+  if (IsEditableContent() &&
+      !([aNativeEvent modifierFlags] & NSEventModifierFlagCommand)) {
     [NSCursor setHiddenUntilMouseMoves:YES];
   }
 
@@ -1848,6 +1849,14 @@ bool TextInputHandler::HandleKeyDownEvent(NSEvent* aNativeEvent,
                         "something and canceling the composition",
                         this));
     return false;
+  }
+
+  // macOS supports shortcut keys using the `Fn` key. Check first if this key
+  // event is such a shortcut key.
+  if (nsCocoaUtils::ModifiersForEvent(aNativeEvent) & MODIFIER_FN) {
+    if (mWidget->SendEventToNativeMenuSystem(aNativeEvent)) {
+      return true;
+    }
   }
 
   // Let Cocoa interpret the key events, caching IsIMEComposing first.
@@ -3218,8 +3227,7 @@ void IMEInputHandler::OnCurrentTextInputSourceChange(
       // U+2026 is "..."
       key.Append(char16_t(0x2026));
     }
-    Telemetry::ScalarSet(Telemetry::ScalarID::WIDGET_IME_NAME_ON_MAC, key,
-                         true);
+    glean::widget::ime_name_on_mac.Get(NS_ConvertUTF16toUTF8(key)).Set(true);
   }
 
   if (MOZ_LOG_TEST(gIMELog, LogLevel::Info)) {
@@ -4539,17 +4547,10 @@ NSRect IMEInputHandler::FirstRectForCharacterRange(NSRange& aRange,
     actualRange.length = 0;
   }
 
-  nsIWidget* rootWidget = mWidget->GetTopLevelWidget();
-  NSWindow* rootWindow =
-      static_cast<NSWindow*>(rootWidget->GetNativeData(NS_NATIVE_WINDOW));
-  NSView* rootView =
-      static_cast<NSView*>(rootWidget->GetNativeData(NS_NATIVE_WIDGET));
-  if (!rootWindow || !rootView) {
-    return rect;
-  }
-  rect = nsCocoaUtils::DevPixelsToCocoaPoints(r, mWidget->BackingScaleFactor());
-  rect = [rootView convertRect:rect toView:nil];
-  rect.origin = nsCocoaUtils::ConvertPointToScreen(rootWindow, rect.origin);
+  // Widget relative -> Screen relative.
+  r += mWidget->WidgetToScreenOffset();
+  rect = nsCocoaUtils::GeckoRectToCocoaRectDevPix(
+      r, mWidget->BackingScaleFactor());
 
   if (aActualRange) {
     *aActualRange = actualRange;

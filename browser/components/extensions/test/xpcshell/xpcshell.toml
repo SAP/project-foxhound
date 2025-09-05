@@ -28,7 +28,6 @@ skip-if = ["tsan"] # Times out, bug 1612707
 ["test_ext_manifest.js"]
 
 ["test_ext_manifest_commands.js"]
-run-sequentially = "very high failure rate in parallel"
 
 ["test_ext_manifest_omnibox.js"]
 
@@ -48,9 +47,6 @@ run-sequentially = "very high failure rate in parallel"
 skip-if = ["condprof"] # Bug 1776135 - by design, modifies search settings at start of test
 
 ["test_ext_settings_overrides_search.js"]
-
-["test_ext_settings_overrides_search_mozParam.js"]
-skip-if = ["condprof"] # Bug 1776652
 
 ["test_ext_settings_overrides_shutdown.js"]
 

@@ -32,8 +32,6 @@ using vixl::MemOperand;
 using vixl::Operand;
 
 struct ImmShiftedTag : public ImmWord {
-  explicit ImmShiftedTag(JSValueShiftedTag shtag) : ImmWord((uintptr_t)shtag) {}
-
   explicit ImmShiftedTag(JSValueType type)
       : ImmWord(uintptr_t(JSValueShiftedTag(JSVAL_TYPE_TO_SHIFTED_TAG(type)))) {
   }
@@ -61,10 +59,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
  protected:
   bool enoughMemory_;
-  uint32_t framePushed_;
 
-  MacroAssemblerCompat()
-      : vixl::MacroAssembler(), enoughMemory_(true), framePushed_(0) {}
+  MacroAssemblerCompat() : vixl::MacroAssembler(), enoughMemory_(true) {}
 
  protected:
   MoveResolver moveResolver_;
@@ -101,27 +97,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     Add(scratch64, base, Operand(index, vixl::LSL, scale));
     return LoadStoreMacro(rt, MemOperand(scratch64, addr.offset), op);
   }
-  void Push(ARMRegister reg) {
-    push(reg);
-    adjustFrame(reg.size() / 8);
-  }
-  void Push(Register reg) {
-    vixl::MacroAssembler::Push(ARMRegister(reg, 64));
-    adjustFrame(8);
-  }
-  void Push(Imm32 imm) {
-    push(imm);
-    adjustFrame(8);
-  }
-  void Push(FloatRegister f) {
-    push(ARMFPRegister(f, 64));
-    adjustFrame(8);
-  }
-  void Push(ImmPtr imm) {
-    push(imm);
-    adjustFrame(sizeof(void*));
-  }
   void push(FloatRegister f) {
+    MOZ_ASSERT(f.isDouble(), "float32 and simd128 not supported");
     vixl::MacroAssembler::Push(ARMFPRegister(f, 64));
   }
   void push(ARMFPRegister f) { vixl::MacroAssembler::Push(f); }
@@ -224,35 +201,8 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   void pop(const ValueOperand& v) { pop(v.valueReg()); }
   void pop(const FloatRegister& f) {
+    MOZ_ASSERT(f.isDouble(), "float32 and simd128 not supported");
     vixl::MacroAssembler::Pop(ARMFPRegister(f, 64));
-  }
-
-  void implicitPop(uint32_t args) {
-    MOZ_ASSERT(args % sizeof(intptr_t) == 0);
-    adjustFrame(0 - args);
-  }
-  void Pop(ARMRegister r) {
-    vixl::MacroAssembler::Pop(r);
-    adjustFrame(0 - r.size() / 8);
-  }
-  // FIXME: This is the same on every arch.
-  // FIXME: If we can share framePushed_, we can share this.
-  // FIXME: Or just make it at the highest level.
-  CodeOffset PushWithPatch(ImmWord word) {
-    framePushed_ += sizeof(word.value);
-    return pushWithPatch(word);
-  }
-  CodeOffset PushWithPatch(ImmPtr ptr) {
-    return PushWithPatch(ImmWord(uintptr_t(ptr.value)));
-  }
-
-  uint32_t framePushed() const { return framePushed_; }
-  void adjustFrame(int32_t diff) { setFramePushed(framePushed_ + diff); }
-
-  void setFramePushed(uint32_t framePushed) { framePushed_ = framePushed; }
-
-  void freeStack(Register amount) {
-    vixl::MacroAssembler::Drop(Operand(ARMRegister(amount, 64)));
   }
 
   // Update sp with the value of the current active stack pointer, if necessary.
@@ -593,20 +543,18 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
 
   using vixl::MacroAssembler::B;
 
+  bool hasFjcvtzs() const {
+    return CPUHas(vixl::CPUFeatures::kFP, vixl::CPUFeatures::kJSCVT);
+  }
+
   void convertDoubleToInt32(FloatRegister src, Register dest, Label* fail,
                             bool negativeZeroCheck = true) {
     ARMFPRegister fsrc64(src, 64);
     ARMRegister dest32(dest, 32);
 
     // ARMv8.3 chips support the FJCVTZS instruction, which handles exactly this
-    // logic.  But the simulator does not implement it.
-#if defined(JS_SIMULATOR_ARM64)
-    const bool fjscvt = false;
-#else
-    const bool fjscvt =
-        CPUHas(vixl::CPUFeatures::kFP, vixl::CPUFeatures::kJSCVT);
-#endif
-    if (fjscvt) {
+    // logic.
+    if (hasFjcvtzs()) {
       // Convert double to integer, rounding toward zero.
       // The Z-flag is set iff the conversion is exact. -0 unsets the Z-flag.
       Fjcvtzs(dest32, fsrc64);
@@ -642,8 +590,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
       if (negativeZeroCheck) {
         Label nonzero;
         Cbnz(dest32, &nonzero);
+        // dest32 is 0, fail if fsrc64 is negative.
         Fmov(dest64, fsrc64);
-        Cbnz(dest64, fail);
+        Cmp(dest64, xzr);
+        B(fail, Assembler::Signed);
+        Mov(dest64, xzr);
         bind(&nonzero);
       }
     }
@@ -667,8 +618,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     if (negativeZeroCheck) {
       Label nonzero;
       Cbnz(dest32, &nonzero);
+      // dest32 is 0, fail if fsrc64 is negative.
       Fmov(dest32, fsrc);
-      Cbnz(dest32, fail);
+      Cmp(dest32, wzr);
+      B(fail, Assembler::Signed);
+      Mov(dest32, wzr);
       bind(&nonzero);
     }
     Uxtw(dest64, dest64);
@@ -694,10 +648,36 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     if (negativeZeroCheck) {
       Label nonzero;
       Cbnz(dest64, &nonzero);
+      // dest64 is 0, fail if fsrc64 is negative.
       Fmov(dest64, fsrc64);
-      Cbnz(dest64, fail);
+      Cmp(dest64, xzr);
+      B(fail, Assembler::Signed);
+      Mov(dest64, xzr);
       bind(&nonzero);
     }
+  }
+
+  void truncateFloat32ModUint32(FloatRegister src, Register dest) {
+    vixl::UseScratchRegisterScope temps(this);
+    const ARMRegister scratch64 = temps.AcquireX();
+
+    ARMFPRegister src32(src, 32);
+    ARMRegister dest64(dest, 64);
+
+    MOZ_ASSERT(!scratch64.Is(dest64));
+
+    // Convert scalar to signed 64-bit fixed-point, rounding toward zero.
+    // In the case of overflow, the output is saturated.
+    // In the case of NaN and -0, the output is zero.
+    Fcvtzs(dest64, src32);
+
+    // Zero if the result is saturated, i.e. it's either INT64_MIN or INT64_MAX.
+    Add(scratch64, dest64, Operand(0x7fff'ffff'ffff'ffff));
+    Cmn(scratch64, 3);
+    Csel(dest64, dest64, vixl::xzr, Assembler::BelowOrEqual);
+
+    // Clear upper 32 bits.
+    Uxtw(dest64, dest64);
   }
 
   void jump(Label* label) { B(label); }
@@ -1300,6 +1280,9 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
   void negs32(Register reg) {
     Negs(ARMRegister(reg, 32), Operand(ARMRegister(reg, 32)));
   }
+  void negs64(Register reg) {
+    Negs(ARMRegister(reg, 64), Operand(ARMRegister(reg, 64)));
+  }
 
   void ret() {
     pop(lr);
@@ -1335,13 +1318,11 @@ class MacroAssemblerCompat : public vixl::MacroAssembler {
     addPendingJump(loc, ImmPtr(target->raw()), RelocationKind::JITCODE);
   }
 
-  void compareDouble(DoubleCondition cond, FloatRegister lhs,
-                     FloatRegister rhs) {
+  void compareDouble(FloatRegister lhs, FloatRegister rhs) {
     Fcmp(ARMFPRegister(lhs, 64), ARMFPRegister(rhs, 64));
   }
 
-  void compareFloat(DoubleCondition cond, FloatRegister lhs,
-                    FloatRegister rhs) {
+  void compareFloat(FloatRegister lhs, FloatRegister rhs) {
     Fcmp(ARMFPRegister(lhs, 32), ARMFPRegister(rhs, 32));
   }
 

@@ -3,7 +3,11 @@ use super::conv;
 use arrayvec::ArrayVec;
 use ash::vk;
 
-use std::{mem, ops::Range, slice};
+use std::{
+    mem::{self, size_of},
+    ops::Range,
+    slice,
+};
 
 const ALLOCATION_GRANULARITY: u32 = 16;
 const DST_IMAGE_LAYOUT: vk::ImageLayout = vk::ImageLayout::TRANSFER_DST_OPTIMAL;
@@ -62,7 +66,12 @@ impl crate::CommandEncoder for super::CommandEncoder {
             let vk_info = vk::CommandBufferAllocateInfo::default()
                 .command_pool(self.raw)
                 .command_buffer_count(ALLOCATION_GRANULARITY);
-            let cmd_buf_vec = unsafe { self.device.raw.allocate_command_buffers(&vk_info)? };
+            let cmd_buf_vec = unsafe {
+                self.device
+                    .raw
+                    .allocate_command_buffers(&vk_info)
+                    .map_err(super::map_host_device_oom_err)?
+            };
             self.free.extend(cmd_buf_vec);
         }
         let raw = self.free.pop().unwrap();
@@ -76,7 +85,8 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
         let vk_info = vk::CommandBufferBeginInfo::default()
             .flags(vk::CommandBufferUsageFlags::ONE_TIME_SUBMIT);
-        unsafe { self.device.raw.begin_command_buffer(raw, &vk_info) }?;
+        unsafe { self.device.raw.begin_command_buffer(raw, &vk_info) }
+            .map_err(super::map_host_device_oom_err)?;
         self.active = raw;
 
         Ok(())
@@ -85,7 +95,12 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn end_encoding(&mut self) -> Result<super::CommandBuffer, crate::DeviceError> {
         let raw = self.active;
         self.active = vk::CommandBuffer::null();
-        unsafe { self.device.raw.end_command_buffer(raw) }?;
+        unsafe { self.device.raw.end_command_buffer(raw) }.map_err(map_err)?;
+        fn map_err(err: vk::Result) -> crate::DeviceError {
+            // We don't use VK_KHR_video_encode_queue
+            // VK_ERROR_INVALID_VIDEO_STD_PARAMETERS_KHR
+            super::map_host_device_oom_err(err)
+        }
         Ok(super::CommandBuffer { raw })
     }
 
@@ -116,7 +131,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn transition_buffers<'a, T>(&mut self, barriers: T)
     where
-        T: Iterator<Item = crate::BufferBarrier<'a, super::Api>>,
+        T: Iterator<Item = crate::BufferBarrier<'a, super::Buffer>>,
     {
         //Note: this is done so that we never end up with empty stage flags
         let mut src_stages = vk::PipelineStageFlags::TOP_OF_PIPE;
@@ -125,9 +140,9 @@ impl crate::CommandEncoder for super::CommandEncoder {
         vk_barriers.clear();
 
         for bar in barriers {
-            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.start);
+            let (src_stage, src_access) = conv::map_buffer_usage_to_barrier(bar.usage.from);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.end);
+            let (dst_stage, dst_access) = conv::map_buffer_usage_to_barrier(bar.usage.to);
             dst_stages |= dst_stage;
 
             vk_barriers.push(
@@ -156,7 +171,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn transition_textures<'a, T>(&mut self, barriers: T)
     where
-        T: Iterator<Item = crate::TextureBarrier<'a, super::Api>>,
+        T: Iterator<Item = crate::TextureBarrier<'a, super::Texture>>,
     {
         let mut src_stages = vk::PipelineStageFlags::empty();
         let mut dst_stages = vk::PipelineStageFlags::empty();
@@ -169,11 +184,11 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 bar.texture.format,
                 &self.device.private_caps,
             );
-            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.start);
-            let src_layout = conv::derive_image_layout(bar.usage.start, bar.texture.format);
+            let (src_stage, src_access) = conv::map_texture_usage_to_barrier(bar.usage.from);
+            let src_layout = conv::derive_image_layout(bar.usage.from, bar.texture.format);
             src_stages |= src_stage;
-            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.end);
-            let dst_layout = conv::derive_image_layout(bar.usage.end, bar.texture.format);
+            let (dst_stage, dst_access) = conv::map_texture_usage_to_barrier(bar.usage.to);
+            let dst_layout = conv::derive_image_layout(bar.usage.to, bar.texture.format);
             dst_stages |= dst_stage;
 
             vk_barriers.push(
@@ -270,7 +285,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &super::Texture,
-        src_usage: crate::TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &super::Texture,
         regions: T,
     ) where
@@ -330,7 +345,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &super::Texture,
-        src_usage: crate::TextureUses,
+        src_usage: wgt::TextureUses,
         dst: &super::Buffer,
         regions: T,
     ) where
@@ -373,6 +388,46 @@ impl crate::CommandEncoder for super::CommandEncoder {
             )
         };
     }
+    unsafe fn read_acceleration_structure_compact_size(
+        &mut self,
+        acceleration_structure: &super::AccelerationStructure,
+        buffer: &super::Buffer,
+    ) {
+        let ray_tracing_functions = self
+            .device
+            .extension_fns
+            .ray_tracing
+            .as_ref()
+            .expect("Feature `RAY_TRACING` not enabled");
+        let query_pool = acceleration_structure
+            .compacted_size_query
+            .as_ref()
+            .unwrap();
+        unsafe {
+            self.device
+                .raw
+                .cmd_reset_query_pool(self.active, *query_pool, 0, 1);
+            ray_tracing_functions
+                .acceleration_structure
+                .cmd_write_acceleration_structures_properties(
+                    self.active,
+                    &[acceleration_structure.raw],
+                    vk::QueryType::ACCELERATION_STRUCTURE_COMPACTED_SIZE_KHR,
+                    *query_pool,
+                    0,
+                );
+            self.device.raw.cmd_copy_query_pool_results(
+                self.active,
+                *query_pool,
+                0,
+                1,
+                buffer.raw,
+                0,
+                wgt::QUERY_SIZE as vk::DeviceSize,
+                vk::QueryResultFlags::TYPE_64 | vk::QueryResultFlags::WAIT,
+            )
+        };
+    }
     unsafe fn reset_queries(&mut self, set: &super::QuerySet, range: Range<u32>) {
         unsafe {
             self.device.raw.cmd_reset_query_pool(
@@ -408,7 +463,13 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn build_acceleration_structures<'a, T>(&mut self, descriptor_count: u32, descriptors: T)
     where
         super::Api: 'a,
-        T: IntoIterator<Item = crate::BuildAccelerationStructureDescriptor<'a, super::Api>>,
+        T: IntoIterator<
+            Item = crate::BuildAccelerationStructureDescriptor<
+                'a,
+                super::Buffer,
+                super::AccelerationStructure,
+            >,
+        >,
     {
         const CAPACITY_OUTER: usize = 8;
         const CAPACITY_INNER: usize = 1;
@@ -482,6 +543,9 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     for triangles in in_geometries {
                         let mut triangle_data =
                             vk::AccelerationStructureGeometryTrianglesDataKHR::default()
+                                // IndexType::NONE_KHR is not set by default (due to being provided by VK_KHR_acceleration_structure) but unless there is an
+                                // index buffer we need to have IndexType::NONE_KHR as our index type.
+                                .index_type(vk::IndexType::NONE_KHR)
                                 .vertex_data(vk::DeviceOrHostAddressConstKHR {
                                     device_address: get_device_address(triangles.vertex_buffer),
                                 })
@@ -623,10 +687,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
         &mut self,
         barrier: crate::AccelerationStructureBarrier,
     ) {
-        let (src_stage, src_access) =
-            conv::map_acceleration_structure_usage_to_barrier(barrier.usage.start);
-        let (dst_stage, dst_access) =
-            conv::map_acceleration_structure_usage_to_barrier(barrier.usage.end);
+        let (src_stage, src_access) = conv::map_acceleration_structure_usage_to_barrier(
+            barrier.usage.from,
+            self.device.features,
+        );
+        let (dst_stage, dst_access) = conv::map_acceleration_structure_usage_to_barrier(
+            barrier.usage.to,
+            self.device.features,
+        );
 
         unsafe {
             self.device.raw.cmd_pipeline_barrier(
@@ -644,7 +712,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
     }
     // render
 
-    unsafe fn begin_render_pass(&mut self, desc: &crate::RenderPassDescriptor<super::Api>) {
+    unsafe fn begin_render_pass(
+        &mut self,
+        desc: &crate::RenderPassDescriptor<super::QuerySet, super::TextureView>,
+    ) {
         let mut vk_clear_values =
             ArrayVec::<vk::ClearValue, { super::MAX_TOTAL_ATTACHMENTS }>::new();
         let mut vk_image_views = ArrayVec::<vk::ImageView, { super::MAX_TOTAL_ATTACHMENTS }>::new();
@@ -833,7 +904,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 layout.raw,
                 conv::map_shader_stage(stages),
                 offset_bytes,
-                slice::from_raw_parts(data.as_ptr() as _, data.len() * 4),
+                slice::from_raw_parts(data.as_ptr().cast(), data.len() * 4),
             )
         };
     }
@@ -870,7 +941,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn set_index_buffer<'a>(
         &mut self,
-        binding: crate::BufferBinding<'a, super::Api>,
+        binding: crate::BufferBinding<'a, super::Buffer>,
         format: wgt::IndexFormat,
     ) {
         unsafe {
@@ -885,7 +956,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn set_vertex_buffer<'a>(
         &mut self,
         index: u32,
-        binding: crate::BufferBinding<'a, super::Api>,
+        binding: crate::BufferBinding<'a, super::Buffer>,
     ) {
         let vk_buffers = [binding.buffer.raw];
         let vk_offsets = [binding.offset];
@@ -992,7 +1063,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 buffer.raw,
                 offset,
                 draw_count,
-                mem::size_of::<wgt::DrawIndirectArgs>() as u32,
+                size_of::<wgt::DrawIndirectArgs>() as u32,
             )
         };
     }
@@ -1008,7 +1079,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 buffer.raw,
                 offset,
                 draw_count,
-                mem::size_of::<wgt::DrawIndexedIndirectArgs>() as u32,
+                size_of::<wgt::DrawIndexedIndirectArgs>() as u32,
             )
         };
     }
@@ -1020,7 +1091,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         count_offset: wgt::BufferAddress,
         max_count: u32,
     ) {
-        let stride = mem::size_of::<wgt::DrawIndirectArgs>() as u32;
+        let stride = size_of::<wgt::DrawIndirectArgs>() as u32;
         match self.device.extension_fns.draw_indirect_count {
             Some(ref t) => {
                 unsafe {
@@ -1046,7 +1117,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         count_offset: wgt::BufferAddress,
         max_count: u32,
     ) {
-        let stride = mem::size_of::<wgt::DrawIndexedIndirectArgs>() as u32;
+        let stride = size_of::<wgt::DrawIndexedIndirectArgs>() as u32;
         match self.device.extension_fns.draw_indirect_count {
             Some(ref t) => {
                 unsafe {
@@ -1067,7 +1138,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     // compute
 
-    unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor<'_, super::Api>) {
+    unsafe fn begin_compute_pass(
+        &mut self,
+        desc: &crate::ComputePassDescriptor<'_, super::QuerySet>,
+    ) {
         self.bind_point = vk::PipelineBindPoint::COMPUTE;
         if let Some(label) = desc.label {
             unsafe { self.begin_debug_marker(label) };
@@ -1118,12 +1192,49 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 .cmd_dispatch_indirect(self.active, buffer.raw, offset)
         }
     }
+
+    unsafe fn copy_acceleration_structure_to_acceleration_structure(
+        &mut self,
+        src: &super::AccelerationStructure,
+        dst: &super::AccelerationStructure,
+        copy: wgt::AccelerationStructureCopy,
+    ) {
+        let ray_tracing_functions = self
+            .device
+            .extension_fns
+            .ray_tracing
+            .as_ref()
+            .expect("Feature `RAY_TRACING` not enabled");
+
+        let mode = match copy {
+            wgt::AccelerationStructureCopy::Clone => vk::CopyAccelerationStructureModeKHR::CLONE,
+            wgt::AccelerationStructureCopy::Compact => {
+                vk::CopyAccelerationStructureModeKHR::COMPACT
+            }
+        };
+
+        unsafe {
+            ray_tracing_functions
+                .acceleration_structure
+                .cmd_copy_acceleration_structure(
+                    self.active,
+                    &vk::CopyAccelerationStructureInfoKHR {
+                        s_type: vk::StructureType::COPY_ACCELERATION_STRUCTURE_INFO_KHR,
+                        p_next: std::ptr::null(),
+                        src: src.raw,
+                        dst: dst.raw,
+                        mode,
+                        _marker: Default::default(),
+                    },
+                );
+        }
+    }
 }
 
 #[test]
 fn check_dst_image_layout() {
     assert_eq!(
-        conv::derive_image_layout(crate::TextureUses::COPY_DST, wgt::TextureFormat::Rgba8Unorm),
+        conv::derive_image_layout(wgt::TextureUses::COPY_DST, wgt::TextureFormat::Rgba8Unorm),
         DST_IMAGE_LAYOUT
     );
 }

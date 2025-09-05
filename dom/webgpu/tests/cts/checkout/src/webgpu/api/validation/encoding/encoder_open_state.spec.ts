@@ -79,7 +79,11 @@ const kEncoderCommandInfo: {
 };
 const kEncoderCommands = keysOf(kEncoderCommandInfo);
 
-type RenderPassEncoderCommands = keyof Omit<GPURenderPassEncoder, '__brand' | 'label' | 'end'>;
+// MAINTENANCE_TODO: Remove multiDrawIndirect and multiDrawIndexedIndirect once https://github.com/gpuweb/gpuweb/pull/2315 is merged.
+type RenderPassEncoderCommands =
+  | keyof Omit<GPURenderPassEncoder, '__brand' | 'label' | 'end'>
+  | 'multiDrawIndirect'
+  | 'multiDrawIndexedIndirect';
 const kRenderPassEncoderCommandInfo: {
   readonly [k in RenderPassEncoderCommands]: {};
 } = {
@@ -87,6 +91,8 @@ const kRenderPassEncoderCommandInfo: {
   drawIndexed: {},
   drawIndexedIndirect: {},
   drawIndirect: {},
+  multiDrawIndexedIndirect: {},
+  multiDrawIndirect: {},
   setIndexBuffer: {},
   setBindGroup: {},
   setVertexBuffer: {},
@@ -169,29 +175,29 @@ g.test('non_pass_commands')
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
 
-    const srcBuffer = t.device.createBuffer({
+    const srcBuffer = t.createBufferTracked({
       size: 16,
       usage: GPUBufferUsage.COPY_SRC | GPUTextureUsage.COPY_DST,
     });
-    const dstBuffer = t.device.createBuffer({
+    const dstBuffer = t.createBufferTracked({
       size: 16,
       usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.QUERY_RESOLVE,
     });
 
     const textureSize = { width: 1, height: 1 };
     const textureFormat = 'rgba8unorm';
-    const srcTexture = t.device.createTexture({
+    const srcTexture = t.createTextureTracked({
       size: textureSize,
       format: textureFormat,
       usage: GPUTextureUsage.COPY_SRC,
     });
-    const dstTexture = t.device.createTexture({
+    const dstTexture = t.createTextureTracked({
       size: textureSize,
       format: textureFormat,
       usage: GPUTextureUsage.COPY_DST,
     });
 
-    const querySet = t.device.createQuerySet({
+    const querySet = t.createQuerySetTracked({
       type: command === 'writeTimestamp' ? 'timestamp' : 'occlusion',
       count: 1,
     });
@@ -298,14 +304,20 @@ g.test('render_pass_commands')
       .beginSubcases()
       .combine('finishBeforeCommand', [false, true])
   )
+  .beforeAllSubcases(t => {
+    const { command } = t.params;
+    if (command === 'multiDrawIndirect' || command === 'multiDrawIndexedIndirect') {
+      t.selectDeviceOrSkipTestCase('chromium-experimental-multi-draw-indirect' as GPUFeatureName);
+    }
+  })
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
 
-    const querySet = t.device.createQuerySet({ type: 'occlusion', count: 1 });
+    const querySet = t.createQuerySetTracked({ type: 'occlusion', count: 1 });
     const encoder = t.device.createCommandEncoder();
     const renderPass = beginRenderPassWithQuerySet(t, encoder, querySet);
 
-    const buffer = t.device.createBuffer({
+    const buffer = t.createBufferTracked({
       size: 12,
       usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.VERTEX,
     });
@@ -344,6 +356,18 @@ g.test('render_pass_commands')
         case 'drawIndexedIndirect':
           {
             renderPass.drawIndexedIndirect(buffer, 0);
+          }
+          break;
+        case 'multiDrawIndirect':
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (renderPass as any).multiDrawIndirect(buffer, 0, 1);
+          }
+          break;
+        case 'multiDrawIndexedIndirect':
+          {
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (renderPass as any).multiDrawIndexedIndirect(buffer, 0, 1);
           }
           break;
         case 'setBindGroup':
@@ -436,7 +460,7 @@ g.test('render_bundle_commands')
   .fn(t => {
     const { command, finishBeforeCommand } = t.params;
 
-    const buffer = t.device.createBuffer({
+    const buffer = t.createBufferTracked({
       size: 12,
       usage: GPUBufferUsage.INDIRECT | GPUBufferUsage.VERTEX,
     });
@@ -537,7 +561,7 @@ g.test('compute_pass_commands')
     const encoder = t.device.createCommandEncoder();
     const computePass = encoder.beginComputePass();
 
-    const indirectBuffer = t.device.createBuffer({
+    const indirectBuffer = t.createBufferTracked({
       size: 12,
       usage: GPUBufferUsage.INDIRECT,
     });

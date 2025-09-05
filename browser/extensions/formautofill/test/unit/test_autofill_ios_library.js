@@ -1,30 +1,19 @@
 /* Any copyright is dedicated to the Public Domain.
 https://creativecommons.org/publicdomain/zero/1.0/ */
 
+"use strict";
+
 const { FormAutofillChild } = ChromeUtils.importESModule(
   "resource://autofill/FormAutofillChild.ios.sys.mjs"
 );
 
-("use strict");
+const { AutofillTelemetry } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/AutofillTelemetry.sys.mjs"
+);
 
-class Callback {
-  waitForCallback() {
-    this.promise = new Promise(resolve => {
-      this._resolve = resolve;
-    });
-    return this.promise;
-  }
-
-  address = {
-    autofill: fieldsWithValues => this._resolve?.(fieldsWithValues),
-    submit: records => this._resolve?.(records),
-  };
-
-  creditCard = {
-    autofill: fieldsWithValues => this._resolve?.(fieldsWithValues),
-    submit: records => this._resolve?.(records),
-  };
-}
+var { FormAutofillHandler } = ChromeUtils.importESModule(
+  "resource://gre/modules/shared/FormAutofillHandler.sys.mjs"
+);
 
 const TEST_CASES = [
   {
@@ -109,7 +98,57 @@ const TEST_CASES = [
 
     expectedSubmit: null,
   },
+  {
+    description: `Test correct street-address to address-line1`,
+    document: `<form>
+                 <input id="email" autocomplete="email">
+                 <input id="tel" autocomplete="tel">
+                 <input id="street-address" >
+                 <input id="address-line2">
+                <form>`,
+    fillPayload: {
+      "street-address": "2 Harrison St\nline2",
+      email: "foo@mozilla.com",
+      tel: "1234567",
+    },
+
+    expectedFill: {
+      "#street-address": "2 Harrison St",
+      "#address-line2": "line2",
+      "#email": "foo@mozilla.com",
+      "#tel": "1234567",
+    },
+
+    expectedDetectedFields: {
+      email: "",
+      tel: "",
+      "address-line1": "",
+      "address-line2": "",
+    },
+
+    expectedSubmit: null,
+  },
+  {
+    description: `Test invalid address section`,
+    document: `<form>
+                 <input id="email">
+                <form>`,
+    fillPayload: {},
+    expectedFill: false,
+    expectedDetectedFields: {},
+
+    expectedSubmit: null,
+  },
 ];
+
+const recordFormInteractionEventStub = sinon.stub(
+  AutofillTelemetry,
+  "recordFormInteractionEvent"
+);
+
+add_setup(() => {
+  registerCleanupFunction(() => sinon.restore());
+});
 
 add_task(async function test_ios_api() {
   for (const TEST of TEST_CASES) {
@@ -119,41 +158,81 @@ add_task(async function test_ios_api() {
       TEST.document
     );
 
-    const callbacks = new Callback();
-    const fac = new FormAutofillChild(callbacks);
+    const autofillSpy = sinon.spy();
+    const submitSpy = sinon.spy();
+
+    const fac = new FormAutofillChild({
+      address: {
+        autofill: autofillSpy,
+        submit: submitSpy,
+      },
+      creditCard: {
+        autofill: autofillSpy,
+        submit: submitSpy,
+      },
+    });
 
     // Test `onFocusIn` API
-    let promise = callbacks.waitForCallback();
     fac.onFocusIn({ target: doc.querySelector("input") });
-    const autofillCallbackResult = await promise;
 
-    Assert.deepEqual(
-      autofillCallbackResult,
-      TEST.expectedDetectedFields,
-      "Should receive autofill callback"
-    );
-
-    // Test `fillFormFields` API
-    fac.fillFormFields(TEST.fillPayload);
-    Object.entries(TEST.expectedFill).forEach(([selector, expectedValue]) => {
-      const element = doc.querySelector(selector);
-      Assert.equal(
-        element.value,
-        expectedValue,
-        `Should fill ${element.id} field correctly`
+    if (TEST.expectedFill) {
+      Assert.ok(
+        autofillSpy.calledOnce,
+        "autofill callback should be called once"
       );
-    });
+      Assert.ok(
+        autofillSpy.calledWithExactly(TEST.expectedDetectedFields),
+        "autofill callback should be called with correct payload"
+      );
+      Assert.ok(
+        recordFormInteractionEventStub.calledWithMatch("detected"),
+        "detect telemetry event should be recorded"
+      );
+
+      // Test `fillFormFields` API
+      fac.fillFormFields(TEST.fillPayload);
+      Object.entries(TEST.expectedFill).forEach(([selector, expectedValue]) => {
+        const element = doc.querySelector(selector);
+        Assert.equal(
+          element.value,
+          expectedValue,
+          `Should fill ${element.id} field correctly`
+        );
+      });
+      Assert.ok(
+        recordFormInteractionEventStub.calledWithMatch("filled"),
+        "filled telemetry event should be recorded"
+      );
+
+      // Test `onFilledModified` API
+      Object.entries(TEST.expectedFill).forEach(([selector, expectedValue]) => {
+        const element = doc.querySelector(selector);
+        // Simulate input change (e.g. adding a char)
+        FormAutofillHandler.fillFieldValue(element, expectedValue + "a");
+        Assert.ok(
+          recordFormInteractionEventStub.calledWithMatch("filled_modified"),
+          "filled_modified telemetry event should be recorded"
+        );
+        FormAutofillHandler.fillFieldValue(element, expectedValue);
+      });
+    } else {
+      Assert.ok(
+        autofillSpy.notCalled,
+        "autofill callback should not be called when section is invalid"
+      );
+    }
 
     // Test `onSubmit` API
     if (TEST.expectedSubmit) {
-      promise = callbacks.waitForCallback();
       fac.onSubmit();
-      const submitCallbackResult = await promise;
-
-      Assert.deepEqual(
-        submitCallbackResult,
-        TEST.expectedSubmit,
-        "Should receive submit callback"
+      Assert.ok(submitSpy.calledOnce, "submit callback should be called once");
+      Assert.ok(
+        submitSpy.calledWithExactly(TEST.expectedSubmit),
+        "submit callback should be called with correct payload"
+      );
+      Assert.ok(
+        recordFormInteractionEventStub.calledWithMatch("submitted"),
+        "submitted telemetry event should be recorded"
       );
     }
   }

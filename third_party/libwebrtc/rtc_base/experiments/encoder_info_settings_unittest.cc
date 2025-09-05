@@ -22,7 +22,7 @@ TEST(SimulcastEncoderAdapterSettingsTest, NoValuesWithoutFieldTrial) {
   ExplicitKeyValueConfig field_trials("");
 
   SimulcastEncoderAdapterEncoderInfoSettings settings(field_trials);
-  EXPECT_EQ(absl::nullopt, settings.requested_resolution_alignment());
+  EXPECT_EQ(std::nullopt, settings.requested_resolution_alignment());
   EXPECT_FALSE(settings.apply_alignment_to_all_simulcast_layers());
   EXPECT_TRUE(settings.resolution_bitrate_limits().empty());
 }
@@ -33,7 +33,7 @@ TEST(SimulcastEncoderAdapterSettingsTest, NoValueForInvalidAlignment) {
       "requested_resolution_alignment:0/");
 
   SimulcastEncoderAdapterEncoderInfoSettings settings(field_trials);
-  EXPECT_EQ(absl::nullopt, settings.requested_resolution_alignment());
+  EXPECT_EQ(std::nullopt, settings.requested_resolution_alignment());
 }
 
 TEST(SimulcastEncoderAdapterSettingsTest, GetResolutionAlignment) {
@@ -68,7 +68,7 @@ TEST(SimulcastEncoderAdapterSettingsTest, GetResolutionBitrateLimits) {
       "max_bitrate_bps:77000/");
 
   SimulcastEncoderAdapterEncoderInfoSettings settings(field_trials);
-  EXPECT_EQ(absl::nullopt, settings.requested_resolution_alignment());
+  EXPECT_EQ(std::nullopt, settings.requested_resolution_alignment());
   EXPECT_FALSE(settings.apply_alignment_to_all_simulcast_layers());
   EXPECT_THAT(settings.resolution_bitrate_limits(),
               ::testing::ElementsAre(VideoEncoder::ResolutionBitrateLimits{
@@ -101,6 +101,51 @@ TEST(EncoderSettingsTest, CommonSettingsUsedIfEncoderNameUnspecified) {
   EXPECT_EQ(2u, vp8_settings.requested_resolution_alignment());
   LibvpxVp9EncoderInfoSettings vp9_settings(field_trials);
   EXPECT_EQ(3u, vp9_settings.requested_resolution_alignment());
+}
+
+TEST(GetSinglecastBitrateLimitForResolutionWhenQpIsUntrustedTests,
+     LinearInterpolationUnderflow) {
+  std::optional<int> frame_size_pixels = 480 * 360;
+  std::vector<VideoEncoder::ResolutionBitrateLimits> resolution_bitrate_limits(
+      {{1280 * 720, 1500000, 30000, 2500000},
+       {1920 * 1080, 2500000, 30000, 4000000}});
+
+  const auto resolutionBitrateLimit = EncoderInfoSettings::
+      GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
+          frame_size_pixels, resolution_bitrate_limits);
+  EXPECT_TRUE(resolutionBitrateLimit.has_value());
+  EXPECT_EQ(resolutionBitrateLimit.value(), resolution_bitrate_limits.front());
+}
+
+TEST(GetSinglecastBitrateLimitForResolutionWhenQpIsUntrustedTests,
+     LinearInterpolationOverflow) {
+  std::optional<int> frame_size_pixels = 4096 * 2160;
+  std::vector<VideoEncoder::ResolutionBitrateLimits> resolution_bitrate_limits(
+      {{1280 * 720, 1500000, 30000, 2500000},
+       {1920 * 1080, 2500000, 30000, 4000000}});
+
+  const auto resolutionBitrateLimit = EncoderInfoSettings::
+      GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
+          frame_size_pixels, resolution_bitrate_limits);
+  EXPECT_TRUE(resolutionBitrateLimit.has_value());
+  EXPECT_EQ(resolutionBitrateLimit.value(), resolution_bitrate_limits.back());
+}
+
+TEST(GetSinglecastBitrateLimitForResolutionWhenQpIsUntrustedTests,
+     LinearInterpolationExactMatch) {
+  std::optional<int> frame_size_pixels = 1920 * 1080;
+  VideoEncoder::ResolutionBitrateLimits expected_match{1920 * 1080, 2500000,
+                                                       30000, 4000000};
+  std::vector<VideoEncoder::ResolutionBitrateLimits> resolution_bitrate_limits(
+      {{1280 * 720, 1500000, 30000, 2500000},
+       expected_match,
+       {4096 * 2160, 4000000, 30000, 8000000}});
+
+  const auto resolutionBitrateLimit = EncoderInfoSettings::
+      GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
+          frame_size_pixels, resolution_bitrate_limits);
+  EXPECT_TRUE(resolutionBitrateLimit.has_value());
+  EXPECT_EQ(resolutionBitrateLimit.value(), expected_match);
 }
 
 }  // namespace webrtc

@@ -40,6 +40,7 @@ const PREFS_FOR_DISPLAY = [
   "browser.places.",
   "browser.privatebrowsing.",
   "browser.search.context.loadInBackground",
+  "browser.search.lastSettingsCorruptTime",
   "browser.search.log",
   "browser.search.openintab",
   "browser.search.param",
@@ -257,9 +258,19 @@ var dataProviders = {
 
     try {
       // Windows - Get info about attached pointing devices
-      data.pointingDevices = Services.sysinfo
-        .getProperty("pointingDevices")
-        .split(",");
+      data.pointingDevices = [];
+      if (Services.sysinfo.getProperty("hasMouse")) {
+        data.pointingDevices.push("pointing-device-mouse");
+      }
+      if (Services.sysinfo.getProperty("hasTouch")) {
+        data.pointingDevices.push("pointing-device-touchscreen");
+      }
+      if (Services.sysinfo.getProperty("hasPen")) {
+        data.pointingDevices.push("pointing-device-pen-digitizer");
+      }
+      if (!data.pointingDevices.length) {
+        data.pointingDevices.push("pointing-device-none");
+      }
     } catch (e) {}
 
     data.numTotalWindows = 0;
@@ -575,26 +586,26 @@ var dataProviders = {
       // a string in some cases and an object in others, return an object always.
       let msg = { key: "" };
       try {
-        var status = gfxInfo.getFeatureStatus(feature);
+        var status = gfxInfo.getFeatureStatusStr(feature);
       } catch (e) {}
       switch (status) {
-        case Ci.nsIGfxInfo.FEATURE_BLOCKED_DEVICE:
-        case Ci.nsIGfxInfo.FEATURE_DISCOURAGED:
+        case "BLOCKED_DEVICE":
+        case "DISCOURAGED":
           msg = { key: "blocked-gfx-card" };
           break;
-        case Ci.nsIGfxInfo.FEATURE_BLOCKED_OS_VERSION:
+        case "BLOCKED_OS_VERSION":
           msg = { key: "blocked-os-version" };
           break;
-        case Ci.nsIGfxInfo.FEATURE_BLOCKED_DRIVER_VERSION:
+        case "BLOCKED_DRIVER_VERSION":
           try {
             var driverVersion =
-              gfxInfo.getFeatureSuggestedDriverVersion(feature);
+              gfxInfo.getFeatureSuggestedDriverVersionStr(feature);
           } catch (e) {}
           msg = driverVersion
             ? { key: "try-newer-driver", args: { driverVersion } }
             : { key: "blocked-driver" };
           break;
-        case Ci.nsIGfxInfo.FEATURE_BLOCKED_MISMATCHED_VERSION:
+        case "BLOCKED_MISMATCHED_VERSION":
           msg = { key: "blocked-mismatched-version" };
           break;
       }
@@ -646,9 +657,7 @@ var dataProviders = {
 
     if (!data.numAcceleratedWindows && gfxInfo) {
       let win = AppConstants.platform == "win";
-      let feature = win
-        ? gfxInfo.FEATURE_DIRECT3D_9_LAYERS
-        : gfxInfo.FEATURE_OPENGL_LAYERS;
+      let feature = win ? "DIRECT3D_9_LAYERS" : "OPENGL_LAYERS";
       data.numAcceleratedWindowsMessage = statusMsgForFeature(feature);
     }
 
@@ -695,9 +704,7 @@ var dataProviders = {
       }
 
       if ("direct2DEnabled" in data && !data.direct2DEnabled) {
-        data.direct2DEnabledMessage = statusMsgForFeature(
-          Ci.nsIGfxInfo.FEATURE_DIRECT2D
-        );
+        data.direct2DEnabledMessage = statusMsgForFeature("DIRECT2D");
       }
     }
 
@@ -846,13 +853,13 @@ var dataProviders = {
 
       desc.isFallbackAdapter = adapter.isFallbackAdapter;
 
-      const adapterInfo = await adapter.requestAdapterInfo();
+      const adapterInfo = adapter.info;
       // We can't directly enumerate properties of instances of `GPUAdapterInfo`s, so use the prototype instead.
       const adapterInfoObj = {};
       for (const k of Object.keys(Object.getPrototypeOf(adapterInfo)).sort()) {
         adapterInfoObj[k] = adapterInfo[k];
       }
-      desc[`requestAdapterInfo()`] = adapterInfoObj;
+      desc.info = adapterInfoObj;
 
       desc.features = Array.from(adapter.features).sort();
 

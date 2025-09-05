@@ -28,7 +28,7 @@ add_task(
           document_language: "es",
           from_language: "es",
           to_language: "en",
-          top_preferred_language: "en",
+          top_preferred_language: "en-US",
           text_source: "hyperlink",
         },
       }
@@ -48,7 +48,7 @@ add_task(
           document_language: "es",
           from_language: "es",
           to_language: "en",
-          top_preferred_language: "en",
+          top_preferred_language: "en-US",
           request_target: "select",
           auto_translate: false,
           source_text_code_units: 23,
@@ -84,7 +84,7 @@ add_task(
           document_language: "es",
           from_language: "es",
           to_language: "fr",
-          top_preferred_language: "en",
+          top_preferred_language: "en-US",
           request_target: "select",
           auto_translate: false,
           source_text_code_units: 23,
@@ -115,18 +115,18 @@ add_task(
           document_language: "es",
           from_language: "es",
           to_language: "fr",
-          top_preferred_language: "en",
+          top_preferred_language: "fr",
           request_target: "full_page",
           auto_translate: false,
         },
       }
     );
 
-    await FullPageTranslationsTestUtils.assertPageIsTranslated(
-      "es",
-      "fr",
-      runInPage
-    );
+    await FullPageTranslationsTestUtils.assertPageIsTranslated({
+      fromLanguage: "es",
+      toLanguage: "fr",
+      runInPage,
+    });
 
     await SelectTranslationsTestUtils.openPanel(runInPage, {
       selectFrenchSection: true,
@@ -146,7 +146,7 @@ add_task(
           document_language: "fr",
           from_language: "fr",
           to_language: "en",
-          top_preferred_language: "en",
+          top_preferred_language: "fr",
           text_source: "selection",
         },
       }
@@ -166,7 +166,7 @@ add_task(
           document_language: "fr",
           from_language: "fr",
           to_language: "en",
-          top_preferred_language: "en",
+          top_preferred_language: "fr",
           request_target: "select",
           auto_translate: false,
           source_text_code_units:
@@ -187,6 +187,7 @@ add_task(
     );
 
     await FullPageTranslationsTestUtils.openPanel({
+      expectedToLanguage: "en",
       onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewRevisit,
     });
     await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
@@ -198,6 +199,10 @@ add_task(
         opened_from: "translationsButton",
         document_language: "es",
       },
+    });
+
+    await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+      expectedEventCount: 2,
     });
 
     await cleanup();

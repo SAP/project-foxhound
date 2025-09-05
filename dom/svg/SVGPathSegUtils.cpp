@@ -6,10 +6,10 @@
 
 #include "SVGPathSegUtils.h"
 
-#include "mozilla/ArrayUtils.h"        // MOZ_ARRAY_LENGTH
+#include "mozilla/ArrayUtils.h"        // std::size
 #include "mozilla/ServoStyleConsts.h"  // StylePathCommand
 #include "gfx2DGlue.h"
-#include "SVGPathDataParser.h"
+#include "SVGArcConverter.h"
 #include "nsMathUtils.h"
 #include "nsTextFormatter.h"
 

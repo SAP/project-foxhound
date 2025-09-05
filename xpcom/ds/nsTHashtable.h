@@ -168,7 +168,8 @@ class nsTHashtableKeyRange {
 };
 
 template <typename EntryType>
-auto RangeSize(const ::detail::nsTHashtableKeyRange<EntryType>& aRange) {
+size_t RangeSizeEstimate(
+    const ::detail::nsTHashtableKeyRange<EntryType>& aRange) {
   return aRange.Count();
 }
 
@@ -730,9 +731,10 @@ inline void ImplCycleCollectionUnlink(nsTHashtable<EntryType>& aField) {
 template <class EntryType>
 inline void ImplCycleCollectionTraverse(
     nsCycleCollectionTraversalCallback& aCallback,
-    nsTHashtable<EntryType>& aField, const char* aName, uint32_t aFlags = 0) {
-  for (auto iter = aField.Iter(); !iter.Done(); iter.Next()) {
-    EntryType* entry = iter.Get();
+    const nsTHashtable<EntryType>& aField, const char* aName,
+    uint32_t aFlags = 0) {
+  for (auto iter = aField.ConstIter(); !iter.Done(); iter.Next()) {
+    const EntryType* entry = iter.Get();
     ImplCycleCollectionTraverse(aCallback, *entry, aName, aFlags);
   }
 }

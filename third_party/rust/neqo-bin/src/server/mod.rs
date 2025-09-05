@@ -10,7 +10,7 @@ use std::{
     cell::RefCell,
     fmt::{self, Display},
     fs, io,
-    net::{SocketAddr, ToSocketAddrs},
+    net::{SocketAddr, ToSocketAddrs as _},
     path::PathBuf,
     pin::Pin,
     process::exit,
@@ -21,7 +21,7 @@ use std::{
 use clap::Parser;
 use futures::{
     future::{select, select_all, Either},
-    FutureExt,
+    FutureExt as _,
 };
 use neqo_common::{qdebug, qerror, qinfo, qwarn, Datagram};
 use neqo_crypto::{
@@ -29,6 +29,7 @@ use neqo_crypto::{
     init_db, AntiReplay, Cipher,
 };
 use neqo_transport::{Output, RandomConnectionIdGenerator, Version};
+use neqo_udp::RecvBuf;
 use tokio::time::Sleep;
 
 use crate::SharedArgs;
@@ -118,12 +119,12 @@ pub struct Args {
     ech: bool,
 }
 
-#[cfg(feature = "bench")]
+#[cfg(any(test, feature = "bench"))]
 impl Default for Args {
     fn default() -> Self {
-        use std::str::FromStr;
+        use std::str::FromStr as _;
         Self {
-            shared: crate::SharedArgs::default(),
+            shared: SharedArgs::default(),
             hosts: vec!["[::]:12345".to_string()],
             db: PathBuf::from_str("../test-fixture/db").unwrap(),
             key: "key".to_string(),
@@ -175,6 +176,11 @@ impl Args {
             Instant::now()
         }
     }
+
+    #[cfg(any(test, feature = "bench"))]
+    pub fn set_qlog_dir(&mut self, dir: PathBuf) {
+        self.shared.qlog_dir = Some(dir);
+    }
 }
 
 fn qns_read_response(filename: &str) -> Result<Vec<u8>, io::Error> {
@@ -186,7 +192,7 @@ fn qns_read_response(filename: &str) -> Result<Vec<u8>, io::Error> {
 
 #[allow(clippy::module_name_repetitions)]
 pub trait HttpServer: Display {
-    fn process(&mut self, dgram: Option<&Datagram>, now: Instant) -> Output;
+    fn process(&mut self, dgram: Option<Datagram<&[u8]>>, now: Instant) -> Output;
     fn process_events(&mut self, now: Instant);
     fn has_events(&self) -> bool;
 }
@@ -197,6 +203,7 @@ pub struct ServerRunner {
     server: Box<dyn HttpServer>,
     timeout: Option<Pin<Box<Sleep>>>,
     sockets: Vec<(SocketAddr, crate::udp::Socket)>,
+    recv_buf: RecvBuf,
 }
 
 impl ServerRunner {
@@ -211,42 +218,81 @@ impl ServerRunner {
             server,
             timeout: None,
             sockets,
+            recv_buf: RecvBuf::new(),
         }
     }
 
     /// Tries to find a socket, but then just falls back to sending from the first.
-    fn find_socket(&mut self, addr: SocketAddr) -> &mut crate::udp::Socket {
-        let ((_host, first_socket), rest) = self.sockets.split_first_mut().unwrap();
+    fn find_socket(
+        sockets: &mut [(SocketAddr, crate::udp::Socket)],
+        addr: SocketAddr,
+    ) -> &mut crate::udp::Socket {
+        let ((_host, first_socket), rest) = sockets.split_first_mut().unwrap();
         rest.iter_mut()
             .map(|(_host, socket)| socket)
-            .find(|socket| {
-                socket
-                    .local_addr()
-                    .ok()
-                    .map_or(false, |socket_addr| socket_addr == addr)
-            })
+            .find(|socket| socket.local_addr().is_ok_and(|a| a == addr))
             .unwrap_or(first_socket)
     }
 
-    async fn process(&mut self, mut dgram: Option<&Datagram>) -> Result<(), io::Error> {
+    // Free function (i.e. not taking `&mut self: ServerRunner`) to be callable by
+    // `ServerRunner::read_and_process` while holding a reference to
+    // `ServerRunner::recv_buf`.
+    async fn process_inner(
+        server: &mut Box<dyn HttpServer>,
+        timeout: &mut Option<Pin<Box<Sleep>>>,
+        sockets: &mut [(SocketAddr, crate::udp::Socket)],
+        now: &dyn Fn() -> Instant,
+        mut input_dgram: Option<Datagram<&[u8]>>,
+    ) -> Result<(), io::Error> {
         loop {
-            match self.server.process(dgram.take(), (self.now)()) {
+            match server.process(input_dgram.take(), now()) {
                 Output::Datagram(dgram) => {
-                    let socket = self.find_socket(dgram.source());
+                    let socket = Self::find_socket(sockets, dgram.source());
                     socket.writable().await?;
                     socket.send(&dgram)?;
                 }
                 Output::Callback(new_timeout) => {
-                    qdebug!("Setting timeout of {:?}", new_timeout);
-                    self.timeout = Some(Box::pin(tokio::time::sleep(new_timeout)));
+                    qdebug!("Setting timeout of {new_timeout:?}");
+                    *timeout = Some(Box::pin(tokio::time::sleep(new_timeout)));
                     break;
                 }
-                Output::None => {
-                    break;
-                }
+                Output::None => break,
             }
         }
         Ok(())
+    }
+
+    async fn read_and_process(&mut self, sockets_index: usize) -> Result<(), io::Error> {
+        loop {
+            let (host, socket) = &mut self.sockets[sockets_index];
+            let Some(input_dgrams) = socket.recv(*host, &mut self.recv_buf)? else {
+                break;
+            };
+
+            for input_dgram in input_dgrams {
+                Self::process_inner(
+                    &mut self.server,
+                    &mut self.timeout,
+                    &mut self.sockets,
+                    &self.now,
+                    Some(input_dgram),
+                )
+                .await?;
+            }
+        }
+
+        Ok(())
+    }
+
+    async fn process(&mut self) -> Result<(), io::Error> {
+        Self::process_inner(
+            &mut self.server,
+            &mut self.timeout,
+            &mut self.sockets,
+            &self.now,
+            None,
+        )
+        .await
     }
 
     // Wait for any of the sockets to be readable or the timeout to fire.
@@ -271,27 +317,19 @@ impl ServerRunner {
     pub async fn run(mut self) -> Res<()> {
         loop {
             self.server.process_events((self.now)());
-
-            self.process(None).await?;
+            self.process().await?;
 
             if self.server.has_events() {
                 continue;
             }
 
             match self.ready().await? {
-                Ready::Socket(inx) => loop {
-                    let (host, socket) = self.sockets.get_mut(inx).unwrap();
-                    let dgrams = socket.recv(host)?;
-                    if dgrams.is_empty() {
-                        break;
-                    }
-                    for dgram in dgrams {
-                        self.process(Some(&dgram)).await?;
-                    }
-                },
+                Ready::Socket(sockets_index) => {
+                    self.read_and_process(sockets_index).await?;
+                }
                 Ready::Timeout => {
                     self.timeout = None;
-                    self.process(None).await?;
+                    self.process().await?;
                 }
             }
         }
@@ -304,8 +342,6 @@ enum Ready {
 }
 
 pub async fn server(mut args: Args) -> Res<()> {
-    const HQ_INTEROP: &str = "hq-interop";
-
     neqo_common::log::init(
         args.shared
             .verbose
@@ -325,34 +361,31 @@ pub async fn server(mut args: Args) -> Res<()> {
                 args.shared.quic_parameters.quic_version = vec![Version::Version1];
             }
         } else {
-            qwarn!("Both -V and --qns-test were set. Ignoring testcase specific versions.");
+            qwarn!("Both -V and --qns-test were set. Ignoring testcase specific versions");
         }
 
+        // These are the default for all tests except http3.
+        args.shared.alpn = String::from("hq-interop");
         // TODO: More options to deduplicate with client?
         match testcase.as_str() {
-            "http3" => (),
-            "zerortt" => {
-                args.shared.use_old_http = true;
-                args.shared.alpn = String::from(HQ_INTEROP);
-                args.shared.quic_parameters.max_streams_bidi = 100;
+            "http3" => {
+                args.shared.alpn = String::from("h3");
             }
-            "handshake" | "transfer" | "resumption" | "multiconnect" | "v2" | "ecn" => {
-                args.shared.use_old_http = true;
-                args.shared.alpn = String::from(HQ_INTEROP);
+            "zerortt" => args.shared.quic_parameters.max_streams_bidi = 100,
+            "handshake" | "transfer" | "resumption" | "multiconnect" | "v2" | "ecn" => {}
+            "connectionmigration" => {
+                if args.shared.quic_parameters.preferred_address().is_none() {
+                    qerror!("No preferred addresses set for connectionmigration test");
+                    exit(127);
+                }
             }
             "chacha20" => {
-                args.shared.use_old_http = true;
-                args.shared.alpn = String::from(HQ_INTEROP);
                 args.shared.ciphers.clear();
                 args.shared
                     .ciphers
                     .extend_from_slice(&[String::from("TLS_CHACHA20_POLY1305_SHA256")]);
             }
-            "retry" => {
-                args.shared.use_old_http = true;
-                args.shared.alpn = String::from(HQ_INTEROP);
-                args.retry = true;
-            }
+            "retry" => args.retry = true,
             _ => exit(127),
         }
     }
@@ -360,7 +393,7 @@ pub async fn server(mut args: Args) -> Res<()> {
     let hosts = args.listen_addresses();
     if hosts.is_empty() {
         qerror!("No valid hosts defined");
-        Err(io::Error::new(io::ErrorKind::InvalidInput, "No hosts"))?;
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "No hosts").into());
     }
     let sockets = hosts
         .into_iter()
@@ -378,12 +411,12 @@ pub async fn server(mut args: Args) -> Res<()> {
         .expect("unable to setup anti-replay");
     let cid_mgr = Rc::new(RefCell::new(RandomConnectionIdGenerator::new(10)));
 
-    let server: Box<dyn HttpServer> = if args.shared.use_old_http {
+    let server: Box<dyn HttpServer> = if args.shared.alpn == "h3" {
+        Box::new(http3::HttpServer::new(&args, anti_replay, cid_mgr))
+    } else {
         Box::new(
             http09::HttpServer::new(&args, anti_replay, cid_mgr).expect("We cannot make a server!"),
         )
-    } else {
-        Box::new(http3::HttpServer::new(&args, anti_replay, cid_mgr))
     };
 
     ServerRunner::new(Box::new(move || args.now()), server, sockets)

@@ -59,7 +59,8 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayCanvas);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayCanvas)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayCanvas)
 
   NS_DISPLAY_DECL_NAME("nsDisplayCanvas", TYPE_CANVAS)
 
@@ -178,7 +179,7 @@ class nsDisplayCanvas final : public nsPaintedDisplayItem {
         // the iframe. That happens in WebRenderCompositableHolder.s2);
         aBuilder.PushIFrame(bounds, !BackfaceIsHidden(),
                             data->GetPipelineId().ref(),
-                            /*ignoreMissingPipelines*/ false);
+                            /*ignoreMissingPipelines*/ true);
 
         LayoutDeviceRect scBounds(LayoutDevicePoint(0, 0), bounds.Size());
         auto filter = wr::ToImageRendering(mFrame->UsedImageRendering());
@@ -365,10 +366,8 @@ CSSIntSize nsHTMLCanvasFrame::GetCanvasSize() const {
   return size;
 }
 
-nscoord nsHTMLCanvasFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsHTMLCanvasFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                           IntrinsicISizeType aType) {
-  // XXX The caller doesn't account for constraints of the height,
-  // min-height, and max-height properties.
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
     return *containISize;
   }
@@ -456,7 +455,9 @@ bool nsHTMLCanvasFrame::UpdateWebRenderCanvasData(
 
 void nsHTMLCanvasFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
                                          const nsDisplayListSet& aLists) {
-  if (!IsVisibleForPainting()) return;
+  if (!IsVisibleForPainting()) {
+    return;
+  }
 
   DisplayBorderBackgroundOutline(aBuilder, aLists);
 
@@ -488,8 +489,8 @@ void nsHTMLCanvasFrame::AppendDirectlyOwnedAnonBoxes(
   aResult.AppendElement(OwnedAnonBox(mFrames.FirstChild()));
 }
 
-void nsHTMLCanvasFrame::UnionChildOverflow(
-    mozilla::OverflowAreas& aOverflowAreas) {
+void nsHTMLCanvasFrame::UnionChildOverflow(OverflowAreas& aOverflowAreas,
+                                           bool) {
   // Our one child (the canvas content anon box) is unpainted and isn't relevant
   // for child-overflow purposes. So we need to provide our own trivial impl to
   // avoid receiving the child-considering impl that we would otherwise inherit.

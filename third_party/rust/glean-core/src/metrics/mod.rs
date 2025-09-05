@@ -47,16 +47,16 @@ use crate::Glean;
 
 pub use self::boolean::BooleanMetric;
 pub use self::counter::CounterMetric;
-pub use self::custom_distribution::CustomDistributionMetric;
+pub use self::custom_distribution::{CustomDistributionMetric, LocalCustomDistribution};
 pub use self::datetime::DatetimeMetric;
 pub use self::denominator::DenominatorMetric;
 pub use self::event::EventMetric;
 pub(crate) use self::experiment::ExperimentMetric;
 pub use self::labeled::{
     LabeledBoolean, LabeledCounter, LabeledCustomDistribution, LabeledMemoryDistribution,
-    LabeledMetric, LabeledString, LabeledTimingDistribution,
+    LabeledMetric, LabeledQuantity, LabeledString, LabeledTimingDistribution,
 };
-pub use self::memory_distribution::MemoryDistributionMetric;
+pub use self::memory_distribution::{LocalMemoryDistribution, MemoryDistributionMetric};
 pub use self::memory_unit::MemoryUnit;
 pub use self::numerator::NumeratorMetric;
 pub use self::object::ObjectMetric;
@@ -68,6 +68,7 @@ pub use self::string_list::StringListMetric;
 pub use self::text::TextMetric;
 pub use self::time_unit::TimeUnit;
 pub use self::timespan::TimespanMetric;
+pub use self::timing_distribution::LocalTimingDistribution;
 pub use self::timing_distribution::TimerId;
 pub use self::timing_distribution::TimingDistributionMetric;
 pub use self::url::UrlMetric;
@@ -82,7 +83,7 @@ pub use self::remote_settings_config::RemoteSettingsConfig;
 // Note: Be careful when changing this structure.
 // The serialized form ends up in the ping payload.
 // New fields might require to be skipped on serialization.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, PartialEq)]
 pub struct DistributionData {
     /// A map containig the bucket index mapped to the accumulated count.
     ///
@@ -177,10 +178,6 @@ pub trait MetricType {
     /// This depends on the metrics own state, as determined by its metadata,
     /// and whether upload is enabled on the Glean object.
     fn should_record(&self, glean: &Glean) -> bool {
-        if !glean.is_upload_enabled() {
-            return false;
-        }
-
         // Technically nothing prevents multiple calls to should_record() to run in parallel,
         // meaning both are reading self.meta().disabled and later writing it. In between it can
         // also read remote_settings_config, which also could be modified in between those 2 reads.
@@ -232,6 +229,25 @@ pub trait MetricType {
 
         // Return a boolean indicating whether or not the metric should be recorded
         current_disabled == 0
+    }
+}
+
+/// A [`MetricIdentifier`] describes an interface for retrieving an
+/// identifier (category, name, label) for a metric
+pub trait MetricIdentifier<'a> {
+    /// Retrieve the category, name and (maybe) label of the metric
+    fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>);
+}
+
+// Provide a blanket implementation for MetricIdentifier for all the types
+// that implement MetricType.
+impl<'a, T> MetricIdentifier<'a> for T
+where
+    T: MetricType,
+{
+    fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>) {
+        let meta = &self.meta().inner;
+        (&meta.category, &meta.name, meta.dynamic_label.as_deref())
     }
 }
 

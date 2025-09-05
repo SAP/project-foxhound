@@ -9,7 +9,8 @@ support-files = [
   "file_discardSystemSource.html",
   "file_empty.html",
   "file_evalInSandbox.html",
-  "file_expandosharing.jsm",
+  "file_expandosharing.sys.mjs",
+  "file_expandosharing.js",
   "outoflinexulscript.js",
   "subscript.js",
   "utf8_subscript.js",
@@ -32,7 +33,11 @@ support-files = [
   "!/js/xpconnect/tests/mochitest/file_evalInSandbox.html",
   "!/js/xpconnect/tests/mochitest/file_xrayic.html",
 ]
-prefs = ["javascript.options.large_arraybuffers=true"]
+
+prefs = [
+    "javascript.options.large_arraybuffers=true",
+    "javascript.options.experimental.error_iserror=true",
+]
 
 ["test_APIExposer.xhtml"]
 
@@ -218,3 +223,5 @@ skip-if = ["bits == 32"] # Large ArrayBuffers not supported on 32-bit.
 ["test_xrayToJS.xhtml"]
 
 ["test_xrayic.xhtml"]
+
+["test_xrayToExplicitResourceManagement.html"]

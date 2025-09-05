@@ -71,14 +71,25 @@ static bool ReshapeForShadowedProp(JSContext* cx, Handle<NativeObject*> obj,
     return true;
   }
 
+  bool useDictionaryTeleporting =
+      cx->zone()->shapeZone().useDictionaryModeTeleportation();
+
   RootedObject proto(cx, obj->staticPrototype());
   while (proto) {
     // Lookups will not be cached through non-native protos.
     if (!proto->is<NativeObject>()) {
       break;
     }
-
     if (proto->as<NativeObject>().contains(cx, id)) {
+      if (useDictionaryTeleporting) {
+        JS_LOG(teleporting, Debug,
+               "Shadowed Prop: Dictionary Reshape for Teleporting");
+
+        return JSObject::reshapeForTeleporting(cx, proto);
+      }
+
+      JS_LOG(teleporting, Info,
+             "Shadowed Prop: Invalidating Reshape for Teleporting");
       return JSObject::setInvalidatedTeleporting(cx, proto);
     }
 
@@ -188,8 +199,24 @@ static bool ReshapeForProtoMutation(JSContext* cx, HandleObject obj) {
 
   RootedObject pobj(cx, obj);
 
+  bool useDictionaryTeleporting =
+      cx->zone()->shapeZone().useDictionaryModeTeleportation();
+
   while (pobj && pobj->is<NativeObject>()) {
-    if (!pobj->hasInvalidatedTeleporting()) {
+    if (useDictionaryTeleporting) {
+      MOZ_ASSERT(!pobj->hasInvalidatedTeleporting(),
+                 "Once we start using invalidation shouldn't do any more "
+                 "dictionary mode teleportation");
+      JS_LOG(teleporting, Debug,
+             "Proto Mutation: Dictionary Reshape for Teleporting");
+
+      if (!JSObject::reshapeForTeleporting(cx, pobj)) {
+        return false;
+      }
+    } else if (!pobj->hasInvalidatedTeleporting()) {
+      JS_LOG(teleporting, Info,
+             "Proto Mutation: Invalidating Reshape for Teleporting");
+
       if (!JSObject::setInvalidatedTeleporting(cx, pobj)) {
         return false;
       }
@@ -319,10 +346,14 @@ bool Watchtower::watchPropertyRemoveSlow(JSContext* cx,
 }
 
 // static
-bool Watchtower::watchPropertyChangeSlow(JSContext* cx,
-                                         Handle<NativeObject*> obj, HandleId id,
-                                         PropertyFlags flags) {
-  MOZ_ASSERT(watchesPropertyChange(obj));
+bool Watchtower::watchPropertyFlagsChangeSlow(JSContext* cx,
+                                              Handle<NativeObject*> obj,
+                                              HandleId id,
+                                              PropertyInfo propInfo,
+                                              PropertyFlags newFlags) {
+  MOZ_ASSERT(watchesPropertyFlagsChange(obj));
+  MOZ_ASSERT(obj->lookupPure(id).ref() == propInfo);
+  MOZ_ASSERT(propInfo.flags() != newFlags);
 
   if (obj->isUsedAsPrototype() && !id.isInt()) {
     InvalidateMegamorphicCache(cx, obj);
@@ -332,26 +363,16 @@ bool Watchtower::watchPropertyChangeSlow(JSContext* cx,
     // The global generation counter only cares whether a property
     // changes from data property to accessor or vice-versa. Changing
     // the flags on a property doesn't matter.
-    uint32_t propIndex;
-    Rooted<PropMap*> map(cx, obj->shape()->lookup(cx, id, &propIndex));
-    MOZ_ASSERT(map);
-    PropertyInfo prop = map->getPropertyInfo(propIndex);
-    bool wasAccessor = prop.isAccessorProperty();
-    bool isAccessor = flags.isAccessorProperty();
+    bool wasAccessor = propInfo.isAccessorProperty();
+    bool isAccessor = newFlags.isAccessorProperty();
     if (wasAccessor != isAccessor) {
       obj->as<GlobalObject>().bumpGenerationCount();
     }
   }
 
-  // Property fuses should also be popped on property changes, as value can
-  // change via this path.
-  if (MOZ_UNLIKELY(obj->hasFuseProperty())) {
-    MaybePopFuses(cx, obj, id);
-  }
-
   if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
     RootedValue val(cx, IdToValue(id));
-    if (!AddToWatchtowerLog(cx, "change-prop", obj, val)) {
+    if (!AddToWatchtowerLog(cx, "change-prop-flags", obj, val)) {
       return false;
     }
   }
@@ -361,10 +382,21 @@ bool Watchtower::watchPropertyChangeSlow(JSContext* cx,
 
 // static
 template <AllowGC allowGC>
-bool Watchtower::watchPropertyModificationSlow(
+void Watchtower::watchPropertyValueChangeSlow(
     JSContext* cx, typename MaybeRooted<NativeObject*, allowGC>::HandleType obj,
-    typename MaybeRooted<PropertyKey, allowGC>::HandleType id) {
-  MOZ_ASSERT(watchesPropertyModification(obj));
+    typename MaybeRooted<PropertyKey, allowGC>::HandleType id,
+    typename MaybeRooted<Value, allowGC>::HandleType value,
+    PropertyInfo propInfo) {
+  MOZ_ASSERT(watchesPropertyValueChange(obj));
+
+  // Note: this is also called when changing the GetterSetter value of an
+  // accessor property or when redefining a data property as an accessor
+  // property and vice versa.
+
+  if (propInfo.hasSlot() && obj->getSlot(propInfo.slot()) == value) {
+    // We're not actually changing the property's value.
+    return;
+  }
 
   if (MOZ_UNLIKELY(obj->hasFuseProperty())) {
     MaybePopFuses(cx, obj, id);
@@ -375,23 +407,27 @@ bool Watchtower::watchPropertyModificationSlow(
   if constexpr (allowGC == AllowGC::CanGC) {
     if (MOZ_UNLIKELY(obj->useWatchtowerTestingLog())) {
       RootedValue val(cx, IdToValue(id));
-      if (!AddToWatchtowerLog(cx, "modify-prop", obj, val)) {
-        return false;
+      if (!AddToWatchtowerLog(cx, "change-prop-value", obj, val)) {
+        // Ignore OOM because this is just a testing feature and infallible
+        // watchPropertyValueChange simplifies the callers.
+        cx->clearPendingException();
       }
     }
   }
-
-  return true;
 }
 
-template bool Watchtower::watchPropertyModificationSlow<AllowGC::CanGC>(
+template void Watchtower::watchPropertyValueChangeSlow<AllowGC::CanGC>(
     JSContext* cx,
     typename MaybeRooted<NativeObject*, AllowGC::CanGC>::HandleType obj,
-    typename MaybeRooted<PropertyKey, AllowGC::CanGC>::HandleType id);
-template bool Watchtower::watchPropertyModificationSlow<AllowGC::NoGC>(
+    typename MaybeRooted<PropertyKey, AllowGC::CanGC>::HandleType id,
+    typename MaybeRooted<Value, AllowGC::CanGC>::HandleType value,
+    PropertyInfo propInfo);
+template void Watchtower::watchPropertyValueChangeSlow<AllowGC::NoGC>(
     JSContext* cx,
     typename MaybeRooted<NativeObject*, AllowGC::NoGC>::HandleType obj,
-    typename MaybeRooted<PropertyKey, AllowGC::NoGC>::HandleType id);
+    typename MaybeRooted<PropertyKey, AllowGC::NoGC>::HandleType id,
+    typename MaybeRooted<Value, AllowGC::NoGC>::HandleType value,
+    PropertyInfo propInfo);
 
 // static
 bool Watchtower::watchFreezeOrSealSlow(JSContext* cx, Handle<NativeObject*> obj,

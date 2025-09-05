@@ -108,7 +108,17 @@ class MOZ_STACK_CLASS TryEmitter {
   //
   // For syntactic try-catch-finally, Syntactic should be used.
   // For non-syntactic try-catch-finally, NonSyntactic should be used.
-  enum class ControlKind { Syntactic, NonSyntactic };
+  // For non-syntactic try-catch-finally for Explicit Resource Management
+  // Disposal kind should be used.
+  enum class ControlKind {
+    Syntactic,
+    NonSyntactic,
+
+    // Disposal kind is exactly same in behaviour of Syntactic kind, it is
+    // used enabling try-finally scope for Explicit Resource Management
+    // Proposal. (https://arai-a.github.io/ecma262-compare/?pr=3000)
+    Disposal,
+  };
 
  private:
   BytecodeEmitter* bce_;
@@ -187,13 +197,14 @@ class MOZ_STACK_CLASS TryEmitter {
     return kind_ == Kind::TryCatchFinally || kind_ == Kind::TryFinally;
   }
 
+  bool requiresControlInfo() const {
+    return controlKind_ == ControlKind::Syntactic ||
+           controlKind_ == ControlKind::Disposal;
+  }
+
   BytecodeOffset offsetAfterTryOp() const {
     return tryOpOffset_ + BytecodeOffsetDiff(JSOpLength_Try);
   }
-
-  // Returns true if catch and finally blocks should handle the frame's
-  // return value.
-  bool shouldUpdateRval() const;
 
   // Jump to the finally block. After the finally block executes,
   // fall through to the code following the finally block.
@@ -201,6 +212,10 @@ class MOZ_STACK_CLASS TryEmitter {
 
  public:
   TryEmitter(BytecodeEmitter* bce, Kind kind, ControlKind controlKind);
+
+  // Returns true if catch and finally blocks should handle the frame's
+  // return value.
+  bool shouldUpdateRval() const;
 
 #ifdef DEBUG
   bool hasControlInfo();
@@ -220,23 +235,7 @@ class MOZ_STACK_CLASS TryEmitter {
     Yes,
   };
 
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-  enum class ForForOfIteratorClose : bool {
-    No,
-    /**
-     * Emit additional code for the ForOfIteratorClose operation.
-     */
-    Yes,
-  };
-#endif
-
-  [[nodiscard]] bool emitCatch(
-      ExceptionStack stack = ExceptionStack::No
-#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-      ,
-      ForForOfIteratorClose forForOfIteratorClose = ForForOfIteratorClose::No
-#endif
-  );
+  [[nodiscard]] bool emitCatch(ExceptionStack stack = ExceptionStack::No);
 
   // If `finallyPos` is specified, it's an offset of the finally block's
   // "{" character in the source code text, to improve line:column number in

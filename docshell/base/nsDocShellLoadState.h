@@ -9,6 +9,9 @@
 
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/SessionHistoryEntry.h"
+#include "mozilla/dom/UserNavigationInvolvement.h"
+
+#include "nsILoadInfo.h"
 
 // Helper Classes
 #include "mozilla/Maybe.h"
@@ -158,6 +161,10 @@ class nsDocShellLoadState final {
 
   void SetOriginalFrameSrc(bool aOriginalFrameSrc);
 
+  bool ShouldCheckForRecursion() const;
+
+  void SetShouldCheckForRecursion(bool aShouldCheckForRecursion);
+
   bool IsFormSubmission() const;
 
   void SetIsFormSubmission(bool aIsFormSubmission);
@@ -165,6 +172,11 @@ class nsDocShellLoadState final {
   uint32_t LoadType() const;
 
   void SetLoadType(uint32_t aLoadType);
+
+  mozilla::dom::UserNavigationInvolvement UserNavigationInvolvement() const;
+
+  void SetUserNavigationInvolvement(
+      mozilla::dom::UserNavigationInvolvement aUserNavigationInvolvement);
 
   nsISHEntry* SHEntry() const;
 
@@ -335,11 +347,13 @@ class nsDocShellLoadState final {
 
   void SetRemoteTypeOverride(const nsCString& aRemoteTypeOverride);
 
-  void SetWasSchemelessInput(bool aWasSchemelessInput) {
-    mWasSchemelessInput = aWasSchemelessInput;
+  void SetSchemelessInput(nsILoadInfo::SchemelessInputType aSchemelessInput) {
+    mSchemelessInput = aSchemelessInput;
   }
 
-  bool GetWasSchemelessInput() { return mWasSchemelessInput; }
+  nsILoadInfo::SchemelessInputType GetSchemelessInput() {
+    return mSchemelessInput;
+  }
 
   void SetHttpsUpgradeTelemetry(
       nsILoadInfo::HTTPSUpgradeTelemetryType aHttpsUpgradeTelemetry) {
@@ -383,8 +397,7 @@ class nsDocShellLoadState final {
   // aIsEmbeddingBlockedError are expected to be Nothing when called from parent
   // process.
   nsLoadFlags CalculateChannelLoadFlags(
-      mozilla::dom::BrowsingContext* aBrowsingContext,
-      mozilla::Maybe<bool> aUriModified,
+      mozilla::dom::BrowsingContext* aBrowsingContext, bool aUriModified,
       mozilla::Maybe<bool> aIsEmbeddingBlockedError);
 
   mozilla::dom::DocShellLoadStateInit Serialize(
@@ -511,6 +524,12 @@ class nsDocShellLoadState final {
   // element loading its original src (or srcdoc) attribute.
   bool mOriginalFrameSrc;
 
+  // If this attribute is true, this load corresponds to a frame, object, or
+  // embed element that needs a recursion check when loading it's src (or data).
+  // Unlike mOriginalFrameSrc, this attribute will always be set regardless
+  // whether we've loaded the src already.
+  bool mShouldCheckForRecursion;
+
   // If this attribute is true, then the load was initiated by a
   // form submission.
   bool mIsFormSubmission;
@@ -518,6 +537,10 @@ class nsDocShellLoadState final {
   // Contains a load type as specified by the nsDocShellLoadTypes::load*
   // constants
   uint32_t mLoadType;
+
+  // https://html.spec.whatwg.org/#user-navigation-involvement
+  mozilla::dom::UserNavigationInvolvement mUserNavigationInvolvement =
+      mozilla::dom::UserNavigationInvolvement::None;
 
   // Active Session History entry (if loading from SH)
   nsCOMPtr<nsISHEntry> mSHEntry;
@@ -628,8 +651,9 @@ class nsDocShellLoadState final {
   // Remote type of the process which originally requested the load.
   nsCString mTriggeringRemoteType;
 
-  // if the to-be-loaded address had it protocol added through a fixup
-  bool mWasSchemelessInput = false;
+  // if the address had an intentional protocol
+  nsILoadInfo::SchemelessInputType mSchemelessInput =
+      nsILoadInfo::SchemelessInputTypeUnset;
 
   // Solely for the use of collecting Telemetry for HTTPS upgrades.
   nsILoadInfo::HTTPSUpgradeTelemetryType mHttpsUpgradeTelemetry =

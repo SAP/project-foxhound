@@ -9,6 +9,7 @@
 
 #include "mozilla/StreamBufferSource.h"
 
+#include "mozilla/Vector.h"
 #include "nsTArray.h"
 
 namespace mozilla {
@@ -17,6 +18,9 @@ class nsTArraySource final : public StreamBufferSource {
  public:
   explicit nsTArraySource(nsTArray<uint8_t>&& aArray, const StringTaint& aTaint)
       : mArray(std::move(aArray)), mTaint(aTaint) {}
+
+  explicit nsTArraySource(nsTArray<uint8_t>&& aArray)
+      : mArray(std::move(aArray)) {}
 
   Span<const char> Data() override {
     return Span{reinterpret_cast<const char*>(mArray.Elements()),
@@ -75,6 +79,9 @@ class nsBorrowedSource final : public StreamBufferSource {
   explicit nsBorrowedSource(Span<const char> aBuffer, const StringTaint& aTaint)
     : mBuffer(aBuffer), mTaint(aTaint) {}
 
+  explicit nsBorrowedSource(Span<const char> aBuffer)
+    : mBuffer(aBuffer) {}    
+
   Span<const char> Data() override { return mBuffer; }
 
   bool Owning() override { return false; }
@@ -90,6 +97,28 @@ class nsBorrowedSource final : public StreamBufferSource {
  private:
   const Span<const char> mBuffer;
   SafeStringTaint mTaint;
+};
+
+class nsVectorSource final : public StreamBufferSource {
+ public:
+  explicit nsVectorSource(Vector<char>&& aBuffer)
+      : mBuffer(std::move(aBuffer)) {}
+
+  Span<const char> Data() override { return mBuffer; }
+
+  bool Owning() override { return true; }
+
+  const StringTaint& Taint() override { return mTaint; }
+
+  void setTaint(const StringTaint& aTaint) override { mTaint = aTaint; }
+
+  size_t SizeOfExcludingThisEvenIfShared(MallocSizeOf aMallocSizeOf) override {
+    return mBuffer.sizeOfExcludingThis(aMallocSizeOf);
+  }
+
+ private:
+  const Vector<char> mBuffer;
+  SafeStringTaint mTaint;  
 };
 
 }  // namespace mozilla

@@ -167,7 +167,7 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
     return NS_OK;
   }
 
-  // Titlebar colors are color-scheme aware.
+  // Titlebar and menu hover colors are color-scheme aware.
   switch (aID) {
     case ColorID::Activecaption:
       aColor = mTitlebarColors.Get(aScheme, true).mBg;
@@ -186,6 +186,29 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       return NS_OK;
     case ColorID::Inactiveborder:
       aColor = mTitlebarColors.Get(aScheme, false).mBorder;
+      return NS_OK;
+    case ColorID::MozMenuhover:
+      MOZ_ASSERT(UseNonNativeMenuColors(aScheme));
+      if (WinUtils::MicaPopupsEnabled()) {
+        aColor = aScheme == ColorScheme::Dark ? NS_RGBA(255, 255, 255, 15)
+                                              : NS_RGBA(0, 0, 0, 15);
+      } else {
+        aColor = aScheme == ColorScheme::Dark ? *GenericDarkColor(aID)
+                                              : NS_RGB(0xe0, 0xe0, 0xe6);
+      }
+      return NS_OK;
+    case ColorID::MozMenuhoverdisabled:
+      if (UseNonNativeMenuColors(aScheme)) {
+        if (WinUtils::MicaPopupsEnabled()) {
+          aColor = aScheme == ColorScheme::Dark ? NS_RGBA(255, 255, 255, 10)
+                                                : NS_RGBA(0, 0, 0, 10);
+        } else {
+          aColor = aScheme == ColorScheme::Dark ? *GenericDarkColor(aID)
+                                                : NS_RGB(0xf0, 0xf0, 0xf3);
+        }
+      } else {
+        aColor = NS_TRANSPARENT;
+      }
       return NS_OK;
     default:
       break;
@@ -272,17 +295,6 @@ nsresult nsLookAndFeel::NativeGetColor(ColorID aID, ColorScheme aScheme,
       }
       idx = COLOR_HIGHLIGHTTEXT;
       break;
-    case ColorID::MozMenuhover:
-      MOZ_ASSERT(UseNonNativeMenuColors(aScheme));
-      aColor = NS_RGB(0xe0, 0xe0, 0xe6);
-      return NS_OK;
-    case ColorID::MozMenuhoverdisabled:
-      if (UseNonNativeMenuColors(aScheme)) {
-        aColor = NS_RGB(0xf0, 0xf0, 0xf3);
-        return NS_OK;
-      }
-      aColor = NS_TRANSPARENT;
-      return NS_OK;
     case ColorID::Infobackground:
       idx = COLOR_INFOBK;
       break;
@@ -469,9 +481,15 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
     case IntID::TreeScrollLinesMax:
       aResult = 3;
       break;
-    case IntID::WindowsAccentColorInTitlebar: {
+    case IntID::WindowsAccentColorInTitlebar:
       aResult = mTitlebarColors.mUseAccent;
-    } break;
+      break;
+    case IntID::WindowsMica:
+      aResult = WinUtils::MicaEnabled();
+      break;
+    case IntID::WindowsMicaPopups:
+      aResult = WinUtils::MicaPopupsEnabled();
+      break;
     case IntID::AlertNotificationOrigin:
       aResult = 0;
       {
@@ -595,6 +613,21 @@ nsresult nsLookAndFeel::NativeGetInt(IntID aID, int32_t& aResult) {
       BOOL enable = TRUE;
       ::SystemParametersInfoW(SPI_GETMOUSEVANISH, 0, &enable, 0);
       aResult = enable;
+      break;
+    }
+    case IntID::PointingDeviceKinds: {
+      LookAndFeel::PointingDeviceKinds result =
+          LookAndFeel::PointingDeviceKinds::None;
+      if (WinUtils::SystemHasMouse()) {
+        result |= LookAndFeel::PointingDeviceKinds::Mouse;
+      }
+      if (WinUtils::SystemHasTouch()) {
+        result |= LookAndFeel::PointingDeviceKinds::Touch;
+      }
+      if (WinUtils::SystemHasPen()) {
+        result |= LookAndFeel::PointingDeviceKinds::Pen;
+      }
+      aResult = static_cast<int32_t>(result);
       break;
     }
     default:
@@ -834,6 +867,12 @@ auto nsLookAndFeel::ComputeTitlebarColors() -> TitlebarColors {
 
   result.mAccentInactive = dwmKey.GetValueAsDword(u"AccentColorInactive"_ns);
   result.mAccentInactiveText = GetAccentColorText(result.mAccentInactive);
+
+  if (WinUtils::MicaEnabled()) {
+    // Use transparent titlebar backgrounds when using mica.
+    result.mActiveDark.mBg = result.mActiveLight.mBg =
+        result.mInactiveDark.mBg = result.mInactiveLight.mBg = NS_TRANSPARENT;
+  }
 
   // The ColorPrevalence value is set to 1 when the "Show color on title bar"
   // setting in the Color section of Window's Personalization settings is

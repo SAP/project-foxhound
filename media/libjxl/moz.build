@@ -15,7 +15,6 @@ SOURCES += [
     "/third_party/jpeg-xl/lib/jxl/alpha.cc",
     "/third_party/jpeg-xl/lib/jxl/ans_common.cc",
     "/third_party/jpeg-xl/lib/jxl/blending.cc",
-    "/third_party/jpeg-xl/lib/jxl/cache_aligned.cc",
     "/third_party/jpeg-xl/lib/jxl/chroma_from_luma.cc",
     "/third_party/jpeg-xl/lib/jxl/coeff_order.cc",
     "/third_party/jpeg-xl/lib/jxl/color_encoding_internal.cc",
@@ -85,6 +84,7 @@ SOURCES += [
     "/third_party/jpeg-xl/lib/jxl/render_pipeline/stage_ycbcr.cc",
     "/third_party/jpeg-xl/lib/jxl/simd_util.cc",
     "/third_party/jpeg-xl/lib/jxl/splines.cc",
+    "/third_party/jpeg-xl/lib/jxl/test_memory_manager.cc",
     "/third_party/jpeg-xl/lib/jxl/toc.cc",
 ]
 
@@ -118,9 +118,3 @@ FINAL_LIBRARY = "xul"
 
 # We allow warnings for third-party code that can be updated from upstream.
 AllowCompilerWarnings()
-
-# Clang 5.0 has a compiler bug that prevents build in c++17
-# See https://gitlab.com/wg1/jpeg-xl/-/issues/227
-# This should be okay since we are using the C API.
-if CONFIG["CC_TYPE"] == "clang":
-    CXXFLAGS += ["-std=c++11"]

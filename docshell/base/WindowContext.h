@@ -23,6 +23,7 @@ class nsGlobalWindowInner;
 
 namespace mozilla {
 class LogModule;
+class nsRFPTargetSetIDL;
 
 namespace dom {
 
@@ -55,7 +56,7 @@ class BrowsingContextGroup;
    * the Storage Access API */                                           \
   FIELD(UsingStorageAccess, bool)                                        \
   FIELD(ShouldResistFingerprinting, bool)                                \
-  FIELD(OverriddenFingerprintingSettings, Maybe<RFPTarget>)              \
+  FIELD(OverriddenFingerprintingSettings, Maybe<RFPTargetSet>)           \
   FIELD(IsSecureContext, bool)                                           \
   FIELD(IsOriginalFrameSource, bool)                                     \
   /* Mixed-Content: If the corresponding documentURI is https,           \
@@ -137,15 +138,10 @@ class WindowContext : public nsISupports, public nsWrapperCache {
     return GetShouldResistFingerprinting();
   }
 
-  Nullable<uint64_t> GetOverriddenFingerprintingSettingsWebIDL() const {
-    Maybe<RFPTarget> overriddenFingerprintingSettings =
-        GetOverriddenFingerprintingSettings();
+  bool UsingStorageAccess() const { return GetUsingStorageAccess(); }
 
-    return overriddenFingerprintingSettings.isSome()
-               ? Nullable<uint64_t>(
-                     uint64_t(overriddenFingerprintingSettings.ref()))
-               : Nullable<uint64_t>();
-  }
+  already_AddRefed<nsIRFPTargetSetIDL>
+  GetOverriddenFingerprintingSettingsWebIDL() const;
 
   nsGlobalWindowInner* GetInnerWindow() const;
   Document* GetDocument() const;
@@ -227,6 +223,13 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // successfully.
   bool ConsumeTransientUserGestureActivation();
 
+  // Return true if its corresponding window has history activation.
+  bool HasValidHistoryActivation() const;
+
+  // Return true if the corresponding window has valid history activation
+  // and the history activation had been consumed successfully.
+  bool ConsumeHistoryActivation();
+
   bool GetTransientUserGestureActivationModifiers(
       UserActivation::Modifiers* aModifiers);
 
@@ -296,7 +299,7 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   bool CanSet(FieldIndex<IDX_ShouldResistFingerprinting>,
               const bool& aShouldResistFingerprinting, ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_OverriddenFingerprintingSettings>,
-              const Maybe<RFPTarget>& aValue, ContentParent* aSource);
+              const Maybe<RFPTargetSet>& aValue, ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_IsSecureContext>, const bool& aIsSecureContext,
               ContentParent* aSource);
   bool CanSet(FieldIndex<IDX_IsOriginalFrameSource>,
@@ -394,6 +397,11 @@ class WindowContext : public nsISupports, public nsWrapperCache {
   // The start time of user gesture, this is only available if the window
   // context is in process.
   TimeStamp mUserGestureStart;
+
+  // https://html.spec.whatwg.org/#history-action-activation
+  // This is set to mUserGestureStart every time ConsumeHistoryActivation is
+  // called.
+  TimeStamp mHistoryActivation;
 };
 
 using WindowContextTransaction = WindowContext::BaseTransaction;

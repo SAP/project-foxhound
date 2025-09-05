@@ -176,7 +176,8 @@ var supported_properties = {
     "left": [ test_length_transition, test_percent_transition,
               test_length_percent_calc_transition,
               test_length_unclamped, test_percent_unclamped ],
-    "letter-spacing": [ test_length_transition, test_length_unclamped ],
+    "letter-spacing": [ test_length_transition, test_percent_transition,
+                        test_length_unclamped, test_percent_unclamped ],
     "lighting-color": [ test_color_transition,
                         test_currentcolor_transition ],
     // NOTE: when calc() is supported on 'line-height', we should add
@@ -312,7 +313,8 @@ var supported_properties = {
     "width": [ test_length_transition, test_percent_transition,
                test_length_percent_calc_transition,
                test_length_clamped, test_percent_clamped ],
-    "word-spacing": [ test_length_transition, test_length_unclamped ],
+    "word-spacing": [ test_length_transition, test_percent_transition,
+                      test_length_unclamped, test_percent_unclamped ],
     "x": [ test_length_transition, test_percent_transition,
            test_length_unclamped, test_percent_unclamped ],
     "y": [ test_length_transition, test_percent_transition,
@@ -386,6 +388,7 @@ var skipped_transitionable_properties = [
   "font-style",  // Tests being added in https://github.com/web-platform-tests/wpt/pull/37570
   "grid-template-columns",
   "grid-template-rows",
+  "hyphenate-limit-chars",  // WPT tests being added in bug 1521723.
   "offset-path",
   "offset-distance",
   "offset-rotate",
@@ -2393,11 +2396,11 @@ function test_length_pair_transition_clamped(prop) {
   div.style.setProperty("transition-timing-function", FUNC_NEGATIVE, "");
   div.style.setProperty("transition-property", "none", "");
   div.style.setProperty(prop, "0px 0px", "");
-  is(cs.getPropertyValue(prop), "0px 0px",
+  is(cs.getPropertyValue(prop), "0px",
      "length-valued property " + prop + ": flush before clamping test");
   div.style.setProperty("transition-property", prop, "");
   div.style.setProperty(prop, "30px 50px", "");
-  is(cs.getPropertyValue(prop), "0px 0px",
+  is(cs.getPropertyValue(prop), "0px",
      "length-valued property " + prop + ": clamping of negatives");
   div.style.setProperty("transition-timing-function", "linear", "");
 }

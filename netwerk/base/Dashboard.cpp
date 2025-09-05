@@ -498,7 +498,9 @@ Dashboard::RequestSockets(nsINetDashboardCallback* aCallback) {
     }
 
     RefPtr<Dashboard> self(this);
-    SocketProcessParent::GetSingleton()->SendGetSocketData()->Then(
+    RefPtr<SocketProcessParent> socketParent =
+        SocketProcessParent::GetSingleton();
+    socketParent->SendGetSocketData()->Then(
         GetMainThreadSerialEventTarget(), __func__,
         [self{std::move(self)},
          socketData{std::move(socketData)}](SocketDataArgs&& args) {
@@ -588,7 +590,9 @@ Dashboard::RequestHttpConnections(nsINetDashboardCallback* aCallback) {
     }
 
     RefPtr<Dashboard> self(this);
-    SocketProcessParent::GetSingleton()->SendGetHttpConnectionData()->Then(
+    RefPtr<SocketProcessParent> socketParent =
+        SocketProcessParent::GetSingleton();
+    socketParent->SendGetHttpConnectionData()->Then(
         GetMainThreadSerialEventTarget(), __func__,
         [self{std::move(self)}, httpData](nsTArray<HttpRetParams>&& params) {
           httpData->mData.Assign(std::move(params));
@@ -834,7 +838,9 @@ Dashboard::RequestDNSInfo(nsINetDashboardCallback* aCallback) {
     }
 
     RefPtr<Dashboard> self(this);
-    SocketProcessParent::GetSingleton()->SendGetDNSCacheEntries()->Then(
+    RefPtr<SocketProcessParent> socketParent =
+        SocketProcessParent::GetSingleton();
+    socketParent->SendGetDNSCacheEntries()->Then(
         GetMainThreadSerialEventTarget(), __func__,
         [self{std::move(self)},
          dnsData{std::move(dnsData)}](nsTArray<DNSCacheEntries>&& entries) {
@@ -906,10 +912,13 @@ nsresult Dashboard::GetDNSCacheEntries(DnsData* dnsData) {
       CopyASCIItoUTF16(dnsData->mData[i].hostaddr[j], *addr);
     }
 
-    if (dnsData->mData[i].family == PR_AF_INET6) {
-      entry.mFamily.AssignLiteral(u"ipv6");
-    } else {
-      entry.mFamily.AssignLiteral(u"ipv4");
+    entry.mType = dnsData->mData[i].resolveType;
+    if (entry.mType == nsIDNSService::RESOLVE_TYPE_DEFAULT) {
+      if (dnsData->mData[i].family == PR_AF_INET6) {
+        entry.mFamily.AssignLiteral(u"ipv6");
+      } else {
+        entry.mFamily.AssignLiteral(u"ipv4");
+      }
     }
 
     entry.mOriginAttributesSuffix =
@@ -1109,7 +1118,7 @@ nsresult Dashboard::TestNewConnection(ConnectionData* aConnectionData) {
 
   nsresult rv;
   if (!connectionData->mHost.Length() ||
-      !net_IsValidHostName(connectionData->mHost)) {
+      !net_IsValidDNSHost(connectionData->mHost)) {
     return NS_ERROR_UNKNOWN_HOST;
   }
 

@@ -33,6 +33,7 @@ dependencies {
     implementation project(':browser-storage-sync')
     implementation project(':browser-icons')
 
+    implementation project(':feature-top-sites')
     implementation project(':feature-tabs')
     implementation project(':feature-session')
     implementation project(':feature-search')
@@ -56,4 +57,4 @@ dependencies {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

@@ -1,7 +1,13 @@
+use alloc::{boxed::Box, string::String, sync::Arc, vec::Vec};
 use core::fmt;
-use std::{error::Error, sync::Arc};
+use std::error::Error; // TODO(https://github.com/gfx-rs/wgpu/issues/6826): use core::error after MSRV bump
 
 use thiserror::Error;
+
+#[cfg(send_sync)]
+pub type ContextErrorSource = Box<dyn Error + Send + Sync + 'static>;
+#[cfg(not(send_sync))]
+pub type ContextErrorSource = Box<dyn Error + 'static>;
 
 #[derive(Debug, Error)]
 #[error(
@@ -13,10 +19,7 @@ use thiserror::Error;
 pub struct ContextError {
     pub fn_ident: &'static str,
     #[source]
-    #[cfg(send_sync)]
-    pub source: Box<dyn Error + Send + Sync + 'static>,
-    #[cfg(not(send_sync))]
-    pub source: Box<dyn Error + 'static>,
+    pub source: ContextErrorSource,
     pub label: String,
 }
 

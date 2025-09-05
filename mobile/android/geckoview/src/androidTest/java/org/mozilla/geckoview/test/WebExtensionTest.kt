@@ -592,8 +592,10 @@ class WebExtensionTest : BaseSessionTest() {
         blocklistDisabled: Boolean = false,
         signatureDisabled: Boolean = false,
         appVersionDisabled: Boolean = false,
+        softBlocklistDisabled: Boolean = false,
     ) {
-        val enabled = !userDisabled && !appDisabled && !blocklistDisabled && !signatureDisabled && !appVersionDisabled
+        val enabled =
+            !userDisabled && !appDisabled && !blocklistDisabled && !signatureDisabled && !appVersionDisabled && !softBlocklistDisabled
 
         mainSession.reload()
         sessionRule.waitForPageStop()
@@ -634,6 +636,11 @@ class WebExtensionTest : BaseSessionTest() {
             "appVersionDisabled should match",
             extension.metaData.disabledFlags and DisabledFlags.APP_VERSION > 0,
             equalTo(appVersionDisabled),
+        )
+        assertThat(
+            "softBlocklistDisabled should match",
+            extension.metaData.disabledFlags and DisabledFlags.SOFT_BLOCKLIST > 0,
+            equalTo(softBlocklistDisabled),
         )
     }
 
@@ -698,12 +705,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        true, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -777,7 +789,7 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
-    fun installWebExtension() {
+    fun installWebExtensionOnInstallPrompt() {
         mainSession.loadUri("https://example.com")
         sessionRule.waitForPageStop()
 
@@ -787,11 +799,11 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(
                     extension.metaData.description,
                     "Adds a red border to all webpages matching example.com.",
@@ -810,7 +822,12 @@ class WebExtensionTest : BaseSessionTest() {
                 )
                 assertEquals(extension.metaData.incognito, "spanning")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -847,6 +864,159 @@ class WebExtensionTest : BaseSessionTest() {
     }
 
     @Test
+    fun installWebExtension() {
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        // First let's check that the color of the border is empty before loading
+        // the WebExtension
+        assertBodyBorderEqualTo("")
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
+            @AssertCalled
+            override fun onInstallPromptRequest(
+                extension: WebExtension,
+                permissions: Array<out String>,
+                origins: Array<out String>,
+            ): GeckoResult<PermissionPromptResponse>? {
+                assertEquals(
+                    extension.metaData.description,
+                    "Adds a red border to all webpages matching example.com.",
+                )
+                assertEquals(extension.metaData.name, "Borderify")
+                assertEquals(extension.metaData.version, "1.0")
+                assertEquals(extension.isBuiltIn, false)
+                assertEquals(extension.metaData.enabled, false)
+                assertEquals(
+                    extension.metaData.signedState,
+                    WebExtension.SignedStateFlags.SIGNED,
+                )
+                assertEquals(
+                    extension.metaData.blocklistState,
+                    WebExtension.BlocklistStateFlags.NOT_BLOCKED,
+                )
+                assertEquals(extension.metaData.incognito, "spanning")
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
+            }
+        })
+
+        val borderify = sessionRule.waitForResult(
+            controller.install(
+                "resource://android/assets/web_extensions/borderify.xpi",
+                null,
+            ),
+        )
+
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was applied by checking the border color
+        assertBodyBorderEqualTo("red")
+        assertFalse(borderify.metaData.allowedInPrivateBrowsing)
+
+        var list = extensionsMap(sessionRule.waitForResult(controller.list()))
+        assertEquals(list.size, 2)
+        assertTrue(list.containsKey(borderify.id))
+        assertTrue(list.containsKey(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID))
+
+        // Uninstall WebExtension and check again
+        sessionRule.waitForResult(controller.uninstall(borderify))
+
+        list = extensionsMap(sessionRule.waitForResult(controller.list()))
+        assertEquals(list.size, 1)
+        assertTrue(list.containsKey(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID))
+
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was not applied after being uninstalled
+        assertBodyBorderEqualTo("")
+    }
+
+    @Test
+    @Setting.List(Setting(key = Setting.Key.USE_PRIVATE_MODE, value = "true"))
+    fun installWebExtensionAllowInPrivateMode() {
+        mainSession.loadUri("https://example.com")
+        sessionRule.waitForPageStop()
+
+        // First let's check that the color of the border is empty before loading
+        // the WebExtension
+        assertBodyBorderEqualTo("")
+
+        sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
+            @AssertCalled
+            override fun onInstallPromptRequest(
+                extension: WebExtension,
+                permissions: Array<out String>,
+                origins: Array<out String>,
+            ): GeckoResult<PermissionPromptResponse>? {
+                assertEquals(
+                    extension.metaData.description,
+                    "Adds a red border to all webpages matching example.com.",
+                )
+                assertEquals(extension.metaData.name, "Borderify")
+                assertEquals(extension.metaData.version, "1.0")
+                assertEquals(extension.isBuiltIn, false)
+                assertEquals(extension.metaData.enabled, false)
+                assertEquals(
+                    extension.metaData.signedState,
+                    WebExtension.SignedStateFlags.SIGNED,
+                )
+                assertEquals(
+                    extension.metaData.blocklistState,
+                    WebExtension.BlocklistStateFlags.NOT_BLOCKED,
+                )
+                assertEquals(extension.metaData.incognito, "spanning")
+
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        true, // isPrivateModeGranted
+                    ),
+                )
+            }
+        })
+
+        val borderify = sessionRule.waitForResult(
+            controller.install(
+                "resource://android/assets/web_extensions/borderify.xpi",
+                null,
+            ),
+        )
+
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was applied by checking the border color
+        assertBodyBorderEqualTo("red")
+        assertTrue(mainSession.settings.usePrivateMode)
+        assertTrue(borderify.metaData.allowedInPrivateBrowsing)
+
+        var list = extensionsMap(sessionRule.waitForResult(controller.list()))
+        assertEquals(list.size, 2)
+        assertTrue(list.containsKey(borderify.id))
+        assertTrue(list.containsKey(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID))
+
+        // Uninstall WebExtension and check again
+        sessionRule.waitForResult(controller.uninstall(borderify))
+
+        list = extensionsMap(sessionRule.waitForResult(controller.list()))
+        assertEquals(list.size, 1)
+        assertTrue(list.containsKey(RuntimeCreator.TEST_SUPPORT_EXTENSION_ID))
+
+        mainSession.reload()
+        sessionRule.waitForPageStop()
+
+        // Check that the WebExtension was not applied after being uninstalled
+        assertBodyBorderEqualTo("")
+    }
+
+    @Test
     @Setting.List(Setting(key = Setting.Key.USE_PRIVATE_MODE, value = "true"))
     fun runInPrivateBrowsing() {
         mainSession.loadUri("https://example.com")
@@ -857,12 +1027,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -940,12 +1115,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1015,12 +1195,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 2)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1070,12 +1255,17 @@ class WebExtensionTest : BaseSessionTest() {
     ) {
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 0)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1092,7 +1282,8 @@ class WebExtensionTest : BaseSessionTest() {
                     // Make sure the extension is present when it should be.
                     assertEquals(expectedExtension, extension != null)
                     assertEquals(expectedExtensionID, extension?.id)
-                    assertEquals(installException.code, expectedError)
+                    assertEquals(expectedError, installException.code)
+                    assertEquals(expectedExtensionID, installException.extensionId)
                 }
             },
         )
@@ -1130,12 +1321,17 @@ class WebExtensionTest : BaseSessionTest() {
         )
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1228,12 +1424,17 @@ class WebExtensionTest : BaseSessionTest() {
     fun corruptFileErrorWillNotReturnAnWebExtensionWithoutId() {
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 0)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1292,12 +1493,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.deny()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        false, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1902,12 +2108,17 @@ class WebExtensionTest : BaseSessionTest() {
         )
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -1980,12 +2191,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
         val tabsExtension = sessionRule.waitForResult(
@@ -1994,12 +2210,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
         var tabsExtensionPB = sessionRule.waitForResult(
@@ -2169,9 +2390,6 @@ class WebExtensionTest : BaseSessionTest() {
     // - verifies that the messages are received when restoring the tab in a fresh session
     @Test
     fun testRestoringExtensionPagePreservesMessages() {
-        // TODO: Bug 1837551
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
         val extension = sessionRule.waitForResult(
             controller.installBuiltIn(EXTENSION_PAGE_RESTORE),
         )
@@ -2912,14 +3130,19 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -2973,14 +3196,19 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3014,14 +3242,19 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3062,14 +3295,19 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3137,14 +3375,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                assertEquals(extension.metaData.version, "2.0")
-
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3194,14 +3435,19 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
 
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3270,12 +3516,17 @@ class WebExtensionTest : BaseSessionTest() {
     fun cancelInstallFailsAfterInstalled() {
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3311,13 +3562,18 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.version, "1.0")
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3373,12 +3629,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3532,12 +3793,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3611,12 +3877,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -3883,9 +4154,6 @@ class WebExtensionTest : BaseSessionTest() {
 
     @Test
     fun testMozAddonManagerCanBeEnabledByPref() {
-        // TODO: Bug 1837551
-        assumeThat(sessionRule.env.isFission, equalTo(false))
-
         mainSession.loadUri("https://example.com")
         sessionRule.waitForPageStop()
 
@@ -3907,16 +4175,21 @@ class WebExtensionTest : BaseSessionTest() {
         var addonId = ""
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny> {
+            ): GeckoResult<PermissionPromptResponse>? {
                 assertEquals(extension.metaData.name, "Borderify")
                 assertEquals(extension.metaData.version, "1.0")
                 assertEquals(extension.isBuiltIn, false)
                 addonId = extension.id
-                return GeckoResult.allow()
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 
@@ -4047,12 +4320,17 @@ class WebExtensionTest : BaseSessionTest() {
 
         sessionRule.delegateDuringNextWait(object : WebExtensionController.PromptDelegate {
             @AssertCalled(count = 1)
-            override fun onInstallPrompt(
+            override fun onInstallPromptRequest(
                 extension: WebExtension,
                 permissions: Array<String>,
                 origins: Array<String>,
-            ): GeckoResult<AllowOrDeny>? {
-                return GeckoResult.allow()
+            ): GeckoResult<PermissionPromptResponse>? {
+                return GeckoResult.fromValue(
+                    PermissionPromptResponse(
+                        true, // isPermissionsGranted
+                        false, // isPrivateModeGranted
+                    ),
+                )
             }
         })
 

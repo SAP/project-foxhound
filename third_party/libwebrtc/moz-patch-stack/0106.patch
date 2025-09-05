@@ -1,44 +1,48 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Mon, 6 May 2024 07:28:00 +0000
-Subject: Bug 1892329 - Invert _captureThread check in
- VideoCaptureModuleV4L2::StartCapture. r=webrtc-reviewers,mjf
+From: Nico Grunbaum <na-g@nostrum.com>
+Date: Thu, 23 May 2024 17:28:00 +0000
+Subject: Bug 1897459 - P2 - for BSD reference null socket server
+ instead;r=mjf,webrtc-reviewers
 
-Differential Revision: https://phabricator.services.mozilla.com/D208186
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/6ed6737b8214bf664642eb17cbf66a8c8450e569
+Differential Revision: https://phabricator.services.mozilla.com/D211095
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/0993ae41fb7db1624dedc5cf2278cd5a505f18f5
 ---
- .../video_capture/linux/video_capture_v4l2.cc | 21 +++++++++++--------
- 1 file changed, 12 insertions(+), 9 deletions(-)
+ rtc_base/internal/default_socket_server.cc | 4 ++--
+ rtc_base/virtual_socket_server.cc          | 2 ++
+ 2 files changed, 4 insertions(+), 2 deletions(-)
 
-diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index 74af348a6c..29ca864e19 100644
---- a/modules/video_capture/linux/video_capture_v4l2.cc
-+++ b/modules/video_capture/linux/video_capture_v4l2.cc
-@@ -303,16 +303,19 @@ int32_t VideoCaptureModuleV4L2::StartCapture(
-   }
+diff --git a/rtc_base/internal/default_socket_server.cc b/rtc_base/internal/default_socket_server.cc
+index 5632b989fc..cb7b81978a 100644
+--- a/rtc_base/internal/default_socket_server.cc
++++ b/rtc_base/internal/default_socket_server.cc
+@@ -14,7 +14,7 @@
  
-   // start capture thread;
--  if (_captureThread.empty()) {
--    quit_ = false;
--    _captureThread = rtc::PlatformThread::SpawnJoinable(
--        [self = scoped_refptr(this)] {
--          while (self->CaptureProcess()) {
--          }
--        },
--        "CaptureThread",
--        rtc::ThreadAttributes().SetPriority(rtc::ThreadPriority::kHigh));
-+  if (!_captureThread.empty()) {
-+    return 0;
-   }
-+
-+  quit_ = false;
-+
-+  _captureThread = rtc::PlatformThread::SpawnJoinable(
-+      [self = scoped_refptr(this)] {
-+        while (self->CaptureProcess()) {
-+        }
-+      },
-+      "CaptureThread",
-+      rtc::ThreadAttributes().SetPriority(rtc::ThreadPriority::kHigh));
-   return 0;
- }
+ #include "rtc_base/socket_server.h"
  
+-#if defined(__native_client__)
++#if defined(__native_client__) || defined(WEBRTC_BSD)
+ #include "rtc_base/null_socket_server.h"
+ #else
+ #include "rtc_base/physical_socket_server.h"
+@@ -23,7 +23,7 @@
+ namespace rtc {
+ 
+ std::unique_ptr<SocketServer> CreateDefaultSocketServer() {
+-#if defined(__native_client__)
++#if defined(__native_client__) || defined(WEBRTC_BSD)
+   return std::unique_ptr<SocketServer>(new rtc::NullSocketServer);
+ #else
+   return std::unique_ptr<SocketServer>(new rtc::PhysicalSocketServer);
+diff --git a/rtc_base/virtual_socket_server.cc b/rtc_base/virtual_socket_server.cc
+index bea068d36f..4463edf738 100644
+--- a/rtc_base/virtual_socket_server.cc
++++ b/rtc_base/virtual_socket_server.cc
+@@ -24,7 +24,9 @@
+ #include "rtc_base/event.h"
+ #include "rtc_base/fake_clock.h"
+ #include "rtc_base/logging.h"
++#if !defined(WEBRTC_BSD)
+ #include "rtc_base/physical_socket_server.h"
++#endif
+ #include "rtc_base/socket_address_pair.h"
+ #include "rtc_base/thread.h"
+ #include "rtc_base/time_utils.h"

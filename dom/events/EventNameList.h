@@ -179,6 +179,7 @@ EVENT(dragstart, eDragStart, EventNameType_HTMLXUL, eDragEventClass)
 EVENT(drop, eDrop, EventNameType_HTMLXUL, eDragEventClass)
 EVENT(durationchange, eDurationChange, EventNameType_HTML, eBasicEventClass)
 EVENT(emptied, eEmptied, EventNameType_HTML, eBasicEventClass)
+EVENT(encrypted, eEncrypted, EventNameType_HTMLMedia, eBasicEventClass)
 EVENT(ended, eEnded, EventNameType_HTML, eBasicEventClass)
 EVENT(formdata, eFormData, EventNameType_HTML, eBasicEventClass)
 EVENT(fullscreenchange, eFullscreenChange, EventNameType_HTML, eBasicEventClass)
@@ -254,6 +255,7 @@ EVENT(timeupdate, eTimeUpdate, EventNameType_HTML, eBasicEventClass)
 EVENT(toggle, eToggle, EventNameType_HTML, eBasicEventClass)
 EVENT(volumechange, eVolumeChange, EventNameType_HTML, eBasicEventClass)
 EVENT(waiting, eWaiting, EventNameType_HTML, eBasicEventClass)
+EVENT(waitingforkey, eWaitingForKey, EventNameType_HTMLMedia, eBasicEventClass)
 EVENT(wheel, eWheel, EventNameType_All, eWheelEventClass)
 EVENT(copy, eCopy, EventNameType_HTMLXUL | EventNameType_SVGGraphic,
       eClipboardEventClass)
@@ -295,10 +297,8 @@ WINDOW_EVENT(hashchange, eHashChange,
              eBasicEventClass)
 WINDOW_EVENT(languagechange, eLanguageChange,
              EventNameType_HTMLBodyOrFramesetOnly, eBasicEventClass)
-// XXXbz Should the onmessage attribute on <body> really not work?  If so, do we
-// need a different macro to flag things like that (IDL, but not content
-// attributes on body/frameset), or is just using EventNameType_None enough?
-WINDOW_EVENT(message, eMessage, EventNameType_None, eBasicEventClass)
+WINDOW_EVENT(message, eMessage, EventNameType_HTMLBodyOrFramesetOnly,
+             eBasicEventClass)
 WINDOW_EVENT(rtctransform, eRTCTransform, EventNameType_None, eBasicEventClass)
 WINDOW_EVENT(messageerror, eMessageError, EventNameType_HTMLBodyOrFramesetOnly,
              eBasicEventClass)
@@ -356,11 +356,11 @@ TOUCH_EVENT(touchend, eTouchEnd, EventNameType_All, eTouchEventClass)
 TOUCH_EVENT(touchmove, eTouchMove, EventNameType_All, eTouchEventClass)
 TOUCH_EVENT(touchcancel, eTouchCancel, EventNameType_All, eTouchEventClass)
 
-DOCUMENT_ONLY_EVENT(readystatechange, eReadyStateChange, EventNameType_HTMLXUL,
+DOCUMENT_ONLY_EVENT(readystatechange, eReadyStateChange, EventNameType_XUL,
                     eBasicEventClass)
 EVENT(selectionchange, eSelectionChange, EventNameType_HTMLXUL,
       eBasicEventClass)
-DOCUMENT_ONLY_EVENT(visibilitychange, eVisibilityChange, EventNameType_HTMLXUL,
+DOCUMENT_ONLY_EVENT(visibilitychange, eVisibilityChange, EventNameType_XUL,
                     eBasicEventClass)
 
 NON_IDL_EVENT(MozMouseHittest, eMouseHitTest, EventNameType_None,

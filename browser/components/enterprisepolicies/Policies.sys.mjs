@@ -27,7 +27,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   ProxyPolicies: "resource:///modules/policies/ProxyPolicies.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
+  QuickSuggest: "resource:///modules/QuickSuggest.sys.mjs",
   WebsiteFilter: "resource:///modules/policies/WebsiteFilter.sys.mjs",
 });
 
@@ -59,13 +59,13 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
  * happens. An object for each policy should be defined, containing
  * callback functions that will be called by the engine.
  *
- * See the _callbacks object in EnterprisePolicies.js for the list of
+ * See the _callbacks object in EnterprisePoliciesParent.sys.mjs for the list of
  * possible callbacks and an explanation of each.
  *
  * Each callback will be called with two parameters:
  * - manager
  *   This is the EnterprisePoliciesManager singleton object from
- *   EnterprisePolicies.js
+ *   EnterprisePoliciesParent.sys.mjs
  *
  * - param
  *   The parameter defined for this policy in policies-schema.json.
@@ -363,9 +363,18 @@ export var Policies = {
   },
 
   BlockAboutProfiles: {
+    onBeforeAddons(manager, param) {
+      if (param) {
+        manager.disallowFeature("profileManagement");
+      }
+    },
     onBeforeUIStartup(manager, param) {
       if (param) {
         blockAboutPage(manager, "about:profiles");
+        blockAboutPage(manager, "about:profilemanager");
+        blockAboutPage(manager, "about:editprofile");
+        blockAboutPage(manager, "about:deleteprofile");
+        blockAboutPage(manager, "about:newprofile");
       }
     },
   },
@@ -509,12 +518,13 @@ export var Policies = {
 
   ContentAnalysis: {
     onBeforeAddons(manager, param) {
-      if ("PipePathName" in param) {
-        setAndLockPref(
-          "browser.contentanalysis.pipe_path_name",
-          param.PipePathName
-        );
-      }
+      // For security reasons, all of the Content Analysis related prefs should be locked in
+      // this method, even if the values aren't specified in Enterprise Policies.
+      setPrefIfPresentAndLock(
+        param,
+        "PipePathName",
+        "browser.contentanalysis.pipe_path_name"
+      );
       if ("AgentTimeout" in param) {
         if (!Number.isInteger(param.AgentTimeout)) {
           lazy.log.error(
@@ -526,42 +536,52 @@ export var Policies = {
             param.AgentTimeout
           );
         }
+      } else {
+        Services.prefs.lockPref("browser.contentanalysis.agent_timeout");
       }
-      if ("AllowUrlRegexList" in param) {
-        setAndLockPref(
-          "browser.contentanalysis.allow_url_regex_list",
-          param.AllowUrlRegexList
-        );
-      }
-      if ("DenyUrlRegexList" in param) {
-        setAndLockPref(
-          "browser.contentanalysis.deny_url_regex_list",
-          param.DenyUrlRegexList
-        );
-      }
-      if ("AgentName" in param) {
-        setAndLockPref("browser.contentanalysis.agent_name", param.AgentName);
-      }
-      if ("ClientSignature" in param) {
-        setAndLockPref(
-          "browser.contentanalysis.client_signature",
-          param.ClientSignature
-        );
-      }
-      if ("DefaultResult" in param) {
-        if (
-          !Number.isInteger(param.DefaultResult) ||
-          param.DefaultResult < 0 ||
-          param.DefaultResult > 2
-        ) {
-          lazy.log.error(
-            `Non-integer or out of range value for DefaultResult: ${param.DefaultResult}`
-          );
+      setPrefIfPresentAndLock(
+        param,
+        "AllowUrlRegexList",
+        "browser.contentanalysis.allow_url_regex_list"
+      );
+      setPrefIfPresentAndLock(
+        param,
+        "DenyUrlRegexList",
+        "browser.contentanalysis.deny_url_regex_list"
+      );
+      setPrefIfPresentAndLock(
+        param,
+        "AgentName",
+        "browser.contentanalysis.agent_name"
+      );
+      setPrefIfPresentAndLock(
+        param,
+        "ClientSignature",
+        "browser.contentanalysis.client_signature"
+      );
+      let resultPrefs = [
+        ["DefaultResult", "default_result"],
+        ["TimeoutResult", "timeout_result"],
+      ];
+      for (let pref of resultPrefs) {
+        if (pref[0] in param) {
+          if (
+            !Number.isInteger(param[pref[0]]) ||
+            param[pref[0]] < 0 ||
+            param[pref[0]] > 2
+          ) {
+            lazy.log.error(
+              `Non-integer or out of range value for ${pref[0]}: ${param[pref[0]]}`
+            );
+            Services.prefs.lockPref(`browser.contentanalysis.${pref[1]}`);
+          } else {
+            setAndLockPref(
+              `browser.contentanalysis.${pref[1]}`,
+              param[pref[0]]
+            );
+          }
         } else {
-          setAndLockPref(
-            "browser.contentanalysis.default_result",
-            param.DefaultResult
-          );
+          Services.prefs.lockPref(`browser.contentanalysis.${pref[1]}`);
         }
       }
       let boolPrefs = [
@@ -575,6 +595,62 @@ export var Policies = {
             `browser.contentanalysis.${pref[1]}`,
             !!param[pref[0]]
           );
+        } else {
+          Services.prefs.lockPref(`browser.contentanalysis.${pref[1]}`);
+        }
+      }
+      let interceptionPointPrefs = [
+        ["Clipboard", "clipboard"],
+        ["DragAndDrop", "drag_and_drop"],
+        ["FileUpload", "file_upload"],
+        ["Print", "print"],
+      ];
+      if ("InterceptionPoints" in param) {
+        for (let pref of interceptionPointPrefs) {
+          let value = true;
+          if (pref[0] in param.InterceptionPoints) {
+            if ("Enabled" in param.InterceptionPoints[pref[0]]) {
+              value = !!param.InterceptionPoints[pref[0]].Enabled;
+            }
+          }
+          setAndLockPref(
+            `browser.contentanalysis.interception_point.${pref[1]}.enabled`,
+            value
+          );
+        }
+      } else {
+        for (let pref of interceptionPointPrefs) {
+          Services.prefs.lockPref(
+            `browser.contentanalysis.interception_point.${pref[1]}.enabled`
+          );
+        }
+      }
+      let plainTextOnlyPrefs = [
+        ["Clipboard", "clipboard"],
+        ["DragAndDrop", "drag_and_drop"],
+      ];
+      if ("InterceptionPoints" in param) {
+        for (let pref of plainTextOnlyPrefs) {
+          // Need to set and lock this value even if the enterprise
+          // policy isn't set so users can't change it
+          let value = true;
+          if ("InterceptionPoints" in param) {
+            if (pref[0] in param.InterceptionPoints) {
+              if ("PlainTextOnly" in param.InterceptionPoints[pref[0]]) {
+                value = !!param.InterceptionPoints[pref[0]].PlainTextOnly;
+              }
+            }
+          }
+          setAndLockPref(
+            `browser.contentanalysis.interception_point.${pref[1]}.plain_text_only`,
+            value
+          );
+        }
+      } else {
+        for (let pref of plainTextOnlyPrefs) {
+          Services.prefs.lockPref(
+            `browser.contentanalysis.interception_point.${pref[1]}.plain_text_only`
+          );
         }
       }
       if ("Enabled" in param) {
@@ -584,6 +660,10 @@ export var Policies = {
           Ci.nsIContentAnalysis
         );
         ca.isSetByEnterprisePolicy = true;
+      } else {
+        // Probably not strictly necessary, but let's lock everything
+        // to be consistent.
+        Services.prefs.lockPref("browser.contentanalysis.enabled");
       }
     },
   },
@@ -1399,7 +1479,7 @@ export var Policies = {
   FirefoxSuggest: {
     onBeforeAddons(manager, param) {
       (async () => {
-        await lazy.UrlbarPrefs.firefoxSuggestScenarioStartupPromise;
+        await lazy.QuickSuggest.initPromise;
         if ("WebSuggestions" in param) {
           PoliciesUtils.setDefaultPref(
             "browser.urlbar.suggest.quicksuggest.nonsponsored",
@@ -1638,6 +1718,12 @@ export var Policies = {
     },
   },
 
+  MicrosoftEntraSSO: {
+    onBeforeAddons(manager, param) {
+      setAndLockPref("network.http.microsoft-entra-sso.enabled", param);
+    },
+  },
+
   NetworkPrediction: {
     onBeforeAddons(manager, param) {
       setAndLockPref("network.dns.disablePrefetch", !param);
@@ -1840,6 +1926,7 @@ export var Policies = {
     onBeforeAddons(manager, param) {
       setAndLockPref("network.http.http3.enable_kyber", param);
       setAndLockPref("security.tls.enable_kyber", param);
+      setAndLockPref("media.webrtc.enable_pq_dtls", param);
     },
   },
 
@@ -1857,6 +1944,7 @@ export var Policies = {
         "general.smoothScroll",
         "geo.",
         "gfx.",
+        "identity.fxaccounts.toolbar.",
         "intl.",
         "keyword.enabled",
         "layers.",
@@ -1894,6 +1982,9 @@ export var Policies = {
         "security.osclientcerts.autoload",
         "security.OCSP.enabled",
         "security.OCSP.require",
+        "security.pki.certificate_transparency.disable_for_hosts",
+        "security.pki.certificate_transparency.disable_for_spki_hashes",
+        "security.pki.certificate_transparency.mode",
         "security.ssl.enable_ocsp_stapling",
         "security.ssl.errorReporting.enabled",
         "security.ssl.require_safe_negotiation",
@@ -2092,12 +2183,13 @@ export var Policies = {
         setAndLockPref("privacy.clearOnShutdown.siteSettings", param);
         setAndLockPref("privacy.clearOnShutdown.offlineApps", param);
         setAndLockPref(
-          "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+          "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
           param
         );
         setAndLockPref("privacy.clearOnShutdown_v2.cookiesAndStorage", param);
         setAndLockPref("privacy.clearOnShutdown_v2.cache", param);
         setAndLockPref("privacy.clearOnShutdown_v2.siteSettings", param);
+        setAndLockPref("privacy.clearOnShutdown_v2.formdata", param);
       } else {
         let locked = true;
         // Needed to preserve original behavior in perpetuity.
@@ -2180,9 +2272,21 @@ export var Policies = {
             param.FormData,
             locked
           );
+
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.formdata",
+            param.FormData,
+            locked
+          );
         } else {
           PoliciesUtils.setDefaultPref(
             "privacy.clearOnShutdown.formdata",
+            false,
+            lockDefaultPrefs
+          );
+
+          PoliciesUtils.setDefaultPref(
+            "privacy.clearOnShutdown_v2.formdata",
             false,
             lockDefaultPrefs
           );
@@ -2194,11 +2298,11 @@ export var Policies = {
             locked
           );
 
-          // We set historyFormDataAndDownloads to follow lock and pref
-          // settings for history, and deprecate formdata and downloads
+          // We set browsingHistoryAndDownloads to follow lock and pref
+          // settings for history, and deprecate downloads
           // in the new clear on shutdown dialog - Bug 1853996
           PoliciesUtils.setDefaultPref(
-            "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+            "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
             param.History,
             locked
           );
@@ -2209,7 +2313,7 @@ export var Policies = {
             lockDefaultPrefs
           );
           PoliciesUtils.setDefaultPref(
-            "privacy.clearOnShutdown_v2.historyFormDataAndDownloads",
+            "privacy.clearOnShutdown_v2.browsingHistoryAndDownloads",
             false,
             lockDefaultPrefs
           );
@@ -2552,6 +2656,13 @@ export var Policies = {
           param.Locked
         );
       }
+      if ("FirefoxLabs" in param) {
+        PoliciesUtils.setDefaultPref(
+          "browser.preferences.experimental",
+          param.FirefoxLabs,
+          param.Locked
+        );
+      }
     },
   },
 
@@ -2597,6 +2708,28 @@ export var Policies = {
  */
 export function setAndLockPref(prefName, prefValue) {
   PoliciesUtils.setDefaultPref(prefName, prefValue, true);
+}
+
+/**
+ *
+ * setPrefIfPresentAndLock
+ *
+ * Sets the pref to the value param[paramKey] if that exists. Either
+ * way, the pref is locked.
+ *
+ * @param {object} param
+ *        Object with pref values
+ * @param {string} paramKey
+ *        The key to look up the value in param
+ * @param {string} prefName
+ *        The pref to be changed
+ */
+function setPrefIfPresentAndLock(param, paramKey, prefName) {
+  if (paramKey in param) {
+    setAndLockPref(prefName, param[paramKey]);
+  } else {
+    Services.prefs.lockPref(prefName);
+  }
 }
 
 /**
@@ -2773,7 +2906,6 @@ export function runOnce(actionName, callback) {
  *        The callback to be run when the pref value changes
  * @returns {Promise}
  *        A promise that will resolve once the callback finishes running.
- *
  */
 async function runOncePerModification(actionName, policyValue, callback) {
   let prefName = `browser.policies.runOncePerModification.${actionName}`;

@@ -32,11 +32,10 @@ export class ActionsProvider {
    * Query for actions based on the current users input.
    *
    * @param {UrlbarQueryContext} _queryContext The query context object.
-   * @param {UrlbarController} _controller The urlbar controller.
-   * @returns {ActionsResult}
+   * @returns {Array} An array of ActionResult's
    * @abstract
    */
-  async queryAction(_queryContext, _controller) {
+  async queryActions(_queryContext) {
     throw new Error("Not implemented.");
   }
 
@@ -64,6 +63,9 @@ export class ActionsResult {
   #l10nArgs;
   #icon;
   #dataset;
+  #onPick;
+  #onSelection;
+  #engine;
 
   /**
    * @param {object} options
@@ -79,13 +81,31 @@ export class ActionsResult {
    * @param {object} options.dataset
    *    An object of properties we set on the action button that
    *    can be used to pass data when it is selected.
+   * @param { Function} options.onPick
+   *    A callback function called when the result has been picked.
+   * @param { Function} options.onSelection
+   *    A callback function called when the result has been selected.
+   * @param { Function} options.engine
+   *    The name of an installed engine if the action prompts search mode.
    */
-  constructor({ key, l10nId, l10nArgs, icon, dataset }) {
+  constructor({
+    key,
+    l10nId,
+    l10nArgs,
+    icon,
+    dataset,
+    onPick,
+    onSelection,
+    engine,
+  }) {
     this.#key = key;
     this.#l10nId = l10nId;
     this.#l10nArgs = l10nArgs;
     this.#icon = icon;
     this.#dataset = dataset;
+    this.#onPick = onPick;
+    this.#onSelection = onSelection;
+    this.#engine = engine;
   }
 
   get key() {
@@ -106,5 +126,17 @@ export class ActionsResult {
 
   get dataset() {
     return this.#dataset;
+  }
+
+  get onPick() {
+    return this.#onPick;
+  }
+
+  get onSelection() {
+    return this.#onSelection;
+  }
+
+  get engine() {
+    return this.#engine;
   }
 }

@@ -41,6 +41,15 @@ void js::PopsOptimizedGetIteratorFuse::popFuse(JSContext* cx,
   realmFuses.optimizeGetIteratorFuse.popFuse(cx, realmFuses);
 }
 
+void js::PopsOptimizedArrayIteratorPrototypeFuse::popFuse(
+    JSContext* cx, RealmFuses& realmFuses) {
+  // Pop Self.
+  RealmFuse::popFuse(cx);
+
+  // Pop associated fuse in same realm as current object.
+  realmFuses.optimizeArrayIteratorPrototypeFuse.popFuse(cx, realmFuses);
+}
+
 int32_t js::RealmFuses::fuseOffsets[uint8_t(
     RealmFuses::FuseIndex::LastFuseIndex)] = {
 #define FUSE(Name, LowerName) offsetof(RealmFuses, LowerName),
@@ -72,7 +81,7 @@ const char* js::RealmFuses::fuseNames[] = {
 // I'd love it if we had a better answer.
 const char* js::RealmFuses::getFuseName(RealmFuses::FuseIndex index) {
   uint8_t rawIndex = uint8_t(index);
-  MOZ_ASSERT(rawIndex > 0 && index < RealmFuses::FuseIndex::LastFuseIndex);
+  MOZ_ASSERT(index < RealmFuses::FuseIndex::LastFuseIndex);
   return fuseNames[rawIndex];
 }
 
@@ -82,7 +91,23 @@ bool js::OptimizeGetIteratorFuse::checkInvariant(JSContext* cx) {
   // these two realm fuses are also intact.
   auto& realmFuses = cx->realm()->realmFuses;
   return realmFuses.arrayPrototypeIteratorFuse.intact() &&
-         realmFuses.arrayPrototypeIteratorNextFuse.intact() &&
+         realmFuses.optimizeArrayIteratorPrototypeFuse.intact();
+}
+
+void js::OptimizeGetIteratorFuse::popFuse(JSContext* cx,
+                                          RealmFuses& realmFuses) {
+  InvalidatingRealmFuse::popFuse(cx, realmFuses);
+  MOZ_ASSERT(cx->global());
+  cx->runtime()->setUseCounter(cx->global(),
+                               JSUseCounter::OPTIMIZE_GET_ITERATOR_FUSE);
+}
+
+bool js::OptimizeArrayIteratorPrototypeFuse::checkInvariant(JSContext* cx) {
+  // Simple invariant: this fuse merely reflects the conjunction of a group of
+  // fuses, so if this fuse is intact, then the invariant it asserts is that
+  // these realm fuses are also intact.
+  auto& realmFuses = cx->realm()->realmFuses;
+  return realmFuses.arrayPrototypeIteratorNextFuse.intact() &&
          realmFuses.arrayIteratorPrototypeHasNoReturnProperty.intact() &&
          realmFuses.iteratorPrototypeHasNoReturnProperty.intact() &&
          realmFuses.arrayIteratorPrototypeHasIteratorProto.intact() &&

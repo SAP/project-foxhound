@@ -76,62 +76,72 @@ void Queue::WriteBuffer(const Buffer& aBuffer, uint64_t aBufferOffset,
       elementByteSize = byteSize(type);
     }
   }
-  dom::ProcessTypedArraysFixed(aData, [&, elementByteSize](
-                                          const Span<const uint8_t>& aData) {
-    uint64_t byteLength = aData.Length();
+  dom::ProcessTypedArraysFixed(
+      aData, [&, elementByteSize](const Span<const uint8_t>& aData) {
+        uint64_t byteLength = aData.Length();
 
-    auto checkedByteOffset =
-        CheckedInt<uint64_t>(aDataOffset) * elementByteSize;
-    if (!checkedByteOffset.isValid()) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
-    auto offset = checkedByteOffset.value();
+        auto checkedByteOffset =
+            CheckedInt<uint64_t>(aDataOffset) * elementByteSize;
+        if (!checkedByteOffset.isValid()) {
+          aRv.ThrowOperationError("offset x element size overflows");
+          return;
+        }
+        auto offset = checkedByteOffset.value();
 
-    const auto checkedByteSize =
-        aSize.WasPassed() ? CheckedInt<size_t>(aSize.Value()) * elementByteSize
-                          : CheckedInt<size_t>(byteLength) - offset;
-    if (!checkedByteSize.isValid()) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
-    auto size = checkedByteSize.value();
+        size_t size;
+        if (aSize.WasPassed()) {
+          const auto checkedByteSize =
+              CheckedInt<size_t>(aSize.Value()) * elementByteSize;
+          if (!checkedByteSize.isValid()) {
+            aRv.ThrowOperationError("write size x element size overflows");
+            return;
+          }
+          size = checkedByteSize.value();
+        } else {
+          const auto checkedByteSize = CheckedInt<size_t>(byteLength) - offset;
+          if (!checkedByteSize.isValid()) {
+            aRv.ThrowOperationError("data byte length - offset underflows");
+            return;
+          }
+          size = checkedByteSize.value();
+        }
 
-    auto checkedByteEnd = CheckedInt<uint64_t>(offset) + size;
-    if (!checkedByteEnd.isValid() || checkedByteEnd.value() > byteLength) {
-      aRv.ThrowAbortError(nsPrintfCString("Wrong data size %" PRIuPTR, size));
-      return;
-    }
+        auto checkedByteEnd = CheckedInt<uint64_t>(offset) + size;
+        if (!checkedByteEnd.isValid() || checkedByteEnd.value() > byteLength) {
+          aRv.ThrowOperationError(
+              nsPrintfCString("Wrong data size %" PRIuPTR, size));
+          return;
+        }
 
-    if (size % 4 != 0) {
-      aRv.ThrowAbortError("Byte size must be a multiple of 4");
-      return;
-    }
+        if (size % 4 != 0) {
+          aRv.ThrowOperationError("Byte size must be a multiple of 4");
+          return;
+        }
 
-    auto alloc = mozilla::ipc::UnsafeSharedMemoryHandle::CreateAndMap(size);
-    if (alloc.isNothing()) {
-      aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
-      return;
-    }
+        auto alloc = mozilla::ipc::UnsafeSharedMemoryHandle::CreateAndMap(size);
+        if (alloc.isNothing()) {
+          aRv.Throw(NS_ERROR_OUT_OF_MEMORY);
+          return;
+        }
 
-    auto handle = std::move(alloc.ref().first);
-    auto mapping = std::move(alloc.ref().second);
+        auto handle = std::move(alloc.ref().first);
+        auto mapping = std::move(alloc.ref().second);
 
-    memcpy(mapping.Bytes().data(), aData.Elements() + aDataOffset, size);
-    ipc::ByteBuf bb;
-    ffi::wgpu_queue_write_buffer(aBuffer.mId, aBufferOffset, ToFFI(&bb));
-    mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
-                                  std::move(handle));
-  });
+        memcpy(mapping.Bytes().data(), aData.Elements() + offset, size);
+        ipc::ByteBuf bb;
+        ffi::wgpu_queue_write_buffer(aBuffer.mId, aBufferOffset, ToFFI(&bb));
+        mBridge->SendQueueWriteAction(mId, mParent->mId, std::move(bb),
+                                      std::move(handle));
+      });
 }
 
-void Queue::WriteTexture(const dom::GPUImageCopyTexture& aDestination,
+void Queue::WriteTexture(const dom::GPUTexelCopyTextureInfo& aDestination,
                          const dom::ArrayBufferViewOrArrayBuffer& aData,
-                         const dom::GPUImageDataLayout& aDataLayout,
+                         const dom::GPUTexelCopyBufferLayout& aDataLayout,
                          const dom::GPUExtent3D& aSize, ErrorResult& aRv) {
-  ffi::WGPUImageCopyTexture copyView = {};
+  ffi::WGPUTexelCopyTextureInfo copyView = {};
   CommandEncoder::ConvertTextureCopyViewToFFI(aDestination, &copyView);
-  ffi::WGPUImageDataLayout dataLayout = {};
+  ffi::WGPUTexelCopyBufferLayout dataLayout = {};
   CommandEncoder::ConvertTextureDataLayoutToFFI(aDataLayout, &dataLayout);
   dataLayout.offset = 0;  // our Shmem has the contents starting from 0.
   ffi::WGPUExtent3d extent = {};
@@ -139,14 +149,14 @@ void Queue::WriteTexture(const dom::GPUImageCopyTexture& aDestination,
 
   dom::ProcessTypedArraysFixed(aData, [&](const Span<const uint8_t>& aData) {
     if (aData.IsEmpty()) {
-      aRv.ThrowAbortError("Input size cannot be zero.");
+      aRv.ThrowOperationError("Input size cannot be zero.");
       return;
     }
 
     const auto checkedSize =
         CheckedInt<size_t>(aData.Length()) - aDataLayout.mOffset;
     if (!checkedSize.isValid()) {
-      aRv.ThrowAbortError("Offset is higher than the size");
+      aRv.ThrowOperationError("Offset is higher than the size");
       return;
     }
     const auto size = checkedSize.value();
@@ -214,8 +224,8 @@ static WebGLTexelFormat ToWebGLTexelFormat(dom::GPUTextureFormat aFormat) {
 }
 
 void Queue::CopyExternalImageToTexture(
-    const dom::GPUImageCopyExternalImage& aSource,
-    const dom::GPUImageCopyTextureTagged& aDestination,
+    const dom::GPUCopyExternalImageSourceInfo& aSource,
+    const dom::GPUCopyExternalImageDestInfo& aDestination,
     const dom::GPUExtent3D& aCopySize, ErrorResult& aRv) {
   const auto dstFormat = ToWebGLTexelFormat(aDestination.mTexture->Format());
   if (dstFormat == WebGLTexelFormat::FormatNotSupportingAnyConversion) {
@@ -410,7 +420,8 @@ void Queue::CopyExternalImageToTexture(
   if (!ConvertImage(dstWidth, dstHeight, srcBegin, srcStride, srcOriginPos,
                     srcFormat, srcPremultiplied, dstBegin, dstStrideVal,
                     dstOriginPos, dstFormat, aDestination.mPremultipliedAlpha,
-                    &wasTrivial)) {
+                    dom::PredefinedColorSpace::Srgb,
+                    dom::PredefinedColorSpace::Srgb, &wasTrivial)) {
     MOZ_ASSERT_UNREACHABLE("ConvertImage failed!");
     aRv.ThrowInvalidStateError(
         nsPrintfCString("Failed to convert source to destination format "
@@ -419,8 +430,8 @@ void Queue::CopyExternalImageToTexture(
     return;
   }
 
-  ffi::WGPUImageDataLayout dataLayout = {0, &dstStrideVal, &dstHeight};
-  ffi::WGPUImageCopyTexture copyView = {};
+  ffi::WGPUTexelCopyBufferLayout dataLayout = {0, &dstStrideVal, &dstHeight};
+  ffi::WGPUTexelCopyTextureInfo copyView = {};
   CommandEncoder::ConvertTextureCopyViewToFFI(aDestination, &copyView);
   ipc::ByteBuf bb;
   ffi::wgpu_queue_write_texture(copyView, dataLayout, extent, ToFFI(&bb));

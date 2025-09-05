@@ -25,7 +25,6 @@ import mozilla.components.concept.menu.Orientation
 import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.robolectric.testContext
 import mozilla.components.support.test.rule.MainCoroutineRule
-import mozilla.telemetry.glean.testing.GleanTestRule
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,6 +37,7 @@ import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.components.metrics.MetricsUtils
 import org.mozilla.fenix.ext.settings
+import org.mozilla.fenix.helpers.FenixGleanTestRule
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.search.SearchDialogFragmentStore
 import org.mozilla.fenix.search.SearchEngineSource
@@ -62,7 +62,7 @@ class SearchSelectorToolbarActionTest {
     val coroutinesTestRule = MainCoroutineRule()
 
     @get:Rule
-    val gleanTestRule = GleanTestRule(testContext)
+    val gleanTestRule = FenixGleanTestRule(testContext)
 
     @Before
     fun setup() {
@@ -124,7 +124,10 @@ class SearchSelectorToolbarActionTest {
             verify {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = testSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        testSearchEngine.name,
+                    ),
                 )
             }
         }
@@ -155,7 +158,10 @@ class SearchSelectorToolbarActionTest {
             verify(exactly = 1) {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = testSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        testSearchEngine.name,
+                    ),
                 )
             }
         }
@@ -183,7 +189,10 @@ class SearchSelectorToolbarActionTest {
             verify(exactly = 1) {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = testSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        testSearchEngine.name,
+                    ),
                 )
             }
 
@@ -200,7 +209,10 @@ class SearchSelectorToolbarActionTest {
             verify(exactly = 1) {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = testSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        testSearchEngine.name,
+                    ),
                 )
             }
 
@@ -219,13 +231,19 @@ class SearchSelectorToolbarActionTest {
             verify(exactly = 1) {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = testSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        testSearchEngine.name,
+                    ),
                 )
             }
             verify(exactly = 1) {
                 view.setIcon(
                     icon = searchEngineIcon,
-                    contentDescription = newSearchEngine.name,
+                    contentDescription = testContext.getString(
+                        R.string.search_engine_selector_content_description,
+                        newSearchEngine.name,
+                    ),
                 )
             }
         }

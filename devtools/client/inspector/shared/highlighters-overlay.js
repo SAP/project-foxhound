@@ -90,23 +90,23 @@ const HIGHLIGHTER_EVENTS = {
 };
 
 // Tool IDs mapped by highlighter type. Used to log telemetry for opening & closing tools.
-const TELEMETRY_TOOL_IDS = {
-  [TYPES.FLEXBOX]: "FLEXBOX_HIGHLIGHTER",
-  [TYPES.GRID]: "GRID_HIGHLIGHTER",
+const GLEAN_TOOL_IDS = {
+  [TYPES.FLEXBOX]: "flexbox_highlighter",
+  [TYPES.GRID]: "grid_highlighter",
 };
 
-// Scalars mapped by highlighter type. Used to log telemetry about highlighter triggers.
-const TELEMETRY_SCALARS = {
+// Glean counter names mapped by highlighter type. Used to log telemetry about highlighter triggers.
+const GLEAN_COUNTER_NAMES = {
   [TYPES.FLEXBOX]: {
-    layout: "devtools.layout.flexboxhighlighter.opened",
-    markup: "devtools.markup.flexboxhighlighter.opened",
-    rule: "devtools.rules.flexboxhighlighter.opened",
+    layout: "devtoolsLayoutFlexboxhighlighter",
+    markup: "devtoolsMarkupFlexboxhighlighter",
+    rule: "devtoolsRulesFlexboxhighlighter",
   },
 
   [TYPES.GRID]: {
-    grid: "devtools.grid.gridinspector.opened",
-    markup: "devtools.markup.gridinspector.opened",
-    rule: "devtools.rules.gridinspector.opened",
+    grid: "devtoolsGridGridinspector",
+    markup: "devtoolsMarkupGridinspector",
+    rule: "devtoolsRulesGridinspector",
   },
 };
 
@@ -275,14 +275,14 @@ class HighlightersOverlay {
       // Log telemetry for showing the flexbox and grid highlighters.
       case TYPES.FLEXBOX:
       case TYPES.GRID:
-        const toolID = TELEMETRY_TOOL_IDS[type];
+        const toolID = GLEAN_TOOL_IDS[type];
         if (toolID) {
           this.telemetry.toolOpened(toolID, this);
         }
 
-        const scalar = TELEMETRY_SCALARS[type]?.[options?.trigger];
-        if (scalar) {
-          this.telemetry.scalarAdd(scalar, 1);
+        const counterName = GLEAN_COUNTER_NAMES[type]?.[options?.trigger];
+        if (counterName) {
+          Glean[counterName].opened.add(1);
         }
 
         break;
@@ -383,7 +383,7 @@ class HighlightersOverlay {
       // Log telemetry for hiding the flexbox and grid highlighters.
       case TYPES.FLEXBOX:
       case TYPES.GRID:
-        const toolID = TELEMETRY_TOOL_IDS[type];
+        const toolID = GLEAN_TOOL_IDS[type];
         const conditions = {
           [TYPES.FLEXBOX]: () => {
             // always stop the timer when the flexbox highlighter is about to be hidden.
@@ -1023,9 +1023,8 @@ class HighlightersOverlay {
     let parentGridHighlighter = null;
     if (node.displayType === "subgrid") {
       parentGridNode = await node.walkerFront.getParentGridNode(node);
-      parentGridHighlighter = await this.showParentGridHighlighter(
-        parentGridNode
-      );
+      parentGridHighlighter =
+        await this.showParentGridHighlighter(parentGridNode);
     }
 
     // When changing highlighter colors, we call highlighter.show() again with new options
@@ -1587,7 +1586,7 @@ class HighlightersOverlay {
    */
   _isRuleViewShapeSwatch(node) {
     return (
-      this.isRuleView(node) && node.classList.contains("ruleview-shapeswatch")
+      this.isRuleView(node) && node.classList.contains("inspector-shapeswatch")
     );
   }
 

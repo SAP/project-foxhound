@@ -37,6 +37,7 @@ class DebugTargetInfo extends PureComponent {
         }).isRequired,
         descriptorType: PropTypes.oneOf(Object.values(DESCRIPTOR_TYPES))
           .isRequired,
+        descriptorName: PropTypes.string.isRequired,
       }).isRequired,
       L10N: PropTypes.object.isRequired,
       toolbox: PropTypes.object.isRequired,
@@ -234,25 +235,39 @@ class DebugTargetInfo extends PureComponent {
     );
   }
 
-  renderTargetTitle() {
-    const title = this.props.toolbox.target.name;
+  renderDescriptorName() {
+    const name = this.props.debugTargetData.descriptorName;
 
     const { image, l10nId } = this.getAssetsForDebugDescriptorType();
 
     return dom.span(
       {
-        className: "iconized-label debug-target-title",
+        className: "iconized-label debug-descriptor-title",
       },
       dom.img({ src: image, alt: this.props.L10N.getStr(l10nId) }),
-      title
-        ? dom.b({ className: "devtools-ellipsis-text qa-target-title" }, title)
+      name
+        ? dom.b(
+            { className: "devtools-ellipsis-text qa-descriptor-title" },
+            name
+          )
         : null
     );
   }
 
   renderTargetURI() {
-    const url = this.props.toolbox.target.url;
     const { descriptorType } = this.props.debugTargetData;
+    const { url } = this.props.toolbox.target;
+    const isWebExtension = descriptorType === DESCRIPTOR_TYPES.EXTENSION;
+
+    // Avoid displaying the target url for web extension as it is always
+    // the fallback document URL. Keeps rendering the url component
+    // as it use flex to align the "always on top" button on the right.
+    if (isWebExtension) {
+      return dom.span({
+        className: "debug-target-url",
+      });
+    }
+
     const isURLEditable = descriptorType === DESCRIPTOR_TYPES.TAB;
 
     return dom.span(
@@ -370,8 +385,7 @@ class DebugTargetInfo extends PureComponent {
         className: "qa-reload-button",
         icon: "chrome://global/skin/icons/reload.svg",
         l10nId: "toolbox.debugTargetInfo.reload",
-        onClick: () =>
-          this.props.toolbox.commands.targetCommand.reloadTopLevelTarget(),
+        onClick: () => this.props.toolbox.reload(),
       })
     );
 
@@ -390,7 +404,7 @@ class DebugTargetInfo extends PureComponent {
       },
       this.shallRenderConnection() ? this.renderConnection() : null,
       this.renderRuntime(),
-      this.renderTargetTitle(),
+      this.renderDescriptorName(),
       this.renderNavigation(),
       this.renderTargetURI(),
       ...this.renderAlwaysOnTopButton()

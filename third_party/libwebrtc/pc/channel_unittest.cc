@@ -13,13 +13,22 @@
 #include <stddef.h>
 
 #include <cstdint>
+#include <memory>
+#include <optional>
 #include <string>
-#include <type_traits>
+#include <utility>
+#include <vector>
 
 #include "absl/functional/any_invocable.h"
 #include "api/array_view.h"
 #include "api/audio_options.h"
+#include "api/crypto/crypto_options.h"
+#include "api/jsep.h"
+#include "api/rtp_headers.h"
 #include "api/rtp_parameters.h"
+#include "api/rtp_transceiver_direction.h"
+#include "api/scoped_refptr.h"
+#include "api/sequence_checker.h"
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "media/base/codec.h"
 #include "media/base/fake_media_engine.h"
@@ -27,23 +36,31 @@
 #include "media/base/media_channel.h"
 #include "media/base/media_constants.h"
 #include "media/base/rid_description.h"
+#include "media/base/stream_params.h"
 #include "p2p/base/candidate_pair_interface.h"
-#include "p2p/base/dtls_transport_internal.h"
-#include "p2p/base/fake_dtls_transport.h"
 #include "p2p/base/fake_packet_transport.h"
 #include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/packet_transport_internal.h"
+#include "p2p/dtls/dtls_transport_internal.h"
+#include "p2p/dtls/fake_dtls_transport.h"
 #include "pc/dtls_srtp_transport.h"
 #include "pc/jsep_transport.h"
 #include "pc/rtp_transport.h"
+#include "pc/rtp_transport_internal.h"
+#include "pc/session_description.h"
 #include "rtc_base/arraysize.h"
 #include "rtc_base/buffer.h"
 #include "rtc_base/byte_order.h"
 #include "rtc_base/checks.h"
+#include "rtc_base/network_route.h"
 #include "rtc_base/rtc_certificate.h"
+#include "rtc_base/socket.h"
 #include "rtc_base/ssl_identity.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/unique_id_generator.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 #include "test/scoped_key_value_config.h"
@@ -340,7 +357,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
       rtc::PacketTransportInternal* rtp_packet_transport,
       rtc::PacketTransportInternal* rtcp_packet_transport) {
     auto rtp_transport = std::make_unique<webrtc::RtpTransport>(
-        rtcp_packet_transport == nullptr);
+        rtcp_packet_transport == nullptr, field_trials_);
 
     SendTask(network_thread_,
              [&rtp_transport, rtp_packet_transport, rtcp_packet_transport] {
@@ -690,6 +707,37 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     EXPECT_TRUE(channel2_->SetRemoteContent(&content, SdpType::kAnswer, err));
   }
 
+  // Test that SetLocalContent and SetRemoteContent properly set RTCP
+  // reduced_size.
+  void TestSetContentsRtcpReducedSize() {
+    CreateChannels(0, 0);
+    typename T::Content content;
+    CreateContent(0, kPcmuCodec, kH264Codec, &content);
+    // Both sides agree on reduced size.
+    content.set_rtcp_reduced_size(true);
+    std::string err;
+    // The RTCP mode is a send property and should be configured based on
+    // the remote content and not the local content.
+    EXPECT_TRUE(channel1_->SetLocalContent(&content, SdpType::kOffer, err));
+    EXPECT_EQ(media_receive_channel1_impl()->RtcpMode(),
+              webrtc::RtcpMode::kCompound);
+    EXPECT_TRUE(channel1_->SetRemoteContent(&content, SdpType::kAnswer, err));
+    EXPECT_EQ(media_receive_channel1_impl()->RtcpMode(),
+              webrtc::RtcpMode::kReducedSize);
+    // Only initiator supports reduced size.
+    EXPECT_TRUE(channel2_->SetLocalContent(&content, SdpType::kOffer, err));
+    EXPECT_EQ(media_receive_channel2_impl()->RtcpMode(),
+              webrtc::RtcpMode::kCompound);
+    content.set_rtcp_reduced_size(false);
+    EXPECT_TRUE(channel2_->SetRemoteContent(&content, SdpType::kAnswer, err));
+    EXPECT_EQ(media_receive_channel2_impl()->RtcpMode(),
+              webrtc::RtcpMode::kCompound);
+    // Peer renegotiates without reduced size.
+    EXPECT_TRUE(channel1_->SetRemoteContent(&content, SdpType::kAnswer, err));
+    EXPECT_EQ(media_receive_channel1_impl()->RtcpMode(),
+              webrtc::RtcpMode::kCompound);
+  }
+
   // Test that SetLocalContent and SetRemoteContent properly
   // handles adding and removing StreamParams when the action is a full
   // SdpType::kOffer / SdpType::kAnswer.
@@ -936,7 +984,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
       rtc::NetworkRoute network_route;
       // The transport channel becomes disconnected.
       fake_rtp_dtls_transport1_->ice_transport()->SignalNetworkRouteChanged(
-          absl::optional<rtc::NetworkRoute>(network_route));
+          std::optional<rtc::NetworkRoute>(network_route));
     });
     WaitForThreads();
     EXPECT_EQ(1, media_send_channel1_impl->num_network_route_changes());
@@ -955,7 +1003,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
       // The transport channel becomes connected.
       fake_rtp_dtls_transport1_->ice_transport()->SignalNetworkRouteChanged(
 
-          absl::optional<rtc::NetworkRoute>(network_route));
+          std::optional<rtc::NetworkRoute>(network_route));
     });
     WaitForThreads();
     EXPECT_EQ(1, media_send_channel1_impl->num_network_route_changes());
@@ -1331,7 +1379,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
     return channel1_->SetRemoteContent(&content, SdpType::kOffer, NULL);
   }
 
-  webrtc::RtpParameters BitrateLimitedParameters(absl::optional<int> limit) {
+  webrtc::RtpParameters BitrateLimitedParameters(std::optional<int> limit) {
     webrtc::RtpParameters parameters;
     webrtc::RtpEncodingParameters encoding;
     encoding.max_bitrate_bps = limit;
@@ -1340,7 +1388,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
   }
 
   void VerifyMaxBitrate(const webrtc::RtpParameters& parameters,
-                        absl::optional<int> expected_bitrate) {
+                        std::optional<int> expected_bitrate) {
     EXPECT_EQ(1UL, parameters.encodings.size());
     EXPECT_EQ(expected_bitrate, parameters.encodings[0].max_bitrate_bps);
   }
@@ -1352,7 +1400,7 @@ class ChannelTest : public ::testing::Test, public sigslot::has_slots<> {
                                            SdpType::kOffer, err));
     EXPECT_EQ(media_send_channel1_impl()->max_bps(), -1);
     VerifyMaxBitrate(media_send_channel1()->GetRtpSendParameters(kSsrc1),
-                     absl::nullopt);
+                     std::nullopt);
   }
 
   // Test that when a channel gets new RtpTransport with a call to
@@ -1729,6 +1777,10 @@ TEST_F(VoiceChannelSingleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
 }
 
+TEST_F(VoiceChannelSingleThreadTest, TestSetContentsRtcpReducedSize) {
+  Base::TestSetContentsRtcpReducedSize();
+}
+
 TEST_F(VoiceChannelSingleThreadTest, TestChangeStreamParamsInContent) {
   Base::TestChangeStreamParamsInContent();
 }
@@ -1864,6 +1916,10 @@ TEST_F(VoiceChannelDoubleThreadTest, TestSetContentsRtcpMux) {
 
 TEST_F(VoiceChannelDoubleThreadTest, TestSetContentsRtcpMuxWithPrAnswer) {
   Base::TestSetContentsRtcpMux();
+}
+
+TEST_F(VoiceChannelDoubleThreadTest, TestSetContentsRtcpReducedSize) {
+  Base::TestSetContentsRtcpReducedSize();
 }
 
 TEST_F(VoiceChannelDoubleThreadTest, TestChangeStreamParamsInContent) {
@@ -2113,7 +2169,7 @@ TEST_F(VideoChannelSingleThreadTest, TestSetLocalOfferWithPacketization) {
   EXPECT_TRUE(
       media_receive_channel1_impl()->recv_codecs()[0].Matches(kVp8Codec));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   EXPECT_TRUE(
       media_receive_channel1_impl()->recv_codecs()[1].Matches(vp9_codec));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[1].packetization,
@@ -2136,7 +2192,7 @@ TEST_F(VideoChannelSingleThreadTest, TestSetRemoteOfferWithPacketization) {
   ASSERT_THAT(media_send_channel1_impl()->send_codecs(), testing::SizeIs(2));
   EXPECT_TRUE(media_send_channel1_impl()->send_codecs()[0].Matches(kVp8Codec));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   EXPECT_TRUE(media_send_channel1_impl()->send_codecs()[1].Matches(vp9_codec));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[1].packetization,
             cricket::kPacketizationParamRaw);
@@ -2160,7 +2216,7 @@ TEST_F(VideoChannelSingleThreadTest, TestSetAnswerWithPacketization) {
   EXPECT_TRUE(
       media_receive_channel1_impl()->recv_codecs()[0].Matches(kVp8Codec));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   EXPECT_TRUE(
       media_receive_channel1_impl()->recv_codecs()[1].Matches(vp9_codec));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[1].packetization,
@@ -2168,7 +2224,7 @@ TEST_F(VideoChannelSingleThreadTest, TestSetAnswerWithPacketization) {
   EXPECT_THAT(media_send_channel1_impl()->send_codecs(), testing::SizeIs(2));
   EXPECT_TRUE(media_send_channel1_impl()->send_codecs()[0].Matches(kVp8Codec));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   EXPECT_TRUE(media_send_channel1_impl()->send_codecs()[1].Matches(vp9_codec));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[1].packetization,
             cricket::kPacketizationParamRaw);
@@ -2190,10 +2246,10 @@ TEST_F(VideoChannelSingleThreadTest, TestSetLocalAnswerWithoutPacketization) {
   EXPECT_TRUE(channel1_->SetLocalContent(&local_video, SdpType::kAnswer, err));
   ASSERT_THAT(media_receive_channel1_impl()->recv_codecs(), testing::SizeIs(1));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   ASSERT_THAT(media_send_channel1_impl()->send_codecs(), testing::SizeIs(1));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
 }
 
 TEST_F(VideoChannelSingleThreadTest, TestSetRemoteAnswerWithoutPacketization) {
@@ -2213,10 +2269,10 @@ TEST_F(VideoChannelSingleThreadTest, TestSetRemoteAnswerWithoutPacketization) {
       channel1_->SetRemoteContent(&remote_video, SdpType::kAnswer, err));
   ASSERT_THAT(media_receive_channel1_impl()->recv_codecs(), testing::SizeIs(1));
   EXPECT_EQ(media_receive_channel1_impl()->recv_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
   ASSERT_THAT(media_send_channel1_impl()->send_codecs(), testing::SizeIs(1));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
 }
 
 TEST_F(VideoChannelSingleThreadTest,
@@ -2264,7 +2320,7 @@ TEST_F(VideoChannelSingleThreadTest,
   EXPECT_THAT(media_receive_channel1_impl()->recv_codecs(), testing::IsEmpty());
   ASSERT_THAT(media_send_channel1_impl()->send_codecs(), testing::SizeIs(1));
   EXPECT_EQ(media_send_channel1_impl()->send_codecs()[0].packetization,
-            absl::nullopt);
+            std::nullopt);
 }
 
 TEST_F(VideoChannelSingleThreadTest,
@@ -2294,13 +2350,13 @@ TEST_F(VideoChannelSingleThreadTest,
                   AllOf(Field(&cricket::Codec::id, 97),
                         Field(&cricket::Codec::packetization, "bar")),
                   AllOf(Field(&cricket::Codec::id, 99),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
   EXPECT_THAT(
       media_send_channel1_impl()->send_codecs(),
       ElementsAre(AllOf(Field(&cricket::Codec::id, 96),
                         Field(&cricket::Codec::packetization, "foo")),
                   AllOf(Field(&cricket::Codec::id, 98),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
 }
 
 TEST_F(VideoChannelSingleThreadTest,
@@ -2328,7 +2384,7 @@ TEST_F(VideoChannelSingleThreadTest,
       ElementsAre(AllOf(Field(&cricket::Codec::id, 96),
                         Field(&cricket::Codec::packetization, "foo")),
                   AllOf(Field(&cricket::Codec::id, 98),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
   EXPECT_THAT(
       media_send_channel1_impl()->send_codecs(),
       ElementsAre(AllOf(Field(&cricket::Codec::id, 96),
@@ -2336,7 +2392,7 @@ TEST_F(VideoChannelSingleThreadTest,
                   AllOf(Field(&cricket::Codec::id, 97),
                         Field(&cricket::Codec::packetization, "bar")),
                   AllOf(Field(&cricket::Codec::id, 99),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
 }
 
 TEST_F(VideoChannelSingleThreadTest,
@@ -2358,7 +2414,7 @@ TEST_F(VideoChannelSingleThreadTest,
   EXPECT_THAT(
       media_receive_channel1_impl()->recv_codecs(),
       ElementsAre(AllOf(Field(&cricket::Codec::id, 96),
-                        Field(&cricket::Codec::packetization, absl::nullopt)),
+                        Field(&cricket::Codec::packetization, std::nullopt)),
                   AllOf(Field(&cricket::Codec::id, 97),
                         Field(&cricket::Codec::packetization,
                               cricket::kPacketizationParamRaw))));
@@ -2368,7 +2424,7 @@ TEST_F(VideoChannelSingleThreadTest,
                         Field(&cricket::Codec::packetization,
                               cricket::kPacketizationParamRaw)),
                   AllOf(Field(&cricket::Codec::id, 96),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
 }
 
 TEST_F(VideoChannelSingleThreadTest,
@@ -2393,11 +2449,11 @@ TEST_F(VideoChannelSingleThreadTest,
                         Field(&cricket::Codec::packetization,
                               cricket::kPacketizationParamRaw)),
                   AllOf(Field(&cricket::Codec::id, 96),
-                        Field(&cricket::Codec::packetization, absl::nullopt))));
+                        Field(&cricket::Codec::packetization, std::nullopt))));
   EXPECT_THAT(
       media_send_channel1_impl()->send_codecs(),
       ElementsAre(AllOf(Field(&cricket::Codec::id, 96),
-                        Field(&cricket::Codec::packetization, absl::nullopt)),
+                        Field(&cricket::Codec::packetization, std::nullopt)),
                   AllOf(Field(&cricket::Codec::id, 97),
                         Field(&cricket::Codec::packetization,
                               cricket::kPacketizationParamRaw))));

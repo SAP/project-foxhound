@@ -307,24 +307,12 @@ int32_t HyperTextAccessibleBase::OffsetAtPoint(int32_t aX, int32_t aY,
   }
 
   TextLeafPoint startPoint = ToTextLeafPoint(0, false);
-  // As with TextBounds, we walk to the very end of the text contained in this
-  // hypertext and then step backwards to make our endPoint inclusive.
+  // Walk to the very end of the text contained in this hypertext in order to
+  // hit test it in its entirety.
   TextLeafPoint endPoint =
       ToTextLeafPoint(static_cast<int32_t>(CharacterCount()), true);
-  endPoint =
-      endPoint.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirPrevious);
-  TextLeafPoint point = startPoint;
-  // XXX: We should create a TextLeafRange object for this hypertext and move
-  // this search inside the TextLeafRange class.
-  // If there are no characters in this container, we might have moved endPoint
-  // before startPoint. In that case, we shouldn't try to move further forward,
-  // as that might result in an infinite loop.
-  if (startPoint <= endPoint) {
-    for (; !point.ContainsPoint(coords.x, coords.y) && point != endPoint;
-         point =
-             point.FindBoundary(nsIAccessibleText::BOUNDARY_CHAR, eDirNext)) {
-    }
-  }
+  TextLeafRange range{startPoint, endPoint};
+  TextLeafPoint point = range.TextLeafPointAtScreenPoint(coords.x, coords.y);
   if (!point.ContainsPoint(coords.x, coords.y)) {
     LayoutDeviceIntRect startRect = startPoint.CharBounds();
     if (coords.x < startRect.x || coords.y < startRect.y) {
@@ -764,16 +752,49 @@ already_AddRefed<AccAttributes> HyperTextAccessibleBase::TextAttributes(
 void HyperTextAccessibleBase::CroppedSelectionRanges(
     nsTArray<TextRange>& aRanges) const {
   SelectionRanges(&aRanges);
-  const Accessible* acc = Acc();
-  aRanges.RemoveElementsBy([acc](auto& range) {
+  Accessible* acc = const_cast<Accessible*>(Acc());
+
+  size_t startIndex = 0;
+  size_t endIndex = aRanges.Length();
+  // If this is the document, it contains all ranges, so there's no need to
+  // search for overlapping ranges.
+  if (!acc->IsDoc()) {
+    // Find overlapping ranges. We use binary searches here, which is far more
+    // efficient than cropping every range in the list.
+    // Find the first range that ends after acc starts.
+    TextPoint thisPoint = TextPoint(acc, 0);
+    startIndex =
+        UpperBound(aRanges, 0, aRanges.Length(), [&](const TextRange& range) {
+          return thisPoint.Compare(range.EndPoint());
+        });
+    // Find the first range that starts after acc ends. This will be the first
+    // non-overlapping range after startIndex; i.e. the exclusive end of our
+    // desired span.
+    thisPoint = TextPoint(acc, CharacterCount());
+    endIndex = UpperBound(aRanges, startIndex, aRanges.Length(),
+                          [&](const TextRange& range) {
+                            return thisPoint.Compare(range.StartPoint());
+                          });
+  }
+
+  // Exclude ranges that don't overlap acc.
+  size_t nextIndex = 0;
+  aRanges.RemoveElementsBy([&](TextRange& range) {
+    // Set index to the index of range. Increment nextIndex ready for the next
+    // iteration.
+    size_t index = nextIndex++;
     if (range.StartPoint() == range.EndPoint()) {
       return true;  // Collapsed, so remove this range.
     }
-    // If this is the document, it contains all ranges, so there's no need to
-    // crop.
-    if (!acc->IsDoc()) {
-      // If we fail to crop, the range is outside acc, so remove it.
-      return !range.Crop(const_cast<Accessible*>(acc));
+    // Remove (return true for) ranges that aren't between startIndex
+    // (inclusive) and endIndex (exclusive).
+    if (index < startIndex || index >= endIndex) {
+      return true;
+    }
+    // The first and last ranges might extend beyond acc, so crop them.
+    if (index == startIndex || index == endIndex - 1) {
+      DebugOnly<bool> cropped = range.Crop(const_cast<Accessible*>(acc));
+      MOZ_ASSERT(cropped, "range should overlap and thus crop successfully");
     }
     return false;
   });

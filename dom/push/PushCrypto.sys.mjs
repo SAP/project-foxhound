@@ -23,9 +23,8 @@ const DEFAULT_KEYID = "";
 
 // `Encryption` header missing or malformed.
 const BAD_ENCRYPTION_HEADER = "PushMessageBadEncryptionHeader";
-// `Crypto-Key` or legacy `Encryption-Key` header missing.
+// `Crypto-Key` header missing.
 const BAD_CRYPTO_KEY_HEADER = "PushMessageBadCryptoKeyHeader";
-const BAD_ENCRYPTION_KEY_HEADER = "PushMessageBadEncryptionKeyHeader";
 // `Content-Encoding` header missing or contains unsupported encoding.
 const BAD_ENCODING_HEADER = "PushMessageBadEncodingHeader";
 // `dh` parameter of `Crypto-Key` header missing or not base64url-encoded.
@@ -106,6 +105,8 @@ function getEncryptionParams(encryptField) {
 // aes128gcm scheme.
 function getCryptoParamsFromPayload(payload) {
   if (payload.byteLength < 21) {
+    // The value 21 is from https://datatracker.ietf.org/doc/html/rfc8188#section-2.1
+    // | salt (16) | rs (4) | idlen (1) | keyid (idlen) |
     throw new CryptoError("Truncated header", BAD_CRYPTO);
   }
   let rs =
@@ -113,8 +114,16 @@ function getCryptoParamsFromPayload(payload) {
     (payload[17] << 16) |
     (payload[18] << 8) |
     payload[19];
+  if (rs < 18) {
+    // https://datatracker.ietf.org/doc/html/rfc8188#section-2.1
+    throw new CryptoError(
+      "Record sizes smaller than 18 are invalid",
+      BAD_RS_PARAM
+    );
+  }
   let keyIdLen = payload[20];
   if (keyIdLen != 65) {
+    // https://datatracker.ietf.org/doc/html/rfc8291/#section-4
     throw new CryptoError("Invalid sender public key", BAD_DH_PARAM);
   }
   if (payload.byteLength <= 21 + keyIdLen) {
@@ -128,33 +137,23 @@ function getCryptoParamsFromPayload(payload) {
   };
 }
 
-// Extracts the sender public key, salt, and record size from the `Crypto-Key`,
-// `Encryption-Key`, and `Encryption` headers for the aesgcm and aesgcm128
-// schemes.
+// Extracts the sender public key, salt, and record size from the `Crypto-Key`
+// and `Encryption` headers for the aesgcm scheme.
 export function getCryptoParamsFromHeaders(headers) {
   if (!headers) {
     return null;
   }
 
-  var keymap;
-  if (headers.encoding == AESGCM_ENCODING) {
-    // aesgcm uses the Crypto-Key header, 2 bytes for the pad length, and an
-    // authentication secret.
-    // https://tools.ietf.org/html/draft-ietf-httpbis-encryption-encoding-01
-    keymap = getEncryptionKeyParams(headers.crypto_key);
-    if (!keymap) {
-      throw new CryptoError("Missing Crypto-Key header", BAD_CRYPTO_KEY_HEADER);
-    }
-  } else if (headers.encoding == AESGCM128_ENCODING) {
-    // aesgcm128 uses Encryption-Key, 1 byte for the pad length, and no secret.
-    // https://tools.ietf.org/html/draft-thomson-http-encryption-02
-    keymap = getEncryptionKeyParams(headers.encryption_key);
-    if (!keymap) {
-      throw new CryptoError(
-        "Missing Encryption-Key header",
-        BAD_ENCRYPTION_KEY_HEADER
-      );
-    }
+  if (headers.encoding !== AESGCM_ENCODING) {
+    throw new CryptoError("Unexpected encoding", BAD_CRYPTO);
+  }
+
+  // aesgcm uses the Crypto-Key header, 2 bytes for the pad length, and an
+  // authentication secret.
+  // https://tools.ietf.org/html/draft-ietf-httpbis-encryption-encoding-01
+  let keymap = getEncryptionKeyParams(headers.crypto_key);
+  if (!keymap) {
+    throw new CryptoError("Missing Crypto-Key header", BAD_CRYPTO_KEY_HEADER);
   }
 
   var enc = getEncryptionParams(headers.encryption);
@@ -169,8 +168,12 @@ export function getCryptoParamsFromHeaders(headers) {
     throw new CryptoError("Invalid salt parameter", BAD_SALT_PARAM);
   }
   var rs = enc.rs ? parseInt(enc.rs, 10) : 4096;
-  if (isNaN(rs)) {
-    throw new CryptoError("rs parameter must be a number", BAD_RS_PARAM);
+  if (isNaN(rs) || rs < 1 || rs > 68719476705) {
+    // https://datatracker.ietf.org/doc/html/draft-ietf-httpbis-encryption-encoding-03#section-3.1
+    throw new CryptoError(
+      "rs parameter must be a number greater than 1 and smaller than 2^36-31",
+      BAD_RS_PARAM
+    );
   }
   return {
     salt,
@@ -357,9 +360,7 @@ class Decoder {
    */
   async computeSharedSecret() {
     let [appServerKey, subscriptionPrivateKey] = await Promise.all([
-      crypto.subtle.importKey("raw", this.senderKey, ECDH_KEY, false, [
-        "deriveBits",
-      ]),
+      crypto.subtle.importKey("raw", this.senderKey, ECDH_KEY, false, []),
       crypto.subtle.importKey("jwk", this.privateKey, ECDH_KEY, false, [
         "deriveBits",
       ]),
@@ -420,8 +421,7 @@ class Decoder {
 
 class OldSchemeDecoder extends Decoder {
   async decode() {
-    // For aesgcm and aesgcm128, the ciphertext length can't fall on a record
-    // boundary.
+    // For aesgcm, the ciphertext length can't fall on a record boundary.
     if (
       this.ciphertext.byteLength > 0 &&
       this.ciphertext.byteLength % this.chunkSize === 0
@@ -433,7 +433,6 @@ class OldSchemeDecoder extends Decoder {
 
   /**
    * For aesgcm, the padding length is a 16-bit unsigned big endian integer.
-   * For aesgcm128, the padding is an 8-bit integer.
    */
   unpadChunk(decoded) {
     if (decoded.length < this.padSize) {
@@ -456,7 +455,7 @@ class OldSchemeDecoder extends Decoder {
   }
 
   /**
-   * aesgcm and aesgcm128 don't account for the authentication tag as part of
+   * aesgcm doesn't account for the authentication tag as part of
    * the record size.
    */
   get chunkSize() {
@@ -566,34 +565,6 @@ class aesgcmDecoder extends OldSchemeDecoder {
   }
 }
 
-/** Oldest encryption scheme (draft-thomson-http-encryption-02). */
-
-const AESGCM128_ENCODING = "aesgcm128";
-const AESGCM128_KEY_INFO = UTF8.encode("Content-Encoding: aesgcm128");
-
-class aesgcm128Decoder extends OldSchemeDecoder {
-  constructor(privateKey, publicKey, cryptoParams, ciphertext) {
-    super(privateKey, publicKey, null, cryptoParams, ciphertext);
-  }
-
-  /**
-   * The aesgcm128 scheme ignores the authentication secret, and uses
-   * "Content-Encoding: <blah>" for the context string. It should eventually
-   * be removed: bug 1230038.
-   */
-  deriveKeyAndNonce(ikm) {
-    let prkKdf = new hkdf(this.salt, ikm);
-    return Promise.all([
-      prkKdf.extract(AESGCM128_KEY_INFO, 16),
-      prkKdf.extract(NONCE_INFO, 12),
-    ]);
-  }
-
-  get padSize() {
-    return 1;
-  }
-}
-
 export var PushCrypto = {
   concatArray,
 
@@ -650,6 +621,7 @@ export var PushCrypto = {
       // aes128gcm includes the salt, record size, and sender public key in a
       // binary header preceding the ciphertext.
       let cryptoParams = getCryptoParamsFromPayload(new Uint8Array(payload));
+      Glean.webPush.contentEncoding.aes128gcm.add();
       decoder = new aes128gcmDecoder(
         privateKey,
         publicKey,
@@ -657,26 +629,18 @@ export var PushCrypto = {
         cryptoParams,
         cryptoParams.ciphertext
       );
-    } else if (encoding == AESGCM128_ENCODING || encoding == AESGCM_ENCODING) {
-      // aesgcm and aesgcm128 include the salt, record size, and sender public
+    } else if (encoding == AESGCM_ENCODING) {
+      // aesgcm includes the salt, record size, and sender public
       // key in the `Crypto-Key` and `Encryption` HTTP headers.
       let cryptoParams = getCryptoParamsFromHeaders(headers);
-      if (headers.encoding == AESGCM_ENCODING) {
-        decoder = new aesgcmDecoder(
-          privateKey,
-          publicKey,
-          authenticationSecret,
-          cryptoParams,
-          payload
-        );
-      } else {
-        decoder = new aesgcm128Decoder(
-          privateKey,
-          publicKey,
-          cryptoParams,
-          payload
-        );
-      }
+      Glean.webPush.contentEncoding.aesgcm.add();
+      decoder = new aesgcmDecoder(
+        privateKey,
+        publicKey,
+        authenticationSecret,
+        cryptoParams,
+        payload
+      );
     }
 
     if (!decoder) {
@@ -789,6 +753,7 @@ class aes128gcmEncoder {
   // Perform the actual encryption of the payload.
   async encrypt(key, nonce) {
     if (this.rs < 18) {
+      // https://datatracker.ietf.org/doc/html/rfc8188#section-2.1
       throw new CryptoError("recordsize is too small", BAD_RS_PARAM);
     }
 
@@ -853,7 +818,7 @@ class aes128gcmEncoder {
       receiverPublicKey,
       ECDH_KEY,
       false,
-      ["deriveBits"]
+      []
     );
 
     return crypto.subtle.deriveBits(
@@ -867,6 +832,7 @@ class aes128gcmEncoder {
   createHeader(key) {
     // layout is "salt|32-bit-int|8-bit-int|key"
     if (key.byteLength != 65) {
+      // https://datatracker.ietf.org/doc/html/rfc8291/#section-4
       throw new CryptoError("Invalid key length for header", BAD_DH_PARAM);
     }
     // the 2 ints

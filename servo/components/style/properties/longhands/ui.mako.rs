@@ -87,18 +87,6 @@ ${helpers.predefined_type(
 )}
 
 ${helpers.predefined_type(
-    "-moz-window-transform-origin",
-    "TransformOrigin",
-    "computed::TransformOrigin::initial_value()",
-    engines="gecko",
-    gecko_ffi_name="mWindowTransformOrigin",
-    boxed=True,
-    spec="None (Nonstandard internal property)",
-    enabled_in="chrome",
-    affects="overflow",
-)}
-
-${helpers.predefined_type(
     "-moz-window-input-region-margin",
     "Length",
     "computed::Length::zero()",
@@ -195,12 +183,13 @@ ${helpers.predefined_type(
     "transition-behavior",
     "TransitionBehavior",
     "computed::TransitionBehavior::normal()",
-    engines="gecko",
+    engines="gecko servo",
     initial_specified_value="specified::TransitionBehavior::normal()",
     vector=True,
     need_index=True,
     animation_type="none",
     gecko_pref="layout.css.transition-behavior.enabled",
+    servo_pref="layout.css.transition-behavior.enabled",
     spec="https://drafts.csswg.org/css-transitions-2/#transition-behavior-property",
     affects="",
 )}
@@ -224,16 +213,15 @@ ${helpers.predefined_type(
 
 ${helpers.predefined_type(
     "animation-duration",
-    "Time",
-    "computed::Time::zero()",
+    "AnimationDuration",
+    "computed::AnimationDuration::auto()",
     engines="gecko servo",
-    initial_specified_value="specified::Time::zero()",
-    parse_method="parse_non_negative",
+    initial_specified_value="specified::AnimationDuration::auto()",
     vector=True,
     need_index=True,
     animation_type="none",
     extra_prefixes=animation_extra_prefixes,
-    spec="https://drafts.csswg.org/css-transitions/#propdef-transition-duration",
+    spec="https://drafts.csswg.org/css-animations-2/#animation-duration",
     affects="",
 )}
 
@@ -438,4 +426,16 @@ ${helpers.single_keyword(
     gecko_pref="layout.css.field-sizing.enabled",
     spec="https://drafts.csswg.org/css-ui/#field-sizing",
     affects="layout",
+)}
+
+${helpers.predefined_type(
+    "view-transition-name",
+    "ViewTransitionName",
+    "computed::ViewTransitionName::none()",
+    engines="gecko",
+    animation_type="discrete",
+    gecko_pref="dom.viewTransitions.enabled",
+    spec="https://drafts.csswg.org/css-view-transitions-1/#view-transition-name-prop",
+    affects="",
+    enabled_in="ua",
 )}

@@ -17,12 +17,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 
 private val cardShape = RoundedCornerShape(8.dp)
 internal val defaultTabStripCardElevation = 0.dp
-internal val selectedTabStripCardElevation = 1.dp
+internal val selectedTabStripCardElevation = 4.dp
 
 /**
  * Card composable used in Tab Strip items.

@@ -19,6 +19,7 @@ const char* FFmpegRuntimeLinker::sLinkStatusLibraryName = "";
 template <int V>
 class FFmpegDecoderModule {
  public:
+  static void Init(FFmpegLibWrapper*);
   static already_AddRefed<PlatformDecoderModule> Create(FFmpegLibWrapper*);
 };
 
@@ -68,15 +69,11 @@ bool FFmpegRuntimeLinker::Init() {
     return sLinkStatus == LinkStatus_SUCCEEDED;
   }
 
-#ifdef MOZ_WIDGET_GTK
-  sLibAV.LinkVAAPILibs();
-#endif
-
   // While going through all possible libs, this status will be updated with a
   // more precise error if possible.
   sLinkStatus = LinkStatus_NOT_FOUND;
 
-  for (size_t i = 0; i < ArrayLength(sLibs); i++) {
+  for (size_t i = 0; i < std::size(sLibs); i++) {
     const char* lib = sLibs[i];
     PRLibSpec lspec;
     lspec.type = PR_LibSpec_Pathname;
@@ -90,6 +87,33 @@ bool FFmpegRuntimeLinker::Init() {
         case FFmpegLibWrapper::LinkResult::Success:
           sLinkStatus = LinkStatus_SUCCEEDED;
           sLinkStatusLibraryName = lib;
+          switch (sLibAV.mVersion) {
+            case 53:
+              FFmpegDecoderModule<53>::Init(&sLibAV);
+              break;
+            case 54:
+              FFmpegDecoderModule<54>::Init(&sLibAV);
+              break;
+            case 55:
+            case 56:
+              FFmpegDecoderModule<55>::Init(&sLibAV);
+              break;
+            case 57:
+              FFmpegDecoderModule<57>::Init(&sLibAV);
+              break;
+            case 58:
+              FFmpegDecoderModule<58>::Init(&sLibAV);
+              break;
+            case 59:
+              FFmpegDecoderModule<59>::Init(&sLibAV);
+              break;
+            case 60:
+              FFmpegDecoderModule<60>::Init(&sLibAV);
+              break;
+            case 61:
+              FFmpegDecoderModule<61>::Init(&sLibAV);
+              break;
+          }
           return true;
         case FFmpegLibWrapper::LinkResult::NoProvidedLib:
           MOZ_ASSERT_UNREACHABLE("Incorrectly-setup sLibAV");
@@ -139,7 +163,7 @@ bool FFmpegRuntimeLinker::Init() {
   }
 
   FFMPEGV_LOG("H264/AAC codecs unsupported without [");
-  for (size_t i = 0; i < ArrayLength(sLibs); i++) {
+  for (size_t i = 0; i < std::size(sLibs); i++) {
     FFMPEGV_LOG("%s %s", i ? "," : " ", sLibs[i]);
   }
   FFMPEGV_LOG(" ]\n");

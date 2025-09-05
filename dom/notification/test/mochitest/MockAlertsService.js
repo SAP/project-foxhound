@@ -19,10 +19,6 @@ function mockServicesChromeScript() {
   let activeNotifications = Object.create(null);
 
   const mockAlertsService = {
-    showPersistentNotification(persistentData, alert, alertListener) {
-      this.showAlert(alert, alertListener);
-    },
-
     showAlert(alert, listener) {
       activeNotifications[alert.name] = {
         listener,
@@ -140,6 +136,10 @@ function mockServicesChromeScript() {
     mockAlertsService.autoClick = true;
   });
 
+  addMessageListener("mock-alert-service:get-notification-ids", () =>
+    Object.keys(activeNotifications)
+  );
+
   sendAsyncMessage("mock-alert-service:registered");
 }
 
@@ -196,5 +196,10 @@ const MockAlertsService = {
   },
   async enableAutoClick() {
     await this._chromeScript.sendQuery("mock-alert-service:enable-autoclick");
+  },
+  async getNotificationIds() {
+    return await this._chromeScript.sendQuery(
+      "mock-alert-service:get-notification-ids"
+    );
   },
 };

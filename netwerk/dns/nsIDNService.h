@@ -12,6 +12,7 @@
 #include "mozilla/intl/UnicodeScriptCodes.h"
 #include "mozilla/net/IDNBlocklistUtils.h"
 #include "mozilla/Span.h"
+#include "nsTHashSet.h"
 
 class nsIPrefBranch;
 
@@ -36,18 +37,16 @@ class nsIDNService final : public nsIIDNService {
   virtual ~nsIDNService();
 
  private:
-  void prefsChanged(const char* pref);
-
-  static void PrefChanged(const char* aPref, void* aSelf) {
-    auto* self = static_cast<nsIDNService*>(aSelf);
-    self->prefsChanged(aPref);
-  }
+  void InitCJKSlashConfusables();
+  void InitCJKIdeographs();
+  void InitDigitConfusables();
+  void InitCyrillicLatinConfusables();
+  void InitThaiLatinConfusables();
 
  public:
   /**
    * Determine whether a label is considered safe to display to the user
-   * according to the algorithm defined in UTR 39 and the profile
-   * selected in mRestrictionProfile.
+   * according to the algorithm defined in UTR 39.
    *
    * For the ASCII-only profile, returns false for all labels containing
    * non-ASCII characters.
@@ -72,48 +71,33 @@ class nsIDNService final : public nsIIDNService {
    *   XXX this test was disabled by bug 857481
    */
   bool IsLabelSafe(mozilla::Span<const char32_t> aLabel,
-                   mozilla::Span<const char32_t> aTLD) MOZ_EXCLUDES(mLock);
+                   mozilla::Span<const char32_t> aTLD);
 
  private:
   /**
-   * Restriction-level Detection profiles defined in UTR 39
-   * http://www.unicode.org/reports/tr39/#Restriction_Level_Detection,
-   * and selected by the pref network.IDN.restriction_profile
-   */
-  enum restrictionProfile {
-    eASCIIOnlyProfile,
-    eHighlyRestrictiveProfile,
-    eModeratelyRestrictiveProfile
-  };
-
-  /**
    * Determine whether a combination of scripts in a single label is
-   * permitted according to the algorithm defined in UTR 39 and the
-   * profile selected in mRestrictionProfile.
+   * permitted according to the algorithm defined in UTR 39.
    *
-   * For the "Highly restrictive" profile, all characters in each
-   * identifier must be from a single script, or from the combinations:
+   * All characters in each identifier must be from a single script,
+   * or from the combinations:
    *  Latin + Han + Hiragana + Katakana;
    *  Latin + Han + Bopomofo; or
    *  Latin + Han + Hangul
-   *
-   * For the "Moderately restrictive" profile, Latin is also allowed
-   *  with other scripts except Cyrillic and Greek
    */
-  bool illegalScriptCombo(restrictionProfile profile,
-                          mozilla::intl::Script script,
+  bool illegalScriptCombo(mozilla::intl::Script script,
                           mozilla::net::ScriptCombo& savedScript);
 
-  // We use this rwlock to guard access to:
-  // |mIDNBlocklist|, |mRestrictionProfile|
-  mozilla::RWLock mLock{"nsIDNService"};
+  bool isCJKSlashConfusable(char32_t aChar);
+  bool isCJKIdeograph(char32_t aChar);
 
-  // guarded by mLock
-  nsTArray<mozilla::net::BlocklistRange> mIDNBlocklist MOZ_GUARDED_BY(mLock);
+  nsTArray<mozilla::net::BlocklistRange> mIDNBlocklist;
 
-  // guarded by mLock;
-  restrictionProfile mRestrictionProfile MOZ_GUARDED_BY(mLock){
-      eASCIIOnlyProfile};
+  // Confusables that we would like to check for IDN spoofing detection.
+  nsTHashSet<char32_t> mCJKSlashConfusables;
+  nsTHashSet<char32_t> mCJKIdeographs;
+  nsTHashSet<char32_t> mDigitConfusables;
+  nsTHashSet<char32_t> mCyrillicLatinConfusables;
+  nsTHashSet<char32_t> mThaiLatinConfusables;
 };
 
 extern "C" MOZ_EXPORT bool mozilla_net_is_label_safe(const char32_t* aLabel,

@@ -265,6 +265,13 @@ void nsINode::AssertInvariantsOnNodeInfoChange() {
 }
 #endif
 
+#ifdef DEBUG
+void nsINode::AssertIsRootElementSlow(bool aIsRoot) const {
+  const bool isRootSlow = this == OwnerDoc()->GetRootElement();
+  MOZ_ASSERT(aIsRoot == isRootSlow);
+}
+#endif
+
 void* nsINode::GetProperty(const nsAtom* aPropertyName,
                            nsresult* aStatus) const {
   if (!HasProperties()) {  // a fast HasFlag() test
@@ -338,14 +345,16 @@ class IsItemInRangeComparator {
   }
 
   int operator()(const AbstractRange* const aRange) const {
-    int32_t cmp = nsContentUtils::ComparePoints_Deprecated(
-        &mNode, mEndOffset, aRange->GetMayCrossShadowBoundaryStartContainer(),
-        aRange->MayCrossShadowBoundaryStartOffset(), nullptr, mCache);
-    if (cmp == 1) {
-      cmp = nsContentUtils::ComparePoints_Deprecated(
-          &mNode, mStartOffset, aRange->GetMayCrossShadowBoundaryEndContainer(),
-          aRange->MayCrossShadowBoundaryEndOffset(), nullptr, mCache);
-      if (cmp == -1) {
+    Maybe<int32_t> cmp = nsContentUtils::ComparePoints(
+        ConstRawRangeBoundary(&mNode, mEndOffset,
+                              RangeBoundaryIsMutationObserved::No),
+        aRange->MayCrossShadowBoundaryStartRef(), mCache);
+    if (cmp.valueOr(1) == 1) {
+      cmp = nsContentUtils::ComparePoints(
+          ConstRawRangeBoundary(&mNode, mStartOffset,
+                                RangeBoundaryIsMutationObserved::No),
+          aRange->MayCrossShadowBoundaryEndRef(), mCache);
+      if (cmp.valueOr(1) == -1) {
         return 0;
       }
       return 1;
@@ -360,17 +369,16 @@ class IsItemInRangeComparator {
   nsContentUtils::NodeIndexCache* mCache;
 };
 
-bool nsINode::IsSelected(const uint32_t aStartOffset,
-                         const uint32_t aEndOffset) const {
+bool nsINode::IsSelected(const uint32_t aStartOffset, const uint32_t aEndOffset,
+                         SelectionNodeCache* aCache) const {
   MOZ_ASSERT(aStartOffset <= aEndOffset);
-
   const nsINode* n = GetClosestCommonInclusiveAncestorForRangeInSelection(this);
   NS_ASSERTION(n || !IsMaybeSelected(),
                "A node without a common inclusive ancestor for a range in "
                "Selection is for sure not selected.");
 
   // Collect the selection objects for potential ranges.
-  nsTHashSet<Selection*> ancestorSelections;
+  AutoTArray<Selection*, 1> ancestorSelections;
   for (; n; n = GetClosestCommonInclusiveAncestorForRangeInSelection(
                 n->GetParentNode())) {
     const LinkedList<AbstractRange>* ranges =
@@ -384,12 +392,16 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
       // Looks like that IsInSelection() assert fails sometimes...
       if (range->IsInAnySelection()) {
         for (const WeakPtr<Selection>& selection : range->GetSelections()) {
-          if (selection) {
-            ancestorSelections.Insert(selection);
+          if (selection && !ancestorSelections.Contains(selection)) {
+            ancestorSelections.AppendElement(selection);
           }
         }
       }
     }
+  }
+  if (aCache && aCache->MaybeCollectNodesAndCheckIfFullySelectedInAnyOf(
+                    this, ancestorSelections)) {
+    return true;
   }
 
   nsContentUtils::NodeIndexCache cache;
@@ -427,16 +439,21 @@ bool nsINode::IsSelected(const uint32_t aStartOffset,
         // if node end > start of middle+1, result = 1
         if (middle + 1 < high &&
             (middlePlus1 = selection->GetAbstractRangeAt(middle + 1)) &&
-            nsContentUtils::ComparePoints_Deprecated(
-                this, aEndOffset, middlePlus1->GetStartContainer(),
-                middlePlus1->StartOffset(), nullptr, &cache) > 0) {
+            nsContentUtils::ComparePoints(
+                ConstRawRangeBoundary(this, aEndOffset,
+                                      RangeBoundaryIsMutationObserved::No),
+                middlePlus1->StartRef(), &cache)
+                    .valueOr(1) > 0) {
           result = 1;
           // if node start < end of middle - 1, result = -1
         } else if (middle >= 1 &&
                    (middleMinus1 = selection->GetAbstractRangeAt(middle - 1)) &&
-                   nsContentUtils::ComparePoints_Deprecated(
-                       this, aStartOffset, middleMinus1->GetEndContainer(),
-                       middleMinus1->EndOffset(), nullptr, &cache) < 0) {
+                   nsContentUtils::ComparePoints(
+                       ConstRawRangeBoundary(
+                           this, aStartOffset,
+                           RangeBoundaryIsMutationObserved::No),
+                       middleMinus1->EndRef(), &cache)
+                           .valueOr(1) < 0) {
           result = -1;
         } else {
           break;
@@ -592,44 +609,71 @@ nsIContent* nsINode::GetSelectionRootContent(PresShell* aPresShell,
                                              bool aAllowCrossShadowBoundary) {
   NS_ENSURE_TRUE(aPresShell, nullptr);
 
-  if (IsDocument()) return AsDocument()->GetRootElement();
-  if (!IsContent()) return nullptr;
+  const bool isContent = IsContent();
 
-  if (GetComposedDoc() != aPresShell->GetDocument()) {
+  if (!isContent && !IsDocument()) {
     return nullptr;
   }
 
-  if (AsContent()->HasIndependentSelection() || IsInNativeAnonymousSubtree()) {
-    // This node should be an inclusive descendant of input/textarea editor.
-    // In that case, the anonymous <div> for TextEditor should be always the
-    // selection root.
-    // FIXME: If Selection for the document is collapsed in <input> or
-    // <textarea>, returning anonymous <div> may make the callers confused.
-    // Perhaps, we should do this only when this is in the native anonymous
-    // subtree unless the callers explicitly want to retrieve the anonymous
-    // <div> from a text control element.
-    if (Element* anonymousDivElement = GetAnonymousRootElementOfTextEditor()) {
-      return anonymousDivElement;
+  if (isContent) {
+    if (GetComposedDoc() != aPresShell->GetDocument()) {
+      return nullptr;
+    }
+
+    if (AsContent()->HasIndependentSelection() ||
+        IsInNativeAnonymousSubtree()) {
+      // This node should be an inclusive descendant of input/textarea editor.
+      // In that case, the anonymous <div> for TextEditor should be always the
+      // selection root.
+      // FIXME: If Selection for the document is collapsed in <input> or
+      // <textarea>, returning anonymous <div> may make the callers confused.
+      // Perhaps, we should do this only when this is in the native anonymous
+      // subtree unless the callers explicitly want to retrieve the anonymous
+      // <div> from a text control element.
+      if (Element* anonymousDivElement =
+              GetAnonymousRootElementOfTextEditor()) {
+        return anonymousDivElement;
+      }
     }
   }
 
-  nsPresContext* presContext = aPresShell->GetPresContext();
-  if (presContext) {
-    HTMLEditor* htmlEditor = nsContentUtils::GetHTMLEditor(presContext);
-    if (htmlEditor) {
-      // This node is in HTML editor.
+  if (nsPresContext* presContext = aPresShell->GetPresContext()) {
+    if (nsContentUtils::GetHTMLEditor(presContext)) {
+      // When there is an HTMLEditor, selection root should be one of focused
+      // editing host, <body> or root of the (sub)tree which this node belong.
+
+      // If this node is in design mode or this node is not editable, selection
+      // root should be the <body> if this node is not in any subtrees and there
+      // is a <body> or the root of the shadow DOM if this node is in a shadow
+      // or the document element.
+      // XXX If this node is not connected, it seems that this should return
+      // nullptr because this node is not selectable.
       if (!IsInComposedDoc() || IsInDesignMode() ||
           !HasFlag(NODE_IS_EDITABLE)) {
-        nsIContent* editorRoot = htmlEditor->GetRoot();
-        NS_ENSURE_TRUE(editorRoot, nullptr);
-        return nsContentUtils::IsInSameAnonymousTree(this, editorRoot)
-                   ? editorRoot
+        Element* const bodyOrDocumentElement = [&]() -> Element* {
+          if (Element* const bodyElement = OwnerDoc()->GetBodyElement()) {
+            return bodyElement;
+          }
+          return OwnerDoc()->GetDocumentElement();
+        }();
+        NS_ENSURE_TRUE(bodyOrDocumentElement, nullptr);
+        return nsContentUtils::IsInSameAnonymousTree(this,
+                                                     bodyOrDocumentElement)
+                   ? bodyOrDocumentElement
                    : GetRootForContentSubtree(AsContent());
       }
-      // If the document isn't editable but this is editable, this is in
-      // contenteditable.  Use the editing host element for selection root.
+      // If this node is editable but not in the design mode, this is always an
+      // editable node in an editing host of contenteditable.  In this case,
+      // let's use the editing host element as selection root.
+      MOZ_ASSERT(IsEditable());
+      MOZ_ASSERT(!IsInDesignMode());
+      MOZ_ASSERT(IsContent());
       return static_cast<nsIContent*>(this)->GetEditingHost();
     }
+  }
+
+  if (!isContent) {
+    return nullptr;
   }
 
   RefPtr<nsFrameSelection> fs = aPresShell->FrameSelection();
@@ -725,8 +769,7 @@ nsINode::GetMutationObservers() {
 }
 
 void nsINode::LastRelease() {
-  nsINode::nsSlots* slots = GetExistingSlots();
-  if (slots) {
+  if (nsSlots* slots = GetExistingSlots()) {
     if (!slots->mMutationObservers.isEmpty()) {
       for (auto iter = slots->mMutationObservers.begin();
            iter != slots->mMutationObservers.end(); ++iter) {
@@ -759,7 +802,6 @@ void nsINode::LastRelease() {
     // properties are bound to nsINode objects and the destructor functions of
     // the properties may want to use the owner document of the nsINode.
     AsDocument()->RemoveAllProperties();
-
     AsDocument()->DropStyleSet();
   } else {
     if (HasProperties()) {
@@ -770,37 +812,37 @@ void nsINode::LastRelease() {
     }
 
     if (HasFlag(ADDED_TO_FORM)) {
-      if (nsGenericHTMLFormControlElement* formControl =
-              nsGenericHTMLFormControlElement::FromNode(this)) {
+      if (auto* formControl = nsGenericHTMLFormControlElement::FromNode(this)) {
         // Tell the form (if any) this node is going away.  Don't
         // notify, since we're being destroyed in any case.
         formControl->ClearForm(true, true);
-      } else if (HTMLImageElement* imageElem =
-                     HTMLImageElement::FromNode(this)) {
+      } else if (auto* imageElem = HTMLImageElement::FromNode(this)) {
         imageElem->ClearForm(true);
       }
     }
-  }
-  UnsetFlags(NODE_HAS_PROPERTIES);
-
-  if (NodeType() != nsINode::DOCUMENT_NODE &&
-      HasFlag(NODE_HAS_LISTENERMANAGER)) {
+    if (HasFlag(NODE_HAS_LISTENERMANAGER)) {
 #ifdef DEBUG
-    if (nsContentUtils::IsInitialized()) {
-      EventListenerManager* manager =
-          nsContentUtils::GetExistingListenerManagerForNode(this);
-      if (!manager) {
-        NS_ERROR(
-            "Huh, our bit says we have a listener manager list, "
-            "but there's nothing in the hash!?!!");
+      if (nsContentUtils::IsInitialized()) {
+        EventListenerManager* manager =
+            nsContentUtils::GetExistingListenerManagerForNode(this);
+        if (!manager) {
+          NS_ERROR(
+              "Huh, our bit says we have a listener manager list, "
+              "but there's nothing in the hash!?!!");
+        }
       }
-    }
 #endif
 
-    nsContentUtils::RemoveListenerManager(this);
-    UnsetFlags(NODE_HAS_LISTENERMANAGER);
+      nsContentUtils::RemoveListenerManager(this);
+      UnsetFlags(NODE_HAS_LISTENERMANAGER);
+    }
+
+    if (Element* element = Element::FromNode(this)) {
+      element->ClearAttributes();
+    }
   }
 
+  UnsetFlags(NODE_HAS_PROPERTIES);
   ReleaseWrapper(this);
 
   FragmentOrElement::RemoveBlackMarkedNode(this);
@@ -810,9 +852,12 @@ std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode) {
   nsAutoString elemDesc;
   const nsINode* curr = &aNode;
   while (curr) {
-    nsString id;
+    nsString id, cls;
     if (curr->IsElement()) {
       curr->AsElement()->GetId(id);
+      if (const nsAttrValue* attrValue = curr->AsElement()->GetClasses()) {
+        attrValue->ToString(cls);
+      }
     }
 
     if (!elemDesc.IsEmpty()) {
@@ -827,6 +872,8 @@ std::ostream& operator<<(std::ostream& aStream, const nsINode& aNode) {
 
     if (!id.IsEmpty()) {
       elemDesc = elemDesc + u"['"_ns + id + u"']"_ns;
+    } else if (!cls.IsEmpty()) {
+      elemDesc = elemDesc + u"[class=\""_ns + cls + u"\"]"_ns;
     }
 
     if (curr->IsElement() &&
@@ -890,11 +937,11 @@ static const char* NodeTypeAsString(nsINode* aNode) {
       "a DocumentFragment",
       "a Notation",
   };
-  static_assert(ArrayLength(NodeTypeStrings) == nsINode::MAX_NODE_TYPE + 1,
+  static_assert(std::size(NodeTypeStrings) == nsINode::MAX_NODE_TYPE + 1,
                 "Max node type out of range for our array");
 
   uint16_t nodeType = aNode->NodeType();
-  MOZ_RELEASE_ASSERT(nodeType < ArrayLength(NodeTypeStrings),
+  MOZ_RELEASE_ASSERT(nodeType < std::size(NodeTypeStrings),
                      "Uknown out-of-range node type");
   return NodeTypeStrings[nodeType];
 }
@@ -1855,7 +1902,7 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
     return Some(GetChildCount() - 1);
   }
 
-  if (mChildCount >= CACHE_CHILD_LIMIT) {
+  if (MaybeCachesComputedIndex()) {
     const nsINode* child;
     Maybe<uint32_t> maybeChildIndex;
     GetChildAndIndexFromCache(this, &child, &maybeChildIndex);
@@ -1896,7 +1943,7 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
   while (current) {
     MOZ_ASSERT(current->GetParentNode() == this);
     if (current == aPossibleChild) {
-      if (mChildCount >= CACHE_CHILD_LIMIT) {
+      if (MaybeCachesComputedIndex()) {
         AddChildAndIndexToCache(this, current, index);
       }
       return Some(index);
@@ -1907,6 +1954,10 @@ Maybe<uint32_t> nsINode::ComputeIndexOf(const nsINode* aPossibleChild) const {
   }
 
   return Nothing();
+}
+
+bool nsINode::MaybeCachesComputedIndex() const {
+  return mChildCount >= CACHE_CHILD_LIMIT;
 }
 
 Maybe<uint32_t> nsINode::ComputeIndexInParentNode() const {
@@ -1923,6 +1974,11 @@ Maybe<uint32_t> nsINode::ComputeIndexInParentContent() const {
     return Nothing();
   }
   return parent->ComputeIndexOf(this);
+}
+
+bool nsINode::MaybeParentCachesComputedIndex() const {
+  nsINode* parent = GetParentNode();
+  return parent && parent->MaybeCachesComputedIndex();
 }
 
 static Maybe<uint32_t> DoComputeFlatTreeIndexOf(FlattenedChildIterator& aIter,
@@ -2312,9 +2368,7 @@ void nsINode::ReplaceChildren(nsINode* aNode, ErrorResult& aRv) {
   nsAutoScriptBlockerSuppressNodeRemoved scriptBlocker;
 
   // Replace all with node within this.
-  while (mFirstChild) {
-    RemoveChildNode(mFirstChild, true);
-  }
+  RemoveAllChildren(true);
   mb.RemovalDone();
 
   if (aNode) {
@@ -2323,7 +2377,8 @@ void nsINode::ReplaceChildren(nsINode* aNode, ErrorResult& aRv) {
   }
 }
 
-void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify) {
+void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify,
+                              const BatchRemovalState* aState) {
   // NOTE: This function must not trigger any calls to
   // Document::GetRootElement() calls until *after* it has removed aKid from
   // aChildArray. Any calls before then could potentially restore a stale
@@ -2335,7 +2390,9 @@ void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify) {
   nsMutationGuard::DidMutate();
   mozAutoDocUpdate updateBatch(GetComposedDoc(), aNotify);
 
-  nsIContent* previousSibling = aKid->GetPreviousSibling();
+  if (aNotify) {
+    MutationObservers::NotifyContentWillBeRemoved(this, aKid, aState);
+  }
 
   // Since aKid is use also after DisconnectChild, ensure it stays alive.
   nsCOMPtr<nsIContent> kungfuDeathGrip = aKid;
@@ -2343,11 +2400,6 @@ void nsINode::RemoveChildNode(nsIContent* aKid, bool aNotify) {
 
   // Invalidate cached array of child nodes
   InvalidateChildNodes();
-
-  if (aNotify) {
-    MutationObservers::NotifyContentRemoved(this, aKid, previousSibling);
-  }
-
   aKid->UnbindFromTree();
 }
 
@@ -2771,7 +2823,7 @@ nsINode* nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
     fragChildren->SetCapacity(count);
     for (nsIContent* child = newContent->GetFirstChild(); child;
          child = child->GetNextSibling()) {
-      NS_ASSERTION(child->GetUncomposedDoc() == nullptr,
+      NS_ASSERTION(!child->GetUncomposedDoc(),
                    "How did we get a child with a current doc?");
       fragChildren->AppendElement(child);
     }
@@ -2787,9 +2839,7 @@ nsINode* nsINode::ReplaceOrInsertBefore(bool aReplace, nsINode* aNewChild,
       mozAutoDocUpdate batch(newContent->GetComposedDoc(), true);
       nsAutoMutationBatch mb(newContent, false, true);
 
-      while (newContent->HasChildren()) {
-        newContent->RemoveChildNode(newContent->GetLastChild(), true);
-      }
+      newContent->RemoveAllChildren<BatchRemovalOrder::BackToFront>(true);
     }
 
     // We expect |count| removals
@@ -3432,10 +3482,6 @@ nsGenericHTMLElement* nsINode::GetEffectiveInvokeTargetElement() const {
 }
 
 nsGenericHTMLElement* nsINode::GetEffectivePopoverTargetElement() const {
-  if (!StaticPrefs::dom_element_popover_enabled()) {
-    return nullptr;
-  }
-
   const auto* formControl =
       nsGenericHTMLFormControlElementWithState::FromNode(this);
   if (!formControl || formControl->IsDisabled() ||

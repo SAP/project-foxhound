@@ -10,6 +10,8 @@ with Files("**"):
 XPIDL_SOURCES += [
     "nsIBackgroundChannelRegistrar.idl",
     "nsIBinaryHttp.idl",
+    "nsICORSPreflightCache.idl",
+    "nsICORSPreflightCacheEntry.idl",
     "nsIEarlyHintObserver.idl",
     "nsIHttpActivityObserver.idl",
     "nsIHttpAuthenticableChannel.idl",
@@ -21,6 +23,7 @@ XPIDL_SOURCES += [
     "nsIHttpChannelInternal.idl",
     "nsIHttpHeaderVisitor.idl",
     "nsIHttpProtocolHandler.idl",
+    "nsINetworkErrorLogging.idl",
     "nsIObliviousHttp.idl",
     "nsIObliviousHttpChannel.idl",
     "nsIRaceCacheWithNetwork.idl",
@@ -113,6 +116,7 @@ UNIFIED_SOURCES += [
     "Http2Stream.cpp",
     "Http2StreamBase.cpp",
     "Http2StreamTunnel.cpp",
+    "Http2WebTransportSession.cpp",
     "Http3Session.cpp",
     "Http3Stream.cpp",
     "Http3WebTransportSession.cpp",
@@ -175,6 +179,14 @@ if CONFIG["MOZ_WIDGET_TOOLKIT"] == "windows":
         "HttpWinUtils.cpp",
     ]
 
+if CONFIG["TARGET_OS"] == "OSX":
+    UNIFIED_SOURCES += [
+        "MicrosoftEntraSSOUtils.mm",
+    ]
+    OS_LIBS += [
+        "-framework AuthenticationServices",
+    ]
+
 # These files cannot be built in unified mode because of OS X headers.
 SOURCES += [
     "nsHttpHandler.cpp",
@@ -215,6 +227,8 @@ if CONFIG["MOZ_AUTH_EXTENSION"]:
 
 EXTRA_JS_MODULES += [
     "HPKEConfigManager.sys.mjs",
+    "NetworkErrorLogging.sys.mjs",
+    "ObliviousHTTP.sys.mjs",
     "WellKnownOpportunisticUtils.sys.mjs",
 ]
 

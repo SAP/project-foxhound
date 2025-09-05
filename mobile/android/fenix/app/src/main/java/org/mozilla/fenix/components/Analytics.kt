@@ -4,6 +4,7 @@
 
 package org.mozilla.fenix.components
 
+import android.app.Application
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -21,12 +22,16 @@ import org.mozilla.fenix.Config
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.ReleaseChannel
+import org.mozilla.fenix.components.metrics.AdjustMetricsService
 import org.mozilla.fenix.components.metrics.DefaultMetricsStorage
 import org.mozilla.fenix.components.metrics.GleanMetricsService
+import org.mozilla.fenix.components.metrics.GleanProfileIdPreferenceStore
+import org.mozilla.fenix.components.metrics.GleanUsageReportingMetricsService
 import org.mozilla.fenix.components.metrics.InstallReferrerMetricsService
 import org.mozilla.fenix.components.metrics.MetricController
 import org.mozilla.fenix.components.metrics.MetricsStorage
 import org.mozilla.fenix.crashes.CrashFactCollector
+import org.mozilla.fenix.crashes.ReleaseRuntimeTagProvider
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.perf.lazyMonitored
@@ -119,7 +124,9 @@ class Analytics(
             ),
             enabled = true,
             nonFatalCrashIntent = pendingIntent,
-            notificationsDelegate = context.components.notificationsDelegate,
+            useLegacyReporting = !context.settings().crashReportAlwaysSend &&
+                !context.settings().useNewCrashReporterDialog,
+            runtimeTagProviders = listOf(ReleaseRuntimeTagProvider()),
         )
     }
 
@@ -139,10 +146,19 @@ class Analytics(
         MetricController.create(
             listOf(
                 GleanMetricsService(context),
+                AdjustMetricsService(
+                    application = context as Application,
+                    storage = metricsStorage,
+                    crashReporter = crashReporter,
+                ),
                 InstallReferrerMetricsService(context),
+                GleanUsageReportingMetricsService(gleanProfileIdStore = GleanProfileIdPreferenceStore(context)),
             ),
             isDataTelemetryEnabled = { context.settings().isTelemetryEnabled },
-            isMarketingDataTelemetryEnabled = { context.settings().isMarketingTelemetryEnabled },
+            isMarketingDataTelemetryEnabled = {
+                context.settings().isMarketingTelemetryEnabled && context.settings().hasMadeMarketingTelemetrySelection
+            },
+            isUsageTelemetryEnabled = { context.settings().isDailyUsagePingEnabled },
             context.settings(),
         )
     }

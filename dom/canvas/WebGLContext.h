@@ -28,7 +28,6 @@
 #include "mozilla/Mutex.h"
 #include "mozilla/StaticMutex.h"
 #include "mozilla/StaticPrefs_webgl.h"
-#include "mozilla/UniquePtr.h"
 #include "mozilla/WeakPtr.h"
 #include "nsICanvasRenderingContextInternal.h"
 #include "nsTArray.h"
@@ -104,6 +103,7 @@ class Texture;
 namespace layers {
 class CompositableHost;
 class RemoteTextureOwnerClient;
+class SharedSurfacesHolder;
 class SurfaceDescriptor;
 }  // namespace layers
 
@@ -487,6 +487,8 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
 
   void DummyReadFramebufferOperation();
 
+  layers::SharedSurfacesHolder* GetSharedSurfacesHolder() const;
+
   dom::ContentParentId GetContentId() const;
 
   WebGLTexture* GetActiveTex(const GLenum texTarget) const;
@@ -549,10 +551,15 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
                                                   const bool webvr);
 
   std::optional<dom::PredefinedColorSpace> mDrawingBufferColorSpace;
+  std::optional<dom::PredefinedColorSpace> mUnpackColorSpace;
   std::optional<color::ColorProfileDesc> mDisplayProfile;
 
   void SetDrawingBufferColorSpace(const dom::PredefinedColorSpace val) {
     mDrawingBufferColorSpace = val;
+  }
+
+  void SetUnpackColorSpace(const dom::PredefinedColorSpace val) {
+    mUnpackColorSpace = val;
   }
 
   void ClearVRSwapChain();
@@ -853,10 +860,11 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   void TexStorage(GLenum texTarget, uint32_t levels, GLenum sizedFormat,
                   uvec3 size) const;
 
-  UniquePtr<webgl::TexUnpackBlob> ToTexUnpackBytes(
+  std::unique_ptr<webgl::TexUnpackBlob> ToTexUnpackBytes(
       const WebGLTexImageData& imageData);
 
-  UniquePtr<webgl::TexUnpackBytes> ToTexUnpackBytes(WebGLTexPboOffset& aPbo);
+  std::unique_ptr<webgl::TexUnpackBytes> ToTexUnpackBytes(
+      WebGLTexPboOffset& aPbo);
 
   ////////////////////////////////////
   // WebGLTextureUpload.cpp
@@ -1358,9 +1366,9 @@ class WebGLContext : public VRefCounted, public SupportsWeakPtr {
   }
 
  public:
-  UniquePtr<webgl::FormatUsageAuthority> mFormatUsage;
+  std::unique_ptr<webgl::FormatUsageAuthority> mFormatUsage;
 
-  virtual UniquePtr<webgl::FormatUsageAuthority> CreateFormatUsage(
+  virtual std::unique_ptr<webgl::FormatUsageAuthority> CreateFormatUsage(
       gl::GLContext* gl) const;
 
   const decltype(mBound2DTextures)* TexListForElemType(GLenum elemType) const;

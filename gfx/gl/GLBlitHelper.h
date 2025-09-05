@@ -62,7 +62,7 @@ class SurfaceDescriptorBuffer;
 
 #ifdef XP_WIN
 class D3D11ShareHandleImage;
-class D3D11TextureIMFSampleImage;
+class D3D11ZeroCopyTextureImage;
 class SurfaceDescriptorD3D10;
 class SurfaceDescriptorDXGIYCbCr;
 #endif
@@ -200,6 +200,9 @@ class GLBlitHelper final {
   gfx::IntSize mYuvUploads_UVSize = {0, 0};
 
  public:
+  static std::optional<color::ColorProfileDesc> ToColorProfileDesc(
+      gfx::ColorSpace2);
+
   struct ColorLutKey : DeriveCmpOpMembers<ColorLutKey> {
     std::variant<gfx::ColorSpace2, gfx::YUVRangedColorSpace> src;
     gfx::ColorSpace2 dst;
@@ -295,7 +298,7 @@ class GLBlitHelper final {
   // GLBlitHelperD3D.cpp:
   bool BlitImage(layers::D3D11ShareHandleImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
-  bool BlitImage(layers::D3D11TextureIMFSampleImage* srcImage,
+  bool BlitImage(layers::D3D11ZeroCopyTextureImage* srcImage,
                  const gfx::IntSize& destSize, OriginPos destOrigin) const;
 
   bool BlitDescriptor(const layers::SurfaceDescriptorD3D10& desc,

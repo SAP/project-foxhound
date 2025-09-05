@@ -3,11 +3,10 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#include "mozilla/dom/ContentChild.h"
+#include "xpcpublic.h"
 #include "mozilla/dom/PermissionMessageUtils.h"
 #include "mozilla/Preferences.h"
 #include "mozilla/StaticPrefs_alerts.h"
-#include "mozilla/Telemetry.h"
 #include "nsXULAppAPI.h"
 
 #include "nsAlertsService.h"
@@ -26,8 +25,6 @@
 #endif
 
 using namespace mozilla;
-
-using mozilla::dom::ContentChild;
 
 namespace {
 
@@ -113,13 +110,7 @@ nsresult ShowWithIconBackend(nsIAlertsService* aBackend,
 
 nsresult ShowWithBackend(nsIAlertsService* aBackend,
                          nsIAlertNotification* aAlert,
-                         nsIObserver* aAlertListener,
-                         const nsAString& aPersistentData) {
-  if (!aPersistentData.IsEmpty()) {
-    return aBackend->ShowPersistentNotification(aPersistentData, aAlert,
-                                                aAlertListener);
-  }
-
+                         nsIObserver* aAlertListener) {
   if (Preferences::GetBool("alerts.showFavicons")) {
     nsresult rv = ShowWithIconBackend(aBackend, aAlert, aAlertListener);
     if (NS_SUCCEEDED(rv)) {
@@ -196,11 +187,6 @@ NS_IMETHODIMP nsAlertsService::ShowAlertNotification(
   return ShowAlert(alert, aAlertListener);
 }
 
-NS_IMETHODIMP nsAlertsService::ShowAlert(nsIAlertNotification* aAlert,
-                                         nsIObserver* aAlertListener) {
-  return ShowPersistentNotification(u""_ns, aAlert, aAlertListener);
-}
-
 static bool ShouldFallBackToXUL() {
 #if defined(XP_WIN) || defined(XP_MACOSX)
   // We know we always have system backend on Windows and macOS. Let's not
@@ -213,28 +199,18 @@ static bool ShouldFallBackToXUL() {
 #endif
 }
 
-NS_IMETHODIMP nsAlertsService::ShowPersistentNotification(
-    const nsAString& aPersistentData, nsIAlertNotification* aAlert,
-    nsIObserver* aAlertListener) {
+NS_IMETHODIMP nsAlertsService::ShowAlert(nsIAlertNotification* aAlert,
+                                         nsIObserver* aAlertListener) {
   NS_ENSURE_ARG(aAlert);
 
   nsAutoString cookie;
   nsresult rv = aAlert->GetCookie(cookie);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  if (XRE_IsContentProcess()) {
-    ContentChild* cpc = ContentChild::GetSingleton();
-
-    if (aAlertListener) cpc->AddRemoteAlertObserver(cookie, aAlertListener);
-
-    cpc->SendShowAlert(aAlert);
-    return NS_OK;
-  }
-
   // Check if there is an optional service that handles system-level
   // notifications
   if (ShouldUseSystemBackend()) {
-    rv = ShowWithBackend(mBackend, aAlert, aAlertListener, aPersistentData);
+    rv = ShowWithBackend(mBackend, aAlert, aAlertListener);
     if (NS_SUCCEEDED(rv) || !ShouldFallBackToXUL()) {
       return rv;
     }
@@ -253,17 +229,11 @@ NS_IMETHODIMP nsAlertsService::ShowPersistentNotification(
   // Use XUL notifications as a fallback if above methods have failed.
   nsCOMPtr<nsIAlertsService> xulBackend(nsXULAlerts::GetInstance());
   NS_ENSURE_TRUE(xulBackend, NS_ERROR_FAILURE);
-  return ShowWithBackend(xulBackend, aAlert, aAlertListener, aPersistentData);
+  return ShowWithBackend(xulBackend, aAlert, aAlertListener);
 }
 
 NS_IMETHODIMP nsAlertsService::CloseAlert(const nsAString& aAlertName,
                                           bool aContextClosed) {
-  if (XRE_IsContentProcess()) {
-    ContentChild* cpc = ContentChild::GetSingleton();
-    cpc->SendCloseAlert(nsAutoString(aAlertName), aContextClosed);
-    return NS_OK;
-  }
-
   nsresult rv;
   // Try the system notification service.
   if (ShouldUseSystemBackend()) {
@@ -299,11 +269,7 @@ NS_IMETHODIMP nsAlertsService::SetManualDoNotDisturb(bool aDoNotDisturb) {
   nsCOMPtr<nsIAlertsDoNotDisturb> alertsDND(GetDNDBackend());
   NS_ENSURE_TRUE(alertsDND, NS_ERROR_NOT_IMPLEMENTED);
 
-  nsresult rv = alertsDND->SetManualDoNotDisturb(aDoNotDisturb);
-  if (NS_SUCCEEDED(rv)) {
-    Telemetry::Accumulate(Telemetry::ALERTS_SERVICE_DND_ENABLED, 1);
-  }
-  return rv;
+  return alertsDND->SetManualDoNotDisturb(aDoNotDisturb);
 #endif
 }
 

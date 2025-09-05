@@ -14,11 +14,11 @@
 #include <array>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
 #include "absl/base/attributes.h"
-#include "absl/types/optional.h"
 #include "modules/video_coding/packet_buffer.h"
 #include "rtc_base/numerics/sequence_number_unwrapper.h"
 
@@ -37,6 +37,7 @@ class H26xPacketBuffer {
 
   ABSL_MUST_USE_RESULT InsertResult
   InsertPacket(std::unique_ptr<Packet> packet);
+  ABSL_MUST_USE_RESULT InsertResult InsertPadding(uint16_t unwrapped_seq_num);
 
   // Out of band supplied codec parameters for H.264.
   void SetSpropParameterSets(const std::string& sprop_parameter_sets);
@@ -72,6 +73,7 @@ class H26xPacketBuffer {
   };
 
   static constexpr int kBufferSize = 2048;
+  static constexpr int kNumTrackedSequences = 5;
 
   std::unique_ptr<Packet>& GetPacket(int64_t unwrapped_seq_num);
   bool BeginningOfStream(const Packet& packet) const;
@@ -83,7 +85,7 @@ class H26xPacketBuffer {
   // received without SPS/PPS.
   void InsertSpsPpsNalus(const std::vector<uint8_t>& sps,
                          const std::vector<uint8_t>& pps);
-  // Insert start code and paramter sets for H.264 payload, also update header
+  // Insert start code and parameter sets for H.264 payload, also update header
   // if parameter sets are inserted. Return false if required SPS or PPS is not
   // found.
   bool FixH264Packet(Packet& packet);
@@ -91,15 +93,15 @@ class H26xPacketBuffer {
   // Indicates whether IDR frames without SPS and PPS are allowed.
   const bool h264_idr_only_keyframes_allowed_;
   std::array<std::unique_ptr<Packet>, kBufferSize> buffer_;
-  absl::optional<int64_t> last_continuous_unwrapped_seq_num_;
-  SeqNumUnwrapper<uint16_t> seq_num_unwrapper_;
+  std::array<int64_t, kNumTrackedSequences> last_continuous_in_sequence_;
+  int64_t last_continuous_in_sequence_index_ = 0;
 
   // Map from pps_pic_parameter_set_id to the PPS payload associated with this
   // ID.
-  std::map<uint32_t, PpsInfo> pps_data_;
+  std::map<int, PpsInfo> pps_data_;
   // Map from sps_video_parameter_set_id to the SPS payload associated with this
   // ID.
-  std::map<uint32_t, SpsInfo> sps_data_;
+  std::map<int, SpsInfo> sps_data_;
 };
 
 }  // namespace webrtc

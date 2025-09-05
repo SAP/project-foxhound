@@ -13,14 +13,18 @@ import io.mockk.impl.annotations.MockK
 import io.mockk.impl.annotations.RelaxedMockK
 import io.mockk.just
 import io.mockk.mockk
+import io.mockk.spyk
 import io.mockk.verify
 import mozilla.components.browser.state.action.BrowserAction
 import mozilla.components.browser.state.action.ContentAction
+import mozilla.components.browser.state.action.ShareResourceAction
 import mozilla.components.browser.state.action.TabListAction
 import mozilla.components.browser.state.state.BrowserState
+import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
+import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases
 import mozilla.components.feature.tabs.TabsUseCases
@@ -46,6 +50,7 @@ import org.mozilla.fenix.GleanMetrics.NavigationBar
 import org.mozilla.fenix.GleanMetrics.ReaderMode
 import org.mozilla.fenix.GleanMetrics.Translations
 import org.mozilla.fenix.HomeActivity
+import org.mozilla.fenix.NavGraphDirections
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserAnimator
 import org.mozilla.fenix.browser.BrowserFragmentDirections
@@ -54,7 +59,9 @@ import org.mozilla.fenix.browser.browsingmode.SimpleBrowsingModeManager
 import org.mozilla.fenix.browser.readermode.ReaderModeController
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.directionsEq
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.FenixRobolectricTestRunner
 import org.mozilla.fenix.home.HomeFragment
@@ -391,71 +398,6 @@ class DefaultBrowserToolbarControllerTest {
     }
 
     @Test
-    fun handleShoppingCfrActionClick() {
-        val controller = createController()
-
-        controller.handleShoppingCfrActionClick()
-
-        verify {
-            navController.navigate(BrowserFragmentDirections.actionBrowserFragmentToReviewQualityCheckDialogFragment())
-        }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedOnce() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCfrDisplayTimeInMillis = any() } just Runs
-            every { reviewQualityCheckCFRClosedCounter } returns 1
-            every { reviewQualityCheckCFRClosedCounter = 2 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify(exactly = 0) { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedTwice() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCfrDisplayTimeInMillis = any() } just Runs
-            every { reviewQualityCheckCFRClosedCounter } returns 2
-            every { reviewQualityCheckCFRClosedCounter = 3 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify(exactly = 0) { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
-    fun handleShoppingCfrDisplayedThreeTimes() {
-        val controller = createController()
-        val mockSettings = mockk<Settings> {
-            every { reviewQualityCheckCfrDisplayTimeInMillis } returns System.currentTimeMillis()
-            every { reviewQualityCheckCFRClosedCounter } returns 3
-            every { reviewQualityCheckCFRClosedCounter = 4 } just Runs
-            every { shouldShowReviewQualityCheckCFR } returns true
-            every { shouldShowReviewQualityCheckCFR = any() } just Runs
-        }
-        every { activity.settings() } returns mockSettings
-
-        controller.handleShoppingCfrDisplayed()
-
-        verify { mockSettings.shouldShowReviewQualityCheckCFR = false }
-        verify(exactly = 0) { mockSettings.reviewQualityCheckCfrDisplayTimeInMillis = any() }
-    }
-
-    @Test
     fun handleTranslationsButtonClick() {
         val controller = createController()
         controller.handleTranslationsButtonClick()
@@ -473,7 +415,8 @@ class DefaultBrowserToolbarControllerTest {
     }
 
     @Test
-    fun `WHEN new tab button is clicked THEN navigate to homepage`() {
+    fun `WHEN new tab button is clicked and navigation bar is enabled THEN navigate to homepage`() {
+        every { activity.settings().navigationToolbarEnabled } returns true
         val controller = createController()
         controller.handleNewTabButtonClick()
 
@@ -498,6 +441,7 @@ class DefaultBrowserToolbarControllerTest {
 
         verify {
             tabsUseCases.addTab.invoke(
+                url = "about:home",
                 startLoading = false,
                 private = false,
             )
@@ -509,7 +453,8 @@ class DefaultBrowserToolbarControllerTest {
     }
 
     @Test
-    fun `WHEN new tab button is long clicked THEN record the telemetry event`() {
+    fun `WHEN new tab button is long clicked and navigation toolbar enabled THEN record the navigation bar telemetry event`() {
+        every { activity.settings().navigationToolbarEnabled } returns true
         val controller = createController()
         controller.handleNewTabButtonLongClick()
 
@@ -519,9 +464,99 @@ class DefaultBrowserToolbarControllerTest {
         assertEquals(null, recordedEvents.single().extra)
     }
 
+    @Test
+    fun `GIVEN that the menu access point is not a custom tab WHEN menu button is clicked THEN handle menu navigation`() {
+        val controller = createController()
+        val accessPoint = MenuAccessPoint.Browser
+
+        controller.handleMenuButtonClicked(accessPoint)
+
+        verify {
+            navController.navigate(
+                BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                    accesspoint = accessPoint,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN that the menu access point is a custom tab WHEN menu button is clicked THEN handle menu navigation`() {
+        val controller = createController()
+        val accessPoint = MenuAccessPoint.External
+        val customTabSessionId = "1"
+
+        controller.handleMenuButtonClicked(accessPoint, customTabSessionId)
+
+        verify {
+            navController.navigate(
+                BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                    accesspoint = accessPoint,
+                    customTabSessionId = customTabSessionId,
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN that the tab is a local PDF WHEN share button is clicked THEN start the shareResource process`() {
+        val store = spyk(
+            BrowserStore(
+                initialState = BrowserState(
+                    tabs = listOf(
+                        createTab("content://pdf.pdf", id = "1"),
+                    ),
+                    selectedTabId = "1",
+                ),
+                middleware = listOf(captureMiddleware),
+            ),
+        )
+
+        val controller = createController(store = store)
+        controller.onShareActionClicked()
+
+        verify {
+            store.dispatch(
+                ShareResourceAction.AddShareAction(
+                    tabId = "1",
+                    ShareResourceState.LocalResource("content://pdf.pdf"),
+                ),
+            )
+        }
+    }
+
+    @Test
+    fun `GIVEN that the tab is an internet resource WHEN share button is clicked THEN navigate to ShareFragment`() {
+        val store = BrowserStore(
+            initialState = BrowserState(
+                tabs = listOf(
+                    createTab("https://mozilla.com", id = "1"),
+                ),
+                selectedTabId = "1",
+            ),
+            middleware = listOf(captureMiddleware),
+        )
+
+        val controller = createController(store = store)
+        controller.onShareActionClicked()
+
+        verify {
+            navController.navigate(
+                directionsEq(
+                    NavGraphDirections.actionGlobalShareFragment(
+                        sessionId = "1",
+                        data = arrayOf(ShareData(url = "https://mozilla.com", title = "")),
+                        showPage = true,
+                    ),
+                ),
+            )
+        }
+    }
+
     private fun createController(
         activity: HomeActivity = this.activity,
         customTabSessionId: String? = null,
+        store: BrowserStore = this.store,
     ) = DefaultBrowserToolbarController(
         store = store,
         appStore = appStore,

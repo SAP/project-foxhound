@@ -7,6 +7,7 @@
 #include "CanvasTranslator.h"
 
 #include "gfxGradientCache.h"
+#include "mozilla/DataMutex.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/CanvasManagerParent.h"
 #include "mozilla/gfx/CanvasRenderThread.h"
@@ -26,13 +27,13 @@
 #include "mozilla/StaticPrefs_gfx.h"
 #include "mozilla/SyncRunnable.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Telemetry.h"
 #include "GLContext.h"
 #include "RecordedCanvasEventImpl.h"
 
 #if defined(XP_WIN)
 #  include "mozilla/gfx/DeviceManagerDx.h"
 #  include "mozilla/layers/TextureD3D11.h"
+#  include "mozilla/layers/VideoProcessorD3D11.h"
 #endif
 
 namespace mozilla {
@@ -71,6 +72,9 @@ CanvasTranslator::CanvasTranslator(
     const dom::ContentParentId& aContentId, uint32_t aManagerId)
     : mTranslationTaskQueue(gfx::CanvasRenderThread::CreateWorkerTaskQueue()),
       mSharedSurfacesHolder(aSharedSurfacesHolder),
+#if defined(XP_WIN)
+      mVideoProcessorD3D11("CanvasTranslator::mVideoProcessorD3D11"),
+#endif
       mMaxSpinCount(StaticPrefs::gfx_canvas_remote_max_spin_count()),
       mContentId(aContentId),
       mManagerId(aManagerId),
@@ -78,9 +82,6 @@ CanvasTranslator::CanvasTranslator(
           "CanvasTranslator::mCanvasTranslatorEventsLock") {
   mNextEventTimeout = TimeDuration::FromMilliseconds(
       StaticPrefs::gfx_canvas_remote_event_timeout_ms());
-
-  // Track when remote canvas has been activated.
-  Telemetry::ScalarAdd(Telemetry::ScalarID::GFX_CANVAS_REMOTE_ACTIVATED, 1);
 }
 
 CanvasTranslator::~CanvasTranslator() = default;
@@ -101,11 +102,11 @@ bool CanvasTranslator::IsInTaskQueue() const {
   return gfx::CanvasRenderThread::IsInCanvasRenderThread();
 }
 
-static bool CreateAndMapShmem(RefPtr<ipc::SharedMemoryBasic>& aShmem,
+static bool CreateAndMapShmem(RefPtr<ipc::SharedMemory>& aShmem,
                               Handle&& aHandle,
                               ipc::SharedMemory::OpenRights aOpenRights,
                               size_t aSize) {
-  auto shmem = MakeRefPtr<ipc::SharedMemoryBasic>();
+  auto shmem = MakeRefPtr<ipc::SharedMemory>();
   if (!shmem->SetHandle(std::move(aHandle), aOpenRights) ||
       !shmem->Map(aSize)) {
     return false;
@@ -166,14 +167,14 @@ mozilla::ipc::IPCResult CanvasTranslator::RecvInitTranslator(
   mBackendType = aBackendType;
   mOtherPid = OtherPid();
 
-  mHeaderShmem = MakeAndAddRef<ipc::SharedMemoryBasic>();
+  mHeaderShmem = MakeAndAddRef<ipc::SharedMemory>();
   if (!CreateAndMapShmem(mHeaderShmem, std::move(aReadHandle),
                          ipc::SharedMemory::RightsReadWrite, sizeof(Header))) {
     Deactivate();
     return IPC_FAIL(this, "Failed to map canvas header shared memory.");
   }
 
-  mHeader = static_cast<Header*>(mHeaderShmem->memory());
+  mHeader = static_cast<Header*>(mHeaderShmem->Memory());
 
   mWriterSemaphore.reset(CrossProcessSemaphore::Create(std::move(aWriterSem)));
   mWriterSemaphore->CloseHandle();
@@ -246,7 +247,7 @@ ipc::IPCResult CanvasTranslator::RecvRestartTranslation() {
 }
 
 ipc::IPCResult CanvasTranslator::RecvAddBuffer(
-    ipc::SharedMemoryBasic::Handle&& aBufferHandle, uint64_t aBufferSize) {
+    ipc::SharedMemory::Handle&& aBufferHandle, uint64_t aBufferSize) {
   if (mDeactivated) {
     // The other side might have sent a resume message before we deactivated.
     return IPC_OK();
@@ -258,16 +259,15 @@ ipc::IPCResult CanvasTranslator::RecvAddBuffer(
         std::move(aBufferHandle), aBufferSize));
     PostCanvasTranslatorEvents(lock);
   } else {
-    DispatchToTaskQueue(
-        NewRunnableMethod<ipc::SharedMemoryBasic::Handle&&, size_t>(
-            "CanvasTranslator::AddBuffer", this, &CanvasTranslator::AddBuffer,
-            std::move(aBufferHandle), aBufferSize));
+    DispatchToTaskQueue(NewRunnableMethod<ipc::SharedMemory::Handle&&, size_t>(
+        "CanvasTranslator::AddBuffer", this, &CanvasTranslator::AddBuffer,
+        std::move(aBufferHandle), aBufferSize));
   }
 
   return IPC_OK();
 }
 
-bool CanvasTranslator::AddBuffer(ipc::SharedMemoryBasic::Handle&& aBufferHandle,
+bool CanvasTranslator::AddBuffer(ipc::SharedMemory::Handle&& aBufferHandle,
                                  size_t aBufferSize) {
   MOZ_ASSERT(IsInTaskQueue());
   if (mHeader->readerState == State::Failed) {
@@ -279,7 +279,7 @@ bool CanvasTranslator::AddBuffer(ipc::SharedMemoryBasic::Handle&& aBufferHandle,
     gfxCriticalNote << "CanvasTranslator::AddBuffer bad state "
                     << uint32_t(State(mHeader->readerState));
 #ifndef FUZZING_SNAPSHOT
-    MOZ_DIAGNOSTIC_ASSERT(false, "mHeader->readerState == State::Paused");
+    MOZ_DIAGNOSTIC_CRASH("mHeader->readerState == State::Paused");
 #endif
     Deactivate();
     return false;
@@ -292,7 +292,7 @@ bool CanvasTranslator::AddBuffer(ipc::SharedMemoryBasic::Handle&& aBufferHandle,
   CheckAndSignalWriter();
 
   // Default sized buffers will have been queued for recycling.
-  if (mCurrentShmem.Size() == mDefaultBufferSize) {
+  if (mCurrentShmem.IsValid() && mCurrentShmem.Size() == mDefaultBufferSize) {
     mCanvasShmems.emplace(std::move(mCurrentShmem));
   }
 
@@ -309,7 +309,7 @@ bool CanvasTranslator::AddBuffer(ipc::SharedMemoryBasic::Handle&& aBufferHandle,
 }
 
 ipc::IPCResult CanvasTranslator::RecvSetDataSurfaceBuffer(
-    ipc::SharedMemoryBasic::Handle&& aBufferHandle, uint64_t aBufferSize) {
+    ipc::SharedMemory::Handle&& aBufferHandle, uint64_t aBufferSize) {
   if (mDeactivated) {
     // The other side might have sent a resume message before we deactivated.
     return IPC_OK();
@@ -322,18 +322,17 @@ ipc::IPCResult CanvasTranslator::RecvSetDataSurfaceBuffer(
                                                     aBufferSize));
     PostCanvasTranslatorEvents(lock);
   } else {
-    DispatchToTaskQueue(
-        NewRunnableMethod<ipc::SharedMemoryBasic::Handle&&, size_t>(
-            "CanvasTranslator::SetDataSurfaceBuffer", this,
-            &CanvasTranslator::SetDataSurfaceBuffer, std::move(aBufferHandle),
-            aBufferSize));
+    DispatchToTaskQueue(NewRunnableMethod<ipc::SharedMemory::Handle&&, size_t>(
+        "CanvasTranslator::SetDataSurfaceBuffer", this,
+        &CanvasTranslator::SetDataSurfaceBuffer, std::move(aBufferHandle),
+        aBufferSize));
   }
 
   return IPC_OK();
 }
 
 bool CanvasTranslator::SetDataSurfaceBuffer(
-    ipc::SharedMemoryBasic::Handle&& aBufferHandle, size_t aBufferSize) {
+    ipc::SharedMemory::Handle&& aBufferHandle, size_t aBufferSize) {
   MOZ_ASSERT(IsInTaskQueue());
   if (mHeader->readerState == State::Failed) {
     // We failed before we got to the pause event.
@@ -344,7 +343,7 @@ bool CanvasTranslator::SetDataSurfaceBuffer(
     gfxCriticalNote << "CanvasTranslator::SetDataSurfaceBuffer bad state "
                     << uint32_t(State(mHeader->readerState));
 #ifndef FUZZING_SNAPSHOT
-    MOZ_DIAGNOSTIC_ASSERT(false, "mHeader->readerState == State::Paused");
+    MOZ_DIAGNOSTIC_CRASH("mHeader->readerState == State::Paused");
 #endif
     Deactivate();
     return false;
@@ -390,7 +389,7 @@ void CanvasTranslator::GetDataSurface(uint64_t aSurfaceRef) {
     return;
   }
 
-  uint8_t* dst = static_cast<uint8_t*>(mDataSurfaceShmem->memory());
+  uint8_t* dst = static_cast<uint8_t*>(mDataSurfaceShmem->Memory());
   const uint8_t* src = map->GetData();
   const uint8_t* endSrc = src + (srcSize.height * srcStride);
   while (src < endSrc) {
@@ -398,6 +397,36 @@ void CanvasTranslator::GetDataSurface(uint64_t aSurfaceRef) {
     src += srcStride;
     dst += dstStride;
   }
+}
+
+already_AddRefed<gfx::DataSourceSurface> CanvasTranslator::WaitForSurface(
+    uintptr_t aId) {
+  // If it's not safe to flush the event queue, then don't try to wait.
+  if (!gfx::gfxVars::UseAcceleratedCanvas2D() ||
+      !UsePendingCanvasTranslatorEvents() || !IsInTaskQueue()) {
+    return nullptr;
+  }
+  ReferencePtr idRef(aId);
+  if (!HasSourceSurface(idRef)) {
+    if (!HasPendingEvent()) {
+      return nullptr;
+    }
+
+    // If the surface doesn't exist yet, that may be because the events
+    // that produce it still need to be processed. Flush out any events
+    // currently in the queue, that by now should have been placed in
+    // the queue but for which processing has not yet occurred..
+    mFlushCheckpoint = mHeader->eventCount;
+    HandleCanvasTranslatorEvents();
+    mFlushCheckpoint = 0;
+    // If there is still no surface, then it is unlikely to be produced
+    // now, so give up.
+    if (!HasSourceSurface(idRef)) {
+      return nullptr;
+    }
+  }
+  // The surface exists, so get its data.
+  return LookupSourceSurface(idRef)->GetDataSurface();
 }
 
 void CanvasTranslator::RecycleBuffer() {
@@ -426,6 +455,14 @@ void CanvasTranslator::ActorDestroy(ActorDestroyReason why) {
     MutexAutoLock lock(mCanvasTranslatorEventsLock);
     mPendingCanvasTranslatorEvents.clear();
   }
+
+#if defined(XP_WIN)
+  {
+    auto lock = mVideoProcessorD3D11.Lock();
+    auto& videoProcessor = lock.ref();
+    videoProcessor = nullptr;
+  }
+#endif
 
   DispatchToTaskQueue(NewRunnableMethod("CanvasTranslator::ClearTextureInfo",
                                         this,
@@ -479,23 +516,16 @@ inline gfx::DrawTargetWebgl* CanvasTranslator::TextureInfo::GetDrawTargetWebgl(
 }
 
 bool CanvasTranslator::TryDrawTargetWebglFallback(
-    int64_t aTextureId, gfx::DrawTargetWebgl* aWebgl) {
-  NotifyRequiresRefresh(aTextureId);
+    const RemoteTextureOwnerId aTextureOwnerId, gfx::DrawTargetWebgl* aWebgl) {
+  NotifyRequiresRefresh(aTextureOwnerId);
 
-  // An existing data snapshot is required for fallback, as we have to avoid
-  // trying to touch the WebGL context, which is assumed to be invalid and not
-  // suitable for readback.
-  if (!aWebgl->HasDataSnapshot()) {
-    return false;
-  }
-
-  const auto& info = mTextureInfo[aTextureId];
-  if (RefPtr<gfx::DrawTarget> dt = CreateFallbackDrawTarget(
-          info.mRefPtr, aTextureId, info.mRemoteTextureOwnerId,
-          aWebgl->GetSize(), aWebgl->GetFormat())) {
-    aWebgl->CopyToFallback(dt);
+  const auto& info = mTextureInfo[aTextureOwnerId];
+  if (RefPtr<gfx::DrawTarget> dt =
+          CreateFallbackDrawTarget(info.mRefPtr, aTextureOwnerId,
+                                   aWebgl->GetSize(), aWebgl->GetFormat())) {
+    bool success = aWebgl->CopyToFallback(dt);
     AddDrawTarget(info.mRefPtr, dt);
-    return true;
+    return success;
   }
   return false;
 }
@@ -506,20 +536,20 @@ void CanvasTranslator::ForceDrawTargetWebglFallback() {
   // loss.
   RemoteTextureOwnerIdSet lost;
   for (const auto& entry : mTextureInfo) {
+    const auto& ownerId = entry.first;
     const auto& info = entry.second;
     if (gfx::DrawTargetWebgl* webgl = info.GetDrawTargetWebgl()) {
       if (!TryDrawTargetWebglFallback(entry.first, webgl)) {
         // No fallback could be created, so we need to notify the compositor the
         // texture won't be pushed.
-        if (mRemoteTextureOwner &&
-            mRemoteTextureOwner->IsRegistered(info.mRemoteTextureOwnerId)) {
-          lost.insert(info.mRemoteTextureOwnerId);
+        if (mRemoteTextureOwner && mRemoteTextureOwner->IsRegistered(ownerId)) {
+          lost.insert(ownerId);
         }
       }
     }
   }
   if (!lost.empty()) {
-    mRemoteTextureOwner->NotifyContextLost(&lost);
+    NotifyDeviceReset(lost);
   }
 }
 
@@ -567,14 +597,16 @@ bool CanvasTranslator::HasPendingEvent() {
 bool CanvasTranslator::ReadPendingEvent(EventType& aEventType) {
   ReadElementConstrained(mCurrentMemReader, aEventType,
                          EventType::DRAWTARGETCREATION, LAST_CANVAS_EVENT_TYPE);
-  return mCurrentMemReader.good();
+  if (!mCurrentMemReader.good()) {
+    mHeader->readerState = State::Failed;
+    return false;
+  }
+
+  return true;
 }
 
 bool CanvasTranslator::ReadNextEvent(EventType& aEventType) {
-  if (mHeader->readerState == State::Paused) {
-    Flush();
-    return false;
-  }
+  MOZ_DIAGNOSTIC_ASSERT(mHeader->readerState == State::Processing);
 
   uint32_t spinCount = mMaxSpinCount;
   do {
@@ -621,6 +653,11 @@ bool CanvasTranslator::ReadNextEvent(EventType& aEventType) {
 
 bool CanvasTranslator::TranslateRecording() {
   MOZ_ASSERT(IsInTaskQueue());
+  MOZ_DIAGNOSTIC_ASSERT_IF(mFlushCheckpoint, HasPendingEvent());
+
+  if (mHeader->readerState == State::Failed) {
+    return false;
+  }
 
   if (mSharedContext && EnsureSharedContextWebgl()) {
     mSharedContext->EnterTlsScope();
@@ -648,7 +685,6 @@ bool CanvasTranslator::TranslateRecording() {
               gfxCriticalNote << "Failed to read event type: "
                               << recordedEvent->GetType();
             }
-            mHeader->readerState = State::Failed;
             return false;
           }
 
@@ -657,6 +693,7 @@ bool CanvasTranslator::TranslateRecording() {
 
     // Check the stream is good here or we will log the issue twice.
     if (!mCurrentMemReader.good()) {
+      mHeader->readerState = State::Failed;
       return false;
     }
 
@@ -668,19 +705,38 @@ bool CanvasTranslator::TranslateRecording() {
       } else {
         gfxCriticalNote << "Failed to play canvas event type: " << eventType;
       }
-      mHeader->readerState = State::Failed;
+
+      if (!mCurrentMemReader.good()) {
+        mHeader->readerState = State::Failed;
+        return false;
+      }
     }
 
     mHeader->processedCount++;
 
-    const auto maxDurationMs = 100;
-    const auto now = TimeStamp::Now();
-    const auto waitDurationMs =
-        static_cast<uint32_t>((now - start).ToMilliseconds());
+    if (mHeader->readerState == State::Paused) {
+      // We're waiting for an IPDL message return false, because we will resume
+      // translation after it is received.
+      Flush();
+      return false;
+    }
 
-    if (UsePendingCanvasTranslatorEvents() && waitDurationMs > maxDurationMs &&
-        mHeader->readerState != State::Paused) {
-      return true;
+    if (mFlushCheckpoint) {
+      // If we processed past the checkpoint return true to ensure translation
+      // after the checkpoint resumes later.
+      if (mHeader->processedCount >= mFlushCheckpoint) {
+        return true;
+      }
+    } else {
+      if (UsePendingCanvasTranslatorEvents()) {
+        const auto maxDurationMs = 100;
+        const auto now = TimeStamp::Now();
+        const auto waitDurationMs =
+            static_cast<uint32_t>((now - start).ToMilliseconds());
+        if (waitDurationMs > maxDurationMs) {
+          return true;
+        }
+      }
     }
   }
 
@@ -748,6 +804,9 @@ void CanvasTranslator::HandleCanvasTranslatorEvents() {
         break;
       case CanvasTranslatorEvent::Tag::ClearCachedResources:
         ClearCachedResources();
+        break;
+      case CanvasTranslatorEvent::Tag::DropFreeBuffersWhenDormant:
+        DropFreeBuffersWhenDormant();
         break;
     }
 
@@ -852,6 +911,8 @@ void CanvasTranslator::DeviceChangeAcknowledged() {
   }
 }
 
+void CanvasTranslator::DeviceResetAcknowledged() { DeviceChangeAcknowledged(); }
+
 bool CanvasTranslator::CreateReferenceTexture() {
   if (mReferenceTextureData) {
     mReferenceTextureData->Unlock();
@@ -930,8 +991,6 @@ bool CanvasTranslator::CheckForFreshCanvasDevice(int aLineNumber) {
   mDevice = gfx::DeviceManagerDx::Get()->GetCanvasDevice();
   if (!mDevice) {
     // We don't have a canvas device, we need to deactivate.
-    Telemetry::ScalarAdd(
-        Telemetry::ScalarID::GFX_CANVAS_REMOTE_DEACTIVATED_NO_DEVICE, 1);
     Deactivate();
     return false;
   }
@@ -952,63 +1011,83 @@ void CanvasTranslator::NotifyDeviceChanged() {
                         &CanvasTranslator::SendNotifyDeviceChanged));
 }
 
+void CanvasTranslator::NotifyDeviceReset(const RemoteTextureOwnerIdSet& aIds) {
+  if (aIds.empty()) {
+    return;
+  }
+  if (mRemoteTextureOwner) {
+    mRemoteTextureOwner->NotifyContextLost(&aIds);
+  }
+  nsTArray<RemoteTextureOwnerId> idArray(aIds.size());
+  for (const auto& id : aIds) {
+    idArray.AppendElement(id);
+  }
+  gfx::CanvasRenderThread::Dispatch(
+      NewRunnableMethod<nsTArray<RemoteTextureOwnerId>&&>(
+          "CanvasTranslator::SendNotifyDeviceReset", this,
+          &CanvasTranslator::SendNotifyDeviceReset, std::move(idArray)));
+}
+
 gfx::DrawTargetWebgl* CanvasTranslator::GetDrawTargetWebgl(
-    int64_t aTextureId, bool aCheckForFallback) const {
-  auto result = mTextureInfo.find(aTextureId);
+    const RemoteTextureOwnerId aTextureOwnerId, bool aCheckForFallback) const {
+  auto result = mTextureInfo.find(aTextureOwnerId);
   if (result != mTextureInfo.end()) {
     return result->second.GetDrawTargetWebgl(aCheckForFallback);
   }
   return nullptr;
 }
 
-void CanvasTranslator::NotifyRequiresRefresh(int64_t aTextureId,
-                                             bool aDispatch) {
+void CanvasTranslator::NotifyRequiresRefresh(
+    const RemoteTextureOwnerId aTextureOwnerId, bool aDispatch) {
   if (aDispatch) {
-    auto& info = mTextureInfo[aTextureId];
+    auto& info = mTextureInfo[aTextureOwnerId];
     if (!info.mNotifiedRequiresRefresh) {
       info.mNotifiedRequiresRefresh = true;
-      DispatchToTaskQueue(NewRunnableMethod<int64_t, bool>(
+      DispatchToTaskQueue(NewRunnableMethod<RemoteTextureOwnerId, bool>(
           "CanvasTranslator::NotifyRequiresRefresh", this,
-          &CanvasTranslator::NotifyRequiresRefresh, aTextureId, false));
+          &CanvasTranslator::NotifyRequiresRefresh, aTextureOwnerId, false));
     }
     return;
   }
 
-  if (mTextureInfo.find(aTextureId) != mTextureInfo.end()) {
-    Unused << SendNotifyRequiresRefresh(aTextureId);
+  if (mTextureInfo.find(aTextureOwnerId) != mTextureInfo.end()) {
+    Unused << SendNotifyRequiresRefresh(aTextureOwnerId);
   }
 }
 
-void CanvasTranslator::CacheSnapshotShmem(int64_t aTextureId, bool aDispatch) {
+void CanvasTranslator::CacheSnapshotShmem(
+    const RemoteTextureOwnerId aTextureOwnerId, bool aDispatch) {
   if (aDispatch) {
-    DispatchToTaskQueue(NewRunnableMethod<int64_t, bool>(
+    DispatchToTaskQueue(NewRunnableMethod<RemoteTextureOwnerId, bool>(
         "CanvasTranslator::CacheSnapshotShmem", this,
-        &CanvasTranslator::CacheSnapshotShmem, aTextureId, false));
+        &CanvasTranslator::CacheSnapshotShmem, aTextureOwnerId, false));
     return;
   }
 
-  if (gfx::DrawTargetWebgl* webgl = GetDrawTargetWebgl(aTextureId)) {
+  if (gfx::DrawTargetWebgl* webgl = GetDrawTargetWebgl(aTextureOwnerId)) {
     if (auto shmemHandle = webgl->TakeShmemHandle()) {
       // Lock the DT so that it doesn't get removed while shmem is in transit.
-      mTextureInfo[aTextureId].mLocked++;
+      mTextureInfo[aTextureOwnerId].mLocked++;
       nsCOMPtr<nsIThread> thread =
           gfx::CanvasRenderThread::GetCanvasRenderThread();
       RefPtr<CanvasTranslator> translator = this;
-      SendSnapshotShmem(aTextureId, std::move(shmemHandle),
+      SendSnapshotShmem(aTextureOwnerId, std::move(shmemHandle),
                         webgl->GetShmemSize())
           ->Then(
               thread, __func__,
-              [=](bool) { translator->RemoveTexture(aTextureId); },
+              [=](bool) { translator->RemoveTexture(aTextureOwnerId); },
               [=](ipc::ResponseRejectReason) {
-                translator->RemoveTexture(aTextureId);
+                translator->RemoveTexture(aTextureOwnerId);
               });
     }
   }
 }
 
-void CanvasTranslator::PrepareShmem(int64_t aTextureId) {
-  if (gfx::DrawTargetWebgl* webgl = GetDrawTargetWebgl(aTextureId, false)) {
-    if (const auto& fallback = mTextureInfo[aTextureId].mTextureData) {
+void CanvasTranslator::PrepareShmem(
+    const RemoteTextureOwnerId aTextureOwnerId) {
+  if (gfx::DrawTargetWebgl* webgl =
+          GetDrawTargetWebgl(aTextureOwnerId, false)) {
+    if (const auto& fallback = mTextureInfo[aTextureOwnerId].mTextureData) {
       // If there was a fallback, copy the fallback to the software framebuffer
       // shmem for reading.
       if (RefPtr<gfx::DrawTarget> dt = fallback->BorrowDrawTarget()) {
@@ -1024,23 +1103,30 @@ void CanvasTranslator::PrepareShmem(int64_t aTextureId) {
   }
 }
 
-void CanvasTranslator::ClearCachedResources() {
-  mUsedDataSurfaceForSurfaceDescriptor = nullptr;
-  mUsedWrapperForSurfaceDescriptor = nullptr;
-  mUsedSurfaceDescriptorForSurfaceDescriptor = Nothing();
-
+void CanvasTranslator::CacheDataSnapshots() {
   if (mSharedContext) {
     // If there are any DrawTargetWebgls, then try to cache their framebuffers
     // in software surfaces, just in case the GL context is lost. So long as
     // there is a software copy of the framebuffer, it can be copied into a
     // fallback TextureData later even if the GL context goes away.
-    mSharedContext->OnMemoryPressure();
     for (auto const& entry : mTextureInfo) {
       if (gfx::DrawTargetWebgl* webgl = entry.second.GetDrawTargetWebgl()) {
         webgl->EnsureDataSnapshot();
       }
     }
   }
+}
+
+void CanvasTranslator::ClearCachedResources() {
+  mUsedDataSurfaceForSurfaceDescriptor = nullptr;
+  mUsedWrapperForSurfaceDescriptor = nullptr;
+  mUsedSurfaceDescriptorForSurfaceDescriptor = Nothing();
+
+  if (mSharedContext) {
+    mSharedContext->OnMemoryPressure();
+  }
+
+  CacheDataSnapshots();
 }
 
 ipc::IPCResult CanvasTranslator::RecvClearCachedResources() {
@@ -1062,12 +1148,32 @@ ipc::IPCResult CanvasTranslator::RecvClearCachedResources() {
   return IPC_OK();
 }
 
+void CanvasTranslator::DropFreeBuffersWhenDormant() { CacheDataSnapshots(); }
+
+ipc::IPCResult CanvasTranslator::RecvDropFreeBuffersWhenDormant() {
+  if (mDeactivated) {
+    // The other side might have sent a message before we deactivated.
+    return IPC_OK();
+  }
+
+  if (UsePendingCanvasTranslatorEvents()) {
+    MutexAutoLock lock(mCanvasTranslatorEventsLock);
+    mPendingCanvasTranslatorEvents.emplace_back(
+        CanvasTranslatorEvent::DropFreeBuffersWhenDormant());
+    PostCanvasTranslatorEvents(lock);
+  } else {
+    DispatchToTaskQueue(
+        NewRunnableMethod("CanvasTranslator::DropFreeBuffersWhenDormant", this,
+                          &CanvasTranslator::DropFreeBuffersWhenDormant));
+  }
+  return IPC_OK();
+}
+
 static const OpenMode kInitMode = OpenMode::OPEN_READ_WRITE;
 
 already_AddRefed<gfx::DrawTarget> CanvasTranslator::CreateFallbackDrawTarget(
-    gfx::ReferencePtr aRefPtr, int64_t aTextureId,
-    RemoteTextureOwnerId aTextureOwnerId, const gfx::IntSize& aSize,
-    gfx::SurfaceFormat aFormat) {
+    gfx::ReferencePtr aRefPtr, const RemoteTextureOwnerId aTextureOwnerId,
+    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) {
   RefPtr<gfx::DrawTarget> dt;
   do {
     UniquePtr<TextureData> textureData =
@@ -1089,29 +1195,20 @@ already_AddRefed<gfx::DrawTarget> CanvasTranslator::CreateFallbackDrawTarget(
     // Recycled buffer contents may be uninitialized.
     dt->ClearRect(gfx::Rect(dt->GetRect()));
 
-    TextureInfo& info = mTextureInfo[aTextureId];
+    TextureInfo& info = mTextureInfo[aTextureOwnerId];
     info.mRefPtr = aRefPtr;
     info.mTextureData = std::move(textureData);
-    info.mRemoteTextureOwnerId = aTextureOwnerId;
     info.mTextureLockMode = kInitMode;
   } while (!dt && CheckForFreshCanvasDevice(__LINE__));
   return dt.forget();
 }
 
 already_AddRefed<gfx::DrawTarget> CanvasTranslator::CreateDrawTarget(
-    gfx::ReferencePtr aRefPtr, int64_t aTextureId,
-    RemoteTextureOwnerId aTextureOwnerId, const gfx::IntSize& aSize,
-    gfx::SurfaceFormat aFormat) {
-  if (aTextureId < 0) {
-#ifndef FUZZING_SNAPSHOT
-    MOZ_DIAGNOSTIC_ASSERT(false, "No texture ID set");
-#endif
-    return nullptr;
-  }
-
+    gfx::ReferencePtr aRefPtr, const RemoteTextureOwnerId aTextureOwnerId,
+    const gfx::IntSize& aSize, gfx::SurfaceFormat aFormat) {
   if (!aTextureOwnerId.IsValid()) {
 #ifndef FUZZING_SNAPSHOT
-    MOZ_DIAGNOSTIC_ASSERT(false, "No texture owner set");
+    MOZ_DIAGNOSTIC_CRASH("No texture owner set");
 #endif
     return nullptr;
   }
@@ -1126,22 +1223,20 @@ already_AddRefed<gfx::DrawTarget> CanvasTranslator::CreateDrawTarget(
       webgl->BeginFrame(true);
       dt = webgl.forget().downcast<gfx::DrawTarget>();
       if (dt) {
-        TextureInfo& info = mTextureInfo[aTextureId];
+        TextureInfo& info = mTextureInfo[aTextureOwnerId];
         info.mRefPtr = aRefPtr;
         info.mDrawTarget = dt;
-        info.mRemoteTextureOwnerId = aTextureOwnerId;
         info.mTextureLockMode = kInitMode;
-        CacheSnapshotShmem(aTextureId);
+        CacheSnapshotShmem(aTextureOwnerId);
       }
     }
     if (!dt) {
-      NotifyRequiresRefresh(aTextureId);
+      NotifyRequiresRefresh(aTextureOwnerId);
     }
   }
 
   if (!dt) {
-    dt = CreateFallbackDrawTarget(aRefPtr, aTextureId, aTextureOwnerId, aSize,
-                                  aFormat);
+    dt = CreateFallbackDrawTarget(aRefPtr, aTextureOwnerId, aSize, aFormat);
   }
 
   AddDrawTarget(aRefPtr, dt);
@@ -1152,23 +1247,32 @@ already_AddRefed<gfx::DrawTarget> CanvasTranslator::CreateDrawTarget(
     gfx::ReferencePtr aRefPtr, const gfx::IntSize& aSize,
     gfx::SurfaceFormat aFormat) {
 #ifndef FUZZING_SNAPSHOT
-  MOZ_DIAGNOSTIC_ASSERT(false, "Unexpected CreateDrawTarget call!");
+  MOZ_DIAGNOSTIC_CRASH("Unexpected CreateDrawTarget call!");
 #endif
   return nullptr;
 }
 
-void CanvasTranslator::RemoveTexture(int64_t aTextureId,
+void CanvasTranslator::NotifyTextureDestruction(
+    const RemoteTextureOwnerId aTextureOwnerId) {
+  MOZ_ASSERT(gfx::CanvasRenderThread::IsInCanvasRenderThread());
+
+  if (mIPDLClosed) {
+    return;
+  }
+  Unused << SendNotifyTextureDestruction(aTextureOwnerId);
+}
+
+void CanvasTranslator::RemoveTexture(const RemoteTextureOwnerId aTextureOwnerId,
                                      RemoteTextureTxnType aTxnType,
                                      RemoteTextureTxnId aTxnId) {
   // Don't erase the texture if still in use
-  auto result = mTextureInfo.find(aTextureId);
+  auto result = mTextureInfo.find(aTextureOwnerId);
   if (result == mTextureInfo.end()) {
     return;
   }
   auto& info = result->second;
   if (mRemoteTextureOwner && aTxnType && aTxnId) {
-    mRemoteTextureOwner->WaitForTxn(info.mRemoteTextureOwnerId, aTxnType,
-                                    aTxnId);
+    mRemoteTextureOwner->WaitForTxn(aTextureOwnerId, aTxnType, aTxnId);
   }
   if (--info.mLocked > 0) {
     return;
@@ -1179,20 +1283,24 @@ void CanvasTranslator::RemoveTexture(int64_t aTextureId,
   if (mRemoteTextureOwner) {
     // If this texture id was manually registered as a remote texture owner,
     // unregister it so it does not stick around after the texture id goes away.
-    RemoteTextureOwnerId owner = info.mRemoteTextureOwnerId;
-    if (owner.IsValid()) {
-      mRemoteTextureOwner->UnregisterTextureOwner(owner);
+    if (aTextureOwnerId.IsValid()) {
+      mRemoteTextureOwner->UnregisterTextureOwner(aTextureOwnerId);
     }
   }
+
+  gfx::CanvasRenderThread::Dispatch(NewRunnableMethod<RemoteTextureOwnerId>(
+      "CanvasTranslator::NotifyTextureDestruction", this,
+      &CanvasTranslator::NotifyTextureDestruction, aTextureOwnerId));
+
   mTextureInfo.erase(result);
 }
 
-bool CanvasTranslator::LockTexture(int64_t aTextureId, OpenMode aMode,
-                                   bool aInvalidContents) {
+bool CanvasTranslator::LockTexture(const RemoteTextureOwnerId aTextureOwnerId,
+                                   OpenMode aMode, bool aInvalidContents) {
   if (aMode == OpenMode::OPEN_NONE) {
     return false;
   }
-  auto result = mTextureInfo.find(aTextureId);
+  auto result = mTextureInfo.find(aTextureOwnerId);
   if (result == mTextureInfo.end()) {
     return false;
   }
@@ -1209,8 +1317,9 @@ bool CanvasTranslator::LockTexture(int64_t aTextureId, OpenMode aMode,
   return true;
 }
 
-bool CanvasTranslator::UnlockTexture(int64_t aTextureId) {
-  auto result = mTextureInfo.find(aTextureId);
+bool CanvasTranslator::UnlockTexture(
+    const RemoteTextureOwnerId aTextureOwnerId) {
+  auto result = mTextureInfo.find(aTextureOwnerId);
   if (result == mTextureInfo.end()) {
     return false;
   }
@@ -1223,7 +1332,7 @@ bool CanvasTranslator::UnlockTexture(int64_t aTextureId) {
     if (info.mTextureLockMode & OpenMode::OPEN_WRITE) {
       webgl->EndFrame();
       if (webgl->RequiresRefresh()) {
-        NotifyRequiresRefresh(aTextureId);
+        NotifyRequiresRefresh(aTextureOwnerId);
       }
     }
   }
@@ -1231,18 +1340,18 @@ bool CanvasTranslator::UnlockTexture(int64_t aTextureId) {
   return true;
 }
 
-bool CanvasTranslator::PresentTexture(int64_t aTextureId, RemoteTextureId aId) {
+bool CanvasTranslator::PresentTexture(
+    const RemoteTextureOwnerId aTextureOwnerId, RemoteTextureId aId) {
   AUTO_PROFILER_MARKER_TEXT("CanvasTranslator", GRAPHICS, {},
                             "CanvasTranslator::PresentTexture"_ns);
-  auto result = mTextureInfo.find(aTextureId);
+  auto result = mTextureInfo.find(aTextureOwnerId);
   if (result == mTextureInfo.end()) {
     return false;
   }
   auto& info = result->second;
-  RemoteTextureOwnerId ownerId = info.mRemoteTextureOwnerId;
   if (gfx::DrawTargetWebgl* webgl = info.GetDrawTargetWebgl()) {
-    EnsureRemoteTextureOwner(ownerId);
-    if (webgl->CopyToSwapChain(mWebglTextureType, aId, ownerId,
+    EnsureRemoteTextureOwner(aTextureOwnerId);
+    if (webgl->CopyToSwapChain(mWebglTextureType, aId, aTextureOwnerId,
                                mRemoteTextureOwner)) {
       return true;
     }
@@ -1254,14 +1363,14 @@ bool CanvasTranslator::PresentTexture(int64_t aTextureId, RemoteTextureId aId) {
       // Try to read into fallback data if possible to recover, otherwise force
       // the loss of the individual texture.
       webgl->EnsureDataSnapshot();
-      if (!TryDrawTargetWebglFallback(aTextureId, webgl)) {
-        RemoteTextureOwnerIdSet lost = {info.mRemoteTextureOwnerId};
-        mRemoteTextureOwner->NotifyContextLost(&lost);
+      if (!TryDrawTargetWebglFallback(aTextureOwnerId, webgl)) {
+        RemoteTextureOwnerIdSet lost = {aTextureOwnerId};
+        NotifyDeviceReset(lost);
       }
     }
   }
   if (TextureData* data = info.mTextureData.get()) {
-    PushRemoteTexture(aTextureId, data, aId, ownerId);
+    PushRemoteTexture(aTextureOwnerId, data, aId, aTextureOwnerId);
   }
   return true;
 }
@@ -1292,9 +1401,9 @@ UniquePtr<TextureData> CanvasTranslator::CreateOrRecycleTextureData(
   return CreateTextureData(aSize, aFormat, false);
 }
 
-bool CanvasTranslator::PushRemoteTexture(int64_t aTextureId, TextureData* aData,
-                                         RemoteTextureId aId,
-                                         RemoteTextureOwnerId aOwnerId) {
+bool CanvasTranslator::PushRemoteTexture(
+    const RemoteTextureOwnerId aTextureOwnerId, TextureData* aData,
+    RemoteTextureId aId, RemoteTextureOwnerId aOwnerId) {
   EnsureRemoteTextureOwner(aOwnerId);
   UniquePtr<TextureData> dstData;
   if (!mDeviceResetInProgress) {
@@ -1330,6 +1439,8 @@ bool CanvasTranslator::PushRemoteTexture(int64_t aTextureId, TextureData* aData,
 }
 
 void CanvasTranslator::ClearTextureInfo() {
+  MOZ_ASSERT(mIPDLClosed);
+
   mUsedDataSurfaceForSurfaceDescriptor = nullptr;
   mUsedWrapperForSurfaceDescriptor = nullptr;
   mUsedSurfaceDescriptorForSurfaceDescriptor = Nothing();
@@ -1424,10 +1535,10 @@ CanvasTranslator::MaybeRecycleDataSurfaceForSurfaceDescriptor(
   bool isYuvVideo = false;
   if (aTextureHost->AsMacIOSurfaceTextureHost()) {
     if (aTextureHost->GetFormat() == SurfaceFormat::NV12 ||
-        aTextureHost->GetFormat() == SurfaceFormat::YUV422) {
+        aTextureHost->GetFormat() == SurfaceFormat::YUY2) {
       isYuvVideo = true;
     }
-  } else if (aTextureHost->GetFormat() == gfx::SurfaceFormat::YUV) {
+  } else if (aTextureHost->GetFormat() == gfx::SurfaceFormat::YUV420) {
     isYuvVideo = true;
   }
 
@@ -1491,7 +1602,8 @@ CanvasTranslator::LookupSourceSurfaceFromSurfaceDescriptor(
 
     // TODO reuse DataSourceSurface if no update.
 
-    usedSurf = textureHostD3D11->GetAsSurfaceWithDevice(mDevice);
+    usedSurf =
+        textureHostD3D11->GetAsSurfaceWithDevice(mDevice, mVideoProcessorD3D11);
     if (!usedSurf) {
       MOZ_ASSERT_UNREACHABLE("unexpected to be called");
       usedDescriptor = Nothing();

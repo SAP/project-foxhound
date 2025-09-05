@@ -32,9 +32,17 @@ function assertRelativeDateMs(date, expectedMs) {
 /*---
 description: |
     A collection of assertion and wrapper functions for testing asynchronous built-ins.
-defines: [asyncTest]
+defines: [asyncTest, assert.throwsAsync]
 ---*/
 
+/**
+ * Defines the **sole** asynchronous test of a file.
+ * @see {@link ../docs/rfcs/async-helpers.md} for background.
+ *
+ * @param {Function} testFunc a callback whose returned promise indicates test results
+ *   (fulfillment for success, rejection for failure)
+ * @returns {void}
+ */
 function asyncTest(testFunc) {
   if (!Object.hasOwn(globalThis, "$DONE")) {
     throw new Test262Error("asyncTest called without async flag");
@@ -57,87 +65,71 @@ function asyncTest(testFunc) {
   }
 }
 
+/**
+ * Asserts that a callback asynchronously throws an instance of a particular
+ * error (i.e., returns a promise whose rejection value is an object referencing
+ * the constructor).
+ *
+ * @param {Function} expectedErrorConstructor the expected constructor of the
+ *   rejection value
+ * @param {Function} func the callback
+ * @param {string} [message] the prefix to use for failure messages
+ * @returns {Promise<void>} fulfills if the expected error is thrown,
+ *   otherwise rejects
+ */
 assert.throwsAsync = function (expectedErrorConstructor, func, message) {
   return new Promise(function (resolve) {
-    var innerThenable;
-    if (message === undefined) {
-      message = "";
-    } else {
-      message += " ";
-    }
-    if (typeof func === "function") {
-      try {
-        innerThenable = func();
-        if (
-          innerThenable === null ||
-          typeof innerThenable !== "object" ||
-          typeof innerThenable.then !== "function"
-        ) {
-          message +=
-            "Expected to obtain an inner promise that would reject with a" +
-            expectedErrorConstructor.name +
-            " but result was not a thenable";
-          throw new Test262Error(message);
-        }
-      } catch (thrown) {
-        message +=
-          "Expected a " +
-          expectedErrorConstructor.name +
-          " to be thrown asynchronously but an exception was thrown synchronously while obtaining the inner promise";
-        throw new Test262Error(message);
+    var fail = function (detail) {
+      if (message === undefined) {
+        throw new Test262Error(detail);
       }
-    } else {
-      message +=
-        "assert.throwsAsync called with an argument that is not a function";
-      throw new Test262Error(message);
+      throw new Test262Error(message + " " + detail);
+    };
+    if (typeof expectedErrorConstructor !== "function") {
+      fail("assert.throwsAsync called with an argument that is not an error constructor");
     }
-
+    if (typeof func !== "function") {
+      fail("assert.throwsAsync called with an argument that is not a function");
+    }
+    var expectedName = expectedErrorConstructor.name;
+    var expectation = "Expected a " + expectedName + " to be thrown asynchronously";
+    var res;
     try {
-      resolve(innerThenable.then(
-        function () {
-          message +=
-            "Expected a " +
-            expectedErrorConstructor.name +
-            " to be thrown asynchronously but no exception was thrown at all";
-          throw new Test262Error(message);
-        },
-        function (thrown) {
-          var expectedName, actualName;
-          if (typeof thrown !== "object" || thrown === null) {
-            message += "Thrown value was not an object!";
-            throw new Test262Error(message);
-          } else if (thrown.constructor !== expectedErrorConstructor) {
-            expectedName = expectedErrorConstructor.name;
-            actualName = thrown.constructor.name;
-            if (expectedName === actualName) {
-              message +=
-                "Expected a " +
-                expectedName +
-                " but got a different error constructor with the same name";
-            } else {
-              message +=
-                "Expected a " + expectedName + " but got a " + actualName;
-            }
-            throw new Test262Error(message);
-          }
-        }
-      ));
+      res = func();
     } catch (thrown) {
-      if (typeof thrown !== "object" || thrown === null) {
-        message +=
-          "Expected a " +
-          expectedErrorConstructor.name +
-          " to be thrown asynchronously but innerThenable synchronously threw a value that was not an object ";
-      } else {
-        message +=
-          "Expected a " +
-          expectedErrorConstructor.name +
-          " to be thrown asynchronously but a " +
-          thrown.constructor.name +
-          " was thrown synchronously";
-      }
-      throw new Test262Error(message);
+      fail(expectation + " but the function threw synchronously");
     }
+    if (res === null || typeof res !== "object" || typeof res.then !== "function") {
+      fail(expectation + " but result was not a thenable");
+    }
+    var onResFulfilled, onResRejected;
+    var resSettlementP = new Promise(function (onFulfilled, onRejected) {
+      onResFulfilled = onFulfilled;
+      onResRejected = onRejected;
+    });
+    try {
+      res.then(onResFulfilled, onResRejected)
+    } catch (thrown) {
+      fail(expectation + " but .then threw synchronously");
+    }
+    resolve(resSettlementP.then(
+      function () {
+        fail(expectation + " but no exception was thrown at all");
+      },
+      function (thrown) {
+        var actualName;
+        if (thrown === null || typeof thrown !== "object") {
+          fail(expectation + " but thrown value was not an object");
+        } else if (thrown.constructor !== expectedErrorConstructor) {
+          actualName = thrown.constructor.name;
+          if (expectedName === actualName) {
+            fail(expectation +
+              " but got a different error constructor with the same name");
+          }
+          fail(expectation + " but got a " + actualName);
+        }
+      }
+    ));
   });
 };
 
@@ -873,57 +865,125 @@ assert.deepEqual = function(actual, expected, message) {
   );
 };
 
+(function() {
+let getOwnPropertyDescriptor = Object.getOwnPropertyDescriptor;
+let join = arr => arr.join(', ');
+function stringFromTemplate(strings, ...subs) {
+  let parts = strings.map((str, i) => `${i === 0 ? '' : subs[i - 1]}${str}`);
+  return parts.join('');
+}
+function escapeKey(key) {
+  if (typeof key === 'symbol') return `[${String(key)}]`;
+  if (/^[a-zA-Z0-9_$]+$/.test(key)) return key;
+  return assert._formatIdentityFreeValue(key);
+}
+
 assert.deepEqual.format = function(value, seen) {
-  switch (typeof value) {
+  let basic = assert._formatIdentityFreeValue(value);
+  if (basic) return basic;
+  switch (value === null ? 'null' : typeof value) {
     case 'string':
-      return typeof JSON !== "undefined" ? JSON.stringify(value) : `"${value}"`;
+    case 'bigint':
     case 'number':
     case 'boolean':
-    case 'symbol':
-    case 'bigint':
-      return value.toString();
     case 'undefined':
-      return 'undefined';
+    case 'null':
+      assert(false, 'values without identity should use basic formatting');
+      break;
+    case 'symbol':
     case 'function':
-      return `[Function${value.name ? `: ${value.name}` : ''}]`;
     case 'object':
-      if (value === null) return 'null';
-      if (value instanceof Date) return `Date "${value.toISOString()}"`;
-      if (value instanceof RegExp) return value.toString();
-      if (!seen) {
-        seen = {
-          counter: 0,
-          map: new Map()
-        };
-      }
-
-      let usage = seen.map.get(value);
-      if (usage) {
-        usage.used = true;
-        return `[Ref: #${usage.id}]`;
-      }
-
-      usage = { id: ++seen.counter, used: false };
-      seen.map.set(value, usage);
-
-      if (typeof Set !== "undefined" && value instanceof Set) {
-        return `Set {${Array.from(value).map(value => assert.deepEqual.format(value, seen)).join(', ')}}${usage.used ? ` as #${usage.id}` : ''}`;
-      }
-      if (typeof Map !== "undefined" && value instanceof Map) {
-        return `Map {${Array.from(value).map(pair => `${assert.deepEqual.format(pair[0], seen)} => ${assert.deepEqual.format(pair[1], seen)}}`).join(', ')}}${usage.used ? ` as #${usage.id}` : ''}`;
-      }
-      if (Array.isArray ? Array.isArray(value) : value instanceof Array) {
-        return `[${value.map(value => assert.deepEqual.format(value, seen)).join(', ')}]${usage.used ? ` as #${usage.id}` : ''}`;
-      }
-      let tag = Symbol.toStringTag in value ? value[Symbol.toStringTag] : 'Object';
-      if (tag === 'Object' && Object.getPrototypeOf(value) === null) {
-        tag = '[Object: null prototype]';
-      }
-      return `${tag ? `${tag} ` : ''}{ ${Object.keys(value).map(key => `${key.toString()}: ${assert.deepEqual.format(value[key], seen)}`).join(', ')} }${usage.used ? ` as #${usage.id}` : ''}`;
+      break;
     default:
       return typeof value;
   }
+
+  if (!seen) {
+    seen = {
+      counter: 0,
+      map: new Map()
+    };
+  }
+  let usage = seen.map.get(value);
+  if (usage) {
+    usage.used = true;
+    return `ref #${usage.id}`;
+  }
+  usage = { id: ++seen.counter, used: false };
+  seen.map.set(value, usage);
+
+  // Properly communicating multiple references requires deferred rendering of
+  // all identity-bearing values until the outermost format call finishes,
+  // because the current value can also in appear in a not-yet-visited part of
+  // the object graph (which, when visited, will update the usage object).
+  //
+  // To preserve readability of the desired output formatting, we accomplish
+  // this deferral using tagged template literals.
+  // Evaluation closes over the usage object and returns a function that accepts
+  // "mapper" arguments for rendering the corresponding substitution values and
+  // returns an object with only a toString method which will itself be invoked
+  // when trying to use the result as a string in assert.deepEqual.
+  //
+  // For convenience, any absent mapper is presumed to be `String`, and the
+  // function itself has a toString method that self-invokes with no mappers
+  // (allowing returning the function directly when every mapper is `String`).
+  function lazyResult(strings, ...subs) {
+    function acceptMappers(...mappers) {
+      function toString() {
+        let renderings = subs.map((sub, i) => (mappers[i] || String)(sub));
+        let rendered = stringFromTemplate(strings, ...renderings);
+        if (usage.used) rendered += ` as #${usage.id}`;
+        return rendered;
+      }
+
+      return { toString };
+    }
+
+    acceptMappers.toString = () => String(acceptMappers());
+    return acceptMappers;
+  }
+
+  let format = assert.deepEqual.format;
+  function lazyString(strings, ...subs) {
+    return { toString: () => stringFromTemplate(strings, ...subs) };
+  }
+
+  if (typeof value === 'function') {
+    return lazyResult`function${value.name ? ` ${String(value.name)}` : ''}`;
+  }
+  if (typeof value !== 'object') {
+    // probably a symbol
+    return lazyResult`${value}`;
+  }
+  if (Array.isArray ? Array.isArray(value) : value instanceof Array) {
+    return lazyResult`[${value.map(value => format(value, seen))}]`(join);
+  }
+  if (value instanceof Date) {
+    return lazyResult`Date(${format(value.toISOString(), seen)})`;
+  }
+  if (value instanceof Error) {
+    return lazyResult`error ${value.name || 'Error'}(${format(value.message, seen)})`;
+  }
+  if (value instanceof RegExp) {
+    return lazyResult`${value}`;
+  }
+  if (typeof Map !== "undefined" && value instanceof Map) {
+    let contents = Array.from(value).map(pair => lazyString`${format(pair[0], seen)} => ${format(pair[1], seen)}`);
+    return lazyResult`Map {${contents}}`(join);
+  }
+  if (typeof Set !== "undefined" && value instanceof Set) {
+    let contents = Array.from(value).map(value => format(value, seen));
+    return lazyResult`Set {${contents}}`(join);
+  }
+
+  let tag = Symbol.toStringTag && Symbol.toStringTag in value
+    ? value[Symbol.toStringTag]
+    : Object.getPrototypeOf(value) === null ? '[Object: null prototype]' : 'Object';
+  let keys = Reflect.ownKeys(value).filter(key => getOwnPropertyDescriptor(value, key).enumerable);
+  let contents = keys.map(key => lazyString`${escapeKey(key)}: ${format(value[key], seen)}`);
+  return lazyResult`${tag ? `${tag} ` : ''}{${contents}}`(String, join);
 };
+})();
 
 assert.deepEqual._compare = (function () {
   var EQUAL = 1;
@@ -1002,7 +1062,7 @@ assert.deepEqual._compare = (function () {
   }
 
   function isObjectEquatable(value) {
-    return typeof value === 'object';
+    return typeof value === 'object' || typeof value === 'function';
   }
 
   function compareObjectEquality(a, b, cache) {
@@ -1772,36 +1832,4 @@ function floatTypedArrayConstructorPrecision(FA) {
   } else {
     throw new Error("Malformed test - floatTypedArrayConstructorPrecision called with non-float TypedArray");
   }
-}
-
-// file: timer.js
-// Copyright (C) 2017 Ecma International.  All rights reserved.
-// This code is governed by the BSD license found in the LICENSE file.
-/*---
-description: |
-    Used in website/scripts/sth.js
-defines: [setTimeout]
----*/
-//setTimeout is not available, hence this script was loaded
-if (Promise === undefined && this.setTimeout === undefined) {
-  if(/\$DONE()/.test(code))
-    throw new Test262Error("Async test capability is not supported in your test environment");
-}
-
-if (Promise !== undefined && this.setTimeout === undefined) {
-  (function(that) {
-     that.setTimeout = function(callback, delay) {
-      var p = Promise.resolve();
-      var start = Date.now();
-      var end = start + delay;
-      function check(){
-        var timeLeft = end - Date.now();
-        if(timeLeft > 0)
-          p.then(check);
-        else
-          callback();
-      }
-      p.then(check);
-    }
-  })(this);
 }

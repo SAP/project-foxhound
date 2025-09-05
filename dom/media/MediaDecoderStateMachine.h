@@ -259,9 +259,6 @@ class MediaDecoderStateMachine
   void AudioAudibleChanged(bool aAudible);
 
   void SetPlaybackRate(double aPlaybackRate) override;
-  void SetIsLiveStream(bool aIsLiveStream) override {
-    mIsLiveStream = aIsLiveStream;
-  }
   void SetCanPlayThrough(bool aCanPlayThrough) override {
     mCanPlayThrough = aCanPlayThrough;
   }
@@ -410,7 +407,7 @@ class MediaDecoderStateMachine
   bool mDispatchedStateMachine;
 
   // Used to dispatch another round schedule with specific target time.
-  DelayedScheduler mDelayedScheduler;
+  DelayedScheduler<TimeStamp> mDelayedScheduler;
 
   // Queue of audio frames. This queue is threadsafe, and is accessed from
   // the audio, decoder, state machine, and main threads.
@@ -472,8 +469,6 @@ class MediaDecoderStateMachine
 
   bool mCanPlayThrough = false;
 
-  bool mIsLiveStream = false;
-
   // True if all audio frames are already rendered.
   bool mAudioCompleted = false;
 
@@ -484,7 +479,7 @@ class MediaDecoderStateMachine
   bool mVideoDecodeSuspended;
 
   // Track enabling video decode suspension via timer
-  DelayedScheduler mVideoDecodeSuspendTimer;
+  DelayedScheduler<TimeStamp> mVideoDecodeSuspendTimer;
 
   // Track the current video decode mode.
   VideoDecodeMode mVideoDecodeMode;

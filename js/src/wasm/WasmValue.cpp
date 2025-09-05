@@ -124,7 +124,7 @@ bool CheckFuncRefValue(JSContext* cx, HandleValue v, MutableHandleAnyRef vp) {
     JSObject& obj = v.toObject();
     if (obj.is<JSFunction>()) {
       JSFunction* f = &obj.as<JSFunction>();
-      if (IsWasmExportedFunction(f)) {
+      if (f->isWasm()) {
         vp.set(AnyRef::fromJSObject(*f));
         return true;
       }
@@ -670,15 +670,11 @@ bool wasm::ToWebAssemblyValue(JSContext* cx, HandleValue val, ValType type,
     case ValType::V128:
       break;
     case ValType::Ref:
-#ifdef ENABLE_WASM_GC
       if (!type.isNullable() && val.isNull()) {
         JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                                  JSMSG_WASM_BAD_REF_NONNULLABLE_VALUE);
         return false;
       }
-#else
-      MOZ_ASSERT(type.isNullable());
-#endif
       switch (type.refTypeKind()) {
         case RefType::Func:
           return ToWebAssemblyValue_funcref<Debug>(cx, val, (void**)loc,

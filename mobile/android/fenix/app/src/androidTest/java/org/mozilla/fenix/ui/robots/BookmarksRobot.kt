@@ -13,7 +13,6 @@ import androidx.test.espresso.action.ViewActions.clearText
 import androidx.test.espresso.action.ViewActions.longClick
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.action.ViewActions.typeText
-import androidx.test.espresso.assertion.ViewAssertions.doesNotExist
 import androidx.test.espresso.assertion.ViewAssertions.matches
 import androidx.test.espresso.matcher.RootMatchers
 import androidx.test.espresso.matcher.ViewMatchers
@@ -32,6 +31,7 @@ import androidx.test.uiautomator.Until
 import org.hamcrest.Matchers.allOf
 import org.hamcrest.Matchers.containsString
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
@@ -46,6 +46,8 @@ import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.packageName
+import org.mozilla.fenix.helpers.TestHelper.snackbarButton
+import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
 import org.mozilla.fenix.helpers.click
 import org.mozilla.fenix.helpers.ext.waitNotNull
 
@@ -55,11 +57,11 @@ import org.mozilla.fenix.helpers.ext.waitNotNull
 class BookmarksRobot {
 
     fun verifyBookmarksMenuView() {
-        Log.i(TAG, "verifyBookmarksMenuView: Waiting for $waitingTime ms for bookmarks view to exist")
+        Log.i(TAG, "verifyBookmarksMenuView: Waiting for $waitingTimeShort ms for bookmarks view to exist")
         mDevice.findObject(
             UiSelector().text("Bookmarks"),
-        ).waitForExists(waitingTime)
-        Log.i(TAG, "verifyBookmarksMenuView: Waited for $waitingTime ms for bookmarks view to exist")
+        ).waitForExists(waitingTimeShort)
+        Log.i(TAG, "verifyBookmarksMenuView: Waited for $waitingTimeShort ms for bookmarks view to exist")
         Log.i(TAG, "verifyBookmarksMenuView: Trying to verify bookmarks view is displayed")
         onView(
             allOf(
@@ -147,7 +149,7 @@ class BookmarksRobot {
 
     fun verifyUndoDeleteSnackBarButton() {
         Log.i(TAG, "verifyUndoDeleteSnackBarButton: Trying to verify bookmark deletion undo snack bar button")
-        snackBarUndoButton().check(matches(withText("UNDO")))
+        assertTrue(snackbarButton!!.children.count { it.text == "UNDO" } == 1)
         Log.i(TAG, "verifyUndoDeleteSnackBarButton: Verified bookmark deletion undo snack bar button")
     }
 
@@ -159,7 +161,7 @@ class BookmarksRobot {
         )
         Log.i(TAG, "verifySnackBarHidden: Waited until undo snack bar button was gone")
         Log.i(TAG, "verifySnackBarHidden: Trying to verify bookmark snack bar does not exist")
-        onView(withId(R.id.snackbar_layout)).check(doesNotExist())
+        waitUntilSnackbarGone()
         Log.i(TAG, "verifySnackBarHidden: Verified bookmark snack bar does not exist")
     }
 
@@ -210,34 +212,29 @@ class BookmarksRobot {
     }
 
     fun verifyCurrentFolderTitle(title: String) {
-        Log.i(TAG, "verifyCurrentFolderTitle: Waiting for $waitingTime ms for bookmark with title: $title to exist")
+        Log.i(TAG, "verifyCurrentFolderTitle: Waiting for $waitingTimeShort ms for bookmark with title: $title to exist")
         mDevice.findObject(
             UiSelector().resourceId("$packageName:id/navigationToolbar")
                 .textContains(title),
-        )
-            .waitForExists(waitingTime)
-        Log.i(TAG, "verifyCurrentFolderTitle: Waited for $waitingTime ms for bookmark with title: $title to exist")
+        ).waitForExists(waitingTimeShort)
+        Log.i(TAG, "verifyCurrentFolderTitle: Waited for $waitingTimeShort ms for bookmark with title: $title to exist")
         Log.i(TAG, "verifyCurrentFolderTitle: Trying to verify bookmark with title: $title is displayed")
         onView(
             allOf(
                 withText(title),
                 withParent(withId(R.id.navigationToolbar)),
             ),
-        )
-            .check(matches(isDisplayed()))
+        ).check(matches(isDisplayed()))
         Log.i(TAG, "verifyCurrentFolderTitle: Verified bookmark with title: $title is displayed")
     }
 
     fun waitForBookmarksFolderContentToExist(parentFolderName: String, childFolderName: String) {
-        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waiting for $waitingTime ms for navigation toolbar containing bookmark folder with title: $parentFolderName to exist")
-        mDevice.findObject(
-            UiSelector().resourceId("$packageName:id/navigationToolbar")
-                .textContains(parentFolderName),
-        )
-            .waitForExists(waitingTime)
-        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waited for $waitingTime ms for navigation toolbar containing bookmark folder with title: $parentFolderName to exist")
-
-        mDevice.waitNotNull(Until.findObject(By.text(childFolderName)), waitingTime)
+        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waiting for $waitingTimeShort ms for navigation toolbar containing bookmark folder with title: $parentFolderName to exist")
+        itemWithResIdContainingText("$packageName:id/navigationToolbar", parentFolderName).waitForExists(waitingTimeShort)
+        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waited for $waitingTimeShort ms for navigation toolbar containing bookmark folder with title: $parentFolderName to exist")
+        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waiting for $waitingTimeShort ms for $childFolderName to exist")
+        itemContainingText(childFolderName).waitForExists(waitingTimeShort)
+        Log.i(TAG, "waitForBookmarksFolderContentToExist: Waited for $waitingTimeShort ms for $childFolderName to exist")
     }
 
     fun verifySyncSignInButton() {
@@ -271,10 +268,6 @@ class BookmarksRobot {
     }
 
     fun clickAddFolderButton() {
-        mDevice.waitNotNull(
-            Until.findObject(By.desc("Add folder")),
-            waitingTime,
-        )
         Log.i(TAG, "clickAddFolderButton: Trying to click add bookmarks folder button")
         addFolderButton().click()
         Log.i(TAG, "clickAddFolderButton: Clicked add bookmarks folder button")
@@ -381,6 +374,12 @@ class BookmarksRobot {
         Log.i(TAG, "clickDeleteInEditModeButton: Trying to click delete bookmarks button while in edit mode")
         deleteInEditModeButton().click()
         Log.i(TAG, "clickDeleteInEditModeButton: Clicked delete bookmarks button while in edit mode")
+    }
+
+    fun selectItem(title: String) {
+        Log.i(TAG, "selectItem: Trying to click item with title: $title")
+        onView(withText(title)).click()
+        Log.i(TAG, "selectItem: Clicked item with title: $title")
     }
 
     class Transition {
@@ -499,10 +498,6 @@ private fun threeDotMenu(bookmark: String) = onView(
         hasSibling(withText(bookmark)),
     ),
 )
-
-private fun snackBarText() = onView(withId(R.id.snackbar_text))
-
-private fun snackBarUndoButton() = onView(withId(R.id.snackbar_btn))
 
 private fun bookmarkNameEditBox() = onView(withId(R.id.bookmarkNameEdit))
 

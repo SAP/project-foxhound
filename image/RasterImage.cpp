@@ -33,6 +33,7 @@
 #include "mozilla/RefPtr.h"
 #include "mozilla/SizeOfState.h"
 #include "mozilla/StaticPrefs_image.h"
+#include "mozilla/glean/ImageDecodersMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/TimeStamp.h"
 
@@ -91,7 +92,7 @@ RasterImage::~RasterImage() {
   SurfaceCache::RemoveImage(ImageKey(this));
 
   // Record Telemetry.
-  Telemetry::Accumulate(Telemetry::IMAGE_DECODE_COUNT, mDecodeCount);
+  glean::image_decode::count.AccumulateSingleSample(mDecodeCount);
 }
 
 nsresult RasterImage::Init(const char* aMimeType, uint32_t aFlags) {
@@ -256,12 +257,11 @@ RasterImage::GetIntrinsicSize(nsSize* aSize) {
 }
 
 //******************************************************************************
-Maybe<AspectRatio> RasterImage::GetIntrinsicRatio() {
+AspectRatio RasterImage::GetIntrinsicRatio() {
   if (mError) {
-    return Nothing();
+    return {};
   }
-
-  return Some(AspectRatio::FromSize(mSize.width, mSize.height));
+  return AspectRatio::FromSize(mSize.width, mSize.height);
 }
 
 NS_IMETHODIMP_(Orientation)
@@ -745,8 +745,8 @@ bool RasterImage::SetMetadata(const ImageMetadata& aMetadata,
     MOZ_ASSERT(mOrientation.IsIdentity(), "Would need to orient hotspot point");
 
     auto hotspot = aMetadata.GetHotspot();
-    mHotspot.x = std::max(std::min(hotspot.x.value, mSize.width - 1), 0);
-    mHotspot.y = std::max(std::min(hotspot.y.value, mSize.height - 1), 0);
+    mHotspot.x = std::clamp(hotspot.x.value, 0, mSize.width - 1);
+    mHotspot.y = std::clamp(hotspot.y.value, 0, mSize.height - 1);
   }
 
   return true;
@@ -1433,8 +1433,7 @@ RasterImage::Draw(gfxContext* aContext, const IntSize& aSize,
 
   if (shouldRecordTelemetry) {
     TimeDuration drawLatency = TimeStamp::Now() - mDrawStartTime;
-    Telemetry::Accumulate(Telemetry::IMAGE_DECODE_ON_DRAW_LATENCY,
-                          int32_t(drawLatency.ToMicroseconds()));
+    glean::image_decode::on_draw_latency.AccumulateRawDuration(drawLatency);
     mDrawStartTime = TimeStamp();
   }
 
@@ -1679,16 +1678,15 @@ void RasterImage::NotifyDecodeComplete(
   // Do some telemetry if this isn't a metadata decode.
   if (!aStatus.mWasMetadataDecode) {
     if (aTelemetry.mChunkCount) {
-      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_CHUNKS,
-                            aTelemetry.mChunkCount);
+      glean::image_decode::chunks.AccumulateSingleSample(
+          aTelemetry.mChunkCount);
     }
 
     if (aStatus.mFinished) {
-      Telemetry::Accumulate(Telemetry::IMAGE_DECODE_TIME,
-                            int32_t(aTelemetry.mDecodeTime.ToMicroseconds()));
+      glean::image_decode::time.AccumulateRawDuration(aTelemetry.mDecodeTime);
 
-      if (aTelemetry.mSpeedHistogram && aTelemetry.mBytesDecoded) {
-        Telemetry::Accumulate(*aTelemetry.mSpeedHistogram, aTelemetry.Speed());
+      if (aTelemetry.mSpeedMetric && aTelemetry.mBytesDecoded) {
+        (*aTelemetry.mSpeedMetric).Accumulate(aTelemetry.Speed());
       }
     }
   }

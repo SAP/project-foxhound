@@ -5,11 +5,17 @@
 use inherent::inherent;
 use std::sync::Arc;
 
-use super::{CommonMetricData, MetricId};
+use super::{CommonMetricData, MetricGetter, MetricId};
 use glean::{DistributionData, ErrorType, HistogramType};
 
 use crate::ipc::{need_ipc, with_ipc_payload};
 use glean::traits::CustomDistribution;
+
+#[cfg(feature = "with_gecko")]
+use super::profiler_utils::{
+    truncate_vector_for_marker, DistributionMetricMarker, DistributionValues,
+    TelemetryProfilerCategory,
+};
 
 /// A custom distribution metric.
 ///
@@ -17,10 +23,10 @@ use glean::traits::CustomDistribution;
 #[derive(Clone)]
 pub enum CustomDistributionMetric {
     Parent {
-        /// The metric's ID.
-        ///
-        /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
-        id: MetricId,
+        /// The metric's ID. Used for testing and profiler markers. Custom
+        /// distribution metrics can be labeled, so we may have either a
+        /// metric ID or sub-metric ID.
+        id: MetricGetter,
         inner: Arc<glean::private::CustomDistributionMetric>,
     },
     Child(CustomDistributionMetricIpc),
@@ -49,28 +55,62 @@ impl CustomDistributionMetric {
                 histogram_type,
             );
             CustomDistributionMetric::Parent {
-                id,
+                id: id.into(),
                 inner: Arc::new(inner),
             }
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn metric_id(&self) -> MetricId {
+    pub(crate) fn metric_id(&self) -> MetricGetter {
         match self {
             CustomDistributionMetric::Parent { id, .. } => *id,
-            CustomDistributionMetric::Child(c) => c.0,
+            CustomDistributionMetric::Child(c) => c.0.into(),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn child_metric(&self) -> Self {
         match self {
-            CustomDistributionMetric::Parent { id, .. } => {
-                CustomDistributionMetric::Child(CustomDistributionMetricIpc(*id))
-            }
+            CustomDistributionMetric::Parent { id, .. } => CustomDistributionMetric::Child(
+                // SAFETY: We can unwrap here, as this code is only run in the
+                // context of a test. If this code is used elsewhere, the
+                // `unwrap` should be replaced with proper error handling of
+                // the `None` case.
+                CustomDistributionMetricIpc(id.metric_id().unwrap()),
+            ),
             CustomDistributionMetric::Child(_) => {
                 panic!("Can't get a child metric from a child metric")
+            }
+        }
+    }
+
+    pub fn start_buffer(&self) -> LocalCustomDistribution<'_> {
+        match self {
+            CustomDistributionMetric::Parent { inner, .. } => {
+                LocalCustomDistribution::Parent(inner.start_buffer())
+            }
+            CustomDistributionMetric::Child(_) => {
+                // TODO(bug 1920957): Buffering not implemented for child processes yet. We don't
+                // want to panic though.
+                log::warn!("Can't get a local custom distribution from a child metric. No data will be recorded.");
+                LocalCustomDistribution::Child
+            }
+        }
+    }
+}
+
+pub enum LocalCustomDistribution<'a> {
+    Parent(glean::private::LocalCustomDistribution<'a>),
+    Child,
+}
+
+impl LocalCustomDistribution<'_> {
+    pub fn accumulate(&mut self, sample: u64) {
+        match self {
+            LocalCustomDistribution::Parent(p) => p.accumulate(sample),
+            LocalCustomDistribution::Child => {
+                log::debug!("Can't accumulate local custom distribution in a child process.")
             }
         }
     }
@@ -79,8 +119,15 @@ impl CustomDistributionMetric {
 #[inherent]
 impl CustomDistribution for CustomDistributionMetric {
     pub fn accumulate_samples_signed(&self, samples: Vec<i64>) {
-        match self {
-            CustomDistributionMetric::Parent { inner, .. } => inner.accumulate_samples(samples),
+        #[cfg(feature = "with_gecko")]
+        let marker_samples = truncate_vector_for_marker(&samples);
+
+        #[allow(unused)]
+        let id = match self {
+            CustomDistributionMetric::Parent { id, inner } => {
+                inner.accumulate_samples(samples);
+                *id
+            }
             CustomDistributionMetric::Child(c) => {
                 with_ipc_payload(move |payload| {
                     if let Some(v) = payload.custom_samples.get_mut(&c.0) {
@@ -89,14 +136,24 @@ impl CustomDistribution for CustomDistributionMetric {
                         payload.custom_samples.insert(c.0, samples);
                     }
                 });
+                MetricGetter::Id(c.0)
             }
-        }
+        };
+
+        #[cfg(feature = "with_gecko")]
+        gecko_profiler::lazy_add_marker!(
+            "CustomDistribution::accumulate",
+            TelemetryProfilerCategory,
+            DistributionMetricMarker::new(id, None, DistributionValues::Samples(marker_samples),)
+        );
     }
 
     pub fn accumulate_single_sample_signed(&self, sample: i64) {
-        match self {
-            CustomDistributionMetric::Parent { inner, .. } => {
-                inner.accumulate_single_sample(sample)
+        #[allow(unused)]
+        let id = match self {
+            CustomDistributionMetric::Parent { id, inner } => {
+                inner.accumulate_single_sample(sample);
+                *id
             }
             CustomDistributionMetric::Child(c) => {
                 with_ipc_payload(move |payload| {
@@ -106,8 +163,15 @@ impl CustomDistribution for CustomDistributionMetric {
                         payload.custom_samples.insert(c.0, vec![sample]);
                     }
                 });
+                MetricGetter::Id(c.0)
             }
-        }
+        };
+        #[cfg(feature = "with_gecko")]
+        gecko_profiler::lazy_add_marker!(
+            "CustomDistribution::accumulate",
+            TelemetryProfilerCategory,
+            DistributionMetricMarker::new(id, None, DistributionValues::Sample(sample))
+        );
     }
 
     pub fn test_get_value<'a, S: Into<Option<&'a str>>>(
@@ -148,7 +212,7 @@ mod test {
 
         metric.accumulate_samples_signed(vec![1, 2, 3]);
 
-        assert!(metric.test_get_value("store1").is_some());
+        assert!(metric.test_get_value("test-ping").is_some());
     }
 
     #[test]
@@ -172,7 +236,7 @@ mod test {
         assert!(ipc::replay_from_buf(&buf).is_ok());
 
         let data = parent_metric
-            .test_get_value("store1")
+            .test_get_value("test-ping")
             .expect("should have some data");
 
         assert_eq!(2, data.values[&1], "Low bucket has 2 values");

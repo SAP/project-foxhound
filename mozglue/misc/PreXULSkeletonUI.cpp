@@ -97,6 +97,13 @@ NormalizedRGB Lerp(const NormalizedRGB& a, const NormalizedRGB& b, double x) {
 // Produces a smooth curve in [0,1] based on a linear input in [0,1]
 double SmoothStep3(double x) { return x * x * (3.0 - 2.0 * x); }
 
+struct Margin {
+  int top = 0;
+  int right = 0;
+  int bottom = 0;
+  int left = 0;
+};
+
 static const wchar_t kPreXULSkeletonUIKeyPath[] =
     L"SOFTWARE"
     L"\\" MOZ_APP_VENDOR L"\\" MOZ_APP_BASENAME L"\\PreXULSkeletonUISettings";
@@ -115,9 +122,20 @@ static Vector<ColorRect>* sAnimatedRects = nullptr;
 static int sTotalChromeHeight = 0;
 static volatile LONG sAnimationControlFlag = 0;
 static bool sMaximized = false;
-static int sNonClientVerticalMargins = 0;
-static int sNonClientHorizontalMargins = 0;
 static uint32_t sDpi = 0;
+// See nsWindow::mNonClientOffset
+static Margin sNonClientOffset;
+static int sCaptionHeight = 0;
+static int sHorizontalResizeMargin = 0;
+static int sVerticalResizeMargin = 0;
+
+// See nsWindow::NonClientSizeMargin()
+static Margin NonClientSizeMargin() {
+  return Margin{sCaptionHeight + sVerticalResizeMargin - sNonClientOffset.top,
+                sHorizontalResizeMargin - sNonClientOffset.right,
+                sVerticalResizeMargin - sNonClientOffset.bottom,
+                sHorizontalResizeMargin - sNonClientOffset.left};
+}
 
 // Color values needed by the animation loop
 static uint32_t sAnimationColor;
@@ -696,17 +714,19 @@ Result<Ok, PreXULSkeletonUIError> DrawSkeletonUI(
   sToolbarForegroundColor = currentTheme.toolbarForegroundColor;
 
   bool menubarShown = flags.contains(SkeletonUIFlag::MenubarShown);
+  bool verticalTabs = flags.contains(SkeletonUIFlag::VerticalTabs);
   bool bookmarksToolbarShown =
       flags.contains(SkeletonUIFlag::BookmarksToolbarShown);
   bool rtlEnabled = flags.contains(SkeletonUIFlag::RtlEnabled);
 
   int chromeHorMargin = CSSToDevPixels(2, sCSSToDevPixelScaling);
-  int verticalOffset = sMaximized ? sNonClientVerticalMargins : 0;
+  int verticalOffset = sMaximized ? sVerticalResizeMargin : 0;
   int horizontalOffset =
-      sNonClientHorizontalMargins - (sMaximized ? 0 : chromeHorMargin);
+      sHorizontalResizeMargin - (sMaximized ? 0 : chromeHorMargin);
 
   // found in tabs.inc.css, "--tab-min-height" + 2 * "--tab-block-margin"
-  int tabBarHeight = CSSToDevPixels(44, sCSSToDevPixelScaling);
+  int tabBarHeight =
+      verticalTabs ? 0 : CSSToDevPixels(44, sCSSToDevPixelScaling);
   int selectedTabBorderWidth = CSSToDevPixels(2, sCSSToDevPixelScaling);
   // found in tabs.inc.css, "--tab-block-margin"
   int titlebarSpacerWidth = horizontalOffset +
@@ -776,7 +796,7 @@ Result<Ok, PreXULSkeletonUIError> DrawSkeletonUI(
   Vector<ColorRect> rects;
 
   ColorRect menubar = {};
-  menubar.color = currentTheme.tabBarColor;
+  menubar.color = currentTheme.titlebarColor;
   menubar.x = 0;
   menubar.y = verticalOffset;
   menubar.width = sWindowWidth;
@@ -792,7 +812,7 @@ Result<Ok, PreXULSkeletonUIError> DrawSkeletonUI(
 
   // The (traditionally dark blue on Windows) background of the tab bar.
   ColorRect tabBar = {};
-  tabBar.color = currentTheme.tabBarColor;
+  tabBar.color = currentTheme.titlebarColor;
   tabBar.x = 0;
   tabBar.y = menubar.y + menubar.height;
   tabBar.width = sWindowWidth;
@@ -802,38 +822,47 @@ Result<Ok, PreXULSkeletonUIError> DrawSkeletonUI(
     return Err(PreXULSkeletonUIError::OOM);
   }
 
-  // The initial selected tab
-  ColorRect selectedTab = {};
-  selectedTab.color = currentTheme.tabColor;
-  selectedTab.x = titlebarSpacerWidth;
-  selectedTab.y = menubar.y + menubar.height + selectedTabMarginTop;
-  selectedTab.width = selectedTabWidth;
-  selectedTab.height =
-      tabBar.y + tabBar.height - selectedTab.y - selectedTabMarginBottom;
-  selectedTab.borderColor = currentTheme.tabOutlineColor;
-  selectedTab.borderWidth = selectedTabBorderWidth;
-  selectedTab.borderRadius = selectedTabBorderRadius;
-  selectedTab.flipIfRTL = true;
-  if (!rects.append(selectedTab)) {
-    return Err(PreXULSkeletonUIError::OOM);
-  }
+  if (!verticalTabs) {
+    // The initial selected tab
+    ColorRect selectedTab = {};
+    selectedTab.color = currentTheme.tabColor;
+    selectedTab.x = titlebarSpacerWidth;
+    selectedTab.y = menubar.y + menubar.height + selectedTabMarginTop;
+    selectedTab.width = selectedTabWidth;
+    selectedTab.height =
+        tabBar.y + tabBar.height - selectedTab.y - selectedTabMarginBottom;
+    selectedTab.borderColor = currentTheme.tabOutlineColor;
+    selectedTab.borderWidth = selectedTabBorderWidth;
+    selectedTab.borderRadius = selectedTabBorderRadius;
+    selectedTab.flipIfRTL = true;
+    if (!rects.append(selectedTab)) {
+      return Err(PreXULSkeletonUIError::OOM);
+    }
 
-  // A placeholder rect representing text that will fill the selected tab title
-  ColorRect tabTextPlaceholder = {};
-  tabTextPlaceholder.color = currentTheme.toolbarForegroundColor;
-  tabTextPlaceholder.x = selectedTab.x + tabPlaceholderBarMarginLeft;
-  tabTextPlaceholder.y = selectedTab.y + tabPlaceholderBarMarginTop;
-  tabTextPlaceholder.width = tabPlaceholderBarWidth;
-  tabTextPlaceholder.height = tabPlaceholderBarHeight;
-  tabTextPlaceholder.borderRadius = placeholderBorderRadius;
-  tabTextPlaceholder.flipIfRTL = true;
-  if (!rects.append(tabTextPlaceholder)) {
-    return Err(PreXULSkeletonUIError::OOM);
+    // A placeholder rect representing text that will fill the selected tab
+    // title
+    ColorRect tabTextPlaceholder = {};
+    tabTextPlaceholder.color = currentTheme.toolbarForegroundColor;
+    tabTextPlaceholder.x = selectedTab.x + tabPlaceholderBarMarginLeft;
+    tabTextPlaceholder.y = selectedTab.y + tabPlaceholderBarMarginTop;
+    tabTextPlaceholder.width = tabPlaceholderBarWidth;
+    tabTextPlaceholder.height = tabPlaceholderBarHeight;
+    tabTextPlaceholder.borderRadius = placeholderBorderRadius;
+    tabTextPlaceholder.flipIfRTL = true;
+    if (!rects.append(tabTextPlaceholder)) {
+      return Err(PreXULSkeletonUIError::OOM);
+    }
+
+    if (!sAnimatedRects->append(tabTextPlaceholder)) {
+      return Err(PreXULSkeletonUIError::OOM);
+    }
   }
 
   // The toolbar background
   ColorRect toolbar = {};
-  toolbar.color = currentTheme.backgroundColor;
+  // In the vertical tabs case the main toolbar is in the titlebar:
+  toolbar.color =
+      verticalTabs ? currentTheme.titlebarColor : currentTheme.backgroundColor;
   toolbar.x = 0;
   toolbar.y = tabBar.y + tabBarHeight;
   toolbar.width = sWindowWidth;
@@ -1024,8 +1053,7 @@ Result<Ok, PreXULSkeletonUIError> DrawSkeletonUI(
     return Err(PreXULSkeletonUIError::BadWindowDimensions);
   }
 
-  if (!sAnimatedRects->append(tabTextPlaceholder) ||
-      !sAnimatedRects->append(urlbarTextPlaceholder)) {
+  if (!sAnimatedRects->append(urlbarTextPlaceholder)) {
     return Err(PreXULSkeletonUIError::OOM);
   }
 
@@ -1274,19 +1302,12 @@ LRESULT WINAPI PreXULSkeletonUIProc(HWND hWnd, UINT msg, WPARAM wParam,
         wParam ? &(reinterpret_cast<NCCALCSIZE_PARAMS*>(lParam))->rgrc[0]
                : (reinterpret_cast<RECT*>(lParam));
 
-    // These match the margins set in browser-tabsintitlebar.js with
-    // default prefs on Windows. Bug 1673092 tracks lining this up with
-    // that more correctly instead of hard-coding it.
-    int horizontalOffset =
-        sNonClientHorizontalMargins -
-        (sMaximized ? 0 : CSSToDevPixels(2, sCSSToDevPixelScaling));
-    int verticalOffset =
-        sNonClientHorizontalMargins -
-        (sMaximized ? 0 : CSSToDevPixels(2, sCSSToDevPixelScaling));
-    clientRect->top = clientRect->top;
-    clientRect->left += horizontalOffset;
-    clientRect->right -= horizontalOffset;
-    clientRect->bottom -= verticalOffset;
+    Margin margin = NonClientSizeMargin();
+    clientRect->top += margin.top;
+    clientRect->left += margin.left;
+    clientRect->right -= margin.right;
+    clientRect->bottom -= margin.bottom;
+
     return 0;
   }
 
@@ -1328,8 +1349,8 @@ ThemeColors GetTheme(ThemeMode themeId) {
       theme.toolbarForegroundColor = 0x6a6a6d;
       theme.tabOutlineColor = 0x1c1b22;
       // controlled by css variable --lwt-accent-color
-      theme.tabBarColor = 0x1c1b22;
-      // controlled by --toolbar-non-lwt-textcolor in browser.css
+      theme.titlebarColor = 0x1c1b22;
+      // controlled by --toolbar-color in browser.css
       theme.chromeContentDividerColor = 0x0c0c0d;
       // controlled by css variable --toolbar-field-background-color
       theme.urlbarColor = 0x42414d;
@@ -1339,14 +1360,14 @@ ThemeColors GetTheme(ThemeMode themeId) {
     case ThemeMode::Light:
     case ThemeMode::Default:
     default:
-      // --toolbar-non-lwt-bgcolor in browser.css
+      // --toolbar-bgcolor in browser.css
       theme.backgroundColor = 0xf9f9fb;
       theme.tabColor = 0xf9f9fb;
       theme.toolbarForegroundColor = 0xdddde1;
       theme.tabOutlineColor = 0xdddde1;
-      // found in browser-aero.css ":root[tabsintitlebar]:not(:-moz-lwtheme)"
+      // found in browser-aero.css ":root[customtitlebar]:not(:-moz-lwtheme)"
       // (set to "hsl(235,33%,19%)")
-      theme.tabBarColor = 0xf0f0f4;
+      theme.titlebarColor = 0xf0f0f4;
       // --chrome-content-separator-color in browser.css
       theme.chromeContentDividerColor = 0xe1e1e2;
       // controlled by css variable --toolbar-color
@@ -1902,7 +1923,7 @@ static Result<Ok, PreXULSkeletonUIError> CreateAndStorePreXULSkeletonUIImpl(
                                                          sThemeRegSuffix)));
   ThemeMode themeMode = static_cast<ThemeMode>(theme);
   if (themeMode == ThemeMode::Default) {
-    if (IsSystemDarkThemeEnabled() == true) {
+    if (IsSystemDarkThemeEnabled()) {
       themeMode = ThemeMode::Dark;
     }
   }
@@ -1931,7 +1952,7 @@ static Result<Ok, PreXULSkeletonUIError> CreateAndStorePreXULSkeletonUIImpl(
   // mostly #FFFFFF. To avoid a bright flash when the window is first created,
   // cloak the window while showing it, and fill it with the appropriate
   // background color before uncloaking it.
-  if (sDwmGetWindowAttribute != nullptr) {
+  {
     constexpr static auto const CloakWindow = [](HWND hwnd, BOOL state) {
       sDwmSetWindowAttribute(sPreXULSkeletonUIWindow, DWMWA_CLOAK, &state,
                              sizeof(state));
@@ -1967,11 +1988,20 @@ static Result<Ok, PreXULSkeletonUIError> CreateAndStorePreXULSkeletonUIImpl(
   }
 
   sDpi = sGetDpiForWindow(sPreXULSkeletonUIWindow);
-  sNonClientHorizontalMargins =
-      sGetSystemMetricsForDpi(SM_CXFRAME, sDpi) +
-      sGetSystemMetricsForDpi(SM_CXPADDEDBORDER, sDpi);
-  sNonClientVerticalMargins = sGetSystemMetricsForDpi(SM_CYFRAME, sDpi) +
-                              sGetSystemMetricsForDpi(SM_CXPADDEDBORDER, sDpi);
+  sHorizontalResizeMargin = sGetSystemMetricsForDpi(SM_CXFRAME, sDpi) +
+                            sGetSystemMetricsForDpi(SM_CXPADDEDBORDER, sDpi);
+  sVerticalResizeMargin = sGetSystemMetricsForDpi(SM_CYFRAME, sDpi) +
+                          sGetSystemMetricsForDpi(SM_CXPADDEDBORDER, sDpi);
+  sCaptionHeight = sGetSystemMetricsForDpi(SM_CYCAPTION, sDpi);
+
+  // These match the offsets that we get with default prefs. We don't use the
+  // skeleton ui if tabsInTitlebar is disabled, see bug 1673092.
+  if (sMaximized) {
+    sNonClientOffset = Margin{sCaptionHeight, 0, 0, 0};
+  } else {
+    // See nsWindow::NormalWindowNonClientOffset()
+    sNonClientOffset = Margin{sCaptionHeight + sVerticalResizeMargin, 0, 0, 0};
+  }
 
   if (sMaximized) {
     HMONITOR monitor =
@@ -1989,9 +2019,9 @@ static Result<Ok, PreXULSkeletonUIError> CreateAndStorePreXULSkeletonUIImpl(
     }
 
     sWindowWidth =
-        mi.rcWork.right - mi.rcWork.left + sNonClientHorizontalMargins * 2;
+        mi.rcWork.right - mi.rcWork.left + sHorizontalResizeMargin * 2;
     sWindowHeight =
-        mi.rcWork.bottom - mi.rcWork.top + sNonClientVerticalMargins * 2;
+        mi.rcWork.bottom - mi.rcWork.top + sVerticalResizeMargin * 2;
   } else {
     sWindowWidth = static_cast<int>(windowWidth);
     sWindowHeight = static_cast<int>(windowHeight);
@@ -2061,10 +2091,6 @@ HWND ConsumePreXULSkeletonUIHandle() {
   return result;
 }
 
-Maybe<PreXULSkeletonUIError> GetPreXULSkeletonUIErrorReason() {
-  return sErrorReason;
-}
-
 Result<Ok, PreXULSkeletonUIError> PersistPreXULSkeletonUIValues(
     const SkeletonUISettings& settings) {
   if (!sPreXULSkeletonUIEnabled) {
@@ -2108,6 +2134,9 @@ Result<Ok, PreXULSkeletonUIError> PersistPreXULSkeletonUIValues(
   }
   if (settings.uiDensity == SkeletonUIDensity::Compact) {
     flags += SkeletonUIFlag::CompactDensity;
+  }
+  if (settings.verticalTabs) {
+    flags += SkeletonUIFlag::VerticalTabs;
   }
 
   uint32_t flagsUint = flags.serialize();

@@ -68,8 +68,6 @@ class TelemetryProbesReporter final {
   void OnAudibleChanged(AudibleState aAudible);
   void OnMediaContentChanged(MediaContent aContent);
   void OnMutedChanged(bool aMuted);
-  void OnDecodeSuspended();
-  void OnDecodeResumed();
 
   enum class FirstFrameLoadedFlag {
     IsMSE,
@@ -78,18 +76,18 @@ class TelemetryProbesReporter final {
     IsHardwareDecoding,
   };
   using FirstFrameLoadedFlagSet = EnumSet<FirstFrameLoadedFlag, uint8_t>;
-  void OntFirstFrameLoaded(const double aLoadedFirstFrameTime,
-                           const double aLoadedMetadataTime,
-                           const double aTotalWaitingDataTime,
-                           const double aTotalBufferingTime,
-                           const FirstFrameLoadedFlagSet aFlags,
-                           const MediaInfo& aInfo);
+  void OnFirstFrameLoaded(const double aLoadedFirstFrameTime,
+                          const double aLoadedMetadataTime,
+                          const double aTotalWaitingDataTime,
+                          const double aTotalBufferingTime,
+                          const FirstFrameLoadedFlagSet aFlags,
+                          const MediaInfo& aInfo,
+                          const nsCString& aVideoDecoderName);
 
   double GetTotalVideoPlayTimeInSeconds() const;
   double GetTotalVideoHDRPlayTimeInSeconds() const;
   double GetVisibleVideoPlayTimeInSeconds() const;
   double GetInvisibleVideoPlayTimeInSeconds() const;
-  double GetVideoDecodeSuspendedTimeInSeconds() const;
 
   double GetTotalAudioPlayTimeInSeconds() const;
   double GetInaudiblePlayTimeInSeconds() const;
@@ -182,9 +180,6 @@ class TelemetryProbesReporter final {
 
   // Total time an element with an audio track has spent muted
   TimeDurationAccumulator mMutedAudioPlayTime;
-
-  // Total time a VIDEO has spent in video-decode-suspend mode.
-  TimeDurationAccumulator mVideoDecodeSuspendedTime;
 
   Visibility mMediaElementVisibility = Visibility::eInitial;
 

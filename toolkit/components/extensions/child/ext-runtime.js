@@ -19,7 +19,7 @@ ChromeUtils.defineESModuleGetters(this, {
  * @param {any}      message
  * @param {object?}  [options]
  * @param {Function} [callback]
- * @returns {{extensionId: string?, message: any, callback: Function?}}
+ * @returns {{extensionId: string|null, message: any, callback: Function|null}}
  */
 /* eslint-enable jsdoc/check-param-names */
 function parseBonkersArgs(...args) {
@@ -62,6 +62,21 @@ this.runtime = class extends ExtensionAPI {
 
         onConnectExternal: context.messenger.onConnectEx.api(),
         onMessageExternal: context.messenger.onMessageEx.api(),
+
+        get onUserScriptConnect() {
+          return ExtensionCommon.redefineGetter(
+            this,
+            "onUserScriptConnect",
+            context.messenger.onUserScriptConnect.api()
+          );
+        },
+        get onUserScriptMessage() {
+          return ExtensionCommon.redefineGetter(
+            this,
+            "onUserScriptMessage",
+            context.messenger.onUserScriptMessage.api()
+          );
+        },
 
         connect(extensionId, options) {
           let name = options?.name ?? "";

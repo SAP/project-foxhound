@@ -40,11 +40,10 @@ class RenderBundleEncoder final : public ObjectBase, public ChildOf<Device> {
   nsTArray<RefPtr<const BindGroup>> mUsedBindGroups;
   nsTArray<RefPtr<const Buffer>> mUsedBuffers;
   nsTArray<RefPtr<const RenderPipeline>> mUsedPipelines;
-  nsTArray<RefPtr<const TextureView>> mUsedTextureViews;
 
  public:
   // programmable pass encoder
-  void SetBindGroup(uint32_t aSlot, const BindGroup& aBindGroup,
+  void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets);
   // render encoder base
   void SetPipeline(const RenderPipeline& aPipeline);

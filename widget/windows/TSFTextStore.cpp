@@ -15,7 +15,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/Logging.h"
 #include "mozilla/StaticPrefs_intl.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/WidgetWindowsMetrics.h"
 #include "mozilla/TextEventDispatcher.h"
 #include "mozilla/TextEvents.h"
 #include "mozilla/ToString.h"
@@ -216,7 +216,7 @@ static nsCString GetCLSIDNameStr(REFCLSID aCLSID) {
 
 static nsCString GetGUIDNameStr(REFGUID aGUID) {
   OLECHAR str[40];
-  int len = ::StringFromGUID2(aGUID, str, ArrayLength(str));
+  int len = ::StringFromGUID2(aGUID, str, std::size(str));
   if (!len || !str[0]) {
     return ""_ns;
   }
@@ -1625,8 +1625,8 @@ TSFStaticSink::OnActivated(DWORD dwProfileType, LANGID langid, REFCLSID rclsid,
       // 72 is kMaximumKeyStringLength in TelemetryScalar.cpp
       nsAutoString key;
       TSFStaticSink::GetActiveTIPNameForTelemetry(key);
-      Telemetry::ScalarSet(Telemetry::ScalarID::WIDGET_IME_NAME_ON_WINDOWS, key,
-                           true);
+      glean::widget::ime_name_on_windows.Get(NS_ConvertUTF16toUTF8(key))
+          .Set(true);
     }
     // Notify IMEHandler of changing active keyboard layout.
     IMEHandler::OnKeyboardLayoutChanged();
@@ -3405,11 +3405,11 @@ TSFTextStore::RecordCompositionUpdateAction() {
       }
       // The range may include out of composition string.  We should ignore
       // outside of the composition string.
-      LONG start = std::min(std::max(rangeStart, mComposition->StartOffset()),
-                            mComposition->EndOffset());
-      LONG end = std::max(
-          std::min(rangeStart + rangeLength, mComposition->EndOffset()),
-          mComposition->StartOffset());
+      LONG start = std::clamp(rangeStart, mComposition->StartOffset(),
+                              mComposition->EndOffset());
+      LONG end =
+          std::clamp(rangeStart + rangeLength, mComposition->StartOffset(),
+                     mComposition->EndOffset());
       LONG length = end - start;
       if (length < 0) {
         MOZ_LOG(gIMELog, LogLevel::Error,
@@ -5246,9 +5246,9 @@ bool TSFTextStore::InsertTextAtSelectionInternal(const nsAString& aInsertStr,
   if (numberOfCRLFs) {
     nsAutoString key;
     if (TSFStaticSink::GetActiveTIPNameForTelemetry(key)) {
-      Telemetry::ScalarSet(
-          Telemetry::ScalarID::WIDGET_IME_NAME_ON_WINDOWS_INSERTED_CRLF, key,
-          true);
+      glean::widget::ime_name_on_windows_inserted_crlf
+          .Get(NS_ConvertUTF16toUTF8(key))
+          .Set(true);
     }
   }
 

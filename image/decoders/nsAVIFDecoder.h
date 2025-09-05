@@ -35,7 +35,7 @@ class nsAVIFDecoder final : public Decoder {
  protected:
   LexerResult DoDecode(SourceBufferIterator& aIterator,
                        IResumable* aOnResume) override;
-  Maybe<Telemetry::HistogramID> SpeedHistogram() const override;
+  Maybe<glean::impl::MemoryDistributionMetric> SpeedMetric() const override;
 
  private:
   friend class DecoderFactory;
@@ -66,6 +66,7 @@ class nsAVIFDecoder final : public Decoder {
     FrameSizeChanged,
     InvalidCICP,
     NoSamples,
+    ConvertYCbCrFailure,
   };
   using DecodeResult =
       Variant<Mp4parseStatus, NonDecoderResult, Dav1dResult, AOMResult>;
@@ -89,6 +90,7 @@ class nsAVIFDecoder final : public Decoder {
 
   bool mIsAnimated = false;
   bool mHasAlpha = false;
+  bool mUsePipeTransform = true;
 };
 
 class AVIFDecoderStream : public ByteStream {

@@ -470,8 +470,8 @@ export var CrashSubmit = {
   },
 
   /**
-   * Add a .dmg.ignore file along side the .dmp file to indicate that the user
-   * shouldn't be prompted to submit this crash report again.
+   * Add a .dmg.ignore file along side the (existing) .dmp file to indicate
+   * that the user shouldn't be prompted to submit this crash report again.
    *
    * @param id
    *        Filename (minus .dmp extension) of the report to ignore
@@ -481,8 +481,10 @@ export var CrashSubmit = {
    */
   ignore: async function CrashSubmit_ignore(id) {
     let [dump /* , extra, memory */] = getPendingMinidump(id);
-    const ignorePath = `${dump}.ignore`;
-    await IOUtils.writeUTF8(ignorePath, "", { mode: "create" });
+    if (await IOUtils.exists(dump)) {
+      const ignorePath = `${dump}.ignore`;
+      await IOUtils.writeUTF8(ignorePath, "", { mode: "create" });
+    }
   },
 
   /**
@@ -514,7 +516,17 @@ export var CrashSubmit = {
       const ignored = Object.create(null);
 
       for (const child of children) {
-        const info = await IOUtils.stat(child);
+        let info;
+        try {
+          info = await IOUtils.stat(child);
+        } catch (ex) {
+          // File may have disappeared
+          if (ex.result == Cr.NS_ERROR_DOM_NOT_FOUND_ERR) {
+            continue;
+          }
+          console.error(ex);
+          throw ex;
+        }
 
         if (info.type !== "directory") {
           const name = PathUtils.filename(child);

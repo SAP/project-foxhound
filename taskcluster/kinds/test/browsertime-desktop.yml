@@ -10,21 +10,27 @@ task-defaults:
     suite: raptor
     run-on-projects:
         by-test-platform:
-            linux.*shippable[^-qr].*: [mozilla-central]
+            linux.*shippable.*: [mozilla-central]
             default: []
     limit-platforms:
         by-app:
             chrome:
-                - .*64.*shippable.*
+                - (?!macosx1470).*shippable.*
             safari:
                 - .*macos.*shippable.*
             safari-tp:
                 - macosx1400.*
             custom-car:
-                - .*64.*shippable.*
+                - (macosx1400|linux|windows.*-64).*shippable.*
             default: []
     test-manifest-loader: null  # don't load tests in the taskgraph
-    tier: 3
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 3
     virtualization: hardware
     mozharness:
         script: raptor_script.py
@@ -38,6 +44,10 @@ task-defaults:
                     - raptor/linux_config.py
         extra-options:
             - --conditioned-profile=settled
+    use-caches:
+        by-test-platform:
+            windows.*: ["checkout"]
+            default: ["checkout", "pip", "uv"]
     fetches:
         toolchain:
             by-app:
@@ -53,10 +63,6 @@ task-defaults:
                             - win64-custom-car
                             - win64-minidump-stackwalk
                             - win64-fix-stacks
-                        macosx1015.*:
-                            - macosx64-custom-car
-                            - macosx64-minidump-stackwalk
-                            - macosx64-fix-stacks
                         macosx1400.*:
                             - macosx-arm64-custom-car
                             - macosx64-aarch64-minidump-stackwalk
@@ -76,9 +82,6 @@ task-defaults:
                         windows.*-64.*:
                             - win64-minidump-stackwalk
                             - win64-fix-stacks
-                        macosx1015.*:
-                            - macosx64-minidump-stackwalk
-                            - macosx64-fix-stacks
                         macosx1400.*:
                             - macosx64-aarch64-minidump-stackwalk
                             - macosx64-aarch64-fix-stacks
@@ -92,11 +95,11 @@ browsertime-tp6:
         limit-platforms:
             by-app:
                 chrome:
-                    - .*shippable.*
+                    - (?!macosx1470).*shippable.*
                 safari:
                     - .*macos.*shippable.*
                 custom-car:
-                    - .*64.*shippable.*
+                    - (macosx1400|linux|windows.*-64).*shippable.*
                 default: []
         max-run-time:
             by-subtest:
@@ -105,7 +108,7 @@ browsertime-tp6:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows.*64.*shippable.*-qr.*:
+                    windows.*64.*shippable.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -121,7 +124,7 @@ browsertime-tp6:
                         firefox:
                             by-test-platform:
                                 windows.*-32.*: []
-                                (macosx1015|linux|windows.*-64).*shippable-qr.*: [trunk]
+                                (macosx1470|linux|windows.*-64).*shippable.*: [trunk]
                                 default: []
                         default: []
                 default:
@@ -129,12 +132,12 @@ browsertime-tp6:
                         firefox:
                             by-test-platform:
                                 windows.*-32.*: []
-                                .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk]
+                                .*64(?!.*nightlyasrelease).*shippable.*: [trunk]
                                 default: []
                         default: []
         treeherder-symbol: Btime(tp6)
     raptor:
-        apps: [firefox, chrome]
+        apps: [firefox, chrome, custom-car]
         test: tp6
         run-visual-metrics: true
         subtests:
@@ -163,7 +166,10 @@ browsertime-tp6:
             - youtube
     tier:
         by-app:
-            firefox: 2
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
             default: 3
 
 browsertime-responsiveness:
@@ -195,13 +201,9 @@ browsertime-responsiveness:
             firefox:
                 by-test-platform:
                     windows.*-32.*: []
-                    .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk]
+                    .*64(?!.*nightlyasrelease).*shippable.*: [trunk]
                     default: []
             default: []
-    tier:
-        by-app:
-            firefox: 2
-            default: 3
 
 browsertime-tp6-essential:
     <<: *tp6-defaults
@@ -209,7 +211,7 @@ browsertime-tp6-essential:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows.*-64.*shippable.*-qr.*:
+                    windows.*-64.*shippable.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -243,16 +245,16 @@ browsertime-tp6-essential:
                     by-test-platform:
                         windows.*-32.*: []
                         macosx1100.*shippable.*: [mozilla-central]
-                        .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk]
+                        .*64(?!.*nightlyasrelease).*shippable.*: [trunk]
                         default: []
                 default: []
         tier:
-            by-test-platform:
-                linux1804-64-clang-trunk-qr/opt: 2
-                default:
-                    by-app:
-                        firefox: 1
-                        default: 3
+            by-app:
+                firefox:
+                    by-test-platform:
+                        linux.*clang-trunk.*: 2
+                        default: 1
+                default: 3
 
 browsertime-tp6-bytecode:
     <<: *tp6-defaults
@@ -277,13 +279,13 @@ browsertime-tp6-bytecode:
                 by-test-platform:
                     windows.*-32.*: []
                     macosx1100.*shippable.*: [mozilla-central]
-                    .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk]
+                    .*64(?!.*nightlyasrelease).*shippable.*: [trunk]
                     default: []
             default: []
     mozharness:
         extra-options:
             by-test-platform:
-                windows.*-64.*shippable.*-qr.*:
+                windows.*-64.*shippable.*:
                     - --chimera
                     - --browsertime
                     - --browsertime-no-ffwindowrecorder
@@ -296,10 +298,6 @@ browsertime-tp6-bytecode:
                     - --conditioned-profile=settled
                     - --test-bytecode-cache
                     - --extra-profiler-run
-    tier:
-        by-app:
-            firefox: 2
-            default: 3
     treeherder-symbol: Btime-cache(tp6)
 
 browsertime-tp7:
@@ -308,11 +306,11 @@ browsertime-tp7:
         limit-platforms:
             by-app:
                 chrome:
-                    - .*shippable.*
+                    - (?!macosx1470).*shippable.*
                 safari:
                     - .*macos.*shippable.*
                 custom-car:
-                    - .*64.*shippable.*
+                    - (macosx1400|linux|windows.*-64).*shippable.*
                 default: []
         max-run-time:
             by-subtest:
@@ -321,7 +319,7 @@ browsertime-tp7:
         mozharness:
             extra-options:
                 by-test-platform:
-                    windows.*-64.*shippable.*-qr.*:
+                    windows.*-64.*shippable.*:
                         - --chimera
                         - --browsertime-no-ffwindowrecorder
                         - --conditioned-profile=settled
@@ -344,7 +342,10 @@ browsertime-tp7:
             - docomo
     tier:
         by-app:
-            firefox: 3
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
             default: 3
 
 browsertime-benchmark:
@@ -357,11 +358,27 @@ browsertime-benchmark:
                     by-app:
                         safari-tp:
                             - [speedometer3, sp3]
+                            # Bug 1931699, jetstream permafailing
+                            # - [jetstream2, js2]
                         default:
                             - [speedometer, sp]
                             - [speedometer3, sp3]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
+                            - [jetstream2, js2]
+                # Bug 1909894, windows 10 + sp3 temporarily
+                windows10-64.*shippable.*:
+                    by-app:
+                        safari: []
+                        safari-tp: []
+                        default:
+                            - [speedometer3, sp3]
+                windows11-64-.*-hw-ref.*:
+                    by-app:
+                        safari: []
+                        safari-tp: []
+                        default:
+                            - [speedometer3, sp3]
                 default:
                     by-app:
                         firefox:
@@ -369,10 +386,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             - [matrix-react-bench, mrb]
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
-                            - [motionmark-htmlsuite, mm-h]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -387,10 +400,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             # - [matrix-react-bench, mrb] Perma fails on osx 10.15.x machines (Bug 1807754)
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-htmlsuite, mm-h]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -402,36 +411,16 @@ browsertime-benchmark:
                         custom-car:
                             - [speedometer, sp]
                             - [speedometer3, sp3]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                         chrome:
                             by-test-platform:
-                                macosx1015.*shippable.*:
-                                    - ares6
-                                    - [assorted-dom, dom]
-                                    - [jetstream2, js2]
-                                    - [matrix-react-bench, mrb]
-                                    - [motionmark-animometer, mm-a]
-                                    - [motionmark-htmlsuite, mm-h]
-                                    - [motionmark-1-3, mm-1.3]
-                                    - [motionmark-htmlsuite-1-3, mm-h-1.3]
-                                    - [speedometer, sp]
-                                    - [speedometer3, sp3]
-                                    - [stylebench, sb]
-                                    - [sunspider, ss]
-                                    - [unity-webgl, ugl]
-                                    - [webaudio, wa]
+                                macosx1470.*shippable.*: []
                                 default:
                                     - ares6
                                     - [assorted-dom, dom]
                                     - [jetstream2, js2]
                                     - [matrix-react-bench, mrb]
-                                    - [motionmark-animometer, mm-a]
-                                    - [motionmark-animometer-ramp, mm-ar]
-                                    - [motionmark-htmlsuite, mm-h]
-                                    - [motionmark-htmlsuite-ramp, mm-hr]
                                     - [motionmark-1-3, mm-1.3]
                                     - [motionmark-htmlsuite-1-3, mm-h-1.3]
                                     - [speedometer, sp]
@@ -445,10 +434,6 @@ browsertime-benchmark:
                             - [assorted-dom, dom]
                             - [jetstream2, js2]
                             - [matrix-react-bench, mrb]
-                            - [motionmark-animometer, mm-a]
-                            - [motionmark-animometer-ramp, mm-ar]
-                            - [motionmark-htmlsuite, mm-h]
-                            - [motionmark-htmlsuite-ramp, mm-hr]
                             - [motionmark-1-3, mm-1.3]
                             - [motionmark-htmlsuite-1-3, mm-h-1.3]
                             - [speedometer, sp]
@@ -461,20 +446,18 @@ browsertime-benchmark:
     tier:
         by-app:
             firefox:
-                by-subtest:
-                    motionmark-animometer:
-                        by-test-platform:
-                            linux1804-64-clang-trunk-qr/opt: 2
-                            default: 1
-                    default:
-                        by-test-platform:
-                            windows.*-64-ccov.*/.*: 3
-                            linux64-ccov.*/.*: 3
-                            default: 2
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
             default:
                 by-subtest:
                     unity-webgl: 3
+                    jetstream2:
+                        by-test-platform:
+                            macosx1400.*shippable.*: 3
+                            default: 2
                     default: 2
+
     run-on-projects:
         by-subtest:
             speedometer3:
@@ -482,12 +465,18 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk]
+                            # Bug 1909894, windows 10 + sp3 temporarily
+                            windows10-64.*shippable.*: [mozilla-central]
+                            windows11-64-.*-hw-ref-shippable/opt: [mozilla-central]
+                            windows11-64-shippable-qr/opt: [trunk]
+                            windows11-64-24h2-shippable/opt: [trunk]
+                            (linux|macosx1470|macosx1400).*shippable.*: [trunk]
                             .*nightlyasrelease.*: [autoland, mozilla-central]
                             default: []
                     custom-car:
                         by-test-platform:
-                            (linux|windows).*shippable-qr.*: [mozilla-central]
+                            # NOTE: this includes windows -hw-ref machines
+                            (linux|windows).*shippable.*: [mozilla-central]
                             default: []
                     safari-tp:
                         by-test-platform:
@@ -500,7 +489,7 @@ browsertime-benchmark:
                         by-test-platform:
                             windows.*-32.*: []
                             # Disabled on autoland due to bug 1720063, and bug 1795826
-                            .*64.*shippable-qr/.*: [mozilla-central]
+                            .*64.*shippable.*/.*: [mozilla-central]
                             default: []
                     default: []
             speedometer:
@@ -508,12 +497,12 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk]
+                            .*64.*shippable.*/.*: [trunk]
                             .*nightlyasrelease.*: [autoland]
                             default: []
                     custom-car:
                         by-test-platform:
-                            (linux|windows.*-64).*shippable-qr.*: [mozilla-central]
+                            (linux|windows.*-64).*shippable.*: [mozilla-central]
                             default: []
                     default: []
             default:
@@ -521,7 +510,8 @@ browsertime-benchmark:
                     firefox:
                         by-test-platform:
                             windows.*-32.*: []
-                            .*64.*shippable-qr/.*: [trunk]
+                            (?!macosx1400).*64.*shippable.*/.*: [trunk]
+                            macosx1400.*shippable.*: [mozilla-central]
                             default: []
                     default: []
     max-run-time:
@@ -533,9 +523,6 @@ browsertime-benchmark:
                     default: 1500
             jetstream2: 8000
             matrix-react-bench: 1500
-            motionmark-htmlsuite: 1500
-            motionmark-htmlsuite-ramp: 3000
-            motionmark-animometer-ramp: 2100
             motionmark-1-3: 3000
             motionmark-htmlsuite-1-3: 3000
             unity-webgl: 2400
@@ -574,13 +561,19 @@ browsertime-benchmark-wasm:
                     - [wasm-misc, wm]
                     - [wasm-godot, godot]
     treeherder-symbol: Btime()
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     run-on-projects:
         by-app:
             firefox:
                 by-test-platform:
                     windows.*-32.*: []
-                    .*64(?!.*nightlyasrelease).*shippable-qr/.*: [mozilla-central]
+                    .*64(?!.*nightlyasrelease).*shippable.*: [mozilla-central]
                     default: []
             default: []
     max-run-time:
@@ -611,13 +604,19 @@ browsertime-youtube-playback:
     run-on-projects:
         by-test-platform:
             windows.*-32.*: []
-            .*64(?!.*nightlyasrelease).*shippable-qr/.*: [mozilla-central]
+            .*64(?!.*nightlyasrelease).*shippable.*/.*: [mozilla-central]
             default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     limit-platforms:
         by-subtest:
             youtube-playback-av1-sfr:
-                - macosx1015-64-shippable-qr/opt
+                - macosx1470-64-shippable/opt
             default: []
     max-run-time:
         by-subtest:
@@ -644,9 +643,15 @@ browsertime-youtube-playback-power:
     treeherder-symbol: Btime()
     run-on-projects:
         by-test-platform:
-            macosx.*shippable-qr.*: [mozilla-central]
+            macosx.*shippable.*: [mozilla-central]
             default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     max-run-time: 2700
 
 browsertime-tp6-live:
@@ -750,8 +755,8 @@ browsertime-tp6-live:
                     - yahoo-mail
                     - youtube
     run-on-projects: []
-    tier: 3
     treeherder-symbol: Btime-live(tp6)
+    tier: 3
 
 browsertime-tp6-live-sheriffed:
     <<: *tp6-defaults
@@ -771,11 +776,16 @@ browsertime-tp6-live-sheriffed:
             - --browsertime-arg=maxLoadTime=240000
     run-on-projects:
         by-test-platform:
-            (linux|windows.*-64|macos)(?!.*shippable).*: []
-            (linux|windows|macosx1015)(?!.*-qr).*: []
+            (linux|windows.*-64|macos).*: []
             windows.*-32.*: []
             default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     treeherder-symbol: Btime-live(tp6)
 
 browsertime-tp6-profiling:
@@ -792,9 +802,15 @@ browsertime-tp6-profiling:
             - --gecko-profile
     run-on-projects:
         by-test-platform:
-            (linux|windows|macosx1015).*shippable-qr.*: [mozilla-central]
+            (linux|windows|macosx1470).*shippable.*: [mozilla-central]
             default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     treeherder-symbol: Btime-Prof(tp6)
 
 browsertime-custom:
@@ -811,7 +827,7 @@ browsertime-custom:
     run-on-projects:
         by-test-platform:
             windows.*-32.*: []
-            .*64(?!.*nightlyasrelease).*shippable-qr/.*: [mozilla-central]
+            .*64(?!.*nightlyasrelease).*shippable.*: [mozilla-central]
             default: []
     tier: 1
     treeherder-symbol: Btime(ps)
@@ -830,7 +846,7 @@ browsertime-first-install:
     run-on-projects:
         by-test-platform:
             windows.*-32.*: []
-            .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk]
+            .*64(?!.*nightlyasrelease).*shippable.*: [trunk]
             default: []
     tier: 1
     treeherder-symbol: Btime(welcome)
@@ -847,9 +863,15 @@ browsertime-regression-tests:
     mozharness:
         extra-options:
             by-test-platform:
-                windows.*-64.*shippable.*-qr.*: []
+                windows.*-64.*shippable.*: []
                 default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     treeherder-symbol: Btime(regressor)
 
 browsertime-upload:
@@ -865,11 +887,67 @@ browsertime-upload:
             firefox:
                 by-test-platform:
                     windows.*-32.*: []
-                    .*64.*shippable-qr/.*: [autoland, mozilla-central]
+                    .*64.*shippable.*: [autoland, mozilla-central]
                     default: []
             default: []
-    tier: 3
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 3
     treeherder-symbol: Btime(upload)
+    fetches:
+        fetch:
+            - upload-speed-test-file
+
+browsertime-network-bench:
+    raptor:
+        apps: [firefox, chrome, custom-car]
+        subtests:
+            - [h3-upload, h3-up]
+            - [h3-download, h3-down]
+        network-conditions:
+            by-subtest:
+                h3-upload:
+                    - [1M_400ms, "0"]
+                    - [300M_40ms, "0"]
+                    - [300M_80ms, "0"]
+                    - [10M_40ms, "0"]
+                    - [100M_40ms, "0"]
+                h3-download:
+                    - [1M_400ms, "0"]
+                    - [300M_40ms, "0"]
+                    - [300M_80ms, "0"]
+                    - [10M_40ms, "0"]
+                    - [100M_40ms, "0"]
+                default: []
+    description: Raptor (browsertime) networking download/upload performance test
+    max-run-time: 15000
+    run-on-projects:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*shippable-qr.*: [mozilla-central]
+                    default: []
+            chrome:
+                by-test-platform:
+                    linux.*shippable-qr.*: [mozilla-central]
+                    default: []
+            custom-car:
+                by-test-platform:
+                    linux.*shippable-qr.*: [mozilla-central]
+                    default: []
+            default: []
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 2
+            default: 3
+    treeherder-symbol: Btime(network-bench)
     fetches:
         fetch:
             - upload-speed-test-file
@@ -883,8 +961,18 @@ browsertime-pageload-benchmark:
     mozharness:
         extra-options:
             - --browser-cycles=5
-    run-on-projects: []
-    tier: 2
+    run-on-projects:
+        by-test-platform:
+            windows.*-32.*: []
+            (linux|windows.*-64).*shippable.*: [autoland]
+            default: []
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 3
     treeherder-symbol: Btime(tp6-bench)
 
 browsertime-video-playback-latency:
@@ -904,18 +992,84 @@ browsertime-video-playback-latency:
     description: Raptor (browsertime) Video playback latency test
     mozharness:
         extra-options:
-            - --chimera
-            - --browsertime-no-ffwindowrecorder
-            - --extra-profiler-run
+            by-test-platform:
+                windows.*-64.*shippable.*:
+                    - --chimera
+                    - --browsertime-no-ffwindowrecorder
+                    - --extra-profiler-run
+                default:
+                    - --chimera
+                    - --extra-profiler-run
     run-on-projects:
         by-app:
             firefox:
                 by-test-platform:
-                    (macosx1015|linux|windows10-64).*shippable-qr.*: [autoland, mozilla-central]
+                    (macosx1470|linux|windows10-64).*shippable.*: [autoland, mozilla-central]
                     default: []
             default: []
-    tier: 3
     treeherder-symbol: Btime(vpl)
+
+browsertime-webcodecs:
+    raptor:
+        apps: [firefox, chrome, safari, custom-car]
+        test: webcodecs
+        run-visual-metrics: false
+        subtests:
+            by-test-platform:
+                # Since x264 isn't built into Ubuntu 18.04 by defualt, we skip it.
+                linux.*.*:
+                    - ve-av1-rt
+                    - ve-av1-q
+                    - ve-vp8-rt
+                    - ve-vp8-q
+                    - ve-vp9-rt
+                    - ve-vp9-q
+                default:
+                    by-app:
+                        # Chrome currently refuses to encode H264 at larger resolutions like 720p and 1080p.
+                        # Testname aliases are used to work around the length limit.
+                        chrome:
+                            - ve-av1-rt
+                            - ve-av1-q
+                            - [ve-h264-rt-sd, veh264rtsd]
+                            - [ve-h264-q-sd, veh264qsd]
+                            - ve-vp8-rt
+                            - ve-vp8-q
+                            - ve-vp9-rt
+                            - ve-vp9-q
+                        custom-car:
+                            - ve-av1-rt
+                            - ve-av1-q
+                            - [ve-h264-rt-sd, veh264rtsd]
+                            - [ve-h264-q-sd, veh264qsd]
+                            - ve-vp8-rt
+                            - ve-vp8-q
+                            - ve-vp9-rt
+                            - ve-vp9-q
+                        default:
+                            - ve-av1-rt
+                            - ve-av1-q
+                            - ve-h264-rt
+                            - ve-h264-q
+                            - [ve-h264-rt-sd, veh264rtsd]
+                            - [ve-h264-q-sd, veh264qsd]
+                            - ve-vp8-rt
+                            - ve-vp8-q
+                            - ve-vp9-rt
+                            - ve-vp9-q
+    description: Raptor (browsertime) WebCodecs test
+    mozharness:
+        extra-options:
+            - --extra-profiler-run
+    run-on-projects:
+        by-app:
+            firefox: [autoland, mozilla-central]
+            default: []
+    tier:
+        by-app:
+            firefox: 2
+            default: 3
+    treeherder-symbol: Btime(webcodecs)
 
 browsertime-speculative:
     raptor:
@@ -927,9 +1081,15 @@ browsertime-speculative:
     run-on-projects:
         by-test-platform:
             windows.*-32.*: []
-            .*64.*shippable-qr/.*: [autoland]
+            .*64.*shippable.*: [autoland]
             default: []
-    tier: 2
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 2
     treeherder-symbol: Btime(speculative)
 
 browsertime-throttled:
@@ -940,7 +1100,13 @@ browsertime-throttled:
     description: Raptor (browsertime) throttled network pageload tests
     max-run-time: 420
     run-on-projects: []
-    tier: 3
+    tier:
+        by-app:
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
+            default: 3
     treeherder-symbol: Btime(throttled)
 
 browsertime-tp6-webextensions:
@@ -962,13 +1128,13 @@ browsertime-tp6-webextensions:
                 by-test-platform:
                     windows.*-32.*: []
                     macosx1100.*shippable.*: [mozilla-central]
-                    .*64(?!.*nightlyasrelease).*shippable-qr/.*: [trunk-only]
+                    .*64(?!.*nightlyasrelease).*shippable.*: [trunk-only]
                     default: []
             default: []
     mozharness:
         extra-options:
             by-test-platform:
-                windows.*-64.*shippable.*-qr.*:
+                windows.*-64.*shippable.*:
                     - --chimera
                     - --browsertime
                     - --browsertime-no-ffwindowrecorder
@@ -988,9 +1154,9 @@ browsertime-indexeddb:
     limit-platforms:
         by-app:
             chrome:
-                - .*shippable.*
+                - (.*?!macosx1470.*)shippable.*
             custom-car:
-                - .*64.*shippable.*
+                - (macosx1400|linux|windows.*-64).*shippable.*
             default: []
     raptor:
         apps: [firefox, chrome]
@@ -1014,13 +1180,40 @@ browsertime-indexeddb:
             firefox:
                 by-test-platform:
                     windows.*-32.*: []
-                    .*64.*shippable-qr/.*: [autoland, mozilla-central]
+                    .*64.*shippable.*: [autoland, mozilla-central]
                     default: []
             default: []
     tier:
         by-app:
-            firefox: 2
+            firefox:
+                by-test-platform:
+                    linux.*clang-trunk.*: 2
+                    default: 1
             default: 3
     mozharness:
         extra-options:
             - --extra-profiler-run
+
+browsertime-trr-performance:
+    raptor:
+        apps: [firefox]
+        run-visual-metrics: false
+        subtests:
+            - trr-cloudf
+            - trr-cira
+            - trr-comcas
+            - trr-next
+            - trr-native
+            - trr-w-clou
+            - trr-w-cira
+            - trr-w-comc
+            - trr-w-next
+
+    description: Raptor (browsertime) trr performance tests
+    max-run-time: 600
+    run-on-projects:
+        by-test-platform:
+            windows11-64-24h2-shippable/opt: [mozilla-central]
+            default: []
+    tier: 3
+    treeherder-symbol: Btime(trrperf)

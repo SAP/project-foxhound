@@ -26,7 +26,8 @@ subsuite = "media"
 tags = "media-gpu"
 prefs = [
   "gfx.core-animation.low-power-telemetry-frames=60", # only for test_video_low_power_telemetry.html
- "media.setsinkid.enabled=true", # for test_setSinkId_after_loop.html
+  "media.setsinkid.enabled=true", # for test_setSinkId_after_loop.html
+  "media.ffvpx-hw.enabled=true", # test_hw_video_decoding.html
 ]
 support-files = [
   "16bit_wave_extrametadata.wav",
@@ -47,6 +48,8 @@ support-files = [
   "audio.wav^headers^",
   "av1.mp4",
   "av1.mp4^headers^",
+  "av1-yuv420p.mp4",
+  "av1-yuv420p.mp4^headers^",
   "background_video.js",
   "badtags.ogg",
   "badtags.ogg^headers^",
@@ -609,6 +612,10 @@ support-files = [
   "sin-441-1s-44100.opus",
   # ffmpeg -i sin-441-1s-44100.wav sin-441-1s-44100.flac
   "sin-441-1s-44100.flac",
+  # > sox -n -r 44100 -c 1 -b 32 sin-1k.wav synth 1 sine 1000 vol 0dB && \
+  # ffmpeg -i sin-1k.wav -c:a aac -b:a 320k -sample_fmt fltp sin-1k.mp4
+  # then hex-edited the 'samplesize' field in 'mp4a' box to 32, since ffmpeg always output 16
+  "sin-1k-32bit.m4a",
   "sine.webm",
   "sine.webm^headers^",
   "sintel-short-clearkey-subsample-encrypted-audio.webm",
@@ -735,9 +742,9 @@ support-files = [
 ["test_capture_stream_av_sync.html"]
 skip-if = [
   "os == 'android'", # 1712598 (canvas error)
-  "os == 'mac'", # 1517199 (timeout-on-osx)
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # 1517199 (timeout-on-osx)
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "os == 'linux'", # 1713397, 1719881 (high intermittent failure on linux tsan), 1776937
-  "apple_silicon", # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
   "mda_gpu", # Disabled because high intermittent failure
 ]
 
@@ -764,7 +771,8 @@ tags = "cloneelementvisually"
 ["test_cloneElementVisually_resource_change.html"]
 skip-if = [
   "os == 'linux' && !(debug || asan || tsan)",  # Bug 1559308 - lower frequency intermittent
-  "os == 'mac' && os_version == '14.40'",  # Bug 1909908
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'",  # Bug 1909908
+  "os == 'mac' && os_version == '15.30' && arch == 'aarch64'",  # Bug 1909908
 ]
 tags = "cloneelementvisually os_integration"
 
@@ -785,6 +793,10 @@ skip-if = ["true"] # bug 1896932
 tags = "hls"
 
 ["test_hw_video_decoding.html"]
+run-if = [
+  "os == 'win'",
+  "os == 'mac' && os_version != '10.15'" # Bug 1942396
+]
 skip-if = ["!mda_gpu"]
 scheme = "https"
 tags = "os_integration"
@@ -816,6 +828,8 @@ skip-if = [
 
 ["test_mp3_broadcast.html"]
 
+["test_mp4a_32bit_samplesize.html"] # bug 1924052
+
 ["test_multiple_mediastreamtracks.html"]
 scheme = "https"
 
@@ -839,9 +853,12 @@ tags = "hls"
 ["test_played.html"]
 skip-if = [
   "os == 'android' && is_emulator", # Times out on android-em, Bug 1613946
-  "os == 'mac'", # Bug 1110922
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1110922
+  "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", # Bug 1110922
   "os == 'win'", # Bug 1110922
   "os == 'android' && processor == 'aarch64'", # Bug 1110922
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && mda_gpu", # Bug 1929426
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && socketprocess_e10s", # Bug 1929426
 ]
 
 ["test_replay_metadata.html"]

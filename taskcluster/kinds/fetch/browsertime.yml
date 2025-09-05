@@ -37,85 +37,91 @@ linux64-chromedriver:
         sha256: 461919e080e19335a34224e2d353b96b07c7d068621aa940f9c136e86d090047
         size: 5404417
 
-win64-chromedriver-126:
-    description: "Win64 chromedriver v126"
+win64-chromedriver-130:
+    description: "Win64 chromedriver v130"
     fetch:
         type: static-url
-        artifact-name: chromedriver_win64_126.tar.zst
-        add-prefix: "126"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.26/win64/chromedriver-win64.zip"
-        sha256: 9cdb6e169620c9af44420c494ac763ab0141639ca63f5f9b1f4896c9abc3c868
-        size: 8796210
+        artifact-name: chromedriver_win64_130.tar.zst
+        add-prefix: "130"
+        url: https://storage.googleapis.com/chrome-for-testing-public/130.0.6723.44/win64/chromedriver-win64.zip
+        sha256: dc9de0c4e169dcbf729a5f29d67c323d56d5c6f1a1047eb94d8dabca0e183da1
+        size: 8935429
 
-linux64-chromedriver-126:
-    description: "Linux64 chromedriver v126"
-    fetch:
-        type: static-url
-        artifact-name: chromedriver_linux64_126.tar.zst
-        add-prefix: "126"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.26/linux64/chromedriver-linux64.zip"
-        sha256: e1611a62a64b0717178d54a48cfacaf257e113ae272770d4b1411407beccacbc
-        size: 8785256
 
-mac64-chromedriver-126:
-    description: "Mac64 chromedriver v126"
+linux64-chromedriver-130:
+    description: "Linux64 chromedriver v130"
     fetch:
         type: static-url
-        artifact-name: chromedriver_mac64_126.tar.zst
-        add-prefix: "126"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.26/mac-x64/chromedriver-mac-x64.zip"
-        sha256: 555f50e6fc5c24fdbbcea5a29b08cbe42479d3ece44da864553950e421dc8728
-        size: 10291734
+        artifact-name: chromedriver_linux64_130.tar.zst
+        add-prefix: "130"
+        url: https://storage.googleapis.com/chrome-for-testing-public/130.0.6723.44/linux64/chromedriver-linux64.zip
+        sha256: 0cf9c59f8b18076d1e9b8ef2f773d200d9dd90ff072f3e3a3c109f5164ebec4e
+        size: 9326314
 
-mac-arm-chromedriver-126:
-    description: "Mac64 arm chromedriver v126"
-    fetch:
-        type: static-url
-        artifact-name: chromedriver_mac-arm_126.tar.zst
-        add-prefix: "126"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/126.0.6478.26/mac-arm64/chromedriver-mac-arm64.zip"
-        sha256: 0f6511f7ab5cb8d684b2c6a41d57aad6403f115bfbbece8e3d02fbdb6e45b7c4
-        size: 9349562
 
-win64-chromedriver-127:
-    description: "Win64 chromedriver v127"
+mac64-chromedriver-130:
+    description: "Mac64 chromedriver v130"
     fetch:
         type: static-url
-        artifact-name: chromedriver_win64_127.tar.zst
-        add-prefix: "127"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/127.0.6533.57/win64/chromedriver-win64.zip"
-        sha256: 89d64e084229962e89c542731e266670890ac70bf0a15f2f75f0484e98f887cc
-        size: 8746983
+        artifact-name: chromedriver_mac64_130.tar.zst
+        add-prefix: "130"
+        url: https://storage.googleapis.com/chrome-for-testing-public/130.0.6723.44/mac-x64/chromedriver-mac-x64.zip
+        sha256: 83920ba17cae95673c48f2d06c3b3cf28e04abed2730b59bbb66589f6a70bfd2
+        size: 10446331
 
-linux64-chromedriver-127:
-    description: "Linux64 chromedriver v127"
-    fetch:
-        type: static-url
-        artifact-name: chromedriver_linux64_127.tar.zst
-        add-prefix: "127"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/127.0.6533.57/linux64/chromedriver-linux64.zip"
-        sha256: 0d5e1fb62d862afa4ef262c4b071e95be99d1b7f1b3be686a7b0710f69fb289a
-        size: 9131207
 
-mac64-chromedriver-127:
-    description: "Mac64 chromedriver v127"
+mac-arm-chromedriver-130:
+    description: "Mac-arm chromedriver v130"
     fetch:
         type: static-url
-        artifact-name: chromedriver_mac64_127.tar.zst
-        add-prefix: "127"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/127.0.6533.57/mac-x64/chromedriver-mac-x64.zip"
-        sha256: ec2a1f7673f5ca4dfe09d4c740620318c22fe39157acb1e93f20356643e28c24
-        size: 10395047
+        artifact-name: chromedriver_mac-arm_130.tar.zst
+        add-prefix: "130"
+        url: https://storage.googleapis.com/chrome-for-testing-public/130.0.6723.44/mac-arm64/chromedriver-mac-arm64.zip
+        sha256: 72ca2d545ed9e4f2c64348715dd91aab3f44622f94fa678c33c9fa9b5cbaa175
+        size: 9565155
 
-mac-arm-chromedriver-127:
-    description: "Mac64 arm chromedriver v127"
+win64-chromedriver-131:
+    description: "Win64 chromedriver v131"
     fetch:
         type: static-url
-        artifact-name: chromedriver_mac-arm_127.tar.zst
-        add-prefix: "127"
-        url: "https://storage.googleapis.com/chrome-for-testing-public/127.0.6533.57/mac-arm64/chromedriver-mac-arm64.zip"
-        sha256: 8d6e8f584e215a6b5748f58c08656472029697a2871d88eef2edc168df218fce
-        size: 9564213
+        artifact-name: chromedriver_win64_131.tar.zst
+        add-prefix: "131"
+        url: https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.69/win64/chromedriver-win64.zip
+        sha256: b3709a5717e960a7f763d30be166a0f8b3734677aadc0a356c5bed3169c3c103
+        size: 8951667
+
+
+linux64-chromedriver-131:
+    description: "Linux64 chromedriver v131"
+    fetch:
+        type: static-url
+        artifact-name: chromedriver_linux64_131.tar.zst
+        add-prefix: "131"
+        url: https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.69/linux64/chromedriver-linux64.zip
+        sha256: afc7b41aa0e1606e8cc177c776287d836635690964e39eab1ed94d63a0c96be2
+        size: 9945918
+
+
+mac64-chromedriver-131:
+    description: "Mac64 chromedriver v131"
+    fetch:
+        type: static-url
+        artifact-name: chromedriver_mac64_131.tar.zst
+        add-prefix: "131"
+        url: https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.69/mac-x64/chromedriver-mac-x64.zip
+        sha256: 92583e52f601951d3e0849891239bb2f6ff00dd8f8fd6c908473cc21c0533dd2
+        size: 10460902
+
+
+mac-arm-chromedriver-131:
+    description: "Mac-arm chromedriver v131"
+    fetch:
+        type: static-url
+        artifact-name: chromedriver_mac-arm_131.tar.zst
+        add-prefix: "131"
+        url: https://storage.googleapis.com/chrome-for-testing-public/131.0.6778.69/mac-arm64/chromedriver-mac-arm64.zip
+        sha256: 05bb13e90bb2803fd26a8ccaf752715cd0c6a0521235da952e1cb2c733689e73
+        size: 9575007
 
 upload-speed-test-file:
     description: "File used for the upload speed performance test"

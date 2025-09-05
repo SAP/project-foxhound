@@ -18,7 +18,7 @@
  */
 declare namespace MockedExports {
   /**
-   * This interface teaches ChromeUtils.import how to find modules.
+   * This interface teaches ChromeUtils.importESModule how to find modules.
    */
   interface KnownModules {
     Services: typeof import("Services");
@@ -33,6 +33,7 @@ declare namespace MockedExports {
     "resource://devtools/client/performance-new/shared/typescript-lazy-load.sys.mjs": typeof import("resource://devtools/client/performance-new/shared/typescript-lazy-load.sys.mjs");
     "resource://devtools/client/performance-new/popup/logic.sys.mjs": typeof import("resource://devtools/client/performance-new/popup/logic.sys.mjs");
     "resource:///modules/PanelMultiView.sys.mjs": typeof import("resource:///modules/PanelMultiView.sys.mjs");
+    "resource://gre/modules/PlacesUtils.sys.mjs": typeof import("resource://gre/modules/PlacesUtils.sys.mjs");
   }
 
   interface ChromeUtils {
@@ -40,16 +41,14 @@ declare namespace MockedExports {
      * This function reads the KnownModules and resolves which import to use.
      * If you are getting the TS2345 error:
      *
-     *  Argument of type '"resource:///.../file.jsm"' is not assignable to parameter
-     *  of type
+     *  Argument of type '"resource:///.../file.sys.mjs"' is not assignable to
+     *  parameter of type
      *
      * Then add the file path to the KnownModules above.
      */
-    import: <S extends keyof KnownModules>(module: S) => KnownModules[S];
     importESModule: <S extends keyof KnownModules>(
       module: S
     ) => KnownModules[S];
-    defineModuleGetter: (target: any, variable: string, path: string) => void;
     defineESModuleGetters: (target: any, mappings: any) => void;
   }
 
@@ -68,6 +67,7 @@ declare namespace MockedExports {
     selectedBrowser?: ChromeBrowser;
     messageManager: MessageManager;
     ownerDocument?: ChromeDocument;
+    tabs: BrowserTab[];
   }
 
   // This is a tab in a browser, defined in
@@ -85,6 +85,7 @@ declare namespace MockedExports {
   // This is linked to BrowserTab.
   interface ChromeBrowser {
     browsingContext?: BrowsingContext;
+    browserId: number;
   }
 
   interface BrowsingContext {
@@ -226,6 +227,24 @@ declare namespace MockedExports {
     principal: PrincipalStub;
   }
 
+  interface FaviconData {
+    uri: nsIURI;
+    dataLen: number;
+    data: number[];
+    mimeType: string;
+    size: number;
+  }
+
+  const PlaceUtilsSYSMJS: {
+    PlacesUtils: {
+      promiseFaviconData: (
+        pageUrl: string | URL | nsIURI,
+        preferredWidth?: number
+      ) => Promise<FaviconData>;
+      // TS-TODO: Add the rest.
+    };
+  };
+
   // TS-TODO
   const CustomizableUISYSMJS: any;
   const CustomizableWidgetsSYSMJS: any;
@@ -242,7 +261,11 @@ declare namespace MockedExports {
   class nsIFilePicker {}
 
   interface FilePicker {
-    init: (browsingContext: BrowsingContext, title: string, mode: number) => void;
+    init: (
+      browsingContext: BrowsingContext,
+      title: string,
+      mode: number
+    ) => void;
     open: (callback: (rv: number) => unknown) => void;
     // The following are enum values.
     modeGetFolder: number;
@@ -263,16 +286,6 @@ declare namespace MockedExports {
   }
 
   interface Cu {
-    /**
-     * This function reads the KnownModules and resolves which import to use.
-     * If you are getting the TS2345 error:
-     *
-     *  Argument of type '"resource:///.../file.jsm"' is not assignable to parameter
-     *  of type
-     *
-     * Then add the file path to the KnownModules above.
-     */
-    import: <S extends keyof KnownModules>(module: S) => KnownModules[S];
     exportFunction: (fn: Function, scope: object, options?: object) => void;
     cloneInto: (value: any, scope: object, options?: object) => void;
     isInAutomation: boolean;
@@ -356,6 +369,10 @@ declare module "resource:///modules/PanelMultiView.sys.mjs" {
 
 declare module "resource://devtools/shared/loader/Loader.sys.mjs" {
   export = MockedExports.LoaderESM;
+}
+
+declare module "resource://gre/modules/PlacesUtils.sys.mjs" {
+  export = MockedExports.PlaceUtilsSYSMJS;
 }
 
 declare var ChromeUtils: MockedExports.ChromeUtils;

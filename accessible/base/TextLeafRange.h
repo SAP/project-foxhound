@@ -12,6 +12,7 @@
 #include "AccAttributes.h"
 #include "nsDirection.h"
 #include "nsIAccessibleText.h"
+#include "mozilla/FunctionRef.h"
 
 namespace mozilla {
 namespace dom {
@@ -84,7 +85,7 @@ class TextLeafPoint final {
     eDefaultBoundaryFlags = 0,
     // Return point unchanged if it is at the given boundary type.
     eIncludeOrigin = 1 << 0,
-    // If current point is in editable, return point within samme editable.
+    // If current point is in editable, return point within same editable.
     eStopInEditable = 1 << 1,
     // Skip over list items in searches and don't consider them line or
     // paragraph starts.
@@ -153,9 +154,9 @@ class TextLeafPoint final {
   /**
    * Find the start of a run of text attributes in a specific direction.
    * A text attributes run is a span of text where the attributes are the same.
-   * If no boundary is found, the start/end of the container is returned
-   * (depending on the direction).
-   * If aIncludeorigin is true and this is at a boundary, this will be
+   * If no boundary is found, the function will walk out of the container and
+   * into the next/previous leaf (if it exists) until it finds a start point.
+   * If aIncludeOrigin is true and this is at a boundary, this will be
    * returned unchanged.
    */
   TextLeafPoint FindTextAttrsStart(nsDirection aDirection,
@@ -164,8 +165,6 @@ class TextLeafPoint final {
   /**
    * Returns a rect (in dev pixels) describing position and size of
    * the character at mOffset in mAcc. This rect is screen-relative.
-   * This function only works on remote accessibles, and assumes caching
-   * is enabled.
    */
   LayoutDeviceIntRect CharBounds();
 
@@ -173,8 +172,7 @@ class TextLeafPoint final {
    * Returns true if the given point (in screen coords) is contained
    * in the char bounds of the current TextLeafPoint. Returns false otherwise.
    * If the current point is an empty container, we use the acc's bounds instead
-   * of char bounds. Because this depends on CharBounds, this function only
-   * works on remote accessibles, and assumes caching is enabled.
+   * of char bounds.
    */
   bool ContainsPoint(int32_t aX, int32_t aY);
 
@@ -270,6 +268,11 @@ class TextLeafRange final {
       : mStart(aStart), mEnd(aStart) {}
   explicit TextLeafRange() {}
 
+  // Create a TextLeafRange spanning the entire leaf.
+  static TextLeafRange FromAccessible(Accessible* aAcc) {
+    return {{aAcc, 0}, {aAcc, nsIAccessibleText::TEXT_OFFSET_END_OF_TEXT}};
+  }
+
   /**
    * A valid TextLeafRange evaluates to true. An invalid TextLeafRange
    * evaluates to false.
@@ -293,10 +296,22 @@ class TextLeafRange final {
 
   /**
    * Returns a union rect (in dev pixels) of all character bounds in this range.
-   * This rect is screen-relative and inclusive of mEnd. This function only
-   * works on remote accessibles, and assumes caching is enabled.
+   * This rect is screen-relative and inclusive of mEnd.
    */
   LayoutDeviceIntRect Bounds() const;
+
+  /*
+   * Returns an array of bounding rectangles, one for each visible text line in
+   * this range. These rectangles are screen-relative and inclusive of mEnd.
+   */
+  nsTArray<LayoutDeviceIntRect> LineRects() const;
+
+  /*
+   * Returns a TextLeafPoint corresponding to the point in the TextLeafRange
+   * containing the given screen point. The function returns a TextLeafPoint
+   * constructed from mStart if it does not find a containing character.
+   */
+  TextLeafPoint TextLeafPointAtScreenPoint(int32_t aX, int32_t aY) const;
 
   /**
    * Get the ranges of text that are selected within this Accessible. The caret
@@ -314,9 +329,27 @@ class TextLeafRange final {
 
   MOZ_CAN_RUN_SCRIPT void ScrollIntoView(uint32_t aScrollType) const;
 
+  /**
+   * Returns sub-ranges for all the lines in this range visible within the given
+   * container Accessible.
+   */
+  nsTArray<TextLeafRange> VisibleLines(Accessible* aContainer) const;
+
  private:
   TextLeafPoint mStart;
   TextLeafPoint mEnd;
+
+  /*
+   * Walk all of the lines within the TextLeafRange. This function invokes the
+   * given callback with the sub-range for each line and the line's bounding
+   * rectangle. The bounds are inclusive of all characters in each line. Each
+   * rectangle is screen-relative. The function returns true if it walks any
+   * lines, and false if it could not walk any rects, which could happen if the
+   * start and end points are improperly positioned.
+   */
+  using LineRectCallback =
+      FunctionRef<void(TextLeafRange, LayoutDeviceIntRect)>;
+  bool WalkLineRects(LineRectCallback aCallback) const;
 
  public:
   /**

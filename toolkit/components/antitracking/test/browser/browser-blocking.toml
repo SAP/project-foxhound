@@ -8,7 +8,6 @@ prefs = [
   # Disable the Storage Access API prompts for all of the tests in this directory
   "dom.storage_access.prompt.testing=true",
   "dom.storage_access.prompt.testing.allow=true",
-  "dom.testing.sync-content-blocking-notifications=true",
   # Enable the window.open() heuristics globally in this directory
   "privacy.restrict3rdpartystorage.heuristic.window_open=true",
   "privacy.restrict3rdpartystorage.heuristic.opened_window_after_interaction=true",
@@ -49,14 +48,6 @@ support-files = [
 skip-if = ["socketprocess_networking"]
 
 ["browser_blockingDOMCache.js"]
-
-["browser_blockingDOMCacheAlwaysPartition.js"]
-skip-if = ["socketprocess_networking"]
-
-["browser_blockingDOMCacheAlwaysPartitionSAA.js"]
-skip-if = ["socketprocess_networking"]
-
-["browser_blockingDOMCacheSAA.js"]
 skip-if = ["socketprocess_networking"]
 
 ["browser_blockingIndexedDb.js"]
@@ -91,3 +82,5 @@ support-files = [
 ]
 
 ["browser_contentBlockingTelemetry.js"]
+
+["browser_trackerCookieBlocking.js"]

@@ -75,6 +75,12 @@ interface nsIContentSecurityPolicy : nsISerializable
     REPORT_TO_DIRECTIVE                   = 27,
   };
 
+  cenum RequireTrustedTypesForDirectiveState : 8 {
+    NONE         = 0,
+    REPORT_ONLY  = 1,
+    ENFORCE      = 2,
+  };
+
   /**
    * Accessor method for a read-only string version of the policy at a given
    * index.
@@ -129,6 +135,16 @@ interface nsIContentSecurityPolicy : nsISerializable
   void appendPolicy(in AString policyString,
                     in boolean reportOnly,
                     in boolean deliveredViaMetaTag);
+
+  /**
+   * Indicate the global state for the require-trusted-types-for directives
+   * - NONE: No require-trusted-types-for directives.
+   * - REPORT_ONLY: At least one require-trusted-types-for directive, but all
+   *   of them have "report" disposition.
+   * - ENFORCE: At least one require-trusted-types-for directive with "enforce"
+   *   disposition.
+   */
+  [infallible] readonly attribute nsIContentSecurityPolicy_RequireTrustedTypesForDirectiveState requireTrustedTypesForDirectiveState;
 
   /*
    * Whether this policy allows inline script or style.
@@ -241,12 +257,14 @@ interface nsIContentSecurityPolicy : nsISerializable
   const unsigned short VIOLATION_TYPE_WASM_EVAL              = 2;
 
   /**
-   * Log violation details for the Trusted Types directive. No check happens
-   * that the policy is indeed violated. Requires the Trusted Types directive to
-   * belong to the policy referrenced by aCSPViolationData.
+   * Log violation details for aCSPViolationData's directive. The directive is
+   * required to:
+   * - be one of the CSP directives corresponding to Trusted Types.
+   * - belong to the policy referrenced by aCSPViolationData.
+   * No check happens that the policy is indeed violated.
    *
-   * Notifies observers, logs on the error console, sends a report to the
-   * directive's report-uris and may fire a violation event.
+   * Notifies observers, logs on the error console, sends a report (with a code-
+   * sample) to the directive's report-uris and may fire a violation event.
    *
    * @param aCSPEventListener Should be null for Windows
    *                          (https://html.spec.whatwg.org/multipage/nav-history-apis.html#window),
@@ -254,6 +272,7 @@ interface nsIContentSecurityPolicy : nsISerializable
    */
   [noscript] void logTrustedTypesViolationDetailsUnchecked(
     in CSPViolationData aCSPViolationData,
+    in AString aObserverSubject,
     in nsICSPEventListener aCSPEventListener);
 
   /**
@@ -372,6 +391,7 @@ interface nsIContentSecurityPolicy : nsISerializable
 };
 
 typedef nsIContentSecurityPolicy_CSPDirective CSPDirective;
+typedef nsIContentSecurityPolicy_RequireTrustedTypesForDirectiveState RequireTrustedTypesForDirectiveState;
 
 /* Listener for security policy violation event */
 [function, scriptable, uuid(c3163b14-3a8f-46dd-a4af-bd04680364cd)]

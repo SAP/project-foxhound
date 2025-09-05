@@ -82,7 +82,7 @@ class RTC_EXPORT DesktopCapturer {
   struct Source {
     // The unique id to represent a Source of current DesktopCapturer.
     SourceId id;
-    pid_t pid;
+    pid_t pid = 0;
 
     // Title of the window or screen in UTF-8 encoding, maybe empty. This field
     // should not be used to identify a source.
@@ -110,7 +110,7 @@ class RTC_EXPORT DesktopCapturer {
   // supported by all capturers. This will only affect the frequency at which
   // new frames are available, not the frequency at which you are allowed to
   // capture the frames.
-  virtual void SetMaxFrameRate(uint32_t max_frame_rate) {}
+  virtual void SetMaxFrameRate(uint32_t /* max_frame_rate */) {}
 
   // Returns a valid pointer if the capturer requires the user to make a
   // selection from a source list provided by the capturer.

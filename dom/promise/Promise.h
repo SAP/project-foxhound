@@ -189,6 +189,12 @@ class Promise : public SupportsWeakPtr {
                                             // specializations in the .cpp for
                                             // the T values we support.
 
+  // If the JSContext has a pending exception then this will reject the promise
+  // with that exception and clear it from the JSContext.
+  void MaybeRejectWithExceptionFromContext(JSContext* aCx) {
+    HandleException(aCx);
+  }
+
   // Mark a settled promise as already handled so that rejections will not
   // be reported as unhandled.
   bool SetSettledPromiseIsHandled();
@@ -403,6 +409,10 @@ class Promise : public SupportsWeakPtr {
   // Pass ePropagateUserInteraction for aPropagateUserInteraction if you want
   // the promise resolve handler to be called as if we were handling user
   // input events in case we are currently handling user input events.
+  // The error code can be:
+  // * NS_ERROR_UNEXPECTED when AutoJSAPI.Init fails
+  // * NS_ERROR_OUT_OF_MEMORY when NewPromiseObject throws OOM
+  // * NS_ERROR_NOT_INITIALIZED when NewPromiseObject fails without OOM
   void CreateWrapper(ErrorResult& aRv,
                      PropagateUserInteraction aPropagateUserInteraction =
                          eDontPropagateUserInteraction);
@@ -413,7 +423,9 @@ class Promise : public SupportsWeakPtr {
 
   template <typename T>
   void MaybeSomething(T&& aArgument, MaybeFunc aFunc) {
-    MOZ_ASSERT(PromiseObj());  // It was preserved!
+    if (NS_WARN_IF(!PromiseObj())) {
+      return;
+    }
 
     AutoAllowLegacyScriptExecution exemption;
     AutoEntryScript aes(mGlobal, "Promise resolution or rejection");

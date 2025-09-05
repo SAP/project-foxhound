@@ -4,9 +4,10 @@
 
 "use strict";
 
-const { ShoppingProduct, isProductURL } = ChromeUtils.importESModule(
-  "chrome://global/content/shopping/ShoppingProduct.mjs"
-);
+const { ShoppingProduct, isProductURL, isSupportedSiteURL } =
+  ChromeUtils.importESModule(
+    "chrome://global/content/shopping/ShoppingProduct.mjs"
+  );
 
 add_task(function test_product_fromUrl() {
   Assert.deepEqual(
@@ -84,6 +85,22 @@ add_task(function test_product_fromUrl() {
     "Protocol is not checked"
   );
 
+  Services.prefs.setBoolPref("toolkit.shopping.experience2023.defr", false);
+
+  Assert.deepEqual(
+    ShoppingProduct.fromURL(new URL("https://amazon.fr/product/dp/ABCDEFG123")),
+    { host: "amazon.fr", sitename: "amazon", valid: false },
+    "amazon.fr product URL is not valid when DE/FR is disabled"
+  );
+
+  Assert.deepEqual(
+    ShoppingProduct.fromURL(new URL("https://amazon.de/product/dp/ABCDEFG123")),
+    { host: "amazon.de", sitename: "amazon", valid: false },
+    "amazon.de product URL is not valid when DE/FR is disabled"
+  );
+
+  Services.prefs.setBoolPref("toolkit.shopping.experience2023.defr", true);
+
   Assert.deepEqual(
     ShoppingProduct.fromURL(new URL("https://amazon.fr/product/dp/ABCDEFG123")),
     {
@@ -93,7 +110,7 @@ add_task(function test_product_fromUrl() {
       id: "ABCDEFG123",
       valid: true,
     },
-    "Valid French Product Url returns a full result object"
+    "amazon.fr product URL is valid when DE/FR is enabled"
   );
 
   Assert.deepEqual(
@@ -105,8 +122,10 @@ add_task(function test_product_fromUrl() {
       id: "ABCDEFG123",
       valid: true,
     },
-    "Valid German Product Url returns a full result object"
+    "amazon.de product URL is valid when DE/FR is enabled"
   );
+
+  Services.prefs.clearUserPref("toolkit.shopping.experience2023.defr");
 });
 
 add_task(function test_product_isProduct() {
@@ -293,5 +312,132 @@ add_task(function test_new_ShoppingProduct() {
     productURI.isProduct(),
     true,
     "Passing a product URI returns a valid product"
+  );
+});
+
+add_task(function test_product_isSupportedSite() {
+  let product = {
+    host: "walmart.com",
+    sitename: "walmart",
+    tld: "com",
+    valid: false,
+  };
+  Assert.equal(
+    ShoppingProduct.isSupportedSite(product),
+    true,
+    "Passing an invalid Product object returns true if it is a supported site"
+  );
+});
+
+add_task(function test_isSupportedSiteURL() {
+  let productString =
+    "https://www.amazon.com/Furmax-Electric-Adjustable-Standing-Computer/dp/B09TJGHL5F/";
+  let productUrl = new URL(productString);
+  let productUri = Services.io.newURI(productString);
+  Assert.equal(
+    isSupportedSiteURL(productUrl),
+    false,
+    "Passing a product URL returns false"
+  );
+  Assert.equal(
+    isSupportedSiteURL(productUri),
+    false,
+    "Passing a product URI returns false"
+  );
+
+  let supportedSiteHomepageString = "https://www.amazon.com";
+  let supportedSiteHomepageUrl = new URL(supportedSiteHomepageString);
+  let supportedSiteHomepageUri = Services.io.newURI(
+    supportedSiteHomepageString
+  );
+  Assert.equal(
+    isSupportedSiteURL(supportedSiteHomepageUrl),
+    true,
+    "Passing the amazon homepage URL returns true"
+  );
+  Assert.equal(
+    isSupportedSiteURL(supportedSiteHomepageUri),
+    true,
+    "Passing the amazon homepage URI returns true"
+  );
+
+  let supportedSiteListingPageString =
+    "https://www.walmart.com/browse/food/grilling-foods/976759_1567409_8808777";
+  let supportedSiteListingPagUrl = new URL(supportedSiteListingPageString);
+  let supportedSiteListingPagUri = Services.io.newURI(
+    supportedSiteListingPageString
+  );
+  Assert.equal(
+    isSupportedSiteURL(supportedSiteListingPagUrl),
+    true,
+    "Passing a content URL returns true"
+  );
+  Assert.equal(
+    isSupportedSiteURL(supportedSiteListingPagUri),
+    true,
+    "Passing a content URI returns true"
+  );
+
+  let unsupportedSiteString = "https://www.wikipedia.org";
+  let unsupportedSiteUrl = new URL(unsupportedSiteString);
+  let unsupportedSiteUri = Services.io.newURI(unsupportedSiteString);
+  Assert.equal(
+    isSupportedSiteURL(unsupportedSiteUrl),
+    false,
+    "Passing a unsupported website URL returns false"
+  );
+  Assert.equal(
+    isSupportedSiteURL(unsupportedSiteUri),
+    false,
+    "Passing a unsupported website URI returns false"
+  );
+});
+
+add_task(function test_getSupportedDomains() {
+  const mockConfig = {
+    site1: {
+      productIdFromURLRegex:
+        /(?:[\/]|$|%2F)(?<productId>[A-Z0-9]{10})(?:[\/]|$|\#|\?|%2F)/,
+      validTLDs: ["com", "de"],
+    },
+    site2: {
+      productIdFromURLRegex:
+        /\/ip\/(?:[A-Za-z0-9-]{1,320}\/)?(?<productId>[0-9]{3,13})/,
+      validTLDs: ["ca"],
+    },
+    site3: {
+      productIdFromURLRegex:
+        /\/ip\/(?:[A-Za-z0-9-]{1,320}\/)?(?<productId>[0-9]{3,13})/,
+      validTLDs: ["co", "io"],
+    },
+  };
+  const expected = {
+    site1: ["https://site1.com", "https://site1.de"],
+    site2: ["https://site2.ca"],
+    site3: ["https://site3.co", "https://site3.io"],
+  };
+
+  let sites = ShoppingProduct.getSupportedDomains(mockConfig);
+
+  Assert.deepEqual(
+    sites,
+    expected,
+    "Got expected output for ShoppingProduct.getSupportedDomains"
+  );
+
+  let emptyConfigResults = ShoppingProduct.getSupportedDomains({});
+
+  Assert.deepEqual(
+    emptyConfigResults,
+    {},
+    "Got an empty object for ShoppingProduct.getSupportedDomains with empty config"
+  );
+
+  let invalidResults = ShoppingProduct.getSupportedDomains(null);
+
+  Assert.deepEqual(
+    invalidResults,
+    null,
+    "Got null for ShoppingProduct.getSupportedDomains with invalid config"
   );
 });

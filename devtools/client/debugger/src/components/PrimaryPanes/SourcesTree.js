@@ -15,6 +15,10 @@ import {
 } from "devtools/client/shared/vendor/react-dom-factories";
 import PropTypes from "devtools/client/shared/vendor/react-prop-types";
 import { connect } from "devtools/client/shared/vendor/react-redux";
+const MenuButton = require("resource://devtools/client/shared/components/menu/MenuButton.js");
+const MenuItem = require("resource://devtools/client/shared/components/menu/MenuItem.js");
+const MenuList = require("resource://devtools/client/shared/components/menu/MenuList.js");
+import { prefs } from "../../utils/prefs";
 
 // Selectors
 import {
@@ -47,24 +51,57 @@ class SourcesTree extends Component {
   constructor(props) {
     super(props);
 
-    this.state = {};
+    this.state = {
+      hasOverflow: undefined,
+    };
+
+    // Monitor resize to check if the source tree shows a scrollbar.
+    this.onResize = this.onResize.bind(this);
+    this.resizeObserver = new ResizeObserver(this.onResize);
   }
 
   static get propTypes() {
     return {
-      mainThreadHost: PropTypes.string.isRequired,
+      mainThreadHost: PropTypes.string,
       expanded: PropTypes.object.isRequired,
       focusItem: PropTypes.func.isRequired,
       focused: PropTypes.object,
       projectRoot: PropTypes.string.isRequired,
       selectSource: PropTypes.func.isRequired,
       setExpandedState: PropTypes.func.isRequired,
-      rootItems: PropTypes.object.isRequired,
+      rootItems: PropTypes.array.isRequired,
       clearProjectDirectoryRoot: PropTypes.func.isRequired,
       projectRootName: PropTypes.string.isRequired,
       setHideOrShowIgnoredSources: PropTypes.func.isRequired,
       hideIgnoredSources: PropTypes.bool.isRequired,
     };
+  }
+
+  onResize() {
+    const tree = this.refs.tree;
+    if (!tree) {
+      return;
+    }
+
+    // "treeRef" is created via createRef() in the Tree component.
+    const treeEl = tree.treeRef.current;
+    const hasOverflow = treeEl.scrollHeight > treeEl.clientHeight;
+    if (hasOverflow !== this.state.hasOverflow) {
+      this.setState({ hasOverflow });
+    }
+  }
+
+  componentDidUpdate() {
+    this.onResize();
+  }
+
+  componentDidMount() {
+    this.resizeObserver.observe(this.refs.pane);
+    this.onResize();
+  }
+
+  componentWillUnmount() {
+    this.resizeObserver.disconnect();
   }
 
   selectSourceItem = item => {
@@ -271,6 +308,7 @@ class SourcesTree extends Component {
         return this.props.expanded.has(this.getKey(item));
       },
       onActivate: this.onActivate,
+      ref: "tree",
       renderItem: this.renderItem,
       preventBlur: true,
     };
@@ -310,15 +348,61 @@ class SourcesTree extends Component {
     return null;
   }
 
+  renderSettingsButton() {
+    const { toolboxDoc } = this.context;
+    return React.createElement(
+      MenuButton,
+      {
+        menuId: "sources-tree-settings-menu-button",
+        toolboxDoc,
+        className:
+          "devtools-button command-bar-button debugger-settings-menu-button",
+        title: L10N.getStr("sources-settings.button.label"),
+        "aria-label": L10N.getStr("sources-settings.button.label"),
+      },
+      () => this.renderSettingsMenuItems()
+    );
+  }
+
+  renderSettingsMenuItems() {
+    return React.createElement(
+      MenuList,
+      {
+        id: "sources-tree-settings-menu-list",
+      },
+      React.createElement(MenuItem, {
+        key: "debugger-settings-menu-item-hide-ignored-sources",
+        className: "menu-item debugger-settings-menu-item-hide-ignored-sources",
+        checked: prefs.hideIgnoredSources,
+        label: L10N.getStr("settings.hideIgnoredSources.label"),
+        tooltip: L10N.getStr("settings.hideIgnoredSources.tooltip"),
+        onClick: () =>
+          this.props.setHideOrShowIgnoredSources(!prefs.hideIgnoredSources),
+      }),
+      React.createElement(MenuItem, {
+        key: "debugger-settings-menu-item-show-content-scripts",
+        className: "menu-item debugger-settings-menu-item-show-content-scripts",
+        checked: prefs.showContentScripts,
+        label: L10N.getStr("sources-settings.showContentScripts.label"),
+        tooltip: L10N.getStr("sources-settings.showContentScripts.tooltip"),
+        onClick: () =>
+          this.props.setShowContentScripts(!prefs.showContentScripts),
+      })
+    );
+  }
+
   render() {
     const { projectRoot } = this.props;
     return div(
       {
         key: "pane",
+        ref: "pane",
         className: classnames("sources-list", {
           "sources-list-custom-root": !!projectRoot,
+          "sources-list-has-overflow": this.state.hasOverflow,
         }),
       },
+      this.renderSettingsButton(),
       this.isEmpty()
         ? this.renderEmptyElement(L10N.getStr("noSourcesText"))
         : React.createElement(
@@ -331,6 +415,10 @@ class SourcesTree extends Component {
     );
   }
 }
+
+SourcesTree.contextTypes = {
+  toolboxDoc: PropTypes.object,
+};
 
 const mapStateToProps = state => {
   return {
@@ -350,4 +438,5 @@ export default connect(mapStateToProps, {
   focusItem: actions.focusItem,
   clearProjectDirectoryRoot: actions.clearProjectDirectoryRoot,
   setHideOrShowIgnoredSources: actions.setHideOrShowIgnoredSources,
+  setShowContentScripts: actions.setShowContentScripts,
 })(SourcesTree);

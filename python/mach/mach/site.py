@@ -17,9 +17,14 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import warnings
 from contextlib import contextmanager
+from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
+
+from filelock import FileLock, Timeout
+from packaging.specifiers import SpecifierSet
 
 from mach.requirements import (
     MachEnvRequirements,
@@ -34,6 +39,34 @@ METADATA_FILENAME = "moz_virtualenv_metadata.json"
 PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS = ("mach", "build", "common")
 
 _is_windows = sys.platform == "cygwin" or (sys.platform == "win32" and os.sep == "\\")
+
+
+@lru_cache(maxsize=None)
+def use_uv():
+    return os.environ.get("MACH_NO_UV", "").lower() not in (
+        "1",
+        "true",
+    ) and shutil.which("uv")
+
+
+@lru_cache(maxsize=None)
+def show_pip_output():
+    return os.environ.get("MACH_SHOW_PIP_OUTPUT", "").lower() in ("1", "true")
+
+
+def pip_command(*, python_executable, subcommand=None, args=None, non_uv_args=None):
+    if use_uv():
+        command = ["uv", "pip"]
+        if subcommand:
+            command.append(subcommand)
+        full_command = command + (args or [])
+    else:
+        command = [python_executable, "-m", "pip"]
+        if subcommand:
+            command.append(subcommand)
+        full_command = command + (non_uv_args or []) + (args or [])
+
+    return full_command
 
 
 class VenvModuleNotFoundException(Exception):
@@ -168,7 +201,7 @@ class MozSiteMetadata:
 
     def __eq__(self, other):
         return (
-            type(self) == type(other)
+            type(self) is type(other)
             and self.hex_version == other.hex_version
             and self.site_name == other.site_name
             and self.mach_site_packages_source == other.mach_site_packages_source
@@ -191,7 +224,7 @@ class MozSiteMetadata:
             f'The virtualenv at "{prefix}" is out-of-date.'
         )
         try:
-            with open(metadata_path, "r") as file:
+            with open(metadata_path) as file:
                 raw = json.load(file)
 
             if not raw.get("is_finalized", False):
@@ -257,6 +290,7 @@ class MachSiteManager:
         requirements: MachEnvRequirements,
         original_python: "ExternalPythonSite",
         site_packages_source: SitePackagesSource,
+        quiet: bool = False,
     ):
         """
         Args:
@@ -283,9 +317,16 @@ class MachSiteManager:
             original_python,
             self._virtualenv_root,
         )
+        self._quiet = quiet
+
+    def _log(self, message: str):
+        if not self._quiet:
+            print(message)
 
     @classmethod
-    def from_environment(cls, topsrcdir: str, get_state_dir: Callable[[], str]):
+    def from_environment(
+        cls, topsrcdir: str, get_state_dir: Callable[[], str], quiet: bool = False
+    ):
         """
         Args:
             topsrcdir: The path to the Firefox repo
@@ -294,6 +335,7 @@ class MachSiteManager:
         """
 
         requirements = resolve_requirements(topsrcdir, "mach")
+
         # Mach needs to operate in environments in which no pip packages are installed
         # yet, and the system isn't guaranteed to have the packages we need. For example,
         # "./mach bootstrap" can't have any dependencies.
@@ -326,6 +368,7 @@ class MachSiteManager:
             requirements,
             original_python,
             source,
+            quiet,
         )
 
     def _up_to_date(self):
@@ -368,9 +411,11 @@ class MachSiteManager:
 
         self.ensure()
         with self._metadata.update_current_site(
-            self._virtualenv().python_path
-            if self._site_packages_source == SitePackagesSource.VENV
-            else sys.executable,
+            (
+                self._virtualenv().python_path
+                if self._site_packages_source == SitePackagesSource.VENV
+                else sys.executable
+            ),
         ):
             # Reset the sys.path to insulate ourselves from the environment.
             # This should be safe to do, since activation of the Mach site happens so
@@ -385,6 +430,7 @@ class MachSiteManager:
                 activate_virtualenv(self._virtualenv())
 
     def _build(self):
+        self._log(f"Creating the 'mach' site at {self._virtualenv_root}")
         if self._site_packages_source != SitePackagesSource.VENV:
             # The Mach virtualenv doesn't have a physical virtualenv on-disk if it won't
             # be "pip install"-ing. So, there's no build work to do.
@@ -406,6 +452,7 @@ class MachSiteManager:
                 *stdlib_paths,
                 *self._requirements.pths_as_absolute(self._topsrcdir),
                 *system_site_paths,
+                *self._requirements.pths_fallback_as_absolute(self._topsrcdir),
             ]
         elif self._site_packages_source == SitePackagesSource.NONE:
             stdlib_paths = self._metadata.original_python.sys_path_stdlib()
@@ -432,7 +479,7 @@ class MachSiteManager:
 
     def _virtualenv(self):
         assert self._site_packages_source == SitePackagesSource.VENV
-        return PythonVirtualenv(self._metadata.prefix)
+        return PythonVirtualenv(self._metadata.prefix, self._quiet)
 
 
 class CommandSiteManager:
@@ -465,6 +512,7 @@ class CommandSiteManager:
         active_metadata: MozSiteMetadata,
         populate_virtualenv: bool,
         requirements: MachEnvRequirements,
+        quiet: bool = False,
     ):
         """
         Args:
@@ -484,7 +532,8 @@ class CommandSiteManager:
         self._mach_virtualenv_root = mach_virtualenv_root
         self.virtualenv_root = virtualenv_root
         self._site_name = site_name
-        self._virtualenv = PythonVirtualenv(self.virtualenv_root)
+        self._quiet = quiet
+        self._virtualenv = PythonVirtualenv(self.virtualenv_root, self._quiet)
         self.python_path = self._virtualenv.python_path
         self.bin_path = self._virtualenv.bin_path
         self._populate_virtualenv = populate_virtualenv
@@ -498,6 +547,13 @@ class CommandSiteManager:
             virtualenv_root,
         )
 
+    def _log(self, message: str):
+        if not self._quiet:
+            # Ideally we would write to stderr here, but mozharness
+            # has tests that fail if there is any output to stderr.
+            # So until that changes, this will have to do.
+            print(message)
+
     @classmethod
     def from_environment(
         cls,
@@ -505,6 +561,7 @@ class CommandSiteManager:
         get_state_dir: Callable[[], Optional[str]],
         site_name: str,
         command_virtualenvs_dir: str,
+        quiet: bool = False,
     ):
         """
         Args:
@@ -553,6 +610,7 @@ class CommandSiteManager:
             active_metadata,
             populate_virtualenv,
             resolve_requirements(topsrcdir, site_name),
+            quiet,
         )
 
     def ensure(self):
@@ -560,23 +618,39 @@ class CommandSiteManager:
         If using a virtualenv Python binary directly, it's useful to call this function
         first to ensure that the virtualenv doesn't have obsolete references or packages.
         """
-        result = self._up_to_date()
-        if not result.is_up_to_date:
-            active_site = MozSiteMetadata.from_runtime()
-            if active_site.site_name == self._site_name:
-                print(result.reason, file=sys.stderr)
-                raise Exception(
-                    f'The "{self._site_name}" site is out-of-date, even though it has '
-                    f"already been activated. Was it modified while this Mach process "
-                    f"was running?"
-                )
+        lock_file = Path(self.virtualenv_root).with_suffix(".lock")
+        timeout = 60
 
-            _create_venv_with_pthfile(
-                self._virtualenv,
-                self._pthfile_lines(),
-                self._populate_virtualenv,
-                self._requirements,
-                self._metadata,
+        # In the scenario where multiple processes use the same site that does not yet exist,
+        # they will trample each other when attempting to create it. To resolve this, we use
+        # a file lock. The first process to reach the lock will create it and ensure it is up
+        # to date, while the other(s) wait(s). Once the first releases the lock, the others
+        # will continue one-by-one and determine it's up-to-date.
+        try:
+            with FileLock(lock_file, timeout=timeout):
+                result = self._up_to_date()
+                if not result.is_up_to_date:
+                    active_site = MozSiteMetadata.from_runtime()
+                    if active_site.site_name == self._site_name:
+                        print(result.reason, file=sys.stderr)
+                        raise Exception(
+                            f'The "{self._site_name}" site is out-of-date, even though it has '
+                            f"already been activated. Was it modified while this Mach process "
+                            f"was running?"
+                        )
+                    self._log(
+                        f"Creating the '{self._site_name}' site at {self.virtualenv_root}"
+                    )
+                    _create_venv_with_pthfile(
+                        self._virtualenv,
+                        self._pthfile_lines(),
+                        self._populate_virtualenv,
+                        self._requirements,
+                        self._metadata,
+                    )
+        except Timeout:
+            self._log(
+                f"Could not acquire the lock at {lock_file} for the {self._site_name} site after {timeout} seconds."
             )
 
     def activate(self):
@@ -586,7 +660,6 @@ class CommandSiteManager:
         site, you can simply instantiate an instance of this class
         and call .activate() to make the virtualenv active.
         """
-
         active_site = MozSiteMetadata.from_runtime()
         site_is_already_active = active_site.site_name == self._site_name
         if (
@@ -637,6 +710,7 @@ class CommandSiteManager:
         expected hash of the downloaded package. See:
         https://pip.pypa.io/en/stable/reference/pip_install/#hash-checking-mode
         """
+        self._log(f"Installing pip requirements to the '{self._site_name}' site.")
 
         if not os.path.isabs(path):
             path = os.path.join(self._topsrcdir, path)
@@ -646,19 +720,15 @@ class CommandSiteManager:
         if require_hashes:
             args.append("--require-hashes")
 
-        install_result = self._virtualenv.pip_install(
-            args,
-            check=not quiet,
-            stdout=subprocess.PIPE if quiet else None,
-        )
+        install_result = self._virtualenv.pip_install(args)
+
         if install_result.returncode:
-            print(install_result.stdout)
             raise InstallPipRequirementsException(
                 f'Failed to install "{path}" into the "{self._site_name}" site.'
             )
 
         check_result = subprocess.run(
-            [self.python_path, "-m", "pip", "check"],
+            pip_command(python_executable=self.python_path, subcommand="check"),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -717,7 +787,7 @@ class CommandSiteManager:
         _delete_ignored_egg_info_dirs()
 
         check_result = subprocess.run(
-            [self.python_path, "-m", "pip", "check"],
+            pip_command(python_executable=self.python_path, subcommand="check"),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
@@ -730,10 +800,15 @@ class CommandSiteManager:
                 # the "pip check" failure is easier.
                 print(install_result.stdout)
 
-            subprocess.check_call(
-                [self.python_path, "-m", "pip", "list", "-v"], stdout=sys.stderr
+            result = subprocess.run(
+                pip_command(
+                    python_executable=self.python_path, subcommand="list", args=["-v"]
+                ),
+                stdout=subprocess.PIPE,
+                text=True,
+                check=True,
             )
-            print(check_result.stdout, file=sys.stderr)
+            print(result.stdout, file=sys.stderr)
             raise InstallPipRequirementsException(
                 f'As part of validation after installing "{path}" into the '
                 f'"{self._site_name}" site, the site appears to contain installed '
@@ -789,6 +864,12 @@ class CommandSiteManager:
         lines.extend(
             _deprioritize_venv_packages(self._virtualenv, self._populate_virtualenv)
         )
+        # Except for fallback that should come after the pip installed package.
+        lines.extend(
+            resolve_requirements(self._topsrcdir, "mach").pths_fallback_as_absolute(
+                self._topsrcdir
+            )
+        )
 
         # Note that an on-disk virtualenv is always created for commands, even if they
         # are using the system as their site-packages source. This is to support use
@@ -816,34 +897,77 @@ class CommandSiteManager:
 class PythonVirtualenv:
     """Calculates paths of interest for general python virtual environments"""
 
-    def __init__(self, prefix):
-        if _is_windows:
-            self.bin_path = os.path.join(prefix, "Scripts")
-            self.python_path = os.path.join(self.bin_path, "python.exe")
-        else:
-            self.bin_path = os.path.join(prefix, "bin")
-            self.python_path = os.path.join(self.bin_path, "python")
+    def __init__(self, prefix, quiet=False):
         self.prefix = os.path.realpath(prefix)
+        self.paths = self._get_sysconfig_paths(self.prefix)
 
-    @functools.lru_cache(maxsize=None)
-    def resolve_sysconfig_packages_path(self, sysconfig_path):
-        # macOS uses a different default sysconfig scheme based on whether it's using the
-        # system Python or running in a virtualenv.
-        # Manually define the scheme (following the implementation in
-        # "sysconfig._get_default_scheme()") so that we're always following the
-        # code path for a virtualenv directory structure.
-        if os.name == "posix":
-            scheme = "posix_prefix"
+        # Name of the Python executable to use in virtual environments.
+        # An executable with the same name as sys.executable might not exist in
+        # virtual environments. An executable with 'python' as the steam —
+        # without version numbers or ABI flags — will always be present in
+        # virtual environments, so we use that.
+        python_exe_name = "python" + sysconfig.get_config_var("EXE")
+
+        self.bin_path = self.paths["scripts"]
+        self.python_path = os.path.join(self.bin_path, python_exe_name)
+        self._quiet = quiet
+
+    @staticmethod
+    def _get_sysconfig_paths(prefix):
+        """Calculate the sysconfig paths of a virtual environment in the given prefix.
+
+        The virtual environment MUST be using the same Python distribution as us.
+        """
+        # Determine the sysconfig scheme used in virtual environments
+        if "venv" in sysconfig.get_scheme_names():
+            # A 'venv' scheme was added in Python 3.11 to allow users to
+            # calculate the paths for a virtual environment, since the default
+            # scheme may not always be the same as used on virtual environments.
+            # Some common examples are the system Python distributed by macOS,
+            # Debian, and Fedora.
+            # For more information, see https://github.com/python/cpython/issues/89576
+            venv_scheme = "venv"
+        elif os.name == "nt":
+            # We know that before the 'venv' scheme was added, on Windows,
+            # the 'nt' scheme was used in virtual environments.
+            venv_scheme = "nt"
+        elif os.name == "posix":
+            # We know that before the 'venv' scheme was added, on POSIX,
+            # the 'posix_prefix' scheme was used in virtual environments.
+            venv_scheme = "posix_prefix"
         else:
-            scheme = os.name
+            # This should never happen with upstream Python, as the 'venv'
+            # scheme should always be available on >=3.11, and no other
+            # platforms are supported by the upstream on older Python versions.
+            #
+            # Since the 'venv' scheme isn't available, and we have no knowledge
+            # of this platform/distribution, fallback to the default scheme.
+            #
+            # Hitting this will likely be the result of running a custom Python
+            # distribution targetting a platform that is not supported by the
+            # upstream.
+            # In this case, unless the Python vendor patched the Python
+            # distribution in such a way as the default scheme may not always be
+            # the same scheme, using the default scheme should be correct.
+            # If the vendor did patch Python as such, to work around this issue,
+            # I would recommend them to define a 'venv' scheme that matches
+            # the layout used on virtual environments in their Python distribution.
+            # (rec. signed Filipe Laíns — upstream sysconfig maintainer)
+            venv_scheme = sysconfig.get_default_scheme()
+            warnings.warn(
+                f"Unknown platform '{os.name}', using the default install scheme '{venv_scheme}'. "
+                "If this is incorrect, please ask your Python vendor to add a 'venv' sysconfig scheme "
+                "(see https://github.com/python/cpython/issues/89576, or check the code comment).",
+                stacklevel=2,
+            )
+        # Build the sysconfig config_vars dictionary for the virtual environment.
+        venv_vars = sysconfig.get_config_vars().copy()
+        venv_vars["base"] = venv_vars["platbase"] = prefix
+        # Get sysconfig paths for the virtual environment.
+        return sysconfig.get_paths(venv_scheme, vars=venv_vars)
 
-        sysconfig_paths = sysconfig.get_paths(scheme)
-        data_path = Path(sysconfig_paths["data"])
-        path = Path(sysconfig_paths[sysconfig_path])
-        relative_path = path.relative_to(data_path)
-
-        # Path to virtualenv's "site-packages" directory for provided sysconfig path
-        return os.path.normpath(os.path.normcase(Path(self.prefix) / relative_path))
+    def resolve_sysconfig_packages_path(self, sysconfig_path):
+        return self.paths[sysconfig_path]
 
     def site_packages_dirs(self):
         dirs = []
@@ -874,19 +998,22 @@ class PythonVirtualenv:
         """
         existing_packages = self._resolve_installed_packages()
 
-        with tempfile.TemporaryDirectory() as tempdir:
-            constraints_path = os.path.join(tempdir, "site-constraints.txt")
-            with open(constraints_path, "w") as file:
-                file.write(
-                    "\n".join(
-                        [
-                            f"{name}=={version}"
-                            for name, version in existing_packages.items()
-                        ]
+        if existing_packages:
+            with tempfile.TemporaryDirectory() as tempdir:
+                constraints_path = os.path.join(tempdir, "site-constraints.txt")
+                with open(constraints_path, "w") as file:
+                    file.write(
+                        "\n".join(
+                            [
+                                f"{name}=={version}"
+                                for name, version in existing_packages.items()
+                            ]
+                        )
                     )
-                )
 
-            return self.pip_install(["--constraint", constraints_path] + pip_args)
+                self.pip_install(["--constraint", constraints_path] + pip_args)
+        else:
+            self.pip_install(pip_args)
 
     def pip_install(self, pip_install_args, **kwargs):
         # setuptools will use the architecture of the running Python instance when
@@ -898,8 +1025,10 @@ class PythonVirtualenv:
             "ARCHFLAGS", "-arch {}".format(platform.machine())
         )
         kwargs.setdefault("check", True)
-        kwargs.setdefault("stderr", subprocess.STDOUT)
+        kwargs.setdefault("stdout", None if show_pip_output() else subprocess.PIPE)
+        kwargs.setdefault("stderr", None if show_pip_output() else subprocess.PIPE)
         kwargs.setdefault("universal_newlines", True)
+        kwargs.setdefault("text", True)
 
         # It's tempting to call pip natively via pip.main(). However,
         # the current Python interpreter may not be the virtualenv python.
@@ -908,17 +1037,32 @@ class PythonVirtualenv:
         # force the virtualenv's interpreter to be used and all is well.
         # It /might/ be possible to cheat and set sys.executable to
         # self.python_path. However, this seems more risk than it's worth.
-        return subprocess.run(
-            [self.python_path, "-m", "pip", "install"] + pip_install_args,
+
+        install_result = subprocess.run(
+            pip_command(
+                python_executable=self.python_path,
+                subcommand="install",
+                args=pip_install_args,
+            ),
             **kwargs,
         )
+
+        if install_result.returncode and not self._quiet:
+            if install_result.stdout:
+                print(install_result.stdout)
+            if install_result.stderr:
+                print(install_result.stderr, file=sys.stderr)
+
+        return install_result
 
     def install_optional_packages(self, optional_requirements):
         for requirement in optional_requirements:
             try:
                 self.pip_install_with_constraints([str(requirement.requirement)])
-            except subprocess.CalledProcessError:
+            except subprocess.CalledProcessError as error:
                 print(
+                    f"{error.output if error.output else ''}"
+                    f"{error.stderr if error.stderr else ''}"
                     f"Could not install {requirement.requirement.name}, so "
                     f"{requirement.repercussion}. Continuing."
                 )
@@ -1057,16 +1201,21 @@ class ExternalPythonSite:
 
 @functools.lru_cache(maxsize=None)
 def resolve_requirements(topsrcdir, site_name):
-    thunderbird_dir = os.path.join(topsrcdir, "comm")
-    is_thunderbird = os.path.exists(thunderbird_dir) and bool(
-        os.listdir(thunderbird_dir)
-    )
-    prefixes = [topsrcdir]
+    thunderbird_dir = Path(topsrcdir, "comm")
+    is_thunderbird = thunderbird_dir.exists() and any(thunderbird_dir.iterdir())
+    prefixes = [Path(topsrcdir)]
     if is_thunderbird:
-        prefixes[0:0] = [thunderbird_dir]
-    manifest_suffix = os.path.join("python", "sites", f"{site_name}.txt")
-    manifest_paths = (os.path.join(prefix, manifest_suffix) for prefix in prefixes)
-    manifest_path = next((f for f in manifest_paths if os.path.exists(f)), None)
+        prefixes.insert(0, thunderbird_dir)
+
+    manifest_suffix = Path("python", "sites", f"{site_name}.txt")
+    manifest_path = next(
+        (
+            prefix / manifest_suffix
+            for prefix in prefixes
+            if (prefix / manifest_suffix).exists()
+        ),
+        None,
+    )
 
     if manifest_path is None:
         raise Exception(
@@ -1076,7 +1225,7 @@ def resolve_requirements(topsrcdir, site_name):
         )
 
     try:
-        return MachEnvRequirements.from_requirements_definition(
+        requirements = MachEnvRequirements.from_requirements_definition(
             topsrcdir,
             is_thunderbird,
             site_name not in PIP_NETWORK_INSTALL_RESTRICTED_VIRTUALENVS,
@@ -1090,22 +1239,41 @@ def resolve_requirements(topsrcdir, site_name):
             "allowed to have unpinned packages."
         )
 
+    current_version = (
+        f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+    )
+    specifier = SpecifierSet(requirements.requires_python)
+    if current_version not in specifier:
+        site_name = manifest_path.stem
+        print(
+            f"The current Python version ({current_version}) does not meet the required "
+            f"version specification ({requirements.requires_python}) for the '{site_name}' site "
+            f"({manifest_path}).\n\n"
+            f"You will need to switch to a compatible Python version to run this command.\n\n"
+            f"To manage multiple versions of Python, we recommend a tool called 'uv': "
+            f"https://docs.astral.sh/uv/guides/install-python/"
+        )
+
+        exit(1)
+
+    return requirements
+
 
 def _resolve_installed_packages(python_executable):
-    pip_json = subprocess.check_output(
-        [
-            python_executable,
-            "-m",
-            "pip",
-            "list",
-            "--format",
-            "json",
-            "--disable-pip-version-check",
-        ],
+    result = subprocess.run(
+        pip_command(
+            python_executable=python_executable,
+            subcommand="list",
+            args=["--format", "json"],
+            non_uv_args=["--disable-pip-version-check"],
+        ),
         universal_newlines=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
     )
 
-    installed_packages = json.loads(pip_json)
+    installed_packages = json.loads(result.stdout)
     return {package["name"]: package["version"] for package in installed_packages}
 
 
@@ -1199,7 +1367,7 @@ def _assert_pip_check(pthfile_lines, virtualenv_name, requirements):
         ) as f:
             f.write("\n".join(pthfile_lines))
 
-        pip = [check_env.python_path, "-m", "pip"]
+        pip = pip_command(python_executable=check_env.python_path)
         if requirements:
             packages = _resolve_installed_packages(check_env.python_path)
             validation_result = RequirementsValidationResult.from_packages(
@@ -1254,9 +1422,11 @@ def _deprioritize_venv_packages(virtualenv, populate_virtualenv):
             (
                 "import sys; sys.path = [p for p in sys.path if "
                 f"p.lower() != {repr(site_packages_dir)}.lower()]",
-                f"import sys; sys.path.append({repr(site_packages_dir)})"
-                if populate_virtualenv
-                else None,
+                (
+                    f"import sys; sys.path.append({repr(site_packages_dir)})"
+                    if populate_virtualenv
+                    else None
+                ),
             ),
         )
     ]
@@ -1284,6 +1454,8 @@ def _create_venv_with_pthfile(
     )
 
     if process.returncode != 0:
+        # Clean up what we've made on failure so that we're not in an incomplete state
+        shutil.rmtree(virtualenv_root)
         if "No module named venv" in process.stderr:
             raise VenvModuleNotFoundException()
         else:
@@ -1304,9 +1476,21 @@ def _create_venv_with_pthfile(
     with open(os.path.join(platlib_site_packages_dir, PTH_FILENAME), "w") as f:
         f.write(pthfile_contents)
 
+    # Since we now support 'uv pip', "VIRTUAL_ENV" needs to be set to where we
+    # want it to install the packages into. With 'pip' we just use the venv's python
+    # executable, which is relative to the venv. That's not possible with 'uv`, and it's
+    # also not in the venv directory.
+    # Prior to this, we would only set this env var when activating the venv, but now we
+    # also need it set here (it still needs to be set in 'activate_virtualenv' as well
+    # since we won't always take this code path).
+    os.environ["VIRTUAL_ENV"] = virtualenv_root
+
     if populate_with_pip:
-        for requirement in requirements.pypi_requirements:
-            target_venv.pip_install([str(requirement.requirement)])
+        if requirements.pypi_requirements:
+            requirements_list = [
+                str(req.requirement) for req in requirements.pypi_requirements
+            ]
+            target_venv.pip_install(requirements_list)
         target_venv.install_optional_packages(requirements.pypi_optional_requirements)
 
     metadata.write(is_finalized=True)
@@ -1321,11 +1505,15 @@ def _is_venv_up_to_date(
     if not os.path.exists(target_venv.prefix):
         return SiteUpToDateResult(False, f'"{target_venv.prefix}" does not exist')
 
-    # Modifications to any of the requirements manifest files mean the virtualenv should
-    # be rebuilt:
-    metadata_mtime = os.path.getmtime(
-        os.path.join(target_venv.prefix, METADATA_FILENAME)
-    )
+    metadata_file = os.path.join(target_venv.prefix, METADATA_FILENAME)
+
+    if not os.path.exists(metadata_file):
+        return SiteUpToDateResult(
+            False, f'"{METADATA_FILENAME}" does not exist for "{target_venv.prefix}".'
+        )
+
+    # Modifications to any of the requirements manifest files mean the virtualenv should be rebuilt:
+    metadata_mtime = os.path.getmtime(metadata_file)
     for dep_file in requirements.requirements_paths:
         if os.path.getmtime(dep_file) > metadata_mtime:
             return SiteUpToDateResult(

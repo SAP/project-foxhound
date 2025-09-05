@@ -34,12 +34,12 @@
 #include "nsServiceManagerUtils.h"
 #include "nsTextFormatter.h"
 #include "OuterDocAccessible.h"
+#include "Pivot.h"
 #include "mozilla/a11y/Role.h"
 #ifdef MOZ_ACCESSIBILITY_ATK
 #  include "RootAccessibleWrap.h"
 #endif
 #include "States.h"
-#include "Statistics.h"
 #include "TextLeafAccessible.h"
 #include "xpcAccessibleApplication.h"
 
@@ -61,6 +61,7 @@
 #include "nsTreeUtils.h"
 #include "mozilla/a11y/AccTypes.h"
 #include "mozilla/ArrayUtils.h"
+#include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/DOMStringList.h"
 #include "mozilla/dom/EventTarget.h"
 #include "mozilla/dom/HTMLTableElement.h"
@@ -135,6 +136,22 @@ static LocalAccessible* MaybeCreateSpecificARIAAccessible(
     }
   }
   return nullptr;
+}
+
+// Send a request to all content processes that they build and send back
+// information about the given cache domains.
+static bool SendCacheDomainRequestToAllContentProcesses(
+    uint64_t aCacheDomains) {
+  if (!XRE_IsParentProcess()) {
+    return false;
+  }
+  bool sentAll = true;
+  nsTArray<ContentParent*> contentParents;
+  ContentParent::GetAll(contentParents);
+  for (auto* parent : contentParents) {
+    sentAll = sentAll && parent->SendSetCacheDomains(aCacheDomains);
+  }
+  return sentAll;
 }
 
 /**
@@ -340,6 +357,15 @@ LocalAccessible* CreateMenupopupAccessible(Element* aElement,
   return new XULMenupopupAccessible(aElement, aContext->Document());
 }
 
+static uint64_t GetCacheDomainsForKnownClients(uint64_t aCacheDomains) {
+  // Only check clients in the parent process.
+  if (!XRE_IsParentProcess()) {
+    return aCacheDomains;
+  }
+
+  return a11y::GetCacheDomainsForKnownClients(aCacheDomains);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // LocalAccessible constructors
 
@@ -422,11 +448,13 @@ ApplicationAccessible* nsAccessibilityService::gApplicationAccessible = nullptr;
 xpcAccessibleApplication* nsAccessibilityService::gXPCApplicationAccessible =
     nullptr;
 uint32_t nsAccessibilityService::gConsumers = 0;
+uint64_t nsAccessibilityService::gCacheDomains =
+    nsAccessibilityService::kDefaultCacheDomains;
 
 nsAccessibilityService::nsAccessibilityService()
-    : mHTMLMarkupMap(ArrayLength(sHTMLMarkupMapList)),
-      mMathMLMarkupMap(ArrayLength(sMathMLMarkupMapList)),
-      mXULMarkupMap(ArrayLength(sXULMarkupMapList)) {}
+    : mHTMLMarkupMap(std::size(sHTMLMarkupMapList)),
+      mMathMLMarkupMap(std::size(sMathMLMarkupMapList)),
+      mXULMarkupMap(std::size(sXULMarkupMapList)) {}
 
 nsAccessibilityService::~nsAccessibilityService() {
   NS_ASSERTION(IsShutdown(), "Accessibility wasn't shutdown!");
@@ -539,8 +567,12 @@ void nsAccessibilityService::NotifyOfAnchorJumpTo(nsIContent* aTargetNode) {
   const Accessible* focusedAcc = FocusedAccessible();
   if (focusedAcc &&
       (focusedAcc == document || focusedAcc->IsNonInteractive())) {
-    LocalAccessible* targetAcc = document->GetAccessible(aTargetNode);
-    if (targetAcc) {
+    LocalAccessible* targetAcc =
+        document->GetAccessibleOrContainer(aTargetNode);
+    // If targetAcc is the document, this isn't useful. It's possible we just
+    // haven't built the initial tree yet. Regardless, we don't want to fire an
+    // event for the document here.
+    if (targetAcc && !targetAcc->IsDoc()) {
       nsEventShell::FireEvent(nsIAccessibleEvent::EVENT_SCROLLING_START,
                               targetAcc);
       document->SetAnchorJump(nullptr);
@@ -564,11 +596,14 @@ void nsAccessibilityService::NotifyOfPossibleBoundsChange(
   if (IPCAccessibilityActive()) {
     DocAccessible* document = aPresShell->GetDocAccessible();
     if (document) {
-      // DocAccessible::GetAccessible() won't return the document if a root
-      // element like body is passed.
-      LocalAccessible* accessible = aContent == document->GetContent()
-                                        ? document
-                                        : document->GetAccessible(aContent);
+      LocalAccessible* accessible = document->GetAccessible(aContent);
+      if (!accessible && aContent == document->GetContent()) {
+        // DocAccessible::GetAccessible() won't return the document if a root
+        // element like body is passed. In that case we need the doc accessible
+        // itself.
+        accessible = document;
+      }
+
       if (accessible) {
         document->QueueCacheUpdate(accessible, CacheDomain::Bounds);
       }
@@ -583,11 +618,14 @@ void nsAccessibilityService::NotifyOfComputedStyleChange(
     return;
   }
 
-  // DocAccessible::GetAccessible() won't return the document if a root
-  // element like body is passed.
-  LocalAccessible* accessible = aContent == document->GetContent()
-                                    ? document
-                                    : document->GetAccessible(aContent);
+  LocalAccessible* accessible = document->GetAccessible(aContent);
+  if (!accessible && aContent == document->GetContent()) {
+    // DocAccessible::GetAccessible() won't return the document if a root
+    // element like body is passed. In that case we need the doc accessible
+    // itself.
+    accessible = document;
+  }
+
   if (!accessible && aContent && aContent->HasChildren() &&
       !aContent->IsInNativeAnonymousSubtree()) {
     // If the content has children and its frame has a transform, create an
@@ -1053,10 +1091,10 @@ already_AddRefed<DOMStringList> nsAccessibilityService::GetStringStates(
 void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
                                                 nsAString& aString) {
   static_assert(
-      nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
+      nsIAccessibleEvent::EVENT_LAST_ENTRY == std::size(kEventTypeNames),
       "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
 
-  if (aEventType >= ArrayLength(kEventTypeNames)) {
+  if (aEventType >= std::size(kEventTypeNames)) {
     aString.AssignLiteral("unknown");
     return;
   }
@@ -1066,11 +1104,10 @@ void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
 
 void nsAccessibilityService::GetStringEventType(uint32_t aEventType,
                                                 nsACString& aString) {
-  MOZ_ASSERT(
-      nsIAccessibleEvent::EVENT_LAST_ENTRY == ArrayLength(kEventTypeNames),
-      "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
+  MOZ_ASSERT(nsIAccessibleEvent::EVENT_LAST_ENTRY == std::size(kEventTypeNames),
+             "nsIAccessibleEvent constants are out of sync to kEventTypeNames");
 
-  if (aEventType >= ArrayLength(kEventTypeNames)) {
+  if (aEventType >= std::size(kEventTypeNames)) {
     aString.AssignLiteral("unknown");
     return;
   }
@@ -1466,7 +1503,7 @@ LocalAccessible* nsAccessibilityService::CreateAccessible(
 #  include "mozilla/Monitor.h"
 #  include "mozilla/Maybe.h"
 
-static Maybe<Monitor> sAndroidMonitor;
+MOZ_RUNINIT static Maybe<Monitor> sAndroidMonitor;
 
 mozilla::Monitor& nsAccessibilityService::GetAndroidMonitor() {
   if (!sAndroidMonitor.isSome()) {
@@ -1480,8 +1517,8 @@ mozilla::Monitor& nsAccessibilityService::GetAndroidMonitor() {
 ////////////////////////////////////////////////////////////////////////////////
 // nsAccessibilityService private
 
-bool nsAccessibilityService::Init() {
-  AUTO_PROFILER_MARKER_TEXT("nsAccessibilityService::Init", A11Y, {}, ""_ns);
+bool nsAccessibilityService::Init(uint64_t aCacheDomains) {
+  AUTO_PROFILER_MARKER_UNTYPED("nsAccessibilityService::Init", A11Y, {});
   // DO NOT ADD CODE ABOVE HERE: THIS CODE IS MEASURING TIMINGS.
 
   // Initialize accessible document manager.
@@ -1508,7 +1545,7 @@ bool nsAccessibilityService::Init() {
 
   eventListenerService->AddListenerChangeListener(this);
 
-  for (uint32_t i = 0; i < ArrayLength(sHTMLMarkupMapList); i++) {
+  for (uint32_t i = 0; i < std::size(sHTMLMarkupMapList); i++) {
     mHTMLMarkupMap.InsertOrUpdate(sHTMLMarkupMapList[i].tag,
                                   &sHTMLMarkupMapList[i]);
   }
@@ -1516,7 +1553,7 @@ bool nsAccessibilityService::Init() {
     mMathMLMarkupMap.InsertOrUpdate(info.tag, &info);
   }
 
-  for (uint32_t i = 0; i < ArrayLength(sXULMarkupMapList); i++) {
+  for (uint32_t i = 0; i < std::size(sXULMarkupMapList); i++) {
     mXULMarkupMap.InsertOrUpdate(sXULMarkupMapList[i].tag,
                                  &sXULMarkupMapList[i]);
   }
@@ -1543,7 +1580,16 @@ bool nsAccessibilityService::Init() {
   // Now its safe to start platform accessibility.
   if (XRE_IsParentProcess()) PlatformInit();
 
-  statistics::A11yInitialized();
+  // Check the startup cache domain pref. We might be in a test environment
+  // where we need to have all cache domains enabled (e.g., fuzzing).
+  if (XRE_IsParentProcess() &&
+      StaticPrefs::accessibility_enable_all_cache_domains_AtStartup()) {
+    gCacheDomains = CacheDomain::All;
+  }
+
+  // Set the active accessibility cache domains. We might want to modify the
+  // domains that we activate based on information about the instantiator.
+  gCacheDomains = ::GetCacheDomainsForKnownClients(aCacheDomains);
 
   static const char16_t kInitIndicator[] = {'1', 0};
   observerService->NotifyObservers(nullptr, "a11y-init-or-shutdown",
@@ -1716,7 +1762,7 @@ void nsAccessibilityService::MarkupAttributes(
   if (!markupMap) return;
 
   dom::Element* el = aAcc->IsLocal() ? aAcc->AsLocal()->Elm() : nullptr;
-  for (uint32_t i = 0; i < ArrayLength(markupMap->attrs); i++) {
+  for (uint32_t i = 0; i < std::size(markupMap->attrs); i++) {
     const MarkupAttrInfo* info = markupMap->attrs + i;
     if (!info->name) break;
 
@@ -1817,6 +1863,48 @@ void nsAccessibilityService::GetConsumers(nsAString& aString) {
   aString.Assign(json);
 }
 
+void nsAccessibilityService::SetCacheDomains(uint64_t aCacheDomains) {
+  if (XRE_IsParentProcess()) {
+    const DebugOnly<bool> requestSent =
+        SendCacheDomainRequestToAllContentProcesses(aCacheDomains);
+    MOZ_ASSERT(requestSent,
+               "Could not send cache domain request to content processes.");
+    gCacheDomains = aCacheDomains;
+    return;
+  }
+
+  // Bail out if we're not a content process.
+  if (!XRE_IsContentProcess()) {
+    return;
+  }
+
+  // Anything not enabled already but enabled now is a newly-enabled domain.
+  const uint64_t newDomains = ~gCacheDomains & aCacheDomains;
+
+  // Queue cache updates on all accessibles in all documents within this
+  // process.
+  if (newDomains != CacheDomain::None) {
+    for (const RefPtr<DocAccessible>& doc : mDocAccessibleCache.Values()) {
+      MOZ_ASSERT(doc, "DocAccessible in cache is null!");
+      doc->QueueCacheUpdate(doc.get(), newDomains, true);
+      Pivot pivot(doc.get());
+      LocalAccInSameDocRule rule;
+      for (Accessible* anchor = doc.get(); anchor;
+           anchor = pivot.Next(anchor, rule)) {
+        LocalAccessible* acc = anchor->AsLocal();
+
+        // Note: Queueing changes for domains that aren't yet active. The
+        // domains will become active at the end of the function.
+        doc->QueueCacheUpdate(acc, newDomains, true);
+      }
+      // Process queued cache updates immediately.
+      doc->ProcessQueuedCacheUpdates(newDomains);
+    }
+  }
+
+  gCacheDomains = aCacheDomains;
+}
+
 void nsAccessibilityService::NotifyOfConsumersChange() {
   nsCOMPtr<nsIObserverService> observerService =
       mozilla::services::GetObserverService();
@@ -1845,15 +1933,22 @@ const mozilla::a11y::MarkupMapInfo* nsAccessibilityService::GetMarkupMapInfoFor(
   return mHTMLMarkupMap.Get(aAcc->TagName());
 }
 
-nsAccessibilityService* GetOrCreateAccService(uint32_t aNewConsumer) {
+nsAccessibilityService* GetOrCreateAccService(uint32_t aNewConsumer,
+                                              uint64_t aCacheDomains) {
   // Do not initialize accessibility if it is force disabled.
   if (PlatformDisabledState() == ePlatformIsDisabled) {
     return nullptr;
   }
 
   if (!nsAccessibilityService::gAccessibilityService) {
+    uint64_t cacheDomains = aCacheDomains;
+    if (aNewConsumer == nsAccessibilityService::eXPCOM) {
+      // When instantiated via XPCOM, cache all accessibility information.
+      cacheDomains = CacheDomain::All;
+    }
+
     RefPtr<nsAccessibilityService> service = new nsAccessibilityService();
-    if (!service->Init()) {
+    if (!service->Init(cacheDomains)) {
       service->Shutdown();
       return nullptr;
     }
@@ -1865,7 +1960,7 @@ nsAccessibilityService* GetOrCreateAccService(uint32_t aNewConsumer) {
   return nsAccessibilityService::gAccessibilityService;
 }
 
-void MaybeShutdownAccService(uint32_t aFormerConsumer) {
+void MaybeShutdownAccService(uint32_t aFormerConsumer, bool aAsync) {
   nsAccessibilityService* accService =
       nsAccessibilityService::gAccessibilityService;
 
@@ -1890,11 +1985,32 @@ void MaybeShutdownAccService(uint32_t aFormerConsumer) {
   }
 
   if (nsAccessibilityService::gConsumers & ~aFormerConsumer) {
+    // There are still other consumers of the accessibility service, so we
+    // can't shut down.
     accService->UnsetConsumers(aFormerConsumer);
-  } else {
+    return;
+  }
+
+  if (!aAsync) {
     accService
         ->Shutdown();  // Will unset all nsAccessibilityService::gConsumers
+    return;
   }
+
+  static bool sIsPending = false;
+  if (sIsPending) {
+    // An async shutdown runnable is pending. Don't dispatch another.
+    return;
+  }
+  NS_DispatchToMainThread(NS_NewRunnableFunction(
+      "a11y::MaybeShutdownAccService", [aFormerConsumer]() {
+        // It's possible (albeit very unlikely) that another accessibility
+        // service consumer arrived since this runnable was dispatched. Use
+        // MaybeShutdownAccService to be safe.
+        MaybeShutdownAccService(aFormerConsumer, false);
+        sIsPending = false;
+      }));
+  sIsPending = true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////

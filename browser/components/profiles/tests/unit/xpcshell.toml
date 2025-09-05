@@ -1,6 +1,19 @@
 [DEFAULT]
+head = "../../../../../toolkit/profile/test/xpcshell/head.js head.js"
 firefox-appdir = "browser"
 
+prefs = [
+  "browser.profiles.enabled=true",
+]
+
+["test_fail_recover_storeID.js"]
+
+["test_recover_storeID.js"]
+
+["test_selectable_profile_launch.js"]
+
 ["test_selectable_profile_service_exists.js"]
+
 ["test_selectable_profiles_lifecycle.js"]
+
 ["test_shared_prefs_lifecycles_methods.js"]

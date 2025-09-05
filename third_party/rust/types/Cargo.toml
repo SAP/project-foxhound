@@ -14,7 +14,18 @@ edition = "2021"
 name = "types"
 version = "0.1.0"
 authors = ["Sync Team <sync-team@mozilla.com>"]
+build = false
+autolib = false
+autobins = false
+autoexamples = false
+autotests = false
+autobenches = false
+readme = false
 license = "MPL-2.0"
+
+[lib]
+name = "types"
+path = "src/lib.rs"
 
 [dependencies]
 serde = "1"

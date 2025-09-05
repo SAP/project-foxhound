@@ -39,6 +39,11 @@
     "dark": "#00000000",
     "forcedColors": "CanvasText"
   },
+  "border/color/deemphasized": {
+    "light": "#bac2caff",
+    "dark": "#5b5b66ff",
+    "forcedColors": "ButtonText"
+  },
   "border/color/interactive": {
     "light": "#8f8f9dff",
     "dark": "#bfbfc9ff",
@@ -122,7 +127,7 @@
   "button/background/color/ghost": {
     "light": "#00000000",
     "dark": "#00000000",
-    "forcedColors": "ButtonFace"
+    "forcedColors": "#00000000"
   },
   "button/background/color/ghost/active": {
     "light": "color-mix(in srgb, currentColor 21%, transparent)",
@@ -132,7 +137,7 @@
   "button/background/color/ghost/disabled": {
     "light": "#00000000",
     "dark": "#00000000",
-    "forcedColors": "ButtonFace"
+    "forcedColors": "#00000000"
   },
   "button/background/color/ghost/hover": {
     "light": "color-mix(in srgb, currentColor 14%, transparent)",
@@ -255,9 +260,9 @@
     "forcedColors": "GrayText"
   },
   "button/text/color/ghost": {
-    "light": "#15141aff",
-    "dark": "#fbfbfeff",
-    "forcedColors": "ButtonText"
+    "light": "#00000000",
+    "dark": "#00000000",
+    "forcedColors": "inherit"
   },
   "button/text/color/ghost/active": {
     "light": "#15141aff",
@@ -265,9 +270,9 @@
     "forcedColors": "SelectedItem"
   },
   "button/text/color/ghost/disabled": {
-    "light": "#15141aff",
-    "dark": "#fbfbfeff",
-    "forcedColors": "GrayText"
+    "light": "#00000000",
+    "dark": "#00000000",
+    "forcedColors": "inherit"
   },
   "button/text/color/ghost/hover": {
     "light": "#15141aff",
@@ -309,6 +314,7 @@
   "color/cyan/20": "#aaf2ffff",
   "color/cyan/30": "#80ebffff",
   "color/cyan/50": "#00ddffff",
+  "color/gray/30": "#bac2caff",
   "color/gray/50": "#bfbfc9ff",
   "color/gray/60": "#8f8f9dff",
   "color/gray/70": "#5b5b66ff",
@@ -403,6 +409,16 @@
     "dark": "#ff9aa2ff",
     "forcedColors": "CanvasText"
   },
+  "table/row/background/color": {
+    "light": "#ffffffff",
+    "dark": "#1c1b22ff",
+    "forcedColors": "Canvas"
+  },
+  "table/row/background/color/alternate": {
+    "light": "#f0f0f4ff",
+    "dark": "#23222bff",
+    "forcedColors": "Canvas"
+  },
   "text/color": {
     "light": "#15141aff",
     "dark": "#fbfbfeff",
@@ -411,7 +427,12 @@
   "text/color/deemphasized": {
     "light": "color-mix(in srgb, currentColor 69%, transparent)",
     "dark": "color-mix(in srgb, currentColor 69%, transparent)",
-    "forcedColors": "color-mix(in srgb, currentColor 69%, transparent)"
+    "forcedColors": "inherit"
+  },
+  "text/color/disabled": {
+    "light": "color-mix(in srgb, currentColor 40%, transparent)",
+    "dark": "color-mix(in srgb, currentColor 40%, transparent)",
+    "forcedColors": "GrayText"
   },
   "text/color/error": {
     "light": "#d7264cff",

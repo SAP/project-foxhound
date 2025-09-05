@@ -43,6 +43,8 @@ struct ReferencePtr {
   MOZ_IMPLICIT ReferencePtr(const RefPtr<T>& aPtr)
       : mLongPtr(uint64_t(aPtr.get())) {}
 
+  explicit ReferencePtr(uintptr_t aLongPtr) : mLongPtr(uint64_t(aLongPtr)) {}
+
   ReferencePtr& operator=(const void* aLongPtr) {
     mLongPtr = uint64_t(aLongPtr);
     return *this;
@@ -55,6 +57,8 @@ struct ReferencePtr {
   }
 
   operator void*() const { return (void*)mLongPtr; }
+
+  explicit operator uintptr_t() const { return uintptr_t(mLongPtr); }
 
   uint64_t mLongPtr;
 };
@@ -155,7 +159,9 @@ class Translator {
     mDependentSurfaces = aDependentSurfaces;
   }
 
-  DrawTarget* GetCurrentDrawTarget() const { return mCurrentDT; }
+  DrawTarget* GetCurrentDrawTarget() const {
+    return mCurrentDT && mCurrentDT->IsValid() ? mCurrentDT : nullptr;
+  }
 
   nsRefPtrHashtable<nsUint64HashKey, RecordedDependentSurface>*
       mDependentSurfaces = nullptr;
@@ -388,6 +394,7 @@ class RecordedEvent {
     PUSHCLIP,
     PUSHCLIPRECT,
     POPCLIP,
+    REMOVEALLCLIPS,
     FILL,
     FILLCIRCLE,
     FILLGLYPHS,

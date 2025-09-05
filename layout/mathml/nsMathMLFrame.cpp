@@ -27,12 +27,14 @@ using namespace mozilla::gfx;
 
 eMathMLFrameType nsMathMLFrame::GetMathMLFrameType() {
   // see if it is an embellished operator (mapped to 'Op' in TeX)
-  if (mEmbellishData.coreFrame)
+  if (mEmbellishData.coreFrame) {
     return GetMathMLFrameTypeFor(mEmbellishData.coreFrame);
+  }
 
   // if it has a prescribed base, fetch the type from there
-  if (mPresentationData.baseFrame)
+  if (mPresentationData.baseFrame) {
     return GetMathMLFrameTypeFor(mPresentationData.baseFrame);
+  }
 
   // everything else is treated as ordinary (mapped to 'Ord' in TeX)
   return eMathMLFrameType_Ordinary;
@@ -52,10 +54,6 @@ nsMathMLFrame::InheritAutomaticData(nsIFrame* aParent) {
   // by default, just inherit the display of our parent
   nsPresentationData parentData;
   GetPresentationDataFrom(aParent, parentData);
-
-#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
-  mPresentationData.flags |= NS_MATHML_SHOW_BOUNDING_METRICS;
-#endif
 
   return NS_OK;
 }
@@ -131,7 +129,9 @@ void nsMathMLFrame::GetPresentationDataFrom(
     nsIContent* content = frame->GetContent();
     NS_ASSERTION(content || !frame->GetParent(),  // no assert for the root
                  "dangling frame without a content node");
-    if (!content) break;
+    if (!content) {
+      break;
+    }
 
     if (content->IsMathMLElement(nsGkAtoms::math)) {
       break;
@@ -244,7 +244,7 @@ void nsMathMLFrame::ParseNumericValue(const nsString& aString,
 
   nsCSSUnit unit = cssValue.GetUnit();
 
-  if (unit == eCSSUnit_Percent || unit == eCSSUnit_Number) {
+  if (unit == eCSSUnit_Percent) {
     // Relative units. A multiple of the default length value is used.
     *aLengthValue = NSToCoordRound(
         *aLengthValue * (unit == eCSSUnit_Percent ? cssValue.GetPercentValue()
@@ -258,46 +258,6 @@ void nsMathMLFrame::ParseNumericValue(const nsString& aString,
 }
 
 namespace mozilla {
-#if defined(DEBUG) && defined(SHOW_BOUNDING_BOX)
-class nsDisplayMathMLBoundingMetrics final : public nsDisplayItem {
- public:
-  nsDisplayMathMLBoundingMetrics(nsDisplayListBuilder* aBuilder,
-                                 nsIFrame* aFrame, const nsRect& aRect)
-      : nsDisplayItem(aBuilder, aFrame), mRect(aRect) {
-    MOZ_COUNT_CTOR(nsDisplayMathMLBoundingMetrics);
-  }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLBoundingMetrics)
-
-  virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
-  NS_DISPLAY_DECL_NAME("MathMLBoundingMetrics", TYPE_MATHML_BOUNDING_METRICS)
- private:
-  nsRect mRect;
-};
-
-void nsDisplayMathMLBoundingMetrics::Paint(nsDisplayListBuilder* aBuilder,
-                                           gfxContext* aCtx) {
-  DrawTarget* drawTarget = aCtx->GetDrawTarget();
-  Rect r = NSRectToRect(mRect + ToReferenceFrame(),
-                        mFrame->PresContext()->AppUnitsPerDevPixel());
-  ColorPattern blue(ToDeviceColor(Color(0.f, 0.f, 1.f, 1.f)));
-  drawTarget->StrokeRect(r, blue);
-}
-
-void nsMathMLFrame::DisplayBoundingMetrics(nsDisplayListBuilder* aBuilder,
-                                           nsIFrame* aFrame, const nsPoint& aPt,
-                                           const nsBoundingMetrics& aMetrics,
-                                           const nsDisplayListSet& aLists) {
-  if (!NS_MATHML_PAINT_BOUNDING_METRICS(mPresentationData.flags)) return;
-
-  nscoord x = aPt.x + aMetrics.leftBearing;
-  nscoord y = aPt.y - aMetrics.ascent;
-  nscoord w = aMetrics.rightBearing - aMetrics.leftBearing;
-  nscoord h = aMetrics.ascent + aMetrics.descent;
-
-  aLists.Content()->AppendNewToTop<nsDisplayMathMLBoundingMetrics>(
-      aBuilder, aFrame, nsRect(x, y, w, h));
-}
-#endif
 
 class nsDisplayMathMLBar final : public nsPaintedDisplayItem {
  public:
@@ -306,9 +266,10 @@ class nsDisplayMathMLBar final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame), mRect(aRect) {
     MOZ_COUNT_CTOR(nsDisplayMathMLBar);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayMathMLBar)
 
-  virtual void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayMathMLBar)
+
+  void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   NS_DISPLAY_DECL_NAME("MathMLBar", TYPE_MATHML_BAR)
 
  private:
@@ -333,7 +294,9 @@ void nsMathMLFrame::DisplayBar(nsDisplayListBuilder* aBuilder, nsIFrame* aFrame,
                                const nsRect& aRect,
                                const nsDisplayListSet& aLists,
                                uint32_t aIndex) {
-  if (!aFrame->StyleVisibility()->IsVisible() || aRect.IsEmpty()) return;
+  if (!aFrame->StyleVisibility()->IsVisible() || aRect.IsEmpty()) {
+    return;
+  }
 
   aLists.Content()->AppendNewToTopWithIndex<nsDisplayMathMLBar>(
       aBuilder, aFrame, aIndex, aRect);

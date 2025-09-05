@@ -11,13 +11,16 @@
 #include <type_traits>
 
 #include "mozilla/Attributes.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/TimeStamp.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/FetchService.h"
+#include "mozilla/dom/Promise.h"
 #include "mozilla/dom/RemoteWorkerController.h"
 #include "mozilla/dom/RemoteWorkerTypes.h"
+#include "mozilla/dom/ServiceWorkerLifetimeExtension.h"
 #include "mozilla/dom/ServiceWorkerOpArgs.h"
 #include "nsCOMPtr.h"
 #include "nsISupportsImpl.h"
@@ -27,6 +30,7 @@
 #define NOTIFICATION_CLOSE_EVENT_NAME u"notificationclose"
 
 class nsIInterceptedChannel;
+class nsIPushSubscription;
 class nsIWorkerDebugger;
 
 namespace mozilla {
@@ -38,7 +42,7 @@ class JSObjectHolder;
 
 namespace dom {
 
-class ClientInfoAndState;
+class PostMessageSource;
 class RemoteWorkerControllerChild;
 class ServiceWorkerCloneData;
 class ServiceWorkerInfo;
@@ -82,29 +86,34 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
  public:
   explicit ServiceWorkerPrivate(ServiceWorkerInfo* aInfo);
 
-  nsresult SendMessageEvent(RefPtr<ServiceWorkerCloneData>&& aData,
-                            const ClientInfoAndState& aClientInfoAndState);
+  Maybe<ClientInfo> GetClientInfo() { return mClientInfo; }
+
+  nsresult SendMessageEvent(
+      RefPtr<ServiceWorkerCloneData>&& aData,
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension,
+      const PostMessageSource& aSource);
 
   // This is used to validate the worker script and continue the installation
   // process.
-  nsresult CheckScriptEvaluation(RefPtr<LifeCycleEventCallback> aCallback);
+  nsresult CheckScriptEvaluation(
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension,
+      RefPtr<LifeCycleEventCallback> aCallback);
 
-  nsresult SendLifeCycleEvent(const nsAString& aEventType,
-                              RefPtr<LifeCycleEventCallback> aCallback);
+  nsresult SendLifeCycleEvent(
+      const nsAString& aEventType,
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension,
+      const RefPtr<LifeCycleEventCallback>& aCallback);
 
   nsresult SendPushEvent(const nsAString& aMessageId,
                          const Maybe<nsTArray<uint8_t>>& aData,
                          RefPtr<ServiceWorkerRegistrationInfo> aRegistration);
 
-  nsresult SendPushSubscriptionChangeEvent();
+  nsresult SendPushSubscriptionChangeEvent(
+      const RefPtr<nsIPushSubscription>& aOldSubscription);
 
   nsresult SendNotificationEvent(const nsAString& aEventName,
-                                 const nsAString& aID, const nsAString& aTitle,
-                                 const nsAString& aDir, const nsAString& aLang,
-                                 const nsAString& aBody, const nsAString& aTag,
-                                 const nsAString& aIcon, const nsAString& aData,
-                                 const nsAString& aBehavior,
-                                 const nsAString& aScope);
+                                 const nsAString& aScope, const nsAString& aId,
+                                 const IPCNotificationOptions& aOptions);
 
   nsresult SendFetchEvent(nsCOMPtr<nsIInterceptedChannel> aChannel,
                           nsILoadGroup* aLoadGroup, const nsAString& aClientId,
@@ -119,7 +128,10 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   // Called by ServiceWorkerInfo when [[Clear Registration]] is invoked
   // or whenever the spec mandates that we terminate the worker.
   // This is a no-op if the worker has already been stopped.
-  void TerminateWorker();
+  //
+  // Now takes an optional promise that will be resolved when the worker is
+  // dead, including if the worker was not running at all.
+  void TerminateWorker(Maybe<RefPtr<Promise>> aMaybePromise = Nothing());
 
   void NoteDeadServiceWorkerInfo();
 
@@ -127,11 +139,23 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
 
   void UpdateState(ServiceWorkerState aState);
 
+  void UpdateIsOnContentBlockingAllowList(bool aOnContentBlockingAllowList);
+
   nsresult GetDebugger(nsIWorkerDebugger** aResult);
 
   nsresult AttachDebugger();
 
   nsresult DetachDebugger();
+
+  // Return the current lifetime deadline for this ServiceWorker; this value may
+  // be null or in the past.
+  //
+  // This value always only reflects the explicit lifetime extensions
+  // resulting from functional events and will never reflect the extra "grace
+  // period".
+  TimeStamp GetLifetimeDeadline() { return mIdleDeadline; }
+
+  uint32_t GetLaunchCount() { return mLaunchCount; }
 
   bool IsIdle() const;
 
@@ -169,9 +193,11 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
 
   void TerminateWorkerCallback(nsITimer* aTimer);
 
-  void RenewKeepAliveToken();
+  void RenewKeepAliveToken(
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension);
 
-  void ResetIdleTimeout();
+  void ResetIdleTimeout(
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension);
 
   void AddToken();
 
@@ -179,11 +205,14 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
 
   already_AddRefed<KeepAliveToken> CreateEventKeepAliveToken();
 
-  nsresult SpawnWorkerIfNeeded();
+  nsresult SpawnWorkerIfNeeded(
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension);
 
   ~ServiceWorkerPrivate();
 
   nsresult Initialize();
+
+  void RegenerateClientInfo();
 
   /**
    * RemoteWorkerObserver
@@ -224,13 +253,14 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
       nsCOMPtr<nsIInterceptedChannel>&& aChannel,
       RefPtr<FetchServicePromises>&& aPreloadResponseReadyPromises);
 
-  void Shutdown();
+  void Shutdown(Maybe<RefPtr<Promise>>&& aMaybePromise = Nothing());
 
   RefPtr<GenericNonExclusivePromise> ShutdownInternal(
       uint32_t aShutdownStateId);
 
   nsresult ExecServiceWorkerOp(
       ServiceWorkerOpArgs&& aArgs,
+      const ServiceWorkerLifetimeExtension& aLifetimeExtension,
       std::function<void(ServiceWorkerOpResult&&)>&& aSuccessCallback,
       std::function<void()>&& aFailureCallback = [] {});
 
@@ -335,6 +365,7 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   RefPtr<RAIIActorPtrHolder> mControllerChild;
 
   RemoteWorkerData mRemoteWorkerData;
+  Maybe<ClientInfo> mClientInfo;
 
   TimeStamp mServiceWorkerLaunchTimeStart;
 
@@ -357,6 +388,14 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
 
   nsCOMPtr<nsITimer> mIdleWorkerTimer;
 
+  ServiceWorkerLifetimeExtension mPendingSpawnLifetime;
+
+  // This is the current time in the future that the idle timer is set to expire
+  // for keepalive purposes.  This will not be updated for the
+  // "dom.serviceWorkers.idle_extended_timeout" grace period after the time
+  // first expires.
+  TimeStamp mIdleDeadline;
+
   // We keep a token for |dom.serviceWorkers.idle_timeout| seconds to give the
   // worker a grace period after each event.
   RefPtr<KeepAliveToken> mIdleKeepAliveToken;
@@ -364,6 +403,8 @@ class ServiceWorkerPrivate final : public RemoteWorkerObserver {
   uint64_t mDebuggerCount;
 
   uint64_t mTokenCount;
+
+  uint32_t mLaunchCount;
 
   // Used by the owning `ServiceWorkerRegistrationInfo` when it wants to call
   // `Clear` after being unregistered and isn't controlling any clients but this

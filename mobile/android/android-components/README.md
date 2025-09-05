@@ -83,8 +83,6 @@ High-level components for building browser(-like) apps.
 
 * 🔵 [**Toolbar**](components/browser/toolbar/README.md) - A customizable toolbar for browsers.
 
-* 🔴 [**Toolbar2**](components/browser/toolbar2/README.md) - A customizable toolbar for browsers.
-
 ## Concept
 
 _API contracts and abstraction layers for browser components._
@@ -180,6 +178,12 @@ _Generic low-level UI components for building apps._
 * 🔵 [**Icons**](components/ui/icons/README.md) - A collection of often used browser icons.
 
 * 🔵 [**Tabcounter**](components/ui/tabcounter/README.md) - A button that shows the current tab count and can animate state changes.
+
+## Compose
+
+Compose UI components for building apps.
+
+* 🔵 [**Base**](components/compose/base/README.md) - Base component containing Composable components based on [Acorn Design System](https://acorn.firefox.com/) that are used as building blocks for building UI.
 
 ## Service
 

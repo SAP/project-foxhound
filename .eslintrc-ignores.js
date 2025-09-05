@@ -69,17 +69,19 @@ module.exports = [
   "!browser/components/storybook/.storybook/",
   "!browser/components/storybook/.storybook/*.js",
 
-  // Ignore newtab files
-  "browser/components/newtab/data/",
-  "browser/components/newtab/logs/",
-
   // Ignore webpack about:welcome files
   "browser/components/aboutwelcome/webpack.aboutwelcome.config.js",
 
   // The only file in browser/locales/ is pre-processed.
   "browser/locales/",
   // Generated data files
-  "browser/extensions/formautofill/phonenumberutils/PhoneNumberMetaData.jsm",
+  "browser/extensions/formautofill/phonenumberutils/PhoneNumberMetaData.sys.mjs",
+
+  // JS file using the #include pre-processor macro, leading to syntax errors.
+  "browser/extensions/webcompat/run.js",
+
+  // Ignore newtab files
+  "browser/extensions/newtab/logs/",
 
   // Ignore devtools debugger files which aren't intended for linting.
   "devtools/client/debugger/bin/",
@@ -271,13 +273,11 @@ module.exports = [
   "toolkit/components/pdfjs/content/build",
   "toolkit/components/pdfjs/content/web",
 
-  "toolkit/components/pdfjs/PdfJsOverridePrefs.js",
-
   // Uses preprocessing
   "toolkit/components/reader/Readerable.sys.mjs",
 
   // Generated & special files in cld2
-  "toolkit/components/translation/cld2/",
+  "toolkit/components/translations/cld2/",
 
   // Uses preprocessing
   "toolkit/mozapps/update/tests/data/xpcshellConstantsPP.js",
@@ -302,4 +302,8 @@ module.exports = [
   // Test files for circular import in modules.
   "dom/base/test/jsmodules/import_circular.mjs",
   "dom/base/test/jsmodules/import_circular_1.mjs",
+
+  // Support for Import attributes is only available in ESLint v9.19
+  // https://bugzilla.mozilla.org/show_bug.cgi?id=1944290
+  "netwerk/test/mochitests/test_import_json_module.mjs",
 ];

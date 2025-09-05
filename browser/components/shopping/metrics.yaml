@@ -22,7 +22,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -44,7 +44,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -67,7 +67,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1845822
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -89,7 +89,7 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -111,13 +111,34 @@ shopping.settings:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879119
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - metrics
     telemetry_mirror: SHOPPING_AUTO_OPEN_USER_DISABLED
+    no_lint:
+      - GIFFT_NON_PING_LIFETIME
+
+  auto_close_user_disabled:
+    type: boolean
+    lifetime: application
+    description: |
+      Indicates if the user has manually disabled the auto close sidebar feature.
+      Set during shopping component init and updated when changed in browser.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - metrics
     no_lint:
       - GIFFT_NON_PING_LIFETIME
 
@@ -132,7 +153,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870#c2
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -156,7 +177,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     send_in_pings:
       - events
     notification_emails:
@@ -174,7 +195,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849382
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -198,7 +219,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849382
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -221,7 +242,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -245,7 +266,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -267,7 +288,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1849241
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
     send_in_pings:
@@ -289,7 +310,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -306,7 +327,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -323,7 +344,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -341,7 +362,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -358,7 +379,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -382,7 +403,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892#c6
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -401,7 +422,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -419,7 +440,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1851820#c2
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -437,7 +458,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848870
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -454,7 +475,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1841892
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -471,7 +492,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1851675#c4
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -489,7 +510,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854223
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -508,7 +529,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1848160
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -527,7 +548,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1853785
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -544,7 +565,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854376
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -566,12 +587,17 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1855812
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - events
+    extra_keys:
+      sponsored:
+        description: >
+          Whether the ad was sponsored or not.
+        type: boolean
 
   surface_ads_impression:
     type: event
@@ -583,12 +609,17 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1855810
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - events
+    extra_keys:
+      sponsored:
+        description: >
+          Whether the ad was sponsored or not.
+        type: boolean
 
   surface_ads_placement:
     type: event
@@ -600,12 +631,17 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1872872
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
     send_in_pings:
       - events
+    extra_keys:
+      sponsored:
+        description: >
+          Whether the ad was sponsored or not.
+        type: boolean
 
   surface_no_ads_available:
     type: event
@@ -619,27 +655,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1855811
     data_sensitivity:
       - interaction
-    expires: 134
-    notification_emails:
-      - betling@mozilla.com
-      - fx-desktop-shopping-eng@mozilla.com
-    send_in_pings:
-      - events
-
-  ads_exposure:
-    type: event
-    description: |
-      On a supported product page, the review checker showed analysis, and
-      the ads exposure pref was enabled, or review checker ads were enabled,
-      and when we tried to fetch an ad from the ad server, an ad was available.
-      Does not indicate whether the ad was actually shown.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1858470
-    data_sensitivity:
-      - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -657,7 +673,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1858540
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -680,7 +696,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1869413
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -698,7 +714,31 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879125
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+    extra_keys:
+      action:
+        description: >
+          Whether the toggle was used to enable or disable auto-open. Possible values
+          are `enabled` and `disabled`.
+        type: string
+
+  surface_auto_close_setting_toggled:
+    type: event
+    description: |
+      The user clicked the settings toggle to enable or disable auto-close in the
+      sidebar settings component.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1945688
+    data_sensitivity:
+      - interaction
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -722,7 +762,7 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com
@@ -740,7 +780,94 @@ shopping:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1879127
     data_sensitivity:
       - interaction
-    expires: 134
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_impression:
+    type: event
+    description: |
+      The notification card for changing left or right sidebar position was
+      visible in the Review Checker sidebar panel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_move_right_clicked:
+    type: event
+    description: |
+      The user clicked the 'Move right' button to move the sidebar to the right side.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_move_left_clicked:
+    type: event
+    description: |
+      The user clicked the 'Move left' button to move the sidebar to the left side.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_dismiss_clicked:
+    type: event
+    description: |
+      The user clicked the dismiss button to close the notification card.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
+    notification_emails:
+      - betling@mozilla.com
+      - fx-desktop-shopping-eng@mozilla.com
+    send_in_pings:
+      - events
+
+  surface_notification_card_sidebar_settings_clicked:
+    type: event
+    description: |
+      The user clicked the sidebar settings link in the notification card to view
+      the sidebar settings panel.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1948124
+    data_sensitivity:
+      - interaction
+    expires: 147
     notification_emails:
       - betling@mozilla.com
       - fx-desktop-shopping-eng@mozilla.com

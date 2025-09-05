@@ -339,8 +339,7 @@ bool UDPSocket::Send(const StringOrBlobOrArrayBufferOrArrayBufferView& aData,
     }
 
     if (aData.IsString()) {
-      NS_ConvertUTF16toUTF8 data(aData.GetAsString());
-      aRv = strStream->SetData(data.BeginReading(), data.Length());
+      aRv = strStream->SetUTF8Data(NS_ConvertUTF16toUTF8(aData.GetAsString()));
     } else {
       Vector<char> data;
       if (!AppendTypedArrayDataTo(aData, data)) {
@@ -578,6 +577,7 @@ nsresult UDPSocket::DispatchReceivedData(const nsACString& aRemoteAddress,
   ErrorResult error;
   JS::Rooted<JSObject*> arrayBuf(cx, ArrayBuffer::Create(cx, aData, error));
 
+  error.WouldReportJSException();
   if (NS_WARN_IF(error.Failed())) {
     return error.StealNSResult();
   }

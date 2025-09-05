@@ -4,6 +4,8 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   AppMenuNotifications: "resource://gre/modules/AppMenuNotifications.sys.mjs",
+  ASRouter: "resource:///modules/asrouter/ASRouter.sys.mjs",
+  MenuMessage: "resource:///modules/asrouter/MenuMessage.sys.mjs",
   NewTabUtils: "resource://gre/modules/NewTabUtils.sys.mjs",
   PanelMultiView: "resource:///modules/PanelMultiView.sys.mjs",
 });
@@ -17,6 +19,12 @@ const PanelUI = {
   get kEvents() {
     return ["popupshowing", "popupshown", "popuphiding", "popuphidden"];
   },
+
+  /// Notification events used for overwriting notification actions
+  get kNotificationEvents() {
+    return ["buttoncommand", "secondarybuttoncommand", "learnmoreclick"];
+  },
+
   /**
    * Used for lazily getting and memoizing elements from the document. Lazy
    * getters are set in init, and memoizing happens after the first retrieval.
@@ -137,6 +145,7 @@ const PanelUI = {
       "appMenu-libraryView"
     ).addEventListener("command", this._onLibraryCommand);
     this.mainView.addEventListener("command", this);
+    this.mainView.addEventListener("ViewShowing", this._onMainViewShow);
     this._eventListenersAdded = true;
   },
 
@@ -160,6 +169,9 @@ const PanelUI = {
 
     if (this._notificationPanel) {
       for (let event of this.kEvents) {
+        this.notificationPanel.removeEventListener(event, this);
+      }
+      for (let event of this.kNotificationEvents) {
         this.notificationPanel.removeEventListener(event, this);
       }
     }
@@ -214,6 +226,14 @@ const PanelUI = {
         document.documentElement.hasAttribute("customizing")
       ) {
         return;
+      }
+
+      if (ASRouter.initialized) {
+        await ASRouter.sendTriggerMessage({
+          browser: gBrowser.selectedBrowser,
+          id: "menuOpened",
+          context: { source: MenuMessage.SOURCES.APP_MENU },
+        });
       }
 
       let domEvent = null;
@@ -284,6 +304,7 @@ const PanelUI = {
         this._updatePanelButton(aEvent.target);
         if (aEvent.type == "popuphidden") {
           CustomizableUI.removePanelCloseListeners(this.panel);
+          MenuMessage.hideAppMenuMessage(gBrowser.selectedBrowser);
         }
         break;
       case "mousedown":
@@ -311,6 +332,16 @@ const PanelUI = {
       case "command":
         this.onCommand(aEvent);
         break;
+      case "buttoncommand":
+        this._onNotificationButtonEvent(aEvent, "buttoncommand");
+        break;
+      case "secondarybuttoncommand":
+        this._onNotificationButtonEvent(aEvent, "secondarybuttoncommand");
+        break;
+      case "learnmoreclick":
+        // Don't fall back to PopupNotifications.
+        aEvent.preventDefault();
+        break;
     }
   },
 
@@ -328,9 +359,6 @@ const PanelUI = {
       case "appMenu-fxa-label2":
         gSync.toggleAccountPanel(target, aEvent);
         break;
-      case "appMenu-profiles-button":
-        gProfiles.updateView(target);
-        break;
       case "appMenu-bookmarks-button":
         BookmarkingUI.showSubView(target);
         break;
@@ -338,7 +366,7 @@ const PanelUI = {
         this.showSubView("PanelUI-history", target);
         break;
       case "appMenu-passwords-button":
-        LoginHelper.openPasswordManager(window, { entryPoint: "mainmenu" });
+        LoginHelper.openPasswordManager(window, { entryPoint: "Mainmenu" });
         break;
       case "appMenu-fullscreen-button2":
         // Note that we're custom-handling the hiding of the panel to make
@@ -619,6 +647,22 @@ const PanelUI = {
     }
   },
 
+  _onMainViewShow(event) {
+    let panelview = event.target;
+    let messageId = panelview.getAttribute(
+      MenuMessage.SHOWING_FXA_MENU_MESSAGE_ATTR
+    );
+    if (messageId) {
+      MenuMessage.recordMenuMessageTelemetry(
+        "IMPRESSION",
+        MenuMessage.SOURCES.APP_MENU,
+        messageId
+      );
+      let message = ASRouter.getMessageById(messageId);
+      ASRouter.addImpression(message);
+    }
+  },
+
   _onHelpViewShow() {
     // Call global menu setup function
     buildHelpMenu();
@@ -711,7 +755,7 @@ const PanelUI = {
         });
         break;
       case "appMenu_menu_HelpPopup_reportPhishingErrortoolmenu":
-        ReportFalseDeceptiveSite();
+        gSafeBrowsing.reportFalseDeceptiveSite();
         break;
       case "appMenu_helpSwitchDevice":
         openSwitchingDevicesPage();
@@ -943,6 +987,9 @@ const PanelUI = {
       for (let event of this.kEvents) {
         this._notificationPanel.addEventListener(event, this);
       }
+      for (let event of this.kNotificationEvents) {
+        this._notificationPanel.addEventListener(event, this);
+      }
     }
     return this._notificationPanel;
   },
@@ -981,14 +1028,6 @@ const PanelUI = {
     let popupnotification = document.getElementById(popupnotificationID);
 
     popupnotification.setAttribute("id", popupnotificationID);
-    popupnotification.setAttribute(
-      "buttoncommand",
-      "PanelUI._onNotificationButtonEvent(event, 'buttoncommand');"
-    );
-    popupnotification.setAttribute(
-      "secondarybuttoncommand",
-      "PanelUI._onNotificationButtonEvent(event, 'secondarybuttoncommand');"
-    );
 
     if (notification.options.message) {
       let desc = this._formatDescriptionMessage(notification);
@@ -1057,6 +1096,8 @@ const PanelUI = {
   },
 
   _onNotificationButtonEvent(event, type) {
+    event.preventDefault();
+
     let notificationEl = getNotificationFromElement(event.originalTarget);
 
     if (!notificationEl) {

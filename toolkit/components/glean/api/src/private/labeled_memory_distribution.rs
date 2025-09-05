@@ -10,6 +10,12 @@ use crate::ipc::with_ipc_payload;
 use crate::private::{DistributionData, MemoryDistributionMetric, MetricId};
 use std::collections::HashMap;
 
+#[cfg(feature = "with_gecko")]
+use super::profiler_utils::{
+    truncate_vector_for_marker, DistributionMetricMarker, DistributionValues,
+    TelemetryProfilerCategory,
+};
+
 /// A memory distribution metric that knows it's a labeled memory distribution's submetric.
 ///
 /// It has special work to do when in a non-parent process.
@@ -22,10 +28,10 @@ pub enum LabeledMemoryDistributionMetric {
 
 impl LabeledMemoryDistributionMetric {
     #[cfg(test)]
-    pub(crate) fn metric_id(&self) -> MetricId {
+    pub(crate) fn metric_id(&self) -> crate::private::MetricGetter {
         match self {
             LabeledMemoryDistributionMetric::Parent(p) => p.metric_id(),
-            LabeledMemoryDistributionMetric::Child { id, .. } => *id,
+            LabeledMemoryDistributionMetric::Child { id, .. } => (*id).into(),
         }
     }
 
@@ -33,6 +39,19 @@ impl LabeledMemoryDistributionMetric {
         match self {
             LabeledMemoryDistributionMetric::Parent(p) => p.accumulate_samples(samples),
             LabeledMemoryDistributionMetric::Child { id, label } => {
+                #[cfg(feature = "with_gecko")]
+                if gecko_profiler::can_accept_markers() {
+                    gecko_profiler::add_marker(
+                        "MemoryDistribution::accumulate",
+                        TelemetryProfilerCategory,
+                        Default::default(),
+                        DistributionMetricMarker::new(
+                            (*id).into(),
+                            Some(label.clone()),
+                            DistributionValues::Samples(truncate_vector_for_marker(&samples)),
+                        ),
+                    );
+                }
                 with_ipc_payload(move |payload| {
                     if let Some(map) = payload.labeled_memory_samples.get_mut(id) {
                         if let Some(v) = map.get_mut(label) {
@@ -57,6 +76,19 @@ impl MemoryDistribution for LabeledMemoryDistributionMetric {
         match self {
             LabeledMemoryDistributionMetric::Parent(p) => p.accumulate(sample),
             LabeledMemoryDistributionMetric::Child { id, label } => {
+                #[cfg(feature = "with_gecko")]
+                if gecko_profiler::can_accept_markers() {
+                    gecko_profiler::add_marker(
+                        "MemoryDistribution::accumulate",
+                        TelemetryProfilerCategory,
+                        Default::default(),
+                        DistributionMetricMarker::new(
+                            (*id).into(),
+                            Some(label.clone()),
+                            DistributionValues::Sample(sample),
+                        ),
+                    );
+                }
                 with_ipc_payload(move |payload| {
                     if let Some(map) = payload.labeled_memory_samples.get_mut(id) {
                         if let Some(v) = map.get_mut(label) {
@@ -126,6 +158,17 @@ mod test {
         {
             // scope for need_ipc RAII
             let _raii = ipc::test_set_need_ipc(true);
+
+            // clear the per-process submetric cache,
+            // or else we'll be given the parent-process child metric.
+            {
+                let mut map =
+                    crate::metrics::__glean_metric_maps::submetric_maps::MEMORY_DISTRIBUTION_MAP
+                        .write()
+                        .expect("Write lock for MEMORY_DISTRIBUTION_MAP was poisoned");
+                map.clear();
+            }
+
             let child_metric = parent_metric.get(label);
             child_metric.accumulate(13 * 9);
 
@@ -134,13 +177,28 @@ mod test {
                     vec![13 * 9],
                     *payload
                         .labeled_memory_samples
-                        .get(&child_metric.metric_id())
+                        .get(
+                            &child_metric
+                                .metric_id()
+                                .metric_id()
+                                .expect("Cannot perform IPC calls without a MetricId")
+                        )
                         .unwrap()
                         .get(label)
                         .unwrap(),
                     "Stored the correct value in the ipc payload"
                 );
             });
+
+            // clear the per-process submetric cache again,
+            // or else we'll be given the child-process child metric below.
+            {
+                let mut map =
+                    crate::metrics::__glean_metric_maps::submetric_maps::MEMORY_DISTRIBUTION_MAP
+                        .write()
+                        .expect("Write lock for MEMORY_DISTRIBUTION_MAP was poisoned");
+                map.clear();
+            }
         }
 
         let metric_data = parent_metric.get(label).test_get_value(None).unwrap();

@@ -36,6 +36,10 @@ UniquePtr<JSErrorNotes::Note> CopyErrorNote(JSContext* cx,
 
 UniquePtr<JSErrorReport> CopyErrorReport(JSContext* cx, JSErrorReport* report);
 
+// Cut off the stack if it gets too deep (most commonly for infinite recursion
+// errors).
+static const size_t MAX_REPORTED_STACK_DEPTH = 1u << 7;
+
 bool CaptureStack(JSContext* cx, MutableHandleObject stack);
 
 JSString* ComputeStackString(JSContext* cx);
@@ -121,6 +125,8 @@ class AutoClearPendingException {
   ~AutoClearPendingException() { JS_ClearPendingException(cx); }
 };
 
+// Convert the given value to a string for use in an error message. This
+// function never returns nullptr and never reports an exception.
 extern const char* ValueToSourceForError(JSContext* cx, HandleValue val,
                                          JS::UniqueChars& bytes);
 

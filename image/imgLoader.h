@@ -9,6 +9,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/CORSMode.h"
+#include "mozilla/Maybe.h"
 #include "mozilla/Mutex.h"
 #include "mozilla/EnumSet.h"
 #include "mozilla/UniquePtr.h"
@@ -26,6 +27,7 @@
 #include "nsIChannel.h"
 #include "nsIThreadRetargetableStreamListener.h"
 #include "imgIRequest.h"
+#include "mozilla/dom/CacheExpirationTime.h"
 
 class imgLoader;
 class imgRequestProxy;
@@ -65,17 +67,17 @@ class imgCacheEntry {
 
   void UpdateLoadTime();
 
-  uint32_t GetExpiryTime() const { return mExpiryTime; }
-  void AccumulateExpiryTime(uint32_t aExpiryTime, bool aForceTouch = false) {
-    // 0 means "doesn't expire".
-    // Otherwise, calculate the minimum value.
-    if (aExpiryTime == 0) {
+  const CacheExpirationTime& GetExpiryTime() const { return mExpiryTime; }
+
+  void AccumulateExpiryTime(const CacheExpirationTime& aExpiryTime,
+                            bool aForceTouch = false) {
+    if (aExpiryTime.IsNever()) {
       if (aForceTouch) {
         Touch();
       }
       return;
     }
-    if (mExpiryTime == 0 || aExpiryTime < mExpiryTime) {
+    if (mExpiryTime.IsNever() || aExpiryTime.IsShorterThan(mExpiryTime)) {
       mExpiryTime = aExpiryTime;
       Touch();
     } else {
@@ -130,7 +132,7 @@ class imgCacheEntry {
   uint32_t mDataSize;
   int32_t mTouchedTime;
   uint32_t mLoadTime;
-  uint32_t mExpiryTime;
+  CacheExpirationTime mExpiryTime;
   nsExpirationState mExpirationState;
   bool mMustValidate : 1;
   bool mEvicted : 1;
@@ -141,12 +143,12 @@ class imgCacheEntry {
 
 #include <vector>
 
-#define NS_IMGLOADER_CID                             \
-  { /* c1354898-e3fe-4602-88a7-c4520c21cb4e */       \
-    0xc1354898, 0xe3fe, 0x4602, {                    \
-      0x88, 0xa7, 0xc4, 0x52, 0x0c, 0x21, 0xcb, 0x4e \
-    }                                                \
-  }
+#define NS_IMGLOADER_CID                      \
+  {/* c1354898-e3fe-4602-88a7-c4520c21cb4e */ \
+   0xc1354898,                                \
+   0xe3fe,                                    \
+   0x4602,                                    \
+   {0x88, 0xa7, 0xc4, 0x52, 0x0c, 0x21, 0xcb, 0x4e}}
 
 class imgCacheQueue {
  public:
@@ -242,6 +244,8 @@ class imgLoader final : public imgILoader,
   imgLoader();
   nsresult Init();
 
+  nsresult ClearCache(mozilla::Maybe<bool> chrome);
+
   bool IsImageAvailable(nsIURI*, nsIPrincipal* aTriggeringPrincipal,
                         mozilla::CORSMode, mozilla::dom::Document*);
 
@@ -286,6 +290,7 @@ class imgLoader final : public imgILoader,
 
   enum class ClearOption {
     ChromeOnly,
+    ContentOnly,
     UnusedOnly,
   };
   using ClearOptions = mozilla::EnumSet<ClearOption>;
@@ -335,8 +340,10 @@ class imgLoader final : public imgILoader,
 
   void VerifyCacheSizes();
 
-  nsresult RemoveEntriesInternal(nsIPrincipal* aPrincipal,
-                                 const nsACString* aBaseDomain);
+  nsresult RemoveEntriesInternal(
+      const mozilla::Maybe<nsCOMPtr<nsIPrincipal>>& aPrincipal,
+      const mozilla::Maybe<nsCString>& aSchemelessSite,
+      const mozilla::Maybe<mozilla::OriginAttributesPattern>& aPattern);
 
   // The image loader maintains a hash table of all imgCacheEntries. However,
   // only some of them will be evicted from the cache: those who have no

@@ -53,8 +53,6 @@ static inline uint32_t MaxResolverThreads() {
   (((x) == nsIDNSService::MODE_NATIVEONLY) || \
    ((x) == nsIDNSService::MODE_TRROFF))
 
-extern mozilla::Atomic<bool, mozilla::Relaxed> gNativeIsLocalhost;
-
 #define MAX_NON_PRIORITY_REQUESTS 150
 
 class AHostResolver {
@@ -103,18 +101,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   /**
    * creates an addref'd instance of a nsHostResolver object.
    */
-  static nsresult Create(uint32_t maxCacheEntries,  // zero disables cache
-                         uint32_t defaultCacheEntryLifetime,  // seconds
-                         uint32_t defaultGracePeriod,         // seconds
-                         nsHostResolver** result);
-
-  /**
-   * Set (new) cache limits.
-   */
-  void SetCacheLimits(uint32_t maxCacheEntries,  // zero disables cache
-                      uint32_t defaultCacheEntryLifetime,  // seconds
-                      uint32_t defaultGracePeriod);        // seconds
-
+  static nsresult Create(nsHostResolver** result);
   /**
    * puts the resolver in the shutdown state, which will cause any pending
    * callbacks to be detached.  any future calls to ResolveHost will fail.
@@ -175,27 +162,6 @@ class nsHostResolver : public nsISupports, public AHostResolver {
                           const mozilla::OriginAttributes& aOriginAttributes,
                           nsIDNSService::DNSFlags flags, uint16_t af,
                           nsIDNSListener* aListener, nsresult status);
-  /**
-   * values for the flags parameter passed to ResolveHost and DetachCallback
-   * that may be bitwise OR'd together.
-   *
-   * NOTE: in this implementation, these flags correspond exactly in value
-   *       to the flags defined on nsIDNSService.
-   */
-  enum {
-    RES_BYPASS_CACHE = nsIDNSService::RESOLVE_BYPASS_CACHE,
-    RES_CANON_NAME = nsIDNSService::RESOLVE_CANONICAL_NAME,
-    RES_PRIORITY_MEDIUM = nsHostRecord::DNS_PRIORITY_MEDIUM,
-    RES_PRIORITY_LOW = nsHostRecord::DNS_PRIORITY_LOW,
-    RES_SPECULATE = nsIDNSService::RESOLVE_SPECULATE,
-    // RES_DISABLE_IPV6 = nsIDNSService::RESOLVE_DISABLE_IPV6, // Not used
-    RES_OFFLINE = nsIDNSService::RESOLVE_OFFLINE,
-    // RES_DISABLE_IPv4 = nsIDNSService::RESOLVE_DISABLE_IPV4, // Not Used
-    RES_ALLOW_NAME_COLLISION = nsIDNSService::RESOLVE_ALLOW_NAME_COLLISION,
-    RES_DISABLE_TRR = nsIDNSService::RESOLVE_DISABLE_TRR,
-    RES_REFRESH_CACHE = nsIDNSService::RESOLVE_REFRESH_CACHE,
-    RES_IP_HINT = nsIDNSService::RESOLVE_IP_HINT
-  };
 
   size_t SizeOfIncludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
 
@@ -228,9 +194,7 @@ class nsHostResolver : public nsISupports, public AHostResolver {
   bool TRRServiceEnabledForRecord(nsHostRecord* aRec) MOZ_REQUIRES(mLock);
 
  private:
-  explicit nsHostResolver(uint32_t maxCacheEntries,
-                          uint32_t defaultCacheEntryLifetime,
-                          uint32_t defaultGracePeriod);
+  explicit nsHostResolver();
   virtual ~nsHostResolver();
 
   bool DoRetryTRR(AddrHostRecord* aAddrRec,
@@ -315,9 +279,6 @@ class nsHostResolver : public nsISupports, public AHostResolver {
     METHOD_NETWORK_SHARED = 7
   };
 
-  uint32_t mMaxCacheEntries = 0;
-  uint32_t mDefaultCacheLifetime = 0;  // granularity seconds
-  uint32_t mDefaultGracePeriod = 0;    // granularity seconds
   // mutable so SizeOfIncludingThis can be const
   mutable Mutex mLock{"nsHostResolver.mLock"};
   CondVar mIdleTaskCV;

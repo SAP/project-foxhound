@@ -9,6 +9,7 @@
 
 #include "mozilla/dom/Timeout.h"
 #include "nsTArray.h"
+#include "nsISerialEventTarget.h"
 
 class nsIEventTarget;
 class nsITimer;
@@ -27,15 +28,25 @@ class TimeoutManager final {
   struct Timeouts;
 
  public:
-  TimeoutManager(nsIGlobalObject& aHandle, uint32_t aMaxIdleDeferMS);
+  TimeoutManager(nsIGlobalObject& aHandle, uint32_t aMaxIdleDeferMS,
+                 nsISerialEventTarget* aEventTarget);
   ~TimeoutManager();
   TimeoutManager(const TimeoutManager& rhs) = delete;
   void operator=(const TimeoutManager& rhs) = delete;
 
   bool IsRunningTimeout() const;
 
-  static uint32_t GetNestingLevel() { return sNestingLevel; }
-  static void SetNestingLevel(uint32_t aLevel) { sNestingLevel = aLevel; }
+  uint32_t GetNestingLevel() {
+    return mGlobalObject.GetAsInnerWindow() ? sNestingLevel : mNestingLevel;
+  }
+
+  void SetNestingLevel(uint32_t aLevel) {
+    if (mGlobalObject.GetAsInnerWindow()) {
+      sNestingLevel = aLevel;
+    } else {
+      mNestingLevel = aLevel;
+    }
+  }
 
   bool HasTimeouts() const {
     return !mTimeouts.IsEmpty() || !mIdleTimeouts.IsEmpty();
@@ -55,7 +66,7 @@ class TimeoutManager final {
                   bool aProcessIdle);
 
   void ClearAllTimeouts();
-  uint32_t GetTimeoutId(mozilla::dom::Timeout::Reason aReason);
+  int32_t GetTimeoutId(mozilla::dom::Timeout::Reason aReason);
 
   TimeDuration CalculateDelay(Timeout* aTimeout) const;
 
@@ -189,7 +200,7 @@ class TimeoutManager final {
       return false;
     }
 
-    Timeout* GetTimeout(uint32_t aTimeoutId, Timeout::Reason aReason) {
+    Timeout* GetTimeout(int32_t aTimeoutId, Timeout::Reason aReason) {
       Timeout::TimeoutIdAndReason key = {aTimeoutId, aReason};
       return mTimeouts->Get(key);
     }
@@ -222,7 +233,7 @@ class TimeoutManager final {
   RefPtr<TimeoutExecutor> mIdleExecutor;
   // The list of timeouts coming from non-tracking scripts.
   Timeouts mTimeouts;
-  uint32_t mTimeoutIdCounter;
+  int32_t mTimeoutIdCounter;
   uint32_t mNextFiringId;
 #ifdef DEBUG
   int64_t mFiringIndex;
@@ -236,7 +247,7 @@ class TimeoutManager final {
   Timeouts mIdleTimeouts;
 
   // The current idle request callback timeout handle
-  uint32_t mIdleCallbackTimeoutCounter;
+  int32_t mIdleCallbackTimeoutCounter;
 
   nsCOMPtr<nsITimer> mThrottleTimeoutsTimer;
   mozilla::TimeStamp mLastBudgetUpdate;
@@ -247,7 +258,9 @@ class TimeoutManager final {
   bool mBudgetThrottleTimeouts;
 
   bool mIsLoading;
+  nsCOMPtr<nsISerialEventTarget> mEventTarget;
 
+  uint32_t mNestingLevel{0};
   static uint32_t sNestingLevel;
 };
 

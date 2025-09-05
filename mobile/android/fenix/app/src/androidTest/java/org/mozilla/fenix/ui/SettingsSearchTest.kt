@@ -6,14 +6,14 @@ package org.mozilla.fenix.ui
 
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.pressBack
+import androidx.test.filters.SdkSuppress
 import okhttp3.mockwebserver.MockWebServer
 import org.junit.After
 import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
-import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithSystemLocaleChanged
-import org.mozilla.fenix.helpers.AppAndSystemHelper.setSystemLocale
+import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithAppLocaleChanged
 import org.mozilla.fenix.helpers.DataGenerationHelper.setTextToClipBoard
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MockBrowserDataHelper.addCustomSearchEngine
@@ -422,7 +422,7 @@ class SettingsSearchTest : TestSetup() {
             openEngineOverflowMenu(customSearchEngineTitle)
             clickDeleteSearchEngine()
             verifySnackBarText("Deleted $customSearchEngineTitle")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(activityTestRule, "UNDO")
             verifyEngineListContains(customSearchEngineTitle, shouldExist = true)
             changeDefaultSearchEngine(customSearchEngineTitle)
             openEngineOverflowMenu(customSearchEngineTitle)
@@ -482,11 +482,7 @@ class SettingsSearchTest : TestSetup() {
             clickSearchSelectorButton()
             selectTemporarySearchMethod("DuckDuckGo")
             typeSearch("mozilla ")
-            verifySearchEngineSuggestionResults(
-                activityTestRule,
-                "mozilla firefox",
-                searchTerm = "mozilla ",
-            )
+            verifySearchSuggestionsAreDisplayed(activityTestRule, "mozilla firefox")
         }.dismissSearchBar {
         }.openThreeDotMenu {
         }.openSettings {
@@ -528,11 +524,7 @@ class SettingsSearchTest : TestSetup() {
             typeSearch("mozilla")
             verifyAllowSuggestionsInPrivateModeDialog()
             allowSuggestionsInPrivateMode()
-            verifySearchEngineSuggestionResults(
-                activityTestRule,
-                "mozilla firefox",
-                searchTerm = "mozilla",
-            )
+            verifySearchSuggestionsAreDisplayed(activityTestRule, "mozilla firefox")
         }.dismissSearchBar {
         }.openThreeDotMenu {
         }.openSettings {
@@ -547,6 +539,7 @@ class SettingsSearchTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/888673
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyShowVoiceSearchToggleTest() {
         homeScreen {
@@ -611,7 +604,7 @@ class SettingsSearchTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2233337
     @Test
     fun verifyTheSearchEnginesListsRespectTheLocaleTest() {
-        runWithSystemLocaleChanged(Locale.CHINA, activityTestRule.activityRule) {
+        runWithAppLocaleChanged(Locale.CHINA, activityTestRule.activityRule) {
             // Checking search engines for CH locale
             homeScreen {
             }.openSearch {
@@ -623,9 +616,10 @@ class SettingsSearchTest : TestSetup() {
                     "DuckDuckGo",
                 )
             }.dismissSearchBar {}
+        }
 
+        runWithAppLocaleChanged(Locale.FRENCH, activityTestRule.activityRule) {
             // Checking search engines for FR locale
-            setSystemLocale(Locale.FRENCH)
             homeScreen {
             }.openSearch {
                 clickSearchSelectorButton()

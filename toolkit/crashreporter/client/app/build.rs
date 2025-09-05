@@ -9,6 +9,7 @@ fn main() {
     crash_ping_annotations();
     set_mock_cfg();
     set_glean_metrics_file();
+    generate_buildid_section();
 }
 
 fn windows_manifest() {
@@ -25,9 +26,9 @@ fn windows_manifest() {
         // Use legacy active code page because GDI doesn't support per-process UTF8 (and older
         // win10 may not support this setting anyway).
         .active_code_page(manifest::ActiveCodePage::Legacy)
-        // GDI scaling is not enabled by default but we need it to make the GDI-drawn text look
-        // nice on high-DPI displays.
-        .gdi_scaling(manifest::Setting::Enabled);
+        // We support WM_DPICHANGED for scaling, but need to set our DPI awareness to receive the
+        // messages.
+        .dpi_awareness(manifest::DpiAwareness::PerMonitorV2);
 
     embed_manifest(manifest).expect("unable to embed windows manifest file");
 
@@ -112,4 +113,32 @@ fn set_glean_metrics_file() {
         "cargo:rustc-env=GLEAN_METRICS_FILE={}",
         glean_metrics_path.display()
     );
+}
+
+/// Generate the buildid section name (we read the buildid at runtime using buildid_reader).
+fn generate_buildid_section() {
+    use mozbuild::config::BINDGEN_SYSTEM_FLAGS as CFLAGS;
+
+    let defines = if cfg!(target_os = "macos") {
+        "#define XP_DARWIN"
+    } else if cfg!(target_os = "windows") {
+        "#define XP_WIN"
+    } else {
+        ""
+    };
+
+    let bindings = bindgen::Builder::default()
+        .header_contents("defines.h", defines)
+        .header(format!(
+            "{}/toolkit/library/buildid_section.h",
+            mozbuild::TOPSRCDIR.display()
+        ))
+        .clang_args(CFLAGS)
+        .generate_cstr(true)
+        .generate()
+        .expect("unable to generate buildid_section.h");
+    let out_path = std::path::PathBuf::from(std::env::var("OUT_DIR").unwrap());
+    bindings
+        .write_to_file(out_path.join("buildid_section.rs"))
+        .expect("failed to write buildid section");
 }

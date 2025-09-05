@@ -90,6 +90,7 @@ export function skipTestCase(msg: string): never {
  * The `performance` interface.
  * It is available in all browsers, but it is not in scope by default in Node.
  */
+/* eslint-disable-next-line n/no-restricted-require */
 const perf = typeof performance !== 'undefined' ? performance : require('perf_hooks').performance;
 
 /**
@@ -255,6 +256,15 @@ export function mapLazy<T, R>(xs: Iterable<T>, f: (x: T) => R): Iterable<R> {
       }
     },
   };
+}
+
+/** Count the number of elements `x` for which `predicate(x)` is true. */
+export function count<T>(xs: Iterable<T>, predicate: (x: T) => boolean): number {
+  let count = 0;
+  for (const x of xs) {
+    if (predicate(x)) count++;
+  }
+  return count;
 }
 
 const ReorderOrders = {

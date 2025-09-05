@@ -7,7 +7,7 @@
 
 #include <limits>
 #include "mozilla/glean/fog_ffi_generated.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/ProcesstoolsMetrics.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/dom/ContentParent.h"
@@ -17,6 +17,8 @@
 #include "mozilla/gfx/GPUChild.h"
 #include "mozilla/gfx/GPUParent.h"
 #include "mozilla/gfx/GPUProcessManager.h"
+#include "mozilla/glean/bindings/jog/JOG.h"
+#include "mozilla/glean/GleanMetrics.h"
 #include "mozilla/Hal.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/net/SocketProcessChild.h"
@@ -480,7 +482,7 @@ void FlushAllChildData(
     }
   }
 
-  if (net::SocketProcessParent* socketParent =
+  if (RefPtr<net::SocketProcessParent> socketParent =
           net::SocketProcessParent::GetSingleton()) {
     promises.EmplaceBack(socketParent->SendFlushFOGData());
   }
@@ -616,14 +618,14 @@ void TestTriggerMetrics(uint32_t aProcessType,
           [promise]() { promise->MaybeResolveWithUndefined(); },
           [promise]() { promise->MaybeRejectWithUndefined(); });
       break;
-    case nsIXULRuntime::PROCESS_TYPE_SOCKET:
-      Unused << net::SocketProcessParent::GetSingleton()
-                    ->SendTestTriggerMetrics()
-                    ->Then(
-                        GetCurrentSerialEventTarget(), __func__,
-                        [promise]() { promise->MaybeResolveWithUndefined(); },
-                        [promise]() { promise->MaybeRejectWithUndefined(); });
-      break;
+    case nsIXULRuntime::PROCESS_TYPE_SOCKET: {
+      RefPtr<net::SocketProcessParent> socketParent(
+          net::SocketProcessParent::GetSingleton());
+      Unused << socketParent->SendTestTriggerMetrics()->Then(
+          GetCurrentSerialEventTarget(), __func__,
+          [promise]() { promise->MaybeResolveWithUndefined(); },
+          [promise]() { promise->MaybeRejectWithUndefined(); });
+    } break;
     case nsIXULRuntime::PROCESS_TYPE_UTILITY:
       Unused << ipc::UtilityProcessManager::GetSingleton()
                     ->GetProcessParent(ipc::SandboxingKind::GENERIC_UTILITY)

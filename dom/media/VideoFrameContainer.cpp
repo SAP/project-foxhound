@@ -10,34 +10,12 @@
 #  include "GLImages.h"  // for SurfaceTextureImage
 #endif
 #include "MediaDecoderOwner.h"
-#include "mozilla/Telemetry.h"
 #include "mozilla/AbstractThread.h"
 
 using namespace mozilla::layers;
 
 namespace mozilla {
 #define NS_DispatchToMainThread(...) CompileError_UseAbstractMainThreadInstead
-
-namespace {
-template <Telemetry::HistogramID ID>
-class AutoTimer {
-  // Set a threshold to reduce performance overhead
-  // for we're measuring hot spots.
-  static const uint32_t sThresholdMS = 1000;
-
- public:
-  ~AutoTimer() {
-    auto end = TimeStamp::Now();
-    auto diff = uint32_t((end - mStart).ToMilliseconds());
-    if (diff > sThresholdMS) {
-      Telemetry::Accumulate(ID, diff);
-    }
-  }
-
- private:
-  const TimeStamp mStart = TimeStamp::Now();
-};
-}  // namespace
 
 VideoFrameContainer::VideoFrameContainer(
     MediaDecoderOwner* aOwner, already_AddRefed<ImageContainer> aContainer)
@@ -95,21 +73,20 @@ static void NotifySetCurrent(Image* aImage) {
 }
 #endif
 
-void VideoFrameContainer::SetCurrentFrame(const gfx::IntSize& aIntrinsicSize,
-                                          Image* aImage,
-                                          const TimeStamp& aTargetTime) {
+void VideoFrameContainer::SetCurrentFrame(
+    const gfx::IntSize& aIntrinsicSize, Image* aImage,
+    const TimeStamp& aTargetTime, const media::TimeUnit& aProcessingDuration,
+    const media::TimeUnit& aMediaTime) {
 #ifdef MOZ_WIDGET_ANDROID
   NotifySetCurrent(aImage);
 #endif
+  AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
   if (aImage) {
-    MutexAutoLock lock(mMutex);
-    AutoTArray<ImageContainer::NonOwningImage, 1> imageList;
-    imageList.AppendElement(
-        ImageContainer::NonOwningImage(aImage, aTargetTime, ++mFrameID));
-    SetCurrentFramesLocked(aIntrinsicSize, imageList);
-  } else {
-    ClearCurrentFrame(aIntrinsicSize);
+    imageList.AppendElement(ImageContainer::NonOwningImage(
+        aImage, aTargetTime, ++mFrameID, 0, aProcessingDuration, aMediaTime));
   }
+  MutexAutoLock lock(mMutex);
+  SetCurrentFramesLocked(aIntrinsicSize, imageList);
 }
 
 void VideoFrameContainer::SetCurrentFrames(
@@ -153,18 +130,13 @@ void VideoFrameContainer::SetCurrentFramesLocked(
   mImageContainer->GetCurrentImages(&oldImages);
 
   PrincipalHandle principalHandle = PRINCIPAL_HANDLE_NONE;
-  ImageContainer::FrameID lastFrameIDForOldPrincipalHandle =
-      mFrameIDForPendingPrincipalHandle - 1;
   if (mPendingPrincipalHandle != PRINCIPAL_HANDLE_NONE &&
-      ((!oldImages.IsEmpty() &&
-        oldImages.LastElement().mFrameID >= lastFrameIDForOldPrincipalHandle) ||
-       (!aImages.IsEmpty() &&
-        aImages[0].mFrameID > lastFrameIDForOldPrincipalHandle))) {
-    // We are releasing the last FrameID prior to
-    // `lastFrameIDForOldPrincipalHandle` OR there are no FrameIDs prior to
-    // `lastFrameIDForOldPrincipalHandle` in the new set of images. This means
-    // that the old principal handle has been flushed out and we can notify our
-    // video element about this change.
+      (aImages.IsEmpty() ||
+       aImages[0].mFrameID >= mFrameIDForPendingPrincipalHandle)) {
+    // There are no FrameIDs prior to `mFrameIDForPendingPrincipalHandle`
+    // in the new set of images.
+    // This means that the old principal handle has been flushed out and we
+    // can notify our video element about this change.
     principalHandle = mPendingPrincipalHandle;
     mLastPrincipalHandle = mPendingPrincipalHandle;
     mPendingPrincipalHandle = PRINCIPAL_HANDLE_NONE;
@@ -203,16 +175,18 @@ void VideoFrameContainer::ClearFutureFrames(TimeStamp aNow) {
 
   if (!kungFuDeathGrip.IsEmpty()) {
     AutoTArray<ImageContainer::NonOwningImage, 1> currentFrame;
-    ImageContainer::OwningImage& img = kungFuDeathGrip[0];
+    const ImageContainer::OwningImage* img = &kungFuDeathGrip[0];
     // Find the current image in case there are several.
     for (const auto& image : kungFuDeathGrip) {
       if (image.mTimeStamp > aNow) {
         break;
       }
-      img = image;
+      img = &image;
     }
     currentFrame.AppendElement(ImageContainer::NonOwningImage(
-        img.mImage, img.mTimeStamp, img.mFrameID, img.mProducerID));
+        img->mImage, img->mTimeStamp, img->mFrameID, img->mProducerID,
+        img->mProcessingDuration, img->mMediaTime, img->mWebrtcCaptureTime,
+        img->mWebrtcReceiveTime, img->mRtpTimestamp));
     mImageContainer->SetCurrentImages(currentFrame);
   }
 }

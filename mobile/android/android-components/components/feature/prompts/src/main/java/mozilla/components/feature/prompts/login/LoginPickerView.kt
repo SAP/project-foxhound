@@ -38,9 +38,9 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.withStyledAttributes
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.concept.storage.Login
 import mozilla.components.feature.prompts.R
-import mozilla.components.feature.prompts.identitycredential.previews.LightDarkPreview
 import mozilla.components.support.ktx.android.content.getColorFromAttr
 import mozilla.components.ui.icons.R as iconsR
 
@@ -133,9 +133,9 @@ private fun LoginPickerHeader(
     modifier: Modifier = Modifier,
 ) {
     val headerContentDescription = if (isExpanded) {
-        stringResource(id = R.string.mozac_feature_prompts_collapse_logins_content_description)
+        stringResource(id = R.string.mozac_feature_prompts_collapse_logins_content_description_2)
     } else {
-        stringResource(id = R.string.mozac_feature_prompts_expand_logins_content_description)
+        stringResource(id = R.string.mozac_feature_prompts_expand_logins_content_description_2)
     }
 
     val chevronResourceId = if (isExpanded) {

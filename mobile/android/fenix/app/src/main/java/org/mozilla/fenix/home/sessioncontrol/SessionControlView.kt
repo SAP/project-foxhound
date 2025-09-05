@@ -4,7 +4,6 @@
 
 package org.mozilla.fenix.home.sessioncontrol
 
-import android.content.Context
 import android.view.View
 import androidx.annotation.VisibleForTesting
 import androidx.fragment.app.Fragment
@@ -24,6 +23,7 @@ import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.shouldShowRecentSyncedTabs
 import org.mozilla.fenix.ext.shouldShowRecentTabs
 import org.mozilla.fenix.home.bookmarks.Bookmark
+import org.mozilla.fenix.home.ext.showWallpaperOnboardingDialog
 import org.mozilla.fenix.home.recentvisits.RecentlyVisitedItem
 import org.mozilla.fenix.messaging.FenixMessageSurfaceId
 import org.mozilla.fenix.onboarding.HomeCFRPresenter
@@ -102,9 +102,13 @@ internal fun normalModeAdapterItems(
     // when we switch to a Compose-only home screen.
     if (firstFrameDrawn && settings.showPocketRecommendationsFeature && pocketStories.isNotEmpty()) {
         shouldShowCustomizeHome = true
+
         items.add(AdapterItem.PocketStoriesItem)
-        items.add(AdapterItem.PocketCategoriesItem)
-        items.add(AdapterItem.PocketRecommendationsFooterItem)
+
+        if (!settings.showContentRecommendations) {
+            items.add(AdapterItem.PocketCategoriesItem)
+            items.add(AdapterItem.PocketRecommendationsFooterItem)
+        }
     }
 
     if (shouldShowCustomizeHome) {
@@ -147,7 +151,7 @@ private fun AppState.toAdapterList(settings: Settings): List<AdapterItem> = when
         shouldShowRecentTabs(settings),
         shouldShowRecentSyncedTabs(),
         recentHistory,
-        pocketStories,
+        recommendationState.pocketStories,
         firstFrameDrawn,
     )
     BrowsingMode.Private -> privateModeAdapterItems()
@@ -195,24 +199,18 @@ class SessionControlView(
                     val searchDialogFragment: SearchDialogFragment? =
                         fragmentManager.fragments.find { it is SearchDialogFragment } as SearchDialogFragment?
 
-                    if (!featureRecommended && !context.settings().showHomeOnboardingDialog) {
-                        if (!context.settings().showHomeOnboardingDialog &&
-                            searchDialogFragment == null &&
-                            context.shouldShowACfr()
-                        ) {
-                            featureRecommended = HomeCFRPresenter(
-                                context = context,
-                                recyclerView = view,
-                            ).show()
-                        }
+                    with(settings()) {
+                        if (!featureRecommended && !showHomeOnboardingDialog) {
+                            if (!showHomeOnboardingDialog && searchDialogFragment == null && showSyncCFR) {
+                                featureRecommended =
+                                    HomeCFRPresenter(context = context, recyclerView = view).show()
+                            }
 
-                        if (!context.settings().shouldShowJumpBackInCFR &&
-                            context.settings().showWallpaperOnboarding &&
-                            !featureRecommended
-                        ) {
-                            featureRecommended = interactor.showWallpapersOnboardingDialog(
-                                context.components.appStore.state.wallpaperState,
-                            )
+                            if (showWallpaperOnboardingDialog(featureRecommended)) {
+                                featureRecommended = interactor.showWallpapersOnboardingDialog(
+                                    context.components.appStore.state.wallpaperState,
+                                )
+                            }
                         }
                     }
 
@@ -228,9 +226,6 @@ class SessionControlView(
             }
         }
     }
-
-    private fun Context.shouldShowACfr() =
-        settings().showSyncCFR || settings().shouldShowJumpBackInCFR
 
     fun update(state: AppState, shouldReportMetrics: Boolean = false) {
         if (shouldReportMetrics) interactor.reportSessionMetrics(state)

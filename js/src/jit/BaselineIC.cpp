@@ -35,6 +35,7 @@
 #include "vm/JSFunction.h"
 #include "vm/JSScript.h"
 #include "vm/Opcodes.h"
+#include "vm/PortableBaselineInterpret.h"
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #ifdef MOZ_VTUNE
 #  include "vtune/VTuneWrapper.h"
@@ -115,7 +116,7 @@ AllocatableGeneralRegisterSet BaselineICAvailableGeneralRegs(size_t numInputs) {
 #if defined(JS_CODEGEN_ARM)
   MOZ_ASSERT(!regs.has(ICTailCallReg));
   regs.take(BaselineSecondScratchReg);
-#elif defined(JS_CODEGEN_MIPS32) || defined(JS_CODEGEN_MIPS64)
+#elif defined(JS_CODEGEN_MIPS64)
   MOZ_ASSERT(!regs.has(ICTailCallReg));
   MOZ_ASSERT(!regs.has(BaselineSecondScratchReg));
 #elif defined(JS_CODEGEN_ARM64)
@@ -294,6 +295,8 @@ class MOZ_STATIC_CLASS OpToFallbackKindTable {
     setKind(JSOp::NewObject, BaselineICFallbackKind::NewObject);
     setKind(JSOp::NewInit, BaselineICFallbackKind::NewObject);
 
+    setKind(JSOp::Lambda, BaselineICFallbackKind::Lambda);
+
     setKind(JSOp::InitElem, BaselineICFallbackKind::SetElem);
     setKind(JSOp::InitHiddenElem, BaselineICFallbackKind::SetElem);
     setKind(JSOp::InitLockedElem, BaselineICFallbackKind::SetElem);
@@ -331,9 +334,12 @@ class MOZ_STATIC_CLASS OpToFallbackKindTable {
     setKind(JSOp::GetGName, BaselineICFallbackKind::GetName);
 
     setKind(JSOp::BindName, BaselineICFallbackKind::BindName);
-    setKind(JSOp::BindGName, BaselineICFallbackKind::BindName);
+    setKind(JSOp::BindUnqualifiedName, BaselineICFallbackKind::BindName);
+    setKind(JSOp::BindUnqualifiedGName, BaselineICFallbackKind::BindName);
 
-    setKind(JSOp::GetIntrinsic, BaselineICFallbackKind::GetIntrinsic);
+    setKind(JSOp::GetIntrinsic, BaselineICFallbackKind::LazyConstant);
+    setKind(JSOp::BuiltinObject, BaselineICFallbackKind::LazyConstant);
+    setKind(JSOp::ImportMeta, BaselineICFallbackKind::LazyConstant);
 
     setKind(JSOp::Call, BaselineICFallbackKind::Call);
     setKind(JSOp::CallContent, BaselineICFallbackKind::Call);
@@ -374,6 +380,8 @@ class MOZ_STATIC_CLASS OpToFallbackKindTable {
     setKind(JSOp::CloseIter, BaselineICFallbackKind::CloseIter);
     setKind(JSOp::OptimizeGetIterator,
             BaselineICFallbackKind::OptimizeGetIterator);
+
+    setKind(JSOp::GetImport, BaselineICFallbackKind::GetImport);
   }
 };
 
@@ -411,9 +419,14 @@ void ICScript::initICEntries(JSContext* cx, JSScript* script) {
                "Unexpected fallback kind for non-JOF_IC op");
 
     BaselineICFallbackKind kind = BaselineICFallbackKind(tableValue);
-    TrampolinePtr stubCode = !jit::IsPortableBaselineInterpreterEnabled()
-                                 ? fallbackCode.addr(kind)
-                                 : TrampolinePtr();
+    TrampolinePtr stubCode =
+#ifdef ENABLE_PORTABLE_BASELINE_INTERP
+        !jit::IsPortableBaselineInterpreterEnabled()
+            ? fallbackCode.addr(kind)
+            : TrampolinePtr(js::pbl::GetPortableFallbackStub(kind));
+#else
+        fallbackCode.addr(kind);
+#endif
 
     // Initialize the ICEntry and ICFallbackStub.
     uint32_t offset = loc.bytecodeToOffset(script);
@@ -1192,22 +1205,28 @@ bool DoBindNameFallback(JSContext* cx, BaselineFrame* frame,
   MaybeNotifyWarp(frame->outerScript(), stub);
 
   jsbytecode* pc = StubOffsetToPc(stub, frame->script());
-  mozilla::DebugOnly<JSOp> op = JSOp(*pc);
+  JSOp op = JSOp(*pc);
   FallbackICSpew(cx, stub, "BindName(%s)", CodeName(JSOp(*pc)));
 
-  MOZ_ASSERT(op == JSOp::BindName || op == JSOp::BindGName);
+  MOZ_ASSERT(op == JSOp::BindName || op == JSOp::BindUnqualifiedName ||
+             op == JSOp::BindUnqualifiedGName);
 
   Rooted<PropertyName*> name(cx, frame->script()->getName(pc));
 
   TryAttachStub<BindNameIRGenerator>("BindName", cx, frame, stub, envChain,
                                      name);
 
-  RootedObject scope(cx);
-  if (!LookupNameUnqualified(cx, name, envChain, &scope)) {
+  JSObject* env;
+  if (op == JSOp::BindName) {
+    env = LookupNameWithGlobalDefault(cx, name, envChain);
+  } else {
+    env = LookupNameUnqualified(cx, name, envChain);
+  }
+  if (!env) {
     return false;
   }
 
-  res.setObject(*scope);
+  res.setObject(*env);
   return true;
 }
 
@@ -1226,31 +1245,47 @@ bool FallbackICCodeCompiler::emit_BindName() {
 }
 
 //
-// GetIntrinsic_Fallback
+// LazyConstant_Fallback
 //
 
-bool DoGetIntrinsicFallback(JSContext* cx, BaselineFrame* frame,
+bool DoLazyConstantFallback(JSContext* cx, BaselineFrame* frame,
                             ICFallbackStub* stub, MutableHandleValue res) {
   stub->incrementEnteredCount();
   MaybeNotifyWarp(frame->outerScript(), stub);
 
   RootedScript script(cx, frame->script());
   jsbytecode* pc = StubOffsetToPc(stub, script);
-  mozilla::DebugOnly<JSOp> op = JSOp(*pc);
-  FallbackICSpew(cx, stub, "GetIntrinsic(%s)", CodeName(JSOp(*pc)));
+  JSOp op = JSOp(*pc);
+  FallbackICSpew(cx, stub, "LazyConstant(%s)", CodeName(JSOp(*pc)));
 
-  MOZ_ASSERT(op == JSOp::GetIntrinsic);
+  MOZ_ASSERT(op == JSOp::GetIntrinsic || op == JSOp::BuiltinObject ||
+             op == JSOp::ImportMeta);
 
-  if (!GetIntrinsicOperation(cx, script, pc, res)) {
-    return false;
+  if (op == JSOp::GetIntrinsic) {
+    if (!GetIntrinsicOperation(cx, script, pc, res)) {
+      return false;
+    }
+  } else if (op == JSOp::BuiltinObject) {
+    auto kind = BuiltinObjectKind(GET_UINT8(pc));
+    JSObject* builtinObject = BuiltinObjectOperation(cx, kind);
+    if (!builtinObject) {
+      return false;
+    }
+    res.setObject(*builtinObject);
+  } else {
+    JSObject* metaObject = ImportMetaOperation(cx, script);
+    if (!metaObject) {
+      return false;
+    }
+    res.setObject(*metaObject);
   }
 
-  TryAttachStub<GetIntrinsicIRGenerator>("GetIntrinsic", cx, frame, stub, res);
+  TryAttachStub<LazyConstantIRGenerator>("LazyConstant", cx, frame, stub, res);
 
   return true;
 }
 
-bool FallbackICCodeCompiler::emit_GetIntrinsic() {
+bool FallbackICCodeCompiler::emit_LazyConstant() {
   EmitRestoreTailCallReg(masm);
 
   masm.push(ICStubReg);
@@ -1258,7 +1293,7 @@ bool FallbackICCodeCompiler::emit_GetIntrinsic() {
 
   using Fn =
       bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, MutableHandleValue);
-  return tailCallVM<Fn, DoGetIntrinsicFallback>(masm);
+  return tailCallVM<Fn, DoLazyConstantFallback>(masm);
 }
 
 //
@@ -2544,6 +2579,44 @@ bool FallbackICCodeCompiler::emit_NewObject() {
 }
 
 //
+// Lambda_Fallback
+//
+
+bool DoLambdaFallback(JSContext* cx, BaselineFrame* frame, ICFallbackStub* stub,
+                      MutableHandleValue res) {
+  stub->incrementEnteredCount();
+  MaybeNotifyWarp(frame->outerScript(), stub);
+  FallbackICSpew(cx, stub, "Lambda");
+
+  jsbytecode* pc = StubOffsetToPc(stub, frame->script());
+
+  Rooted<JSFunction*> fun(cx, frame->script()->getFunction(pc));
+  Rooted<JSObject*> env(cx, frame->environmentChain());
+
+  TryAttachStub<LambdaIRGenerator>("Lambda", cx, frame, stub, JSOp(*pc), fun,
+                                   frame);
+
+  JSObject* clone = Lambda(cx, fun, env);
+  if (!clone) {
+    return false;
+  }
+
+  res.setObject(*clone);
+  return true;
+}
+
+bool FallbackICCodeCompiler::emit_Lambda() {
+  EmitRestoreTailCallReg(masm);
+
+  masm.push(ICStubReg);
+  masm.pushBaselineFramePtr(FramePointer, R0.scratchReg());
+
+  using Fn =
+      bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, MutableHandleValue);
+  return tailCallVM<Fn, DoLambdaFallback>(masm);
+}
+
+//
 // CloseIter_Fallback
 //
 
@@ -2587,10 +2660,7 @@ bool DoOptimizeGetIteratorFallback(JSContext* cx, BaselineFrame* frame,
   TryAttachStub<OptimizeGetIteratorIRGenerator>("OptimizeGetIterator", cx,
                                                 frame, stub, value);
 
-  bool result;
-  if (!OptimizeGetIterator(cx, value, &result)) {
-    return false;
-  }
+  bool result = OptimizeGetIterator(value, cx);
   res.setBoolean(result);
   return true;
 }
@@ -2605,6 +2675,36 @@ bool FallbackICCodeCompiler::emit_OptimizeGetIterator() {
   using Fn = bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, HandleValue,
                       MutableHandleValue);
   return tailCallVM<Fn, DoOptimizeGetIteratorFallback>(masm);
+}
+
+//
+// GetImport_Fallback
+//
+
+bool DoGetImportFallback(JSContext* cx, BaselineFrame* frame,
+                         ICFallbackStub* stub, MutableHandleValue res) {
+  stub->incrementEnteredCount();
+  MaybeNotifyWarp(frame->outerScript(), stub);
+  FallbackICSpew(cx, stub, "GetImport");
+
+  RootedObject envChain(cx, frame->environmentChain());
+  RootedScript script(cx, frame->script());
+  jsbytecode* pc = StubOffsetToPc(stub, script);
+
+  TryAttachStub<GetImportIRGenerator>("GetImport", cx, frame, stub);
+
+  return GetImportOperation(cx, envChain, script, pc, res);
+}
+
+bool FallbackICCodeCompiler::emit_GetImport() {
+  EmitRestoreTailCallReg(masm);
+
+  masm.push(ICStubReg);
+  pushStubPayload(masm, R0.scratchReg());
+
+  using Fn =
+      bool (*)(JSContext*, BaselineFrame*, ICFallbackStub*, MutableHandleValue);
+  return tailCallVM<Fn, DoGetImportFallback>(masm);
 }
 
 bool JitRuntime::generateBaselineICFallbackCode(JSContext* cx) {

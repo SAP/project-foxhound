@@ -18,6 +18,7 @@ const REMOTE_SETTINGS_RECORDS = [
       score: 0.5,
     },
   },
+  QuickSuggestTestUtils.geonamesRecord(),
 ];
 
 add_setup(async function () {
@@ -26,7 +27,6 @@ add_setup(async function () {
   await QuickSuggestTestUtils.ensureQuickSuggestInit({
     remoteSettingsRecords: REMOTE_SETTINGS_RECORDS,
     prefs: [
-      ["quicksuggest.rustEnabled", true],
       ["suggest.quicksuggest.sponsored", true],
       ["suggest.yelp", true],
       ["yelp.featureGate", true],
@@ -58,9 +58,9 @@ add_task(async function basic() {
     Assert.equal(result.payload.provider, "Yelp");
     Assert.equal(
       result.payload.url,
-      "https://www.yelp.com/search?find_desc=RaMeN&find_loc=tOkYo&utm_medium=partner&utm_source=mozilla"
+      "https://www.yelp.com/search?find_desc=RaMeN&find_loc=Tokyo%2C+Tokyo-to&utm_medium=partner&utm_source=mozilla"
     );
-    Assert.equal(result.payload.title, "RaMeN iN tOkYo");
+    Assert.equal(result.payload.title, "RaMeN iN Tokyo, Tokyo-to");
 
     const { row } = details.element;
     const bottom = row.querySelector(".urlbarView-row-body-bottom");
@@ -285,7 +285,7 @@ add_task(async function resultMenu_not_relevant() {
     menu: "not_relevant",
     assert: resuilt => {
       Assert.ok(
-        QuickSuggest.blockedSuggestions.has(resuilt.payload.url),
+        QuickSuggest.blockedSuggestions.isResultBlocked(resuilt),
         "The URL should be register as blocked"
       );
     },

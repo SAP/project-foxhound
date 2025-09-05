@@ -20,7 +20,7 @@ buildscript {
         ksp_plugin = Versions.ksp_plugin
 
         // Used in mobile/android/fenix/app/build.gradle
-        protobuf_plugin = FenixVersions.protobuf_plugin
+        protobuf_plugin = Versions.protobuf_plugin
     }
 
     dependencies {
@@ -32,9 +32,9 @@ buildscript {
         classpath ComponentsDependencies.tools_kotlingradle
 
         // Used in mobile/android/fenix/app/build.gradle
-        classpath ComponentsDependencies.androidx_safeargs
-        classpath FenixDependencies.osslicenses_plugin
-        classpath FenixDependencies.tools_benchmarkgradle
+        classpath ComponentsDependencies.androidx_navigation_safeargs
+        classpath ComponentsDependencies.osslicenses_plugin
+        classpath ComponentsDependencies.tools_benchmarkgradle
         classpath "org.mozilla.telemetry:glean-gradle-plugin:${Versions.mozilla_glean}"
         classpath "${ApplicationServicesConfig.groupId}:tooling-nimbus-gradle:${ApplicationServicesConfig.version}"
     }
@@ -55,68 +55,55 @@ def tryInt = { string ->
     return string
 }
 
-// Parses the Cargo.lock and returns the version for the given package name.
-def getRustVersionFor(packageName) {
-    String version = null;
-    TomlParseResult result = Toml.parse(file("Cargo.lock").getText());
-    for (object in result.getArray("package").toList()) {
-        def table = (TomlTable) object
-        if (table.getString("name") == packageName) {
-            if (version != null) {
-                throw new StopExecutionException("Multiple versions for '${packageName}' found." +
-                        " Ensure '${packageName}' is only included once.")
-            }
-            version = table.getString("version")
+abstract class VerifyGleanVersionTask extends DefaultTask {
+    @InputFile
+    final RegularFileProperty source = project.objects.fileProperty().convention(project.layout.projectDirectory.file("Cargo.lock"))
+
+    @Input
+    String expectedVersion = Versions.mozilla_glean
+
+    @OutputFiles
+    FileCollection outputFiles = project.objects.fileCollection()
+
+    @TaskAction
+    void verifyGleanVersion() {
+        def foundVersion = getRustVersionFor(source.get().asFile, "glean")
+        if (expectedVersion != foundVersion) {
+          throw new GradleException("Mismatched Glean version, expected: '${expectedVersion}'," +
+              " found '${foundVersion}'")
+        } else {
+            logger.lifecycle("verifyGleanVersion> expected version matches found version '${foundVersion}'")
         }
     }
-    return version
+
+    // Parses the Cargo.lock and returns the version for the given package name.
+    static String getRustVersionFor(file, packageName) {
+        String version = null;
+        TomlParseResult result = Toml.parse(file.getText());
+        for (object in result.getArray("package").toList()) {
+            def table = (TomlTable) object
+            if (table.getString("name") == packageName) {
+                if (version != null) {
+                    throw new GradleException("Multiple versions for '${packageName}' found." +
+                                                     " Ensure '${packageName}' is only included once.")
+                }
+                version = table.getString("version")
+            }
+        }
+        return version
+    }
 }
 
-def now() {
-    Instant now = Instant.now();
-    return now.getEpochSecond() + now.getNano() / 1_000_000_000L;
-}
+tasks.register("verifyGleanVersion", VerifyGleanVersionTask)
 
 allprojects {
-    def shouldPrintBuildStatus =
-            System.getenv("MACH") && !System.getenv("NO_BUILDSTATUS_MESSAGES")
-
-    if (shouldPrintBuildStatus) {
-        // Adding new line before each line to make sure they're dumped as a separate line.
-        // Add profile marker to the start of the project evaluation
-        project.beforeEvaluate {
-            println "\nBUILDSTATUS ${now()} START_gradle:evaluate-project ${project.name}"
-        }
-
-        // Add profile marker to the end of the project evaluation
-        project.afterEvaluate {
-            println "\nBUILDSTATUS ${now()} END_gradle:evaluate-project ${project.name}"
-        }
-
-        tasks.configureEach { task ->
-            // Add profile marker to the start of the gradle task
-            task.doFirst {
-                println "\nBUILDSTATUS ${now()} START_gradle-task ${project.name}:${task.name}"
-            }
-
-            // Add profile marker to the end of the gradle task
-            task.doLast {
-                println "\nBUILDSTATUS ${now()} END_gradle-task ${project.name}:${task.name}"
-            }
-        }
-    }
-
     // Expose the per-object-directory configuration to all projects.
     ext {
         mozconfig = gradle.mozconfig
         topsrcdir = gradle.mozconfig.topsrcdir
         topobjdir = gradle.mozconfig.topobjdir
 
-        gleanVersion = Versions.mozilla_glean
-        if (gleanVersion != getRustVersionFor("glean")) {
-          throw new StopExecutionException("Mismatched Glean version, expected: ${gleanVersion}," +
-              " found ${getRustVersionFor("glean")}")
-        }
+        gleanVersion = Versions.mozilla_glean // Verification done in verifyGleanVersion task
 
         artifactSuffix = getArtifactSuffix()
         versionName = getVersionName()
@@ -125,7 +112,7 @@ allprojects {
         buildId = getBuildId()
 
         buildToolsVersion = mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
-        compileSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
+        compileSdkVersion = tryInt(mozconfig.substs.ANDROID_COMPILE_SDK)
         targetSdkVersion = tryInt(mozconfig.substs.ANDROID_TARGET_SDK)
         minSdkVersion = tryInt(mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION)
         manifestPlaceholders = [
@@ -133,6 +120,17 @@ allprojects {
             ANDROID_TARGET_SDK: mozconfig.substs.ANDROID_TARGET_SDK,
             MOZ_ANDROID_MIN_SDK_VERSION: mozconfig.substs.MOZ_ANDROID_MIN_SDK_VERSION,
         ]
+    }
+
+    afterEvaluate {
+        if (it.hasProperty('android')) {
+            android {
+                buildToolsVersion gradle.mozconfig.substs.ANDROID_BUILD_TOOLS_VERSION
+                testOptions {
+                    unitTests.includeAndroidResources = true
+                }
+            }
+        }
     }
 
     repositories {
@@ -149,7 +147,7 @@ allprojects {
     // Use the semanticdb-javac and semanticdb-kotlinc plugins to generate semanticdb files for Searchfox
     if (mozconfig.substs.ENABLE_MOZSEARCH_PLUGIN || mozconfig.substs.DOWNLOAD_ALL_GRADLE_DEPENDENCIES) {
         def targetRoot = new File(topobjdir, "mozsearch_java_index")
-        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.10.0"
+        def semanticdbJavacVersion = "com.sourcegraph:semanticdb-javac:0.10.3"
         def semanticdbKotlincVersion = "com.sourcegraph:semanticdb-kotlinc:0.4.0"
 
         afterEvaluate {
@@ -190,14 +188,18 @@ allprojects {
                             configuration.files(dependency)
                         } catch(e) {
                             println("Could not resolve ${configuration.name} -> ${dependency.name}")
-                            println(" > ${e.message}")
-                            if (e.cause) {
-                                println(" >> ${e.cause}")
-                                if (e.cause.cause) {
-                                    println(" >> ${e.cause.cause}")
+                            if (project.hasProperty('displayErrorDetails') && project.property('displayErrorDetails') == 'true') {
+                                println(" > ${e.message}")
+                                if (e.cause) {
+                                    println(" >> ${e.cause}")
+                                    if (e.cause.cause) {
+                                        println(" >> ${e.cause.cause}")
+                                    }
                                 }
+                                println("")
+                            } else {
+                                println("\t >> Re-run with -PdisplayErrorDetails=true to see more details")
                             }
-                            println("")
                         }
                     }
                 }
@@ -257,10 +259,11 @@ ext.geckoBinariesOnlyIf = { task ->
     return true
 }
 
-// Non-official versions are like "61.0a1", where "a1" is the milestone.
+// Non-official versions are like "61.0a1" or "61.0b1", where "a1" and "b1"
+// are the milestone.
 // This simply strips that off, leaving "61.0" in this example.
 def getAppVersionWithoutMilestone() {
-    return project.ext.mozconfig.substs.MOZ_APP_VERSION.replaceFirst(/a[0-9]/, "")
+    return project.ext.mozconfig.substs.MOZ_APP_VERSION.replaceFirst(/[ab][0-9]/, "")
 }
 
 // This converts MOZ_APP_VERSION into an integer
@@ -417,6 +420,31 @@ afterEvaluate {
             }
         }
 
+        project.configurations.configureEach {
+            // Dependencies can't depend on a different major version of Glean than A-C itself.
+            resolutionStrategy.eachDependency { details ->
+                if (details.requested.group == 'org.mozilla.telemetry'
+                        && details.requested.name.contains('glean') ) {
+                    def requested = details.requested.version.tokenize(".")
+                        def defined = Versions.mozilla_glean.tokenize(".")
+                        // Check the major version
+                        if (requested[0] != defined[0]) {
+                            throw new AssertionError("Cannot resolve to a single Glean version. Requested: ${details.requested.version}, A-C uses: ${Versions.mozilla_glean}")
+                        } else {
+                            // Enforce that all (transitive) dependencies are using the defined Glean version
+                            details.useVersion Versions.mozilla_glean
+                        }
+                }
+            }
+
+            resolutionStrategy.capabilitiesResolution.withCapability("org.mozilla.telemetry:glean-native") {
+                def toBeSelected = candidates.find { it.id instanceof ModuleComponentIdentifier && it.id.module.contains('geckoview') }
+                if (toBeSelected != null) {
+                    select(toBeSelected)
+                }
+                because 'use GeckoView Glean instead of standalone Glean'
+            }
+        }
     }
 }
 

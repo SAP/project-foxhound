@@ -25,8 +25,8 @@
 #include "mozilla/dom/PBackgroundLSSharedTypes.h"
 #include "mozilla/dom/PBackgroundLSSimpleRequest.h"
 #include "mozilla/dom/Promise.h"
+#include "mozilla/dom/quota/PrincipalUtils.h"
 #include "mozilla/dom/quota/PromiseUtils.h"
-#include "mozilla/dom/quota/QuotaManager.h"
 #include "mozilla/ipc/BackgroundChild.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundChild.h"
@@ -131,7 +131,7 @@ class AsyncRequestHelper final : public Runnable,
   NS_DECL_NSIRUNNABLE
 
   // LSRequestChildCallback
-  void OnResponse(const LSRequestResponse& aResponse) override;
+  void OnResponse(LSRequestResponse&& aResponse) override;
 };
 
 class SimpleRequestResolver final : public LSSimpleRequestChildCallback {
@@ -165,7 +165,7 @@ nsresult CheckedPrincipalToPrincipalInfo(
     return rv;
   }
 
-  if (NS_WARN_IF(!quota::QuotaManager::IsPrincipalInfoValid(aPrincipalInfo))) {
+  if (NS_WARN_IF(!quota::IsPrincipalInfoValid(aPrincipalInfo))) {
     return NS_ERROR_FAILURE;
   }
 
@@ -502,7 +502,16 @@ void AsyncRequestHelper::Finish() {
 
       case LSRequestResponse::TLSRequestPreloadDatastoreResponse:
         if (mPromise) {
-          mPromise->MaybeResolveWithUndefined();
+          const LSRequestPreloadDatastoreResponse& preloadDatastoreResponse =
+              mResponse.get_LSRequestPreloadDatastoreResponse();
+
+          const bool invalidated = preloadDatastoreResponse.invalidated();
+
+          if (invalidated) {
+            mPromise->MaybeReject(NS_ERROR_ABORT);
+          } else {
+            mPromise->MaybeResolveWithUndefined();
+          }
         }
         break;
       default:
@@ -511,6 +520,7 @@ void AsyncRequestHelper::Finish() {
   }
 
   mManager = nullptr;
+  mPromise = nullptr;
 
   mState = State::Complete;
 }
@@ -552,13 +562,13 @@ AsyncRequestHelper::Run() {
   return NS_OK;
 }
 
-void AsyncRequestHelper::OnResponse(const LSRequestResponse& aResponse) {
+void AsyncRequestHelper::OnResponse(LSRequestResponse&& aResponse) {
   AssertIsOnDOMFileThread();
   MOZ_ASSERT(mState == State::ResponsePending);
 
   mActor = nullptr;
 
-  mResponse = aResponse;
+  mResponse = std::move(aResponse);
 
   mState = State::Finishing;
 

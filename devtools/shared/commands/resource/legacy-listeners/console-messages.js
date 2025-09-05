@@ -44,10 +44,15 @@ module.exports = async function ({
   // /!\ The actor implementation requires to call startListeners(ConsoleAPI) first /!\
   const { messages } = await webConsoleFront.getCachedMessages(["ConsoleAPI"]);
 
-  onAvailableArray([[ResourceCommand.TYPES.CONSOLE_MESSAGE, messages]]);
+  onAvailableArray([
+    [
+      ResourceCommand.TYPES.CONSOLE_MESSAGE,
+      messages.map(({ message }) => message),
+    ],
+  ]);
 
   // Forward new message events
-  webConsoleFront.on("consoleAPICall", message => {
+  webConsoleFront.on("consoleAPICall", ({ message }) => {
     // Ignore console messages that are cloned from the content process
     // (they aren't relevant to toolboxes still using legacy listeners)
     if (message.clonedFromContentProcess) {

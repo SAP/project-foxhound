@@ -6,7 +6,6 @@ import string
 import textwrap
 
 import buildconfig
-from variables import get_buildid
 
 
 def generate_bool(name):
@@ -80,20 +79,6 @@ def generate(output):
         )
     )
 
-    # buildid.h is only available in these conditions (see the top-level moz.build)
-    if not buildconfig.substs.get("JS_STANDALONE") or not buildconfig.substs.get(
-        "MOZ_BUILD_APP"
-    ):
-        output.write(
-            textwrap.dedent(
-                f"""
-                /// The build id of the current build.
-                pub const MOZ_BUILDID: &str = {escape_rust_string(get_buildid())};
-
-                """
-            )
-        )
-
     windows_rs_dir = buildconfig.substs.get("MOZ_WINDOWS_RS_DIR")
     if windows_rs_dir:
         output.write(
@@ -107,9 +92,15 @@ def generate(output):
                     }}
                 }}
 
-                /// The path to the windows-rs crate, for use in build scripts
-                pub const WINDOWS_RS_DIR: &str = {escape_rust_string(windows_rs_dir)};
-
+                /// Macro used to re-export windows-rs's public items
+                #[macro_export]
+                macro_rules! windows_rs_lib {{
+                    () => {{
+                        #[path = {escape_rust_string(windows_rs_dir + "/src/lib.rs")}]
+                        mod lib;
+                        pub use lib::*;
+                    }}
+                }}
                 """
             )
         )
@@ -129,6 +120,10 @@ def generate(output):
 
     # Used by toolkit/crashreporter/client
     output.write(generate_bool("MOZ_CRASHREPORTER_MOCK"))
-    output.write(generate_string_array("CC_BASE_FLAGS"))
+    output.write(generate_string_array("BINDGEN_SYSTEM_FLAGS"))
     output.write(generate_string_array("MOZ_GTK3_CFLAGS"))
     output.write(generate_string_array("MOZ_GTK3_LIBS"))
+    output.write(generate_string_array("NSPR_CFLAGS"))
+    output.write(generate_string_array("NSS_CFLAGS"))
+    output.write(generate_string_array("MOZ_PIXMAN_CFLAGS"))
+    output.write(generate_string_array("MOZ_ICU_CFLAGS"))

@@ -52,14 +52,6 @@ void RenderTextureHostWrapper::Unlock() {
   }
 }
 
-std::pair<gfx::Point, gfx::Point> RenderTextureHostWrapper::GetUvCoords(
-    gfx::IntSize aTextureSize) const {
-  if (mTextureHost) {
-    return mTextureHost->GetUvCoords(aTextureSize);
-  }
-  return RenderTextureHost::GetUvCoords(aTextureSize);
-}
-
 void RenderTextureHostWrapper::ClearCachedResources() {
   if (mTextureHost) {
     mTextureHost->ClearCachedResources();
@@ -133,6 +125,13 @@ RenderTextureHostSWGL* RenderTextureHostWrapper::AsRenderTextureHostSWGL() {
     return nullptr;
   }
   return mTextureHost->AsRenderTextureHostSWGL();
+}
+
+RenderDMABUFTextureHost* RenderTextureHostWrapper::AsRenderDMABUFTextureHost() {
+  if (!mTextureHost) {
+    return nullptr;
+  }
+  return mTextureHost->AsRenderDMABUFTextureHost();
 }
 
 RenderAndroidHardwareBufferTextureHost*

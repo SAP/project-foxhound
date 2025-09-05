@@ -320,18 +320,13 @@ void gfxPlatformGtk::InitWebRenderConfig() {
   }
 
   FeatureState& feature = gfxConfig::GetFeature(Feature::WEBRENDER_COMPOSITOR);
-#ifdef RELEASE_OR_BETA
-  feature.ForceDisable(FeatureStatus::Blocked,
-                       "Cannot be enabled in release or beta",
-                       "FEATURE_FAILURE_DISABLE_RELEASE_OR_BETA"_ns);
-#else
   if (feature.IsEnabled()) {
     if (!IsWaylandDisplay()) {
       feature.ForceDisable(FeatureStatus::Unavailable,
                            "Wayland support missing",
                            "FEATURE_FAILURE_NO_WAYLAND"_ns);
     }
-#  ifdef MOZ_WAYLAND
+#ifdef MOZ_WAYLAND
     else if (gfxConfig::IsEnabled(Feature::WEBRENDER) &&
              !gfxConfig::IsEnabled(Feature::DMABUF)) {
       // We use zwp_linux_dmabuf_v1 and GBM directly to manage FBOs. In theory
@@ -345,9 +340,8 @@ void gfxPlatformGtk::InitWebRenderConfig() {
                            "Requires wp_viewporter protocol support",
                            "FEATURE_FAILURE_REQUIRES_WPVIEWPORTER"_ns);
     }
-#  endif  // MOZ_WAYLAND
+#endif  // MOZ_WAYLAND
   }
-#endif    // RELEASE_OR_BETA
 
   gfxVars::SetUseWebRenderCompositor(feature.IsEnabled());
 }
@@ -479,28 +473,9 @@ int32_t gfxPlatformGtk::GetFontScaleDPI() {
 }
 
 double gfxPlatformGtk::GetFontScaleFactor() {
-  // Integer scale factors work well with GTK window scaling, image scaling, and
-  // pixel alignment, but there is a range where 1 is too small and 2 is too
-  // big.
-  //
-  // An additional step of 1.5 is added because this is common scale on WINNT
-  // and at this ratio the advantages of larger rendering outweigh the
-  // disadvantages from scaling and pixel mis-alignment.
-  //
-  // A similar step for 1.25 is added as well, because this is the scale that
-  // "Large text" settings use in gnome, and it seems worth to allow, especially
-  // on already-hidpi environments.
-  int32_t dpi = GetFontScaleDPI();
-  if (dpi < 120) {
-    return 1.0;
-  }
-  if (dpi < 132) {
-    return 1.25;
-  }
-  if (dpi < 168) {
-    return 1.5;
-  }
-  return round(dpi / 96.0);
+  // Modern GTK works fine with non-integer scaling, and scaling factors like
+  // 1.25 are common as "Large text" in gnome as well, so no need to round.
+  return GetFontScaleDPI() / 96.0;
 }
 
 gfxImageFormat gfxPlatformGtk::GetOffscreenFormat() {

@@ -53,6 +53,8 @@ const val MAX_URI_LENGTH = 25000
 
 private const val FILE_PREFIX = "file://"
 private const val MAX_VALID_PORT = 65_535
+private const val SPACE = " "
+private const val UNDERSCORE = "_"
 
 /**
  * Shortens URLs to be more user friendly.
@@ -137,6 +139,16 @@ fun String.isIpv4OrIpv6(): Boolean {
 fun String.isUrl() = URLStringUtils.isURLLike(this)
 
 /**
+ * Checks if this String is a URL of a content resource.
+ */
+fun String.isContentUrl() = this.startsWith("content://")
+
+/**
+ * Checks if this String is an about URL.
+ */
+fun String.isAboutUrl() = this.startsWith("about:")
+
+/**
  * Checks if this String is a URL of an extension page.
  */
 fun String.isExtensionUrl() = this.startsWith("moz-extension://")
@@ -150,7 +162,7 @@ fun String.isResourceUrl() = this.startsWith("resource://")
  * Appends `http` scheme if no scheme is present in this String.
  */
 fun String.toNormalizedUrl(): String {
-    val s = this.trim()
+    val s = this.sanitizeURL()
     // Most commonly we'll encounter http or https schemes.
     // For these, avoid running through toNormalizedURL as an optimization.
     return if (!s.startsWith("http://") &&
@@ -290,10 +302,10 @@ fun String.stripDefaultPort(): String {
 }
 
 /**
- * Remove any unwanted character in url like spaces at the beginning or end.
+ * Remove leading and trailing whitespace and eliminate newline characters.
  */
 fun String.sanitizeURL(): String {
-    return this.trim()
+    return this.trim().replace("\n", "")
 }
 
 /**
@@ -307,7 +319,9 @@ fun String.sanitizeFileName(): String {
         file.name.replace("\\.\\.+".toRegex(), ".")
     } else {
         file.name.replace(".", "")
-    }.replaceEscapedCharacters()
+    }.replaceContinuousSpaces()
+        .replaceEscapedCharacters()
+        .trim()
 }
 
 /**
@@ -316,7 +330,17 @@ fun String.sanitizeFileName(): String {
  */
 private fun String.replaceEscapedCharacters(): String {
     val escapedCharactersRegex = "[\\x00-\\x13*\"?<>:|\\\\]".toRegex()
-    return replace(escapedCharactersRegex, "_")
+    return replace(escapedCharactersRegex, UNDERSCORE)
+}
+
+/**
+ * Replaces continuous spaces with a single space. Here `\s` matches the ASCII whitespace
+ * characters and `\p{Z}` matches Unicode whitespace characters. For more information, refer to
+ * [Unicode Space Separator Category Docs](https://www.compart.com/en/unicode/category/Zs).
+ */
+private fun String.replaceContinuousSpaces(): String {
+    val escapedCharactersRegex = "[\\p{Z}\\s]+".toRegex()
+    return replace(escapedCharactersRegex, SPACE)
 }
 
 /**

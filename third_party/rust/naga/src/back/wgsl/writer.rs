@@ -1,7 +1,8 @@
 use super::Error;
+use crate::back::wgsl::polyfill::InversePolyfill;
 use crate::{
     back::{self, Baked},
-    proc::{self, NameKey},
+    proc::{self, ExpressionKindTracker, NameKey},
     valid, Handle, Module, ShaderStage, TypeInner,
 };
 use std::fmt::Write;
@@ -68,6 +69,7 @@ pub struct Writer<W> {
     namer: proc::Namer,
     named_expressions: crate::NamedExpressions,
     ep_results: Vec<(ShaderStage, Handle<crate::Type>)>,
+    required_polyfills: crate::FastIndexSet<InversePolyfill>,
 }
 
 impl<W: Write> Writer<W> {
@@ -79,6 +81,7 @@ impl<W: Write> Writer<W> {
             namer: proc::Namer::default(),
             named_expressions: crate::NamedExpressions::default(),
             ep_results: vec![],
+            required_polyfills: crate::FastIndexSet::default(),
         }
     }
 
@@ -90,11 +93,12 @@ impl<W: Write> Writer<W> {
             // an identifier must not start with two underscore
             &[],
             &[],
-            &["__"],
+            &["__", "_naga"],
             &mut self.names,
         );
         self.named_expressions.clear();
         self.ep_results.clear();
+        self.required_polyfills.clear();
     }
 
     fn is_builtin_wgsl_struct(&self, module: &Module, handle: Handle<crate::Type>) -> bool {
@@ -166,6 +170,7 @@ impl<W: Write> Writer<W> {
                 info: fun_info,
                 expressions: &function.expressions,
                 named_expressions: &function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&function.expressions),
             };
 
             // Write the function
@@ -193,12 +198,20 @@ impl<W: Write> Writer<W> {
                 info: info.get_entry_point(index),
                 expressions: &ep.function.expressions,
                 named_expressions: &ep.function.named_expressions,
+                expr_kind_tracker: ExpressionKindTracker::from_arena(&ep.function.expressions),
             };
             self.write_function(module, &ep.function, &func_ctx)?;
 
             if index < module.entry_points.len() - 1 {
                 writeln!(self.out)?;
             }
+        }
+
+        // Write any polyfills that were required.
+        for polyfill in &self.required_polyfills {
+            writeln!(self.out)?;
+            write!(self.out, "{}", polyfill.source)?;
+            writeln!(self.out)?;
         }
 
         Ok(())
@@ -468,7 +481,10 @@ impl<W: Write> Writer<W> {
                         "storage_",
                         "",
                         storage_format_str(format),
-                        if access.contains(crate::StorageAccess::LOAD | crate::StorageAccess::STORE)
+                        if access.contains(crate::StorageAccess::ATOMIC) {
+                            ",atomic"
+                        } else if access
+                            .contains(crate::StorageAccess::LOAD | crate::StorageAccess::STORE)
                         {
                             ",read_write"
                         } else if access.contains(crate::StorageAccess::LOAD) {
@@ -507,6 +523,9 @@ impl<W: Write> Writer<W> {
                         self.write_type(module, base)?;
                         write!(self.out, ", {len}")?;
                     }
+                    crate::ArraySize::Pending(_) => {
+                        unreachable!();
+                    }
                     crate::ArraySize::Dynamic => {
                         self.write_type(module, base)?;
                     }
@@ -520,6 +539,9 @@ impl<W: Write> Writer<W> {
                     crate::ArraySize::Constant(len) => {
                         self.write_type(module, base)?;
                         write!(self.out, ", {len}")?;
+                    }
+                    crate::ArraySize::Pending(_) => {
+                        unreachable!();
                     }
                     crate::ArraySize::Dynamic => {
                         self.write_type(module, base)?;
@@ -770,6 +792,27 @@ impl<W: Write> Writer<W> {
                 write!(self.out, ", ")?;
                 self.write_expr(module, value, func_ctx)?;
                 writeln!(self.out, ");")?
+            }
+            Statement::ImageAtomic {
+                image,
+                coordinate,
+                array_index,
+                ref fun,
+                value,
+            } => {
+                write!(self.out, "{level}")?;
+                let fun_str = fun.to_wgsl();
+                write!(self.out, "textureAtomic{fun_str}(")?;
+                self.write_expr(module, image, func_ctx)?;
+                write!(self.out, ", ")?;
+                self.write_expr(module, coordinate, func_ctx)?;
+                if let Some(array_index_expr) = array_index {
+                    write!(self.out, ", ")?;
+                    self.write_expr(module, array_index_expr, func_ctx)?;
+                }
+                write!(self.out, ", ")?;
+                self.write_expr(module, value, func_ctx)?;
+                writeln!(self.out, ");")?;
             }
             Statement::WorkGroupUniformLoad { pointer, result } => {
                 write!(self.out, "{level}")?;
@@ -1115,8 +1158,14 @@ impl<W: Write> Writer<W> {
         func_ctx: &back::FunctionCtx,
         name: &str,
     ) -> BackendResult {
+        // Some functions are marked as const, but are not yet implemented as constant expression
+        let quantifier = if func_ctx.expr_kind_tracker.is_impl_const(handle) {
+            "const"
+        } else {
+            "let"
+        };
         // Write variable name
-        write!(self.out, "let {name}")?;
+        write!(self.out, "{quantifier} {name}")?;
         if self.flags.contains(WriterFlags::EXPLICIT_TYPES) {
             write!(self.out, ": ")?;
             let ty = &func_ctx.info[handle].ty;
@@ -1213,31 +1262,31 @@ impl<W: Write> Writer<W> {
 
         match expressions[expr] {
             Expression::Literal(literal) => match literal {
-                crate::Literal::F32(value) => write!(self.out, "{}f", value)?,
-                crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
+                crate::Literal::F32(value) => write!(self.out, "{value}f")?,
+                crate::Literal::U32(value) => write!(self.out, "{value}u")?,
                 crate::Literal::I32(value) => {
                     // `-2147483648i` is not valid WGSL. The most negative `i32`
                     // value can only be expressed in WGSL using AbstractInt and
                     // a unary negation operator.
                     if value == i32::MIN {
-                        write!(self.out, "i32({})", value)?;
+                        write!(self.out, "i32({value})")?;
                     } else {
-                        write!(self.out, "{}i", value)?;
+                        write!(self.out, "{value}i")?;
                     }
                 }
-                crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
-                crate::Literal::F64(value) => write!(self.out, "{:?}lf", value)?,
+                crate::Literal::Bool(value) => write!(self.out, "{value}")?,
+                crate::Literal::F64(value) => write!(self.out, "{value:?}lf")?,
                 crate::Literal::I64(value) => {
                     // `-9223372036854775808li` is not valid WGSL. The most negative `i64`
                     // value can only be expressed in WGSL using AbstractInt and
                     // a unary negation operator.
                     if value == i64::MIN {
-                        write!(self.out, "i64({})", value)?;
+                        write!(self.out, "i64({value})")?;
                     } else {
-                        write!(self.out, "{}li", value)?;
+                        write!(self.out, "{value}li")?;
                     }
                 }
-                crate::Literal::U64(value) => write!(self.out, "{:?}lu", value)?,
+                crate::Literal::U64(value) => write!(self.out, "{value:?}lu")?,
                 crate::Literal::AbstractInt(_) | crate::Literal::AbstractFloat(_) => {
                     return Err(Error::Custom(
                         "Abstract types should not appear in IR presented to backends".into(),
@@ -1645,6 +1694,7 @@ impl<W: Write> Writer<W> {
 
                 enum Function {
                     Regular(&'static str),
+                    InversePolyfill(InversePolyfill),
                 }
 
                 let function = match fun {
@@ -1703,6 +1753,7 @@ impl<W: Write> Writer<W> {
                     Mf::InverseSqrt => Function::Regular("inverseSqrt"),
                     Mf::Transpose => Function::Regular("transpose"),
                     Mf::Determinant => Function::Regular("determinant"),
+                    Mf::QuantizeToF16 => Function::Regular("quantizeToF16"),
                     // bits
                     Mf::CountTrailingZeros => Function::Regular("countTrailingZeros"),
                     Mf::CountLeadingZeros => Function::Regular("countLeadingZeros"),
@@ -1710,8 +1761,8 @@ impl<W: Write> Writer<W> {
                     Mf::ReverseBits => Function::Regular("reverseBits"),
                     Mf::ExtractBits => Function::Regular("extractBits"),
                     Mf::InsertBits => Function::Regular("insertBits"),
-                    Mf::FindLsb => Function::Regular("firstTrailingBit"),
-                    Mf::FindMsb => Function::Regular("firstLeadingBit"),
+                    Mf::FirstTrailingBit => Function::Regular("firstTrailingBit"),
+                    Mf::FirstLeadingBit => Function::Regular("firstLeadingBit"),
                     // data packing
                     Mf::Pack4x8snorm => Function::Regular("pack4x8snorm"),
                     Mf::Pack4x8unorm => Function::Regular("pack4x8unorm"),
@@ -1728,9 +1779,16 @@ impl<W: Write> Writer<W> {
                     Mf::Unpack2x16float => Function::Regular("unpack2x16float"),
                     Mf::Unpack4xI8 => Function::Regular("unpack4xI8"),
                     Mf::Unpack4xU8 => Function::Regular("unpack4xU8"),
-                    Mf::Inverse | Mf::Outer => {
-                        return Err(Error::UnsupportedMathFunction(fun));
+                    Mf::Inverse => {
+                        let typ = func_ctx.resolve_type(arg, &module.types);
+
+                        let Some(overload) = InversePolyfill::find_overload(typ) else {
+                            return Err(Error::UnsupportedMathFunction(fun));
+                        };
+
+                        Function::InversePolyfill(overload)
                     }
+                    Mf::Outer => return Err(Error::UnsupportedMathFunction(fun)),
                 };
 
                 match function {
@@ -1742,6 +1800,12 @@ impl<W: Write> Writer<W> {
                             self.write_expr(module, arg, func_ctx)?;
                         }
                         write!(self.out, ")")?
+                    }
+                    Function::InversePolyfill(inverse) => {
+                        write!(self.out, "{}(", inverse.fun_name)?;
+                        self.write_expr(module, arg, func_ctx)?;
+                        write!(self.out, ")")?;
+                        self.required_polyfills.insert(inverse);
                     }
                 }
             }
@@ -1933,9 +1997,8 @@ fn builtin_str(built_in: crate::BuiltIn) -> Result<&'static str, Error> {
         | Bi::CullDistance
         | Bi::PointSize
         | Bi::PointCoord
-        | Bi::WorkGroupSize => {
-            return Err(Error::Custom(format!("Unsupported builtin {built_in:?}")))
-        }
+        | Bi::WorkGroupSize
+        | Bi::DrawID => return Err(Error::Custom(format!("Unsupported builtin {built_in:?}"))),
     })
 }
 
@@ -2015,7 +2078,8 @@ const fn storage_format_str(format: crate::StorageFormat) -> &'static str {
         Sf::Bgra8Unorm => "bgra8unorm",
         Sf::Rgb10a2Uint => "rgb10a2uint",
         Sf::Rgb10a2Unorm => "rgb10a2unorm",
-        Sf::Rg11b10Float => "rg11b10float",
+        Sf::Rg11b10Ufloat => "rg11b10float",
+        Sf::R64Uint => "r64uint",
         Sf::Rg32Uint => "rg32uint",
         Sf::Rg32Sint => "rg32sint",
         Sf::Rg32Float => "rg32float",
@@ -2053,6 +2117,8 @@ const fn sampling_str(sampling: crate::Sampling) -> &'static str {
         S::Center => "",
         S::Centroid => "centroid",
         S::Sample => "sample",
+        S::First => "first",
+        S::Either => "either",
     }
 }
 
@@ -2066,7 +2132,9 @@ const fn address_space_str(
             As::Private => "private",
             As::Uniform => "uniform",
             As::Storage { access } => {
-                if access.contains(crate::StorageAccess::STORE) {
+                if access.contains(crate::StorageAccess::ATOMIC) {
+                    return (Some("storage"), Some("atomic"));
+                } else if access.contains(crate::StorageAccess::STORE) {
                     return (Some("storage"), Some("read_write"));
                 } else {
                     "storage"

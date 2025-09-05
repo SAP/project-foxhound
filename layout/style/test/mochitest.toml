@@ -1,5 +1,6 @@
 [DEFAULT]
 prefs = [
+  "dom.viewTransitions.enabled=true",
   "gfx.omta.background-color=true",
   "gfx.font_loader.delay=0",
   "layout.css.motion-path-url.enabled=true",
@@ -15,6 +16,7 @@ prefs = [
   "layout.css.transform-box-content-stroke.enabled=true",
   "layout.css.transition-behavior.enabled=true",
   "layout.css.field-sizing.enabled=true",
+  "layout.css.anchor-positioning.enabled=true",
 ]
 support-files = [
   "animation_utils.js",
@@ -423,8 +425,10 @@ skip-if = [
 support-files = ["flexbox_layout_testcases.js"]
 
 ["test_flexbox_order.html"]
+skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin"] # Bug 1932914
 
 ["test_flexbox_order_abspos.html"]
+skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin"] # Bug 1932914 (secondary)
 
 ["test_flexbox_order_table.html"]
 
@@ -701,7 +705,14 @@ fail-if = ["xorigin"]
 ["test_transitions_replacement_on_busy_frame.html"]
 
 ["test_transitions_replacement_on_busy_frame_omta.html"]
-skip-if = ["os == 'linux' && tsan && verify"] # intermittent in chaos mode
+skip-if = [
+  "os == 'linux' && tsan && verify", # intermittent in chaos mode
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug && xorigin", # Bug 1932914 (secondary)
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug", # Bug 1905949
+  "os == 'linux' && os_version == '22.04' && processor == 'x86_64' && display == 'wayland'", # Bug 1905949
+  "os == 'android' && processor == 'x86_64' && debug", # Bug 1905949
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug", # Bug 1905949
+]
 
 ["test_transitions_replacement_with_setKeyframes.html"]
 

@@ -1,15 +1,15 @@
+use alloc::boxed::Box;
+
+use thiserror::Error;
+
 use crate::{
     binding_model::{LateMinBufferBindingSizeMismatch, PushConstantUploadError},
-    id,
     resource::{
         DestroyedResourceError, MissingBufferUsageError, MissingTextureUsageError,
         ResourceErrorIdent,
     },
     track::ResourceUsageCompatibilityError,
 };
-use wgt::VertexStepMode;
-
-use thiserror::Error;
 
 use super::bind::BinderError;
 
@@ -34,13 +34,6 @@ pub enum DrawError {
     VertexBeyondLimit {
         last_vertex: u64,
         vertex_limit: u64,
-        slot: u32,
-    },
-    #[error("{step_mode:?} buffer out of bounds at slot {slot}. Offset {offset} beyond limit {limit}. Did you bind the correct `Vertex` step-rate vertex buffer?")]
-    VertexOutOfBounds {
-        step_mode: VertexStepMode,
-        offset: u64,
-        limit: u64,
         slot: u32,
     },
     #[error("Instance {last_instance} extends beyond limit {instance_limit} imposed by the buffer in slot {slot}. Did you bind the correct `Instance` step-rate vertex buffer?")]
@@ -68,22 +61,10 @@ pub enum DrawError {
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum RenderCommandError {
-    #[error("BufferId {0:?} is invalid")]
-    InvalidBufferId(id::BufferId),
-    #[error("BindGroupId {0:?} is invalid")]
-    InvalidBindGroupId(id::BindGroupId),
-    #[error("Render bundle {0:?} is invalid")]
-    InvalidRenderBundle(id::RenderBundleId),
     #[error("Bind group index {index} is greater than the device's requested `max_bind_group` limit {max}")]
     BindGroupIndexOutOfRange { index: u32, max: u32 },
     #[error("Vertex buffer index {index} is greater than the device's requested `max_vertex_buffers` limit {max}")]
     VertexBufferIndexOutOfRange { index: u32, max: u32 },
-    #[error("Dynamic buffer offset {0} does not respect device's requested `{1}` limit {2}")]
-    UnalignedBufferOffset(u64, &'static str, u32),
-    #[error("RenderPipelineId {0:?} is invalid")]
-    InvalidPipelineId(id::RenderPipelineId),
-    #[error("QuerySet {0:?} is invalid")]
-    InvalidQuerySet(id::QuerySetId),
     #[error("Render pipeline targets are incompatible with render pass")]
     IncompatiblePipelineTargets(#[from] crate::device::RenderPassCompatibilityError),
     #[error("{0} writes to depth, while the pass has read-only depth access")]

@@ -104,12 +104,13 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
 
   void GetCookiesWithOriginAttributes(const OriginAttributesPattern& aPattern,
                                       const nsACString& aBaseDomain,
+                                      bool aSorted,
                                       nsTArray<RefPtr<nsICookie>>& aResult);
 
   void RemoveCookie(const nsACString& aBaseDomain,
                     const OriginAttributes& aOriginAttributes,
                     const nsACString& aHost, const nsACString& aName,
-                    const nsACString& aPath);
+                    const nsACString& aPath, const nsID* aOperationID);
 
   virtual void RemoveCookiesWithOriginAttributes(
       const OriginAttributesPattern& aPattern, const nsACString& aBaseDomain);
@@ -124,13 +125,15 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
                      nsICookieNotification::Action aAction,
                      const nsACString& aBaseDomain, bool aIsThirdParty = false,
                      dom::BrowsingContext* aBrowsingContext = nullptr,
-                     bool aOldCookieIsSession = false);
+                     bool aOldCookieIsSession = false,
+                     const nsID* aOperationID = nullptr);
 
   void AddCookie(CookieParser* aCookieParser, const nsACString& aBaseDomain,
                  const OriginAttributes& aOriginAttributes, Cookie* aCookie,
                  int64_t aCurrentTimeInUsec, nsIURI* aHostURI,
                  const nsACString& aCookieHeader, bool aFromHttp,
-                 bool aIsThirdParty, dom::BrowsingContext* aBrowsingContext);
+                 bool aIsThirdParty, dom::BrowsingContext* aBrowsingContext,
+                 const nsID* aOperationID = nullptr);
 
   // return true if we finish within the byte limit
   bool RemoveCookiesFromBackUntilUnderLimit(
@@ -141,8 +144,14 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
                                          const nsACString& aBaseDomain,
                                          nsCOMPtr<nsIArray>& aPurgedList);
 
+  // prevent excessive purging by using a soft and hard limit
+  // the soft limit (aka quota) is derived directly from partitionLimitCapacity
+  // pref while the hard limit is 1.2 times the partitionLimitCapacity pref we
+  // use the hard limit to trigger purging and telemetry and when we do purge,
+  // we purge down to the soft limit (quota)
   int32_t PartitionLimitExceededBytes(Cookie* aCookie,
-                                      const nsACString& aBaseDomain);
+                                      const nsACString& aBaseDomain,
+                                      bool aHardMax);
 
   static void CreateOrUpdatePurgeList(nsCOMPtr<nsIArray>& aPurgedList,
                                       nsICookie* aCookie);
@@ -216,10 +225,6 @@ class CookieStorage : public nsIObserver, public nsSupportsWeakReference {
   virtual already_AddRefed<nsIArray> PurgeCookies(int64_t aCurrentTimeInUsec,
                                                   uint16_t aMaxNumberOfCookies,
                                                   int64_t aCookiePurgeAge) = 0;
-
-  // This method returns true if aBaseDomain contains any colons since only
-  // IPv6 baseDomains may contain colons.
-  static bool isIPv6BaseDomain(const nsACString& aBaseDomain);
 
   // Serialize aBaseDomain e.g. apply "zero abbreveation" (::), use single
   // zeros and remove brackets to match principal base domain representation.

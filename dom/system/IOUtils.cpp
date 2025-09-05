@@ -283,7 +283,7 @@ static bool AssertParentProcessWithCallerLocationImpl(GlobalObject& aGlobal,
   JS::ColumnNumberOneOrigin colNo;
 
   NS_ENSURE_TRUE(
-      JS::DescribeScriptedCaller(cx, &scriptFilename, &lineNo, &colNo), false);
+      JS::DescribeScriptedCaller(&scriptFilename, cx, &lineNo, &colNo), false);
 
   NS_ENSURE_TRUE(scriptFilename.get(), false);
 
@@ -301,7 +301,7 @@ static void AssertParentProcessWithCallerLocation(GlobalObject& aGlobal) {
 
 // IOUtils implementation
 /* static */
-IOUtils::StateMutex IOUtils::sState{"IOUtils::sState"};
+MOZ_RUNINIT IOUtils::StateMutex IOUtils::sState{"IOUtils::sState"};
 
 /* static */
 template <typename Fn>
@@ -812,6 +812,25 @@ already_AddRefed<Promise> IOUtils::SetTime(GlobalObject& aGlobal,
             state->mEventQueue, promise,
             [file = std::move(file), aSetTimeFn, newTime]() {
               return SetTimeSync(file, aSetTimeFn, newTime);
+            });
+      });
+}
+
+/* static */
+already_AddRefed<Promise> IOUtils::HasChildren(
+    GlobalObject& aGlobal, const nsAString& aPath,
+    const HasChildrenOptions& aOptions, ErrorResult& aError) {
+  return WithPromiseAndState(
+      aGlobal, aError, [&](Promise* promise, auto& state) {
+        nsCOMPtr<nsIFile> file = new nsLocalFile();
+        REJECT_IF_INIT_PATH_FAILED(file, aPath, promise,
+                                   "Could not check children of `%s'",
+                                   NS_ConvertUTF16toUTF8(aPath).get());
+
+        DispatchAndResolve<bool>(
+            state->mEventQueue, promise,
+            [file = std::move(file), ignoreAbsent = aOptions.mIgnoreAbsent]() {
+              return HasChildrenSync(file, ignoreAbsent);
             });
       });
 }
@@ -1942,6 +1961,40 @@ Result<int64_t, IOUtils::IOError> IOUtils::SetTimeSync(
                        aFile->HumanReadablePath().get()));
   }
   return aNewTime;
+}
+
+/* static */
+Result<bool, IOUtils::IOError> IOUtils::HasChildrenSync(nsIFile* aFile,
+                                                        bool aIgnoreAbsent) {
+  MOZ_ASSERT(!NS_IsMainThread());
+
+  nsCOMPtr<nsIDirectoryEnumerator> iter;
+  nsresult rv = aFile->GetDirectoryEntries(getter_AddRefs(iter));
+  if (aIgnoreAbsent && IsFileNotFound(rv)) {
+    return false;
+  }
+  if (NS_FAILED(rv)) {
+    if (IsFileNotFound(rv)) {
+      return Err(IOError(
+          rv, "Could not check children of `%s': directory does not exist",
+          aFile->HumanReadablePath().get()));
+    }
+    if (IsNotDirectory(rv)) {
+      return Err(IOError(
+          rv, "Could not check children of `%s': file is not a directory",
+          aFile->HumanReadablePath().get()));
+    }
+    return Err(IOError(rv, "Could not check children of `%s'",
+                       aFile->HumanReadablePath().get()));
+  }
+
+  bool hasMoreElements = false;
+  IOUTILS_TRY_WITH_CONTEXT(
+      iter->HasMoreElements(&hasMoreElements),
+      "Could not check children of `%s': could not iterate children",
+      aFile->HumanReadablePath().get());
+
+  return hasMoreElements;
 }
 
 /* static */

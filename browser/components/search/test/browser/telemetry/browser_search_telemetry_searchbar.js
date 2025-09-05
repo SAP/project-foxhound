@@ -7,6 +7,7 @@ ChromeUtils.defineESModuleGetters(this, {
 });
 
 let suggestionEngine;
+let searchBar;
 
 function checkHistogramResults(resultIndexes, expected, histogram) {
   for (let [i, val] of Object.entries(resultIndexes.values)) {
@@ -35,7 +36,7 @@ function checkHistogramResults(resultIndexes, expected, histogram) {
  *        The options to use for the click.
  */
 function clickSearchbarSuggestion(entryName, clickOptions = {}) {
-  let richlistbox = BrowserSearch.searchBar.textbox.popup.richlistbox;
+  let richlistbox = searchBar.textbox.popup.richlistbox;
   let richlistitem = Array.prototype.find.call(
     richlistbox.children,
     item => item.getAttribute("ac-value") == entryName
@@ -47,7 +48,7 @@ function clickSearchbarSuggestion(entryName, clickOptions = {}) {
 }
 
 add_setup(async function () {
-  await gCUITestUtils.addSearchBar();
+  searchBar = await gCUITestUtils.addSearchBar();
   const url = getRootDirectory(gTestPath) + "telemetrySearchSuggestions.xml";
   suggestionEngine = await SearchTestUtils.installOpenSearchEngine({ url });
 
@@ -78,12 +79,8 @@ add_setup(async function () {
   let oldCanRecord = Services.telemetry.canRecordExtended;
   Services.telemetry.canRecordExtended = true;
 
-  // Enable event recording for the events tested here.
-  Services.telemetry.setEventRecordingEnabled("navigation", true);
-
   registerCleanupFunction(async function () {
     Services.telemetry.canRecordExtended = oldCanRecord;
-    Services.telemetry.setEventRecordingEnabled("navigation", false);
   });
 });
 
@@ -127,18 +124,6 @@ add_task(async function test_plainQuery() {
     search_hist,
     "other-MozSearch.searchbar",
     1
-  );
-
-  // Also check events.
-  TelemetryTestUtils.assertEvents(
-    [
-      {
-        object: "searchbar",
-        value: "enter",
-        extra: { engine: "other-MozSearch" },
-      },
-    ],
-    { category: "navigation", method: "search" }
   );
 
   // Check the histograms as well.
@@ -197,18 +182,6 @@ add_task(async function test_oneOff_enter() {
     search_hist,
     "other-MozSearch2.searchbar",
     1
-  );
-
-  // Also check events.
-  TelemetryTestUtils.assertEvents(
-    [
-      {
-        object: "searchbar",
-        value: "oneoff",
-        extra: { engine: "other-MozSearch2" },
-      },
-    ],
-    { category: "navigation", method: "search" }
   );
 
   // Check the histograms as well.
@@ -349,18 +322,6 @@ async function checkSuggestionClick(clickOptions, waitForActionFn) {
     search_hist,
     searchEngineId + ".searchbar",
     1
-  );
-
-  // Also check events.
-  TelemetryTestUtils.assertEvents(
-    [
-      {
-        object: "searchbar",
-        value: "suggestion",
-        extra: { engine: searchEngineId },
-      },
-    ],
-    { category: "navigation", method: "search" }
   );
 
   // Check the histograms as well.

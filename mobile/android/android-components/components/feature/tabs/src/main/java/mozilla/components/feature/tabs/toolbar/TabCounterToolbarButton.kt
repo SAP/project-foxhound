@@ -6,7 +6,6 @@ package mozilla.components.feature.tabs.toolbar
 
 import android.view.View
 import android.view.ViewGroup
-import androidx.annotation.VisibleForTesting
 import androidx.lifecycle.LifecycleOwner
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
@@ -14,9 +13,14 @@ import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.BrowserState
 import mozilla.components.browser.state.store.BrowserStore
+import mozilla.components.browser.toolbar.facts.ToolbarFacts
 import mozilla.components.concept.toolbar.Toolbar
 import mozilla.components.feature.tabs.R
 import mozilla.components.lib.state.ext.flowScoped
+import mozilla.components.support.base.Component
+import mozilla.components.support.base.facts.Action
+import mozilla.components.support.base.facts.Fact
+import mozilla.components.support.base.facts.collect
 import mozilla.components.support.ktx.android.content.res.resolveAttribute
 import mozilla.components.ui.tabcounter.TabCounter
 import mozilla.components.ui.tabcounter.TabCounterMenu
@@ -27,12 +31,13 @@ import java.lang.ref.WeakReference
  */
 open class TabCounterToolbarButton(
     private val lifecycleOwner: LifecycleOwner,
-    override val visible: () -> Boolean = { true },
     private val countBasedOnSelectedTabType: Boolean = true,
     private val showTabs: () -> Unit,
     private val store: BrowserStore,
     private val menu: TabCounterMenu? = null,
-    private val showMaskInPrivateMode: Boolean = false,
+    private val showMaskInPrivateMode: Boolean = true,
+    override val visible: () -> Boolean = { true },
+    override val weight: () -> Int = { -1 },
 ) : Toolbar.Action {
 
     private var reference = WeakReference<TabCounter>(null)
@@ -51,10 +56,18 @@ open class TabCounterToolbarButton(
             reference = WeakReference(this)
             setOnClickListener {
                 showTabs.invoke()
+                emitTabCounterFact(
+                    action = Action.CLICK,
+                    ToolbarFacts.Items.TOOLBAR,
+                )
             }
 
             menu?.let { menu ->
                 setOnLongClickListener {
+                    emitTabCounterFact(
+                        action = Action.DISPLAY,
+                        ToolbarFacts.Items.MENU,
+                    )
                     menu.menuController.show(anchor = it)
                     true
                 }
@@ -95,12 +108,26 @@ open class TabCounterToolbarButton(
         }
     }
 
+    private fun emitTabCounterFact(
+        action: Action,
+        item: String,
+        value: String? = null,
+        metadata: Map<String, Any>? = null,
+    ) {
+        Fact(
+            Component.UI_TABCOUNTER,
+            action,
+            item,
+            value,
+            metadata,
+        ).collect()
+    }
+
     /**
      * Update the tab counter button on the toolbar.
      *
      * @property count the updated tab count
      */
-    @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
     fun updateCount(count: Int) {
         reference.get()?.setCountWithAnimation(count)
     }

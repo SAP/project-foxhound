@@ -66,9 +66,7 @@ KeymapWrapper::RepeatState KeymapWrapper::sRepeatState =
     KeymapWrapper::NOT_PRESSED;
 
 #ifdef MOZ_WAYLAND
-wl_seat* KeymapWrapper::sSeat = nullptr;
-int KeymapWrapper::sSeatID = -1;
-wl_keyboard* KeymapWrapper::sKeyboard = nullptr;
+uint32_t KeymapWrapper::sLastRepeatableSerial = 0;
 #endif
 
 static const char* GetBoolName(bool aBool) { return aBool ? "TRUE" : "FALSE"; }
@@ -537,7 +535,7 @@ void KeymapWrapper::InitBySystemSettingsX11() {
   // mod[0] is Modifier introduced by Mod1.
   MappedModifier mod[5];
   int32_t foundLevel[5];
-  for (uint32_t i = 0; i < ArrayLength(mod); i++) {
+  for (uint32_t i = 0; i < std::size(mod); i++) {
     mod[i] = NOT_MODIFIER;
     foundLevel[i] = INT32_MAX;
   }
@@ -636,7 +634,7 @@ void KeymapWrapper::InitBySystemSettingsX11() {
       default:
         MOZ_CRASH("All indexes must be handled here");
     }
-    for (uint32_t j = 0; j < ArrayLength(mod); j++) {
+    for (uint32_t j = 0; j < std::size(mod); j++) {
       if (modifier == mod[j]) {
         mModifierMasks[i] |= 1 << (j + 3);
       }
@@ -671,6 +669,8 @@ void KeymapWrapper::SetModifierMasks(xkb_keymap* aKeymap) {
   keymapWrapper->SetModifierMask(aKeymap, INDEX_LEVEL3, "Level3");
   keymapWrapper->SetModifierMask(aKeymap, INDEX_LEVEL5, "Level5");
 
+  keymapWrapper->SetKeymap(aKeymap);
+
   MOZ_LOG(gKeyLog, LogLevel::Info,
           ("%p KeymapWrapper::SetModifierMasks, CapsLock=0x%X, NumLock=0x%X, "
            "ScrollLock=0x%X, Level3=0x%X, Level5=0x%X, "
@@ -690,22 +690,36 @@ void KeymapWrapper::SetModifierMasks(xkb_keymap* aKeymap) {
 
 /* This keymap routine is derived from weston-2.0.0/clients/simple-im.c
  */
-static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
-                                   uint32_t format, int fd, uint32_t size) {
+void KeymapWrapper::HandleKeymap(uint32_t format, int fd, uint32_t size) {
+  MOZ_LOG(gKeyLog, LogLevel::Info,
+          ("KeymapWrapper::HandleKeymap() format %d fd %d size %d", format, fd,
+           size));
   KeymapWrapper::ResetKeyboard();
 
   if (format != WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeymapWrapper::HandleKeymap(): format is not "
+             "WL_KEYBOARD_KEYMAP_FORMAT_XKB_V1!"));
     close(fd);
     return;
   }
 
-  char* mapString = (char*)mmap(NULL, size, PROT_READ, MAP_SHARED, fd, 0);
+  char* mapString = (char*)mmap(NULL, size, PROT_READ, MAP_PRIVATE, fd, 0);
   if (mapString == MAP_FAILED) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeymapWrapper::HandleKeymap(): failed to allocate shm!"));
     close(fd);
     return;
   }
 
   struct xkb_context* xkb_context = xkb_context_new(XKB_CONTEXT_NO_FLAGS);
+  if (!xkb_context) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeymapWrapper::HandleKeymap(): failed to get xkb_context!"));
+    close(fd);
+    return;
+  }
+
   struct xkb_keymap* keymap = xkb_keymap_new_from_string(
       xkb_context, mapString, XKB_KEYMAP_FORMAT_TEXT_V1,
       XKB_KEYMAP_COMPILE_NO_FLAGS);
@@ -714,7 +728,9 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
   close(fd);
 
   if (!keymap) {
-    NS_WARNING("keyboard_handle_keymap(): Failed to compile keymap!\n");
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeymapWrapper::HandleKeymap(): Failed to compile keymap!"));
+    xkb_context_unref(xkb_context);
     return;
   }
 
@@ -724,55 +740,16 @@ static void keyboard_handle_keymap(void* data, struct wl_keyboard* wl_keyboard,
 
   xkb_context_unref(xkb_context);
 }
-
-static void keyboard_handle_enter(void* data, struct wl_keyboard* keyboard,
-                                  uint32_t serial, struct wl_surface* surface,
-                                  struct wl_array* keys) {
-  KeymapWrapper::SetFocusIn(surface, serial);
-}
-
-static void keyboard_handle_leave(void* data, struct wl_keyboard* keyboard,
-                                  uint32_t serial, struct wl_surface* surface) {
-  KeymapWrapper::SetFocusOut(surface);
-}
-
-static void keyboard_handle_key(void* data, struct wl_keyboard* keyboard,
-                                uint32_t serial, uint32_t time, uint32_t key,
-                                uint32_t state) {}
-static void keyboard_handle_modifiers(void* data, struct wl_keyboard* keyboard,
-                                      uint32_t serial, uint32_t mods_depressed,
-                                      uint32_t mods_latched,
-                                      uint32_t mods_locked, uint32_t group) {}
-static void keyboard_handle_repeat_info(void* data,
-                                        struct wl_keyboard* keyboard,
-                                        int32_t rate, int32_t delay) {}
-
-static const struct wl_keyboard_listener keyboard_listener = {
-    keyboard_handle_keymap,    keyboard_handle_enter,
-    keyboard_handle_leave,     keyboard_handle_key,
-    keyboard_handle_modifiers, keyboard_handle_repeat_info};
-
-static void seat_handle_capabilities(void* data, struct wl_seat* seat,
-                                     unsigned int caps) {
-  wl_keyboard* keyboard = KeymapWrapper::GetKeyboard();
-  if ((caps & WL_SEAT_CAPABILITY_KEYBOARD) && !keyboard) {
-    keyboard = wl_seat_get_keyboard(seat);
-    wl_keyboard_add_listener(keyboard, &keyboard_listener, nullptr);
-    KeymapWrapper::SetKeyboard(keyboard);
-  } else if (!(caps & WL_SEAT_CAPABILITY_KEYBOARD) && keyboard) {
-    KeymapWrapper::ClearKeyboard();
-  }
-}
-
-static const struct wl_seat_listener seat_listener = {
-    seat_handle_capabilities,
-};
-
 #endif
 
 KeymapWrapper::~KeymapWrapper() {
 #ifdef MOZ_X11
   gdk_window_remove_filter(nullptr, FilterEvents, this);
+#endif
+#ifdef MOZ_WAYLAND
+  if (mXkbKeymap) {
+    xkb_keymap_unref(mXkbKeymap);
+  }
 #endif
   if (mOnKeysChangedSignalHandle) {
     g_signal_handler_disconnect(mGdkKeymap, mOnKeysChangedSignalHandle);
@@ -897,6 +874,87 @@ GdkFilterReturn KeymapWrapper::FilterEvents(GdkXEvent* aXEvent,
   }
 
   return GDK_FILTER_CONTINUE;
+}
+#endif
+
+#ifdef MOZ_WAYLAND
+// static
+void KeymapWrapper::KeyboardHandlerForWayland(uint32_t aSerial,
+                                              uint32_t aHardwareKeycode,
+                                              uint32_t aState) {
+  KeymapWrapper* keymapWrapper = GetInstance();
+  if (!keymapWrapper->IsAutoRepeatableKey(aHardwareKeycode)) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeyboardHandlerForWayland(aSerial=%u, aHardwareKeycode=0x%08X, "
+             "aState=%s), no repeat key",
+             aSerial, aHardwareKeycode,
+             aState == WL_KEYBOARD_KEY_STATE_PRESSED
+                 ? "WL_KEYBOARD_KEY_STATE_PRESSED"
+                 : "WL_KEYBOARD_KEY_STATE_RELEASED"));
+    return;
+  }
+
+  if (aState == WL_KEYBOARD_KEY_STATE_PRESSED) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeyboardHandlerForWayland(aSerial=%u, aHardwareKeycode=0x%08X, "
+             "aState=WL_KEYBOARD_KEY_STATE_PRESSED), first key pressed",
+             aSerial, aHardwareKeycode));
+
+    sLastRepeatableSerial = aSerial;
+    sLastRepeatableHardwareKeyCode = aHardwareKeycode;
+    sRepeatState = FIRST_PRESS;
+
+    // This runnable will be run after GDK's key event.
+    //
+    // Next key press of GDK will be after repeat's delay ms.
+    // But event time in next key press wonn't updated.
+    //
+    // The delay's default is 400ms in GTK/wayland. Even if we can get this
+    // information from repeat_info, if we wait for this time, it is too late.
+    // We guess that 10ms will be enough durration to set repeat state.
+
+    NS_DelayedDispatchToCurrentThread(
+        NS_NewRunnableFunction(
+            __func__,
+            [aSerial] {
+              if (sLastRepeatableSerial != aSerial) {
+                // We already receive newer key event. Don't set repeat state.
+                return;
+              }
+
+              MOZ_LOG(gKeyLog, LogLevel::Info,
+                      ("KeyboardHandlerForWayland(aSerial=%u, "
+                       "aState=WL_KEYBOARD_KEY_STATE_PRESSED), repeating",
+                       aSerial));
+              sRepeatState = REPEATING;
+            }),
+        10);
+    return;
+  }
+
+  if (sLastRepeatableHardwareKeyCode != aHardwareKeycode) {
+    MOZ_LOG(gKeyLog, LogLevel::Info,
+            ("KeyboardHandlerForWayland(aSerial=%u, aHardwareKeycode=0x%08X "
+             "aState=WL_KEYBOARD_KEY_STATE_RELEASED), released key isn't "
+             "matched",
+             aSerial, aHardwareKeycode));
+    return;
+  }
+
+  MOZ_LOG(gKeyLog, LogLevel::Info,
+          ("KeyboardHandlerForWayland(aSerial=%u, aHardwareKeycode=0x%08X"
+           "aState=WL_KEYBOARD_KEY_STATE_RELEASED), not pressed",
+           aSerial, aHardwareKeycode));
+
+  sLastRepeatableSerial = aSerial;
+  sRepeatState = NOT_PRESSED;
+}
+
+void KeymapWrapper::SetKeymap(xkb_keymap* aKeymap) {
+  if (mXkbKeymap) {
+    xkb_keymap_unref(mXkbKeymap);
+  }
+  mXkbKeymap = xkb_keymap_ref(aKeymap);
 }
 #endif
 
@@ -2075,15 +2133,30 @@ bool KeymapWrapper::IsLatinGroup(guint8 aGroup) {
 }
 
 bool KeymapWrapper::IsAutoRepeatableKey(guint aHardwareKeyCode) {
+  GdkDisplay* gdkDisplay = gdk_display_get_default();
 #ifdef MOZ_X11
-  uint8_t indexOfArray = aHardwareKeyCode / 8;
-  MOZ_ASSERT(indexOfArray < ArrayLength(mKeyboardState.auto_repeats),
-             "invalid index");
-  char bitMask = 1 << (aHardwareKeyCode % 8);
-  return (mKeyboardState.auto_repeats[indexOfArray] & bitMask) != 0;
-#else
-  return false;
+  if (GdkIsX11Display(gdkDisplay)) {
+    uint8_t indexOfArray = aHardwareKeyCode / 8;
+    MOZ_ASSERT(indexOfArray < std::size(mKeyboardState.auto_repeats),
+               "invalid index");
+    char bitMask = 1 << (aHardwareKeyCode % 8);
+    return (mKeyboardState.auto_repeats[indexOfArray] & bitMask) != 0;
+  }
 #endif
+#ifdef MOZ_WAYLAND
+  if (GdkIsWaylandDisplay(gdkDisplay)) {
+    if (MOZ_UNLIKELY(!mXkbKeymap)) {
+#  ifdef DEBUG
+      static bool sWarned = false;
+      NS_WARNING_ASSERTION(sWarned, "no keymap!");
+      sWarned = true;
+#  endif
+      return false;
+    }
+    return !!xkb_keymap_key_repeats(mXkbKeymap, aHardwareKeyCode);
+  }
+#endif
+  return false;
 }
 
 /* static */
@@ -2688,6 +2761,8 @@ void KeymapWrapper::SetFocusOut(wl_surface* aFocusSurface) {
 
   keymapWrapper->mFocusSurface = nullptr;
   keymapWrapper->mFocusSerial = 0;
+
+  sRepeatState = NOT_PRESSED;
 }
 
 void KeymapWrapper::GetFocusInfo(wl_surface** aFocusSurface,
@@ -2697,32 +2772,11 @@ void KeymapWrapper::GetFocusInfo(wl_surface** aFocusSurface,
   *aFocusSerial = keymapWrapper->mFocusSerial;
 }
 
-void KeymapWrapper::SetSeat(wl_seat* aSeat, int aId) {
-  sSeat = aSeat;
-  sSeatID = aId;
-  wl_seat_add_listener(aSeat, &seat_listener, nullptr);
-}
-
-void KeymapWrapper::ClearSeat(int aId) {
-  if (sSeatID == aId) {
-    ClearKeyboard();
-    sSeat = nullptr;
-    sSeatID = -1;
-  }
-}
-
-wl_seat* KeymapWrapper::GetSeat() { return sSeat; }
-
-void KeymapWrapper::SetKeyboard(wl_keyboard* aKeyboard) {
-  sKeyboard = aKeyboard;
-}
-
-wl_keyboard* KeymapWrapper::GetKeyboard() { return sKeyboard; }
-
-void KeymapWrapper::ClearKeyboard() {
-  if (sKeyboard) {
-    wl_keyboard_destroy(sKeyboard);
-    sKeyboard = nullptr;
+void KeymapWrapper::ClearKeymap() {
+  KeymapWrapper* keymapWrapper = KeymapWrapper::GetInstance();
+  if (keymapWrapper->mXkbKeymap) {
+    xkb_keymap_unref(keymapWrapper->mXkbKeymap);
+    keymapWrapper->mXkbKeymap = nullptr;
   }
 }
 #endif

@@ -12,11 +12,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <string>
 #include <vector>
 
-#include "absl/strings/match.h"
 #include "absl/strings/string_view.h"
 #include "api/units/time_delta.h"
 #include "logging/rtc_event_log/rtc_event_log_parser.h"
@@ -31,8 +31,6 @@
 #else
 #include "rtc_tools/rtc_event_log_visualizer/proto/chart.pb.h"
 #endif
-
-using webrtc::PacketDirection;
 
 namespace {
 std::vector<std::string> StrSplit(const std::string& s,

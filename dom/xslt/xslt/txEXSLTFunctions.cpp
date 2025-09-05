@@ -73,11 +73,7 @@ static nsresult convertRtfToNode(txIEvalContext* aContext,
   NS_ENSURE_SUCCESS(rv, rv);
 
   // The txResultTreeFragment will own this.
-  const txXPathNode* node =
-      txXPathNativeNode::createXPathNode(domFragment, true);
-  NS_ENSURE_TRUE(node, NS_ERROR_OUT_OF_MEMORY);
-
-  aRtf->setNode(node);
+  aRtf->setNode(new txXPathNode(domFragment));
 
   return NS_OK;
 }
@@ -95,8 +91,7 @@ static nsresult createTextNode(txIEvalContext* aContext, nsString& aValue,
   nsresult rv = text->SetText(aValue, false);
   NS_ENSURE_SUCCESS(rv, rv);
 
-  *aResult = txXPathNativeNode::createXPathNode(text, true);
-  NS_ENSURE_TRUE(*aResult, NS_ERROR_OUT_OF_MEMORY);
+  *aResult = new txXPathNode(text);
 
   return NS_OK;
 }
@@ -126,11 +121,10 @@ static nsresult createAndAddToResult(nsAtom* aName, const nsAString& aValue,
     return error.StealNSResult();
   }
 
-  UniquePtr<txXPathNode> xpathNode(
-      txXPathNativeNode::createXPathNode(elem, true));
+  Maybe<txXPathNode> xpathNode(txXPathNativeNode::createXPathNode(elem));
   NS_ENSURE_TRUE(xpathNode, NS_ERROR_OUT_OF_MEMORY);
 
-  aResultSet->append(*xpathNode);
+  aResultSet->append(xpathNode.extract());
 
   return NS_OK;
 }
@@ -590,7 +584,22 @@ nsresult txEXSLTFunctionCall::evaluate(txIEvalContext* aContext,
       // http://exslt.org/date/functions/date-time/
 
       PRExplodedTime prtime;
-      PR_ExplodeTime(PR_Now(), PR_LocalTimeParameters, &prtime);
+      Document* sourceDoc = getSourceDocument(aContext);
+      NS_ENSURE_STATE(sourceDoc);
+
+      PRTimeParamFn timezone =
+          sourceDoc->ShouldResistFingerprinting(RFPTarget::JSDateTimeUTC)
+              ? PR_GMTParameters
+              : PR_LocalTimeParameters;
+
+      PRTime time =
+          sourceDoc->ShouldResistFingerprinting(RFPTarget::ReduceTimerPrecision)
+              ? (PRTime)nsRFPService::ReduceTimePrecisionAsSecs(
+                    (double)PR_Now() / PR_USEC_PER_SEC, 0,
+                    RTPCallerType::ResistFingerprinting) *
+                    PR_USEC_PER_SEC
+              : PR_Now();
+      PR_ExplodeTime(time, timezone, &prtime);
 
       int32_t offset =
           (prtime.tm_params.tp_gmt_offset + prtime.tm_params.tp_dst_offset) /
@@ -634,7 +643,7 @@ Expr::ResultType txEXSLTFunctionCall::getReturnType() {
 
 bool txEXSLTFunctionCall::isSensitiveTo(ContextSensitivity aContext) {
   if (mType == txEXSLTType::NODE_SET || mType == txEXSLTType::SPLIT ||
-      mType == txEXSLTType::TOKENIZE) {
+      mType == txEXSLTType::TOKENIZE || mType == txEXSLTType::DATE_TIME) {
     return (aContext & PRIVATE_CONTEXT) || argsSensitiveTo(aContext);
   }
   return argsSensitiveTo(aContext);
@@ -690,8 +699,7 @@ nsresult txEXSLTRegExFunctionCall::evaluate(txIEvalContext* aContext,
       UniquePtr<txXPathNode> node;
       for (nsIContent* result = docFrag->GetFirstChild(); result;
            result = result->GetNextSibling()) {
-        node = WrapUnique(txXPathNativeNode::createXPathNode(result, true));
-        rv = resultSet->add(*node);
+        rv = resultSet->add(txXPathNode(result));
         NS_ENSURE_SUCCESS(rv, rv);
       }
 

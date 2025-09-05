@@ -9,7 +9,6 @@ the task at a higher level, using a "run" field that can be interpreted by
 run-using handlers in `taskcluster/taskgraph/transforms/run`.
 """
 
-
 import copy
 import json
 import logging
@@ -122,7 +121,9 @@ def rewrite_when_to_optimization(config, tasks):
         files_changed = when.get("files-changed")
 
         # implicitly add task config directory.
-        files_changed.append(f"{config.path}/**")
+        files_changed.append(f"{config.path}/kind.yml")
+        if task.get("task-from") and task["task-from"] != "kind.yml":
+            files_changed.append(f"{config.path}/{task['task-from']}")
 
         # "only when files changed" implies "skip if files have not changed"
         task["optimization"] = {"skip-unless-changed": files_changed}
@@ -156,43 +157,6 @@ def set_label(config, tasks):
             task["label"] = "{}-{}".format(config.kind, task["name"])
         if task.get("name"):
             del task["name"]
-        yield task
-
-
-@transforms.add
-def add_resource_monitor(config, tasks):
-    for task in tasks:
-        if task.get("attributes", {}).get("resource-monitor"):
-            worker_implementation, worker_os = worker_type_implementation(
-                config.graph_config, task["worker-type"]
-            )
-            # Normalise worker os so that linux-bitbar and similar use linux tools.
-            if worker_os:
-                worker_os = worker_os.split("-")[0]
-            if "win7" in task["worker-type"]:
-                arch = "32"
-            else:
-                arch = "64"
-            task.setdefault("fetches", {})
-            task["fetches"].setdefault("toolchain", [])
-            task["fetches"]["toolchain"].append(f"{worker_os}{arch}-resource-monitor")
-
-            if worker_implementation == "docker-worker":
-                artifact_source = "/builds/worker/monitoring/resource-monitor.json"
-            else:
-                artifact_source = "monitoring/resource-monitor.json"
-            task["worker"].setdefault("artifacts", [])
-            task["worker"]["artifacts"].append(
-                {
-                    "name": "public/monitoring/resource-monitor.json",
-                    "type": "file",
-                    "path": artifact_source,
-                }
-            )
-            # Set env for output file
-            task["worker"].setdefault("env", {})
-            task["worker"]["env"]["RESOURCE_MONITOR_OUTPUT"] = artifact_source
-
         yield task
 
 

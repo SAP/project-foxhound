@@ -1,8 +1,11 @@
 //! WGSL's automatic conversions for abstract types.
 
+use crate::front::wgsl::error::{
+    AutoConversionError, AutoConversionLeafScalarError, ConcretizationFailedError,
+};
 use crate::{Handle, Span};
 
-impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
+impl<'source> super::ExpressionContext<'source, '_, '_> {
     /// Try to use WGSL's automatic conversions to convert `expr` to `goal_ty`.
     ///
     /// If no conversions are necessary, return `expr` unchanged.
@@ -29,6 +32,15 @@ impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
         let expr_inner = expr_resolution.inner_with(types);
         let goal_inner = goal_ty.inner_with(types);
 
+        // We can only convert abstract types, so if `expr` is not abstract do not even
+        // attempt conversion. This allows the validator to catch type errors correctly
+        // rather than them being misreported as type conversion errors.
+        // If the type is an array (of an array, etc) then we must check whether the
+        // type of the innermost array's base type is abstract.
+        if !expr_inner.is_abstract(types) {
+            return Ok(expr);
+        }
+
         // If `expr` already has the requested type, we're done.
         if expr_inner.equivalent(goal_inner, types) {
             return Ok(expr);
@@ -39,15 +51,17 @@ impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
                 Some(scalars) => scalars,
                 None => {
                     let gctx = &self.module.to_ctx();
-                    let source_type = expr_resolution.to_wgsl(gctx);
-                    let dest_type = goal_ty.to_wgsl(gctx);
+                    let source_type = expr_resolution.to_wgsl(gctx).into();
+                    let dest_type = goal_ty.to_wgsl(gctx).into();
 
-                    return Err(super::Error::AutoConversion {
-                        dest_span: goal_span,
-                        dest_type,
-                        source_span: expr_span,
-                        source_type,
-                    });
+                    return Err(super::Error::AutoConversion(Box::new(
+                        AutoConversionError {
+                            dest_span: goal_span,
+                            dest_type,
+                            source_span: expr_span,
+                            source_type,
+                        },
+                    )));
                 }
             };
 
@@ -79,16 +93,16 @@ impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
 
         let make_error = || {
             let gctx = &self.module.to_ctx();
-            let source_type = expr_resolution.to_wgsl(gctx);
-            super::Error::AutoConversionLeafScalar {
+            let source_type = expr_resolution.to_wgsl(gctx).into();
+            super::Error::AutoConversionLeafScalar(Box::new(AutoConversionLeafScalarError {
                 dest_span: goal_span,
-                dest_scalar: goal_scalar.to_wgsl(),
+                dest_scalar: goal_scalar.to_wgsl().into(),
                 source_span: expr_span,
                 source_type,
-            }
+            }))
         };
 
-        let expr_scalar = match expr_inner.scalar() {
+        let expr_scalar = match expr_inner.automatically_convertible_scalar(&self.module.types) {
             Some(scalar) => scalar,
             None => return Err(make_error()),
         };
@@ -116,7 +130,7 @@ impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
         if let crate::TypeInner::Array { .. } = *expr_inner {
             self.as_const_evaluator()
                 .cast_array(expr, goal_scalar, expr_span)
-                .map_err(|err| super::Error::ConstantEvaluatorError(err, expr_span))
+                .map_err(|err| super::Error::ConstantEvaluatorError(err.into(), expr_span))
         } else {
             let cast = crate::Expression::As {
                 expr,
@@ -254,12 +268,12 @@ impl<'source, 'temp, 'out> super::ExpressionContext<'source, 'temp, 'out> {
                         // it has one. Also, avoid holding the borrow of `inner`
                         // across the call to `cast_array`.
                         let expr_type = &self.typifier()[expr];
-                        super::Error::ConcretizationFailed {
+                        super::Error::ConcretizationFailed(Box::new(ConcretizationFailedError {
                             expr_span,
-                            expr_type: expr_type.to_wgsl(&self.module.to_ctx()),
-                            scalar: concretized.to_wgsl(),
+                            expr_type: expr_type.to_wgsl(&self.module.to_ctx()).into(),
+                            scalar: concretized.to_wgsl().into(),
                             inner: err,
-                        }
+                        }))
                     })?;
             }
         }
@@ -424,6 +438,32 @@ impl crate::TypeInner {
             | Ti::Pointer { .. }
             | Ti::ValuePointer { .. }
             | Ti::Struct { .. }
+            | Ti::Image { .. }
+            | Ti::Sampler { .. }
+            | Ti::AccelerationStructure
+            | Ti::RayQuery
+            | Ti::BindingArray { .. } => None,
+        }
+    }
+
+    /// Return the leaf scalar type of `pointer`.
+    ///
+    /// `pointer` must be a `TypeInner` representing a pointer type.
+    pub fn pointer_automatically_convertible_scalar(
+        &self,
+        types: &crate::UniqueArena<crate::Type>,
+    ) -> Option<crate::Scalar> {
+        use crate::TypeInner as Ti;
+        match *self {
+            Ti::Scalar(scalar) | Ti::Vector { scalar, .. } | Ti::Matrix { scalar, .. } => {
+                Some(scalar)
+            }
+            Ti::Atomic(_) => None,
+            Ti::Pointer { base, .. } | Ti::Array { base, .. } => {
+                types[base].inner.automatically_convertible_scalar(types)
+            }
+            Ti::ValuePointer { scalar, .. } => Some(scalar),
+            Ti::Struct { .. }
             | Ti::Image { .. }
             | Ti::Sampler { .. }
             | Ti::AccelerationStructure

@@ -17,6 +17,7 @@ const NON_MATCHING_ROLLOUT = Object.freeze(
   ExperimentFakes.rollout("non-matching-rollout", {
     branch: {
       slug: "slug",
+      ratio: 1,
       features: [
         {
           featureId: "aboutwelcome",
@@ -30,6 +31,7 @@ const MATCHING_ROLLOUT = Object.freeze(
   ExperimentFakes.rollout("matching-rollout", {
     branch: {
       slug: "slug",
+      ratio: 1,
       features: [
         {
           featureId: "aboutwelcome",
@@ -63,7 +65,7 @@ async function setupForExperimentFeature() {
 
   await manager.onStartup();
 
-  sandbox.stub(ExperimentAPI, "_store").get(() => manager.store);
+  sandbox.stub(ExperimentAPI, "_manager").get(() => manager);
 
   return { sandbox, manager };
 }
@@ -157,6 +159,7 @@ add_task(async function test_features_over_feature() {
     ExperimentFakes.rollout("matching-rollout", {
       branch: {
         slug: "slug",
+        ratio: 1,
         feature: {
           featureId: "aboutwelcome",
           value: { enabled: false },
@@ -174,6 +177,7 @@ add_task(async function test_features_over_feature() {
     ExperimentFakes.rollout("matching-rollout", {
       branch: {
         slug: "slug",
+        ratio: 1,
         feature: {
           featureId: "aboutwelcome",
           value: { enabled: false },
@@ -275,6 +279,7 @@ add_task(async function remote_isEarlyStartup_config() {
   let rollout = ExperimentFakes.rollout("password-autocomplete", {
     branch: {
       slug: "remote-config-isEarlyStartup",
+      ratio: 1,
       features: [
         {
           featureId: "password-autocomplete",

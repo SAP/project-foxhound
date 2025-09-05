@@ -4,8 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(clippy::upper_case_acronyms)]
-
 use std::{
     ops::Deref,
     os::raw::c_void,
@@ -235,7 +233,7 @@ mod test {
         init();
         let base = get_base();
         let delta_micros = PRTime::try_from(DELTA.as_micros()).unwrap();
-        println!("{} - {}", base.prtime, delta_micros);
+        println!("{} - {delta_micros}", base.prtime);
         let t = Time::try_from(base.prtime - delta_micros).unwrap();
         assert_eq!(Instant::from(t) + DELTA, base.instant);
     }

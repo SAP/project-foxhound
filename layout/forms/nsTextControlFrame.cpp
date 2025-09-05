@@ -201,18 +201,14 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(gfxContext* aRenderingContext,
                         nsPresContext::CSSPixelsToAppUnits(4));
     internalPadding = RoundToMultiple(internalPadding, AppUnitsPerCSSPixel());
     intrinsicSize.ISize(aWM) += internalPadding;
-  } else if (PresContext()->CompatibilityMode() ==
-             eCompatibility_FullStandards) {
-    // This is to account for the anonymous <br> having a 1 twip width
-    // in Full Standards mode, see BRFrame::Reflow and bug 228752.
-    intrinsicSize.ISize(aWM) += 1;
   }
 
   // Increment width with cols * letter-spacing.
   {
-    const StyleLength& letterSpacing = StyleText()->mLetterSpacing;
-    if (!letterSpacing.IsZero()) {
-      intrinsicSize.ISize(aWM) += cols * letterSpacing.ToAppUnits();
+    const auto& letterSpacing = StyleText()->mLetterSpacing;
+    if (!letterSpacing.IsDefinitelyZero()) {
+      intrinsicSize.ISize(aWM) +=
+          cols * letterSpacing.Resolve(fontMet->EmHeight());
     }
   }
 
@@ -249,8 +245,8 @@ LogicalSize nsTextControlFrame::CalcIntrinsicSize(gfxContext* aRenderingContext,
   // Add the inline size of the button if our char size is explicit, so as to
   // make sure to make enough space for it.
   if (maybeCols.isSome() && mButton && mButton->GetPrimaryFrame()) {
-    intrinsicSize.ISize(aWM) +=
-        mButton->GetPrimaryFrame()->GetMinISize(aRenderingContext);
+    const IntrinsicSizeInput input(aRenderingContext, Nothing(), Nothing());
+    intrinsicSize.ISize(aWM) += mButton->GetPrimaryFrame()->GetMinISize(input);
   }
 
   return intrinsicSize;
@@ -269,7 +265,9 @@ nsresult nsTextControlFrame::EnsureEditorInitialized() {
   // never get used.  So, now this method is being called lazily only
   // when we actually need an editor.
 
-  if (mEditorHasBeenInitialized) return NS_OK;
+  if (mEditorHasBeenInitialized) {
+    return NS_OK;
+  }
 
   Document* doc = mContent->GetComposedDoc();
   NS_ENSURE_TRUE(doc, NS_ERROR_FAILURE);
@@ -559,12 +557,12 @@ void nsTextControlFrame::AppendAnonymousContentTo(
   aElements.AppendElement(mRootNode);
 }
 
-nscoord nsTextControlFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsTextControlFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                            IntrinsicISizeType aType) {
   // Our min inline size is just our preferred inline-size if we have auto
   // inline size.
   WritingMode wm = GetWritingMode();
-  return CalcIntrinsicSize(aContext, wm).ISize(wm);
+  return CalcIntrinsicSize(aInput.mContext, wm).ISize(wm);
 }
 
 Maybe<nscoord> nsTextControlFrame::ComputeBaseline(
@@ -822,19 +820,18 @@ nsresult nsTextControlFrame::SetSelectionInternal(
 
 void nsTextControlFrame::ScrollSelectionIntoViewAsync(
     ScrollAncestors aScrollAncestors) {
-  nsISelectionController* selCon = GetSelectionController();
+  nsCOMPtr<nsISelectionController> selCon = GetSelectionController();
   if (!selCon) {
     return;
   }
 
-  int16_t flags = aScrollAncestors == ScrollAncestors::Yes
-                      ? 0
-                      : nsISelectionController::SCROLL_FIRST_ANCESTOR_ONLY;
-
   // Scroll the selection into view (see bug 231389).
+  const auto flags = aScrollAncestors == ScrollAncestors::Yes
+                         ? ScrollFlags::None
+                         : ScrollFlags::ScrollFirstAncestorOnly;
   selCon->ScrollSelectionIntoView(
-      nsISelectionController::SELECTION_NORMAL,
-      nsISelectionController::SELECTION_FOCUS_REGION, flags);
+      SelectionType::eNormal, nsISelectionController::SELECTION_FOCUS_REGION,
+      ScrollAxis(), ScrollAxis(), flags);
 }
 
 nsresult nsTextControlFrame::SelectAll() {
@@ -862,7 +859,9 @@ nsresult nsTextControlFrame::SetSelectionEndPoints(
     uint32_t aSelStart, uint32_t aSelEnd, SelectionDirection aDirection) {
   NS_ASSERTION(aSelStart <= aSelEnd, "Invalid selection offsets!");
 
-  if (aSelStart > aSelEnd) return NS_ERROR_FAILURE;
+  if (aSelStart > aSelEnd) {
+    return NS_ERROR_FAILURE;
+  }
 
   nsCOMPtr<nsINode> startNode, endNode;
   uint32_t startOffset, endOffset;
@@ -969,11 +968,11 @@ nsresult nsTextControlFrame::AttributeChanged(int32_t aNameSpaceID,
 
 void nsTextControlFrame::HandleReadonlyOrDisabledChange() {
   RefPtr<TextControlElement> el = ControlElement();
-  RefPtr<TextEditor> editor = el->GetTextEditorWithoutCreation();
+  const RefPtr<TextEditor> editor = el->GetExtantTextEditor();
   if (!editor) {
     return;
   }
-  nsISelectionController* selCon = el->GetSelectionController();
+  nsISelectionController* const selCon = el->GetSelectionController();
   if (!selCon) {
     return;
   }
@@ -1176,8 +1175,8 @@ nsTextControlFrame::EditorInitializer::Run() {
       if (NS_SUCCEEDED(
               dragSession->GetSourceNode(getter_AddRefs(sourceNode))) &&
           mFrame->GetContent() == sourceNode) {
-        if (TextEditor* textEditor =
-                mFrame->ControlElement()->GetTextEditorWithoutCreation()) {
+        if (const TextEditor* const textEditor =
+                mFrame->ControlElement()->GetExtantTextEditor()) {
           if (Element* anonymousDivElement = textEditor->GetRoot()) {
             if (anonymousDivElement && anonymousDivElement->GetFirstChild()) {
               MOZ_ASSERT(anonymousDivElement->GetFirstChild()->IsText());
@@ -1194,8 +1193,8 @@ nsTextControlFrame::EditorInitializer::Run() {
     TextControlElement* textControlElement = mFrame->ControlElement();
     if (nsPresContext* presContext =
             textControlElement->GetPresContext(Element::eForComposedDoc)) {
-      if (TextEditor* textEditor =
-              textControlElement->GetTextEditorWithoutCreation()) {
+      if (const TextEditor* const textEditor =
+              textControlElement->GetExtantTextEditor()) {
         if (Element* anonymousDivElement = textEditor->GetRoot()) {
           presContext->EventStateManager()->TextControlRootAdded(
               *anonymousDivElement, *textControlElement);
@@ -1225,8 +1224,8 @@ void nsTextControlFrame::nsAnonDivObserver::ContentInserted(
   mFrame.ClearCachedValue();
 }
 
-void nsTextControlFrame::nsAnonDivObserver::ContentRemoved(
-    nsIContent* aChild, nsIContent* aPreviousSibling) {
+void nsTextControlFrame::nsAnonDivObserver::ContentWillBeRemoved(
+    nsIContent* aChild, const BatchRemovalState*) {
   mFrame.ClearCachedValue();
 }
 
@@ -1239,7 +1238,7 @@ Maybe<nscoord> nsTextControlFrame::GetNaturalBaselineBOffset(
     }
 
     if (aBaselineGroup == BaselineSharingGroup::First) {
-      return Some(std::clamp(mFirstBaseline, 0, BSize(aWM)));
+      return Some(CSSMinMax(mFirstBaseline, 0, BSize(aWM)));
     }
     // This isn't great, but the content of the root NAC isn't guaranteed
     // to be loaded, so the best we can do is the edge of the border-box.

@@ -97,6 +97,8 @@ exports.WatcherActor = class WatcherActor extends Actor {
       this._browserElement = browsingContext.embedderElement;
     }
 
+    this.watcherConnectionPrefix = conn.allocID("watcher");
+
     // Sometimes we get iframe targets before the top-level targets
     // mostly when doing bfcache navigations, lets cache the early iframes targets and
     // flush them after the top-level target is available. See Bug 1726568 for details.
@@ -151,7 +153,8 @@ exports.WatcherActor = class WatcherActor extends Actor {
     if (this.sessionContext.type == "browser-element") {
       return !this.browserElement.browsingContext;
     } else if (this.sessionContext.type == "webextension") {
-      return !BrowsingContext.get(this.sessionContext.addonBrowsingContextID);
+      // This is no obvious browsing context to target for extensions, so always consider it running
+      return false;
     } else if (this.sessionContext.type == "all") {
       return false;
     }
@@ -475,26 +478,7 @@ exports.WatcherActor = class WatcherActor extends Actor {
       return;
     }
 
-    if (this.sessionContext.type == "webextension") {
-      this._overrideResourceBrowsingContextForWebExtension(resources);
-    }
-
     this.emit(`resources-${updateType}-array`, [[resourceType, resources]]);
-  }
-
-  /**
-   * For WebExtension, we have to hack all resource's browsingContextID
-   * in order to ensure emitting them with the fixed, original browsingContextID
-   * related to the fallback document created by devtools which always exists.
-   * The target's form will always be relating to that BrowsingContext IDs (browsing context ID and inner window id).
-   * Even if the target switches internally to another document via WindowGlobalTargetActor._setWindow.
-   *
-   * @param {Array<Objects>} List of resources
-   */
-  _overrideResourceBrowsingContextForWebExtension(resources) {
-    resources.forEach(resource => {
-      resource.browsingContextID = this.sessionContext.addonBrowsingContextID;
-    });
   }
 
   /**
@@ -516,6 +500,9 @@ exports.WatcherActor = class WatcherActor extends Actor {
     // for a parent process page and lives in the parent process.
     const actors = TargetActorRegistry.getTargetActors(
       this.sessionContext,
+      // Note that we aren't using watcherConnectionPrefix as the ParentProcessTargetActor
+      // are registered in `this.conn` (i.e The connection which is bound to the client)
+      // directly and not in the DevToolsServerConnection running in the content process with `watcherConnectionPrefix`
       this.conn.prefix
     );
 
@@ -878,12 +865,8 @@ exports.WatcherActor = class WatcherActor extends Actor {
    * @param {String} newTargetUrl
    */
   async updateDomainSessionDataForServiceWorkers(newTargetUrl) {
-    let host = "";
-    // Accessing `host` can throw on some URLs with no valid host like about:home.
-    // In such scenario, reset the host to an empty string.
-    try {
-      host = new URL(newTargetUrl).host;
-    } catch (e) {}
+    // If the url could not be parsed the host defaults to an empty string.
+    const host = URL.parse(newTargetUrl)?.host ?? "";
 
     ParentProcessWatcherRegistry.addOrSetSessionDataEntry(
       this,

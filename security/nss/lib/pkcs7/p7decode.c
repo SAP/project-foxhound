@@ -542,6 +542,7 @@ sec_pkcs7_decoder_start_decrypt(SEC_PKCS7DecoderContext *p7dcx, int depth,
      * We are done with (this) bulkkey now.
      */
     PK11_FreeSymKey(bulkkey);
+    bulkkey = NULL;
 
     if (decryptobj == NULL) {
         p7dcx->error = PORT_GetError();
@@ -766,10 +767,10 @@ sec_pkcs7_decoder_notify(void *arg, PRBool before, void *dest, int depth)
              */
             if (after && dest == &(envd->encContentInfo.encContent)) {
                 /*
-             * Close out the decryption context.  We ignore any error
-             * because we are stopping anyway; the error status left
-             * behind in p7dcx will be seen by outer functions.
-             */
+                 * Close out the decryption context.  We ignore any error
+                 * because we are stopping anyway; the error status left
+                 * behind in p7dcx will be seen by outer functions.
+                 */
                 (void)sec_pkcs7_decoder_finish_decrypt(p7dcx, cinfo->poolp,
                                                        &(envd->encContentInfo));
 

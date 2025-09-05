@@ -1345,17 +1345,13 @@ Sync11Service.prototype = {
     return this._lock(
       "service.js: sync",
       this._notify("sync", JSON.stringify({ why }), async function onNotify() {
-        let histogram =
-          Services.telemetry.getHistogramById("WEAVE_START_COUNT");
-        histogram.add(1);
+        Services.telemetry.getHistogramById("WEAVE_START_COUNT").add(1);
 
         let synchronizer = new EngineSynchronizer(this);
         await synchronizer.sync(engineNamesToSync, why); // Might throw!
-
-        histogram = Services.telemetry.getHistogramById(
-          "WEAVE_COMPLETE_SUCCESS_COUNT"
-        );
-        histogram.add(1);
+        Services.telemetry
+          .getHistogramById("WEAVE_COMPLETE_SUCCESS_COUNT")
+          .add(1);
 
         // We successfully synchronized.
         // Check if the identity wants to pre-fetch a migration sentinel from
@@ -1480,9 +1476,6 @@ Sync11Service.prototype = {
    */
   async wipeServer(collections) {
     let response;
-    let histogram = Services.telemetry.getHistogramById(
-      "WEAVE_WIPE_SERVER_SUCCEEDED"
-    );
     if (!collections) {
       // Strip the trailing slash.
       let res = this.resource(this.storageURL.slice(0, -1));
@@ -1491,7 +1484,6 @@ Sync11Service.prototype = {
         response = await res.delete();
       } catch (ex) {
         this._log.debug("Failed to wipe server", ex);
-        histogram.add(false);
         throw ex;
       }
       if (response.status != 200 && response.status != 404) {
@@ -1501,10 +1493,8 @@ Sync11Service.prototype = {
             " response for " +
             this.storageURL
         );
-        histogram.add(false);
         throw response;
       }
-      histogram.add(true);
       return response.headers["x-weave-timestamp"];
     }
 
@@ -1515,7 +1505,6 @@ Sync11Service.prototype = {
         response = await this.resource(url).delete();
       } catch (ex) {
         this._log.debug("Failed to wipe '" + name + "' collection", ex);
-        histogram.add(false);
         throw ex;
       }
 
@@ -1526,7 +1515,6 @@ Sync11Service.prototype = {
             " response for " +
             url
         );
-        histogram.add(false);
         throw response;
       }
 
@@ -1534,7 +1522,6 @@ Sync11Service.prototype = {
         timestamp = response.headers["x-weave-timestamp"];
       }
     }
-    histogram.add(true);
     return timestamp;
   },
 

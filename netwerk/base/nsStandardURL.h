@@ -200,8 +200,6 @@ class nsStandardURL : public nsIFileURL,
   };
   friend class nsSegmentEncoder;
 
-  static nsresult NormalizeIPv4(const nsACString& host, nsCString& result);
-
   static nsIIDNService* GetIDNService();
 
  protected:
@@ -266,7 +264,7 @@ class nsStandardURL : public nsIFileURL,
   static bool IsValidOfBase(unsigned char c, const uint32_t base);
   nsresult NormalizeIDN(const nsACString& aHost, nsACString& aResult);
   nsresult CheckIfHostIsAscii();
-  void CoalescePath(netCoalesceFlags coalesceFlag, char* path);
+  void CoalescePath(char* path);
 
   uint32_t AppendSegmentToBuf(char*, uint32_t, StringTaint&,
                               const char*, const StringTaint&,
@@ -344,6 +342,9 @@ class nsStandardURL : public nsIFileURL,
 
   // Checks if the URL has a valid representation.
   bool IsValid();
+
+  // This value will only be updated on the main thread once.
+  static Atomic<bool, Relaxed> gInitialized;
 
   // mSpec contains the normalized version of the URL spec (UTF-8 encoded).
   nsCString mSpec;
@@ -550,12 +551,12 @@ class nsStandardURL : public nsIFileURL,
   friend BaseURIMutator<nsStandardURL>;
 };
 
-#define NS_THIS_STANDARDURL_IMPL_CID                 \
-  { /* b8e3e97b-1ccd-4b45-af5a-79596770f5d7 */       \
-    0xb8e3e97b, 0x1ccd, 0x4b45, {                    \
-      0xaf, 0x5a, 0x79, 0x59, 0x67, 0x70, 0xf5, 0xd7 \
-    }                                                \
-  }
+#define NS_THIS_STANDARDURL_IMPL_CID          \
+  {/* b8e3e97b-1ccd-4b45-af5a-79596770f5d7 */ \
+   0xb8e3e97b,                                \
+   0x1ccd,                                    \
+   0x4b45,                                    \
+   {0xaf, 0x5a, 0x79, 0x59, 0x67, 0x70, 0xf5, 0xd7}}
 
 //-----------------------------------------------------------------------------
 // Dependent substring getters

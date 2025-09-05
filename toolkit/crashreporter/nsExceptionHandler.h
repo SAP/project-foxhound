@@ -12,31 +12,25 @@
 #ifndef nsExceptionHandler_h__
 #define nsExceptionHandler_h__
 
-#include "mozilla/Assertions.h"
 #include "mozilla/EnumeratedArray.h"
 #include "mozilla/Maybe.h"
+#if !defined(XP_WIN)
+#  include "mozilla/UniquePtrExtensions.h"  // For UniqueFileHandle
+#endif                                      // XP_WIN
 
 #include "CrashAnnotations.h"
 
 #include "nsError.h"
 #include "nsString.h"
 #include "nsXULAppAPI.h"
-#include "prio.h"
 #include <stddef.h>
 #include <stdint.h>
 
 #if defined(XP_WIN)
-#  ifdef WIN32_LEAN_AND_MEAN
-#    undef WIN32_LEAN_AND_MEAN
-#  endif
-#  include <windows.h>
-#endif
-
-#if defined(XP_MACOSX)
+#  include <handleapi.h>
+#elif defined(XP_MACOSX)
 #  include <mach/mach.h>
-#endif
-
-#if defined(XP_LINUX)
+#elif defined(XP_LINUX)
 #  include <signal.h>
 #endif
 
@@ -279,33 +273,17 @@ bool CreateMinidumpsAndPair(ProcessHandle aTargetPid,
                             nsIFile** aTargetDumpOut);
 
 #if defined(XP_WIN) || defined(XP_MACOSX)
-// Parent-side API for children
-const char* GetChildNotificationPipe();
-
+using CrashPipeType = const char*;
 #else
+using CrashPipeType = mozilla::UniqueFileHandle;
+#endif
+
 // Parent-side API for children
-
-// Set the outparams for crash reporter server's fd (|childCrashFd|)
-// and the magic fd number it should be remapped to
-// (|childCrashRemapFd|) before exec() in the child process.
-// |SetRemoteExceptionHandler()| in the child process expects to find
-// the server at |childCrashRemapFd|.  Return true if successful.
-//
-// If crash reporting is disabled, both outparams will be set to -1
-// and |true| will be returned.
-bool CreateNotificationPipeForChild(int* childCrashFd, int* childCrashRemapFd);
-
-#endif  // XP_WIN
+CrashPipeType GetChildNotificationPipe();
 
 // Child-side API
-bool SetRemoteExceptionHandler(const char* aCrashPipe = nullptr);
+bool SetRemoteExceptionHandler(CrashPipeType aCrashPipe);
 bool UnsetRemoteExceptionHandler(bool wasSet = true);
-
-#if defined(MOZ_WIDGET_ANDROID)
-// Android creates child process as services so we must explicitly set
-// the handle for the pipe since it can't get remapped to a default value.
-void SetNotificationPipeForChild(FileHandle childCrashFd);
-#endif
 
 }  // namespace CrashReporter
 

@@ -47,6 +47,7 @@ perf:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1834774
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862939
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892231
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923894
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1759744#c5
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1799727#c4
@@ -66,6 +67,11 @@ perf:
       dns_lookup_time:
         description:
           "Time taken to perform dns lookup of the top level document, in ms."
+        type: quantity
+        unit: ms
+      time_to_request_start:
+        description:
+          "Time between requestStart and navigationStart, in ms."
         type: quantity
         unit: ms
       response_time:
@@ -119,6 +125,13 @@ perf:
         description:
           "TRR domain used."
         type: string
+      features:
+        description:
+          "Bitfield of features in use within this document:
+            1 - fetchpriority applied to images
+            2 - assistive technology in use"
+        type: quantity
+        unit: integer
     send_in_pings:
       - pageload
 
@@ -259,67 +272,6 @@ performance.pageload:
         building and does not include rasterization or compositing of that paint.
         This is collected only on page load where the main document uses HTTP3.
         A "priority" header has not been received.
-
-  eh_fcp_preload_with_eh: &eh_fcp_preload_with_eh
-    type: timing_distribution
-    time_unit: millisecond
-    description: >
-        The time between navigationStart and the first contentful paint of
-        a foreground http or https root content document, in milliseconds.
-        The contentful paint timestamp is taken during display list
-        building and does not include rasterization or compositing of that paint.
-        This is collected only on page load where the main document uses
-        or supports Early Hints preload.
-    bugs:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1808323
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898245
-    data_reviews:
-      - https://bugzilla.mozilla.org/show_bug.cgi?id=1898245
-    notification_emails:
-      - necko@mozilla.com
-      - kershaw@mozilla.com
-      - perf-telemetry-alerts@mozilla.com
-    expires: never
-
-  eh_fcp_preload_without_eh:
-    <<: *eh_fcp_preload_with_eh
-    description: >
-        The time between navigationStart and the first contentful paint of
-        a foreground http or https root content document, in milliseconds.
-        The contentful paint timestamp is taken during display list
-        building and does not include rasterization or compositing of that paint.
-        This is collected only on page load where the main document uses
-        preload without Early Hints.
-
-  eh_fcp_preconnect:
-    <<: *eh_fcp_preload_with_eh
-    description: >
-        The time between navigationStart and the first contentful paint of
-        a foreground http or https root content document, in milliseconds.
-        The contentful paint timestamp is taken during display list
-        building and does not include rasterization or compositing of that paint.
-        This is collected only on page load where the main document uses
-        preconnect but did not use Early Hints preload.
-
-  eh_fcp_preconnect_preload_with_eh:
-    <<: *eh_fcp_preload_with_eh
-    description: >
-        The time between navigationStart and the first contentful paint of
-        a foreground http or https root content document, in milliseconds.
-        The contentful paint timestamp is taken during display list
-        building and does not include rasterization or compositing of that paint.
-        This is collected on early page load where the main document uses
-        preconnect and supports Early Hints preload.
-
-  eh_fcp_preconnect_preload_without_eh:
-    <<: *eh_fcp_preload_with_eh
-    description: >
-        The time between navigationStart and the first contentful paint of
-        a foreground http or https root content document, in milliseconds.
-        The contentful paint timestamp is taken during display list
-        building and does not include rasterization or compositing of that paint.
-        This is collected on early page load where the preconnected main document uses
-        preconnect and preload without Early Hints.
 
 performance.time:
   dom_interactive:
@@ -587,3 +539,278 @@ javascript.pageload:
       - dpalmeiro@mozilla.com
       - perf-telemetry-alerts@mozilla.com
     expires: never
+
+security:
+  fission_principals:
+    type: event
+    description: >
+      When running with Fission, we received an unexpected principal from
+      the content process. Expected values for this telemetry event are
+      the method names in ContentParent that received the unexpected
+      principal.
+      This event was generated to correspond to the Legacy Telemetry event
+      security.fissionPrincipals#contentParent.
+    bugs:
+      - https://bugzil.la/1687891
+    data_reviews:
+      - https://bugzil.la/1687891
+    notification_emails:
+      - tom@mozilla.com
+      - ckerschb@mozilla.com
+    expires: never
+    extra_keys:
+      value:
+        description: >
+          The `value` of the event. Mirrors to the Legacy Telemetry
+          event's `value` parameter.
+        type: string
+      principalType:
+        description: >
+          The type of principal that was received. Expected values for this field are
+            NullPtr
+            SystemPrincipal
+            ExpandedPrincipal
+            ContentPrincipal
+            Unknown
+
+        type: string
+      scheme:
+        description: >
+          If the principal is a ContentPrincipal, we also collect the scheme
+        type: string
+    telemetry_mirror: Security_Fissionprincipals_Contentparent
+
+mathml:
+  doc_count:
+    type: counter
+    description: >
+      The number of documents that contained enabled MathML elements.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar mathml.doc_count.
+    bugs:
+      - https://bugzil.la/1362187
+      - https://bugzil.la/1538985
+      - https://bugzil.la/1590350
+    data_reviews:
+      - https://bugzil.la/1362187
+      - https://bugzil.la/1538985
+      - https://bugzil.la/1590350
+    notification_emails:
+      - emilio@mozilla.com
+      - fred.wang@free.fr
+      - dev-tech-layout@lists.mozilla.org
+    expires: never
+    telemetry_mirror: MATHML_DOC_COUNT
+
+dom.contentprocess:
+  build_id_mismatch:
+    type: counter
+    description: >
+      The number of times the about:restartrequired page appeared due to a
+      buildID mismatch between the parent and the content processes.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.contentprocess.buildID_mismatch.
+    bugs:
+      - https://bugzil.la/1366808
+    data_reviews:
+      - https://bugzil.la/1366808
+    notification_emails:
+      - spohl@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_CONTENTPROCESS_BUILDID_MISMATCH
+
+  build_id_mismatch_false_positive:
+    type: counter
+    description: >
+      The number of times a process crashed early but we could verify it
+      was not because of buildID mismatch between the parent and the
+      content processes.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.contentprocess.buildID_mismatch_false_positive.
+    bugs:
+      - https://bugzil.la/1651133
+      - https://bugzil.la/1730045
+      - https://bugzil.la/1754658
+      - https://bugzil.la/1777404
+      - https://bugzil.la/1817104
+      - https://bugzil.la/1866197
+      - https://bugzil.la/1928259
+    data_reviews:
+      - https://bugzil.la/1651133
+      - https://bugzil.la/1730045
+      - https://bugzil.la/1754658
+      - https://bugzil.la/1777404
+      - https://bugzil.la/1817104
+      - https://bugzil.la/1866197
+      - https://bugzil.la/1928259
+    notification_emails:
+      - alissy@mozilla.com
+    expires: 150
+    telemetry_mirror: DOM_CONTENTPROCESS_BUILDID_MISMATCH_FALSE_POSITIVE
+
+  os_priority_lowered:
+    type: counter
+    description: >
+      The number of times a content process has had its OS priority
+      lowered due to only containing background tabs without audible media
+      playing.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.contentprocess.os_priority_lowered.
+    bugs:
+      - https://bugzil.la/1538987
+    data_reviews:
+      - https://bugzil.la/1538987
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_CONTENTPROCESS_OS_PRIORITY_LOWERED
+
+  os_priority_raised:
+    type: counter
+    description: >
+      The number of times a content process has had its OS priority raised
+      due to containing at least one foregrounded tab, or a tab with
+      audible media has started playing in it.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.contentprocess.os_priority_raised.
+    bugs:
+      - https://bugzil.la/1538987
+    data_reviews:
+      - https://bugzil.la/1538987
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_CONTENTPROCESS_OS_PRIORITY_RAISED
+
+  os_priority_change_considered:
+    type: counter
+    description: >
+      The number of times we've had the opportunity to change content
+      process priority due to a tab switch or a tab being opened.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.contentprocess.os_priority_change_considered.
+    bugs:
+      - https://bugzil.la/1538987
+    data_reviews:
+      - https://bugzil.la/1538987
+    notification_emails:
+      - mconley@mozilla.com
+      - gsvelto@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_CONTENTPROCESS_OS_PRIORITY_CHANGE_CONSIDERED
+
+  launch_mainthread:
+    type: timing_distribution
+    description: >
+      Time spent on the main thread during asynchronous content process launch.
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CONTENT_PROCESS_LAUNCH_MAINTHREAD_MS.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    notification_emails:
+      - jld@mozilla.com
+      - jimm@mozilla.com
+      - mconley@mozilla.com
+    expires: never
+    telemetry_mirror: CONTENT_PROCESS_LAUNCH_MAINTHREAD_MS
+
+  launch_total:
+    type: timing_distribution
+    description: >
+      Total time elapsed during asynchronous content process launch, until the
+      process is usable for loading content.
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CONTENT_PROCESS_LAUNCH_TOTAL_MS.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    notification_emails:
+      - jld@mozilla.com
+      - jimm@mozilla.com
+      - mconley@mozilla.com
+    expires: never
+    telemetry_mirror: CONTENT_PROCESS_LAUNCH_TOTAL_MS
+
+  sync_launch:
+    type: timing_distribution
+    description: >
+      Time elapsed during synchronous content process launch until the process
+      is usable for loading content.
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CONTENT_PROCESS_SYNC_LAUNCH_MS.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    notification_emails:
+      - jld@mozilla.com
+      - jimm@mozilla.com
+      - mconley@mozilla.com
+    expires: never
+    telemetry_mirror: CONTENT_PROCESS_SYNC_LAUNCH_MS
+
+  launch_is_sync:
+    type: labeled_counter
+    description: >
+      Whether a content process was launched synchronously (unnecessarily
+      delaying UI response).
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram CONTENT_PROCESS_LAUNCH_IS_SYNC.
+    labels:
+      - "false"
+      - "true"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1474991
+    notification_emails:
+      - jld@mozilla.com
+      - jimm@mozilla.com
+      - mconley@mozilla.com
+    expires: never
+    telemetry_mirror: h#CONTENT_PROCESS_LAUNCH_IS_SYNC
+
+dom.parentprocess:
+  private_window_used:
+    type: boolean
+    description: >
+      Whether a private browsing window has been used in the session.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.parentprocess.private_window_used.
+    bugs:
+      - https://bugzil.la/1491047
+    data_reviews:
+      - https://bugzil.la/1491047
+    notification_emails:
+      - seceng-telemetry@mozilla.com
+      - ehsan+telemetry@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_PARENTPROCESS_PRIVATE_WINDOW_USED
+
+  process_launch_errors:
+    type: labeled_counter
+    description: >
+      Collect precise set of error code and calling site upon process
+      creation failure path.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar dom.parentprocess.process_launch_errors.
+    bugs:
+      - https://bugzil.la/1819311
+    data_reviews:
+      - https://bugzil.la/1819311
+    notification_emails:
+      - alissy@mozilla.com
+    expires: never
+    telemetry_mirror: DOM_PARENTPROCESS_PROCESS_LAUNCH_ERRORS

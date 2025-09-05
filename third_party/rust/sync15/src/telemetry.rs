@@ -782,8 +782,6 @@ impl SyncTelemetryPing {
     }
 }
 
-ffi_support::implement_into_ffi_by_json!(SyncTelemetryPing);
-
 #[cfg(test)]
 mod ping_tests {
     use super::*;
@@ -816,7 +814,7 @@ mod ping_tests {
     }
 }
 
-impl<'a> From<&'a Error> for SyncFailure {
+impl From<&Error> for SyncFailure {
     fn from(e: &Error) -> SyncFailure {
         match e {
             #[cfg(feature = "sync-client")]

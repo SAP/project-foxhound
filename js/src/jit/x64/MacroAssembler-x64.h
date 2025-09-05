@@ -15,8 +15,6 @@ namespace js {
 namespace jit {
 
 struct ImmShiftedTag : public ImmWord {
-  explicit ImmShiftedTag(JSValueShiftedTag shtag) : ImmWord((uintptr_t)shtag) {}
-
   explicit ImmShiftedTag(JSValueType type)
       : ImmWord(uintptr_t(JSVAL_TYPE_TO_SHIFTED_TAG(type))) {}
 };
@@ -76,6 +74,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
                        JmpSrc (X86Encoding::BaseAssemblerX64::*op)(
                            X86Encoding::XMMRegisterID srcId,
                            X86Encoding::XMMRegisterID destId));
+
+ protected:
+  void flexibleDivMod64(Register rhs, Register lhsOutput, bool isUnsigned,
+                        bool isDiv);
 
  public:
   using MacroAssemblerX86Shared::load32;
@@ -533,6 +535,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   void cmpPtr(Register lhs, Register rhs) { cmpq(rhs, lhs); }
   void testPtr(Register lhs, Register rhs) { testq(rhs, lhs); }
   void testPtr(Register lhs, Imm32 rhs) { testq(rhs, lhs); }
+  void testPtr(Register lhs, ImmWord rhs) { test64(lhs, Imm64(rhs.value)); }
   void testPtr(const Operand& lhs, Imm32 rhs) { testq(rhs, lhs); }
   void test64(Register lhs, Register rhs) { testq(rhs, lhs); }
   void test64(Register lhs, const Imm64 rhs) {
@@ -745,19 +748,22 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
   }
 
   void testNullSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testNull(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testObjectSet(Condition cond, const ValueOperand& value, Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testObject(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void testUndefinedSet(Condition cond, const ValueOperand& value,
                         Register dest) {
+    bool destIsZero = maybeEmitSetZeroByteRegister(value, dest);
     cond = testUndefined(cond, value);
-    emitSet(cond, dest);
+    emitSet(cond, dest, destIsZero);
   }
 
   void boxDouble(FloatRegister src, const ValueOperand& dest, FloatRegister) {
@@ -825,10 +831,10 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     }
     if (src.valueReg() == dest) {
       ScratchRegisterScope scratch(asMasm());
-      mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), scratch);
+      mov(ImmShiftedTag(type), scratch);
       xorq(scratch, dest);
     } else {
-      mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), dest);
+      mov(ImmShiftedTag(type), dest);
       xorq(src.valueReg(), dest);
     }
   }
@@ -842,7 +848,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     ScratchRegisterScope scratch(asMasm());
     MOZ_ASSERT(dest != scratch);
     if (src.containsReg(dest)) {
-      mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), scratch);
+      mov(ImmShiftedTag(type), scratch);
       // If src is already a register, then src and dest are the same
       // thing and we don't need to move anything into dest.
       if (src.kind() != Operand::REG) {
@@ -850,7 +856,7 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
       }
       xorq(scratch, dest);
     } else {
-      mov(ImmWord(JSVAL_TYPE_TO_SHIFTED_TAG(type)), dest);
+      mov(ImmShiftedTag(type), dest);
       xorq(src, dest);
     }
   }
@@ -1206,6 +1212,19 @@ class MacroAssemblerX64 : public MacroAssemblerX86Shared {
     zeroDouble(dest);
 
     vcvtsq2ss(src, dest, dest);
+  }
+
+  void truncateFloat32ModUint32(FloatRegister src, Register dest) {
+    // vcvttss2sq returns 0x8000000000000000 on failure. It fails if
+    // 1. The input is non-finite (NaN or ±Infinity).
+    // 2. The input's exponent is at least 63.
+    //
+    // In both cases the input is too large for an int32 and the truncated
+    // result is zero. So unconditionally zeroing the upper 32-bits gives the
+    // correct result for all inputs.
+
+    vcvttss2sq(src, dest);
+    movl(dest, dest);  // Zero upper 32-bits.
   }
 
   inline void incrementInt32Value(const Address& addr);

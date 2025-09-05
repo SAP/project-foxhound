@@ -50,6 +50,7 @@ ABIArg ABIArgGenerator::softNext(MIRType type) {
     case MIRType::Int32:
     case MIRType::Pointer:
     case MIRType::WasmAnyRef:
+    case MIRType::WasmArrayData:
     case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
@@ -112,6 +113,7 @@ ABIArg ABIArgGenerator::hardNext(MIRType type) {
     case MIRType::Int32:
     case MIRType::Pointer:
     case MIRType::WasmAnyRef:
+    case MIRType::WasmArrayData:
     case MIRType::StackResults:
       if (intRegIndex_ == NumIntArgRegs) {
         current_ = ABIArg(stackOffset_);
@@ -622,10 +624,11 @@ uintptr_t Assembler::GetPointer(uint8_t* instPtr) {
   return ret;
 }
 
-const uint32_t* Assembler::GetPtr32Target(InstructionIterator start,
-                                          Register* dest, RelocStyle* style) {
-  Instruction* load1 = start.cur();
-  Instruction* load2 = start.next();
+template <class Iter>
+const uint32_t* Assembler::GetPtr32Target(Iter iter, Register* dest,
+                                          RelocStyle* style) {
+  Instruction* load1 = iter.cur();
+  Instruction* load2 = iter.next();
 
   if (load1->is<InstMovW>() && load2->is<InstMovT>()) {
     if (style) {
@@ -673,6 +676,11 @@ const uint32_t* Assembler::GetPtr32Target(InstructionIterator start,
 
   MOZ_CRASH("unsupported relocation");
 }
+
+template const uint32_t* Assembler::GetPtr32Target<InstructionIterator>(
+    InstructionIterator iter, Register* dest, RelocStyle* style);
+template const uint32_t* Assembler::GetPtr32Target<BufferInstructionIterator>(
+    BufferInstructionIterator iter, Register* dest, RelocStyle* style);
 
 static JitCode* CodeFromJump(InstructionIterator* jump) {
   uint8_t* target = (uint8_t*)Assembler::GetCF32Target(jump);
@@ -1059,7 +1067,7 @@ O2RegRegShift jit::asr(Register r, Register amt) {
 static js::jit::DoubleEncoder doubleEncoder;
 
 /* static */
-const js::jit::VFPImm js::jit::VFPImm::One(0x3FF00000);
+MOZ_RUNINIT const js::jit::VFPImm js::jit::VFPImm::One(0x3FF00000);
 
 js::jit::VFPImm::VFPImm(uint32_t top) {
   data_ = -1;
@@ -1774,6 +1782,15 @@ BufferOffset Assembler::as_csdb() {
   // https://developer.arm.com/-/media/developer/pdf/Cache_Speculation_Side-channels_22Feb18.pdf
   // CSDB A32: 1110_0011_0010_0000_1111_0000_0001_0100
   return writeInst(0xe320f000 | 0x14);
+}
+
+// Move Special Register and Hints:
+
+BufferOffset Assembler::as_yield() {
+  // YIELD hint instruction.
+  //
+  // YIELD A32: 1110_0011_0010_0000_1111_0000_0000_0001
+  return writeInst(0xe320f001);
 }
 
 // Control flow stuff:

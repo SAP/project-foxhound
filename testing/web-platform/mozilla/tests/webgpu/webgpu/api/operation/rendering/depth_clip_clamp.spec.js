@@ -6,14 +6,14 @@ depth ranges as well.
 `;import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { assert } from '../../../../common/util/util.js';
 import { kDepthStencilFormats, kTextureFormatInfo } from '../../../format_info.js';
-import { GPUTest } from '../../../gpu_test.js';
+import { AllFeaturesMaxLimitsGPUTest } from '../../../gpu_test.js';
 import {
   checkElementsBetween,
   checkElementsPassPredicate } from
 
 '../../../util/check_contents.js';
 
-export const g = makeTestGroup(GPUTest);
+export const g = makeTestGroup(AllFeaturesMaxLimitsGPUTest);
 
 g.test('depth_clamp_and_clip').
 desc(
@@ -55,6 +55,10 @@ fn(async (t) => {
   const info = kTextureFormatInfo[format];
   assert(!!info.depth);
 
+  const hasStorageBuffers = t.isCompatibility ?
+  t.device.limits.maxStorageBuffersInFragmentStage > 0 :
+  true;
+
   /** Number of depth values to test for both vertex output and frag_depth output. */
   const kNumDepthValues = 8;
   /** Test every combination of vertex output and frag_depth output. */
@@ -92,7 +96,7 @@ fn(async (t) => {
 
       struct VFTest {
         @builtin(position) pos: vec4<f32>,
-        @location(0) @interpolate(flat) vertexIndex: u32,
+        @location(0) @interpolate(flat, either) vertexIndex: u32,
       };
 
       @vertex
@@ -111,7 +115,13 @@ fn(async (t) => {
       @group(0) @binding(0) var <storage, read_write> output: Output;
 
       fn checkZ(vf: VFTest) {
-        output.fragInputZDiff[vf.vertexIndex] = vf.pos.z - expectedFragPosZ(vf.vertexIndex);
+        ${
+  hasStorageBuffers ?
+  `
+          output.fragInputZDiff[vf.vertexIndex] = vf.pos.z - expectedFragPosZ(vf.vertexIndex);
+        ` :
+  ''
+  }
       }
 
       @fragment
@@ -129,7 +139,7 @@ fn(async (t) => {
 
       struct VFCheck {
         @builtin(position) pos: vec4<f32>,
-        @location(0) @interpolate(flat) vertexIndex: u32,
+        @location(0) @interpolate(flat, either) vertexIndex: u32,
       };
 
       @vertex
@@ -204,7 +214,7 @@ fn(async (t) => {
     fragment: { module, entryPoint: 'fcheck', targets: [{ format: 'r8unorm' }] }
   });
 
-  const dsTexture = t.device.createTexture({
+  const dsTexture = t.createTextureTracked({
     format,
     size: [kNumTestPoints],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -217,39 +227,41 @@ fn(async (t) => {
     size: [kNumTestPoints],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
   };
-  const checkTexture = t.device.createTexture(checkTextureDesc);
+  const checkTexture = t.createTextureTracked(checkTextureDesc);
   const checkTextureView = checkTexture.createView();
   const checkTextureMSView = multisampled ?
-  t.device.createTexture({ ...checkTextureDesc, sampleCount: 4 }).createView() :
+  t.createTextureTracked({ ...checkTextureDesc, sampleCount: 4 }).createView() :
   undefined;
 
   const dsActual =
   !multisampled && info.depth.bytes ?
-  t.device.createBuffer({
+  t.createBufferTracked({
     size: kNumTestPoints * info.depth.bytes,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
   }) :
   undefined;
   const dsExpected =
   !multisampled && info.depth.bytes ?
-  t.device.createBuffer({
+  t.createBufferTracked({
     size: kNumTestPoints * info.depth.bytes,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
   }) :
   undefined;
-  const checkBuffer = t.device.createBuffer({
+  const checkBuffer = t.createBufferTracked({
     size: kNumTestPoints,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
   });
 
-  const fragInputZFailedBuffer = t.device.createBuffer({
+  const fragInputZFailedBuffer = t.createBufferTracked({
     size: 4 * kNumTestPoints,
     usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
   });
-  const testBindGroup = t.device.createBindGroup({
+  const testBindGroup = hasStorageBuffers ?
+  t.device.createBindGroup({
     layout: testPipeline.getBindGroupLayout(0),
     entries: [{ binding: 0, resource: { buffer: fragInputZFailedBuffer } }]
-  });
+  }) :
+  undefined;
 
   const enc = t.device.createCommandEncoder();
   {
@@ -266,7 +278,9 @@ fn(async (t) => {
       }
     });
     pass.setPipeline(testPipeline);
-    pass.setBindGroup(0, testBindGroup);
+    if (hasStorageBuffers) {
+      pass.setBindGroup(0, testBindGroup);
+    }
     pass.setViewport(0, 0, kNumTestPoints, 1, kViewportMinDepth, kViewportMaxDepth);
     pass.draw(kNumTestPoints);
     pass.end();
@@ -314,11 +328,13 @@ fn(async (t) => {
   }
   t.device.queue.submit([enc.finish()]);
 
-  t.expectGPUBufferValuesPassCheck(
-    fragInputZFailedBuffer,
-    (a) => checkElementsBetween(a, [() => -1e-5, () => 1e-5]),
-    { type: Float32Array, typedLength: kNumTestPoints }
-  );
+  if (hasStorageBuffers) {
+    t.expectGPUBufferValuesPassCheck(
+      fragInputZFailedBuffer,
+      (a) => checkElementsBetween(a, [() => -1e-5, () => 1e-5]),
+      { type: Float32Array, typedLength: kNumTestPoints }
+    );
+  }
 
   const kCheckPassedValue = 0;
   const predicatePrinter = [
@@ -395,7 +411,7 @@ fn((t) => {
 
       struct VF {
         @builtin(position) pos: vec4<f32>,
-        @location(0) @interpolate(flat) vertexIndex: u32,
+        @location(0) @interpolate(flat, either) vertexIndex: u32,
       };
 
       @vertex
@@ -453,7 +469,7 @@ fn((t) => {
     fragment: { module, entryPoint: 'ftest', targets: [{ format: 'r8unorm' }] }
   });
 
-  const dsTexture = t.device.createTexture({
+  const dsTexture = t.createTextureTracked({
     format,
     size: [kNumDepthValues],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
@@ -466,13 +482,13 @@ fn((t) => {
     size: [kNumDepthValues],
     usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC
   };
-  const testTexture = t.device.createTexture(testTextureDesc);
+  const testTexture = t.createTextureTracked(testTextureDesc);
   const testTextureView = testTexture.createView();
   const testTextureMSView = multisampled ?
-  t.device.createTexture({ ...testTextureDesc, sampleCount: 4 }).createView() :
+  t.createTextureTracked({ ...testTextureDesc, sampleCount: 4 }).createView() :
   undefined;
 
-  const resultBuffer = t.device.createBuffer({
+  const resultBuffer = t.createBufferTracked({
     size: kNumDepthValues,
     usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ
   });

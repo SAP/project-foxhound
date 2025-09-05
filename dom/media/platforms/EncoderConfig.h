@@ -7,6 +7,8 @@
 #ifndef mozilla_EncoderConfig_h_
 #define mozilla_EncoderConfig_h_
 
+#include "mozilla/Variant.h"
+
 #include "mozilla/dom/ImageBitmapBinding.h"
 #include "H264.h"
 
@@ -15,6 +17,7 @@ namespace mozilla {
 enum class CodecType {
   _BeginVideo_,
   H264,
+  H265,
   VP8,
   VP9,
   AV1,
@@ -123,7 +126,7 @@ class EncoderConfig final {
   // This constructor is used for video encoders
   EncoderConfig(const CodecType aCodecType, gfx::IntSize aSize,
                 const Usage aUsage, const PixelFormat aPixelFormat,
-                const PixelFormat aSourcePixelFormat, const uint8_t aFramerate,
+                const PixelFormat aSourcePixelFormat, const uint32_t aFramerate,
                 const size_t aKeyframeInterval, const uint32_t aBitrate,
                 const uint32_t aMinBitrate, const uint32_t aMaxBitrate,
                 const BitrateMode aBitrateMode,
@@ -184,7 +187,7 @@ class EncoderConfig final {
   PixelFormat mPixelFormat{};
   PixelFormat mSourcePixelFormat{};
   ScalabilityMode mScalabilityMode{};
-  uint8_t mFramerate{};
+  uint32_t mFramerate{};
   size_t mKeyframeInterval{};
   // Audio-only
   uint32_t mNumberOfChannels{};

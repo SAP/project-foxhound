@@ -6,9 +6,10 @@ members = [
     "wrench",
     "example-compositor/compositor",
 ]
+resolver = "2"
 
 [workspace.dependencies]
-glean = "=60.4.0"
+glean = "=63.1.0"
 
 [profile.release]
 debug = true

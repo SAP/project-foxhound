@@ -26,15 +26,17 @@ class SocketProcessHost;
 // by SocketProcessHost.
 class SocketProcessParent final
     : public PSocketProcessParent,
-      public ipc::CrashReporterHelper<GeckoProcessType_Socket> {
+      public ipc::CrashReporterHelper<SocketProcessParent> {
  public:
+  static constexpr GeckoProcessType PROCESS_TYPE = GeckoProcessType_Socket;
+
   friend class SocketProcessHost;
 
-  NS_INLINE_DECL_REFCOUNTING(SocketProcessParent, final)
+  NS_INLINE_DECL_THREADSAFE_REFCOUNTING(SocketProcessParent, final)
 
   explicit SocketProcessParent(SocketProcessHost* aHost);
 
-  static SocketProcessParent* GetSingleton();
+  static already_AddRefed<SocketProcessParent> GetSingleton();
 
   mozilla::ipc::IPCResult RecvAddMemoryReport(const MemoryReport& aReport);
   mozilla::ipc::IPCResult RecvAccumulateChildHistograms(

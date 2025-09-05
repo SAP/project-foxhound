@@ -186,8 +186,8 @@ nsresult StartupCache::Init() {
   // cache in.
   char* env = PR_GetEnv("MOZ_STARTUP_CACHE");
   if (env && *env) {
-    rv = NS_NewLocalFile(NS_ConvertUTF8toUTF16(env), false,
-                         getter_AddRefs(mFile));
+    MOZ_TRY(
+        NS_NewNativeLocalFile(nsDependentCString(env), getter_AddRefs(mFile)));
   } else {
     nsCOMPtr<nsIFile> file;
     rv = NS_GetSpecialDirectory("ProfLDS", getter_AddRefs(file));
@@ -204,13 +204,10 @@ nsresult StartupCache::Init() {
     if (NS_FAILED(rv) && rv != NS_ERROR_FILE_ALREADY_EXISTS) return rv;
 
     rv = file->AppendNative(nsLiteralCString(STARTUP_CACHE_NAME));
-
     NS_ENSURE_SUCCESS(rv, rv);
 
-    mFile = file;
+    mFile = file.forget();
   }
-
-  NS_ENSURE_TRUE(mFile, NS_ERROR_UNEXPECTED);
 
   mObserverService = do_GetService("@mozilla.org/observer-service;1");
 
@@ -454,7 +451,6 @@ nsresult StartupCache::GetBuffer(const char* id, const char** outbuf,
   return NS_OK;
 }
 
-// Makes a copy of the buffer, client retains ownership of inbuf.
 nsresult StartupCache::PutBuffer(const char* id, UniqueFreePtr<char[]>&& inbuf,
                                  uint32_t len) MOZ_NO_THREAD_SAFETY_ANALYSIS {
   NS_ASSERTION(NS_IsMainThread(),

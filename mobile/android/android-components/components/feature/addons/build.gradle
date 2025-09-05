@@ -78,6 +78,7 @@ dependencies {
 
     testImplementation project(':support-test')
     testImplementation project(':support-test-libstate')
+    testImplementation ComponentsDependencies.androidx_concurrent
     testImplementation ComponentsDependencies.androidx_test_core
     testImplementation ComponentsDependencies.androidx_test_junit
     testImplementation ComponentsDependencies.testing_robolectric
@@ -87,4 +88,4 @@ dependencies {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

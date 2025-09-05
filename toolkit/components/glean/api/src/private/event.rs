@@ -13,6 +13,57 @@ use crate::ipc::{need_ipc, with_ipc_payload};
 use glean::traits::Event;
 pub use glean::traits::{EventRecordingError, ExtraKeys, NoExtraKeys};
 
+#[cfg(feature = "with_gecko")]
+use super::profiler_utils::TelemetryProfilerCategory;
+
+#[cfg(feature = "with_gecko")]
+#[derive(serde::Serialize, serde::Deserialize, Debug)]
+struct EventMetricMarker {
+    id: MetricId,
+    extra: HashMap<String, String>,
+}
+
+#[cfg(feature = "with_gecko")]
+impl gecko_profiler::ProfilerMarker for EventMetricMarker {
+    fn marker_type_name() -> &'static str {
+        "EventMetric"
+    }
+
+    fn marker_type_display() -> gecko_profiler::MarkerSchema {
+        use gecko_profiler::schema::*;
+        let mut schema = MarkerSchema::new(&[Location::MarkerChart, Location::MarkerTable]);
+        schema.set_tooltip_label("{marker.data.id}");
+        schema.set_table_label("{marker.name} - {marker.data.id}: {marker.data.extra}");
+        schema.add_key_label_format_searchable(
+            "id",
+            "Metric",
+            Format::UniqueString,
+            Searchable::Searchable,
+        );
+        schema.add_key_label_format("extra", "Extra", Format::String);
+        schema
+    }
+
+    fn stream_json_marker_data(&self, json_writer: &mut gecko_profiler::JSONWriter) {
+        let name = self.id.get_name();
+        json_writer.unique_string_property("id", &name);
+
+        // Only write our "extra" field if it contains values.
+        if !self.extra.is_empty() {
+            // replace with iter intersperse once it's stabilised (see #79524)
+            let kvps = format!(
+                "{{{}}}",
+                self.extra
+                    .iter()
+                    .map(|(k, v)| format!(r#""{}": "{}""#, k, v))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            json_writer.string_property("extra", kvps.as_str());
+        }
+    }
+}
+
 /// An event metric.
 ///
 /// Events allow recording of e.g. individual occurences of user actions, say
@@ -20,9 +71,10 @@ pub use glean::traits::{EventRecordingError, ExtraKeys, NoExtraKeys};
 /// records a timestamp, the event's name and a set of custom values.
 pub enum EventMetric<K> {
     Parent {
-        /// The metric's ID.
-        ///
-        /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
+        /// The metric's ID. Used for testing and profiler markers. Event
+        /// metrics canot be labeled, so we only store a MetricId. If this
+        /// changes, this should be changed to a MetricGetter to distinguish
+        /// between metrics and sub-metrics.
         id: MetricId,
         inner: glean::private::EventMetric<K>,
     },
@@ -32,7 +84,7 @@ pub enum EventMetric<K> {
 #[derive(Debug)]
 pub struct EventMetricIpc(MetricId);
 
-impl<K: 'static + ExtraKeys + Send + Sync> EventMetric<K> {
+impl<K: 'static + ExtraKeys + Send + Sync + Clone> EventMetric<K> {
     /// Create a new event metric.
     pub fn new(id: MetricId, meta: CommonMetricData) -> Self {
         if need_ipc() {
@@ -78,10 +130,29 @@ impl<K: 'static + ExtraKeys + Send + Sync> EventMetric<K> {
     /// Should only be used when applying previously recorded events, e.g. from IPC.
     pub(crate) fn record_with_time(&self, timestamp: u64, extra: HashMap<String, String>) {
         match self {
-            EventMetric::Parent { inner, .. } => {
+            #[allow(unused)]
+            EventMetric::Parent { id, inner } => {
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Event::record",
+                    TelemetryProfilerCategory,
+                    EventMetricMarker {
+                        id: *id,
+                        extra: extra.clone(),
+                    }
+                );
                 inner.record_with_time(timestamp, extra);
             }
             EventMetric::Child(c) => {
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Event::record",
+                    TelemetryProfilerCategory,
+                    EventMetricMarker {
+                        id: c.0,
+                        extra: extra.clone(),
+                    }
+                );
                 with_ipc_payload(move |payload| {
                     if let Some(v) = payload.events.get_mut(&c.0) {
                         v.push((timestamp, extra));
@@ -96,18 +167,35 @@ impl<K: 'static + ExtraKeys + Send + Sync> EventMetric<K> {
 }
 
 #[inherent]
-impl<K: 'static + ExtraKeys + Send + Sync> Event for EventMetric<K> {
+impl<K: 'static + ExtraKeys + Send + Sync + Clone> Event for EventMetric<K> {
     type Extra = K;
 
     pub fn record<M: Into<Option<K>>>(&self, extra: M) {
+        let now = glean::get_timestamp_ms();
         match self {
-            EventMetric::Parent { inner, .. } => {
+            #[allow(unused)]
+            EventMetric::Parent { id, inner } => {
+                let extra = extra.into();
+                #[cfg(feature = "with_gecko")]
+                gecko_profiler::lazy_add_marker!(
+                    "Event::record",
+                    TelemetryProfilerCategory,
+                    EventMetricMarker {
+                        id: *id,
+                        extra: extra
+                            .clone()
+                            .map_or(HashMap::new(), |extra| extra.into_ffi_extra()),
+                    }
+                );
                 inner.record(extra);
             }
             EventMetric::Child(_) => {
-                let now = glean::get_timestamp_ms();
-                let extra = extra.into().map(|extra| extra.into_ffi_extra());
-                let extra = extra.unwrap_or_else(HashMap::new);
+                // No need to add a marker here, as we dispatch to `record_with_time` above.
+                let extra = if let Some(extra) = extra.into() {
+                    extra.into_ffi_extra()
+                } else {
+                    HashMap::new()
+                };
                 self.record_with_time(now, extra);
             }
         }
@@ -146,11 +234,11 @@ mod test {
         let _lock = lock_test();
 
         let metric = EventMetric::<NoExtraKeys>::new(
-            0.into(),
+            MetricId(0),
             CommonMetricData {
                 name: "event_metric".into(),
                 category: "telemetry".into(),
-                send_in_pings: vec!["store1".into()],
+                send_in_pings: vec!["test-ping".into()],
                 disabled: false,
                 ..Default::default()
             },
@@ -159,7 +247,7 @@ mod test {
         // No extra keys
         metric.record(None);
 
-        let recorded = metric.test_get_value("store1").unwrap();
+        let recorded = metric.test_get_value("test-ping").unwrap();
 
         assert!(recorded.iter().any(|e| e.name == "event_metric"));
     }
@@ -199,7 +287,7 @@ mod test {
 
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
-        let events = parent_metric.test_get_value("store1").unwrap();
+        let events = parent_metric.test_get_value("test-ping").unwrap();
         assert_eq!(events.len(), 4);
 
         // Events from the child process are last, they might get sorted later by Glean.
@@ -220,10 +308,11 @@ mod test {
             extra1: Some("a-valid-value".into()),
             extra2: Some(37),
             extra3_longer_name: Some(false),
+            extra4CamelCase: Some(true),
         };
         event.record(extra);
 
-        let recorded = event.test_get_value("store1").unwrap();
+        let recorded = event.test_get_value("test-ping").unwrap();
 
         assert_eq!(recorded.len(), 1);
         assert!(recorded[0].extra.as_ref().unwrap().get("extra1").unwrap() == "a-valid-value");
@@ -236,6 +325,15 @@ mod test {
                 .get("extra3_longer_name")
                 .unwrap()
                 == "false"
+        );
+        assert_eq!(
+            "true",
+            recorded[0]
+                .extra
+                .as_ref()
+                .unwrap()
+                .get("extra4CamelCase")
+                .unwrap()
         );
     }
 }

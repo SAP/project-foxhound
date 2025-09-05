@@ -8,6 +8,7 @@ import android.content.res.Configuration
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import org.junit.Rule
 import org.junit.Test
+import org.mozilla.fenix.helpers.AppAndSystemHelper.enableOrDisableBackGestureNavigationOnDevice
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
@@ -58,21 +59,21 @@ class SettingsCustomizeTest : TestSetup() {
         }.openThreeDotMenu {
         }.openSettings {
         }.openCustomizeSubMenu {
-            verifyToolbarPositionPreference("Bottom")
+            verifyAddressBarPositionPreference("Bottom")
             clickTopToolbarToggle()
-            verifyToolbarPositionPreference("Top")
+            verifyAddressBarPositionPreference("Top")
         }.goBack {
         }.goBack {
-            verifyToolbarPosition(defaultPosition = false)
+            verifyAddressBarPosition(bottomPosition = false)
         }.openThreeDotMenu {
         }.openSettings {
         }.openCustomizeSubMenu {
             clickBottomToolbarToggle()
-            verifyToolbarPositionPreference("Bottom")
+            verifyAddressBarPositionPreference("Bottom")
             exitMenu()
         }
         homeScreen {
-            verifyToolbarPosition(defaultPosition = true)
+            verifyAddressBarPosition(bottomPosition = true)
         }
     }
 
@@ -81,6 +82,9 @@ class SettingsCustomizeTest : TestSetup() {
     fun turnOffSwipeToSwitchTabsPreferenceTest() {
         val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
         val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+
+        // Disable the back gesture from the edge of the screen on the device.
+        enableOrDisableBackGestureNavigationOnDevice(backGestureNavigationEnabled = false)
 
         homeScreen {
         }.openThreeDotMenu {

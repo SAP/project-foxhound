@@ -16,12 +16,12 @@
 #include <deque>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/base/nullability.h"
-#include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/numerics/samples_stats_counter.h"
 #include "api/sequence_checker.h"
@@ -29,6 +29,7 @@
 #include "api/test/network_emulation/network_emulation_interfaces.h"
 #include "api/test/network_emulation_manager.h"
 #include "api/test/simulated_network.h"
+#include "api/transport/ecn_marking.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
 #include "rtc_base/copy_on_write_buffer.h"
@@ -51,7 +52,7 @@ class EmulatedNetworkOutgoingStatsBuilder {
   explicit EmulatedNetworkOutgoingStatsBuilder(
       EmulatedNetworkStatsGatheringMode stats_gathering_mode);
 
-  void OnPacketSent(Timestamp sent_time, DataSize packet_size);
+  void OnPacketSent(Timestamp sent_time, const EmulatedIpPacket& packet);
 
   void AddOutgoingStats(const EmulatedNetworkOutgoingStats& stats);
 
@@ -73,7 +74,8 @@ class EmulatedNetworkIncomingStatsBuilder {
 
   void OnPacketDropped(DataSize packet_size);
 
-  void OnPacketReceived(Timestamp received_time, DataSize packet_size);
+  void OnPacketReceived(Timestamp received_time,
+                        const EmulatedIpPacket& packet);
 
   // Adds stats collected from another endpoints to the builder.
   void AddIncomingStats(const EmulatedNetworkIncomingStats& stats);
@@ -97,16 +99,12 @@ class EmulatedNetworkStatsBuilder {
       rtc::IPAddress local_ip,
       EmulatedNetworkStatsGatheringMode stats_gathering_mode);
 
-  void OnPacketSent(Timestamp queued_time,
-                    Timestamp sent_time,
-                    rtc::IPAddress destination_ip,
-                    DataSize packet_size);
+  void OnPacketSent(Timestamp send_time, const EmulatedIpPacket& packet);
 
   void OnPacketDropped(rtc::IPAddress source_ip, DataSize packet_size);
 
   void OnPacketReceived(Timestamp received_time,
-                        rtc::IPAddress source_ip,
-                        DataSize packet_size);
+                        const EmulatedIpPacket& packet);
 
   void AddEmulatedNetworkStats(const EmulatedNetworkStats& stats);
 
@@ -203,7 +201,7 @@ class NetworkRouterNode : public EmulatedNetworkReceiverInterface {
 
  private:
   const absl::Nonnull<TaskQueueBase*> task_queue_;
-  absl::optional<EmulatedNetworkReceiverInterface*> default_receiver_
+  std::optional<EmulatedNetworkReceiverInterface*> default_receiver_
       RTC_GUARDED_BY(task_queue_);
   std::map<rtc::IPAddress, EmulatedNetworkReceiverInterface*> routing_
       RTC_GUARDED_BY(task_queue_);
@@ -297,14 +295,15 @@ class EmulatedEndpointImpl : public EmulatedEndpoint {
   void SendPacket(const rtc::SocketAddress& from,
                   const rtc::SocketAddress& to,
                   rtc::CopyOnWriteBuffer packet_data,
-                  uint16_t application_overhead = 0) override;
+                  uint16_t application_overhead = 0,
+                  EcnMarking ecn = EcnMarking::kNotEct) override;
 
-  absl::optional<uint16_t> BindReceiver(
+  std::optional<uint16_t> BindReceiver(
       uint16_t desired_port,
       EmulatedNetworkReceiverInterface* receiver) override;
   // Binds a receiver, and automatically removes the binding after first call to
   // OnPacketReceived.
-  absl::optional<uint16_t> BindOneShotReceiver(
+  std::optional<uint16_t> BindOneShotReceiver(
       uint16_t desired_port,
       EmulatedNetworkReceiverInterface* receiver);
   void UnbindReceiver(uint16_t port) override;
@@ -330,7 +329,7 @@ class EmulatedEndpointImpl : public EmulatedEndpoint {
     bool is_one_shot;
   };
 
-  absl::optional<uint16_t> BindReceiverInternal(
+  std::optional<uint16_t> BindReceiverInternal(
       uint16_t desired_port,
       EmulatedNetworkReceiverInterface* receiver,
       bool is_one_shot);
@@ -349,7 +348,7 @@ class EmulatedEndpointImpl : public EmulatedEndpoint {
   NetworkRouterNode router_;
 
   uint16_t next_port_ RTC_GUARDED_BY(receiver_lock_);
-  absl::optional<EmulatedNetworkReceiverInterface*> default_receiver_
+  std::optional<EmulatedNetworkReceiverInterface*> default_receiver_
       RTC_GUARDED_BY(receiver_lock_);
   std::map<uint16_t, ReceiverBinding> port_to_receiver_
       RTC_GUARDED_BY(receiver_lock_);

@@ -3,6 +3,10 @@
 
 "use strict";
 
+const { ERRORS } = ChromeUtils.importESModule(
+  "chrome://browser/content/backup/backup-constants.mjs"
+);
+
 const SCHEDULED_BACKUPS_ENABLED_PREF = "browser.backup.scheduled.enabled";
 
 add_setup(async () => {
@@ -17,6 +21,9 @@ add_setup(async () => {
  * browser.backup.scheduled.enabled to true from the settings page.
  */
 add_task(async function test_turn_on_scheduled_backups_confirm() {
+  Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
+
   await BrowserTestUtils.withNewTab("about:preferences", async browser => {
     let settings = browser.contentDocument.querySelector("backup-settings");
 
@@ -43,7 +50,7 @@ add_task(async function test_turn_on_scheduled_backups_confirm() {
     let confirmButton = turnOnScheduledBackups.confirmButtonEl;
     let promise = BrowserTestUtils.waitForEvent(
       window,
-      "turnOnScheduledBackups"
+      "BackupUI:EnableScheduledBackups"
     );
 
     Assert.ok(confirmButton, "Confirm button should be found");
@@ -57,6 +64,21 @@ add_task(async function test_turn_on_scheduled_backups_confirm() {
       SCHEDULED_BACKUPS_ENABLED_PREF
     );
     Assert.ok(scheduledPrefVal, "Scheduled backups pref should be true");
+
+    let legacyEvents = TelemetryTestUtils.getEvents(
+      {
+        category: "browser.backup",
+        method: "toggle_on",
+        object: "BackupService",
+      },
+      { process: "parent" }
+    );
+    Assert.equal(legacyEvents.length, 1, "Found the toggle_on legacy event.");
+    let events = Glean.browserBackup.toggleOn.testGetValue();
+    Assert.equal(events.length, 1, "Found the toggleOn Glean event.");
+
+    // Reset scheduled backups again for subsequent tests.
+    Services.prefs.clearUserPref(SCHEDULED_BACKUPS_ENABLED_PREF);
   });
 });
 
@@ -66,6 +88,9 @@ add_task(async function test_turn_on_scheduled_backups_confirm() {
  * that path, and sets browser.backup.location to the path from the settings page.
  */
 add_task(async function test_turn_on_custom_location_filepicker() {
+  Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
+
   await BrowserTestUtils.withNewTab("about:preferences", async browser => {
     const mockCustomParentDir = await IOUtils.createUniqueDirectory(
       PathUtils.tempDir,
@@ -86,6 +111,7 @@ add_task(async function test_turn_on_custom_location_filepicker() {
     MockFilePicker.returnValue = MockFilePicker.returnOK;
 
     // After setting up mocks, start testing components
+    /** @type {import("../../content/backup-settings.mjs").default} */
     let settings = browser.contentDocument.querySelector("backup-settings");
     let turnOnButton = settings.scheduledBackupsButtonEl;
 
@@ -148,7 +174,7 @@ add_task(async function test_turn_on_custom_location_filepicker() {
 
     let confirmButtonPromise = BrowserTestUtils.waitForEvent(
       window,
-      "turnOnScheduledBackups"
+      "BackupUI:EnableScheduledBackups"
     );
 
     confirmButton.click();
@@ -170,6 +196,37 @@ add_task(async function test_turn_on_custom_location_filepicker() {
       ignoreAbsent: true,
       recursive: true,
     });
+
+    let legacyEvents = TelemetryTestUtils.getEvents(
+      {
+        category: "browser.backup",
+        method: "toggle_on",
+        object: "BackupService",
+      },
+      { process: "parent" }
+    );
+    Assert.equal(legacyEvents.length, 1, "Found the toggle_on legacy event.");
+    let events = Glean.browserBackup.toggleOn.testGetValue();
+    Assert.equal(events.length, 1, "Found the toggleOn Glean event.");
+
+    legacyEvents = TelemetryTestUtils.getEvents(
+      {
+        category: "browser.backup",
+        method: "change_location",
+        object: "BackupService",
+      },
+      { process: "parent" }
+    );
+    Assert.equal(
+      legacyEvents.length,
+      1,
+      "Found the change_location legacy event."
+    );
+    events = Glean.browserBackup.changeLocation.testGetValue();
+    Assert.equal(events.length, 1, "Found the changeLocation Glean event.");
+
+    // Reset scheduled backups again for subsequent tests.
+    Services.prefs.clearUserPref(SCHEDULED_BACKUPS_ENABLED_PREF);
   });
 });
 
@@ -178,6 +235,9 @@ add_task(async function test_turn_on_custom_location_filepicker() {
  * turn-on-scheduled-backups dialog.
  */
 add_task(async function test_turn_on_scheduled_backups_encryption() {
+  Services.telemetry.clearEvents();
+  Services.fog.testResetFOG();
+
   await BrowserTestUtils.withNewTab("about:preferences", async browser => {
     let sandbox = sinon.createSandbox();
     let settings = browser.contentDocument.querySelector("backup-settings");
@@ -234,7 +294,7 @@ add_task(async function test_turn_on_scheduled_backups_encryption() {
 
     let promise = BrowserTestUtils.waitForEvent(
       window,
-      "turnOnScheduledBackups"
+      "BackupUI:EnableScheduledBackups"
     );
 
     confirmButton.click();
@@ -246,6 +306,34 @@ add_task(async function test_turn_on_scheduled_backups_encryption() {
       encryptionStub.calledOnceWith(MOCK_PASSWORD),
       "BackupService was called to enable encryption and received the expected argument"
     );
+
+    let legacyEvents = TelemetryTestUtils.getEvents(
+      {
+        category: "browser.backup",
+        method: "toggle_on",
+        object: "BackupService",
+      },
+      { process: "parent" }
+    );
+    Assert.equal(legacyEvents.length, 1, "Found the toggle_on legacy event.");
+    let events = Glean.browserBackup.toggleOn.testGetValue();
+    Assert.equal(events.length, 1, "Found the toggleOn Glean event.");
+
+    legacyEvents = TelemetryTestUtils.getEvents(
+      {
+        category: "browser.backup",
+        method: "password_added",
+        object: "BackupService",
+      },
+      { process: "parent" }
+    );
+    Assert.equal(
+      legacyEvents.length,
+      1,
+      "Found the password_added legacy event."
+    );
+    events = Glean.browserBackup.passwordAdded.testGetValue();
+    Assert.equal(events.length, 1, "Found the passwordAdded Glean event.");
 
     sandbox.restore();
     Services.prefs.clearUserPref(SCHEDULED_BACKUPS_ENABLED_PREF);
@@ -280,7 +368,7 @@ add_task(async function test_turn_on_scheduled_backups_encryption_error() {
 
     let encryptionStub = sandbox
       .stub(BackupService.prototype, "enableEncryption")
-      .throws();
+      .throws(new Error("test error", { cause: ERRORS.INVALID_PASSWORD }));
 
     // Enable passwords
     let passwordsCheckbox = turnOnScheduledBackups.passwordOptionsCheckboxEl;
@@ -317,7 +405,7 @@ add_task(async function test_turn_on_scheduled_backups_encryption_error() {
 
     let promise = BrowserTestUtils.waitForEvent(
       window,
-      "turnOnScheduledBackups"
+      "BackupUI:EnableScheduledBackups"
     );
 
     confirmButton.click();
@@ -337,6 +425,16 @@ add_task(async function test_turn_on_scheduled_backups_encryption_error() {
     Assert.ok(
       !scheduledPrefVal,
       "Scheduled backups pref should still be false"
+    );
+
+    await BrowserTestUtils.waitForCondition(
+      () => !!turnOnScheduledBackups.errorEl,
+      "Error should be displayed to the user"
+    );
+
+    Assert.ok(
+      turnOnScheduledBackups.errorEl,
+      "Error should be displayed to the user"
     );
 
     sandbox.restore();

@@ -142,17 +142,6 @@ open class DefaultComponents(private val applicationContext: Context) {
         }
     }
 
-    private val notificationManagerCompat = NotificationManagerCompat.from(applicationContext)
-
-    val notificationsDelegate: NotificationsDelegate by lazy {
-        NotificationsDelegate(
-            notificationManagerCompat,
-        )
-    }
-
-    val addonUpdater =
-        DefaultAddonUpdater(applicationContext, Frequency(1, TimeUnit.DAYS), notificationsDelegate)
-
     // Engine
     open val engine: Engine by lazy {
         SystemEngine(applicationContext, engineSettings)
@@ -254,6 +243,8 @@ open class DefaultComponents(private val applicationContext: Context) {
             launchInApp = {
                 applicationContext.components.preferences.getBoolean(PREF_LAUNCH_EXTERNAL_APP, false)
             },
+            launchFromInterceptor = true,
+            store = store,
         )
     }
 
@@ -509,7 +500,17 @@ open class DefaultComponents(private val applicationContext: Context) {
                     }
                 },
             ),
-            notificationsDelegate = notificationsDelegate,
         ).install(applicationContext)
     }
+
+    private val notificationManagerCompat = NotificationManagerCompat.from(applicationContext)
+
+    val notificationsDelegate: NotificationsDelegate by lazy {
+        NotificationsDelegate(
+            notificationManagerCompat,
+        )
+    }
+
+    val addonUpdater =
+        DefaultAddonUpdater(applicationContext, Frequency(1, TimeUnit.DAYS), notificationsDelegate)
 }

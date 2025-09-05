@@ -22,11 +22,18 @@ add_setup(async function setup() {
 
   Services.prefs.setBoolPref("network.dns.upgrade_with_https_rr", true);
   Services.prefs.setBoolPref("network.dns.use_https_rr_as_altsvc", true);
+  Services.prefs.setBoolPref(
+    "network.dns.https_rr.check_record_with_cname",
+    false
+  );
 
   registerCleanupFunction(() => {
     trr_clear_prefs();
     Services.prefs.clearUserPref("network.dns.upgrade_with_https_rr");
     Services.prefs.clearUserPref("network.dns.use_https_rr_as_altsvc");
+    Services.prefs.clearUserPref(
+      "network.dns.https_rr.check_record_with_cname"
+    );
   });
 
   if (mozinfo.socketprocess_networking) {
@@ -34,7 +41,7 @@ add_setup(async function setup() {
     await TestUtils.waitForCondition(() => Services.io.socketProcessLaunched);
   }
 
-  Services.prefs.setIntPref("network.trr.mode", 2); // TRR first
+  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
 });
 
 function makeChan(url) {
@@ -177,7 +184,7 @@ add_task(async function testFallback() {
   });
   await trrServer.start();
 
-  Services.prefs.setIntPref("network.trr.mode", 3);
+  Services.prefs.setIntPref("network.trr.mode", Ci.nsIDNSService.MODE_TRRONLY);
   Services.prefs.setCharPref(
     "network.trr.uri",
     `https://foo.example.com:${trrServer.port()}/dns-query`

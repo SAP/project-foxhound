@@ -5,8 +5,6 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 "use strict";
 
-/* globals EventEmitter */
-
 ChromeUtils.defineESModuleGetters(this, {
   PrivateBrowsingUtils: "resource://gre/modules/PrivateBrowsingUtils.sys.mjs",
 });
@@ -111,16 +109,24 @@ class TabBase {
       resetScrollPosition
     );
 
-    let doc = Services.appShell.hiddenDOMWindow.document;
-    let canvas = doc.createElement("canvas");
-    canvas.width = image.width;
-    canvas.height = image.height;
+    let canvas = new OffscreenCanvas(image.width, image.height);
 
-    let ctx = canvas.getContext("2d", { alpha: false });
-    ctx.drawImage(image, 0, 0);
-    image.close();
+    let ctx = canvas.getContext("bitmaprenderer", { alpha: false });
+    ctx.transferFromImageBitmap(image);
 
-    return canvas.toDataURL(`image/${options?.format}`, options?.quality / 100);
+    let blob = await canvas.convertToBlob({
+      type: `image/${options?.format ?? "png"}`,
+      quality: options?.quality / 100,
+    });
+
+    let dataURL = await new Promise((resolve, reject) => {
+      let reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(blob);
+    });
+
+    return dataURL;
   }
 
   /**

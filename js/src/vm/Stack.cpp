@@ -150,7 +150,8 @@ static inline void AssertScopeMatchesEnvironment(Scope* scope,
   //
   // In the case of a syntactic env chain, the outermost env is always a
   // GlobalObject.
-  MOZ_ASSERT(env->is<GlobalObject>() || IsGlobalLexicalEnvironment(env) ||
+  MOZ_ASSERT(env->is<GlobalObject>() ||
+             env->is<GlobalLexicalEnvironmentObject>() ||
              env->is<DebugEnvironmentProxy>());
 #endif
 }
@@ -645,11 +646,11 @@ JS::ProfilingFrameIterator::getPhysicalFrameAndEntry(
   if (isWasm()) {
     Frame frame;
     switch (wasmIter().category()) {
-      case wasm::ProfilingFrameIterator::Baseline: {
+      case wasm::ProfilingFrameIterator::Category::Baseline: {
         frame.kind = FrameKind::Frame_WasmBaseline;
         break;
       }
-      case wasm::ProfilingFrameIterator::Ion: {
+      case wasm::ProfilingFrameIterator::Category::Ion: {
         frame.kind = FrameKind::Frame_WasmIon;
         break;
       }

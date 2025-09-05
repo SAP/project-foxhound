@@ -14,11 +14,15 @@ void nsContainerFrame::DoInlineIntrinsicISize(ISizeData* aData,
                                               F& aHandleChildren) {
   using namespace mozilla;
 
-  auto GetMargin = [](const LengthPercentageOrAuto& aCoord) -> nscoord {
-    return aCoord.IsAuto() ? 0 : aCoord.AsLengthPercentage().Resolve(0);
+  auto GetMargin = [](const mozilla::StyleMargin& aCoord) -> nscoord {
+    return !aCoord.IsLengthPercentage()
+               ? 0
+               : aCoord.AsLengthPercentage().Resolve(0);
   };
 
-  if (GetPrevInFlow()) return;  // Already added.
+  if (GetPrevInFlow()) {
+    return;  // Already added.
+  }
 
   WritingMode wm = GetWritingMode();
   Side startSide = wm.PhysicalSideForInlineAxis(LogicalEdge::Start);
@@ -45,7 +49,7 @@ void nsContainerFrame::DoInlineIntrinsicISize(ISizeData* aData,
         // clamp negative calc() to 0
         std::max(stylePadding->mPadding.Get(startSide).Resolve(0), 0) +
         styleBorder->GetComputedBorderWidth(startSide) +
-        GetMargin(styleMargin->mMargin.Get(startSide));
+        GetMargin(styleMargin->GetMargin(startSide));
     if (MOZ_LIKELY(sliceBreak)) {
       aData->mCurrentLine += startPBM;
     } else {
@@ -57,13 +61,13 @@ void nsContainerFrame::DoInlineIntrinsicISize(ISizeData* aData,
       // clamp negative calc() to 0
       std::max(stylePadding->mPadding.Get(endSide).Resolve(0), 0) +
       styleBorder->GetComputedBorderWidth(endSide) +
-      GetMargin(styleMargin->mMargin.Get(endSide));
+      GetMargin(styleMargin->GetMargin(endSide));
   if (MOZ_UNLIKELY(!sliceBreak)) {
     clonePBM += endPBM;
     aData->mCurrentLine += clonePBM;
   }
 
-  const nsLineList_iterator* savedLine = aData->mLine;
+  const LineListIterator* savedLine = aData->mLine;
   nsIFrame* const savedLineContainer = aData->LineContainer();
 
   nsContainerFrame* lastInFlow;

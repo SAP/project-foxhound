@@ -2,9 +2,27 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+buildscript {
+    repositories {
+        gradle.mozconfig.substs.GRADLE_MAVEN_REPOSITORIES.each { repository ->
+            maven {
+                url repository
+                if (gradle.mozconfig.substs.ALLOW_INSECURE_GRADLE_REPOSITORIES) {
+                    allowInsecureProtocol = true
+                }
+            }
+        }
+    }
+
+    dependencies {
+        classpath  ComponentsDependencies.plugin_serialization
+    }
+}
+
 apply plugin: 'com.android.library'
-apply plugin: 'kotlin-android'
 apply plugin: 'com.google.devtools.ksp'
+apply plugin: 'kotlin-android'
+apply plugin: 'kotlinx-serialization'
 
 android {
     defaultConfig {
@@ -40,6 +58,7 @@ android {
 
 dependencies {
     implementation ComponentsDependencies.kotlin_coroutines
+    implementation ComponentsDependencies.kotlin_json
 
     implementation ComponentsDependencies.androidx_core_ktx
     implementation ComponentsDependencies.androidx_work_runtime
@@ -53,6 +72,7 @@ dependencies {
     testImplementation ComponentsDependencies.kotlin_reflect
 
     testImplementation ComponentsDependencies.androidx_arch_core_testing
+    testImplementation ComponentsDependencies.androidx_concurrent
     testImplementation ComponentsDependencies.androidx_test_core
     testImplementation ComponentsDependencies.androidx_test_junit
     testImplementation ComponentsDependencies.testing_coroutines
@@ -74,4 +94,4 @@ dependencies {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

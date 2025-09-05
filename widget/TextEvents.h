@@ -25,6 +25,7 @@
 #include "mozilla/ipc/IPCForwards.h"
 #include "nsCOMPtr.h"
 #include "nsHashtablesFwd.h"
+#include "nsIFrame.h"
 #include "nsISelectionListener.h"
 #include "nsITransferable.h"
 #include "nsRect.h"
@@ -237,7 +238,7 @@ class WidgetKeyboardEvent final : public WidgetInputEvent {
     //       we don't have any bug reports that user cannot input proper
     //       character with Alt and/or Ctrl key.
     //       -- On macOS, IMEInputHandler::WillDispatchKeyboardEvent() clears
-    //       MODIFIER_ALT and MDOFIEIR_CONTROL of eKeyPress event only when
+    //       MODIFIER_ALT and MODIFIER_CONTROL of eKeyPress event only when
     //       TextInputHandler::InsertText() has been called for the event.
     //       I.e., they are cleared only when an editor has focus (even if IME
     //       is disabled in password field or by |ime-mode: disabled;|) because
@@ -1248,6 +1249,10 @@ class WidgetQueryContentEvent : public WidgetGUIEvent {
     bool mWidgetIsHit = false;
     // true if mContentRoot is focused editable content
     bool mIsEditableContent = false;
+    // Set to the element that a drop at the given coordinates would target
+    mozilla::dom::Element* mDropElement;
+    // Set to the frame that a drop at the given coordinates would target
+    nsIFrame* mDropFrame;
 
     Reply() = delete;
     explicit Reply(EventMessage aEventMessage) : mEventMessage(aEventMessage) {}

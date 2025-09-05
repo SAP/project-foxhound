@@ -460,7 +460,7 @@ add_task(async function pick() {
 // Tests picking elements in a dynamic result.
 add_task(async function shouldNavigate() {
   /**
-   * A dummy provider that providers results with a `shouldNavigate` property.
+   * A dummy provider that providers results with a `url` property.
    */
   class TestShouldNavigateProvider extends TestProvider {
     /**
@@ -470,7 +470,6 @@ add_task(async function shouldNavigate() {
     async startQuery(context, addCallback) {
       for (let result of this.results) {
         result.payload.searchString = context.searchString;
-        result.payload.shouldNavigate = true;
         result.payload.url = DUMMY_PAGE;
         addCallback(this, result);
       }
@@ -792,6 +791,49 @@ add_task(async function hasActionDescendant() {
       "has-action": true,
     },
   });
+});
+
+// Tests whether 'dynamicType' attribute is cleared.
+add_task(async function clear_dynamicType_attribute() {
+  /**
+   * A dummy provider that providers results with a `url` property.
+   */
+  class TestIndex0Provider extends TestProvider {
+    /**
+     * @param {object} context - Data regarding the context of the query.
+     * @param {Function} addCallback - Function to add a result to the query.
+     */
+    async startQuery(context, addCallback) {
+      for (let result of this.results) {
+        result.suggestedIndex = 0;
+        addCallback(this, result);
+      }
+    }
+  }
+
+  await withDynamicTypeProvider(async provider => {
+    // Do a search.
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "test",
+      waitForFocus: SimpleTest.waitForFocus,
+    });
+    // Check the dynamicType.
+    let row = await UrlbarTestUtils.waitForAutocompleteResultAt(window, 0);
+    Assert.equal(row.getAttribute("dynamicType"), "test");
+
+    // Unregister the provider to show normal result.
+    UrlbarProvidersManager.unregisterProvider(provider);
+    // Do a search again.
+    await UrlbarTestUtils.promiseAutocompleteResultPopup({
+      window,
+      value: "test",
+      waitForFocus: SimpleTest.waitForFocus,
+    });
+    Assert.ok(!row.hasAttribute("dynamicType"));
+
+    await UrlbarTestUtils.promisePopupClose(window);
+  }, new TestIndex0Provider());
 });
 
 // View templates that contain descendant `.urlbarView-url` and

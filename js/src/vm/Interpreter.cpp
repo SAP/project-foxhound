@@ -19,13 +19,10 @@
 #include "mozilla/ScopeExit.h"
 #include "mozilla/Sprintf.h"
 #include "mozilla/TimeStamp.h"
-#include "mozilla/WrappingOperations.h"
 
 #include <string.h>
 
 #include "jsapi.h"
-#include "jslibmath.h"
-#include "jsmath.h"
 #include "jsnum.h"
 
 #include "builtin/Array.h"
@@ -37,48 +34,39 @@
 #include "jit/BaselineJIT.h"
 #include "jit/Jit.h"
 #include "jit/JitRuntime.h"
+#include "js/EnvironmentChain.h"      // JS::SupportUnscopables
 #include "js/experimental/JitInfo.h"  // JSJitInfo
 #include "js/friend/ErrorMessages.h"  // js::GetErrorMessage, JSMSG_*
 #include "js/friend/StackLimits.h"    // js::AutoCheckRecursionLimit
 #include "js/friend/WindowProxy.h"    // js::IsWindowProxy
 #include "js/Printer.h"
 #include "proxy/DeadObjectProxy.h"
-#include "util/CheckedArithmetic.h"
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "vm/AsyncFunction.h"
 #include "vm/AsyncIteration.h"
 #include "vm/BigIntType.h"
 #include "vm/BytecodeUtil.h"  // JSDVG_SEARCH_STACK
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-#  include "vm/DisposeJumpKind.h"
 #  include "vm/ErrorObject.h"
 #endif
 #include "vm/EqualityOperations.h"  // js::StrictlyEqual
 #include "vm/GeneratorObject.h"
 #include "vm/Iteration.h"
-#include "vm/JSAtomUtils.h"  // AtomToPrintableString
 #include "vm/JSContext.h"
 #include "vm/JSFunction.h"
 #include "vm/JSObject.h"
 #include "vm/JSScript.h"
 #include "vm/Opcodes.h"
-#include "vm/PIC.h"
 #include "vm/PlainObject.h"  // js::PlainObject
 #include "vm/Scope.h"
 #include "vm/Shape.h"
 #include "vm/SharedStencil.h"  // GCThingIndex
 #include "vm/StringType.h"
-#include "vm/ThrowMsgKind.h"  // ThrowMsgKind
-#include "vm/Time.h"
+#include "vm/ThrowMsgKind.h"     // ThrowMsgKind
 #include "vm/TypeofEqOperand.h"  // TypeofEqOperand
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
 #  include "vm/UsingHint.h"
 #endif
-#ifdef ENABLE_RECORD_TUPLE
-#  include "vm/RecordType.h"
-#  include "vm/TupleType.h"
-#endif
-
 #include "builtin/Boolean-inl.h"
 #include "debugger/DebugAPI-inl.h"
 #include "vm/ArgumentsObject-inl.h"
@@ -88,7 +76,6 @@
 #include "vm/EnvironmentObject-inl.h"
 #include "vm/GeckoProfiler-inl.h"
 #include "vm/JSScript-inl.h"
-#include "vm/List-inl.h"
 #include "vm/NativeObject-inl.h"
 #include "vm/ObjectOperations-inl.h"
 #include "vm/PlainObject-inl.h"  // js::CopyInitializerObject, js::CreateThis
@@ -99,8 +86,6 @@ using namespace js;
 
 using mozilla::DebugOnly;
 using mozilla::NumberEqualsInt32;
-
-using js::jit::JitScript;
 
 template <bool Eq>
 static MOZ_ALWAYS_INLINE bool LooseEqualityOp(JSContext* cx,
@@ -131,6 +116,13 @@ JSObject* js::BoxNonStrictThis(JSContext* cx, HandleValue thisv) {
   return PrimitiveToObject(cx, thisv);
 }
 
+static bool IsNSVOLexicalEnvironment(JSObject* env) {
+  return env->is<LexicalEnvironmentObject>() &&
+         env->as<LexicalEnvironmentObject>()
+             .enclosingEnvironment()
+             .is<NonSyntacticVariablesObject>();
+}
+
 bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
                          MutableHandleValue res) {
   MOZ_ASSERT(frame.isFunctionFrame());
@@ -154,10 +146,12 @@ bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
   // global lexical |this| value. This is for compatibility with the Subscript
   // Loader.
   if (frame.script()->hasNonSyntacticScope() && thisv.isNullOrUndefined()) {
-    RootedObject env(cx, frame.environmentChain());
+    JSObject* env = frame.environmentChain();
     while (true) {
-      if (IsNSVOLexicalEnvironment(env) || IsGlobalLexicalEnvironment(env)) {
-        res.setObject(*GetThisObjectOfLexical(env));
+      if (IsNSVOLexicalEnvironment(env) ||
+          env->is<GlobalLexicalEnvironmentObject>()) {
+        auto* obj = env->as<ExtensibleLexicalEnvironmentObject>().thisObject();
+        res.setObject(*obj);
         return true;
       }
       if (!env->enclosingEnvironment()) {
@@ -182,10 +176,11 @@ bool js::GetFunctionThis(JSContext* cx, AbstractFramePtr frame,
 
 void js::GetNonSyntacticGlobalThis(JSContext* cx, HandleObject envChain,
                                    MutableHandleValue res) {
-  RootedObject env(cx, envChain);
+  JSObject* env = envChain;
   while (true) {
-    if (IsExtensibleLexicalEnvironment(env)) {
-      res.setObject(*GetThisObjectOfLexical(env));
+    if (env->is<ExtensibleLexicalEnvironmentObject>()) {
+      auto* obj = env->as<ExtensibleLexicalEnvironmentObject>().thisObject();
+      res.setObject(*obj);
       return;
     }
     if (!env->enclosingEnvironment()) {
@@ -249,11 +244,38 @@ bool js::Debug_CheckSelfHosted(JSContext* cx, HandleValue funVal) {
   return true;
 }
 
+static inline bool GetLengthProperty(const Value& lval, MutableHandleValue vp) {
+  /* Optimize length accesses on strings, arrays, and arguments. */
+  if (lval.isString()) {
+    vp.setInt32(lval.toString()->length());
+    return true;
+  }
+  if (lval.isObject()) {
+    JSObject* obj = &lval.toObject();
+    if (obj->is<ArrayObject>()) {
+      vp.setNumber(obj->as<ArrayObject>().length());
+      return true;
+    }
+
+    if (obj->is<ArgumentsObject>()) {
+      ArgumentsObject* argsobj = &obj->as<ArgumentsObject>();
+      if (!argsobj->hasOverriddenLength()) {
+        uint32_t length = argsobj->initialLength();
+        MOZ_ASSERT(length < INT32_MAX);
+        vp.setInt32(int32_t(length));
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 static inline bool GetPropertyOperation(JSContext* cx,
                                         Handle<PropertyName*> name,
                                         HandleValue lval,
                                         MutableHandleValue vp) {
-  if (name == cx->names().length && GetLengthProperty(lval, vp)) {
+  if (name == cx->names().length && ::GetLengthProperty(lval, vp)) {
     return true;
   }
 
@@ -322,39 +344,6 @@ static bool MaybeCreateThisForConstructor(JSContext* cx, const CallArgs& args) {
   return JSFunction::getOrCreateScript(cx, callee);
 }
 
-#ifdef ENABLE_RECORD_TUPLE
-static bool AddRecordSpreadOperation(JSContext* cx, HandleValue recHandle,
-                                     HandleValue spreadeeHandle) {
-  MOZ_ASSERT(recHandle.toExtendedPrimitive().is<RecordType>());
-  RecordType* rec = &recHandle.toExtendedPrimitive().as<RecordType>();
-
-  RootedObject obj(cx, ToObjectOrGetObjectPayload(cx, spreadeeHandle));
-
-  RootedIdVector keys(cx);
-  if (!GetPropertyKeys(cx, obj, JSITER_OWNONLY | JSITER_SYMBOLS, &keys)) {
-    return false;
-  }
-
-  size_t len = keys.length();
-  RootedId propKey(cx);
-  RootedValue propValue(cx);
-  for (size_t i = 0; i < len; i++) {
-    propKey.set(keys[i]);
-
-    // Step 4.c.ii.1.
-    if (MOZ_UNLIKELY(!GetProperty(cx, obj, obj, propKey, &propValue))) {
-      return false;
-    }
-
-    if (MOZ_UNLIKELY(!rec->initializeNextProperty(cx, propKey, propValue))) {
-      return false;
-    }
-  }
-
-  return true;
-}
-#endif
-
 InterpreterFrame* InvokeState::pushInterpreterFrame(JSContext* cx) {
   return cx->interpreterStack().pushInvokeFrame(cx, args_, construct_);
 }
@@ -408,6 +397,13 @@ static MOZ_ALWAYS_INLINE bool MaybeEnterInterpreterTrampoline(JSContext* cx,
   return Interpret(cx, state);
 }
 
+static void AssertExceptionResult(JSContext* cx) {
+  // If this assertion fails, a JSNative or code in the VM returned false
+  // without throwing an exception or calling JS::ReportUncatchableException.
+  MOZ_ASSERT(cx->isExceptionPending() || cx->isPropagatingForcedReturn() ||
+             cx->hadUncatchableException());
+}
+
 // MSVC with PGO inlines a lot of functions in RunScript, resulting in large
 // stack frames and stack overflow issues, see bug 1167883. Turn off PGO to
 // avoid this.
@@ -425,6 +421,10 @@ bool js::RunScript(JSContext* cx, RunState& state) {
 
   // Since any script can conceivably GC, make sure it's safe to do so.
   cx->verifyIsSafeToGC();
+
+  // Don't run script while suppressing GC to not confuse JIT code that assumes
+  // some new objects will be allocated in the nursery.
+  MOZ_ASSERT(!cx->suppressGC);
 
   MOZ_ASSERT(cx->realm() == state.script()->realm());
 
@@ -464,7 +464,9 @@ bool js::RunScript(JSContext* cx, RunState& state) {
   }
 
   bool ok = MaybeEnterInterpreterTrampoline(cx, state);
-
+  if (!ok) {
+    AssertExceptionResult(cx);
+  }
   return ok;
 }
 #ifdef _MSC_VER
@@ -495,6 +497,8 @@ MOZ_ALWAYS_INLINE bool CallJSNative(JSContext* cx, Native native,
   if (ok) {
     cx->check(args.rval());
     MOZ_ASSERT_IF(!alreadyThrowing, !cx->isExceptionPending());
+  } else {
+    AssertExceptionResult(cx);
   }
   return ok;
 }
@@ -826,7 +830,7 @@ bool js::ExecuteKernel(JSContext* cx, HandleScript script,
                        HandleObject envChainArg, AbstractFramePtr evalInFrame,
                        MutableHandleValue result) {
   MOZ_ASSERT_IF(script->isGlobalCode(),
-                IsGlobalLexicalEnvironment(envChainArg) ||
+                envChainArg->is<GlobalLexicalEnvironmentObject>() ||
                     !IsSyntacticEnvironment(envChainArg));
 #ifdef DEBUG
   RootedObject terminatingEnv(cx, envChainArg);
@@ -872,7 +876,8 @@ bool js::Execute(JSContext* cx, HandleScript script, HandleObject envChain,
         "Module scripts can only be executed in the module's environment");
   } else {
     MOZ_RELEASE_ASSERT(
-        IsGlobalLexicalEnvironment(envChain) || script->hasNonSyntacticScope(),
+        envChain->is<GlobalLexicalEnvironmentObject>() ||
+            script->hasNonSyntacticScope(),
         "Only global scripts with non-syntactic envs can be executed with "
         "interesting envchains");
   }
@@ -929,10 +934,6 @@ bool js::InstanceofOperator(JSContext* cx, HandleObject obj, HandleValue v,
 }
 
 JSType js::TypeOfObject(JSObject* obj) {
-#ifdef ENABLE_RECORD_TUPLE
-  MOZ_ASSERT(!js::IsExtendedPrimitive(*obj));
-#endif
-
   AutoUnsafeCallWithABI unsafe;
   if (EmulatesUndefined(obj)) {
     return JSTYPE_UNDEFINED;
@@ -942,20 +943,6 @@ JSType js::TypeOfObject(JSObject* obj) {
   }
   return JSTYPE_OBJECT;
 }
-
-#ifdef ENABLE_RECORD_TUPLE
-JSType TypeOfExtendedPrimitive(JSObject* obj) {
-  MOZ_ASSERT(js::IsExtendedPrimitive(*obj));
-
-  if (obj->is<RecordType>()) {
-    return JSTYPE_RECORD;
-  }
-  if (obj->is<TupleType>()) {
-    return JSTYPE_TUPLE;
-  }
-  MOZ_CRASH("Unknown ExtendedPrimitive");
-}
-#endif
 
 JSType js::TypeOfValue(const Value& v) {
   switch (v.type()) {
@@ -970,10 +957,6 @@ JSType js::TypeOfValue(const Value& v) {
       return JSTYPE_UNDEFINED;
     case ValueType::Object:
       return TypeOfObject(&v.toObject());
-#ifdef ENABLE_RECORD_TUPLE
-    case ValueType::ExtendedPrimitive:
-      return TypeOfExtendedPrimitive(&v.toExtendedPrimitive());
-#endif
     case ValueType::Boolean:
       return JSTYPE_BOOLEAN;
     case ValueType::BigInt:
@@ -1039,8 +1022,8 @@ bool js::EnterWithOperation(JSContext* cx, AbstractFramePtr frame,
   }
 
   RootedObject envChain(cx, frame.environmentChain());
-  WithEnvironmentObject* withobj =
-      WithEnvironmentObject::create(cx, obj, envChain, scope);
+  WithEnvironmentObject* withobj = WithEnvironmentObject::create(
+      cx, obj, envChain, scope, JS::SupportUnscopables::Yes);
   if (!withobj) {
     return false;
   }
@@ -1392,13 +1375,6 @@ again:
     REGS.sp++->setObjectOrNull(obj); \
     cx->debugOnlyCheck(REGS.sp[-1]); \
   } while (0)
-#ifdef ENABLE_RECORD_TUPLE
-#  define PUSH_EXTENDED_PRIMITIVE(obj)      \
-    do {                                    \
-      REGS.sp++->setExtendedPrimitive(obj); \
-      cx->debugOnlyCheck(REGS.sp[-1]);      \
-    } while (0)
-#endif
 #define PUSH_MAGIC(magic) REGS.sp++->setMagic(magic)
 #define POP_COPY_TO(v) (v) = *--REGS.sp
 #define POP_RETURN_VALUE() REGS.fp()->setReturnValue(*--REGS.sp)
@@ -1434,7 +1410,8 @@ static inline Value ComputeImplicitThis(JSObject* env) {
 
   // WithEnvironmentObjects have an actual implicit |this|
   if (env->is<WithEnvironmentObject>()) {
-    return ObjectValue(*GetThisObjectOfWith(env));
+    auto* thisObject = env->as<WithEnvironmentObject>().withThis();
+    return ObjectValue(*thisObject);
   }
 
   // Debugger environments need special casing, as despite being
@@ -1654,98 +1631,47 @@ void js::ReportInNotObjectError(JSContext* cx, HandleValue lref,
 }
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-
 // Explicit Resource Management Proposal
-// GetDisposeMethod ( V, hint )
+// 7.5.6 GetDisposeMethod ( V, hint )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-getdisposemethod
-bool js::GetDisposeMethod(JSContext* cx, JS::Handle<JS::Value> objVal,
-                          UsingHint hint,
-                          JS::MutableHandle<JS::Value> disposeMethod) {
-  switch (hint) {
-    case UsingHint::Async:
-      MOZ_CRASH("Async hint is not yet supported");
+// Steps 1.b.ii.1.a-f
+bool js::SyncDisposalClosure(JSContext* cx, unsigned argc, JS::Value* vp) {
+  JS::CallArgs args = CallArgsFromVp(argc, vp);
 
-    case UsingHint::Sync: {
-      // Step 2. Else,
-      // Step 2.a. Let method be ? GetMethod(V, @@dispose).
-      JS::Rooted<JS::PropertyKey> id(
-          cx, PropertyKey::Symbol(cx->wellKnownSymbols().dispose));
-      JS::Rooted<JSObject*> obj(cx, &objVal.toObject());
+  JS::Rooted<JSFunction*> callee(cx, &args.callee().as<JSFunction>());
 
-      if (!GetProperty(cx, obj, obj, id, disposeMethod)) {
-        return false;
-      }
+  JS::Rooted<JS::Value> method(
+      cx, callee->getExtendedSlot(uint8_t(SyncDisposalClosureSlots::Method)));
 
-      // CreateDisposableResource ( V, hint [ , method ] )
-      // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-createdisposableresource
-      //
-      // Step 1.b.iii. If method is undefined, throw a TypeError exception.
-      if (disposeMethod.isNullOrUndefined() || !IsCallable(disposeMethod)) {
-        JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                  JSMSG_DISPOSE_NOT_CALLABLE);
-        return false;
-      }
+  // Step 1.b.ii.1.a. Let O be the this value.
+  JS::Rooted<JS::Value> O(cx, args.thisv());
 
-      return true;
-    }
-    default:
-      MOZ_CRASH("Invalid UsingHint");
-  }
-}
-
-// Explicit Resource Management Proposal
-// CreateDisposableResource ( V, hint [ , method ] )
-// https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-createdisposableresource
-bool js::CreateDisposableResource(
-    JSContext* cx, JS::Handle<JS::Value> obj, UsingHint hint,
-    JS::Handle<mozilla::Maybe<JS::Value>> methodVal,
-    JS::MutableHandle<JS::Value> result) {
-  // Step 1. If method is not present, then
-  JS::Rooted<JS::Value> method(cx);
-  JS::Rooted<JS::Value> object(cx);
-  if (!methodVal.isSome()) {
-    // Step 1.a. If V is either null or undefined, then
-    if (obj.isNullOrUndefined()) {
-      // Step 1.a.i. Set V to undefined.
-      // Step 1.a.ii. Set method to undefined.
-      object.setUndefined();
-      method.setUndefined();
-    } else {
-      // Step 1.b. Else,
-      // Step 1.b.i. If V is not an Object, throw a TypeError exception.
-      if (!obj.isObject()) {
-        return ThrowCheckIsObject(cx, CheckIsObjectKind::Disposable);
-      }
-
-      // Step 1.b.ii. Set method to ? GetDisposeMethod(V, hint).
-      // Step 1.b.iii. If method is undefined, throw a TypeError exception.
-      object.set(obj);
-      if (!GetDisposeMethod(cx, object, hint, &method)) {
-        return false;
-      }
-    }
-  } else {
-    // Step 2. Else,
-    // Step 2.a. If IsCallable(method) is false, throw a TypeError exception.
-    if (!IsCallable(*methodVal)) {
-      JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                                JSMSG_DISPOSE_NOT_CALLABLE);
-      return false;
-    }
-    object.set(obj);
-    method.set(*methodVal);
-  }
-
-  // Step 3. Return the
-  //         DisposableResource Record { [[ResourceValue]]: V, [[Hint]]: hint,
-  //         [[DisposeMethod]]: method }.
-  DisposableRecordObject* disposableRecord =
-      DisposableRecordObject::create(cx, object, method, hint);
-  if (!disposableRecord) {
+  // Step 1.b.ii.1.b. Let promiseCapability be !
+  // NewPromiseCapability(%Promise%).
+  JSObject* createPromise = JS::NewPromiseObject(cx, nullptr);
+  if (!createPromise) {
     return false;
   }
-  result.set(ObjectValue(*disposableRecord));
+  JS::Rooted<PromiseObject*> promiseCapability(
+      cx, &createPromise->as<PromiseObject>());
 
+  // Step 1.b.ii.1.c. Let result be Completion(Call(method, O)).
+  JS::Rooted<JS::Value> rval(cx);
+  bool result = Call(cx, method, O, &rval);
+
+  // Step 1.b.ii.1.d. IfAbruptRejectPromise(result, promiseCapability).
+  if (!result) {
+    return AbruptRejectPromise(cx, args, promiseCapability, nullptr);
+  }
+
+  // Step 1.b.ii.1.e. Perform ? Call(promiseCapability.[[Resolve]], undefined, «
+  // undefined »).
+  if (!JS::ResolvePromise(cx, promiseCapability, JS::UndefinedHandleValue)) {
+    return false;
+  }
+
+  // Step 1.b.ii.1.f. Return promiseCapability.[[Promise]].
+  args.rval().set(JS::ObjectValue(*promiseCapability));
   return true;
 }
 
@@ -1759,9 +1685,18 @@ ErrorObject* js::CreateSuppressedError(JSContext* cx,
   JS_ReportErrorNumberUTF8(cx, GetErrorMessage, nullptr,
                            JSMSG_ERROR_WAS_SUPPRESSED);
 
+  if (cx->isThrowingOutOfMemory()) {
+    return nullptr;
+  }
+
   JS::Rooted<JS::Value> thrownSuppressed(cx);
 
   if (!cx->getPendingException(&thrownSuppressed)) {
+    return nullptr;
+  }
+
+  if (!thrownSuppressed.isObject() ||
+      !thrownSuppressed.toObject().is<ErrorObject>()) {
     return nullptr;
   }
 
@@ -1789,71 +1724,48 @@ ErrorObject* js::CreateSuppressedError(JSContext* cx,
   return errorObj;
 }
 
-bool js::DisposeDisposablesOnScopeLeave(JSContext* cx,
-                                        JS::Handle<JSObject*> env) {
-  MOZ_ASSERT(env->is<LexicalEnvironmentObject>() ||
-             env->is<ModuleEnvironmentObject>());
-
-  JS::Value maybeDisposables =
-      env->is<LexicalEnvironmentObject>()
-          ? env->as<LexicalEnvironmentObject>().getDisposables()
-          : env->as<ModuleEnvironmentObject>().getDisposables();
-
-  MOZ_ASSERT(maybeDisposables.isObject() || maybeDisposables.isUndefined());
-
-  if (!maybeDisposables.isObject()) {
-    return !cx->isExceptionPending();
-  }
-
-  auto clearFn = [env]() {
-    if (env->is<LexicalEnvironmentObject>()) {
-      env->as<LexicalEnvironmentObject>().clearDisposables();
-    } else {
-      env->as<ModuleEnvironmentObject>().clearDisposables();
-    }
-  };
-
-  JS::Rooted<ListObject*> disposables(
-      cx, &maybeDisposables.toObject().as<ListObject>());
-
-  return DisposeResources(cx, disposables, clearFn);
-}
-
 // Explicit Resource Management Proposal
 // 7.5.4 AddDisposableResource ( disposeCapability, V, hint [ , method ] )
 // https://arai-a.github.io/ecma262-compare/?pr=3000&id=sec-adddisposableresource
-bool js::AddDisposableResource(
-    JSContext* cx, JS::Handle<ListObject*> disposeCapability,
-    JS::Handle<JS::Value> val, UsingHint hint,
-    JS::Handle<mozilla::Maybe<JS::Value>> methodVal) {
-  JS::Rooted<JS::Value> resource(cx);
-
-  // Step 1. If method is not present, then
-  if (!methodVal.isSome()) {
-    // Step 1.a. If V is either null or undefined and hint is sync-dispose,
-    // return unused.
-    if (val.isNullOrUndefined() && hint == UsingHint::Sync) {
-      return true;
-    }
-
-    // Step 1.c. Let resource be ? CreateDisposableResource(V, hint).
-    if (!CreateDisposableResource(cx, val, hint, methodVal, &resource)) {
-      return false;
-    }
-  } else {
-    // Step 2. Else,
-    // Step 2.a. Assert: V is undefined.
-    MOZ_ASSERT(val.isUndefined());
-
-    // Step 2.b. Let resource be ? CreateDisposableResource(undefined, hint,
-    // method).
-    if (!CreateDisposableResource(cx, val, hint, methodVal, &resource)) {
-      return false;
-    }
+// Step 3
+bool js::AddDisposableResourceToCapability(JSContext* cx,
+                                           JS::Handle<JSObject*> env,
+                                           JS::Handle<JS::Value> val,
+                                           JS::Handle<JS::Value> method,
+                                           bool needsClosure, UsingHint hint) {
+  JS::Rooted<ArrayObject*> disposeCapability(
+      cx,
+      env->as<DisposableEnvironmentObject>().getOrCreateDisposeCapability(cx));
+  if (!disposeCapability) {
+    return false;
   }
 
-  // Step 3. Append resource to disposeCapability.[[DisposableResourceStack]].
-  return disposeCapability->append(cx, resource);
+  JS::Rooted<JS::Value> disposeMethod(cx);
+
+  if (needsClosure) {
+    JS::Handle<PropertyName*> funName = cx->names().empty_;
+    JSFunction* asyncWrapper =
+        NewNativeFunction(cx, SyncDisposalClosure, 0, funName,
+                          gc::AllocKind::FUNCTION_EXTENDED, GenericObject);
+
+    if (!asyncWrapper) {
+      return false;
+    }
+    asyncWrapper->initExtendedSlot(uint8_t(SyncDisposalClosureSlots::Method),
+                                   method);
+    disposeMethod.set(JS::ObjectValue(*asyncWrapper));
+  } else {
+    disposeMethod.set(method);
+  }
+
+  DisposableRecordObject* disposableRecord =
+      DisposableRecordObject::create(cx, val, disposeMethod, hint);
+  if (!disposableRecord) {
+    return false;
+  }
+
+  return NewbornArrayPush(cx, disposeCapability,
+                          JS::ObjectValue(*disposableRecord));
 }
 #endif
 
@@ -2009,7 +1921,6 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     return false;
   }
 
-  ActivationEntryMonitor entryMonitor(cx, entryFrame);
   InterpreterActivation activation(state, cx, entryFrame);
 
   /* The script is used frequently, so keep a local copy. */
@@ -2023,14 +1934,20 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
    * correctness pitfalls due to incorrect compilation of destructor calls
    * around computed gotos.
    */
-  RootedValue rootValue0(cx), rootValue1(cx);
-  RootedObject rootObject0(cx), rootObject1(cx);
-  RootedFunction rootFunction0(cx);
-  Rooted<JSAtom*> rootAtom0(cx);
-  Rooted<PropertyName*> rootName0(cx);
-  RootedId rootId0(cx);
-  RootedScript rootScript0(cx);
-  Rooted<Scope*> rootScope0(cx);
+  RootedTuple<Value, Value, JSObject*, JSObject*, JSFunction*, JSAtom*,
+              PropertyName*, PropertyKey, JSScript*, Scope*>
+      roots(cx);
+  RootedField<Value, 0> rootValue0(roots);
+  RootedField<Value, 1> rootValue1(roots);
+  RootedField<JSObject*, 2> rootObject0(roots);
+  RootedField<JSObject*, 3> rootObject1(roots);
+  RootedField<JSFunction*> rootFunction0(roots);
+  RootedField<JSAtom*> rootAtom0(roots);
+  RootedField<PropertyName*> rootName0(roots);
+  RootedField<PropertyKey> rootId0(roots);
+  RootedField<JSScript*> rootScript0(roots);
+  RootedField<Scope*> rootScope0(roots);
+
   DebugOnly<uint32_t> blockDepth;
 
   /* State communicated between non-local jumps: */
@@ -2204,66 +2121,57 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(LeaveWith)
 
 #ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
-    CASE(ThrowWithStackWithoutJump) {
-      ReservedRooted<Value> v(&rootValue0);
-      ReservedRooted<Value> stack(&rootValue1);
-      POP_COPY_TO(stack);
-      POP_COPY_TO(v);
-      MOZ_ALWAYS_FALSE(ThrowWithStackOperation(cx, v, stack));
-    }
-    END_CASE(ThrowWithStackWithoutJump)
-
     CASE(AddDisposable) {
       ReservedRooted<JSObject*> env(&rootObject0,
                                     REGS.fp()->environmentChain());
 
-      ReservedRooted<Value> val(&rootValue0, REGS.sp[-1]);
+      ReservedRooted<JS::Value> needsClosure(&rootValue0);
+      POP_COPY_TO(needsClosure);
+
+      ReservedRooted<JS::Value> method(&rootValue1);
+      POP_COPY_TO(method);
+
+      JS::Rooted<JS::Value> val(cx);
+      POP_COPY_TO(val);
+
       UsingHint hint = UsingHint(GET_UINT8(REGS.pc));
-      JS::Rooted<ListObject*> disposableCapability(cx);
 
-      if (env->is<LexicalEnvironmentObject>()) {
-        disposableCapability =
-            env->as<LexicalEnvironmentObject>().getOrCreateDisposeCapability(
-                cx);
-      } else if (env->is<ModuleEnvironmentObject>()) {
-        disposableCapability =
-            env->as<ModuleEnvironmentObject>().getOrCreateDisposeCapability(cx);
-      } else {
-        MOZ_CRASH("Unexpected environment object for JSOp::AddDispose");
-      }
-
-      if (!disposableCapability) {
-        goto error;
-      }
-
-      if (!AddDisposableResource(cx, disposableCapability, val, hint,
-                                 JS::NothingHandleValue)) {
+      if (!AddDisposableResourceToCapability(cx, env, val, method,
+                                             needsClosure.toBoolean(), hint)) {
         goto error;
       }
     }
     END_CASE(AddDisposable)
 
-    CASE(DisposeDisposables) {
+    CASE(TakeDisposeCapability) {
       ReservedRooted<JSObject*> env(&rootObject0,
                                     REGS.fp()->environmentChain());
-      DisposeJumpKind jumpKind = DisposeJumpKind(GET_UINT8(REGS.pc));
-      bool ok = DisposeDisposablesOnScopeLeave(cx, env);
-      if (jumpKind == DisposeJumpKind::JumpOnError) {
-        if (!ok) {
-          goto error;
-        }
+      JS::Value maybeDisposables =
+          env->as<DisposableEnvironmentObject>().getDisposables();
+
+      MOZ_ASSERT(maybeDisposables.isObject() || maybeDisposables.isUndefined());
+
+      if (maybeDisposables.isUndefined()) {
+        PUSH_UNDEFINED();
       } else {
-        MOZ_ASSERT(jumpKind == DisposeJumpKind::NoJumpOnError);
-        // The NoJumpOnError mode for this bytecode is used
-        // in the special case of For-of iterator close when there
-        // is an exception during the loop. Hence, if we reach this
-        // point in the execution we must have an exception
-        // pending and the bytecode following this must handle the
-        // exception.
-        MOZ_ASSERT(!ok, "NoJumpOnError used without a pending exception");
+        PUSH_OBJECT(maybeDisposables.toObject());
+        env->as<DisposableEnvironmentObject>().clearDisposables();
       }
     }
-    END_CASE(DisposeDisposables)
+    END_CASE(TakeDisposeCapability)
+
+    CASE(CreateSuppressedError) {
+      ReservedRooted<JS::Value> error(&rootValue0);
+      ReservedRooted<JS::Value> suppressed(&rootValue1);
+      POP_COPY_TO(suppressed);
+      POP_COPY_TO(error);
+      ErrorObject* errorObj = CreateSuppressedError(cx, error, suppressed);
+      if (!errorObj) {
+        goto error;
+      }
+      PUSH_OBJECT(*errorObj);
+    }
+    END_CASE(CreateSuppressedError)
 #endif
 
     CASE(Return) {
@@ -2512,13 +2420,8 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(CloseIter)
 
     CASE(OptimizeGetIterator) {
-      ReservedRooted<Value> val(&rootValue0, REGS.sp[-1]);
-      MutableHandleValue rval = REGS.stackHandleAt(-1);
-      bool result;
-      if (!OptimizeGetIterator(cx, val, &result)) {
-        goto error;
-      }
-      rval.setBoolean(result);
+      bool result = OptimizeGetIterator(REGS.sp[-1], cx);
+      REGS.sp[-1].setBoolean(result);
     }
     END_CASE(OptimizeGetIterator)
 
@@ -2570,11 +2473,11 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     }
     END_CASE(Unpick)
 
-    CASE(BindGName)
-    CASE(BindName) {
+    CASE(BindUnqualifiedGName)
+    CASE(BindUnqualifiedName) {
       JSOp op = JSOp(*REGS.pc);
       ReservedRooted<JSObject*> envChain(&rootObject0);
-      if (op == JSOp::BindName) {
+      if (op == JSOp::BindUnqualifiedName) {
         envChain.set(REGS.fp()->environmentChain());
       } else {
         MOZ_ASSERT(!script->hasNonSyntacticScope());
@@ -2583,15 +2486,29 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
 
       // Assigning to an undeclared name adds a property to the global object.
-      ReservedRooted<JSObject*> env(&rootObject1);
-      if (!LookupNameUnqualified(cx, name, envChain, &env)) {
+      JSObject* env = LookupNameUnqualified(cx, name, envChain);
+      if (!env) {
         goto error;
       }
 
       PUSH_OBJECT(*env);
 
-      static_assert(JSOpLength_BindName == JSOpLength_BindGName,
-                    "We're sharing the END_CASE so the lengths better match");
+      static_assert(
+          JSOpLength_BindUnqualifiedName == JSOpLength_BindUnqualifiedGName,
+          "We're sharing the END_CASE so the lengths better match");
+    }
+    END_CASE(BindUnqualifiedName)
+
+    CASE(BindName) {
+      auto envChain = REGS.fp()->environmentChain();
+      ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
+
+      JSObject* env = LookupNameWithGlobalDefault(cx, name, envChain);
+      if (!env) {
+        goto error;
+      }
+
+      PUSH_OBJECT(*env);
     }
     END_CASE(BindName)
 
@@ -2869,12 +2786,11 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
 
     CASE(DelName) {
       ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
-      ReservedRooted<JSObject*> envObj(&rootObject0,
-                                       REGS.fp()->environmentChain());
+      HandleObject envChain = REGS.fp()->environmentChain();
 
       PUSH_BOOLEAN(true);
       MutableHandleValue res = REGS.stackHandleAt(-1);
-      if (!DeleteNameOperation(cx, name, envObj, res)) {
+      if (!DeleteNameOperation(cx, name, envChain, res)) {
         goto error;
       }
     }
@@ -3274,7 +3190,7 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
       HandleValue arr = REGS.stackHandleAt(-1 - construct);
       MutableHandleValue ret = REGS.stackHandleAt(-3 - construct);
 
-      RootedValue& newTarget = rootValue0;
+      ReservedRooted<Value> newTarget(&rootValue0);
       if (construct) {
         newTarget = REGS.sp[-1];
       } else {
@@ -3469,16 +3385,8 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     END_CASE(ThrowMsg)
 
     CASE(ImplicitThis) {
-      ReservedRooted<PropertyName*> name(&rootName0, script->getName(REGS.pc));
-      ReservedRooted<JSObject*> envObj(&rootObject0,
-                                       REGS.fp()->environmentChain());
-      ReservedRooted<JSObject*> env(&rootObject1);
-      if (!LookupNameWithGlobalDefault(cx, name, envObj, &env)) {
-        goto error;
-      }
-
-      Value v = ComputeImplicitThis(env);
-      PUSH_COPY(v);
+      Value thisv = ComputeImplicitThis(&REGS.sp[-1].toObject());
+      REGS.sp[-1] = thisv;
     }
     END_CASE(ImplicitThis)
 
@@ -4094,91 +4002,6 @@ bool MOZ_NEVER_INLINE JS_HAZ_JSNATIVE_CALLER js::Interpret(JSContext* cx,
     }
     END_CASE(InitElemInc)
 
-#ifdef ENABLE_RECORD_TUPLE
-    CASE(InitRecord) {
-      uint32_t length = GET_UINT32(REGS.pc);
-      RecordType* rec = RecordType::createUninitialized(cx, length);
-      if (!rec) {
-        goto error;
-      }
-      PUSH_EXTENDED_PRIMITIVE(*rec);
-    }
-    END_CASE(InitRecord)
-
-    CASE(AddRecordProperty) {
-      MOZ_ASSERT(REGS.stackDepth() >= 3);
-
-      ReservedRooted<JSObject*> rec(&rootObject0,
-                                    &REGS.sp[-3].toExtendedPrimitive());
-      MOZ_ASSERT(rec->is<RecordType>());
-
-      ReservedRooted<Value> key(&rootValue0, REGS.sp[-2]);
-      ReservedRooted<jsid> id(&rootId0);
-      if (!JS_ValueToId(cx, key, &id)) {
-        goto error;
-      }
-      if (!rec->as<RecordType>().initializeNextProperty(
-              cx, id, REGS.stackHandleAt(-1))) {
-        goto error;
-      }
-
-      REGS.sp -= 2;
-    }
-    END_CASE(AddRecordProperty)
-
-    CASE(AddRecordSpread) {
-      MOZ_ASSERT(REGS.stackDepth() >= 2);
-
-      if (!AddRecordSpreadOperation(cx, REGS.stackHandleAt(-2),
-                                    REGS.stackHandleAt(-1))) {
-        goto error;
-      }
-      REGS.sp--;
-    }
-    END_CASE(AddRecordSpread)
-
-    CASE(FinishRecord) {
-      MOZ_ASSERT(REGS.stackDepth() >= 1);
-      RecordType* rec = &REGS.sp[-1].toExtendedPrimitive().as<RecordType>();
-      if (!rec->finishInitialization(cx)) {
-        goto error;
-      }
-    }
-    END_CASE(FinishRecord)
-
-    CASE(InitTuple) {
-      uint32_t length = GET_UINT32(REGS.pc);
-      TupleType* tup = TupleType::createUninitialized(cx, length);
-      if (!tup) {
-        goto error;
-      }
-      PUSH_EXTENDED_PRIMITIVE(*tup);
-    }
-    END_CASE(InitTuple)
-
-    CASE(AddTupleElement) {
-      MOZ_ASSERT(REGS.stackDepth() >= 2);
-
-      ReservedRooted<JSObject*> tup(&rootObject0,
-                                    &REGS.sp[-2].toExtendedPrimitive());
-      HandleValue val = REGS.stackHandleAt(-1);
-
-      if (!tup->as<TupleType>().initializeNextElement(cx, val)) {
-        goto error;
-      }
-
-      REGS.sp--;
-    }
-    END_CASE(AddTupleElement)
-
-    CASE(FinishTuple) {
-      MOZ_ASSERT(REGS.stackDepth() >= 1);
-      TupleType& tup = REGS.sp[-1].toExtendedPrimitive().as<TupleType>();
-      tup.finishInitialization(cx);
-    }
-    END_CASE(FinishTuple)
-#endif
-
     CASE(Exception) {
       PUSH_NULL();
       MutableHandleValue res = REGS.stackHandleAt(-1);
@@ -4743,7 +4566,7 @@ bool js::GetProperty(JSContext* cx, HandleValue v, Handle<PropertyName*> name,
                      MutableHandleValue vp) {
   if (name == cx->names().length) {
     // Fast path for strings, arrays and arguments.
-    if (GetLengthProperty(v, vp)) {
+    if (::GetLengthProperty(v, vp)) {
       return true;
     }
   }
@@ -4770,13 +4593,6 @@ bool js::GetProperty(JSContext* cx, HandleValue v, Handle<PropertyName*> name,
       case ValueType::BigInt:
         proto = GlobalObject::getOrCreateBigIntPrototype(cx, cx->global());
         break;
-#ifdef ENABLE_RECORD_TUPLE
-      case ValueType::ExtendedPrimitive: {
-        RootedObject obj(cx, &v.toExtendedPrimitive());
-        RootedId id(cx, NameToId(name));
-        return ExtendedPrimitiveGetProperty(cx, obj, v, id, vp);
-      }
-#endif
       case ValueType::Undefined:
       case ValueType::Null:
       case ValueType::Magic:
@@ -5032,14 +4848,14 @@ bool js::GreaterThanOrEqual(JSContext* cx, MutableHandleValue lhs,
 }
 
 bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
-                             HandleObject scopeObj, MutableHandleValue res) {
-  RootedObject scope(cx), pobj(cx);
+                             HandleObject envChain, MutableHandleValue res) {
+  RootedObject env(cx), pobj(cx);
   PropertyResult prop;
-  if (!LookupName(cx, name, scopeObj, &scope, &pobj, &prop)) {
+  if (!LookupName(cx, name, envChain, &env, &pobj, &prop)) {
     return false;
   }
 
-  if (!scope) {
+  if (!env) {
     // Return true for non-existent names.
     res.setBoolean(true);
     return true;
@@ -5047,33 +4863,21 @@ bool js::DeleteNameOperation(JSContext* cx, Handle<PropertyName*> name,
 
   ObjectOpResult result;
   RootedId id(cx, NameToId(name));
-  if (!DeleteProperty(cx, scope, id, result)) {
+  if (!DeleteProperty(cx, env, id, result)) {
     return false;
   }
 
   bool status = result.ok();
   res.setBoolean(status);
 
-  if (status) {
-    // Deleting a name from the global object removes it from [[VarNames]].
-    if (pobj == scope && scope->is<GlobalObject>()) {
-      scope->as<GlobalObject>().removeFromVarNames(name);
-    }
-  }
-
   return true;
 }
 
-bool js::ImplicitThisOperation(JSContext* cx, HandleObject scopeObj,
-                               Handle<PropertyName*> name,
+void js::ImplicitThisOperation(JSContext* cx, HandleObject env,
                                MutableHandleValue res) {
-  RootedObject obj(cx);
-  if (!LookupNameWithGlobalDefault(cx, name, scopeObj, &obj)) {
-    return false;
-  }
-
-  res.set(ComputeImplicitThis(obj));
-  return true;
+  // Note: ImplicitThisOperation has an unused cx argument because the JIT
+  // callVM machinery requires this.
+  res.set(ComputeImplicitThis(env));
 }
 
 unsigned js::GetInitDataPropAttrs(JSOp op) {
@@ -5219,10 +5023,7 @@ bool js::SpreadCallOperation(JSContext* cx, HandleScript script, jsbytecode* pc,
   return true;
 }
 
-static bool OptimizeArrayIteration(JSContext* cx, HandleObject obj,
-                                   bool* optimized) {
-  *optimized = false;
-
+static bool OptimizeArrayIteration(JSObject* obj, JSContext* cx) {
   // Optimize spread call by skipping spread operation when following
   // conditions are met:
   //   * the argument is an array
@@ -5233,20 +5034,7 @@ static bool OptimizeArrayIteration(JSContext* cx, HandleObject obj,
   //   * %ArrayIteratorPrototype%.next is not modified
   //   * %ArrayIteratorPrototype%.return is not defined
   //   * return is nowhere on the proto chain
-  if (!IsPackedArray(obj)) {
-    return true;
-  }
-
-  ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
-  }
-
-  if (!stubChain->tryOptimizeArray(cx, obj.as<ArrayObject>(), optimized)) {
-    return false;
-  }
-
-  return true;
+  return IsArrayWithDefaultIterator<MustBePacked::Yes>(obj, cx);
 }
 
 static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
@@ -5259,6 +5047,8 @@ static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
   //   * the arguments object has no deleted elements
   //   * arguments.length is not overridden
   //   * arguments[@@iterator] is not overridden
+  //   * the arguments object belongs to the current realm (affects which
+  //     %ArrayIteratorPrototype% is used)
   //   * %ArrayIteratorPrototype%.next is not modified
 
   if (!obj->is<ArgumentsObject>()) {
@@ -5270,17 +5060,11 @@ static bool OptimizeArgumentsSpreadCall(JSContext* cx, HandleObject obj,
       args->hasOverriddenIterator()) {
     return true;
   }
-
-  ForOfPIC::Chain* stubChain = ForOfPIC::getOrCreate(cx);
-  if (!stubChain) {
-    return false;
+  if (cx->realm() != args->realm()) {
+    return true;
   }
 
-  bool optimized;
-  if (!stubChain->tryOptimizeArrayIteratorNext(cx, &optimized)) {
-    return false;
-  }
-  if (!optimized) {
+  if (!HasOptimizableArrayIteratorPrototype(cx)) {
     return true;
   }
 
@@ -5304,11 +5088,7 @@ bool js::OptimizeSpreadCall(JSContext* cx, HandleValue arg,
   }
 
   RootedObject obj(cx, &arg.toObject());
-  bool optimized;
-  if (!OptimizeArrayIteration(cx, obj, &optimized)) {
-    return false;
-  }
-  if (optimized) {
+  if (OptimizeArrayIteration(obj, cx)) {
     result.setObject(*obj);
     return true;
   }
@@ -5324,28 +5104,11 @@ bool js::OptimizeSpreadCall(JSContext* cx, HandleValue arg,
   return true;
 }
 
-bool js::OptimizeGetIterator(JSContext* cx, HandleValue arg, bool* result) {
-  // This function returns |false| if the iteration can't be optimized.
-  *result = false;
-
+bool js::OptimizeGetIterator(const Value& arg, JSContext* cx) {
   if (!arg.isObject()) {
-    return true;
-  }
-
-  RootedObject obj(cx, &arg.toObject());
-
-  bool optimized;
-  if (!OptimizeArrayIteration(cx, obj, &optimized)) {
     return false;
   }
-
-  if (optimized) {
-    *result = true;
-    return true;
-  }
-
-  MOZ_ASSERT(!*result);
-  return true;
+  return OptimizeArrayIteration(&arg.toObject(), cx);
 }
 
 ArrayObject* js::ArrayFromArgumentsObject(JSContext* cx,
@@ -5376,6 +5139,11 @@ JSObject* js::NewObjectOperation(JSContext* cx, HandleScript script,
   }
 
   MOZ_ASSERT(JSOp(*pc) == JSOp::NewInit);
+  uint8_t propCount = GET_UINT8(pc);
+  if (propCount > 0) {
+    gc::AllocKind allocKind = gc::GetGCObjectKind(propCount);
+    return NewPlainObjectWithAllocKind(cx, allocKind);
+  }
   return NewPlainObject(cx);
 }
 
@@ -5480,15 +5248,6 @@ void js::ReportRuntimeLexicalError(JSContext* cx, unsigned errorNumber,
   }
 
   ReportRuntimeLexicalError(cx, errorNumber, name);
-}
-
-void js::ReportRuntimeRedeclaration(JSContext* cx, Handle<PropertyName*> name,
-                                    const char* redeclKind) {
-  if (UniqueChars printable = AtomToPrintableString(cx, name)) {
-    JS_ReportErrorNumberASCII(cx, GetErrorMessage, nullptr,
-                              JSMSG_REDECLARED_VAR, redeclKind,
-                              printable.get());
-  }
 }
 
 bool js::ThrowCheckIsObject(JSContext* cx, CheckIsObjectKind kind) {

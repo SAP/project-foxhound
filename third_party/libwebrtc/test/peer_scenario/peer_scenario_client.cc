@@ -13,6 +13,7 @@
 #include <memory>
 #include <utility>
 
+#include "absl/container/inlined_vector.h"
 #include "absl/memory/memory.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
@@ -21,6 +22,7 @@
 #include "api/task_queue/default_task_queue_factory.h"
 #include "api/test/create_time_controller.h"
 #include "api/transport/field_trial_based_config.h"
+#include "api/video_codecs/scalability_mode.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
 #include "api/video_codecs/video_decoder_factory_template_dav1d_adapter.h"
 #include "api/video_codecs/video_decoder_factory_template_libvpx_vp8_adapter.h"
@@ -179,7 +181,13 @@ class LambdaSetRemoteDescriptionObserver
 class FakeVideoEncoderFactory : public VideoEncoderFactory {
  public:
   std::vector<SdpVideoFormat> GetSupportedFormats() const override {
-    return {SdpVideoFormat::VP8()};
+    const absl::InlinedVector<webrtc::ScalabilityMode,
+                              webrtc::kScalabilityModeCount>
+        kSupportedScalabilityModes = {webrtc::ScalabilityMode::kL1T1,
+                                      webrtc::ScalabilityMode::kL1T2,
+                                      webrtc::ScalabilityMode::kL1T3};
+    return {
+        SdpVideoFormat(cricket::kVp8CodecName, {}, kSupportedScalabilityModes)};
   }
   std::unique_ptr<VideoEncoder> Create(const Environment& env,
                                        const SdpVideoFormat& format) override {
@@ -348,7 +356,8 @@ void PeerScenarioClient::CreateAndSetSdp(
   RTC_DCHECK_RUN_ON(signaling_thread_);
   peer_connection_->CreateOffer(
       rtc::make_ref_counted<LambdaCreateSessionDescriptionObserver>(
-          [=](std::unique_ptr<SessionDescriptionInterface> offer) {
+          [this, munge_offer,
+           offer_handler](std::unique_ptr<SessionDescriptionInterface> offer) {
             RTC_DCHECK_RUN_ON(signaling_thread_);
             if (munge_offer) {
               munge_offer(offer.get());
@@ -371,7 +380,8 @@ void PeerScenarioClient::SetSdpOfferAndGetAnswer(
     std::function<void()> remote_description_set,
     std::function<void(std::string)> answer_handler) {
   if (!signaling_thread_->IsCurrent()) {
-    signaling_thread_->PostTask([=] {
+    signaling_thread_->PostTask([this, remote_offer, remote_description_set,
+                                 answer_handler] {
       SetSdpOfferAndGetAnswer(remote_offer, remote_description_set,
                               answer_handler);
     });
@@ -380,7 +390,9 @@ void PeerScenarioClient::SetSdpOfferAndGetAnswer(
   RTC_DCHECK_RUN_ON(signaling_thread_);
   peer_connection_->SetRemoteDescription(
       CreateSessionDescription(SdpType::kOffer, remote_offer),
-      rtc::make_ref_counted<LambdaSetRemoteDescriptionObserver>([=](RTCError) {
+      rtc::make_ref_counted<
+          LambdaSetRemoteDescriptionObserver>([this, remote_description_set,
+                                               answer_handler](RTCError) {
         RTC_DCHECK_RUN_ON(signaling_thread_);
         if (remote_description_set) {
           // Allow the caller to modify transceivers
@@ -389,7 +401,8 @@ void PeerScenarioClient::SetSdpOfferAndGetAnswer(
         }
         peer_connection_->CreateAnswer(
             rtc::make_ref_counted<LambdaCreateSessionDescriptionObserver>(
-                [=](std::unique_ptr<SessionDescriptionInterface> answer) {
+                [this, answer_handler](
+                    std::unique_ptr<SessionDescriptionInterface> answer) {
                   RTC_DCHECK_RUN_ON(signaling_thread_);
                   std::string sdp_answer;
                   answer->ToString(&sdp_answer);
@@ -410,8 +423,9 @@ void PeerScenarioClient::SetSdpAnswer(
     std::string remote_answer,
     std::function<void(const SessionDescriptionInterface&)> done_handler) {
   if (!signaling_thread_->IsCurrent()) {
-    signaling_thread_->PostTask(
-        [=] { SetSdpAnswer(remote_answer, done_handler); });
+    signaling_thread_->PostTask([this, remote_answer, done_handler] {
+      SetSdpAnswer(remote_answer, done_handler);
+    });
     return;
   }
   RTC_DCHECK_RUN_ON(signaling_thread_);

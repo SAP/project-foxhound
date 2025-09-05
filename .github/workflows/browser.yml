@@ -143,6 +143,9 @@ jobs:
         os: [macos-latest, macos-13]
     runs-on: ${{ matrix.os }}
 
+    # Make sure all versions run to end
+    continue-on-error: true
+
     steps:
 
       - name: Checkout release branch

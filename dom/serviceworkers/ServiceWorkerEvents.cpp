@@ -33,7 +33,6 @@
 #include "mozilla/dom/WorkerPrivate.h"
 #include "mozilla/dom/WorkerScope.h"
 #include "mozilla/net/NeckoChannelParams.h"
-#include "mozilla/Telemetry.h"
 #include "nsComponentManagerUtils.h"
 #include "nsContentPolicyUtils.h"
 #include "nsContentUtils.h"
@@ -339,9 +338,6 @@ class StartResponse final : public Runnable {
     }
     if (!body) {
       mInternalResponse->GetUnfilteredBody(getter_AddRefs(body));
-    } else {
-      Telemetry::ScalarAdd(Telemetry::ScalarID::SW_ALTERNATIVE_BODY_USED_COUNT,
-                           1);
     }
 
     RefPtr<BodyCopyHandle> copyHandle;
@@ -658,14 +654,12 @@ void RespondWithHandler::ResolvedCallback(JSContext* aCx,
   if (NS_WARN_IF((response->Type() == ResponseType::Opaque ||
                   response->Type() == ResponseType::Cors) &&
                  ir->GetUnfilteredURL().IsEmpty())) {
-    MOZ_DIAGNOSTIC_ASSERT(false, "Cors or opaque Response without a URL");
+    MOZ_DIAGNOSTIC_CRASH("Cors or opaque Response without a URL");
     return;
   }
 
   if (mRequestMode == RequestMode::Same_origin &&
       response->Type() == ResponseType::Cors) {
-    Telemetry::ScalarAdd(Telemetry::ScalarID::SW_CORS_RES_FOR_SO_REQ_COUNT, 1);
-
     // XXXtt: Will have a pref to enable the quirk response in bug 1419684.
     // The variadic template provided by StringArrayAppender requires exactly
     // an nsString.

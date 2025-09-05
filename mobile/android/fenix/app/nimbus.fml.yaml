@@ -35,13 +35,6 @@ import:
             }
 
 features:
-  toolbar:
-    description: The searchbar/awesomebar that user uses to search.
-    variables:
-      toolbar-position-top:
-        description: If true, toolbar appears at top of the screen.
-        type: Boolean
-        default: false
   homescreen:
     description: The homescreen that the user goes to when they press home or new tab.
     variables:
@@ -205,13 +198,6 @@ features:
             "feature-setting-global-rules-sub-frames": 1,
           }
         }
-  unified-search:
-    description: A feature allowing user to easily search for specified results directly in the search bar.
-    variables:
-      enabled:
-        description: If true, the feature shows up in the search bar.
-        type: Boolean
-        default: true
 
   growth-data:
     description: A feature measuring campaign growth data
@@ -246,6 +232,14 @@ features:
         type: List<OnboardingPanel>
         default: ["themes", "toolbar-placement", "sync", "tcp", "privacy-notice"]
 
+  one-click-search:
+    description: Enable/disable the one click search feature.
+    variables:
+      enabled:
+        description: If true, the one click search will be enabled.
+        type: Boolean
+        default: false
+
   glean:
     description: "A feature that provides server-side configurations for Glean metrics (aka Server Knobs)."
     allow-coenrollment: true
@@ -257,11 +251,19 @@ features:
       enable-event-timestamps:
         description: "Enables precise event timestamps for Glean events"
         type: Boolean
-        default: false
+        default: true
       delay-ping-lifetime-io:
         description: "Glean will delay io for ping lifetime metrics"
         type: Boolean
         default: true
+      ping-lifetime-threshold:
+        description: "Write count threshold when to auto-flush"
+        type: Int
+        default: 1000
+      ping-lifetime-max-time:
+        description: "After what time to auto-flush"
+        type: Int
+        default: 2000
 
   splash-screen:
     description: "A feature that extends splash screen duration, allowing additional data fetching time for the app's initial run."
@@ -274,28 +276,24 @@ features:
         description: The maximum amount of time in milliseconds the splashscreen will be visible while waiting for initialization calls to complete.
         type: Int
         default: 0
+      off-train-onboarding:
+        description: "If true, the fetched data will be applied and used during the session."
+        type: Boolean
+        default: false
 
-  shopping-experience:
-    description: A feature that shows product review quality information.
+  alternative-app-launcher-icon:
+    description: A feature that changes the app launcher icon background color.
     variables:
       enabled:
-        description: if true, the shopping experience feature is shown to the user.
+        description: If true, the feature is active.
         type: Boolean
         default: false
-      product-recommendations:
-        description: if true, recommended products feature is enabled to be shown to the user based on their preference.
+      reset-to-default:
+        description: >
+          If true use the default icon, if false use the alternative icon.
+          This is required to 'reset' the icon for enrolled users once the initial experiment is complete.
         type: Boolean
         default: false
-      product-recommendations-exposure:
-        description: if true, we want to record recommended products inventory for opted-in users, even if product recommendations are disabled.
-        type: Boolean
-        default: false
-    defaults:
-      - channel: developer
-        value:
-          enabled: true
-          product-recommendations: true
-          product-recommendations-exposure: true
 
   print:
     description: A feature for printing from the share or browser menu.
@@ -308,6 +306,33 @@ features:
         description: If true, a print button from the browser menu is available.
         type: Boolean
         default: true
+
+  sent-from-firefox:
+    description: A feature that allows the user to add a download firefox footer to a shared link.
+    variables:
+      enabled:
+        description: If true, the feature is available for the user.
+        type: Boolean
+        default: false
+      template-message:
+        description: A template for the shared message, supporting three placeholders. A shared link, the brand name and a store download link.
+        type: Text
+        default: ""
+      download-link:
+        description: A store download link.
+        type: Text
+        default: ""
+      show-snackbar:
+        description: If true, the user will see the snackbar after sharing a link, allowing quick navigation to settings.
+        type: Boolean
+        default: false
+    defaults:
+      - channel: developer
+        value:
+          enabled: true
+          template-message: sent_from_firefox_template
+          download-link: "[Download Link]"
+          show-snackbar: true
 
   search-extra-params:
     description: A feature that provides additional args for search.
@@ -342,10 +367,16 @@ features:
           additional Search settings.
         type: Boolean
         default: false
+      boost-amp-wiki:
+        description: >
+          The feature boost wiki and AMP suggestions to the top of its group.
+        type: Boolean
+        default: false
     defaults:
       - channel: developer
         value:
           enabled: true
+          boost-amp-wiki: true
       - channel: nightly
         value:
           enabled: true
@@ -434,6 +465,26 @@ features:
         type: Boolean
         default: true
 
+  ship:
+    description: The feature that controls Session History in Parent (SHIP) in Gecko.
+    variables:
+      disabled:
+        description: >
+          Whether or not to disable SHIP. SHIP is enabled when set to false. SHIP is disabled when
+          set to true.
+        type: Boolean
+        default: true
+
+  fission:
+    description: The feature that controls whether fission is enabled or not in Gecko.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable fission. Fission is enabled when set to true. Fission is disabled when
+          set to false.
+        type: Boolean
+        default: false
+
   suggest-shipped-domains:
     description: Feature that suggests domains from the shipped domain list.
     variables:
@@ -480,11 +531,64 @@ features:
         type: Boolean
         default: false
 
+  third-party-cookie-blocking:
+    description: Control third-party cookie blocking.
+    variables:
+      enabled:
+        description: If true, the feature is active.
+        type: Boolean
+        default: false
+      enabled-normal:
+        description: >
+          Enables / disables third-party cookie blocking in normal browsing mode.
+        type: Boolean
+        default: false
+      enabled-private:
+        description: >
+          Enables / disables third-party cookie blocking in private browsing mode.
+        type: Boolean
+        default: true
+
   menu-redesign:
     description: Control the new menu redesign.
     variables:
       enabled:
         description: If true, the new menu redesign is available.
+        type: Boolean
+        default: false
+      report-site-issue:
+        description: If true, report site issue menu item and preview is available.
+        type: Boolean
+        default: true
+    defaults:
+      - channel: release
+        value:
+          report-site-issue: false
+
+  mars:
+    description: Mozilla Ad Routing Service (MARS) unified ads service.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable MARS endpoint to serve sponsored top sites and stories.
+        type: Boolean
+        default: false
+
+  merino-recommendations:
+    description: Sets the recommendations provider service to Merino.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable Merino endpoint to serve recommendations.
+        type: Boolean
+        default: false
+
+  compose-homepage:
+    description: Turns on compose homepage.
+    variables:
+      enabled:
+        description: >
+          Whether or not to turn on the compose homepage.
         type: Boolean
         default: false
 
@@ -496,6 +600,124 @@ features:
           When the feature is enabled then microsurveys can be used.
         type: Boolean
         default: true
+
+  trending-searches:
+    description: Enables trending searches.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable trending searches.
+        type: Boolean
+        default: false
+
+  recent-searches:
+    description: Enables recent searches.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable recent searches.
+        type: Boolean
+        default: false
+
+  search-suggestions-on-homepage:
+    description: Enables search suggestions on homepage.
+    variables:
+      enabled:
+        description: >
+          Whether or not to enable search suggestions on homepage.
+        type: Boolean
+        default: false
+
+  set-as-default-prompt:
+    description: >
+      Displays native default browser prompt to existing users.
+    variables:
+      enabled:
+        description: >
+          When the feature is enabled then the Set as default prompt can be triggered for
+          existing users.
+        type: Boolean
+        default: true
+      app-cold-starts-between-prompts:
+        description: >
+          Minimum number of app cold starts before the next prompt should be displayed to
+          the user.
+        type: Int
+        default: 4
+      days-between-prompts:
+        description: >
+          Minimum number of days between displays of Set as default prompt.
+        type: Int
+        default: 14
+      max-number-of-times-to-display:
+        description: >
+          Maximum number of time the prompt should be displayed.
+        type: Int
+        default: 3
+
+  user-characteristics:
+    description: A feature for control user characteristic data collection
+    variables:
+      currentVersion:
+        description: The current collection version of the user characteristics.
+        type: Int
+        default: 0
+
+  bookmarks:
+    description: Feature for Bookmarks
+    variables:
+      new-compose-ui:
+        description: if true, enable new compose based UI
+        type: Boolean
+        default: false
+
+  networking:
+    description: Enables networking features
+    variables:
+      fetchPriorityEnabled:
+        description: >
+          Enables or disables network.fetchpriority.enabled preference.
+        type: Boolean
+        default: true
+
+  pki:
+    description: Certificate verification configuration
+    variables:
+      certificateTransparencyMode:
+        description: >
+          What mode Certificate Transparency is in (0=disable, 1=telemetry only, 2=enforce).
+        type: Int
+        default: 0
+
+  pqcrypto:
+    description: Control the use of post-quantum key exchange mechanisms in TLS and HTTP/3.
+    variables:
+      postQuantumKeyExchangeEnabled:
+        description: >
+          Toggles the security.tls.enable_kyber and network.http.http3.enable_kyber preferences.
+        type: Boolean
+        default: false
+
+  javascript:
+    description: Enables Javascript Engine (Spidermonkey) features
+    variables:
+      parallelMarkingEnabled:
+        description: >
+          Enables or disables javascript.options.mem.gc_parallel_marking preference.
+        type: Boolean
+        default: false
+
+  encourage-search-cfr:
+    description: A feature that shows a CFR on first launch to encourage users to make a search
+    variables:
+      enabled:
+        description: When true, the CFR will show
+        type: Boolean
+        default: false
+      cfrText:
+        description: The text to show in the CFR
+        type: Text
+        default: ""
 
 types:
   objects: {}

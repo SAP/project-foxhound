@@ -46,11 +46,28 @@ wr::WrExternalImage RenderDMABUFTextureHost::Lock(uint8_t aChannelIndex,
                                  mSurface->GetTexture(aChannelIndex));
   }
 
-  const auto uvs = GetUvCoords(gfx::IntSize(
-      mSurface->GetWidth(aChannelIndex), mSurface->GetHeight(aChannelIndex)));
-  return NativeTextureToWrExternalImage(mSurface->GetTexture(aChannelIndex),
-                                        uvs.first.x, uvs.first.y, uvs.second.x,
-                                        uvs.second.y);
+  if (auto texture = mSurface->GetTexture(aChannelIndex)) {
+    mSurface->MaybeSemaphoreWait(texture);
+  }
+
+  const gfx::IntSize size(mSurface->GetWidth(aChannelIndex),
+                          mSurface->GetHeight(aChannelIndex));
+  return NativeTextureToWrExternalImage(
+      mSurface->GetTexture(aChannelIndex), 0.0, 0.0,
+      static_cast<float>(size.width), static_cast<float>(size.height));
+}
+
+gfx::IntSize RenderDMABUFTextureHost::GetSize(uint8_t aChannelIndex) const {
+  MOZ_ASSERT(mSurface);
+  MOZ_ASSERT((mSurface->GetTextureCount() == 0)
+                 ? (aChannelIndex == mSurface->GetTextureCount())
+                 : (aChannelIndex < mSurface->GetTextureCount()));
+
+  if (!mSurface) {
+    return gfx::IntSize();
+  }
+  return gfx::IntSize(mSurface->GetWidth(aChannelIndex),
+                      mSurface->GetHeight(aChannelIndex));
 }
 
 void RenderDMABUFTextureHost::Unlock() {}
@@ -62,6 +79,48 @@ void RenderDMABUFTextureHost::DeleteTextureHandle() {
 void RenderDMABUFTextureHost::ClearCachedResources() {
   DeleteTextureHandle();
   mGL = nullptr;
+}
+
+gfx::SurfaceFormat RenderDMABUFTextureHost::GetFormat() const {
+  return mSurface->GetFormat();
+}
+
+bool RenderDMABUFTextureHost::MapPlane(RenderCompositor* aCompositor,
+                                       uint8_t aChannelIndex,
+                                       PlaneInfo& aPlaneInfo) {
+  if (mSurface->GetAsDMABufSurfaceYUV()) {
+    // DMABufSurfaceYUV is not supported.
+    return false;
+  }
+
+  const RefPtr<gfx::SourceSurface> surface = mSurface->GetAsSourceSurface();
+  if (!surface) {
+    return false;
+  }
+
+  const RefPtr<gfx::DataSourceSurface> dataSurface = surface->GetDataSurface();
+  if (!dataSurface) {
+    return false;
+  }
+
+  gfx::DataSourceSurface::MappedSurface map;
+  if (!dataSurface->Map(gfx::DataSourceSurface::MapType::READ, &map)) {
+    return false;
+  }
+
+  mReadback = dataSurface;
+  aPlaneInfo.mSize = gfx::IntSize(mSurface->GetWidth(), mSurface->GetHeight());
+  aPlaneInfo.mStride = map.mStride;
+  aPlaneInfo.mData = map.mData;
+
+  return true;
+}
+
+void RenderDMABUFTextureHost::UnmapPlanes() {
+  if (mReadback) {
+    mReadback->Unmap();
+    mReadback = nullptr;
+  }
 }
 
 }  // namespace mozilla::wr

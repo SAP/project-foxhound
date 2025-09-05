@@ -22,6 +22,7 @@
 #include "ds/Bitmap.h"
 #include "gc/ArenaList.h"
 #include "gc/Barrier.h"
+#include "gc/BufferAllocator.h"
 #include "gc/FindSCCs.h"
 #include "gc/GCMarker.h"
 #include "gc/NurseryAwareHashMap.h"
@@ -397,6 +398,8 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
  public:
   js::gc::ArenaLists arenas;
 
+  js::gc::BufferAllocator bufferAllocator;
+
   // Per-zone data for use by an embedder.
   js::MainThreadData<void*> data;
 
@@ -562,20 +565,19 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
 
   [[nodiscard]] bool findSweepGroupEdges(Zone* atomsZone);
 
-  struct DiscardOptions {
-    DiscardOptions() {}
+  struct JitDiscardOptions {
+    JitDiscardOptions() {}
     bool discardJitScripts = false;
     bool resetNurseryAllocSites = false;
     bool resetPretenuredAllocSites = false;
-    JSTracer* traceWeakJitScripts = nullptr;
   };
 
-  void discardJitCode(JS::GCContext* gcx,
-                      const DiscardOptions& options = DiscardOptions());
+  void maybeDiscardJitCode(JS::GCContext* gcx);
 
   // Discard JIT code regardless of isPreservingCode().
-  void forceDiscardJitCode(JS::GCContext* gcx,
-                           const DiscardOptions& options = DiscardOptions());
+  void forceDiscardJitCode(
+      JS::GCContext* gcx,
+      const JitDiscardOptions& options = JitDiscardOptions());
 
   void resetAllocSitesAndInvalidate(bool resetNurserySites,
                                     bool resetPretenuredSites);
@@ -867,6 +869,9 @@ class Zone : public js::ZoneAllocator, public js::gc::GraphNodeBase<JS::Zone> {
   }
   js::gc::AllocSite* optimizedAllocSite() {
     return &pretenuring.optimizedAllocSite;
+  }
+  js::gc::AllocSite* tenuringAllocSite() {
+    return &pretenuring.tenuringAllocSite;
   }
   uint32_t nurseryAllocCount(JS::TraceKind kind) const {
     return pretenuring.nurseryAllocCount(kind);

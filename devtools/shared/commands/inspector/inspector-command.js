@@ -197,9 +197,10 @@ class InspectorCommand {
       return null;
     }
 
-    const { walker } = await this.commands.targetCommand.targetFront.getFront(
-      "inspector"
-    );
+    const { walker } =
+      await this.commands.targetCommand.targetFront.getFront("inspector");
+    // Copy the array as we will mutate it
+    nodeSelectors = [...nodeSelectors];
     const querySelectors = async nodeFront => {
       const selector = nodeSelectors.shift();
       if (!selector) {
@@ -365,10 +366,15 @@ class InspectorCommand {
    * @returns {Promise<Array<Object>>}
    */
   async getCSSDeclarationBlockIssues(domRuleDeclarations) {
+    // Filter out custom property declarations as we can't have issue with those and
+    // they're already ignored on the server.
+    const nonCustomPropertyDeclarations = domRuleDeclarations.filter(
+      decl => !decl.isCustomProperty
+    );
     const resultIndex =
       this.#cssDeclarationBlockIssuesQueuedDomRulesDeclarations.length;
     this.#cssDeclarationBlockIssuesQueuedDomRulesDeclarations.push(
-      domRuleDeclarations
+      nonCustomPropertyDeclarations
     );
 
     // We're getting the target browsers from RemoteSettings, which can take some time.
@@ -410,9 +416,8 @@ class InspectorCommand {
    * @returns {Promise<Array<Array<Object>>>}
    */
   #batchedGetCSSDeclarationBlockIssues = async () => {
-    const declarations = Array.from(
-      this.#cssDeclarationBlockIssuesQueuedDomRulesDeclarations
-    );
+    const declarations =
+      this.#cssDeclarationBlockIssuesQueuedDomRulesDeclarations;
     this.#cssDeclarationBlockIssuesQueuedDomRulesDeclarations = [];
 
     const { targetFront } = this.commands.targetCommand;

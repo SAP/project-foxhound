@@ -148,10 +148,6 @@ this.test = class extends ExtensionAPI {
           overrideService.clearAllOverrides();
         },
 
-        async setScalar(id, value) {
-          return Services.telemetry.scalarSet(id, value);
-        },
-
         async setResolutionAndScaleTo(tabId, resolution) {
           return getActorForTab(tabId, "TestSupport").sendQuery(
             "SetResolutionAndScaleTo",
@@ -220,6 +216,14 @@ this.test = class extends ExtensionAPI {
             Ci.nsISiteSecurityService
           );
           return sss.clearAll();
+        },
+
+        async isSessionHistoryInParentRunning() {
+          return Services.appinfo.sessionHistoryInParent;
+        },
+
+        async isFissionRunning() {
+          return Services.appinfo.fissionAutostart;
         },
 
         async triggerCookieBannerDetected(tabId) {

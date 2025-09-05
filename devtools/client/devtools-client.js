@@ -13,6 +13,9 @@ const EventEmitter = require("resource://devtools/shared/event-emitter.js");
 const {
   UnsolicitedNotifications,
 } = require("resource://devtools/client/constants.js");
+const { AppConstants } = ChromeUtils.importESModule(
+  "resource://gre/modules/AppConstants.sys.mjs"
+);
 
 loader.lazyRequireGetter(
   this,
@@ -67,13 +70,29 @@ function DevToolsClient(transport) {
    * the connection's root actor.
    */
   this.mainRoot = null;
-  this.expectReply("root", packet => {
+  this.expectReply("root", async packet => {
     if (packet.error) {
       console.error("Error when waiting for root actor", packet);
       return;
     }
 
     this.mainRoot = createRootFront(this, packet);
+
+    // Once the root actor has been communicated by the server,
+    // emit a request to it to also push informations down to the server.
+    //
+    // This request has been added in Firefox 133.
+    try {
+      await this.mainRoot.connect({
+        frontendVersion: AppConstants.MOZ_APP_VERSION,
+      });
+    } catch (e) {
+      // Ignore errors of unsupported packet as the server may not yet support this request.
+      // The request may also fail to complete in tests when closing DevTools quickly after opening.
+      if (!e.message.includes("unrecognizedPacketType")) {
+        throw e;
+      }
+    }
 
     this.emit("connected", packet.applicationType, packet.traits);
   });
@@ -105,6 +124,7 @@ DevToolsClient.prototype = {
     return new Promise(resolve => {
       this.once("connected", (applicationType, traits) => {
         this.traits = traits;
+
         resolve([applicationType, traits]);
       });
 
@@ -669,10 +689,18 @@ DevToolsClient.prototype = {
    *
    * This is a fairly heavy weight process, so it's only meant to be used in tests.
    *
+   * @param {object=} options
+   * @param {boolean=} options.ignoreOrphanedFronts
+   *        Allow to ignore fronts which can no longer be retrieved via
+   *        getFrontByID, as their requests can never be completed now.
+   *        Ideally we should rather investigate and address those cases, but
+   *        since this is a test helper, allow to bypass them here. Defaults to
+   *        false.
+   *
    * @return Promise
    *         Resolved when all requests have settled.
    */
-  waitForRequestsToSettle() {
+  waitForRequestsToSettle({ ignoreOrphanedFronts = false } = {}) {
     let requests = [];
 
     // Gather all pending and active requests in this client
@@ -692,6 +720,12 @@ DevToolsClient.prototype = {
     // For each front, wait for its requests to settle
     for (const front of fronts) {
       if (front.hasRequests()) {
+        if (ignoreOrphanedFronts && !this.getFrontByID(front.actorID)) {
+          // If a front was stuck during its destroy but the pool managing it
+          // has been already removed, ignore its pending requests, they can
+          // never resolve.
+          continue;
+        }
         requests.push(front.waitForRequestsToSettle());
       }
     }
@@ -709,7 +743,7 @@ DevToolsClient.prototype = {
       })
       .then(() => {
         // Repeat, more requests may have started in response to those we just waited for
-        return this.waitForRequestsToSettle();
+        return this.waitForRequestsToSettle({ ignoreOrphanedFronts });
       });
   },
 

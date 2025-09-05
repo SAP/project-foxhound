@@ -632,6 +632,17 @@ MacAvailableMemorySysctl:
     Expected to be a percentage integer value.
   type: u32
 
+Marionette:
+  description: >
+    Set to 1 when Marionette (WebDriver Classic) is enabled.
+  type: boolean
+
+MemtestOutput:
+  description: >
+    The output of memory tests done by the crash reporter client after a crash
+    in a JSON format
+  type: string
+
 LinuxUnderMemoryPressure:
   description: >
     Set to true if the memory pressure watcher was under memory pressure when
@@ -659,10 +670,24 @@ MainThreadRunnableName:
   type: string
   ping: true
 
+ModuleSignatureInfo:
+  description: >
+    A string holding a JSON object describing which entity signed the modules
+    present in the system. The format of this object is:
+    { "Vendor1": [ "Module1", "Module2", ...], "Vendor2": [ "Module3", ... ] }
+  type: string
+
 MozCrashReason:
   description: >
     Plaintext description of why Firefox crashed, this is usually set by
     assertions and the like.
+  type: string
+  ping: true
+
+NimbusEnrollments:
+  description: >
+    A comma-separated string that specifies the active Nimbus experiments and
+    rollouts, as well as their branches.
   type: string
   ping: true
 
@@ -712,6 +737,11 @@ ProductID:
     Application UUID (e.g. ec8030f7-c20a-464f-9b0e-13a3a9e97384).
   type: string
   ping: true
+
+ProfileDirectory:
+  description: >
+    The directory of the active profile, if any.
+  type: string
 
 ProfilerChildShutdownPhase:
   description: >
@@ -776,6 +806,11 @@ ReleaseChannel:
   type: string
   ping: true
 
+RemoteAgent:
+  description: >
+    Set to 1 when the Remote Agent (WebDriver BiDi) is enabled.
+  type: boolean
+
 RemoteType:
   description: >
     Type of the content process, can be set to "web", "file" or "extension".
@@ -809,7 +844,7 @@ ShutdownProgress:
 ShutdownReason:
   description: >
     One out of "Unknown", "AppClose", "AppRestart", "OSForceClose",
-    "OSSessionEnd", "OSShutdown" or "WinUnexpectedMozQuit".
+    "OSSessionEnd" or "OSShutdown".
   type: string
   ping: true
 
@@ -891,6 +926,16 @@ TestUnicode:
   description: >
     Annotation used in tests.
   type: string
+
+TestBoolean:
+  description: >
+    Annotation used in tests.
+  type: boolean
+
+TestInteger:
+  description: >
+    Annotation used in tests.
+  type: u32
 
 TextureUsage:
   description: >

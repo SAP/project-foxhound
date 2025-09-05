@@ -1,8 +1,6 @@
-# ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-# ***** END LICENSE BLOCK *****
 """Generic script objects.
 
 script.py, along with config.py and log.py, represents the core of
@@ -719,7 +717,7 @@ class ScriptMixin(PlatformMixin):
                     self.warning("{} was not found in the zip file".format(entry))
 
     def deflate(self, compressed_file, mode, extract_to=".", *args, **kwargs):
-        """This method allows to extract a compressed file from a tar, tar.bz2 and tar.gz files.
+        """This method allows to extract a compressed file from a tar{,bz2,gz,xz} files.
 
         Args:
             compressed_file (object): File-like object with the contents of a compressed file.
@@ -747,11 +745,16 @@ class ScriptMixin(PlatformMixin):
         def _determine_extraction_method_and_kwargs(url):
             EXTENSION_TO_MIMETYPE = {
                 "bz2": "application/x-bzip2",
+                "xz": "application/x-xz",
                 "gz": "application/x-gzip",
                 "tar": "application/x-tar",
                 "zip": "application/zip",
             }
             MIMETYPES = {
+                "application/x-xz": {
+                    "function": self.deflate,
+                    "kwargs": {"mode": "r:xz"},
+                },
                 "application/x-bzip2": {
                     "function": self.deflate,
                     "kwargs": {"mode": "r:bz2"},
@@ -773,7 +776,7 @@ class ScriptMixin(PlatformMixin):
             }
 
             filename = url.split("/")[-1]
-            # XXX: bz2/gz instead of tar.{bz2/gz}
+            # XXX: bz2/gz/xz instead of tar.{bz2/gz/xz}
             extension = filename[filename.rfind(".") + 1 :]
             mimetype = EXTENSION_TO_MIMETYPE[extension]
             self.debug("Mimetype: {}".format(mimetype))
@@ -2034,7 +2037,7 @@ def PreScriptAction(action=None):
         func._pre_action_listener = None
         return func
 
-    if type(action) == type(_wrapped):
+    if type(action) is type(_wrapped):
         return _wrapped_none(action)
 
     return _wrapped
@@ -2065,7 +2068,7 @@ def PostScriptAction(action=None):
         func._post_action_listener = None
         return func
 
-    if type(action) == type(_wrapped):
+    if type(action) is type(_wrapped):
         return _wrapped_none(action)
 
     return _wrapped
@@ -2191,7 +2194,7 @@ class BaseScript(ScriptMixin, LogMixin, object):
                 item = getattr(self, name)
         else:
             item = inspect.getattr_static(self, name)
-            if type(item) == property:
+            if type(item) is property:
                 item = None
             else:
                 item = getattr(self, name)

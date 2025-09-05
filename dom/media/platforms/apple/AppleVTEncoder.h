@@ -29,7 +29,8 @@ class AppleVTEncoder final : public MediaDataEncoder {
         mHardwareNotAllowed(aConfig.mHardwarePreference ==
                             HardwarePreference::RequireSoftware),
         mError(NS_OK),
-        mSession(nullptr) {
+        mSession(nullptr),
+        mTimer(nullptr) {
     MOZ_ASSERT(mConfig.mSize.width > 0 && mConfig.mSize.height > 0);
     MOZ_ASSERT(mTaskQueue);
   }
@@ -49,21 +50,25 @@ class AppleVTEncoder final : public MediaDataEncoder {
                                   : "apple software VT encoder"_ns;
   }
 
-  void OutputFrame(CMSampleBufferRef aBuffer);
+  void OutputFrame(OSStatus aStatus, VTEncodeInfoFlags aFlags,
+                   CMSampleBufferRef aBuffer);
 
  private:
+  enum class EncodeResult { Success, EncodeError, FrameDropped, EmptyBuffer };
+
   virtual ~AppleVTEncoder() { MOZ_ASSERT(!mSession); }
-  RefPtr<EncodePromise> ProcessEncode(const RefPtr<const VideoData>& aSample);
+  void ProcessEncode(const RefPtr<const VideoData>& aSample);
   RefPtr<ReconfigurationPromise> ProcessReconfigure(
       const RefPtr<const EncoderConfigurationChangeList>&
           aConfigurationChanges);
-  void ProcessOutput(RefPtr<MediaRawData>&& aOutput);
-  void ResolvePromise();
+  void ProcessOutput(RefPtr<MediaRawData>&& aOutput, EncodeResult aResult);
+  void ForceOutputIfNeeded();
+  void MaybeResolveOrRejectEncodePromise();
   RefPtr<EncodePromise> ProcessDrain();
   RefPtr<ShutdownPromise> ProcessShutdown();
 
   CFDictionaryRef BuildSourceImageBufferAttributes();
-  CVPixelBufferRef CreateCVPixelBuffer(const layers::Image* aSource);
+  CVPixelBufferRef CreateCVPixelBuffer(layers::Image* aSource);
   bool WriteExtraData(MediaRawData* aDst, CMSampleBufferRef aSrc,
                       const bool aAsAnnexB);
   void AssertOnTaskQueue() { MOZ_ASSERT(mTaskQueue->IsCurrentThreadIn()); }
@@ -71,8 +76,10 @@ class AppleVTEncoder final : public MediaDataEncoder {
   EncoderConfig mConfig;
   const RefPtr<TaskQueue> mTaskQueue;
   const bool mHardwareNotAllowed;
-  // Access only in mTaskQueue.
+  // Accessed only in mTaskQueue.
   EncodedData mEncodedData;
+  // Accessed only in mTaskQueue.
+  MozPromiseHolder<EncodePromise> mEncodePromise;
   RefPtr<MediaByteBuffer> mAvcc;  // Stores latest avcC data.
   MediaResult mError;
 
@@ -82,6 +89,8 @@ class AppleVTEncoder final : public MediaDataEncoder {
   Atomic<bool> mIsHardwareAccelerated;
   // Written during init and shutdown.
   Atomic<bool> mInited;
+  // Accessed only in mTaskQueue. Used for for OS versions < 11.
+  nsCOMPtr<nsITimer> mTimer;
 };
 
 }  // namespace mozilla

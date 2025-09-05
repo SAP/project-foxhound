@@ -52,11 +52,6 @@ decltype(DCompositionCreateDevice3)* sDcompCreateDevice3Fn = nullptr;
 decltype(DCompositionCreateSurfaceHandle)* sDcompCreateSurfaceHandleFn =
     nullptr;
 
-// We don't have access to the DirectDrawCreateEx type in gfxWindowsPlatform.h,
-// since it doesn't include ddraw.h, so we use a static here. It should only
-// be used within InitializeDirectDrawConfig.
-decltype(DirectDrawCreateEx)* sDirectDrawCreateExFn = nullptr;
-
 /* static */
 void DeviceManagerDx::Init() { sInstance = new DeviceManagerDx(); }
 
@@ -905,7 +900,7 @@ bool DeviceManagerDx::CreateDevice(IDXGIAdapter* aAdapter,
       // problematic.
       D3D11_MESSAGE_ID blockIDs[] = {
           D3D11_MESSAGE_ID_DEVICE_DRAW_CONSTANT_BUFFER_TOO_SMALL};
-      filter.DenyList.NumIDs = MOZ_ARRAY_LENGTH(blockIDs);
+      filter.DenyList.NumIDs = std::size(blockIDs);
       filter.DenyList.pIDList = blockIDs;
       infoQueue->PushStorageFilter(&filter);
 
@@ -1433,58 +1428,6 @@ bool DeviceManagerDx::CanUseDComp() {
   MutexAutoLock lock(mDeviceLock);
   return !!mDirectCompositionDevice;
 }
-
-void DeviceManagerDx::InitializeDirectDraw() {
-  MOZ_ASSERT(layers::CompositorThreadHolder::IsInCompositorThread());
-
-  if (mDirectDraw) {
-    // Already initialized.
-    return;
-  }
-
-  FeatureState& ddraw = gfxConfig::GetFeature(Feature::DIRECT_DRAW);
-  if (!ddraw.IsEnabled()) {
-    return;
-  }
-
-  // Check if DirectDraw is available on this system.
-  mDirectDrawDLL.own(LoadLibrarySystem32(L"ddraw.dll"));
-  if (!mDirectDrawDLL) {
-    ddraw.SetFailed(FeatureStatus::Unavailable,
-                    "DirectDraw not available on this computer",
-                    "FEATURE_FAILURE_DDRAW_LIB"_ns);
-    return;
-  }
-
-  sDirectDrawCreateExFn = (decltype(DirectDrawCreateEx)*)GetProcAddress(
-      mDirectDrawDLL, "DirectDrawCreateEx");
-  if (!sDirectDrawCreateExFn) {
-    ddraw.SetFailed(FeatureStatus::Unavailable,
-                    "DirectDraw not available on this computer",
-                    "FEATURE_FAILURE_DDRAW_LIB"_ns);
-    return;
-  }
-
-  HRESULT hr;
-  MOZ_SEH_TRY {
-    hr = sDirectDrawCreateExFn(nullptr, getter_AddRefs(mDirectDraw),
-                               IID_IDirectDraw7, nullptr);
-  }
-  MOZ_SEH_EXCEPT(EXCEPTION_EXECUTE_HANDLER) {
-    ddraw.SetFailed(FeatureStatus::Failed, "Failed to create DirectDraw",
-                    "FEATURE_FAILURE_DDRAW_LIB"_ns);
-    gfxCriticalNote << "DoesCreatingDirectDrawFailed";
-    return;
-  }
-  if (FAILED(hr)) {
-    ddraw.SetFailed(FeatureStatus::Failed, "Failed to create DirectDraw",
-                    "FEATURE_FAILURE_DDRAW_LIB"_ns);
-    gfxCriticalNote << "DoesCreatingDirectDrawFailed " << hexa(hr);
-    return;
-  }
-}
-
-IDirectDraw7* DeviceManagerDx::GetDirectDraw() { return mDirectDraw; }
 
 void DeviceManagerDx::GetCompositorDevices(
     RefPtr<ID3D11Device>* aOutDevice,

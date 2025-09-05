@@ -11,6 +11,7 @@ import mozilla.components.browser.state.state.TabSessionState
 import mozilla.components.browser.state.state.createTab
 import mozilla.components.concept.engine.EngineSessionState
 import mozilla.components.concept.storage.HistoryMetadataKey
+import mozilla.components.support.utils.ext.isContentUrl
 
 /**
  * A tab that is no longer open and in the list of tabs, but that can be restored (recovered) at
@@ -52,6 +53,7 @@ data class TabState(
     val source: Source = Source.Internal.None,
     val index: Int = -1,
     val hasFormData: Boolean = false,
+    val desktopMode: Boolean = false,
 )
 
 /**
@@ -87,6 +89,7 @@ fun TabSessionState.toRecoverableTab(index: Int = -1): RecoverableTab {
             source = source,
             index = index,
             hasFormData = content.hasFormData,
+            desktopMode = content.desktopMode,
         ),
     )
 }
@@ -111,6 +114,7 @@ fun RecoverableTab.toTabSessionState() = createTab(
     source = state.source,
     restored = true,
     hasFormData = state.hasFormData,
+    desktopMode = state.desktopMode,
 )
 
 /**
@@ -121,4 +125,4 @@ fun List<RecoverableTab>.toTabSessionStates() = map { it.toTabSessionState() }
 /**
  * Check if this [RecoverableTab] is a content URI.
  */
-fun RecoverableTab.isContentUri(): Boolean = this.state.url.startsWith("content://")
+fun RecoverableTab.isContentUri(): Boolean = this.state.url.isContentUrl()

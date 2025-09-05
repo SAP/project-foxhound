@@ -25,6 +25,10 @@ impl<T> HandleSet<T> {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.members.is_empty()
+    }
+
     /// Return a new, empty `HandleSet`, sized to hold handles from `arena`.
     pub fn for_arena(arena: &impl ArenaType<T>) -> Self {
         let len = arena.len();
@@ -80,6 +84,12 @@ impl<T> HandleSet<T> {
     /// Return an iterator over all handles in `self`.
     pub fn iter(&self) -> impl '_ + Iterator<Item = Handle<T>> {
         self.members.iter().map(Handle::from_usize)
+    }
+}
+
+impl<T> Default for HandleSet<T> {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

@@ -34,6 +34,7 @@ for path in paths:
 from chrome_trace import ChromeTrace
 from cmdline import (
     CHROME_ANDROID_APPS,
+    DESKTOP_APPS,
     FIREFOX_ANDROID_APPS,
     FIREFOX_APPS,
     GECKO_PROFILER_APPS,
@@ -73,7 +74,7 @@ class Perftest(object):
         app,
         binary,
         run_local=False,
-        noinstall=False,
+        no_install=False,
         obj_path=None,
         profile_class=None,
         installerpath=None,
@@ -112,7 +113,7 @@ class Perftest(object):
         clean=False,
         screenshot_on_failure=False,
         power_test=False,
-        **kwargs
+        **kwargs,
     ):
         self._remote_test_root = None
         self._dirs_to_remove = []
@@ -605,7 +606,15 @@ class Perftest(object):
     def start_playback(self, test):
         # creating the playback tool
         playback_dir = os.path.join(here, "tooltool-manifests", "playback")
-        playback_manifest = test.get("playback_pageset_manifest")
+
+        # Bug 1926419 avoid using mitm11 manifest on linux desktop tests.
+        if "linux" in self.config["platform"] and self.config["app"] in DESKTOP_APPS:
+            playback_manifest = test.get(
+                "playback_pageset_manifest_backup",
+                test.get("playback_pageset_manifest"),
+            )
+        else:
+            playback_manifest = test.get("playback_pageset_manifest")
         playback_manifests = playback_manifest.split(",")
 
         self.config.update(
@@ -890,19 +899,26 @@ class PerftestDesktop(Perftest):
                     else:
                         LOG.info("Couldn't get browser version and name")
                 else:
-                    # On windows we need to use wimc to get the version
-                    command = r'wmic datafile where name="{0}"'.format(
-                        self.config["binary"].replace("\\", r"\\")
+                    # Define the PowerShell command. We use this method on Windows since WMIC will
+                    # soon be deprecated.
+                    binary_path = self.config.get("binary")
+                    command = rf'(Get-ItemProperty -Path "{binary_path}").VersionInfo.FileVersion'
+                    LOG.info(
+                        "Attempting to get browser application version with powershell..."
                     )
-                    bmeta = subprocess.check_output(command)
-
-                    meta_re = re.compile(r"\s+([\d.a-z]+)\s+")
-                    match = meta_re.findall(bmeta.decode("utf-8"))
-                    if len(match) > 0:
-                        browser_name = self.config["app"]
-                        browser_version = match[-1]
+                    bmeta = subprocess.check_output(
+                        ["powershell", "-Command", command],
+                        text=True,
+                    )
+                    if not bmeta:
+                        LOG.warning("Unable to acquire browser version")
                     else:
-                        LOG.info("Couldn't get browser version and name")
+                        browser_version = bmeta.strip()
+                        browser_name = self.config["app"]
+                        LOG.info(
+                            "Successfully acquired browser version: %s"
+                            % browser_version
+                        )
             except Exception as e:
                 LOG.warning(
                     "Failed to get browser meta data through fallback method: %s-%s"

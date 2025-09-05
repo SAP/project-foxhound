@@ -22,9 +22,8 @@ add_task(async function test_default_telemetry() {
     "Default shortcuts for test"
   );
   Assert.equal(
-    Glean.genaiChatbot.shortcutsCustom.testGetValue() ??
-      AppConstants.NIGHTLY_BUILD,
-    AppConstants.NIGHTLY_BUILD,
+    Glean.genaiChatbot.shortcutsCustom.testGetValue() ?? true,
+    true,
     "Default shortcuts_custom for test"
   );
   Assert.equal(
@@ -38,13 +37,16 @@ add_task(async function test_default_telemetry() {
   SidebarController.hide();
 
   const events = Glean.genaiChatbot.sidebarToggle.testGetValue();
+  const sidebarVersion = SidebarController.sidebarRevampEnabled ? "new" : "old";
   Assert.equal(events.length, 2, "Sidebar toggled twice");
   Assert.equal(events[0].extra.opened, "true", "First opened");
   Assert.equal(events[0].extra.provider, "none", "No provider");
   Assert.equal(events[0].extra.reason, "load", "Page loaded");
+  Assert.equal(events[0].extra.version, sidebarVersion, "Correct version");
   Assert.equal(events[1].extra.opened, "false", "Second not opened");
   Assert.equal(events[1].extra.provider, "none", "Still no provider");
   Assert.equal(events[1].extra.reason, "unload", "Page unloaded");
+  Assert.equal(events[1].extra.version, sidebarVersion, "Correct version");
 
   Assert.equal(
     Glean.genaiChatbot.experimentCheckboxClick.testGetValue(),

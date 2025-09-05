@@ -10,10 +10,10 @@ Performance Testing
   DAMP
   IndexedDB
   awsy
-  fxrecord
   mach-try-perf
   mozperftest
   perf-sheriffing
+  perfcompare
   performance-infrastructure
   perftest-in-a-nutshell
   raptor
@@ -28,10 +28,10 @@ For more detailed information about each test suite and project, see their docum
   * :doc:`DAMP`
   * :doc:`IndexedDB`
   * :doc:`awsy`
-  * :doc:`fxrecord`
   * :doc:`mach-try-perf`
   * :doc:`mozperftest`
   * :doc:`perf-sheriffing`
+  * :doc:`perfcompare`
   * :doc:`performance-infrastructure`
   * :doc:`perftest-in-a-nutshell`
   * :doc:`raptor`
@@ -55,10 +55,6 @@ Here are the active PerfTest components/modules and their respective owners:
         - Owner: Sparky
         - Co-owner: Jmaher
         - Description: Provides tooling to build, and obtain profiles that are preconditioned in some way.
-    * fxrecord
-        - Owner: Sparky
-        - Co-owners: Kash, Andrej
-        - Description: Tool for measuring startup performance for Firefox Desktop
     * Infrastructure
         - Owner: Sparky
         - Co-owners: Kash, Andrej

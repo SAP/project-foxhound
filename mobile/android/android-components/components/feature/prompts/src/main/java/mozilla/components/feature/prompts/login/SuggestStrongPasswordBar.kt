@@ -10,6 +10,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.AbstractComposeView
 import androidx.core.view.isVisible
 import mozilla.components.feature.prompts.concept.PasswordPromptView
+import mozilla.components.feature.prompts.concept.ToggleablePrompt
 
 /**
  * A prompt bar implementing [PasswordPromptView] to display the strong generated password.
@@ -19,26 +20,28 @@ class SuggestStrongPasswordBar @JvmOverloads constructor(
     attrs: AttributeSet? = null,
     defStyleAttr: Int = 0,
 ) : AbstractComposeView(context, attrs, defStyleAttr), PasswordPromptView {
-    override var listener: PasswordPromptView.Listener? = null
     private val colors = PasswordGeneratorPromptColors(context)
+
+    override var passwordPromptListener: PasswordPromptView.Listener? = null
+    override var toggleablePromptListener: ToggleablePrompt.Listener? = null
+    override val isPromptDisplayed
+        get() = isVisible
 
     @Composable
     override fun Content() {
         PasswordGeneratorPrompt(
-            onGeneratedPasswordPromptClick = { listener?.onGeneratedPasswordPromptClick() },
+            onGeneratedPasswordPromptClick = { passwordPromptListener?.onGeneratedPasswordPromptClick() },
             colors = colors,
         )
     }
 
     override fun showPrompt() {
         isVisible = true
+        toggleablePromptListener?.onShown()
     }
 
     override fun hidePrompt() {
         isVisible = false
-    }
-
-    override fun isVisible(): Boolean {
-        return isVisible
+        toggleablePromptListener?.onHidden()
     }
 }

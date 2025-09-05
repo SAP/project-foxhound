@@ -23,6 +23,8 @@ browser:
       - https://github.com/mozilla-mobile/firefox-android/pull/3320
     data_sensitivity:
       - interaction
+    send_in_pings:
+      - usage-reporting
     notification_emails:
       - android-probes@mozilla.com
     expires: never
@@ -236,6 +238,195 @@ activation:
       - jalmeida@mozilla.com
     expires: never
 
+usage:
+  profile_id:
+    type: uuid
+    lifetime: user
+    description: |
+      A UUID uniquely identifying the profile,
+      not shared with other telemetry data.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923902
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1926829
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923902
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1923902
+    data_sensitivity:
+      - technical
+      - highly_sensitive
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+    send_in_pings:
+      - usage-reporting
+      - usage-deletion-request
+
+  duration:
+    type: timespan
+    description: |
+      The duration of the last foreground session.
+    time_unit: second
+    send_in_pings:
+      - usage-reporting
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+      - interaction
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  reason:
+    type: string
+    lifetime: ping
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The optional reason the ping was submitted.
+      The specific values for reason are specific to each ping, and are
+      documented in the ping's pings.yaml file.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1609218#c4
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  os:
+    type: string
+    lifetime: application
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The name of the operating system.
+      Possible values:
+      Android, iOS, Linux, Darwin, Windows,
+      FreeBSD, NetBSD, OpenBSD, Solaris, Unknown
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  os_version:
+    type: string
+    lifetime: application
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The user-visible version of the operating system (e.g. "1.2.3").
+      If the version detection fails, this metric gets set to `Unknown`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  app_display_version:
+    type: string
+    lifetime: application
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The user visible version string (e.g. "1.0.3").
+      If the value was not provided through configuration,
+      this metric gets set to `Unknown`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1508305#c9
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  app_channel:
+    type: string
+    lifetime: application
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The channel the application is being distributed on.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1520741#c18
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  first_run_date:
+    type: datetime
+    lifetime: user
+    send_in_pings:
+      - usage-reporting
+    time_unit: day
+    description: |
+      The date of the first run of the application.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1525045#c18
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
+  app_build:
+    type: string
+    lifetime: application
+    send_in_pings:
+      - usage-reporting
+    description: |
+      The build identifier generated by the CI system (e.g. "1234/A").
+      If the value was not provided through configuration,
+      this metric gets set to `Unknown`.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938070
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1512938#c3
+    data_sensitivity:
+      - technical
+    notification_emails:
+      - glean-team@mozilla.com
+      - jrediger@mozilla.com
+      - loines@mozilla.com
+    expires: never
+
 legacy_ids:
   client_id:
     type: uuid
@@ -276,11 +467,13 @@ browser.search:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1804057
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1799049
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1809447
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_reviews:
       - https://github.com/mozilla-mobile/focus-android/pull/4968#issuecomment-879256443
       - https://github.com/mozilla-mobile/focus-android/pull/7418#issuecomment-1195518264
       - https://github.com/mozilla-mobile/focus-android/pull/8109#issuecomment-1337394286
       - https://github.com/mozilla-mobile/firefox-android/pull/523#issuecomment-1377494482
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_sensitivity:
       - interaction
     notification_emails:
@@ -308,11 +501,13 @@ browser.search:
       - https://github.com/mozilla-mobile/fenix/issues/4967
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1804057
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1809447
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_reviews:
       - https://github.com/mozilla-mobile/focus-android/pull/4968#issuecomment-879256443
       - https://github.com/mozilla-mobile/focus-android/pull/7418#issuecomment-1195518264
       - https://github.com/mozilla-mobile/focus-android/pull/8109#issuecomment-1337394286
       - https://github.com/mozilla-mobile/firefox-android/pull/523#issuecomment-1377494482
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_sensitivity:
       - interaction
     notification_emails:
@@ -331,10 +526,12 @@ browser.search:
     bugs:
       - https://github.com/mozilla-mobile/fenix/issues/4967
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1809447
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_reviews:
       - https://github.com/mozilla-mobile/focus-android/pull/4968#issuecomment-879256443
       - https://github.com/mozilla-mobile/focus-android/pull/7418#issuecomment-1195518264
       - https://github.com/mozilla-mobile/firefox-android/pull/523#issuecomment-1377494482
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_sensitivity:
       - interaction
     notification_emails:
@@ -360,9 +557,11 @@ browser.search:
       - BASELINE_PING
     bugs:
       - https://github.com/mozilla-mobile/focus-android/issues/6229
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_reviews:
       - https://github.com/mozilla-mobile/focus-android/pull/6238
       - https://github.com/mozilla-mobile/focus-android/pull/7906
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1925028
     data_sensitivity:
       - technical
       - interaction
@@ -1001,6 +1200,23 @@ tab_count:
     data_reviews:
       - https://github.com/mozilla-mobile/focus-android/pull/5644
       - https://github.com/mozilla-mobile/focus-android/pull/7906
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - android-probes@mozilla.com
+      - rtestard@mozilla.com
+    expires: never
+    extra_keys:
+      opened_tabs:
+        description: Number of currently opened tabs
+        type: quantity
+  session_close_others_tapped:
+    type: event
+    description: The user has switched to a tab from the session list.
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1912955
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1912955
     data_sensitivity:
       - interaction
     notification_emails:
@@ -1797,19 +2013,6 @@ context_menu:
         type: string
 
 onboarding:
-  first_screen_close_button:
-    type: event
-    description: The user has tapped on close button from the first screen.
-    bugs:
-      - https://github.com/mozilla-mobile/focus-android/issues/7500
-    data_reviews:
-      - https://github.com/mozilla-mobile/focus-android/pull/7566#issuecomment-1235551604
-      - https://github.com/mozilla-mobile/firefox-android/pull/3320
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
   get_started_button:
     type: event
     description: The user has tapped on get started button.
@@ -1839,19 +2042,6 @@ onboarding:
   skip_button:
     type: event
     description: The user has tapped on skip button.
-    bugs:
-      - https://github.com/mozilla-mobile/focus-android/issues/7500
-    data_reviews:
-      - https://github.com/mozilla-mobile/focus-android/pull/7566#issuecomment-1235551604
-      - https://github.com/mozilla-mobile/firefox-android/pull/3320
-    data_sensitivity:
-      - interaction
-    notification_emails:
-      - android-probes@mozilla.com
-    expires: never
-  second_screen_close_button:
-    type: event
-    description: The user has tapped on close button from the second screen.
     bugs:
       - https://github.com/mozilla-mobile/focus-android/issues/7500
     data_reviews:

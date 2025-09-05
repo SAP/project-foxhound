@@ -139,8 +139,6 @@ menu-view-history-button =
     .label = History
 menu-view-synced-tabs-sidebar =
     .label = Synced Tabs
-menu-view-megalist-sidebar =
-    .label = Passwords
 menu-view-full-zoom =
     .label = Zoom
     .accesskey = Z
@@ -247,6 +245,15 @@ menu-bookmarks-other =
     .label = Other Bookmarks
 menu-bookmarks-mobile =
     .label = Mobile Bookmarks
+
+## Profiles Menu
+
+menu-profiles =
+    .label = Profiles
+menu-profiles-manage-profiles =
+    .label = Manage profiles
+menu-profiles-new-profile =
+    .label = New profile
 
 ## Tools Menu
 

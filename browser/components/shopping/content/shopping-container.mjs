@@ -23,16 +23,27 @@ import "chrome://browser/content/shopping/shopping-message-bar.mjs";
 import "chrome://browser/content/shopping/unanalyzed.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://browser/content/shopping/recommended-ad.mjs";
+// eslint-disable-next-line import/no-unassigned-import
+import "chrome://browser/content/shopping/new-position-notification-card.mjs";
 
 // The number of pixels that must be scrolled from the
 // top of the sidebar to show the header box shadow.
 const HEADER_SCROLL_PIXEL_OFFSET = 8;
 
+const HEADER_NOT_TEXT_WRAPPED_HEIGHT = 32;
 const SIDEBAR_CLOSED_COUNT_PREF =
   "browser.shopping.experience2023.sidebarClosedCount";
 const SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF =
   "browser.shopping.experience2023.showKeepSidebarClosedMessage";
 const SHOPPING_SIDEBAR_ACTIVE_PREF = "browser.shopping.experience2023.active";
+const SIDEBAR_REVAMP_PREF = "sidebar.revamp";
+const INTEGRATED_SIDEBAR_PREF =
+  "browser.shopping.experience2023.integratedSidebar";
+const HAS_SEEN_POSITION_NOTIFICATION_CARD_PREF =
+  "browser.shopping.experience2023.newPositionCard.hasSeen";
+
+const CLOSED_COUNT_PREVIOUS_MIN = 4;
+const CLOSED_COUNT_PREVIOUS_MAX = 6;
 
 export class ShoppingContainer extends MozLitElement {
   static properties = {
@@ -47,10 +58,19 @@ export class ShoppingContainer extends MozLitElement {
     adsEnabledByUser: { type: Boolean },
     isAnalysisInProgress: { type: Boolean },
     analysisProgress: { type: Number },
+    showHeaderShadow: { type: Boolean, state: true },
     isOverflow: { type: Boolean },
     autoOpenEnabled: { type: Boolean },
     autoOpenEnabledByUser: { type: Boolean },
+    autoCloseEnabledByUser: { type: Boolean },
     showingKeepClosedMessage: { type: Boolean },
+    isProductPage: { type: Boolean },
+    isSupportedSite: { type: Boolean },
+    supportedDomains: { type: Object },
+    formattedDomainList: { type: Object, state: true },
+    isHeaderOverflow: { type: Boolean, state: true },
+    isSidebarStartPosition: { type: Boolean },
+    showNewPositionCard: { type: Boolean },
   };
 
   static get queries() {
@@ -66,6 +86,13 @@ export class ShoppingContainer extends MozLitElement {
       loadingEl: "#loading-wrapper",
       closeButtonEl: "#close-button",
       keepClosedMessageBarEl: "#keep-closed-message-bar",
+      emptyStateImgEl: "#shopping-empty-state-img",
+      emptyStateHeaderEl: "#shopping-empty-state-header",
+      emptyStateTextEl: "#shopping-empty-state-text",
+      emptyStateSupportedListEl: "#shopping-empty-list-of-supported-domains",
+      containerContentEl: "#content",
+      header: "#shopping-header",
+      newPositionNotificationCardEl: "new-position-notification-card",
     };
   }
 
@@ -75,6 +102,9 @@ export class ShoppingContainer extends MozLitElement {
       return;
     }
     this.initialized = true;
+    this.showHeader =
+      !RPMGetBoolPref(INTEGRATED_SIDEBAR_PREF) ||
+      RPMGetBoolPref(SIDEBAR_REVAMP_PREF);
 
     window.document.addEventListener("Update", this);
     window.document.addEventListener("NewAnalysisRequested", this);
@@ -85,8 +115,11 @@ export class ShoppingContainer extends MozLitElement {
     window.document.addEventListener("UpdateRecommendations", this);
     window.document.addEventListener("UpdateAnalysisProgress", this);
     window.document.addEventListener("autoOpenEnabledByUserChanged", this);
+    window.document.addEventListener("autoCloseEnabledByUserChanged", this);
     window.document.addEventListener("ShowKeepClosedMessage", this);
     window.document.addEventListener("HideKeepClosedMessage", this);
+    window.document.addEventListener("ShowNewPositionCard", this);
+    window.document.addEventListener("HideNewPositionCard", this);
 
     window.dispatchEvent(
       new CustomEvent("ContentReady", {
@@ -96,7 +129,35 @@ export class ShoppingContainer extends MozLitElement {
     );
   }
 
-  updated() {
+  disconnectedCallback() {
+    this.headerResizeObserver?.disconnect();
+  }
+
+  firstUpdated() {
+    this.headerResizeObserver = new ResizeObserver(([entry]) =>
+      this.maybeSetIsHeaderOverflow(entry)
+    );
+    this.headerResizeObserver.observe(this.header);
+  }
+
+  updated(changedProperties) {
+    if (changedProperties.has("supportedDomains")) {
+      let oldVal = changedProperties.get("supportedDomains");
+      /**
+       * We expect the domains object to be passed in consistently and not change often.
+       * A shallow comparison seems to be enough.
+       */
+      try {
+        if (JSON.stringify(oldVal) !== JSON.stringify(this.supportedDomains)) {
+          // Let the render function deal with recreating the formatted list.
+          this.formattedDomainList = null;
+        }
+      } catch (e) {
+        console.error(e);
+        this.formattedDomainList = null;
+      }
+    }
+
     if (this.focusCloseButton) {
       this.closeButtonEl.focus();
     }
@@ -114,22 +175,35 @@ export class ShoppingContainer extends MozLitElement {
     focusCloseButton,
     autoOpenEnabled,
     autoOpenEnabledByUser,
+    autoCloseEnabledByUser,
+    isProductPage,
+    isSupportedSite,
+    supportedDomains,
+    isSidebarStartPosition,
   }) {
     // If we're not opted in or there's no shopping URL in the main browser,
     // the actor will pass `null`, which means this will clear out any existing
     // content in the sidebar.
     this.data = data;
-    this.showOnboarding = showOnboarding;
+    this.showOnboarding = showOnboarding ?? this.showOnboarding;
     this.productUrl = productUrl;
     this.recommendationData = recommendationData;
     this.isOffline = !navigator.onLine;
     this.isAnalysisInProgress = isAnalysisInProgress;
-    this.adsEnabled = adsEnabled;
-    this.adsEnabledByUser = adsEnabledByUser;
+    this.adsEnabled = adsEnabled ?? this.adsEnabled;
+    this.adsEnabledByUser = adsEnabledByUser ?? this.adsEnabledByUser;
     this.analysisProgress = analysisProgress;
     this.focusCloseButton = focusCloseButton;
-    this.autoOpenEnabled = autoOpenEnabled;
-    this.autoOpenEnabledByUser = autoOpenEnabledByUser;
+    this.autoOpenEnabled = autoOpenEnabled ?? this.autoOpenEnabled;
+    this.autoOpenEnabledByUser =
+      autoOpenEnabledByUser ?? this.autoOpenEnabledByUser;
+    this.autoCloseEnabledByUser =
+      autoCloseEnabledByUser ?? this.autoCloseEnabledByUser;
+    this.isProductPage = isProductPage ?? true;
+    this.isSupportedSite = isSupportedSite;
+    this.supportedDomains = supportedDomains ?? this.supportedDomains;
+    this.isSidebarStartPosition =
+      isSidebarStartPosition ?? this.isSidebarStartPosition;
   }
 
   _updateRecommendations({ recommendationData }) {
@@ -173,8 +247,7 @@ export class ShoppingContainer extends MozLitElement {
         this.adsEnabledByUser = event.detail?.adsEnabledByUser;
         break;
       case "scroll":
-        let scrollYPosition = window.scrollY;
-        this.isOverflow = scrollYPosition > HEADER_SCROLL_PIXEL_OFFSET;
+        this.showHeaderShadow = window.scrollY > HEADER_SCROLL_PIXEL_OFFSET;
         break;
       case "UpdateRecommendations":
         this._updateRecommendations(event.detail);
@@ -185,42 +258,57 @@ export class ShoppingContainer extends MozLitElement {
       case "autoOpenEnabledByUserChanged":
         this.autoOpenEnabledByUser = event.detail?.autoOpenEnabledByUser;
         break;
+      case "autoCloseEnabledByUserChanged":
+        this.autoCloseEnabledByUser = event.detail?.autoCloseEnabledByUser;
+        break;
       case "ShowKeepClosedMessage":
         this.showingKeepClosedMessage = true;
         break;
       case "HideKeepClosedMessage":
         this.showingKeepClosedMessage = false;
         break;
+      case "ShowNewPositionCard":
+        this.showNewPositionCard = true;
+        break;
+      case "HideNewPositionCard":
+        this.showNewPositionCard = false;
+        break;
+    }
+  }
+
+  maybeSetIsHeaderOverflow(entry) {
+    let isOverflow = entry.contentRect.height > HEADER_NOT_TEXT_WRAPPED_HEIGHT;
+    if (this.isHeaderOverflow != isOverflow) {
+      this.isHeaderOverflow = isOverflow;
     }
   }
 
   getHostnameFromProductUrl() {
-    let hostname;
-    try {
-      hostname = new URL(this.productUrl)?.hostname;
+    let hostname = URL.parse(this.productUrl)?.hostname;
+    if (hostname) {
       return hostname;
-    } catch (e) {
-      console.error(`Unknown product url ${this.productUrl}.`);
-      return null;
     }
+    console.warn(`Unknown product url ${this.productUrl}.`);
+    return null;
   }
 
   analysisDetailsTemplate() {
     /* At present, en is supported as the default language for reviews. As we support more sites,
      * update `lang` accordingly if highlights need to be displayed in other languages. */
-    let lang;
     let hostname = this.getHostnameFromProductUrl();
 
-    switch (hostname) {
-      case "www.amazon.fr":
-        lang = "fr";
-        break;
-      case "www.amazon.de":
-        lang = "de";
-        break;
-      default:
-        lang = "en";
+    let lang = "en";
+    let isDEFRSupported = RPMGetBoolPref(
+      "toolkit.shopping.experience2023.defr",
+      false
+    );
+
+    if (isDEFRSupported && hostname === "www.amazon.fr") {
+      lang = "fr";
+    } else if (isDEFRSupported && hostname === "www.amazon.de") {
+      lang = "de";
     }
+
     return html`
       <review-reliability letter=${this.data.grade}></review-reliability>
       <adjusted-rating
@@ -233,78 +321,72 @@ export class ShoppingContainer extends MozLitElement {
     `;
   }
 
-  contentTemplate() {
+  hasDataTemplate() {
+    let dataBodyTemplate = null;
+
     // The user requested an analysis which is not done yet.
     if (
       this.analysisEvent?.productUrl == this.productUrl &&
       this.isAnalysisInProgress
     ) {
       const isReanalysis = this.analysisEvent.type === "ReanalysisRequested";
-      return html`<shopping-message-bar
+      dataBodyTemplate = html`<shopping-message-bar
           type=${isReanalysis
             ? "reanalysis-in-progress"
             : "analysis-in-progress"}
           progress=${this.analysisProgress}
         ></shopping-message-bar>
         ${isReanalysis ? this.analysisDetailsTemplate() : null}`;
-    }
-
-    if (this.data?.error) {
-      return html`<shopping-message-bar
+    } else if (this.data?.error) {
+      dataBodyTemplate = html`<shopping-message-bar
         type="generic-error"
       ></shopping-message-bar>`;
-    }
-
-    if (this.data.page_not_supported) {
-      return html`<shopping-message-bar
+    } else if (this.data.page_not_supported) {
+      dataBodyTemplate = html`<shopping-message-bar
         type="page-not-supported"
       ></shopping-message-bar>`;
-    }
-
-    if (this.data.deleted_product_reported) {
-      return html`<shopping-message-bar
+    } else if (this.data.deleted_product_reported) {
+      dataBodyTemplate = html`<shopping-message-bar
         type="product-not-available-reported"
       ></shopping-message-bar>`;
-    }
-
-    if (this.data.deleted_product) {
-      return this.userReportedAvailable
+    } else if (this.data.deleted_product) {
+      dataBodyTemplate = this.userReportedAvailable
         ? html`<shopping-message-bar
             type="thanks-for-reporting"
           ></shopping-message-bar>`
         : html`<shopping-message-bar
             type="product-not-available"
           ></shopping-message-bar>`;
-    }
-
-    if (this.data.needs_analysis) {
+    } else if (this.data.needs_analysis) {
       if (!this.data.product_id || typeof this.data.grade != "string") {
         // Product is new to us.
-        return html`<unanalyzed-product-card
+        dataBodyTemplate = html`<unanalyzed-product-card
           productUrl=${ifDefined(this.productUrl)}
         ></unanalyzed-product-card>`;
+      } else {
+        // We successfully analyzed the product before, but the current analysis is outdated and can be updated
+        // via a re-analysis.
+        dataBodyTemplate = html`
+          <shopping-message-bar
+            type="stale"
+            .productUrl=${this.productUrl}
+          ></shopping-message-bar>
+          ${this.analysisDetailsTemplate()}
+        `;
       }
-
-      // We successfully analyzed the product before, but the current analysis is outdated and can be updated
-      // via a re-analysis.
-      return html`
-        <shopping-message-bar
-          type="stale"
-          .productUrl=${this.productUrl}
-        ></shopping-message-bar>
-        ${this.analysisDetailsTemplate()}
-      `;
-    }
-
-    if (this.data.not_enough_reviews) {
+    } else if (this.data.not_enough_reviews) {
       // We already saw and tried to analyze this product before, but there are not enough reviews
       // to make a detailed analysis.
-      return html`<shopping-message-bar
+      dataBodyTemplate = html`<shopping-message-bar
         type="not-enough-reviews"
       ></shopping-message-bar>`;
+    } else {
+      dataBodyTemplate = this.analysisDetailsTemplate();
     }
 
-    return this.analysisDetailsTemplate();
+    return html`
+      ${dataBodyTemplate}${this.explainerTemplate()}${this.recommendationTemplate()}
+    `;
   }
 
   recommendationTemplate() {
@@ -345,7 +427,152 @@ export class ShoppingContainer extends MozLitElement {
     `;
   }
 
-  renderContainer(sidebarContent, hideFooter = false) {
+  noDataTemplate({ animate = true } = {}) {
+    if (this.isAnalysisInProgress) {
+      return html`<shopping-message-bar
+          type="analysis-in-progress"
+          progress=${this.analysisProgress}
+        ></shopping-message-bar
+        >${this.explainerTemplate()}${this.recommendationTemplate()}`;
+    }
+    return this.loadingTemplate({ animate });
+  }
+
+  nonPDPTemplate() {
+    // TODO: (Bug 1937924) settings template will throw a warning since this.productUrl is null when viewing a non-PDP
+    const bodyTextTemplate = this.isSupportedSite
+      ? html` <p
+          id="shopping-empty-state-text"
+          data-l10n-id="shopping-empty-state-supported-site"
+        ></p>`
+      : html`
+          <p
+            id="shopping-empty-state-text"
+            data-l10n-id="shopping-empty-state-non-supported-site"
+          ></p>
+        `;
+
+    if (!this.formattedDomainList) {
+      this.formattedDomainList = this._formattedDomainListTemplate();
+    }
+
+    const listTemplate = !this.isSupportedSite
+      ? html`<ul id="shopping-empty-list-of-supported-domains">
+          ${this.formattedDomainList}
+        </ul>`
+      : null;
+
+    // Anything wrapped by #shopping-empty-wrapper will be centered on sidebar width changes.
+    return html`<div id="shopping-empty-wrapper">
+        <img
+          id="shopping-empty-state-img"
+          src="chrome://browser/content/shopping/assets/emptyStateA.svg"
+          alt=""
+          role="presentation"
+        />
+        <h2
+          id="shopping-empty-state-header"
+          data-l10n-id="shopping-empty-state-header"
+        ></h2>
+        ${bodyTextTemplate} ${listTemplate}
+      </div>
+      ${this.isSupportedSite
+        ? this.explainerTemplate({ className: "first-footer-card" })
+        : null}`;
+  }
+
+  _formattedDomainListTemplate() {
+    if (!this.supportedDomains) {
+      return null;
+    }
+
+    let template = [];
+    let formatter = new Intl.ListFormat(undefined, {
+      style: "narrow",
+      type: "conjunction",
+    });
+
+    Object.keys(this.supportedDomains)
+      .sort()
+      .forEach(sitename => {
+        let domainsFromSite = this.supportedDomains[sitename];
+
+        // List of supported domains per sitename, per row, as a string.
+        let anchorsString = domainsFromSite.map(domain => {
+          try {
+            let url = new URL(domain);
+            let hostname = url.hostname;
+            /** ShoppingProduct should already validate the URLs in the ProductConfig for us.
+             * As an extra precaution though, let's verify that we've been passed a valid URL, in case
+             * something goes awry in messages between actors and the shopping-container.
+             *
+             * @see ShoppingProduct
+             */
+            let validProtocolRegex = /^(https:\/\/\w+.*)/;
+            return validProtocolRegex.test(url)
+              ? `<a class="shopping-supported-domain-link" href=${url.href} target="_blank">${hostname}</a>`
+              : null;
+          } catch (e) {
+            // Somehow, we got an invalid URL.
+            console.error(e);
+            return null;
+          }
+        });
+
+        // Now format the string as a list suitable for the current locale.
+        anchorsString = formatter.format(anchorsString);
+
+        // Convert the formatted string into an element that can be inserted into our litElement template.
+        const parser = new DOMParser();
+        let anchorsDOMDoc = parser.parseFromString(anchorsString, "text/html");
+        /**
+         * litElement will lose a reference to the childNodes on re-render if we use a DocumentFragment.
+         * Instead, add the nodes as an array in our template so that we preserve them.
+         */
+        let anchorsTemplate = [];
+        Array.from(anchorsDOMDoc.body.childNodes).forEach(childNode => {
+          anchorsTemplate.push(childNode);
+        });
+
+        let listTemplate = html` <li
+          id="shopping-empty-state-domains-list-${sitename}"
+          class="shopping-supported-domain-list"
+        >
+          ${anchorsTemplate}
+        </li>`;
+
+        template.push(listTemplate);
+      });
+
+    return template;
+  }
+
+  headerTemplate() {
+    const headerWrapperClasses = `${this.showHeaderShadow ? "header-wrapper-shadow" : ""} ${this.isHeaderOverflow ? "header-wrapper-overflow" : ""}`;
+    return html`<div id="header-wrapper" class=${headerWrapperClasses}>
+      <header id="shopping-header" data-l10n-id="shopping-a11y-header">
+        <h1
+          id="shopping-header-title"
+          data-l10n-id="shopping-main-container-title"
+        ></h1>
+        <p id="beta-marker" data-l10n-id="shopping-beta-marker"></p>
+      </header>
+      <button
+        id="close-button"
+        class="ghost-button shopping-button"
+        data-l10n-id="shopping-close-button"
+        @click=${this.handleCloseButtonClick}
+      ></button>
+    </div>`;
+  }
+
+  // TODO: (Bug 1949647) do not render "Keep closed" message and notification card simultaneously.
+  renderContainer(sidebarContent, { showSettings = false } = {}) {
+    /* Empty state styles for users that are not yet opted-in are managed separately
+     * by AboutWelcomeChild.sys.mjs and _shopping.scss. To prevent overlap, only apply
+     * the class for these styles if a user is opted-in. */
+    const canStyleEmptyState =
+      !this.isProductPage && !this.isOffline && !this.showOnboarding;
     return html`<link
         rel="stylesheet"
         href="chrome://browser/content/shopping/shopping-container.css"
@@ -359,112 +586,182 @@ export class ShoppingContainer extends MozLitElement {
         href="chrome://browser/content/shopping/shopping-page.css"
       />
       <div id="shopping-container">
+        ${this.showHeader ? this.headerTemplate() : null}
         <div
-          id="header-wrapper"
-          class=${this.isOverflow ? "shopping-header-overflow" : ""}
+          id="content"
+          class=${canStyleEmptyState ? "is-empty-state" : ""}
+          aria-live="polite"
+          aria-busy=${!this.data}
         >
-          <header id="shopping-header" data-l10n-id="shopping-a11y-header">
-            <h1
-              id="shopping-header-title"
-              data-l10n-id="shopping-main-container-title"
-            ></h1>
-            <p id="beta-marker" data-l10n-id="shopping-beta-marker"></p>
-          </header>
-          <button
-            id="close-button"
-            class="ghost-button shopping-button"
-            data-l10n-id="shopping-close-button"
-            @click=${this.handleCloseButtonClick}
-          ></button>
-        </div>
-        <div id="content" aria-live="polite" aria-busy=${!this.data}>
           <slot name="multi-stage-message-slot"></slot>
-          ${this.keepClosedMessageTemplate()}${sidebarContent}
-          ${!hideFooter ? this.footerTemplate() : null}
+          ${this.userInteractionMessageTemplate()}${sidebarContent}
+          ${showSettings
+            ? this.settingsTemplate(
+                !this.isSupportedSite && !this.isProductPage
+                  ? { className: "first-footer-card" }
+                  : ""
+              )
+            : null}
         </div>
       </div>`;
   }
 
-  footerTemplate() {
+  explainerTemplate({ className = "" } = {}) {
+    return html`<analysis-explainer
+      productUrl=${ifDefined(this.productUrl)}
+      class=${className}
+    ></analysis-explainer>`;
+  }
+
+  settingsTemplate({ className = "" } = {}) {
     let hostname = this.getHostnameFromProductUrl();
+    return html` <shopping-settings
+      ?adsEnabled=${this.adsEnabled}
+      ?adsEnabledByUser=${this.adsEnabledByUser}
+      ?autoOpenEnabled=${this.autoOpenEnabled}
+      ?autoOpenEnabledByUser=${this.autoOpenEnabledByUser}
+      ?autoCloseEnabledByUser=${this.autoCloseEnabledByUser}
+      .hostname=${hostname}
+      class=${className}
+    ></shopping-settings>`;
+  }
+
+  userInteractionMessageTemplate() {
+    /**
+     * There are two types of messages about users' interaction with Review Checker that we want to display
+     * when users keep the auto-open setting enabled:
+     * 1. The "Keep closed" message-bar
+     * 2. The "New position" notification card (integratedSidebar only)
+     *
+     * Only one or the other should be rendered at a time, at the same spot. If a user is eligible
+     * to see the notification card, make sure to show that card first. Once the card is dismissed,
+     * we can then check if the user is eligible to see the "Keep closed" message.
+     */
+    if (!this.autoOpenEnabled || !this.autoOpenEnabledByUser) {
+      return null;
+    }
+
+    let canShowNotificationCard =
+      RPMGetBoolPref(INTEGRATED_SIDEBAR_PREF, false) &&
+      this.showNewPositionCard &&
+      this.isSidebarStartPosition &&
+      // Set fallback value to true to prevent weird flickering UI when switching tabs
+      !RPMGetBoolPref(HAS_SEEN_POSITION_NOTIFICATION_CARD_PREF, true);
+    let canShowKeepClosedMessage =
+      this.showingKeepClosedMessage &&
+      RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, true);
+
+    if (canShowNotificationCard) {
+      return this.newPositionNotificationCardTemplate();
+    } else if (canShowKeepClosedMessage) {
+      return this.keepClosedMessageTemplate();
+    }
+
+    return null;
+  }
+
+  newPositionNotificationCardTemplate() {
     return html`
-      <analysis-explainer
-        productUrl=${ifDefined(this.productUrl)}
-      ></analysis-explainer>
-      ${this.recommendationTemplate()}
-      <shopping-settings
-        ?adsEnabled=${this.adsEnabled}
-        ?adsEnabledByUser=${this.adsEnabledByUser}
-        ?autoOpenEnabled=${this.autoOpenEnabled}
-        ?autoOpenEnabledByUser=${this.autoOpenEnabledByUser}
-        .hostname=${hostname}
-      ></shopping-settings>
+      <new-position-notification-card
+        isSidebarStartPosition=${this.isSidebarStartPosition}
+      ></new-position-notification-card>
     `;
   }
 
   keepClosedMessageTemplate() {
-    if (
-      this.autoOpenEnabled &&
-      this.autoOpenEnabledByUser &&
-      this.showingKeepClosedMessage &&
-      RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, true)
-    ) {
-      return html`<shopping-message-bar
-        id="keep-closed-message-bar"
-        type="keep-closed"
-      ></shopping-message-bar>`;
-    }
-    return null;
+    return html`<shopping-message-bar
+      id="keep-closed-message-bar"
+      type="keep-closed"
+    ></shopping-message-bar>`;
   }
 
   render() {
     let content;
-    let hideFooter;
+    // this.data may be null because we're viewing a non PDP, or a PDP that does not have data yet.
+    // Use isProductPage and isSupported to distinguish between the two.
+    const isLoadingData =
+      !this.data && this.isProductPage && !this.isSupportedSite;
+
     if (this.showOnboarding) {
       content = html``;
-      hideFooter = true;
-    } else if (this.isOffline) {
-      content = this.loadingTemplate({ animate: false });
-      hideFooter = true;
-    } else if (!this.data) {
-      if (this.isAnalysisInProgress) {
-        content = html`<shopping-message-bar
-          type="analysis-in-progress"
-          progress=${this.analysisProgress}
-        ></shopping-message-bar>`;
-      } else {
-        content = this.loadingTemplate();
-        hideFooter = true;
-      }
+    } else if (isLoadingData || this.isOffline) {
+      content = this.noDataTemplate({ animate: !this.isOffline });
+    } else if (!this.isProductPage || this.isSupportedSite) {
+      content = this.nonPDPTemplate();
     } else {
-      content = this.contentTemplate();
+      content = this.hasDataTemplate();
     }
-    return this.renderContainer(content, hideFooter);
+
+    const showSettings =
+      !this.showOnboarding &&
+      !this.isOffline &&
+      (!isLoadingData || (isLoadingData && this.isAnalysisInProgress));
+    return this.renderContainer(content, { showSettings });
   }
 
   handleCloseButtonClick() {
+    let canShowKeepClosedMessage;
+
     if (this.autoOpenEnabled && this.autoOpenEnabledByUser) {
-      let sidebarClosedCount = RPMGetIntPref(SIDEBAR_CLOSED_COUNT_PREF, 0);
-      if (
-        !this.showingKeepClosedMessage &&
-        sidebarClosedCount >= 4 &&
-        RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, true)
-      ) {
-        this.showingKeepClosedMessage = true;
-        return;
-      }
+      canShowKeepClosedMessage =
+        this._canShowKeepClosedMessageOnCloseButtonClick();
+    }
 
-      this.showingKeepClosedMessage = false;
+    if (!canShowKeepClosedMessage) {
+      RPMSetPref(SHOPPING_SIDEBAR_ACTIVE_PREF, false);
+      window.dispatchEvent(
+        new CustomEvent("CloseShoppingSidebar", {
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
 
-      if (sidebarClosedCount >= 6) {
-        RPMSetPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false);
-      }
+    Glean.shopping.surfaceClosed.record({ source: "closeButton" });
+  }
 
+  /**
+   * Delaying close is only applicable to the "Keep closed" message.
+   *
+   * We can show the message under these conditions:
+   * - User has already seen the new location notification card
+   * - The message was never seen before
+   * - User clicked the close button at least 5 times in a session (i.e. met the minimum of 4 counts before this point)
+   * - The number of close attempts in a session is less than 7 (i.e. met the maximum of 6 counts before this point)
+   *
+   * Do not show the message again after the 7th close.
+   */
+  _canShowKeepClosedMessageOnCloseButtonClick() {
+    let yetToSeeNotificationCard =
+      !RPMGetBoolPref(HAS_SEEN_POSITION_NOTIFICATION_CARD_PREF, false) &&
+      RPMGetBoolPref(INTEGRATED_SIDEBAR_PREF, false);
+
+    if (
+      yetToSeeNotificationCard ||
+      !RPMGetBoolPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false)
+    ) {
+      return false;
+    }
+
+    let sidebarClosedCount = RPMGetIntPref(SIDEBAR_CLOSED_COUNT_PREF, 0);
+    let canShowKeepClosedMessage =
+      !this.showingKeepClosedMessage &&
+      sidebarClosedCount >= CLOSED_COUNT_PREVIOUS_MIN;
+
+    if (canShowKeepClosedMessage) {
+      this.showingKeepClosedMessage = true;
+      return true;
+    }
+
+    this.showingKeepClosedMessage = false;
+
+    if (sidebarClosedCount >= CLOSED_COUNT_PREVIOUS_MAX) {
+      RPMSetPref(SHOW_KEEP_SIDEBAR_CLOSED_MESSAGE_PREF, false);
+    } else {
       RPMSetPref(SIDEBAR_CLOSED_COUNT_PREF, sidebarClosedCount + 1);
     }
 
-    RPMSetPref(SHOPPING_SIDEBAR_ACTIVE_PREF, false);
-    Glean.shopping.surfaceClosed.record({ source: "closeButton" });
+    return false;
   }
 }
 

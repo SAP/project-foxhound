@@ -47,7 +47,7 @@ def get_image_digest(image_name):
         strict=False,
     )
     tasks = load_tasks_for_kind(params, "docker-image")
-    task = tasks[f"build-docker-image-{image_name}"]
+    task = tasks[f"docker-image-{image_name}"]
     return task.attributes["cached_task"]["digest"]
 
 
@@ -61,7 +61,7 @@ def load_image_by_name(image_name, tag=None):
         strict=False,
     )
     tasks = load_tasks_for_kind(params, "docker-image")
-    task = tasks[f"build-docker-image-{image_name}"]
+    task = tasks[f"docker-image-{image_name}"]
 
     indexes = task.optimization.get("index-search", [])
     task_id = IndexSearch().should_replace_task(task, {}, None, indexes)
@@ -122,11 +122,11 @@ def build_image(name, tag, args=None):
     tag = tag or docker.docker_image(name, by_tag=True)
 
     buf = BytesIO()
-    docker.stream_context_tar(".", image_dir, buf, "", args)
+    docker.stream_context_tar(".", image_dir, buf, args)
     cmdargs = ["docker", "image", "build", "--no-cache", "-"]
     if tag:
         cmdargs.insert(-1, f"-t={tag}")
-    subprocess.run(cmdargs, input=buf.getvalue())
+    subprocess.run(cmdargs, input=buf.getvalue(), check=True)
 
     msg = f"Successfully built {name}"
     if tag:

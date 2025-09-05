@@ -7,11 +7,9 @@ package org.mozilla.fenix.components.toolbar.navbar
 import android.content.Context
 import android.view.View
 import android.view.ViewGroup
-import mozilla.components.support.utils.ext.isLandscape
-import org.mozilla.fenix.browser.tabstrip.isTabStripEnabled
+import mozilla.components.compose.base.theme.layout.AcornWindowSize
 import org.mozilla.fenix.components.toolbar.ToolbarContainerView
 import org.mozilla.fenix.components.toolbar.ToolbarPosition
-import org.mozilla.fenix.ext.isTablet
 import org.mozilla.fenix.ext.settings
 
 /**
@@ -19,8 +17,9 @@ import org.mozilla.fenix.ext.settings
  * device type and orientation – we don't show the navigation bar for tablets, landscape or when tab strip is enabled.
  * NB: don't use it with the app context – it doesn't get recreated when a foldable changes its modes.
  */
-fun Context.shouldAddNavigationBar() = settings().navigationToolbarEnabled && !isLandscape() &&
-    !isTablet() && !isTabStripEnabled()
+fun Context.shouldAddNavigationBar(
+    isWindowSmall: Boolean = AcornWindowSize.getWindowSize(this) == AcornWindowSize.Small,
+) = settings().navigationToolbarEnabled && isWindowSmall
 
 /**
  *
@@ -41,7 +40,7 @@ fun updateNavBarForConfigurationChange(
     reinitializeNavBar: () -> Unit,
     reinitializeMicrosurveyPrompt: () -> Unit,
 ) {
-    if (context.isLandscape()) {
+    if (AcornWindowSize.getWindowSize(context).isNotSmall()) {
         // In landscape mode we want to remove the navigation bar.
         parent.removeView(bottomToolbarContainerView)
 

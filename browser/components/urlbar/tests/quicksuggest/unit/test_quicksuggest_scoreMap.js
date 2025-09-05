@@ -163,9 +163,9 @@ add_task(async function sponsoredWithout_nonsponsoredWithout_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITHOUT_SCORE,
     }),
@@ -181,7 +181,7 @@ add_task(
       scoreMap: {
         adm_nonsponsored: score,
       },
-      expectedFeatureName: "AdmWikipedia",
+      expectedFeatureName: "OfflineWikipediaSuggestions",
       expectedScore: score,
       expectedResult: makeExpectedWikipediaResult({
         keyword,
@@ -201,9 +201,9 @@ add_task(
         adm_sponsored: score,
         adm_nonsponsored: score / 2,
       },
-      expectedFeatureName: "AdmWikipedia",
+      expectedFeatureName: "AmpSuggestions",
       expectedScore: score,
-      expectedResult: makeExpectedAdmResult({
+      expectedResult: makeExpectedAmpResult({
         keyword,
         suggestion: SPONSORED_WITHOUT_SCORE,
       }),
@@ -221,7 +221,7 @@ add_task(
         adm_nonsponsored: score,
         adm_sponsored: score / 2,
       },
-      expectedFeatureName: "AdmWikipedia",
+      expectedFeatureName: "OfflineWikipediaSuggestions",
       expectedScore: score,
       expectedResult: makeExpectedWikipediaResult({
         keyword,
@@ -239,9 +239,9 @@ add_task(async function sponsoredWith_nonsponsoredWith_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITH_SCORE,
     }),
@@ -256,7 +256,7 @@ add_task(async function sponsoredWith_nonsponsoredWith_nonsponsoredWins() {
     scoreMap: {
       adm_nonsponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "OfflineWikipediaSuggestions",
     expectedScore: score,
     expectedResult: makeExpectedWikipediaResult({
       keyword,
@@ -274,9 +274,9 @@ add_task(async function sponsoredWith_nonsponsoredWith_sponsoredWins_both() {
       adm_sponsored: score,
       adm_nonsponsored: score / 2,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITH_SCORE,
     }),
@@ -292,7 +292,7 @@ add_task(async function sponsoredWith_nonsponsoredWith_nonsponsoredWins_both() {
       adm_nonsponsored: score,
       adm_sponsored: score / 2,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "OfflineWikipediaSuggestions",
     expectedScore: score,
     expectedResult: makeExpectedWikipediaResult({
       keyword,
@@ -309,9 +309,9 @@ add_task(async function sponsoredWithout_addonWithout_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITHOUT_SCORE,
     }),
@@ -327,9 +327,9 @@ add_task(async function sponsoredWithout_addonWithout_sponsoredWins_both() {
       adm_sponsored: score,
       amo: score / 2,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITHOUT_SCORE,
     }),
@@ -344,9 +344,9 @@ add_task(async function sponsoredWith_addonWith_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITH_SCORE,
     }),
@@ -378,9 +378,9 @@ add_task(async function sponsoredWith_addonWith_sponsoredWins_both() {
       adm_sponsored: score,
       amo: score / 2,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITH_SCORE,
     }),
@@ -418,9 +418,9 @@ add_task(async function merino_sponsored_addon_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword: "test",
       suggestion: MERINO_SPONSORED_SUGGESTION,
       source: "merino",
@@ -473,9 +473,9 @@ add_task(async function merino_sponsored_unknown_sponsoredWins() {
     scoreMap: {
       adm_sponsored: score,
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: score,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword: "test",
       suggestion: MERINO_SPONSORED_SUGGESTION,
       source: "merino",
@@ -503,7 +503,7 @@ add_task(async function merino_sponsored_unknown_unknownWins() {
     },
     expectedFeatureName: null,
     expectedScore: score,
-    expectedResult: makeExpectedDefaultResult({
+    expectedResult: makeExpectedDefaultMerinoResult({
       suggestion: MERINO_UNKNOWN_SUGGESTION,
     }),
   });
@@ -518,9 +518,9 @@ add_task(async function stringValue() {
     scoreMap: {
       adm_sponsored: "123.456",
     },
-    expectedFeatureName: "AdmWikipedia",
+    expectedFeatureName: "AmpSuggestions",
     expectedScore: 123.456,
-    expectedResult: makeExpectedAdmResult({
+    expectedResult: makeExpectedAmpResult({
       keyword,
       suggestion: SPONSORED_WITH_SCORE,
     }),
@@ -572,7 +572,11 @@ async function doTest({
     let stub = sandbox
       .stub(feature, "makeResult")
       .callsFake((queryContext, suggestion, searchString) => {
-        actualScore = suggestion.score;
+        let expectedUrl =
+          expectedResult.payload.originalUrl || expectedResult.payload.url;
+        if (suggestion.url == expectedUrl) {
+          actualScore = suggestion.score;
+        }
         return stub.wrappedMethod.call(
           feature,
           queryContext,
@@ -602,14 +606,14 @@ async function doTest({
   await cleanUpNimbus();
 }
 
-function makeExpectedAdmResult({
+function makeExpectedAmpResult({
   suggestion,
   keyword,
   source,
   provider,
   requestId,
 }) {
-  return makeAmpResult({
+  return QuickSuggestTestUtils.ampResult({
     keyword,
     source,
     provider,
@@ -626,12 +630,11 @@ function makeExpectedAdmResult({
 }
 
 function makeExpectedWikipediaResult({ suggestion, keyword, source }) {
-  return makeWikipediaResult({
+  return QuickSuggestTestUtils.wikipediaResult({
     keyword,
     source,
     title: suggestion.title,
     url: suggestion.url,
-    originalUrl: suggestion.url,
     impressionUrl: suggestion.impression_url,
     clickUrl: suggestion.click_url,
     blockId: suggestion.id,
@@ -639,7 +642,7 @@ function makeExpectedWikipediaResult({ suggestion, keyword, source }) {
 }
 
 function makeExpectedAddonResult({ suggestion, source, provider }) {
-  return makeAmoResult({
+  return QuickSuggestTestUtils.amoResult({
     source,
     provider,
     title: suggestion.title,
@@ -650,7 +653,7 @@ function makeExpectedAddonResult({ suggestion, source, provider }) {
   });
 }
 
-function makeExpectedDefaultResult({ suggestion }) {
+function makeExpectedDefaultMerinoResult({ suggestion }) {
   return {
     type: UrlbarUtils.RESULT_TYPE.URL,
     source: UrlbarUtils.RESULT_SOURCE.SEARCH,
@@ -659,7 +662,7 @@ function makeExpectedDefaultResult({ suggestion }) {
       source: "merino",
       provider: suggestion.provider,
       telemetryType: suggestion.provider,
-      isSponsored: suggestion.is_sponsored,
+      isSponsored: !!suggestion.is_sponsored,
       title: suggestion.title,
       url: suggestion.url,
       displayUrl: suggestion.url.replace(/^https:\/\//, ""),
@@ -669,9 +672,6 @@ function makeExpectedDefaultResult({ suggestion }) {
         : undefined,
       shouldShowUrl: true,
       isBlockable: true,
-      blockL10n: {
-        id: "urlbar-result-menu-dismiss-firefox-suggest",
-      },
       isManageable: true,
     },
   };

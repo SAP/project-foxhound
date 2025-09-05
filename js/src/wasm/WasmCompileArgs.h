@@ -46,6 +46,17 @@ enum class Tier {
   Serialized = Optimized
 };
 
+static constexpr const char* ToString(Tier tier) {
+  switch (tier) {
+    case wasm::Tier::Baseline:
+      return "baseline";
+    case wasm::Tier::Optimized:
+      return "optimized";
+    default:
+      return "unknown";
+  }
+}
+
 // Iterator over tiers present in a tiered data structure.
 
 class Tiers {
@@ -89,22 +100,19 @@ struct BuiltinModuleIds {
 
 struct FeatureOptions {
   FeatureOptions()
-      : isBuiltinModule(false),
+      : disableOptimizingCompiler(false),
+        isBuiltinModule(false),
         jsStringBuiltins(false),
-        jsStringConstants(false)
-#ifdef ENABLE_WASM_GC
-        ,
-        requireGC(false)
-#endif
-#ifdef ENABLE_WASM_TAIL_CALLS
-        ,
-        requireTailCalls(false)
-#endif
-  {
-  }
+        jsStringConstants(false),
+        requireExnref(false) {}
+
+  // Whether we should try to disable our optimizing compiler. Only available
+  // with `IsSimdPrivilegedContext`.
+  bool disableOptimizingCompiler;
 
   // Enables builtin module opcodes, only set in WasmBuiltinModule.cpp.
   bool isBuiltinModule;
+
   // Enable JS String builtins for this module, only available if the feature
   // is also enabled.
   bool jsStringBuiltins;
@@ -113,14 +121,8 @@ struct FeatureOptions {
   bool jsStringConstants;
   SharedChars jsStringConstantsNamespace;
 
-#ifdef ENABLE_WASM_GC
-  // Enable GC support.
-  bool requireGC;
-#endif
-#ifdef ENABLE_WASM_TAIL_CALLS
-  // Enable tail-calls support.
-  bool requireTailCalls;
-#endif
+  // Enable exnref support.
+  bool requireExnref;
 
   // Parse the compile options bag.
   [[nodiscard]] bool init(JSContext* cx, HandleValue val);
@@ -289,7 +291,7 @@ struct CompilerEnvironment {
   CompilerEnvironment(CompileMode mode, Tier tier, DebugEnabled debugEnabled);
 
   // Compute any remaining compilation parameters.
-  void computeParameters(Decoder& d);
+  void computeParameters(const ModuleMetadata& moduleMeta);
 
   // Compute any remaining compilation parameters.  Only use this method if
   // the CompilerEnvironment was created with values for mode, tier, and

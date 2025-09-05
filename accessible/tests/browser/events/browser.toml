@@ -5,11 +5,14 @@ support-files = [
   "!/accessible/tests/browser/shared-head.js",
   "!/accessible/tests/mochitest/*.js",
 ]
-prefs = ["javascript.options.asyncstack_capture_debuggee_only=false"]
 
 ["browser_alert.js"]
 
 ["browser_content_prompt.js"]
+
+["browser_focus_document.js"]
+
+["browser_menu_and_alerts.js"]
 
 ["browser_test_A11yUtils_announce.js"]
 

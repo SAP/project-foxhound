@@ -78,7 +78,8 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::AllocateExtraData() {
 
 // Note: This doesn't run on the ffmpeg TaskQueue, it runs on some other media
 // taskqueue
-MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVDictionary** aOptions) {
+MediaResult FFmpegDataDecoder<LIBAV_VER>::InitSWDecoder(
+    AVDictionary** aOptions) {
   FFMPEG_LOG("Initialising FFmpeg decoder");
 
   AVCodec* codec = FindAVCodec(mLib, mCodecID);
@@ -87,8 +88,10 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVDictionary** aOptions) {
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                        RESULT_DETAIL("unable to find codec"));
   }
-  // openh264 has broken decoding of some h264 videos so
-  // don't use it unless explicitly allowed for now.
+  // This logic is mirrored in FFmpegDecoderModule::Supports. We prefer to use
+  // our own OpenH264 decoder through the plugin over ffmpeg by default due to
+  // broken decoding with some versions. openh264 has broken decoding of some
+  // h264 videos so don't use it unless explicitly allowed for now.
   if (!strcmp(codec->name, "libopenh264") &&
       !StaticPrefs::media_ffmpeg_allow_openh264()) {
     FFMPEG_LOG("  unable to find codec (openh264 disabled by pref)");
@@ -135,7 +138,7 @@ MediaResult FFmpegDataDecoder<LIBAV_VER>::InitDecoder(AVDictionary** aOptions) {
       mLib->av_freep(&mCodecContext->extradata);
     }
     mLib->av_freep(&mCodecContext);
-    FFMPEG_LOG("  Couldn't open avcodec");
+    FFMPEG_LOG("  Couldn't open avcodec for %s", codec->name);
     return MediaResult(NS_ERROR_DOM_MEDIA_FATAL_ERR,
                        RESULT_DETAIL("Couldn't open avcodec"));
   }
@@ -312,7 +315,6 @@ AVFrame* FFmpegDataDecoder<LIBAV_VER>::PrepareFrame() {
   return aLib->avcodec_find_decoder(aCodec);
 }
 
-#ifdef MOZ_WIDGET_GTK
 /* static */ AVCodec* FFmpegDataDecoder<LIBAV_VER>::FindHardwareAVCodec(
     FFmpegLibWrapper* aLib, AVCodecID aCodec) {
   void* opaque = nullptr;
@@ -324,6 +326,5 @@ AVFrame* FFmpegDataDecoder<LIBAV_VER>::PrepareFrame() {
   }
   return nullptr;
 }
-#endif
 
 }  // namespace mozilla

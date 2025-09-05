@@ -198,24 +198,6 @@ Required for all new histograms. This is an array of integers and should at leas
 ---------------
 Required. A description of the data tracked by the histogram, e.g. _"Resident memory size"_
 
-``cpp_guard`` (obsolete, use ``operating_systems``)
----------------------------------------------------
-Optional. This field inserts an #ifdef directive around the histogram's C++ declaration. This is typically used for platform-specific histograms, e.g. ``"cpp_guard": "ANDROID"``
-
-``operating_systems``
----------------------
-Optional. This field restricts recording to certain operating systems only. Use that in-place of previous ``cpp_guards`` to avoid inclusion on not-specified operating systems.
-Currently supported values are:
-
-- ``mac``
-- ``linux``
-- ``windows``
-- ``android``
-- ``unix``
-- ``all`` (record on all operating systems)
-
-If this field is left out it defaults to ``all``.
-
 ``releaseChannelCollection``
 ----------------------------
 Optional. This is one of:
@@ -295,8 +277,8 @@ For histograms measuring time, TelemetryStopwatch can be used to avoid working w
 
 .. code-block:: js
 
-  TelemetryStopwatch.start("SEARCH_SERVICE_INIT2_MS");
-  TelemetryStopwatch.finish("SEARCH_SERVICE_INIT2_MS");
+  TelemetryStopwatch.start("FX_TAB_SWITCH_TOTAL_E10S_MS");
+  TelemetryStopwatch.finish("FX_TAB_SWITCH_TOTAL_E10S_MS");
 
   TelemetryStopwatch.start("FX_TAB_SWITCH_TOTAL_MS");
   TelemetryStopwatch.cancel("FX_TAB_SWITCH_TOTAL_MS");
@@ -363,12 +345,6 @@ Probes in native code can also use the `nsITelemetry <https://searchfox.org/mozi
    */
   void AccumulateTimeDelta(HistogramID id, const nsCString& key, TimeStamp start, TimeStamp end = TimeStamp::Now());
 
-The histogram names declared in ``Histograms.json`` are translated into constants in the ``mozilla::Telemetry`` namespace:
-
-.. code-block:: cpp
-
-  mozilla::Telemetry::Accumulate(mozilla::Telemetry::STARTUP_CRASH_DETECTED, true);
-
 .. warning::
 
   Telemetry accumulations are designed to be cheap, not free. If you wish to accumulate values in a performance-sensitive piece of code, store the accumualtions locally and accumulate after the performance-sensitive piece ("hot path") has completed.
@@ -384,27 +360,3 @@ The ``Telemetry.h`` header also declares the helper classes ``AutoTimer`` and ``
     ...
     return NS_OK;
   }
-
-If the HistogramID is not known at compile time, one can use the ``RuntimeAutoTimer`` and ``RuntimeAutoCounter`` classes, which behave like the template parameterized ``AutoTimer`` and ``AutoCounter`` ones.
-
-.. code-block:: cpp
-
-  void
-  FunctionWithTiming(Telemetry::HistogramID aTelemetryID)
-  {
-    ...
-    Telemetry::RuntimeAutoTimer timer(aTelemetryID);
-    ...
-  }
-
-  int32_t
-  FunctionWithCounter(Telemetry::HistogramID aTelemetryID)
-  {
-    ...
-    Telemetry::RuntimeAutoCounter myCounter(aTelemetryID);
-    ++myCounter;
-    myCounter += 42;
-    ...
-  }
-
-Prefer using the template parameterized ``AutoTimer`` and ``AutoCounter`` on hot paths, if possible.

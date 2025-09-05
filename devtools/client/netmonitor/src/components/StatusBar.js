@@ -11,7 +11,7 @@ const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-t
 const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 const {
   connect,
-} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 const { PluralForm } = require("resource://devtools/shared/plural-form.js");
 const Actions = require("resource://devtools/client/netmonitor/src/actions/index.js");
 const {
@@ -104,14 +104,11 @@ class StatusBar extends Component {
     return div(
       { className: "devtools-toolbar devtools-toolbar-bottom" },
       !toolbox.isBrowserToolbox
-        ? button(
-            {
-              className: "devtools-button requests-list-network-summary-button",
-              title: TOOLTIP_PERF,
-              onClick: openStatistics,
-            },
-            div({ className: "summary-info-icon" })
-          )
+        ? button({
+            className: "devtools-button requests-list-network-summary-button",
+            title: TOOLTIP_PERF,
+            onClick: openStatistics,
+          })
         : null,
       div(
         {

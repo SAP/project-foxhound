@@ -21,22 +21,20 @@
 
   display: grid;
   grid-template-areas: "toolbar           toolbar"
-                       "timeline-toolbar  timeline-toolbar"
-                       "timeline          tree";
+                       "timeline          tabs";
   grid-template-columns: auto 1fr;
-  grid-template-rows: auto auto 1fr;
+  grid-template-rows: auto 1fr;
 
   & > .tracer-toolbar {
     grid-area: toolbar;
   }
-  & > .tracer-timeline-toolbar {
-    grid-area: timeline-toolbar;
-  }
   & > .tracer-timeline {
     grid-area: timeline;
   }
-  & > :is(.tracer-message, .tree) {
-    grid-area: tree;
+  & > :is(.tabs) {
+    grid-area: tabs;
+    overflow-y: auto;
+    border-inline-start: 1px solid var(--theme-splitter-color);
   }
 }
 
@@ -86,10 +84,64 @@
   user-select: none;
 }
 
+.tracer-tab .tab-panel > * {
+  height: 100%;
+}
+
+.tracer-tab .event-listeners-container {
+  display: flex;
+  flex-direction: column;
+
+  .event-listeners {
+    flex: 1;
+
+    .event-search-input {
+      /* :focus-visible is cutoff on the right */
+      outline-offset: -2px;
+    }
+  }
+
+  footer {
+    background: var(--theme-body-background);
+    border-top: 1px solid var(--theme-splitter-color);
+    min-height: var(--editor-footer-height);
+    align-content: center;
+    padding: 4px 6px;
+  }
+}
+
+
+.tracer-tab .call-tree-container {
+  display: flex;
+  flex-direction: column;
+
+  .search-outline {
+    /* :focus-visible is cutoff on the right */
+    outline-offset: -2px;
+
+    input:not(:placeholder-shown) {
+      font-family: var(--monospace-font-family);
+    }
+  }
+  .search-exception {
+    color: var(--theme-text-color-error);
+    background-color: var(--theme-toolbar-error-background);
+    border-bottom: 1px solid var(--theme-splitter-color);
+  }
+  .search-exception, .search-value {
+    padding: 5px 10px;
+    border-bottom: 1px solid var(--theme-splitter-color);
+  }
+  .objectBox {
+    margin-inline-start: 5px;
+  }
+}
+
+
 .tracer-tab .tree {
+  flex: 1;
   overflow-x: auto;
   overflow-y: auto;
-  border-inline-start: 1px solid var(--theme-splitter-color);
   padding-inline-start: 4px !important;
 }
 
@@ -290,18 +342,26 @@
   background-color: var(--slider-bar-background);
   border-inline-start: 1px solid var(--theme-splitter-color);
 }
+
 .tracer-slider-event, .tracer-slider-mutation {
   position: absolute;
   width: 3px;
   left: 12px;
-  z-index: 8;
-
 }
+
 .tracer-slider-event {
   background-color: var(--tracer-event-color);
   --top-line-height: 2px;
   --left-line-width: 10px;
-  clip-path: polygon(0% 0%, 100% 0%, 100% var(--top-line-height), var(--left-line-width) var(--top-line-height), var(--left-line-width) 100%, 0px 100%);
+  z-index: 5;
+
+  clip-path: polygon(0% 0%, 100% 0%, 100% var(--top-line-height), var(--left-line-width) var(--top-line-height), var(--left-line-width) 100%, 0 100%);
+
+  &.size-subpixel {
+    /* Avoid involving clip-path when the item is really small as it requires lots of computation in the rendering engine */
+    clip-path: none;
+  }
+
   width: 30px;
 
   &.mouse {
@@ -310,8 +370,10 @@
   &.key {
     background-color: var(--tracer-key-event-color);
   }
-  &:hover {
+  &:hover, &.highlighted {
     background-color: var(--blue-30);
+    /* make the highlights and hover go over mutations, as well as non-highlighted events */
+    z-index: 7;
   }
 }
 
@@ -321,6 +383,8 @@
   width: 18px;
   align-content: center;
   text-align: center;
+  /* make the mutation appear on top of events */
+  z-index: 6;
 
   border: 1px solid var(--tracer-mutation-darker-color);
 

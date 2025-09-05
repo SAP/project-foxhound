@@ -654,30 +654,30 @@ SurfaceFormat GfxFormatForCairoSurface(cairo_surface_t* surface) {
   return CairoContentToGfxFormat(cairo_surface_get_content(surface));
 }
 
+// We need to \-escape any single-quotes in the destination and URI strings,
+// in order to pass them via the attributes arg to cairo_tag_begin.
+//
+// We also need to escape any backslashes (bug 1748077), as per doc at
+// https://www.cairographics.org/manual/cairo-Tags-and-Links.html#cairo-tag-begin
+//
+// (Encoding of non-ASCII chars etc gets handled later by the PDF backend.)
+static void EscapeForCairo(nsACString& aStr) {
+  for (size_t i = aStr.Length(); i > 0;) {
+    --i;
+    if (aStr[i] == '\'') {
+      aStr.ReplaceLiteral(i, 1, "\\'");
+    } else if (aStr[i] == '\\') {
+      aStr.ReplaceLiteral(i, 1, "\\\\");
+    }
+  }
+}
+
 void DrawTargetCairo::Link(const char* aDest, const char* aURI,
                            const Rect& aRect) {
   if ((!aURI || !*aURI) && (!aDest || !*aDest)) {
     // No destination? Just bail out.
     return;
   }
-
-  // We need to \-escape any single-quotes in the destination and URI strings,
-  // in order to pass them via the attributes arg to cairo_tag_begin.
-  //
-  // We also need to escape any backslashes (bug 1748077), as per doc at
-  // https://www.cairographics.org/manual/cairo-Tags-and-Links.html#cairo-tag-begin
-  //
-  // (Encoding of non-ASCII chars etc gets handled later by the PDF backend.)
-  auto escapeForCairo = [](nsACString& aStr) {
-    for (size_t i = aStr.Length(); i > 0;) {
-      --i;
-      if (aStr[i] == '\'') {
-        aStr.ReplaceLiteral(i, 1, "\\'");
-      } else if (aStr[i] == '\\') {
-        aStr.ReplaceLiteral(i, 1, "\\\\");
-      }
-    }
-  };
 
   double x = aRect.x, y = aRect.y, w = aRect.width, h = aRect.height;
   cairo_user_to_device(mContext, &x, &y);
@@ -686,12 +686,12 @@ void DrawTargetCairo::Link(const char* aDest, const char* aURI,
 
   if (aDest && *aDest) {
     nsAutoCString dest(aDest);
-    escapeForCairo(dest);
+    EscapeForCairo(dest);
     attributes.AppendPrintf(" dest='%s'", dest.get());
   }
   if (aURI && *aURI) {
     nsAutoCString uri(aURI);
-    escapeForCairo(uri);
+    EscapeForCairo(uri);
     attributes.AppendPrintf(" uri='%s'", uri.get());
   }
 
@@ -710,12 +710,7 @@ void DrawTargetCairo::Destination(const char* aDestination,
   }
 
   nsAutoCString dest(aDestination);
-  for (size_t i = dest.Length(); i > 0;) {
-    --i;
-    if (dest[i] == '\'') {
-      dest.ReplaceLiteral(i, 1, "\\'");
-    }
-  }
+  EscapeForCairo(dest);
 
   double x = aPoint.x, y = aPoint.y;
   cairo_user_to_device(mContext, &x, &y);
@@ -1154,7 +1149,7 @@ void DrawTargetCairo::CopySurface(SourceSurface* aSurface,
     return;
   }
 
-  CopySurfaceInternal(surf, aSource, aDest);
+  CopySurfaceInternal(surf, aSource - aSurface->GetRect().TopLeft(), aDest);
   cairo_surface_destroy(surf);
 }
 
@@ -1553,6 +1548,8 @@ void DrawTargetCairo::PushClip(const Path* aPath) {
     path->SetPathOnContext(mContext);
   }
   cairo_clip_preserve(mContext);
+
+  ++mClipDepth;
 }
 
 void DrawTargetCairo::PushClipRect(const Rect& aRect) {
@@ -1567,9 +1564,13 @@ void DrawTargetCairo::PushClipRect(const Rect& aRect) {
                     aRect.Height());
   }
   cairo_clip_preserve(mContext);
+
+  ++mClipDepth;
 }
 
 void DrawTargetCairo::PopClip() {
+  MOZ_ASSERT(mClipDepth > 0);
+
   // save/restore does not affect the path, so no need to call WillChange()
 
   // cairo_restore will restore the transform too and we don't want to do that
@@ -1580,6 +1581,15 @@ void DrawTargetCairo::PopClip() {
   cairo_restore(mContext);
 
   cairo_set_matrix(mContext, &mat);
+
+  --mClipDepth;
+}
+
+bool DrawTargetCairo::RemoveAllClips() {
+  while (mClipDepth > 0) {
+    PopClip();
+  }
+  return true;
 }
 
 void DrawTargetCairo::PushLayer(bool aOpaque, Float aOpacity,

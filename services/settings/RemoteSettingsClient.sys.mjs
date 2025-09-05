@@ -17,12 +17,13 @@ ChromeUtils.defineESModuleGetters(lazy, {
   ObjectUtils: "resource://gre/modules/ObjectUtils.sys.mjs",
   RemoteSettingsWorker:
     "resource://services-settings/RemoteSettingsWorker.sys.mjs",
+  RemoteSettings: "resource://services-settings/remote-settings.sys.mjs",
   SharedUtils: "resource://services-settings/SharedUtils.sys.mjs",
   UptakeTelemetry: "resource://services-common/uptake-telemetry.sys.mjs",
   Utils: "resource://services-settings/Utils.sys.mjs",
 });
 
-const TELEMETRY_COMPONENT = "remotesettings";
+const TELEMETRY_COMPONENT = "Remotesettings";
 
 ChromeUtils.defineLazyGetter(lazy, "console", () => lazy.Utils.log);
 
@@ -156,11 +157,11 @@ class StorageError extends Error {
 }
 
 class InvalidSignatureError extends Error {
-  constructor(cid, x5u) {
+  constructor(cid, x5u, signerName) {
     let message = `Invalid content signature (${cid})`;
     if (x5u) {
       const chain = x5u.split("/").pop();
-      message += ` using '${chain}'`;
+      message += ` using '${chain}' and signer ${signerName}`;
     }
     super(message);
     this.name = "InvalidSignatureError";
@@ -203,6 +204,9 @@ class AttachmentDownloader extends Downloader {
       },
       set: async (attachmentId, attachment) => {
         return this._client.db.saveAttachment(attachmentId, attachment);
+      },
+      setMultiple: async attachmentsIdsBlobs => {
+        return this._client.db.saveAttachments(attachmentsIdsBlobs);
       },
       delete: async attachmentId => {
         return this._client.db.saveAttachment(attachmentId, null);
@@ -463,7 +467,25 @@ export class RemoteSettingsClient extends EventEmitter {
               lazy.console.debug(
                 `${this.identifier} Local DB is empty, pull data from server`
               );
-              await this.sync({ loadDump: false, sendEvents: false });
+              const waitedAt = Cu.now();
+              const pulled = await lazy.RemoteSettings.pullStartupBundle();
+              // If collection is not part of startup bundle, then sync it individually.
+              if (!pulled.includes(this.identifier)) {
+                lazy.console.debug(
+                  `${this.identifier} was not part of startup bundle. Force a sync`
+                );
+                await this.sync({ loadDump: false, sendEvents: false });
+              }
+              ChromeUtils.addProfilerMarker(
+                "remote-settings:get:sync",
+                waitedAt,
+                "get() with syncIfEmpty"
+              );
+
+              const durationMilliseconds = Cu.now() - waitedAt;
+              lazy.console.debug(
+                `${this.identifier} Waited ${durationMilliseconds}ms for 'syncIfEmpty' in 'get()'`
+              );
             }
             // Return `true` to indicate we don't need to `verifySignature`,
             // since a trusted dump was loaded or a signature verification
@@ -515,7 +537,7 @@ export class RemoteSettingsClient extends EventEmitter {
           }
           // Report error, but continue because there could have been data
           // loaded from a parallel call.
-          console.error(e);
+          lazy.console.error(e);
         } finally {
           // then delete this promise again, as now we should have local data:
           delete this._importingPromise;
@@ -530,7 +552,7 @@ export class RemoteSettingsClient extends EventEmitter {
       if (!dumpFallback) {
         throw e;
       }
-      console.error(e);
+      lazy.console.error(e);
       let { data } = await lazy.SharedUtils.loadJSONDump(
         this.bucketName,
         this.collectionName
@@ -559,10 +581,6 @@ export class RemoteSettingsClient extends EventEmitter {
       return this._filterEntries(data);
     }
 
-    lazy.console.debug(
-      `${this.identifier} ${data.length} records before filtering.`
-    );
-
     if (verifySignature) {
       lazy.console.debug(
         `${this.identifier} verify signature of local data on read`
@@ -581,17 +599,13 @@ export class RemoteSettingsClient extends EventEmitter {
         metadata = await this.db.getMetadata();
       }
       // Will throw MissingSignatureError if no metadata and `syncIfEmpty` is false.
-      await this._validateCollectionSignature(
-        localRecords,
-        timestamp,
-        metadata
-      );
+      await this.validateCollectionSignature(localRecords, timestamp, metadata);
     }
 
     // Filter the records based on `this.filterFunc` results.
     const final = await this._filterEntries(data);
     lazy.console.debug(
-      `${this.identifier} ${final.length} records after filtering.`
+      `${this.identifier} ${final.length}/${data.length} records after filtering.`
     );
     return final;
   }
@@ -723,7 +737,7 @@ export class RemoteSettingsClient extends EventEmitter {
               lazy.console.debug(
                 `${this.identifier} verify signature of local data`
               );
-              await this._validateCollectionSignature(
+              await this.validateCollectionSignature(
                 localRecords,
                 collectionLastModified,
                 metadata
@@ -991,7 +1005,7 @@ export class RemoteSettingsClient extends EventEmitter {
    * @param {Object} metadata       The collection metadata, that contains the signature payload.
    * @returns {Promise}
    */
-  async _validateCollectionSignature(records, timestamp, metadata) {
+  async validateCollectionSignature(records, timestamp, metadata) {
     if (!metadata?.signature) {
       throw new MissingSignatureError(this.identifier);
     }
@@ -1023,7 +1037,7 @@ export class RemoteSettingsClient extends EventEmitter {
         lazy.Utils.CERT_CHAIN_ROOT_IDENTIFIER
       ))
     ) {
-      throw new InvalidSignatureError(this.identifier, x5u);
+      throw new InvalidSignatureError(this.identifier, x5u, this.signerName);
     }
   }
 
@@ -1085,7 +1099,7 @@ export class RemoteSettingsClient extends EventEmitter {
     // And verify the signature on what is now stored.
     if (this.verifySignature) {
       try {
-        await this._validateCollectionSignature(
+        await this.validateCollectionSignature(
           newRecords,
           remoteTimestamp,
           metadata
@@ -1106,7 +1120,7 @@ export class RemoteSettingsClient extends EventEmitter {
         let localTrustworthy = false;
         lazy.console.debug(`${this.identifier} verify data before sync`);
         try {
-          await this._validateCollectionSignature(
+          await this.validateCollectionSignature(
             localRecords,
             localTimestamp,
             localMetadata

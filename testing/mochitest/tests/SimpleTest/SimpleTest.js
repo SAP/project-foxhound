@@ -1494,16 +1494,14 @@ SimpleTest.finish = function () {
         );
       }
     } else if (workers.length) {
-      let FULL_PROFILE_WORKERS_TO_IGNORE = [];
+      let FULL_PROFILE_WORKERS_TO_IGNORE = new Set();
       if (parentRunner.conditionedProfile) {
         // Full profile has service workers in the profile, without clearing the
-        // profile service workers will be leftover.  We perform a startsWith
-        // check below because some origins (s.0cf.io) use a cache-busting query
-        // parameter.
-        FULL_PROFILE_WORKERS_TO_IGNORE = [
-          "https://www.youtube.com/sw.js",
-          "https://s.0cf.io/sw.js",
-        ];
+        // profile service workers will be leftover.
+        for (const knownWorker of parentRunner.conditionedProfile
+          .knownServiceWorkers) {
+          FULL_PROFILE_WORKERS_TO_IGNORE.add(knownWorker.scriptSpec);
+        }
       } else {
         SimpleTest.ok(
           false,
@@ -1512,11 +1510,7 @@ SimpleTest.finish = function () {
       }
 
       for (let worker of workers) {
-        if (
-          FULL_PROFILE_WORKERS_TO_IGNORE.some(ignoreBase =>
-            worker.scriptSpec.startsWith(ignoreBase)
-          )
-        ) {
+        if (FULL_PROFILE_WORKERS_TO_IGNORE.has(worker.scriptSpec)) {
           continue;
         }
         SimpleTest.ok(
@@ -1540,6 +1534,7 @@ SimpleTest.finish = function () {
       }
 
       if (!parentRunner || parentRunner.showTestReport) {
+        SpecialPowers.cleanupAllClipboard(window);
         SpecialPowers.flushPermissions(function () {
           SpecialPowers.flushPrefEnv(function () {
             SimpleTest.showReport();
@@ -1706,6 +1701,35 @@ SimpleTest.monitorConsole = function (
     }
   }
   SpecialPowers.registerConsoleListener(listener);
+};
+
+/**
+ * Enter this window to legacy unpartitioned storage mode.
+ * This disables Storage and cookie partitioning for this frame.
+ * This is useful where the test utilized BroadcastChannels
+ * to coordinate with opened windows and aren't validating
+ * storage partitioning behavior.
+ */
+SimpleTest.enableLegacyUnpartitionedStorage = async function () {
+  if (isXOrigin) {
+    await SpecialPowers.pushPrefEnv({
+      set: [
+        [
+          "privacy.partition.always_partition_third_party_non_cookie_storage",
+          false,
+        ],
+      ],
+    });
+    SpecialPowers.wrap(window.document).notifyUserGestureActivation();
+    await SpecialPowers.pushPermissions([
+      {
+        type: "storageAccessAPI",
+        allow: true,
+        context: window.document,
+      },
+    ]);
+    await SpecialPowers.wrap(window.document).requestStorageAccess();
+  }
 };
 
 /**
@@ -2174,7 +2198,9 @@ var add_task = (function () {
               var name = task.name || "";
               if (
                 task.__skipMe ||
-                (run_only_this_task && task != run_only_this_task)
+                (run_only_this_task &&
+                  task != run_only_this_task &&
+                  !task.isSetup)
               ) {
                 skipTask(name);
                 continue;

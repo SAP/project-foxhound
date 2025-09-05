@@ -13,11 +13,11 @@
 #include <cstdint>
 #include <initializer_list>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <vector>
 
-#include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/rtp_packet_info.h"
 #include "api/rtp_packet_infos.h"
@@ -186,14 +186,13 @@ TEST(FrameCombinerDeathTest, DebugBuildCrashesWithHighRate) {
       const std::vector<AudioFrame*> frames_to_combine(
           all_frames.begin(), all_frames.begin() + number_of_frames);
       AudioFrame audio_frame_for_mixing;
-#if RTC_DCHECK_IS_ON && GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
+#if GTEST_HAS_DEATH_TEST && !defined(WEBRTC_ANDROID)
       EXPECT_DEATH(
           combiner.Combine(frames_to_combine, number_of_channels, rate,
                            frames_to_combine.size(), &audio_frame_for_mixing),
-          "");
-#elif !RTC_DCHECK_IS_ON
-      combiner.Combine(frames_to_combine, number_of_channels, rate,
-                       frames_to_combine.size(), &audio_frame_for_mixing);
+          "")
+          << "number_of_channels=" << number_of_channels << ", rate=" << rate
+          << ", frames to combine=" << frames_to_combine.size();
 #endif
     }
   }

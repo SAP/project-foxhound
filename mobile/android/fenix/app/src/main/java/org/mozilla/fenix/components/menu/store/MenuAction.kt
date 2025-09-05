@@ -83,6 +83,11 @@ sealed class MenuAction : Action {
     data object FindInPage : MenuAction()
 
     /**
+     * [MenuAction] dispatched when a private tab is open in normal tab.
+     */
+    data object OpenInRegularTab : MenuAction()
+
+    /**
      * [MenuAction] dispatched when the extension state is updated.
      *
      * @property recommendedAddons The recommended [Addon]s to suggest.
@@ -92,11 +97,87 @@ sealed class MenuAction : Action {
     ) : MenuAction()
 
     /**
+     * [MenuAction] dispatched when browser web extension items list is updated.
+     *
+     * @property webExtensionBrowserMenuItem browserMenuItem The list of [WebExtensionMenuItem]
+     * to be shown in the menu.
+     */
+    data class UpdateWebExtensionBrowserMenuItems(
+        val webExtensionBrowserMenuItem: List<WebExtensionMenuItem>,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when installed addons list is updated.
+     *
+     * @property availableAddons The list of installed and enabled [Addon]s
+     * to be shown in the menu.
+     */
+    data class UpdateAvailableAddons(
+        val availableAddons: List<Addon>,
+    ) : MenuAction()
+
+    /**
      * [MenuAction] dispatched when an addon is to be installed.
      *
      * @property addon The [Addon] to install.
      */
     data class InstallAddon(val addon: Addon) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when an addon installation is in progress.
+     *
+     * @property addon The [Addon] to install.
+     */
+    data class UpdateInstallAddonInProgress(
+        val addon: Addon,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when we what to show manage extensions menu item.
+     *
+     * @property isVisible Indicates if manage extensions menu item
+     * should be displayed to the user.
+     */
+    data class UpdateManageExtensionsMenuItemVisibility(
+        val isVisible: Boolean,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when an addon installation was completed with success.
+     *
+     * @property addon The [Addon] that was installed.
+     */
+    data class InstallAddonSuccess(
+        val addon: Addon,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when an addon installation failed.
+     *
+     * @property addon The [Addon] whose installation failed.
+     */
+    data class InstallAddonFailed(
+        val addon: Addon,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when extensions promotion banner onboarding should be visible or not.
+     *
+     * @property showExtensionsOnboarding Show extensions promotion banner onboarding.
+     */
+    data class UpdateShowExtensionsOnboarding(
+        val showExtensionsOnboarding: Boolean,
+    ) : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when disabled extensions promotion banner onboarding should be visible or not.
+     *
+     * @property showDisabledExtensionsOnboarding Show extensions promotion banner onboarding when
+     * all installed extensions have been disabled.
+     */
+    data class UpdateShowDisabledExtensionsOnboarding(
+        val showDisabledExtensionsOnboarding: Boolean,
+    ) : MenuAction()
 
     /**
      * [MenuAction] dispatched when a custom item is tapped in the custom tab menu.
@@ -118,6 +199,26 @@ sealed class MenuAction : Action {
      * [MenuAction] dispatched when requesting to switch to the mobile version of the current page.
      */
     data object RequestMobileSite : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when the save menu item is clicked.
+     */
+    data object SaveMenuClicked : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when the tools menu item is clicked.
+     */
+    data object ToolsMenuClicked : MenuAction()
+
+    /**
+     * [MenuAction] dispatched to show the menu CFR.
+     */
+    data object OnCFRShown : MenuAction()
+
+    /**
+     * [MenuAction] dispatched when the menu CFR is dismissed.
+     */
+    data object OnCFRDismiss : MenuAction()
 
     /**
      * [MenuAction] dispatched when a navigation event occurs for a specific destination.
@@ -176,26 +277,6 @@ sealed class MenuAction : Action {
         data object ReleaseNotes : Navigate()
 
         /**
-         * [Navigate] action dispatched when navigating to the tools submenu.
-         */
-        data object Tools : Navigate()
-
-        /**
-         * [Navigate] action dispatched when navigating to the save submenu.
-         */
-        data object Save : Navigate()
-
-        /**
-         * [Navigate] action dispatched when navigating to the extensions submenu.
-         */
-        data object Extensions : Navigate()
-
-        /**
-         * [Navigate] action dispatched when a back navigation event occurs.
-         */
-        data object Back : Navigate()
-
-        /**
          * [Navigate] action dispatched when navigating to edit the existing bookmark.
          */
         data object EditBookmark : Navigate()
@@ -235,6 +316,11 @@ sealed class MenuAction : Action {
         data object DiscoverMoreExtensions : Navigate()
 
         /**
+         * [Navigate] action dispatched when navigating to the SUMO page for installing add-ons.
+         */
+        data object ExtensionsLearnMore : Navigate()
+
+        /**
          * [Navigate] action dispatched when navigating to the new tab.
          */
         data object NewTab : Navigate()
@@ -252,5 +338,10 @@ sealed class MenuAction : Action {
         data class AddonDetails(
             val addon: Addon,
         ) : Navigate()
+
+        /**
+         * [Navigate] action dispatched when the user clicks to report a broken site.
+         */
+        data object WebCompatReporter : Navigate()
     }
 }

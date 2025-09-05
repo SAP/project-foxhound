@@ -8,15 +8,22 @@
 
 #include <utility>
 
+#include "mozilla/AppShutdown.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/dom/ContentChild.h"  // ContentChild::GetSingleton
 #include "mozilla/dom/ProcessIsolation.h"
+#include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerParent.h"
+#include "mozilla/dom/PRemoteWorkerNonLifeCycleOpControllerChild.h"
 #include "mozilla/dom/RemoteWorkerController.h"
+#include "mozilla/dom/RemoteWorkerNonLifeCycleOpControllerParent.h"
 #include "mozilla/dom/RemoteWorkerParent.h"
 #include "mozilla/ipc/BackgroundParent.h"
 #include "mozilla/ipc/BackgroundUtils.h"
 #include "mozilla/ipc/PBackgroundParent.h"
+#include "mozilla/net/CookieServiceParent.h"
+#include "mozilla/net/NeckoParent.h"
+#include "mozilla/net/CookieServiceParent.h"
 #include "mozilla/StaticPrefs_extensions.h"
 #include "nsCOMPtr.h"
 #include "nsImportModule.h"
@@ -36,6 +43,7 @@ mozilla::LazyLogModule gRemoteWorkerManagerLog("RemoteWorkerManager");
 namespace mozilla {
 
 using namespace ipc;
+using namespace net;
 
 namespace dom {
 
@@ -50,7 +58,7 @@ bool IsServiceWorker(const RemoteWorkerData& aData) {
          OptionalServiceWorkerData::TServiceWorkerData;
 }
 
-void TransmitPermissionsAndBlobURLsForPrincipalInfo(
+void TransmitPermissionsAndCookiesAndBlobURLsForPrincipalInfo(
     ContentParent* aContentParent, const PrincipalInfo& aPrincipalInfo) {
   AssertIsOnMainThread();
   MOZ_ASSERT(aContentParent);
@@ -67,6 +75,25 @@ void TransmitPermissionsAndBlobURLsForPrincipalInfo(
 
   MOZ_ALWAYS_SUCCEEDS(
       aContentParent->TransmitPermissionsForPrincipal(principal));
+
+  CookieServiceParent* cs = nullptr;
+
+  PNeckoParent* neckoParent =
+      LoneManagedOrNullAsserts(aContentParent->ManagedPNeckoParent());
+  if (neckoParent) {
+    PCookieServiceParent* csParent =
+        LoneManagedOrNullAsserts(neckoParent->ManagedPCookieServiceParent());
+    if (csParent) {
+      cs = static_cast<CookieServiceParent*>(csParent);
+    }
+  }
+
+  if (cs) {
+    nsCOMPtr<nsIURI> uri = principal->GetURI();
+    cs->UpdateCookieInContentList(uri, principal->OriginAttributesRef());
+  } else {
+    aContentParent->AddPrincipalToCookieInProcessCache(principal);
+  }
 }
 
 }  // namespace
@@ -153,52 +180,6 @@ bool RemoteWorkerManager::HasExtensionPrincipal(const RemoteWorkerData& aData) {
          // associated and we have to resort to check the url scheme instead.
          StringBeginsWith(principalInfo.get_ContentPrincipalInfo().spec(),
                           "moz-extension://"_ns);
-}
-
-// static
-bool RemoteWorkerManager::IsRemoteTypeAllowed(const RemoteWorkerData& aData) {
-  AssertIsOnMainThread();
-
-  // If Gecko is running in single process mode, there is no child process
-  // to select and we have to just consider it valid (if it should haven't
-  // been launched it should have been already prevented before reaching
-  // a RemoteWorkerChild instance).
-  if (!BrowserTabsRemoteAutostart()) {
-    return true;
-  }
-
-  const auto& principalInfo = aData.principalInfo();
-
-  auto* contentChild = ContentChild::GetSingleton();
-  if (!contentChild) {
-    // If e10s isn't disabled, only workers related to the system principal
-    // should be allowed to run in the parent process, and extension principals
-    // if extensions.webextensions.remote is false.
-    return principalInfo.type() == PrincipalInfo::TSystemPrincipalInfo ||
-           (!StaticPrefs::extensions_webextensions_remote() &&
-            aData.remoteType().Equals(NOT_REMOTE_TYPE) &&
-            HasExtensionPrincipal(aData));
-  }
-
-  auto principalOrErr = PrincipalInfoToPrincipal(principalInfo);
-  if (NS_WARN_IF(principalOrErr.isErr())) {
-    return false;
-  }
-  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
-
-  // Recompute the remoteType based on the principal, to double-check that it
-  // has not been tempered to select a different child process than the one
-  // expected.
-  bool isServiceWorker = aData.serviceWorkerData().type() ==
-                         OptionalServiceWorkerData::TServiceWorkerData;
-  auto remoteType = GetRemoteType(
-      principal, isServiceWorker ? WorkerKindService : WorkerKindShared);
-  if (NS_WARN_IF(remoteType.isErr())) {
-    LOG(("IsRemoteTypeAllowed: Error to retrieve remote type"));
-    return false;
-  }
-
-  return MatchRemoteType(remoteType.unwrap(), contentChild->GetRemoteType());
 }
 
 /* static */
@@ -313,8 +294,8 @@ void RemoteWorkerManager::LaunchInternal(
           AssertIsOnMainThread();
           if (RefPtr<ContentParent> contentParent =
                   contentHandle->GetContentParent()) {
-            TransmitPermissionsAndBlobURLsForPrincipalInfo(contentParent,
-                                                           principalInfo);
+            TransmitPermissionsAndCookiesAndBlobURLsForPrincipalInfo(
+                contentParent, principalInfo);
           }
         });
 
@@ -323,7 +304,20 @@ void RemoteWorkerManager::LaunchInternal(
 
   RefPtr<RemoteWorkerParent> workerActor =
       MakeAndAddRef<RemoteWorkerParent>(std::move(aKeepAlive));
-  if (!aTargetActor->SendPRemoteWorkerConstructor(workerActor, aData)) {
+
+  mozilla::ipc::Endpoint<PRemoteWorkerNonLifeCycleOpControllerParent> parentEp;
+  mozilla::ipc::Endpoint<PRemoteWorkerNonLifeCycleOpControllerChild> childEp;
+  MOZ_ALWAYS_SUCCEEDS(PRemoteWorkerNonLifeCycleOpController::CreateEndpoints(
+      &parentEp, &childEp));
+
+  MOZ_ASSERT(!aController->mNonLifeCycleOpController);
+  aController->mNonLifeCycleOpController =
+      MakeAndAddRef<RemoteWorkerNonLifeCycleOpControllerParent>(aController);
+
+  parentEp.Bind(aController->mNonLifeCycleOpController);
+
+  if (!aTargetActor->SendPRemoteWorkerConstructor(workerActor, aData,
+                                                  std::move(childEp))) {
     AsyncCreationFailed(aController);
     return;
   }

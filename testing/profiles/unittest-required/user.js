@@ -83,7 +83,6 @@ user_pref("dom.ipc.reportProcessHangs", true); // process hang monitor
 user_pref("dom.ipc.tabs.shutdownTimeoutSecs", 0);
 user_pref("dom.min_background_timeout_value", 1000);
 user_pref("dom.popup_maximum", -1);
-user_pref("dom.block_multiple_popups", false);
 // Prevent connection to the push server for tests.
 user_pref("dom.push.connection.enabled", false);
 user_pref("dom.successive_dialog_time_limit", 0);
@@ -107,8 +106,6 @@ user_pref("extensions.getAddons.search.browseURL", "http://{server}/extensions-d
 user_pref("extensions.hotfix.url", "http://{server}/extensions-dummy/hotfixURL");
 // Disable intalling any distribution add-ons
 user_pref("extensions.installDistroAddons", false);
-// Disable Screenshots by default for now
-user_pref("extensions.screenshots.disabled", true);
 user_pref("extensions.systemAddon.update.url", "http://{server}/dummy-system-addons.xml");
 user_pref("extensions.systemAddon.update.enabled", false);
 user_pref("extensions.update.background.url", "http://{server}/extensions-dummy/updateBackgroundURL");

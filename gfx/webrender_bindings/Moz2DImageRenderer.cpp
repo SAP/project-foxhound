@@ -78,8 +78,9 @@ struct FontInstanceData {
 };
 
 StaticMutex sFontDataTableLock;
-std::unordered_map<WrFontKey, FontTemplate> sFontDataTable;
-std::unordered_map<WrFontInstanceKey, FontInstanceData> sBlobFontTable;
+MOZ_RUNINIT std::unordered_map<WrFontKey, FontTemplate> sFontDataTable;
+MOZ_RUNINIT std::unordered_map<WrFontInstanceKey, FontInstanceData>
+    sBlobFontTable;
 
 // Fixed-size ring buffer logging font deletion events to aid debugging.
 static struct FontDeleteLog {
@@ -406,6 +407,7 @@ static bool Moz2DRenderCallback(const Range<const uint8_t> aBlob,
   while (reader.pos < reader.len) {
     size_t end = reader.ReadSize();
     size_t extra_end = reader.ReadSize();
+    MOZ_RELEASE_ASSERT(offset <= end);
     MOZ_RELEASE_ASSERT(extra_end >= end);
     MOZ_RELEASE_ASSERT(extra_end < aBlob.length());
 

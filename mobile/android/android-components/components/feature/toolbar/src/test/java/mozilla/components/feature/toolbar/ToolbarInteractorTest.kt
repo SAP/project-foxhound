@@ -139,10 +139,11 @@ class ToolbarInteractorTest {
     fun `provide custom use case for loading url`() {
         var useCaseInvokedWithUrl = ""
         val loadUrlUseCase = object : SessionUseCases.LoadUrlUseCase {
-            override fun invoke(
+            override operator fun invoke(
                 url: String,
                 flags: EngineSession.LoadUrlFlags,
                 additionalHeaders: Map<String, String>?,
+                originalInput: String?,
             ) {
                 useCaseInvokedWithUrl = url
             }

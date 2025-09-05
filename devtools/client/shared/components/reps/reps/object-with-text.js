@@ -7,19 +7,22 @@
 // Make this available to both AMD and CJS environments
 define(function (require, exports, module) {
   // ReactJS
-  const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-  const { span } = require("devtools/client/shared/vendor/react-dom-factories");
+  const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+  const {
+    span,
+  } = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
   // Reps
   const {
     wrapRender,
-  } = require("devtools/client/shared/components/reps/reps/rep-utils");
+  } = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
 
   const String =
-    require("devtools/client/shared/components/reps/reps/string").rep;
+    require("resource://devtools/client/shared/components/reps/reps/string.js").rep;
 
   /**
-   * Renders a grip object with textual data.
+   * Renders a grip object with textual data. This is used for objects like
+   * CSSMediaRule, CSSStyleRule, Temporals.*, :..…
    */
 
   ObjectWithText.propTypes = {
@@ -31,7 +34,7 @@ define(function (require, exports, module) {
     const grip = props.object;
     const config = getElementConfig(props);
 
-    return span(config, `${getType(grip)} `, getDescription(grip));
+    return span(config, getTitle(grip), getDescription(grip));
   }
 
   function getElementConfig(opts) {
@@ -47,13 +50,21 @@ define(function (require, exports, module) {
     };
   }
 
+  function getTitle(grip) {
+    return span({ className: "objectTitle" }, `${getType(grip)} `);
+  }
+
   function getType(grip) {
     return grip.class;
   }
 
   function getDescription(grip) {
+    const type = getType(grip);
+
     return String({
       object: grip.preview.text,
+      // For Temporal, it looks better to not have the quotes around the string
+      useQuotes: !type || !type.startsWith("Temporal"),
     });
   }
 

@@ -2,7 +2,7 @@
    - License, v. 2.0. If a copy of the MPL was not distributed with this file,
    - You can obtain one at http://mozilla.org/MPL/2.0/. -->
 
-<!DOCTYPE html>
+<!doctype html>
 <html>
   <head>
     <title data-l10n-id="addons-page-title"></title>
@@ -30,6 +30,7 @@
 
     <link rel="localization" href="branding/brand.ftl" />
     <link rel="localization" href="toolkit/about/aboutAddons.ftl" />
+    <link rel="localization" href="toolkit/global/extensionPermissions.ftl" />
 
     <!-- Defer scripts so all the templates are loaded by the time they run. -->
     <script
@@ -233,6 +234,7 @@
           action="set-update-automatically"
           data-l10n-id="addon-updates-update-addons-automatically"
           data-l10n-attrs="accesskey"
+          type="checkbox"
         ></panel-item>
         <panel-item
           action="reset-update-states"
@@ -280,10 +282,12 @@
         <panel-item
           data-l10n-id="always-activate-button"
           action="always-activate"
+          type="checkbox"
         ></panel-item>
         <panel-item
           data-l10n-id="never-activate-button"
           action="never-activate"
+          type="checkbox"
         ></panel-item>
         <hr />
         <panel-item
@@ -315,7 +319,7 @@
       </div>
       <div
         class="addon-detail-row addon-permissions-empty"
-        data-l10n-id="addon-permissions-empty"
+        data-l10n-id="addon-permissions-empty2"
         hidden
       ></div>
       <div class="addon-detail-row">
@@ -354,7 +358,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-recommended2"
+                data-l10n-id="addon-badge-recommended3"
                 hidden
               >
               </a>
@@ -363,7 +367,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-line3"
+                data-l10n-id="addon-badge-line4"
                 hidden
               >
               </a>
@@ -372,7 +376,7 @@
                 is="moz-support-link"
                 support-page="add-on-badges"
                 utm-content="promoted-addon-badge"
-                data-l10n-id="addon-badge-verified2"
+                data-l10n-id="addon-badge-verified3"
                 hidden
               >
               </a>
@@ -380,7 +384,7 @@
                 class="addon-badge addon-badge-private-browsing-allowed"
                 is="moz-support-link"
                 support-page="extensions-pb"
-                data-l10n-id="addon-badge-private-browsing-allowed2"
+                data-l10n-id="addon-badge-private-browsing-allowed3"
                 hidden
               >
               </a>
@@ -411,7 +415,6 @@
         <moz-message-bar
           class="update-postponed-bar"
           data-l10n-id="install-postponed-message2"
-          data-l10n-attrs="message"
           align="center"
           hidden
         >
@@ -422,7 +425,11 @@
           ></button>
         </moz-message-bar>
         <moz-message-bar class="addon-card-message" align="center" hidden>
-          <button action="link"></button>
+          <!-- A button or a SUMO page link are going to be slotted into this messagebar
+               (e.g. a button is used for non-SUMO links, like blocklist urls).
+               See addon-card custom element's updateMessage method and
+               getAddonMessageInfo helper defined in aboutaddons.js.
+           -->
         </moz-message-bar>
       </div>
     </template>
@@ -667,7 +674,6 @@
       <moz-message-bar
         class="discopane-notice"
         data-l10n-id="discopane-notice-recommendations2"
-        data-l10n-attrs="message"
         dismissable
       >
         <a
@@ -700,7 +706,7 @@
     <template name="discopane">
       <header>
         <p>
-          <span data-l10n-id="discopane-intro">
+          <span data-l10n-id="discopane-intro2">
             <a
               class="discopane-intro-learn-more-link"
               is="moz-support-link"
@@ -771,7 +777,7 @@
     </template>
 
     <template id="shortcut-card-template">
-      <div class="card shortcut">
+      <div class="card card-no-hover shortcut">
         <div class="card-heading">
           <img class="card-heading-icon addon-icon" />
           <h2 class="addon-name"></h2>

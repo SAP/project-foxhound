@@ -83,7 +83,7 @@ export class AboutWelcomeTelemetry {
    *                there is a case where spotlight may use this, too)
    *                containing a nested structure of data for reporting as
    *                telemetry, as documented in
-   * https://firefox-source-docs.mozilla.org/browser/components/newtab/docs/v2-system-addon/data_events.html
+   * https://firefox-source-docs.mozilla.org/browser/extensions/newtab/docs/v2-system-addon/data_events.html
    *                Does not have all of its data (`_createPing` will augment
    *                with ids and attribution if available).
    */
@@ -235,7 +235,13 @@ export class AboutWelcomeTelemetry {
   handleShoppingPings(ping, event_context) {
     const message_id = ping?.message_id;
     // This function helps direct a shopping ping to the correct Glean event.
-    if (message_id.startsWith("FAKESPOT_OPTIN_DEFAULT")) {
+    if (
+      message_id.startsWith("FAKESPOT_OPTIN_DEFAULT") ||
+      message_id.startsWith("FAKESPOT_OPTIN_SIDEBAR_VARIANT") ||
+      message_id.startsWith(
+        "FAKESPOT_OPTIN_SIDEBAR_VARIANT_UNSUPPORTED_NON_PDP"
+      )
+    ) {
       // Onboarding page message IDs are generated, but can reliably be
       // assumed to start in this manner.
       switch (ping?.event) {

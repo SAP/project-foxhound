@@ -20,7 +20,7 @@ ChromeUtils.defineLazyGetter(lazy, "log", () => {
 });
 
 // Don't use const here because this is acessed by
-// tests through the BackstagePass object.
+// tests through the SystemGlobal object.
 export var PROXY_TYPES_MAP = new Map([
   ["none", Ci.nsIProtocolProxyService.PROXYCONFIG_DIRECT],
   ["system", Ci.nsIProtocolProxyService.PROXYCONFIG_SYSTEM],
@@ -89,12 +89,10 @@ export var ProxyPolicies = {
     }
 
     function setProxyHostAndPort(type, address) {
-      let url;
-      try {
-        // Prepend https just so we can use the URL parser
-        // instead of parsing manually.
-        url = new URL(`https://${address}`);
-      } catch (e) {
+      // Prepend https just so we can use the URL parser
+      // instead of parsing manually.
+      let url = URL.parse(`https://${address}`);
+      if (!url) {
         lazy.log.error(`Invalid address for ${type} proxy: ${address}`);
         return;
       }
@@ -112,7 +110,7 @@ export var ProxyPolicies = {
       // network code. That pref only controls if the checkbox is checked, and
       // then we must manually set the other values.
       if (param.UseHTTPProxyForAllProtocols) {
-        param.SSLProxy = param.SOCKSProxy = param.HTTPProxy;
+        param.SSLProxy = param.HTTPProxy;
       }
     }
 

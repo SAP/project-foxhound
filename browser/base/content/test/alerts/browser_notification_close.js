@@ -9,8 +9,7 @@ const { PermissionTestUtils } = ChromeUtils.importESModule(
 );
 
 let notificationURL =
-  // eslint-disable-next-line @microsoft/sdl/no-insecure-url
-  "http://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
+  "https://example.org/browser/browser/base/content/test/alerts/file_dom_notifications.html";
 let oldShowFavicons;
 
 add_task(async function test_notificationClose() {
@@ -24,15 +23,7 @@ add_task(async function test_notificationClose() {
   let dataURL = makeURI(
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVQI12P4//8/AAX+Av7czFnnAAAAAElFTkSuQmCC"
   );
-  await new Promise(resolve => {
-    PlacesUtils.favicons.setFaviconForPage(
-      notificationURI,
-      dataURL,
-      dataURL,
-      null,
-      resolve
-    );
-  });
+  await PlacesTestUtils.setFaviconForPage(notificationURI, dataURL, dataURL);
 
   await BrowserTestUtils.withNewTab(
     {

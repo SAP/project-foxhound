@@ -21,19 +21,21 @@
 #include "nsServiceManagerUtils.h"
 #include "nsDebug.h"
 #include "nsIPermissionManager.h"
+#include "nsIPushService.h"
 #include "nsXULAppAPI.h"
 
 #include "jsapi.h"
 
 #include "mozilla/AppShutdown.h"
 #include "mozilla/BasePrincipal.h"
+#include "mozilla/ContentBlockingAllowList.h"
 #include "mozilla/ClearOnShutdown.h"
 #include "mozilla/ErrorNames.h"
 #include "mozilla/LoadContext.h"
 #include "mozilla/MozPromise.h"
 #include "mozilla/Result.h"
 #include "mozilla/ResultExtensions.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomServiceworkersMetrics.h"
 #include "mozilla/dom/BindingUtils.h"
 #include "mozilla/dom/ClientHandle.h"
 #include "mozilla/dom/ClientManager.h"
@@ -108,11 +110,6 @@ using namespace mozilla::dom;
 using namespace mozilla::ipc;
 
 namespace mozilla::dom {
-
-// Counts the number of registered ServiceWorkers, and the number that
-// handle Fetch, for reporting in Telemetry
-uint32_t gServiceWorkersRegistered = 0;
-uint32_t gServiceWorkersRegisteredFetch = 0;
 
 static_assert(
     nsIHttpChannelInternal::REDIRECT_MODE_FOLLOW ==
@@ -490,6 +487,8 @@ void ServiceWorkerManager::Init(ServiceWorkerRegistrar* aRegistrar) {
   LoadRegistrations(data);
 
   mTelemetryLastChange = TimeStamp::Now();
+
+  mETPPermissionObserver = new ETPPermissionObserver();
 }
 
 void ServiceWorkerManager::RecordTelemetry(uint32_t aNumber, uint32_t aFetch) {
@@ -511,20 +510,22 @@ void ServiceWorkerManager::RecordTelemetry(uint32_t aNumber, uint32_t aFetch) {
         // after a few months running. 1 month is about 500K repeats @ 5s
         // sampling
         uint32_t num_repeats = std::min(repeats, 1000000U);  // 4MB max
-        nsTArray<uint32_t> values;
+        nsTArray<uint64_t> values;
 
-        uint32_t* array = values.AppendElements(num_repeats);
+        uint64_t* array = values.AppendElements(num_repeats);
         for (uint32_t i = 0; i < num_repeats; i++) {
           array[i] = aNumber;
         }
-        Telemetry::Accumulate(Telemetry::SERVICE_WORKER_RUNNING, "All"_ns,
-                              values);
+        glean::service_worker::running
+            .EnumGet(glean::service_worker::RunningLabel::eAll)
+            .AccumulateSamples(values);
 
         for (uint32_t i = 0; i < num_repeats; i++) {
           array[i] = aFetch;
         }
-        Telemetry::Accumulate(Telemetry::SERVICE_WORKER_RUNNING, "Fetch"_ns,
-                              values);
+        glean::service_worker::running
+            .EnumGet(glean::service_worker::RunningLabel::eFetch)
+            .AccumulateSamples(values);
       });
   NS_DispatchBackgroundTask(runnable.forget(), nsIEventTarget::DISPATCH_NORMAL);
 }
@@ -564,9 +565,6 @@ RefPtr<GenericErrorResultPromise> ServiceWorkerManager::StartControllingClient(
             aRegistrationInfo->StartControllingClient();
           }
 
-          Telemetry::Accumulate(Telemetry::SERVICE_WORKER_CONTROLLED_DOCUMENTS,
-                                1);
-
           // Always check to see if we failed to actually control the client. In
           // that case remove the client from our list of controlled clients.
           return promise->Then(
@@ -600,9 +598,6 @@ RefPtr<GenericErrorResultPromise> ServiceWorkerManager::StartControllingClient(
         clientHandle->OnDetach()->Then(
             GetMainThreadSerialEventTarget(), __func__,
             [self, aClientInfo] { self->StopControllingClient(aClientInfo); });
-
-        Telemetry::Accumulate(Telemetry::SERVICE_WORKER_CONTROLLED_DOCUMENTS,
-                              1);
 
         // Always check to see if we failed to actually control the client.  In
         // that case removed the client from our list of controlled clients.
@@ -701,6 +696,7 @@ void ServiceWorkerManager::MaybeFinishShutdown() {
   nsresult rv = NS_DispatchToMainThread(runnable);
   Unused << NS_WARN_IF(NS_FAILED(rv));
   mActor = nullptr;
+  mETPPermissionObserver = nullptr;
 
   // This also submits final telemetry
   ServiceWorkerPrivate::RunningShutdown();
@@ -834,7 +830,7 @@ ServiceWorkerManager::RegisterForTest(nsIPrincipal* aPrincipal,
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::Register(
     const ClientInfo& aClientInfo, const nsACString& aScopeURL,
     const nsACString& aScriptURL, ServiceWorkerUpdateViaCache aUpdateViaCache) {
-  AUTO_PROFILER_MARKER_TEXT("SWM Register", DOM, {}, ""_ns);
+  AUTO_PROFILER_MARKER_UNTYPED("SWM Register", DOM, {});
 
   nsCOMPtr<nsIURI> scopeURI;
   nsresult rv = NS_NewURI(getter_AddRefs(scopeURI), aScopeURL);
@@ -883,9 +879,11 @@ RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::Register(
   RefPtr<ServiceWorkerResolveWindowPromiseOnRegisterCallback> cb =
       new ServiceWorkerResolveWindowPromiseOnRegisterCallback();
 
+  auto lifetime = DetermineLifetimeForClient(aClientInfo);
+
   RefPtr<ServiceWorkerRegisterJob> job = new ServiceWorkerRegisterJob(
       principal, aScopeURL, aScriptURL,
-      static_cast<ServiceWorkerUpdateViaCache>(aUpdateViaCache));
+      static_cast<ServiceWorkerUpdateViaCache>(aUpdateViaCache), lifetime);
 
   job->AppendResultCallback(cb);
   queue->ScheduleJob(job);
@@ -1116,7 +1114,8 @@ nsresult ServiceWorkerManager::SendPushEvent(
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendPushSubscriptionChangeEvent(
-    const nsACString& aOriginAttributes, const nsACString& aScope) {
+    const nsACString& aOriginAttributes, const nsACString& aScope,
+    nsIPushSubscription* aOldSubscription) {
   OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginAttributes)) {
     return NS_ERROR_INVALID_ARG;
@@ -1126,53 +1125,58 @@ ServiceWorkerManager::SendPushSubscriptionChangeEvent(
   if (!info) {
     return NS_ERROR_FAILURE;
   }
-  return info->WorkerPrivate()->SendPushSubscriptionChangeEvent();
+  return info->WorkerPrivate()->SendPushSubscriptionChangeEvent(
+      aOldSubscription);
 }
 
 nsresult ServiceWorkerManager::SendNotificationEvent(
     const nsAString& aEventName, const nsACString& aOriginSuffix,
-    const nsACString& aScope, const nsAString& aID, const nsAString& aTitle,
+    const nsAString& aScope, const nsAString& aID, const nsAString& aTitle,
     const nsAString& aDir, const nsAString& aLang, const nsAString& aBody,
-    const nsAString& aTag, const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aTag, const nsAString& aIcon, const nsAString& aData) {
   OriginAttributes attrs;
   if (!attrs.PopulateFromSuffix(aOriginSuffix)) {
     return NS_ERROR_INVALID_ARG;
   }
 
-  ServiceWorkerInfo* info = GetActiveWorkerInfoForScope(attrs, aScope);
+  ServiceWorkerInfo* info =
+      GetActiveWorkerInfoForScope(attrs, NS_ConvertUTF16toUTF8(aScope));
   if (!info) {
     return NS_ERROR_FAILURE;
   }
 
   ServiceWorkerPrivate* workerPrivate = info->WorkerPrivate();
-  return workerPrivate->SendNotificationEvent(
-      aEventName, aID, aTitle, aDir, aLang, aBody, aTag, aIcon, aData,
-      aBehavior, NS_ConvertUTF8toUTF16(aScope));
+
+  NotificationDirection dir = StringToEnum<NotificationDirection>(aDir).valueOr(
+      NotificationDirection::Auto);
+
+  // XXX(krosylight): Some notifications options are missing in SWM
+  IPCNotificationOptions options(
+      nsString(aTitle), dir, nsString(aLang), nsString(aBody), nsString(aTag),
+      nsString(aIcon), false, false, nsTArray<uint32_t>(), nsString(aData));
+  return workerPrivate->SendNotificationEvent(aEventName, aScope, aID, options);
 }
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendNotificationClickEvent(
-    const nsACString& aOriginSuffix, const nsACString& aScope,
+    const nsACString& aOriginSuffix, const nsAString& aScope,
     const nsAString& aID, const nsAString& aTitle, const nsAString& aDir,
     const nsAString& aLang, const nsAString& aBody, const nsAString& aTag,
-    const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aIcon, const nsAString& aData) {
   return SendNotificationEvent(nsLiteralString(NOTIFICATION_CLICK_EVENT_NAME),
                                aOriginSuffix, aScope, aID, aTitle, aDir, aLang,
-                               aBody, aTag, aIcon, aData, aBehavior);
+                               aBody, aTag, aIcon, aData);
 }
 
 NS_IMETHODIMP
 ServiceWorkerManager::SendNotificationCloseEvent(
-    const nsACString& aOriginSuffix, const nsACString& aScope,
+    const nsACString& aOriginSuffix, const nsAString& aScope,
     const nsAString& aID, const nsAString& aTitle, const nsAString& aDir,
     const nsAString& aLang, const nsAString& aBody, const nsAString& aTag,
-    const nsAString& aIcon, const nsAString& aData,
-    const nsAString& aBehavior) {
+    const nsAString& aIcon, const nsAString& aData) {
   return SendNotificationEvent(nsLiteralString(NOTIFICATION_CLOSE_EVENT_NAME),
                                aOriginSuffix, aScope, aID, aTitle, aDir, aLang,
-                               aBody, aTag, aIcon, aData, aBehavior);
+                               aBody, aTag, aIcon, aData);
 }
 
 RefPtr<ServiceWorkerRegistrationPromise> ServiceWorkerManager::WhenReady(
@@ -1293,6 +1297,63 @@ ServiceWorkerInfo* ServiceWorkerManager::GetActiveWorkerInfoForScope(
   return registration->GetActive();
 }
 
+ServiceWorkerInfo* ServiceWorkerManager::GetServiceWorkerByClientInfo(
+    const ClientInfo& aClientInfo) const {
+  MOZ_ASSERT(NS_IsMainThread());
+
+  auto principalOrErr = aClientInfo.GetPrincipal();
+  if (NS_WARN_IF(principalOrErr.isErr())) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(principal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nullptr;
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(scopeKey, &data)) {
+    return nullptr;
+  }
+
+  // If the ClientInfo has CSP data populated, we need to normalize that off, so
+  // make a copy and only propagate the non-CSP fields.
+  ClientInfo normalized = ClientInfo(
+      aClientInfo.Id(), aClientInfo.AgentClusterId(), aClientInfo.Type(),
+      aClientInfo.PrincipalInfo(), aClientInfo.CreationTime(),
+      aClientInfo.URL(), aClientInfo.FrameType());
+
+  for (const auto& registration : data->mInfos.Values()) {
+    ServiceWorkerInfo* info = registration->GetByClientInfo(normalized);
+    if (info) {
+      return info;
+    }
+  }
+
+  return nullptr;
+}
+
+ServiceWorkerInfo* ServiceWorkerManager::GetServiceWorkerByDescriptor(
+    const ServiceWorkerDescriptor& aServiceWorker) const {
+  auto principalOrErr = aServiceWorker.GetPrincipal();
+  if (NS_WARN_IF(principalOrErr.isErr())) {
+    return nullptr;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = principalOrErr.unwrap();
+
+  RefPtr<ServiceWorkerRegistrationInfo> registration =
+      GetRegistration(principal, aServiceWorker.Scope());
+  if (NS_WARN_IF(!registration)) {
+    return nullptr;
+  }
+
+  return registration->GetByDescriptor(aServiceWorker);
+}
+
 namespace {
 
 class UnregisterJobCallback final : public ServiceWorkerJob::Callback {
@@ -1391,11 +1452,20 @@ void ServiceWorkerManager::WorkerIsIdle(ServiceWorkerInfo* aWorker) {
     return;
   }
 
+  // We only care about the active worker becoming idle because it means we
+  // can now promote a waiting worker to active.
   if (reg->GetActive() != aWorker) {
     return;
   }
 
-  reg->TryToActivateAsync();
+  // The active worker becoming idle is not a reason to extend a waiting SW's
+  // lifetime (or spawn it) on its own because that potentially enables
+  // unlimited lifetime extension.  `TryToActivate` will handle upgrading the
+  // lifetime extension to a full extension if the registration is controlling
+  // pages (and skipWaiting was used).  It's fine for the ServiceWorker to
+  // receive its activation message prior to its next functional event.
+  reg->TryToActivateAsync(
+      ServiceWorkerLifetimeExtension(NoLifetimeExtension{}));
 }
 
 already_AddRefed<ServiceWorkerJobQueue>
@@ -1587,21 +1657,9 @@ void ServiceWorkerManager::LoadRegistration(
 void ServiceWorkerManager::LoadRegistrations(
     const nsTArray<ServiceWorkerRegistrationData>& aRegistrations) {
   MOZ_ASSERT(NS_IsMainThread());
-  uint32_t fetch = 0;
   for (uint32_t i = 0, len = aRegistrations.Length(); i < len; ++i) {
     LoadRegistration(aRegistrations[i]);
-    if (aRegistrations[i].currentWorkerHandlesFetch()) {
-      fetch++;
-    }
   }
-  gServiceWorkersRegistered = aRegistrations.Length();
-  gServiceWorkersRegisteredFetch = fetch;
-  Telemetry::ScalarSet(Telemetry::ScalarID::SERVICEWORKER_REGISTRATIONS,
-                       u"All"_ns, gServiceWorkersRegistered);
-  Telemetry::ScalarSet(Telemetry::ScalarID::SERVICEWORKER_REGISTRATIONS,
-                       u"Fetch"_ns, gServiceWorkersRegisteredFetch);
-  LOG(("LoadRegistrations: %u, fetch %u\n", gServiceWorkersRegistered,
-       gServiceWorkersRegisteredFetch));
 }
 
 void ServiceWorkerManager::StoreRegistration(
@@ -1942,11 +2000,12 @@ void ServiceWorkerManager::StopControllingRegistration(
     return;
   }
 
-  // We use to aggressively terminate the worker at this point, but it
+  // We used to aggressively terminate the worker at this point, but it
   // caused problems.  There are more uses for a service worker than actively
   // controlled documents.  We need to let the worker naturally terminate
-  // in case its handling push events, message events, etc.
-  aRegistration->TryToActivateAsync();
+  // in case it's handling push events, message events, etc.
+  aRegistration->TryToActivateAsync(
+      ServiceWorkerLifetimeExtension(NoLifetimeExtension{}));
 }
 
 NS_IMETHODIMP
@@ -2241,6 +2300,43 @@ void ServiceWorkerManager::DispatchFetchEvent(nsIInterceptedChannel* aChannel,
   }
 }
 
+ServiceWorkerLifetimeExtension ServiceWorkerManager::DetermineLifetimeForClient(
+    const ClientInfo& aClientInfo) {
+  // For everything but ServiceWorkers this should extend the ServiceWorker's
+  // lifetime.
+  if (aClientInfo.Type() == ClientType::Serviceworker) {
+    // But for the ServiceWorker we need to find out the originating
+    // ServiceWorker's lifetime and use that.
+    ServiceWorkerInfo* source = GetServiceWorkerByClientInfo(aClientInfo);
+    if (source) {
+      return ServiceWorkerLifetimeExtension(PropagatedLifetimeExtension{
+          .mDeadline = source->LifetimeDeadline(),
+      });
+    }
+
+    // If we can't find the ServiceWorker, then it's gone and we shouldn't
+    // extend the lifetime.
+    return ServiceWorkerLifetimeExtension(NoLifetimeExtension{});
+  }
+
+  return ServiceWorkerLifetimeExtension(FullLifetimeExtension{});
+}
+
+ServiceWorkerLifetimeExtension
+ServiceWorkerManager::DetermineLifetimeForServiceWorker(
+    const ServiceWorkerDescriptor& aServiceWorker) {
+  ServiceWorkerInfo* source = GetServiceWorkerByDescriptor(aServiceWorker);
+  if (source) {
+    return ServiceWorkerLifetimeExtension(PropagatedLifetimeExtension{
+        .mDeadline = source->LifetimeDeadline(),
+    });
+  }
+
+  // If we can't find the ServiceWorker, then it's gone and we shouldn't
+  // extend the lifetime.
+  return ServiceWorkerLifetimeExtension(NoLifetimeExtension{});
+}
+
 bool ServiceWorkerManager::IsAvailable(nsIPrincipal* aPrincipal, nsIURI* aURI,
                                        nsIChannel* aChannel) {
   MOZ_ASSERT(aPrincipal);
@@ -2492,9 +2588,19 @@ void ServiceWorkerManager::SoftUpdateInternal(
   // See: https://github.com/slightlyoff/ServiceWorker/issues/759
   RefPtr<ServiceWorkerJobQueue> queue = GetOrCreateJobQueue(scopeKey, aScope);
 
+  // Soft updates always correspond to functional events.  Functional events
+  // are always events that should result in a fresh, full lifetime extension.
+  //
+  // The set of known events at this time is documented at
+  // https://w3c.github.io/ServiceWorker/#execution-context-events at this time.
+  //
+  // Note that Lifecycle events (install, activate) are explicitly not
+  // functional events.
+  auto lifetime = ServiceWorkerLifetimeExtension(FullLifetimeExtension{});
+
   RefPtr<ServiceWorkerUpdateJob> job = new ServiceWorkerUpdateJob(
       principal, registration->Scope(), newest->ScriptSpec(),
-      registration->GetUpdateViaCache());
+      registration->GetUpdateViaCache(), lifetime);
 
   if (aCallback) {
     RefPtr<UpdateJobCallback> cb = new UpdateJobCallback(aCallback);
@@ -2505,19 +2611,19 @@ void ServiceWorkerManager::SoftUpdateInternal(
 }
 
 void ServiceWorkerManager::Update(
-    nsIPrincipal* aPrincipal, const nsACString& aScope,
-    nsCString aNewestWorkerScriptUrl,
+    const ClientInfo& aClientInfo, nsIPrincipal* aPrincipal,
+    const nsACString& aScope, nsCString aNewestWorkerScriptUrl,
     ServiceWorkerUpdateFinishCallback* aCallback) {
   MOZ_ASSERT(NS_IsMainThread());
   MOZ_ASSERT(!aNewestWorkerScriptUrl.IsEmpty());
 
-  UpdateInternal(aPrincipal, aScope, std::move(aNewestWorkerScriptUrl),
-                 aCallback);
+  UpdateInternal(aClientInfo, aPrincipal, aScope,
+                 std::move(aNewestWorkerScriptUrl), aCallback);
 }
 
 void ServiceWorkerManager::UpdateInternal(
-    nsIPrincipal* aPrincipal, const nsACString& aScope,
-    nsCString&& aNewestWorkerScriptUrl,
+    const ClientInfo& aClientInfo, nsIPrincipal* aPrincipal,
+    const nsACString& aScope, nsCString&& aNewestWorkerScriptUrl,
     ServiceWorkerUpdateFinishCallback* aCallback) {
   MOZ_ASSERT(aPrincipal);
   MOZ_ASSERT(aCallback);
@@ -2543,12 +2649,14 @@ void ServiceWorkerManager::UpdateInternal(
 
   RefPtr<ServiceWorkerJobQueue> queue = GetOrCreateJobQueue(scopeKey, aScope);
 
+  auto lifetime = DetermineLifetimeForClient(aClientInfo);
+
   // "Let job be the result of running Create Job with update, registration’s
   // scope url, newestWorker’s script url, promise, and the context object’s
   // relevant settings object."
   RefPtr<ServiceWorkerUpdateJob> job = new ServiceWorkerUpdateJob(
       aPrincipal, registration->Scope(), std::move(aNewestWorkerScriptUrl),
-      registration->GetUpdateViaCache());
+      registration->GetUpdateViaCache(), lifetime);
 
   RefPtr<UpdateJobCallback> cb = new UpdateJobCallback(aCallback);
   job->AppendResultCallback(cb);
@@ -3378,5 +3486,98 @@ void ServiceWorkerManager::ReportServiceWorkerShutdownProgress(
   MOZ_ASSERT(mShutdownBlocker);
   mShutdownBlocker->ReportShutdownProgress(aShutdownStateId, aProgress);
 }
+
+nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>
+ServiceWorkerManager::GetRegistrations(nsIPrincipal* aPrincipal) {
+  MOZ_ASSERT(aPrincipal);
+
+  nsAutoCString scopeKey;
+  nsresult rv = PrincipalToScopeKey(aPrincipal, scopeKey);
+  if (NS_WARN_IF(NS_FAILED(rv))) {
+    return nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>();
+  }
+
+  RegistrationDataPerPrincipal* data;
+  if (!mRegistrationInfos.Get(scopeKey, &data)) {
+    return nsRefPtrHashtable<nsCStringHashKey, ServiceWorkerRegistrationInfo>();
+  }
+
+  return data->mInfos.Clone();
+}
+
+// ETPPermissionObserver implementation
+ETPPermissionObserver::ETPPermissionObserver() { RegisterObserverEvents(); }
+ETPPermissionObserver::~ETPPermissionObserver() { UnregisterObserverEvents(); }
+
+NS_IMETHODIMP ETPPermissionObserver::Observe(nsISupports* aSubject,
+                                             const char* aTopic,
+                                             const char16_t* aSomeData) {
+  nsCOMPtr<nsIPermission> perm = nullptr;
+  perm = do_QueryInterface(aSubject);
+  if (!perm) {
+    return NS_OK;
+  }
+
+  nsCOMPtr<nsIPrincipal> principal = nullptr;
+  perm->GetPrincipal(getter_AddRefs(principal));
+  if (!principal) {
+    return NS_OK;
+  }
+
+  bool isContentPrincipal = false;
+  principal->GetIsContentPrincipal(&isContentPrincipal);
+  if (!isContentPrincipal) {
+    return NS_OK;
+  }
+
+  nsAutoCString type;
+  perm->GetType(type);
+  if (!type.EqualsLiteral("trackingprotection") &&
+      !type.EqualsLiteral("trackingprotection-pb")) {
+    return NS_OK;
+  }
+
+  RefPtr<dom::ServiceWorkerManager> swm =
+      dom::ServiceWorkerManager::GetInstance();
+  auto registrations = swm->GetRegistrations(principal);
+
+  for (const auto& registrationInfo : registrations.Values()) {
+    RefPtr<dom::ServiceWorkerInfo> swInfo =
+        registrationInfo->NewestIncludingEvaluating();
+    if (!swInfo) {
+      continue;
+    }
+
+    bool isOnContentBlockingAllowList = ContentBlockingAllowList::Check(
+        principal, principal->GetIsInPrivateBrowsing());
+
+    swInfo->WorkerPrivate()->UpdateIsOnContentBlockingAllowList(
+        isOnContentBlockingAllowList);
+  }
+
+  return NS_OK;
+}
+
+void ETPPermissionObserver::RegisterObserverEvents() {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  MOZ_ASSERT(observerService);
+
+  if (observerService) {
+    observerService->AddObserver(this, "perm-changed", false);
+  }
+}
+
+void ETPPermissionObserver::UnregisterObserverEvents() {
+  nsCOMPtr<nsIObserverService> observerService =
+      mozilla::services::GetObserverService();
+
+  if (observerService) {
+    observerService->RemoveObserver(this, "perm-changed");
+  }
+}
+
+NS_IMPL_ISUPPORTS(ETPPermissionObserver, nsIObserver, nsISupports)
 
 }  // namespace mozilla::dom

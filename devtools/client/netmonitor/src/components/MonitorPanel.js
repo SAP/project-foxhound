@@ -13,7 +13,7 @@ const { div } = dom;
 const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 const {
   connect,
-} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 const {
   findDOMNode,
 } = require("resource://devtools/client/shared/vendor/react-dom.js");
@@ -107,8 +107,10 @@ class MonitorPanel extends Component {
   }
 
   componentDidUpdate() {
-    const { selectedRequestVisible, openNetworkDetails } = this.props;
-    if (!selectedRequestVisible) {
+    const { selectedRequestVisible, openNetworkDetails, networkDetailsOpen } =
+      this.props;
+    // Close the side panel if it was open and there is no more selected request
+    if (!selectedRequestVisible && networkDetailsOpen) {
       openNetworkDetails(false);
     }
   }

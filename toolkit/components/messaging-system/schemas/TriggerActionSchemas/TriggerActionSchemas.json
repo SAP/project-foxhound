@@ -248,6 +248,76 @@
           "properties": {
             "id": {
               "type": "string",
+              "enum": ["sidebarToolOpened"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user clicks on tools/extensions in the sidebar",
+          "context": {
+            "type": "object",
+            "properties": {
+              "view": {
+                "type": "string",
+                "description": "The tool/extension you've opened in the sidebar"
+              },
+              "clickCounts": {
+                "type": "object",
+                "description": "An object to store click counts for the tools/extensions opened in the sidebar"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["shoppingProductPageWithIntegratedRCSidebarClosed"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user navigates to a product page with the sidebar closed",
+          "context": {
+            "type": "object",
+            "properties": {
+              "isReviewCheckerInSidebarClosed": {
+                "type": "string",
+                "description": "Whether the Review Checker panel in the sidebar is closed"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["reviewCheckerSidebarClosedCallout"]
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when the user closes the sidebar",
+          "context": {
+            "type": "object",
+            "properties": {
+              "isReviewCheckerInSidebarClosed": {
+                "type": "string",
+                "description": "Whether the Review Checker panel in the sidebar is closed"
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
               "enum": ["activityAfterIdle"]
             }
           },
@@ -302,6 +372,70 @@
           "additionalProperties": false,
           "required": ["id"],
           "description": "Happens when a page action appears in the urlbar. The specific page action(s) to watch can be specified by id in the targeting expression."
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["onSearch"]
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "isSuggestion": {
+                  "type": "boolean",
+                  "description": "When the search was a suggestion"
+                },
+                "searchSource": {
+                  "type": "string",
+                  "enum": [
+                    "urlbar-handoff",
+                    "urlbar-searchmode",
+                    "urlbar-persisted",
+                    "urlbar"
+                  ],
+                  "description": "The source of the search that occurred"
+                },
+                "isOneOff": {
+                  "type": "boolean",
+                  "description": "When the search is a one-off search"
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when a search is completed"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "enum": ["elementClicked"]
+            },
+            "params": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "List of IDs of elements that will fire this trigger when clicked"
+            },
+            "context": {
+              "type": "object",
+              "properties": {
+                "elementId": {
+                  "type": "string",
+                  "description": "The ID of the element that was clicked"
+                }
+              }
+            }
+          },
+          "additionalProperties": false,
+          "required": ["id"],
+          "description": "Happens when a browser chrome element is clicked"
         }
       ]
     }

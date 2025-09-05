@@ -134,11 +134,10 @@ void OffscreenCanvasDisplayHelper::FlushForDisplay() {
     return;
   }
 
-  class FlushWorkerRunnable final : public WorkerThreadRunnable {
+  class FlushWorkerRunnable final : public MainThreadWorkerRunnable {
    public:
-    FlushWorkerRunnable(WorkerPrivate* aWorkerPrivate,
-                        OffscreenCanvasDisplayHelper* aDisplayHelper)
-        : WorkerThreadRunnable("FlushWorkerRunnable"),
+    explicit FlushWorkerRunnable(OffscreenCanvasDisplayHelper* aDisplayHelper)
+        : MainThreadWorkerRunnable("FlushWorkerRunnable"),
           mDisplayHelper(aDisplayHelper) {}
 
     bool WorkerRun(JSContext*, WorkerPrivate*) override {
@@ -165,7 +164,7 @@ void OffscreenCanvasDisplayHelper::FlushForDisplay() {
 
   // Otherwise we are calling from the main thread during painting to a canvas
   // on a worker thread.
-  auto task = MakeRefPtr<FlushWorkerRunnable>(mWorkerRef->Private(), this);
+  auto task = MakeRefPtr<FlushWorkerRunnable>(this);
   task->Dispatch(mWorkerRef->Private());
 }
 
@@ -192,12 +191,6 @@ bool OffscreenCanvasDisplayHelper::CommitFrameToCompositor(
   if (aData) {
     mData = aData.ref();
     MaybeQueueInvalidateElement();
-  }
-
-  if (mData.mOwnerId.isSome()) {
-    // No need to update the ImageContainer as the presentation itself is
-    // handled in the compositor process.
-    return true;
   }
 
   if (!mImageContainer) {
@@ -433,8 +426,8 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
 
   class SnapshotWorkerRunnable final : public MainThreadWorkerRunnable {
    public:
-    SnapshotWorkerRunnable(WorkerPrivate* aWorkerPrivate,
-                           OffscreenCanvasDisplayHelper* aDisplayHelper)
+    explicit SnapshotWorkerRunnable(
+        OffscreenCanvasDisplayHelper* aDisplayHelper)
         : MainThreadWorkerRunnable("SnapshotWorkerRunnable"),
           mMonitor("SnapshotWorkerRunnable::mMonitor"),
           mDisplayHelper(aDisplayHelper) {}
@@ -513,8 +506,7 @@ OffscreenCanvasDisplayHelper::GetSurfaceSnapshot() {
     originPos = mData.mOriginPos;
     canvasElement = mCanvasElement;
     if (mWorkerRef) {
-      workerRunnable =
-          MakeRefPtr<SnapshotWorkerRunnable>(mWorkerRef->Private(), this);
+      workerRunnable = MakeRefPtr<SnapshotWorkerRunnable>(this);
       workerRunnable->Dispatch(mWorkerRef->Private());
     }
   }

@@ -95,7 +95,7 @@
 ////////////////////////////////////////////////////////////////////////////////
 
 // Serde types in rustdoc of other crates get linked to here.
-#![doc(html_root_url = "https://docs.rs/serde/1.0.204")]
+#![doc(html_root_url = "https://docs.rs/serde/1.0.218")]
 // Support using Serde without the standard library!
 #![cfg_attr(not(feature = "std"), no_std)]
 // Show which crate feature enables conditionally compiled APIs in documentation.
@@ -144,6 +144,7 @@
     clippy::too_many_lines,
     // preference
     clippy::doc_markdown,
+    clippy::needless_lifetimes,
     clippy::unseparated_literal_suffix,
     // false positive
     clippy::needless_doctest_main,
@@ -238,8 +239,13 @@ mod lib {
     #[cfg(feature = "std")]
     pub use std::ffi::CString;
 
+    #[cfg(all(not(no_core_net), not(feature = "std")))]
+    pub use self::core::net;
     #[cfg(feature = "std")]
-    pub use std::{error, net};
+    pub use std::net;
+
+    #[cfg(feature = "std")]
+    pub use std::error;
 
     #[cfg(feature = "std")]
     pub use std::collections::{HashMap, HashSet};
@@ -305,6 +311,8 @@ mod integer128;
 pub mod de;
 pub mod ser;
 
+mod format;
+
 #[doc(inline)]
 pub use crate::de::{Deserialize, Deserializer};
 #[doc(inline)]
@@ -318,7 +326,7 @@ pub mod __private;
 #[path = "de/seed.rs"]
 mod seed;
 
-#[cfg(not(any(feature = "std", feature = "unstable")))]
+#[cfg(all(not(feature = "std"), no_core_error))]
 mod std_error;
 
 // Re-export #[derive(Serialize, Deserialize)].

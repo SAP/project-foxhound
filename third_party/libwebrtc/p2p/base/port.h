@@ -17,6 +17,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <set>
 #include <string>
 #include <type_traits>
@@ -25,7 +26,6 @@
 
 #include "absl/base/attributes.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "api/candidate.h"
 #include "api/field_trials_view.h"
 #include "api/packet_socket_factory.h"
@@ -102,7 +102,7 @@ class CandidateStats {
   CandidateStats(const CandidateStats&) = default;
   CandidateStats(CandidateStats&&) = default;
   CandidateStats(Candidate candidate,
-                 absl::optional<StunStats> stats = absl::nullopt)
+                 std::optional<StunStats> stats = std::nullopt)
       : candidate_(std::move(candidate)), stun_stats_(std::move(stats)) {}
   ~CandidateStats() = default;
 
@@ -110,18 +110,18 @@ class CandidateStats {
 
   const Candidate& candidate() const { return candidate_; }
 
-  const absl::optional<StunStats>& stun_stats() const { return stun_stats_; }
+  const std::optional<StunStats>& stun_stats() const { return stun_stats_; }
 
  private:
   Candidate candidate_;
   // STUN port stats if this candidate is a STUN candidate.
-  absl::optional<StunStats> stun_stats_;
+  std::optional<StunStats> stun_stats_;
 };
 
 typedef std::vector<CandidateStats> CandidateStatsList;
 
 const char* ProtoToString(ProtocolType proto);
-absl::optional<ProtocolType> StringToProto(absl::string_view proto_name);
+std::optional<ProtocolType> StringToProto(absl::string_view proto_name);
 
 struct ProtocolAddress {
   rtc::SocketAddress address;
@@ -170,24 +170,25 @@ typedef std::set<rtc::SocketAddress> ServerAddresses;
 // connections to similar mechanisms of the other client.  Subclasses of this
 // one add support for specific mechanisms like local UDP ports.
 class RTC_EXPORT Port : public PortInterface, public sigslot::has_slots<> {
+ public:
+  // A struct containing common arguments to creating a port. See also
+  // CreateRelayPortArgs.
+  struct PortParametersRef {
+    webrtc::TaskQueueBase* network_thread;
+    rtc::PacketSocketFactory* socket_factory;
+    const rtc::Network* network;
+    absl::string_view ice_username_fragment;
+    absl::string_view ice_password;
+    const webrtc::FieldTrialsView* field_trials;
+  };
+
  protected:
   // Constructors for use only by via constructors in derived classes.
-  Port(webrtc::TaskQueueBase* thread,
+  Port(const PortParametersRef& args, webrtc::IceCandidateType type);
+  Port(const PortParametersRef& args,
        webrtc::IceCandidateType type,
-       rtc::PacketSocketFactory* factory,
-       const rtc::Network* network,
-       absl::string_view username_fragment,
-       absl::string_view password,
-       const webrtc::FieldTrialsView* field_trials = nullptr);
-  Port(webrtc::TaskQueueBase* thread,
-       webrtc::IceCandidateType type,
-       rtc::PacketSocketFactory* factory,
-       const rtc::Network* network,
        uint16_t min_port,
        uint16_t max_port,
-       absl::string_view username_fragment,
-       absl::string_view password,
-       const webrtc::FieldTrialsView* field_trials = nullptr,
        bool shared_socket = false);
 
  public:
@@ -362,7 +363,7 @@ class RTC_EXPORT Port : public PortInterface, public sigslot::has_slots<> {
 
   int16_t network_cost() const override { return network_cost_; }
 
-  void GetStunStats(absl::optional<StunStats>* stats) override {}
+  void GetStunStats(std::optional<StunStats>* /* stats */) override {}
 
  protected:
   void UpdateNetworkCost() override;
@@ -426,7 +427,7 @@ class RTC_EXPORT Port : public PortInterface, public sigslot::has_slots<> {
   rtc::DiffServCodePoint StunDscpValue() const override;
 
   // Extra work to be done in subclasses when a connection is destroyed.
-  virtual void HandleConnectionDestroyed(Connection* conn) {}
+  virtual void HandleConnectionDestroyed(Connection* /* conn */) {}
 
   void DestroyAllConnections();
 

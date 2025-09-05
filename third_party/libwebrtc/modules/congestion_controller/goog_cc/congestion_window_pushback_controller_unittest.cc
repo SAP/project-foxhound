@@ -11,7 +11,6 @@
 #include "modules/congestion_controller/goog_cc/congestion_window_pushback_controller.h"
 
 #include <cstdint>
-#include <memory>
 
 #include "api/units/data_size.h"
 #include "test/explicit_key_value_config.h"
@@ -20,8 +19,6 @@
 
 namespace webrtc {
 namespace test {
-
-using ::testing::_;
 
 TEST(CongestionWindowPushbackControllerTest, FullCongestionWindow) {
   CongestionWindowPushbackController cwnd_controller(

@@ -41,9 +41,10 @@ pub enum PreferredAddressConfig {
     Address(PreferredAddress),
 }
 
-/// `ConnectionParameters` use for setting intitial value for QUIC parameters.
+/// `ConnectionParameters` use for setting initial value for QUIC parameters.
 /// This collects configuration like initial limits, protocol version, and
 /// congestion control algorithm.
+#[allow(clippy::struct_excessive_bools)] // We need that many, sorry.
 #[derive(Debug, Clone)]
 pub struct ConnectionParameters {
     versions: VersionConfig,
@@ -78,16 +79,19 @@ pub struct ConnectionParameters {
     incoming_datagram_queue: usize,
     fast_pto: u8,
     grease: bool,
+    disable_migration: bool,
     pacing: bool,
     /// Whether the connection performs PLPMTUD.
     pmtud: bool,
+    /// Whether the connection should use SNI slicing.
+    sni_slicing: bool,
 }
 
 impl Default for ConnectionParameters {
     fn default() -> Self {
         Self {
             versions: VersionConfig::default(),
-            cc_algorithm: CongestionControlAlgorithm::NewReno,
+            cc_algorithm: CongestionControlAlgorithm::Cubic,
             max_data: LOCAL_MAX_DATA,
             max_stream_data_bidi_remote: u64::try_from(RECV_BUFFER_SIZE).unwrap(),
             max_stream_data_bidi_local: u64::try_from(RECV_BUFFER_SIZE).unwrap(),
@@ -102,8 +106,10 @@ impl Default for ConnectionParameters {
             incoming_datagram_queue: MAX_QUEUED_DATAGRAMS_DEFAULT,
             fast_pto: FAST_PTO_SCALE,
             grease: true,
+            disable_migration: false,
             pacing: true,
             pmtud: false,
+            sni_slicing: true,
         }
     }
 }
@@ -186,7 +192,7 @@ impl ConnectionParameters {
             (StreamType::BiDi, false) => self.max_stream_data_bidi_local,
             (StreamType::BiDi, true) => self.max_stream_data_bidi_remote,
             (StreamType::UniDi, false) => {
-                panic!("Can't get receive limit on a stream that can only be sent.")
+                panic!("Can't get receive limit on a stream that can only be sent")
             }
             (StreamType::UniDi, true) => self.max_stream_data_uni,
         }
@@ -209,7 +215,7 @@ impl ConnectionParameters {
                 self.max_stream_data_bidi_remote = v;
             }
             (StreamType::UniDi, false) => {
-                panic!("Can't set receive limit on a stream that can only be sent.")
+                panic!("Can't set receive limit on a stream that can only be sent")
             }
             (StreamType::UniDi, true) => {
                 self.max_stream_data_uni = v;
@@ -337,6 +343,12 @@ impl ConnectionParameters {
     }
 
     #[must_use]
+    pub const fn disable_migration(mut self, disable_migration: bool) -> Self {
+        self.disable_migration = disable_migration;
+        self
+    }
+
+    #[must_use]
     pub const fn pacing_enabled(&self) -> bool {
         self.pacing
     }
@@ -358,6 +370,17 @@ impl ConnectionParameters {
         self
     }
 
+    #[must_use]
+    pub const fn sni_slicing_enabled(&self) -> bool {
+        self.sni_slicing
+    }
+
+    #[must_use]
+    pub const fn sni_slicing(mut self, sni_slicing: bool) -> Self {
+        self.sni_slicing = sni_slicing;
+        self
+    }
+
     /// # Errors
     /// When a connection ID cannot be obtained.
     /// # Panics
@@ -371,17 +394,21 @@ impl ConnectionParameters {
         // default parameters
         tps.local.set_integer(
             tparams::ACTIVE_CONNECTION_ID_LIMIT,
-            u64::try_from(LOCAL_ACTIVE_CID_LIMIT).unwrap(),
+            u64::try_from(LOCAL_ACTIVE_CID_LIMIT)?,
         );
-        tps.local.set_empty(tparams::DISABLE_MIGRATION);
-        tps.local.set_empty(tparams::GREASE_QUIC_BIT);
+        if self.disable_migration {
+            tps.local.set_empty(tparams::DISABLE_MIGRATION);
+        }
+        if self.grease {
+            tps.local.set_empty(tparams::GREASE_QUIC_BIT);
+        }
         tps.local.set_integer(
             tparams::MAX_ACK_DELAY,
-            u64::try_from(DEFAULT_ACK_DELAY.as_millis()).unwrap(),
+            u64::try_from(DEFAULT_ACK_DELAY.as_millis())?,
         );
         tps.local.set_integer(
             tparams::MIN_ACK_DELAY,
-            u64::try_from(GRANULARITY.as_micros()).unwrap(),
+            u64::try_from(GRANULARITY.as_micros())?,
         );
 
         // set configurable parameters

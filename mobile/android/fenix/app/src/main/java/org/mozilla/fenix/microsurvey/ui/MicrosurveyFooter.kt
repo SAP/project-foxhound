@@ -18,10 +18,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.tooling.preview.PreviewScreenSizes
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.button.PrimaryButton
 import org.mozilla.fenix.theme.FirefoxTheme
 
@@ -55,7 +55,7 @@ fun MicrosurveyFooter(
         Spacer(modifier = Modifier.height(12.dp))
 
         LinkText(
-            text = stringResource(id = R.string.about_privacy_notice),
+            text = stringResource(id = R.string.micro_survey_privacy_notice_2),
             linkTextStates = listOf(
                 LinkTextState(
                     text = stringResource(id = R.string.micro_survey_privacy_notice_2),

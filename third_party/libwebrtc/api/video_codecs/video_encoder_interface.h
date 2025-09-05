@@ -11,24 +11,21 @@
 #ifndef API_VIDEO_CODECS_VIDEO_ENCODER_INTERFACE_H_
 #define API_VIDEO_CODECS_VIDEO_ENCODER_INTERFACE_H_
 
-#include <map>
+#include <cstdint>
 #include <memory>
-#include <string>
-#include <utility>
+#include <optional>
 #include <vector>
 
-#include "absl/functional/any_invocable.h"
-#include "absl/types/optional.h"
 #include "absl/types/variant.h"
+#include "api/array_view.h"
+#include "api/scoped_refptr.h"
 #include "api/units/data_rate.h"
+#include "api/units/data_size.h"
 #include "api/units/time_delta.h"
 #include "api/units/timestamp.h"
-#include "api/video/encoded_image.h"
 #include "api/video/resolution.h"
-#include "api/video/video_frame.h"
+#include "api/video/video_frame_buffer.h"
 #include "api/video_codecs/video_codec.h"
-#include "api/video_codecs/video_encoding_general.h"
-#include "rtc_base/numerics/rational.h"
 
 namespace webrtc {
 // NOTE: This class is still under development and may change without notice.
@@ -37,22 +34,23 @@ class VideoEncoderInterface {
   virtual ~VideoEncoderInterface() = default;
   enum class FrameType { kKeyframe, kStartFrame, kDeltaFrame };
 
-  struct TemporalUnitSettings {
-    VideoCodecMode content_hint = VideoCodecMode::kRealtimeVideo;
-    Timestamp presentation_timestamp;
-    int effort_level = 0;
-  };
-
-  // Results from calling Encode. Called once for each configured frame.
   struct EncodingError {};
   struct EncodedData {
-    rtc::scoped_refptr<EncodedImageBufferInterface> bitstream_data;
     FrameType frame_type;
     int encoded_qp;
   };
   using EncodeResult = absl::variant<EncodingError, EncodedData>;
-  using EncodeResultCallback =
-      absl::AnyInvocable<void(const EncodeResult& result) &&>;
+
+  struct FrameOutput {
+    virtual ~FrameOutput() = default;
+    virtual rtc::ArrayView<uint8_t> GetBitstreamOutputBuffer(DataSize size) = 0;
+    virtual void EncodeComplete(const EncodeResult& encode_result) = 0;
+  };
+
+  struct TemporalUnitSettings {
+    VideoCodecMode content_hint = VideoCodecMode::kRealtimeVideo;
+    Timestamp presentation_timestamp;
+  };
 
   struct FrameEncodeSettings {
     struct Cbr {
@@ -71,9 +69,10 @@ class VideoEncoderInterface {
     int spatial_id = 0;
     Resolution resolution;
     std::vector<int> reference_buffers;
-    absl::optional<int> update_buffer;
+    std::optional<int> update_buffer;
+    int effort_level = 0;
 
-    EncodeResultCallback result_callback;
+    std::unique_ptr<FrameOutput> frame_output;
   };
 
   virtual void Encode(rtc::scoped_refptr<webrtc::VideoFrameBuffer> frame_buffer,

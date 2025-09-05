@@ -40,9 +40,10 @@ import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.GleanMetrics.SyncAccount
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.StoreProvider
 import org.mozilla.fenix.components.accounts.FenixFxAEntryPoint
+import org.mozilla.fenix.compose.snackbar.Snackbar
+import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.requireComponents
@@ -68,7 +69,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
 
         override fun onLoggedOut() {
             viewLifecycleOwner.lifecycleScope.launch {
-                findNavController().popBackStack()
+                findNavController().popBackStack(R.id.accountSettingsFragment, inclusive = true)
 
                 // Remove the device name when we log out.
                 context?.let {
@@ -326,7 +327,7 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
             isChecked = syncEnginesStatus.getOrElse(SyncEngine.Tabs) { true }
         }
         requirePreference<CheckBoxPreference>(R.string.pref_key_sync_address).apply {
-            isVisible = FeatureFlags.syncAddressesFeature
+            isVisible = FeatureFlags.SYNC_ADDRESSES_FEATURE
             isEnabled = syncEnginesStatus.containsKey(SyncEngine.Addresses)
             isChecked = syncEnginesStatus.getOrElse(SyncEngine.Addresses) { true }
         }
@@ -405,12 +406,13 @@ class AccountSettingsFragment : PreferenceFragmentCompat() {
     private fun getChangeListenerForDeviceName(): Preference.OnPreferenceChangeListener {
         return Preference.OnPreferenceChangeListener { _, newValue ->
             accountSettingsInteractor.onChangeDeviceName(newValue as String) {
-                FenixSnackbar.make(
-                    view = requireView(),
-                    duration = FenixSnackbar.LENGTH_LONG,
-                )
-                    .setText(getString(R.string.empty_device_name_error))
-                    .show()
+                Snackbar.make(
+                    snackBarParentView = requireView(),
+                    snackbarState = SnackbarState(
+                        message = getString(R.string.empty_device_name_error),
+                        duration = SnackbarState.Duration.Preset.Long,
+                    ),
+                ).show()
             }
         }
     }

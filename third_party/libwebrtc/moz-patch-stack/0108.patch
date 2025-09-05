@@ -1,23 +1,30 @@
-From: Michael Froman <mfroman@mozilla.com>
-Date: Fri, 17 May 2024 22:30:00 -0500
-Subject: Bug 1897501 - (fix-09bb4f09e1) keep default python intepreter as
- python3
+From: Byron Campen <docfaraday@gmail.com>
+Date: Thu, 25 Jul 2024 10:07:00 -0500
+Subject: Bug 1909234 - (fix-4fec6f9c67dc) Hollow out the new ssl_adapter lib.
+ r?mjf
 
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b21ca84c8b2620a98515624de0e43a237698726c
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/ee2f06666bcc6d22c4d7c93b78fb52d28452d055
 ---
- .gn | 2 +-
- 1 file changed, 1 insertion(+), 1 deletion(-)
+ rtc_base/BUILD.gn | 2 ++
+ 1 file changed, 2 insertions(+)
 
-diff --git a/.gn b/.gn
-index 5796d30b7b..23da4f21b9 100644
---- a/.gn
-+++ b/.gn
-@@ -13,7 +13,7 @@ buildconfig = "//build/config/BUILDCONFIG.gn"
+diff --git a/rtc_base/BUILD.gn b/rtc_base/BUILD.gn
+index fe16057ba6..0d5ec16ff0 100644
+--- a/rtc_base/BUILD.gn
++++ b/rtc_base/BUILD.gn
+@@ -1616,6 +1616,7 @@ if (!build_with_mozilla) {
+ }
  
- # The python interpreter to use by default. On Windows, this will look
- # for vpython3.exe and vpython3.bat.
--script_executable = "vpython3"
-+script_executable = "python3"
+ rtc_library("ssl_adapter") {
++if (!build_with_mozilla) {
+   visibility = [ "*" ]
+   sources = [
+     "openssl_adapter.cc",
+@@ -1664,6 +1665,7 @@ rtc_library("ssl_adapter") {
+     configs += [ "..:external_ssl_library" ]
+   }
+ }
++}
  
- # The secondary source root is a parallel directory tree where
- # GN build files are placed when they can not be placed directly
+ rtc_source_set("gtest_prod") {
+   sources = [ "gtest_prod_util.h" ]

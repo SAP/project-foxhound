@@ -128,12 +128,8 @@ class ScrollAnchorContainer;
 }  // namespace layout
 
 // 039d8ffc-fa55-42d7-a53a-388cb129b052
-#define NS_PRESSHELL_IID                             \
-  {                                                  \
-    0x039d8ffc, 0xfa55, 0x42d7, {                    \
-      0xa5, 0x3a, 0x38, 0x8c, 0xb1, 0x29, 0xb0, 0x52 \
-    }                                                \
-  }
+#define NS_PRESSHELL_IID \
+  {0x039d8ffc, 0xfa55, 0x42d7, {0xa5, 0x3a, 0x38, 0x8c, 0xb1, 0x29, 0xb0, 0x52}}
 
 #undef NOISY_INTERRUPTIBLE_REFLOW
 
@@ -386,6 +382,10 @@ class PresShell final : public nsStubDocumentObserver,
 
   bool CanHandleUserInputEvents(WidgetGUIEvent* aGUIEvent);
 
+  void ScrollFrameIntoVisualViewport(Maybe<nsPoint>& aDestination,
+                                     const nsRect& aPositionFixedRect,
+                                     ScrollFlags aScrollFlags);
+
  public:
   /**
    * Updates pending layout, assuming reasonable (up-to-date, or mid-update for
@@ -418,7 +418,7 @@ class PresShell final : public nsStubDocumentObserver,
    * viewport. Will return null in situations where we don't have a mobile
    * viewport, and for documents that are not the root content document.
    */
-  RefPtr<MobileViewportManager> GetMobileViewportManager() const;
+  MobileViewportManager* GetMobileViewportManager() const;
 
   /**
    * Called when document load completes.
@@ -606,6 +606,9 @@ class PresShell final : public nsStubDocumentObserver,
    * If ScrollNoParentFrames is set then we only scroll
    * nodes in this document, not in any parent documents which
    * contain this document in a iframe or the like.
+   * If AxesAreLogical is set, then the aVertical param actually refers to the
+   * frame's block axis, and the aHorizontal param to its inline axis, rather
+   * than to physical directions.
    * @return true if any scrolling happened, false if no scrolling happened
    */
   MOZ_CAN_RUN_SCRIPT
@@ -1159,7 +1162,7 @@ class PresShell final : public nsStubDocumentObserver,
   MOZ_CAN_RUN_SCRIPT void FireResizeEvent();
   MOZ_CAN_RUN_SCRIPT void FireResizeEventSync();
 
-  void NativeAnonymousContentRemoved(nsIContent* aAnonContent);
+  void NativeAnonymousContentWillBeRemoved(nsIContent* aAnonContent);
 
   /**
    * See HTMLDocument.setKeyPressEventModel() in HTMLDocument.webidl for the
@@ -1259,7 +1262,8 @@ class PresShell final : public nsStubDocumentObserver,
   NS_IMETHOD GetDisplaySelection(int16_t* aToggle) override;
   NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
                                      SelectionRegion aRegion,
-                                     int16_t aFlags) override;
+                                     ControllerScrollFlags aFlags) override;
+  using nsISelectionController::ScrollSelectionIntoView;
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
   void SelectionWillTakeFocus() override;
   void SelectionWillLoseFocus() override;
@@ -1475,6 +1479,12 @@ class PresShell final : public nsStubDocumentObserver,
    */
   void MarkFixedFramesForReflow(IntrinsicDirty aIntrinsicDirty);
 
+  /**
+   * Similar to above MarkFixedFramesForReflow, but for sticky position children
+   * stuck to the root frame.
+   */
+  void MarkStickyFramesForReflow();
+
   void MaybeReflowForInflationScreenSizeChange();
 
   // This function handles all the work after VisualViewportSize is set
@@ -1520,6 +1530,9 @@ class PresShell final : public nsStubDocumentObserver,
   // Returns the visual viewport size during the dynamic toolbar is being
   // shown/hidden.
   nsSize GetVisualViewportSizeUpdatedByDynamicToolbar() const;
+
+  // Trigger refreshing the MobileViewportManager's size metrics.
+  void RefreshViewportSize();
 
   /* Enable/disable author style level. Disabling author style disables the
    * entire author level of the cascade, including the HTML preshint level.
@@ -1639,6 +1652,10 @@ class PresShell final : public nsStubDocumentObserver,
    *                      using ScrollContainerFrame::ScrollMode::SMOOTH_MSD;
    *                      otherwise, ScrollContainerFrame::ScrollMode::INSTANT
    *                      will be used.
+   *                      If ScrollFlags::AxesAreLogical is set, then the
+   *                      aVertical param actually refers to the element's
+   *                      block axis, and the aHorizontal param to its inline
+   *                      axis, rather than to physical directions.
    */
   MOZ_CAN_RUN_SCRIPT
   nsresult ScrollContentIntoView(nsIContent* aContent, ScrollAxis aVertical,
@@ -1751,6 +1768,12 @@ class PresShell final : public nsStubDocumentObserver,
   ProximityToViewportResult DetermineProximityToViewport();
 
   void ClearTemporarilyVisibleForScrolledIntoViewDescendantFlags() const;
+
+  // A cache that contains all fully selected nodes per selection instance.
+  // Only non-null during reflow.
+  dom::SelectionNodeCache* GetSelectionNodeCache() {
+    return mSelectionNodeCache;
+  }
 
  private:
   ~PresShell();
@@ -2845,7 +2868,7 @@ class PresShell final : public nsStubDocumentObserver,
      * AutoCurrentEventInfoSetter() pushes and pops current event info of
      * aEventHandler.mPresShell.
      */
-    struct MOZ_STACK_CLASS AutoCurrentEventInfoSetter final {
+    struct MOZ_RAII AutoCurrentEventInfoSetter final {
       explicit AutoCurrentEventInfoSetter(EventHandler& aEventHandler)
           : mEventHandler(aEventHandler) {
         MOZ_DIAGNOSTIC_ASSERT(!mEventHandler.mCurrentEventInfoSetter);
@@ -2902,6 +2925,10 @@ class PresShell final : public nsStubDocumentObserver,
     already_AddRefed<PresShell> GetParentPresShellForEventHandling() {
       return mPresShell->GetParentPresShellForEventHandling();
     }
+
+    bool UpdateFocusSequenceNumber(nsIFrame* aFrameForPresShell,
+                                   uint64_t aEventFocusSequenceNumber);
+
     OwningNonNull<PresShell> mPresShell;
     AutoCurrentEventInfoSetter* mCurrentEventInfoSetter;
     static TimeStamp sLastInputCreated;
@@ -3033,7 +3060,8 @@ class PresShell final : public nsStubDocumentObserver,
   // Text directives are supposed to be scrolled to the center of the viewport.
   // Since `ScrollToAnchor()` might get called after `GoToAnchor()` during a
   // load, the vertical view position should be preserved.
-  WhereToScroll mLastAnchorVerticalScrollViewPosition;
+  enum class AnchorScrollType : bool { Anchor, TextDirective };
+  AnchorScrollType mLastAnchorScrollType = AnchorScrollType::Anchor;
 
   // Information needed to properly handle scrolling content into view if the
   // pre-scroll reflow flush can be interrupted.  mContentToScrollTo is non-null
@@ -3088,9 +3116,6 @@ class PresShell final : public nsStubDocumentObserver,
 
   // Only populated on root content documents.
   nsSize mVisualViewportSize;
-
-  // The focus information needed for async keyboard scrolling
-  FocusTarget mAPZFocusTarget;
 
   using Arena = nsPresArena<8192, ArenaObjectID, eArenaObjectID_COUNT>;
   Arena mFrameArena;
@@ -3260,6 +3285,13 @@ class PresShell final : public nsStubDocumentObserver,
   // The last TimeStamp when the keyup event did not exit fullscreen because it
   // was consumed.
   TimeStamp mLastConsumedEscapeKeyUpForFullscreen;
+
+  // The `SelectionNodeCache` is tightly coupled with the PresShell.
+  // It should only be possible to create a cache from within a PresShell.
+  // The created cache sets itself into `this`. Therefore, it's necessary to use
+  // `friend` here to avoid having setters.
+  friend dom::SelectionNodeCache;
+  dom::SelectionNodeCache* mSelectionNodeCache{nullptr};
 
   struct CapturingContentInfo final {
     CapturingContentInfo()

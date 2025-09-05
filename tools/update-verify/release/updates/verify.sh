@@ -11,9 +11,9 @@
 # clear_cache
 # create_cache
 
-ftp_server_to="http://stage.mozilla.org/pub/mozilla.org"
-ftp_server_from="http://stage.mozilla.org/pub/mozilla.org"
-aus_server="https://aus4.mozilla.org"
+ftp_server_to="https://archive.mozilla.org/pub"
+ftp_server_from="https://archive.mozilla.org/pub"
+aus_server="https://aus5.mozilla.org"
 to=""
 to_build_id=""
 to_app_version=""
@@ -182,7 +182,7 @@ do
                     ;;
             esac
             ;;
-          *bz2)
+          *bz2|*xz)
             updater_package_url=${updater_package_url/ja-JP-mac/ja}
             platform_dirname=$(echo "$product" | tr '[:upper:]' '[:lower:]')
             updater_bins="updater"
@@ -203,7 +203,10 @@ do
         esac
 
         rm -rf updater/*
-        cached_download "${updater_package_filename}" "${updater_package_url}"
+        if ! cached_download "${updater_package_filename}" "${updater_package_url}"; then
+          echo "TEST-UNEXPECTED-FAIL: [$release $locale $patch_type] couldn't download updater package"
+          continue
+        fi
         unpack_build "$updater_platform" updater "$updater_package_filename" "$locale" "$product"
 
         # Even on Windows, we want Unix-style paths for the updater, because of MSYS.

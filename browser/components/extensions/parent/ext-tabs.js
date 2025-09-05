@@ -8,6 +8,7 @@
 
 ChromeUtils.defineESModuleGetters(this, {
   BrowserUIUtils: "resource:///modules/BrowserUIUtils.sys.mjs",
+  CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   ExtensionControlledPopup:
     "resource:///modules/ExtensionControlledPopup.sys.mjs",
@@ -30,13 +31,15 @@ const TAB_ID_NONE = -1;
 ChromeUtils.defineLazyGetter(this, "tabHidePopup", () => {
   return new ExtensionControlledPopup({
     confirmedType: TAB_HIDE_CONFIRMED_TYPE,
-    anchorId: "alltabs-button",
     popupnotificationId: "extension-tab-hide-notification",
     descriptionId: "extension-tab-hide-notification-description",
     descriptionMessageId: "tabHideControlled.message",
     getLocalizedDescription: (doc, message, addonDetails) => {
       let image = doc.createXULElement("image");
-      image.setAttribute("class", "extension-controlled-icon alltabs-icon");
+      image.classList.add("extension-controlled-icon", "alltabs-icon");
+      if (!doc.getElementById("alltabs-button")?.closest("#TabsToolbar")) {
+        image.classList.add("alltabs-icon-generic");
+      }
       return BrowserUIUtils.getLocalizedFragment(
         doc,
         message,
@@ -160,6 +163,7 @@ const allProperties = new Set([
   "hidden",
   "isArticle",
   "mutedInfo",
+  "openerTabId",
   "pinned",
   "sharingState",
   "status",
@@ -503,6 +507,11 @@ this.tabs = class extends ExtensionAPIPersistent {
         }
       };
 
+      let openerTabIdChangeListener = (_, { nativeTab, openerTabId }) => {
+        let tab = tabManager.getWrapper(nativeTab);
+        fireForTab(tab, { openerTabId }, nativeTab);
+      };
+
       let listeners = new Map();
       if (filter.properties.has("status") || filter.properties.has("url")) {
         listeners.set("status", statusListener);
@@ -531,6 +540,10 @@ this.tabs = class extends ExtensionAPIPersistent {
         tabTracker.on("tab-isarticle", isArticleChangeListener);
       }
 
+      if (filter.properties.has("openerTabId")) {
+        tabTracker.on("tab-openerTabId", openerTabIdChangeListener);
+      }
+
       return {
         unregister() {
           for (let [name, listener] of listeners) {
@@ -539,6 +552,10 @@ this.tabs = class extends ExtensionAPIPersistent {
 
           if (filter.properties.has("isArticle")) {
             tabTracker.off("tab-isarticle", isArticleChangeListener);
+          }
+
+          if (filter.properties.has("openerTabId")) {
+            tabTracker.off("tab-openerTabId", openerTabIdChangeListener);
           }
         },
         convert(_fire, _context) {
@@ -939,14 +956,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             }
           }
           if (updateProperties.openerTabId !== null) {
-            let opener = tabTracker.getTab(updateProperties.openerTabId);
-            if (opener.ownerDocument !== nativeTab.ownerDocument) {
-              return Promise.reject({
-                message:
-                  "Opener tab must be in the same window as the tab being updated",
-              });
-            }
-            tabTracker.setOpener(nativeTab, opener);
+            tabTracker.setOpener(nativeTab, updateProperties.openerTabId);
           }
           if (updateProperties.successorTabId !== null) {
             let successor = null;
@@ -1143,7 +1153,7 @@ this.tabs = class extends ExtensionAPIPersistent {
             // the current set of pinned tabs. Unpinned tabs, likewise, can only
             // be moved to a position after the current set of pinned tabs.
             // Attempts to move a tab to an illegal position are ignored.
-            let numPinned = gBrowser._numPinnedTabs;
+            let numPinned = gBrowser.pinnedTabCount;
             let ok = nativeTab.pinned
               ? insertionPoint <= numPinned
               : insertionPoint >= numPinned;
@@ -1599,6 +1609,17 @@ this.tabs = class extends ExtensionAPIPersistent {
           }
           if (hidden.length) {
             let win = Services.wm.getMostRecentWindow("navigator:browser");
+
+            // Before showing the hidden tabs warning,
+            // move alltabs-button to somewhere visible if it isn't already.
+            if (!CustomizableUI.widgetIsLikelyVisible("alltabs-button", win)) {
+              CustomizableUI.addWidgetToArea(
+                "alltabs-button",
+                CustomizableUI.verticalTabsEnabled
+                  ? CustomizableUI.AREA_NAVBAR
+                  : CustomizableUI.AREA_TABSTRIP
+              );
+            }
             tabHidePopup.open(win, extension.id);
           }
           return hidden;
@@ -1631,12 +1652,12 @@ this.tabs = class extends ExtensionAPIPersistent {
 
         goForward(tabId) {
           let nativeTab = getTabOrActive(tabId);
-          nativeTab.linkedBrowser.goForward();
+          nativeTab.linkedBrowser.goForward(false);
         },
 
         goBack(tabId) {
           let nativeTab = getTabOrActive(tabId);
-          nativeTab.linkedBrowser.goBack();
+          nativeTab.linkedBrowser.goBack(false);
         },
       },
     };

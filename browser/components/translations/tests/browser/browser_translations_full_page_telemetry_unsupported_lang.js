@@ -149,16 +149,18 @@ add_task(async function test_translations_telemetry_unsupported_lang() {
     },
   });
 
-  await FullPageTranslationsTestUtils.changeSelectedFromLanguage("fr");
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "fr",
+  });
 
   await FullPageTranslationsTestUtils.clickTranslateButton({
     downloadHandler: resolveDownloads,
   });
-  await FullPageTranslationsTestUtils.assertPageIsTranslated(
-    "fr",
-    "en",
-    runInPage
-  );
+  await FullPageTranslationsTestUtils.assertPageIsTranslated({
+    fromLanguage: "fr",
+    toLanguage: "en",
+    runInPage,
+  });
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeFromLanguage,
     {
@@ -190,7 +192,7 @@ add_task(async function test_translations_telemetry_unsupported_lang() {
         to_language: "en",
         auto_translate: false,
         document_language: "es",
-        top_preferred_language: "en",
+        top_preferred_language: "en-US",
         request_target: "full_page",
       },
     }
@@ -202,6 +204,10 @@ add_task(async function test_translations_telemetry_unsupported_lang() {
       ["select", 0],
     ]
   );
+
+  await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+    expectedEventCount: 1,
+  });
 
   await cleanup();
 });

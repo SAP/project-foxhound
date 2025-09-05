@@ -50,17 +50,19 @@ MacIOSurfaceTextureData* MacIOSurfaceTextureData::Create(const IntSize& aSize,
 }
 
 bool MacIOSurfaceTextureData::Serialize(SurfaceDescriptor& aOutDescriptor) {
-  aOutDescriptor = SurfaceDescriptorMacIOSurface(mSurface->GetIOSurfaceID(),
-                                                 !mSurface->HasAlpha(),
-                                                 mSurface->GetYUVColorSpace());
+  RefPtr<layers::GpuFence> gpuFence;
+  aOutDescriptor = SurfaceDescriptorMacIOSurface(
+      mSurface->GetIOSurfaceID(), !mSurface->HasAlpha(),
+      mSurface->GetYUVColorSpace(), std::move(gpuFence));
   return true;
 }
 
 void MacIOSurfaceTextureData::GetSubDescriptor(
     RemoteDecoderVideoSubDescriptor* const aOutDesc) {
-  *aOutDesc = SurfaceDescriptorMacIOSurface(mSurface->GetIOSurfaceID(),
-                                            !mSurface->HasAlpha(),
-                                            mSurface->GetYUVColorSpace());
+  RefPtr<layers::GpuFence> gpuFence;
+  *aOutDesc = SurfaceDescriptorMacIOSurface(
+      mSurface->GetIOSurfaceID(), !mSurface->HasAlpha(),
+      mSurface->GetYUVColorSpace(), std::move(gpuFence));
 }
 
 void MacIOSurfaceTextureData::FillInfo(TextureData::Info& aInfo) const {
@@ -73,10 +75,7 @@ void MacIOSurfaceTextureData::FillInfo(TextureData::Info& aInfo) const {
   aInfo.canExposeMappedData = false;
 }
 
-bool MacIOSurfaceTextureData::Lock(OpenMode) {
-  mSurface->Lock(false);
-  return true;
-}
+bool MacIOSurfaceTextureData::Lock(OpenMode) { return mSurface->Lock(false); }
 
 void MacIOSurfaceTextureData::Unlock() { mSurface->Unlock(false); }
 

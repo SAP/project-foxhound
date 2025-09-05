@@ -256,7 +256,7 @@ class ModuleNamespaceObject : public ProxyObject {
 
  private:
   struct ProxyHandler : public BaseProxyHandler {
-    ProxyHandler();
+    constexpr ProxyHandler() : BaseProxyHandler(&family, false) {}
 
     bool getOwnPropertyDescriptor(
         JSContext* cx, HandleObject proxy, HandleId id,
@@ -461,7 +461,7 @@ class ModuleObject : public NativeObject {
   static bool createEnvironment(JSContext* cx, Handle<ModuleObject*> self);
   static bool createSyntheticEnvironment(JSContext* cx,
                                          Handle<ModuleObject*> self,
-                                         Handle<GCVector<Value>> values);
+                                         JS::HandleVector<Value> values);
 
   void initAsyncSlots(JSContext* cx, bool hasTopLevelAwait,
                       Handle<ListObject*> asyncParentModules);

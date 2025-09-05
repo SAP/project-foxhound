@@ -35,15 +35,13 @@ ChromeUtils.defineLazyGetter(lazy, "logConsole", () =>
 
 XPCOMUtils.defineLazyPreferenceGetter(
   lazy,
-  "POSTINSTALL_PRIVATEBROWSING_CHECKBOX",
-  "extensions.ui.postInstallPrivateBrowsingCheckbox",
-  false
+  "SHOW_FULL_DOMAINS_LIST",
+  "extensions.ui.installDialogFullDomains",
+  true
 );
 
 const DEFAULT_EXTENSION_ICON =
   "chrome://mozapps/skin/extensions/extensionGeneric.svg";
-
-const HTML_NS = "http://www.w3.org/1999/xhtml";
 
 function getTabBrowser(browser) {
   while (browser.ownerGlobal.docShell.itemType !== Ci.nsIDocShell.typeChrome) {
@@ -67,8 +65,8 @@ export var ExtensionsUI = {
 
   pendingNotifications: new WeakMap(),
 
-  get POSTINSTALL_PRIVATEBROWSING_CHECKBOX() {
-    return lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
+  get SHOW_FULL_DOMAINS_LIST() {
+    return lazy.SHOW_FULL_DOMAINS_LIST;
   },
 
   async init() {
@@ -184,17 +182,6 @@ export var ExtensionsUI = {
         await addon.enable();
 
         this._updateNotifications();
-
-        // The user has just enabled a sideloaded extension, if the permission
-        // can be changed for the extension, show the post-install panel to
-        // give the user that opportunity.
-        if (
-          ExtensionsUI.POSTINSTALL_PRIVATEBROWSING_CHECKBOX &&
-          addon.permissions &
-            lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
-        ) {
-          this.showInstallNotification(tabbrowser.selectedBrowser, addon);
-        }
       }
       this.emit("sideload-response");
     });
@@ -243,7 +230,10 @@ export var ExtensionsUI = {
       if (
         info.unsigned &&
         Cu.isInAutomation &&
-        Services.prefs.getBoolPref("extensions.ui.ignoreUnsigned", false)
+        Services.prefs.getBoolPref(
+          "extensions.ui.showAddonIconForUnsigned",
+          false
+        )
       ) {
         info.unsigned = false;
       }
@@ -327,7 +317,22 @@ export var ExtensionsUI = {
         resolve(true);
         return;
       }
-      resolve(this.showPermissionsPrompt(browser, strings, icon));
+      // "userScripts" is an OptionalOnlyPermission, which means that it can
+      // only be requested through the permissions.request() API, without other
+      // permissions in the same request.
+      let isUserScriptsRequest =
+        permissions.permissions.length === 1 &&
+        permissions.permissions[0] === "userScripts";
+      resolve(
+        this.showPermissionsPrompt(
+          browser,
+          strings,
+          icon,
+          /* addon */ undefined,
+          /* shouldShowIncognitoCheckbox */ false,
+          isUserScriptsRequest
+        )
+      );
     } else if (topic == "webextension-defaultsearch-prompt") {
       let { browser, name, icon, respond, currentEngine, newEngine } =
         subject.wrappedJSObject;
@@ -371,9 +376,12 @@ export var ExtensionsUI = {
 
   // Create a set of formatted strings for a permission prompt
   _buildStrings(info) {
-    const strings = lazy.ExtensionData.formatPermissionStrings(info, {
-      collapseOrigins: true,
-    });
+    const strings = lazy.ExtensionData.formatPermissionStrings(
+      info,
+      this.SHOW_FULL_DOMAINS_LIST
+        ? { fullDomainsList: true }
+        : { collapseOrigins: true }
+    );
     strings.addonName = info.addon.name;
     return strings;
   },
@@ -383,21 +391,18 @@ export var ExtensionsUI = {
     strings,
     icon,
     addon = undefined,
-    shouldShowIncognitoCheckbox = false
+    shouldShowIncognitoCheckbox = false,
+    isUserScriptsRequest = false
   ) {
     let { browser, window } = getTabBrowser(target);
 
-    let showIncognitoCheckbox =
-      shouldShowIncognitoCheckbox && !lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
-
+    let showIncognitoCheckbox = shouldShowIncognitoCheckbox;
     if (showIncognitoCheckbox) {
       showIncognitoCheckbox = !!(
         addon.permissions &
         lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
       );
     }
-
-    let checkbox;
 
     const incognitoPermissionName = "internal:privateBrowsingAllowed";
     let grantPrivateBrowsingAllowed = false;
@@ -416,79 +421,7 @@ export var ExtensionsUI = {
 
     let promise = new Promise(resolve => {
       function eventCallback(topic) {
-        let doc = this.browser.ownerDocument;
-        if (topic == "showing") {
-          let textEl = doc.getElementById("addon-webext-perm-text");
-          textEl.textContent = strings.text;
-          textEl.hidden = !strings.text;
-
-          // By default, multiline strings don't get formatted properly. These
-          // are presently only used in site permission add-ons, so we treat it
-          // as a special case to avoid unintended effects on other things.
-          let isMultiline = strings.text.includes("\n\n");
-          textEl.classList.toggle(
-            "addon-webext-perm-text-multiline",
-            isMultiline
-          );
-
-          let listIntroEl = doc.getElementById("addon-webext-perm-intro");
-          listIntroEl.textContent = strings.listIntro;
-          listIntroEl.hidden = !strings.msgs.length || !strings.listIntro;
-
-          // Show the link to the sumo page if there are permissions listed
-          // or the private browsing checkbox is visible.
-          let listInfoEl = doc.getElementById("addon-webext-perm-info");
-          listInfoEl.hidden = !strings.msgs.length && !showIncognitoCheckbox;
-
-          let list = doc.getElementById("addon-webext-perm-list");
-          while (list.firstChild) {
-            list.firstChild.remove();
-          }
-          let singleEntryEl = doc.getElementById(
-            "addon-webext-perm-single-entry"
-          );
-          singleEntryEl.textContent = "";
-          singleEntryEl.hidden = true;
-          list.hidden = true;
-
-          const createPrivateBrowsingCheckbox = () => {
-            let checkboxEl = doc.createXULElement("checkbox");
-            checkboxEl.checked = grantPrivateBrowsingAllowed;
-            doc.l10n.setAttributes(
-              checkboxEl,
-              "popup-notification-addon-privatebrowsing-checkbox"
-            );
-            return checkboxEl;
-          };
-
-          if (strings.msgs.length === 0 && showIncognitoCheckbox) {
-            checkbox = createPrivateBrowsingCheckbox();
-            singleEntryEl.appendChild(checkbox);
-            singleEntryEl.hidden = false;
-            singleEntryEl.classList.add("webext-perm-optional");
-            singleEntryEl.classList.add("webext-perm-privatebrowsing");
-          } else if (strings.msgs.length === 1 && !showIncognitoCheckbox) {
-            singleEntryEl.textContent = strings.msgs[0];
-            singleEntryEl.hidden = false;
-          } else if (strings.msgs.length) {
-            for (let msg of strings.msgs) {
-              let item = doc.createElementNS(HTML_NS, "li");
-              item.classList.add("webext-perm-granted");
-              item.textContent = msg;
-              list.appendChild(item);
-            }
-            if (showIncognitoCheckbox) {
-              let item = doc.createElementNS(HTML_NS, "li");
-              item.classList.add("webext-perm-optional");
-              item.classList.add("webext-perm-privatebrowsing");
-              checkbox = createPrivateBrowsingCheckbox();
-              item.appendChild(checkbox);
-              list.appendChild(item);
-            }
-
-            list.hidden = false;
-          }
-        } else if (topic == "swapping") {
+        if (topic == "swapping") {
           return true;
         }
         if (topic == "removed") {
@@ -499,15 +432,38 @@ export var ExtensionsUI = {
         return false;
       }
 
+      // Show the SUMO link already part of the popupnotification by
+      // setting learnMoreURL option if there are permissions to be
+      // granted to the addon being installed (or if the private
+      // browsing checkbox is shown).
+      const learnMoreURL =
+        strings.msgs.length || showIncognitoCheckbox
+          ? Services.urlFormatter.formatURLPref("app.support.baseURL") +
+            "extension-permissions"
+          : undefined;
+
       let options = {
         hideClose: true,
         popupIconURL: icon || DEFAULT_EXTENSION_ICON,
         popupIconClass: icon ? "" : "addon-warning-icon",
+        learnMoreURL,
         persistent: true,
         eventCallback,
         removeOnDismissal: true,
         popupOptions: {
           position: "bottomright topright",
+        },
+        // Pass additional options used internally by the
+        // addon-webext-permissions-notification custom element
+        // (defined and registered by browser-addons.js).
+        customElementOptions: {
+          strings,
+          showIncognitoCheckbox,
+          grantPrivateBrowsingAllowed,
+          onPrivateBrowsingAllowedChanged(value) {
+            grantPrivateBrowsingAllowed = value;
+          },
+          isUserScriptsRequest,
         },
       };
       // The prompt/notification machinery has a special affordance wherein
@@ -529,9 +485,6 @@ export var ExtensionsUI = {
         label: strings.acceptText,
         accessKey: strings.acceptKey,
         callback: () => {
-          grantPrivateBrowsingAllowed = showIncognitoCheckbox
-            ? checkbox.checked
-            : undefined;
           resolve(true);
         },
       };
@@ -655,77 +608,77 @@ export var ExtensionsUI = {
       addonName: "<>",
     });
 
-    const hideIncognitoCheckbox = !lazy.POSTINSTALL_PRIVATEBROWSING_CHECKBOX;
-    const permissionName = "internal:privateBrowsingAllowed";
-    const { permissions } = await lazy.ExtensionPermissions.get(addon.id);
-    const hasIncognito = permissions.includes(permissionName);
-
     return new Promise(resolve => {
-      // Show or hide private permission ui based on the pref.
-      function setCheckbox(win) {
-        let checkbox = win.document.getElementById("addon-incognito-checkbox");
-        checkbox.checked = hasIncognito;
-        checkbox.hidden =
-          hideIncognitoCheckbox ||
-          !(
-            addon.permissions &
-            lazy.AddonManager.PERM_CAN_CHANGE_PRIVATEBROWSING_ACCESS
-          );
-      }
-
-      async function actionResolve(win) {
-        let checkbox = win.document.getElementById("addon-incognito-checkbox");
-
-        if (hideIncognitoCheckbox || checkbox.checked == hasIncognito) {
-          resolve();
-          return;
-        }
-
-        let incognitoPermission = {
-          permissions: [permissionName],
-          origins: [],
-        };
-
-        // The checkbox has been changed at this point, otherwise we would
-        // have exited early above.
-        if (checkbox.checked) {
-          await lazy.ExtensionPermissions.add(addon.id, incognitoPermission);
-        } else if (hasIncognito) {
-          await lazy.ExtensionPermissions.remove(addon.id, incognitoPermission);
-        }
-        // Reload the extension if it is already enabled.  This ensures any change
-        // on the private browsing permission is properly handled.
-        if (addon.isActive) {
-          await addon.reload();
-        }
-
-        resolve();
-      }
-
-      let action = {
-        callback: actionResolve,
-      };
-
       let icon = addon.isWebExtension
         ? lazy.AddonManager.getPreferredIconURL(addon, 32, window) ||
           DEFAULT_EXTENSION_ICON
         : "chrome://browser/skin/addons/addon-install-installed.svg";
-      let options = {
-        name: addon.name,
-        message,
-        popupIconURL: icon,
-        onRefresh: setCheckbox,
-        onDismissed: win => {
-          lazy.AppMenuNotifications.removeNotification("addon-installed");
-          actionResolve(win);
-        },
-      };
-      lazy.AppMenuNotifications.showNotification(
-        "addon-installed",
-        action,
-        null,
-        options
-      );
+
+      if (addon.type == "theme") {
+        const { previousActiveThemeID } = addon;
+
+        async function themeActionUndo() {
+          try {
+            // Undoing a theme install means re-enabling the previous active theme
+            // ID, and uninstalling the theme that was just installed
+            const theme = await lazy.AddonManager.getAddonByID(
+              previousActiveThemeID
+            );
+
+            if (theme) {
+              await theme.enable();
+            }
+
+            // `addon` is the theme that was just installed
+            await addon.uninstall();
+          } finally {
+            resolve();
+          }
+        }
+
+        let themePrimaryAction = { callback: resolve };
+
+        // Show the undo button if previousActiveThemeID is set.
+        let themeSecondaryAction = previousActiveThemeID
+          ? { callback: themeActionUndo }
+          : null;
+
+        let options = {
+          name: addon.name,
+          message,
+          popupIconURL: icon,
+          onDismissed: () => {
+            lazy.AppMenuNotifications.removeNotification("theme-installed");
+            resolve();
+          },
+        };
+        lazy.AppMenuNotifications.showNotification(
+          "theme-installed",
+          themePrimaryAction,
+          themeSecondaryAction,
+          options
+        );
+      } else {
+        let action = {
+          callback: resolve,
+        };
+
+        let options = {
+          name: addon.name,
+          message,
+          popupIconURL: icon,
+          onDismissed: () => {
+            lazy.AppMenuNotifications.removeNotification("addon-installed");
+            resolve();
+          },
+        };
+        lazy.AppMenuNotifications.showNotification(
+          "addon-installed",
+          action,
+          null,
+          options
+        );
+      }
     });
   },
 

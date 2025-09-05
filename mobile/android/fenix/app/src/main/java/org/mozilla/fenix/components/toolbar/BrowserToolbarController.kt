@@ -6,17 +6,20 @@ package org.mozilla.fenix.components.toolbar
 
 import androidx.navigation.NavController
 import mozilla.components.browser.state.action.ContentAction
+import mozilla.components.browser.state.action.ShareResourceAction
 import mozilla.components.browser.state.ext.getUrl
 import mozilla.components.browser.state.selector.findCustomTabOrSelectedTab
 import mozilla.components.browser.state.selector.findTab
 import mozilla.components.browser.state.selector.getNormalOrPrivateTabs
 import mozilla.components.browser.state.selector.selectedTab
 import mozilla.components.browser.state.state.SessionState
+import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.store.BrowserStore
 import mozilla.components.concept.engine.EngineView
 import mozilla.components.concept.engine.prompt.ShareData
 import mozilla.components.feature.tabs.TabsUseCases
 import mozilla.components.support.ktx.kotlin.isUrl
+import mozilla.components.support.utils.ext.isContentUrl
 import mozilla.components.ui.tabcounter.TabCounterMenu
 import mozilla.telemetry.glean.private.NoExtras
 import org.mozilla.fenix.GleanMetrics.Events
@@ -33,7 +36,9 @@ import org.mozilla.fenix.browser.browsingmode.BrowsingMode
 import org.mozilla.fenix.browser.readermode.ReaderModeController
 import org.mozilla.fenix.components.AppStore
 import org.mozilla.fenix.components.appstate.AppAction.SnackbarAction
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.interactor.BrowserToolbarInteractor
+import org.mozilla.fenix.components.toolbar.navbar.shouldAddNavigationBar
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.navigateSafe
@@ -65,16 +70,6 @@ interface BrowserToolbarController {
     fun handleEraseButtonClick()
 
     /**
-     * @see [BrowserToolbarInteractor.onShoppingCfrActionClicked]
-     */
-    fun handleShoppingCfrActionClick()
-
-    /**
-     * @see [BrowserToolbarInteractor.onShoppingCfrDisplayed]
-     */
-    fun handleShoppingCfrDisplayed()
-
-    /**
      * @see [BrowserToolbarInteractor.onTranslationsButtonClicked]
      */
     fun handleTranslationsButtonClick()
@@ -93,9 +88,16 @@ interface BrowserToolbarController {
      * @see [BrowserToolbarInteractor.onNewTabButtonLongClicked]
      */
     fun handleNewTabButtonLongClick()
-}
 
-private const val MAX_DISPLAY_NUMBER_SHOPPING_CFR = 3
+    /**
+     * @see [BrowserToolbarInteractor.onMenuButtonClicked]
+     */
+    fun handleMenuButtonClicked(
+        accessPoint: MenuAccessPoint,
+        customTabSessionId: String? = null,
+        isSandboxCustomTab: Boolean = false,
+    )
+}
 
 @Suppress("LongParameterList")
 class DefaultBrowserToolbarController(
@@ -131,7 +133,7 @@ class DefaultBrowserToolbarController(
     override fun handleToolbarPasteAndGo(text: String) {
         if (text.isUrl()) {
             store.updateSearchTermsOfSelectedSession("")
-            activity.components.useCases.sessionUseCases.loadUrl.invoke(text)
+            activity.components.useCases.sessionUseCases.loadUrl(text)
             return
         }
 
@@ -237,16 +239,6 @@ class DefaultBrowserToolbarController(
         navController.navigate(directions)
     }
 
-    override fun handleShoppingCfrActionClick() {
-        navController.navigate(
-            BrowserFragmentDirections.actionBrowserFragmentToReviewQualityCheckDialogFragment(),
-        )
-    }
-
-    override fun handleShoppingCfrDisplayed() {
-        updateShoppingCfrSettings()
-    }
-
     override fun handleTranslationsButtonClick() {
         Translations.action.record(Translations.ActionExtra("main_flow_toolbar"))
 
@@ -262,28 +254,45 @@ class DefaultBrowserToolbarController(
         val url = sessionId?.let {
             store.state.findTab(it)?.getUrl()
         }
-        val directions = NavGraphDirections.actionGlobalShareFragment(
-            sessionId = sessionId,
-            data = arrayOf(
-                ShareData(
-                    url = url,
-                    title = currentSession?.content?.title,
+
+        if (url?.isContentUrl() == true) {
+            val tab = sessionId.let { store.state.findTab(it) } ?: return
+
+            store.dispatch(
+                ShareResourceAction.AddShareAction(
+                    tab.id,
+                    ShareResourceState.LocalResource(url),
                 ),
-            ),
-            showPage = true,
-        )
-        navController.navigate(directions)
+            )
+        } else {
+            val directions = NavGraphDirections.actionGlobalShareFragment(
+                sessionId = sessionId,
+                data = arrayOf(
+                    ShareData(
+                        url = url,
+                        title = currentSession?.content?.title,
+                    ),
+                ),
+                showPage = true,
+            )
+            navController.navigate(directions)
+        }
     }
 
     override fun handleNewTabButtonClick() {
         if (settings.enableHomepageAsNewTab) {
             tabsUseCases.addTab.invoke(
+                url = "about:home",
                 startLoading = false,
                 private = currentSession?.content?.private ?: false,
             )
         }
 
-        NavigationBar.browserNewTabTapped.record(NoExtras())
+        if (activity.shouldAddNavigationBar()) {
+            NavigationBar.browserNewTabTapped.record(NoExtras())
+        } else {
+            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab"))
+        }
 
         browserAnimator.captureEngineViewAndDrawStatically {
             navController.navigate(
@@ -293,27 +302,29 @@ class DefaultBrowserToolbarController(
     }
 
     override fun handleNewTabButtonLongClick() {
-        NavigationBar.browserNewTabLongTapped.record(NoExtras())
+        if (activity.shouldAddNavigationBar()) {
+            NavigationBar.browserNewTabLongTapped.record(NoExtras())
+        } else {
+            Events.browserToolbarAction.record(Events.BrowserToolbarActionExtra("new_tab_long_press"))
+        }
+    }
+
+    override fun handleMenuButtonClicked(
+        accessPoint: MenuAccessPoint,
+        customTabSessionId: String?,
+        isSandboxCustomTab: Boolean,
+    ) {
+        navController.navigate(
+            BrowserFragmentDirections.actionGlobalMenuDialogFragment(
+                accesspoint = accessPoint,
+                customTabSessionId = customTabSessionId,
+                isSandboxCustomTab = isSandboxCustomTab,
+            ),
+        )
     }
 
     companion object {
         internal const val TELEMETRY_BROWSER_IDENTIFIER = "browserMenu"
-    }
-
-    /**
-     * Stop showing the CFR after being displayed three times with
-     * with at least 12 hrs in-between.
-     * As described in: https://bugzilla.mozilla.org/show_bug.cgi?id=1861173#c0
-     */
-    private fun updateShoppingCfrSettings() = with(activity.settings()) {
-        reviewQualityCheckCFRClosedCounter++
-        if (reviewQualityCheckCfrDisplayTimeInMillis != 0L &&
-            reviewQualityCheckCFRClosedCounter >= MAX_DISPLAY_NUMBER_SHOPPING_CFR
-        ) {
-            shouldShowReviewQualityCheckCFR = false
-        } else {
-            reviewQualityCheckCfrDisplayTimeInMillis = System.currentTimeMillis()
-        }
     }
 }
 

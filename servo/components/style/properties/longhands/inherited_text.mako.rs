@@ -142,11 +142,14 @@ ${helpers.predefined_type(
 // TODO: `white-space-collapse: discard` not yet supported
 ${helpers.single_keyword(
     name="white-space-collapse",
-    values="collapse preserve preserve-breaks preserve-spaces break-spaces",
-    engines="gecko",
+    values="collapse preserve preserve-breaks break-spaces",
+    extra_gecko_values="preserve-spaces",
+    gecko_aliases="-moz-pre-space=preserve-spaces",
+    engines="gecko servo",
     gecko_enum_prefix="StyleWhiteSpaceCollapse",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-text-4/#propdef-white-space-collapse",
+    servo_restyle_damage="rebuild_and_reflow",
     affects="layout",
 )}
 
@@ -177,9 +180,9 @@ ${helpers.predefined_type(
 ${helpers.predefined_type(
     "text-emphasis-position",
     "TextEmphasisPosition",
-    "computed::TextEmphasisPosition::OVER",
+    "computed::TextEmphasisPosition::AUTO",
     engines="gecko",
-    initial_specified_value="specified::TextEmphasisPosition::OVER",
+    initial_specified_value="specified::TextEmphasisPosition::AUTO",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-text-decor/#propdef-text-emphasis-position",
     affects="layout",
@@ -358,8 +361,6 @@ ${helpers.predefined_type(
     "ForcedColorAdjust",
     "computed::ForcedColorAdjust::Auto",
     engines="gecko",
-    gecko_pref="layout.css.forced-color-adjust.enabled",
-    has_effect_on_gecko_scrollbars=False,
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-color-adjust-1/#forced-color-adjust-prop",
     affects="paint",
@@ -378,11 +379,25 @@ ${helpers.single_keyword(
 ${helpers.single_keyword(
     "text-wrap-mode",
     "wrap nowrap",
-    engines="gecko",
+    engines="gecko servo",
     gecko_enum_prefix="StyleTextWrapMode",
     animation_type="discrete",
     spec="https://drafts.csswg.org/css-text-4/#propdef-text-wrap-mode",
+    servo_restyle_damage="rebuild_and_reflow",
     affects="layout",
+)}
+
+// hyphenation length thresholds
+${helpers.predefined_type(
+    "hyphenate-limit-chars",
+    "HyphenateLimitChars",
+    "computed::HyphenateLimitChars::auto()",
+    engines="gecko",
+    gecko_pref="layout.css.hyphenate-limit-chars.enabled",
+    has_effect_on_gecko_scrollbars=False,
+    spec="https://drafts.csswg.org/css-text-4/#hyphenate-char-limits",
+    affects="layout",
+    boxed=True,
 )}
 
 ${helpers.single_keyword(

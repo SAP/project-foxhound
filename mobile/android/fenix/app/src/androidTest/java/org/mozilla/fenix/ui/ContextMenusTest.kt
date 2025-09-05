@@ -12,6 +12,7 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.assertExternalAppOpens
 import org.mozilla.fenix.helpers.Constants.PackageName.YOUTUBE_APP
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
@@ -46,7 +47,9 @@ class ContextMenusTest : TestSetup() {
     val composeTestRule =
         AndroidComposeTestRule(
             HomeActivityIntentTestRule(
-                isJumpBackInCFREnabled = false,
+                // workaround for toolbar at top position by default
+                // remove with https://bugzilla.mozilla.org/show_bug.cgi?id=1917640
+                shouldUseBottomToolbar = true,
             ),
         ) { it.activity }
 
@@ -69,7 +72,7 @@ class ContextMenusTest : TestSetup() {
             verifyContextMenuForLocalHostLinks(genericURL.url)
             clickContextMenuItem("Open link in new tab")
             verifySnackBarText("New tab opened")
-            clickSnackbarButton("SWITCH")
+            clickSnackbarButton(composeTestRule, "SWITCH")
             verifyUrl(genericURL.url.toString())
         }.openTabDrawer(composeTestRule) {
             verifyNormalBrowsingButtonIsSelected()
@@ -93,7 +96,7 @@ class ContextMenusTest : TestSetup() {
             verifyContextMenuForLocalHostLinks(genericURL.url)
             clickContextMenuItem("Open link in private tab")
             verifySnackBarText("New private tab opened")
-            clickSnackbarButton("SWITCH")
+            clickSnackbarButton(composeTestRule, "SWITCH")
             verifyUrl(genericURL.url.toString())
         }.openTabDrawer(composeTestRule) {
             verifyPrivateBrowsingButtonIsSelected()
@@ -158,7 +161,7 @@ class ContextMenusTest : TestSetup() {
             verifyLinkImageContextMenuItems(imageResource.url)
             clickContextMenuItem("Open image in new tab")
             verifySnackBarText("New tab opened")
-            clickSnackbarButton("SWITCH")
+            clickSnackbarButton(composeTestRule, "SWITCH")
             verifyUrl(imageResource.url.toString())
         }
     }
@@ -242,6 +245,7 @@ class ContextMenusTest : TestSetup() {
         }.enterURLAndEnterToBrowser(genericURL.url) {
             clickPageObject(itemWithText("PDF form file"))
             waitForPageToLoad()
+            clickPageObject(itemWithResIdAndText("android:id/button2", "CANCEL"))
             longClickPageObject(itemWithText("Wikipedia link"))
             verifyContextMenuForLinksToOtherHosts("wikipedia.org".toUri())
             dismissContentContextMenu()

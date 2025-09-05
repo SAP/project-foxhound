@@ -196,7 +196,7 @@ struct Statistics {
     }
   }
 
-  void measureInitialHeapSize();
+  void measureInitialHeapSizes();
 
   void nonincremental(GCAbortReason reason) {
     MOZ_ASSERT(reason != GCAbortReason::None);
@@ -295,7 +295,7 @@ struct Statistics {
   TimeStamp creationTime() const { return creationTime_; }
 
   TimeDuration totalGCTime() const { return totalGCTime_; }
-  size_t initialCollectedBytes() const { return preCollectedHeapBytes; }
+  size_t initialCollectedBytes() const { return preCollectedGCHeapBytes; }
 
   // File to write profiling information to, either stderr or file specified
   // with JS_GC_PROFILE_FILE.
@@ -321,6 +321,8 @@ struct Statistics {
 
   // Return JSON for the previous nursery collection.
   UniqueChars renderNurseryJson() const;
+
+  bool bufferAllocStatsEnabled() const { return enableBufferAllocStats_; }
 
 #ifdef DEBUG
   // Print a logging message.
@@ -384,11 +386,15 @@ struct Statistics {
   uint32_t tenuredAllocsSinceMinorGC;
 
   /* Total GC heap size before and after the GC ran. */
-  size_t preTotalHeapBytes;
-  size_t postTotalHeapBytes;
+  size_t preTotalGCHeapBytes;
+  size_t postTotalGCHeapBytes;
 
   /* GC heap size for collected zones before GC ran. */
-  size_t preCollectedHeapBytes;
+  size_t preCollectedGCHeapBytes;
+
+  /* Total malloc heap size before and after the GC ran. */
+  size_t preTotalMallocHeapBytes;
+  size_t postTotalMallocHeapBytes;
 
   /*
    * If a GC slice was triggered by exceeding some threshold, record the
@@ -444,6 +450,7 @@ struct Statistics {
 
   bool enableProfiling_ = false;
   bool profileWorkers_ = false;
+  bool enableBufferAllocStats_ = false;
   TimeDuration profileThreshold_;
   ProfileDurations totalTimes_;
   uint64_t sliceCount_;
@@ -497,6 +504,14 @@ struct Statistics {
   const char* formatGCFlags(const SliceData& slice);
   const char* formatBudget(const SliceData& slice);
   const char* formatTotalSlices();
+
+  size_t getMallocHeapSize();
+
+  void getBufferedAllocatorStats(Zone* zone, size_t& mediumChunks,
+                                 size_t& mediumTenuredChunks,
+                                 size_t& largeNurseryAllocs,
+                                 size_t& largeTenuredAllocs);
+
   static void printProfileTimes(const ProfileDurations& times,
                                 Sprinter& sprinter);
 };

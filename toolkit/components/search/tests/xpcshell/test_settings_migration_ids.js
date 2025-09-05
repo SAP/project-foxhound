@@ -58,7 +58,10 @@ add_setup(async function () {
   );
   policies.observe(null, "policies-startup", null);
 
-  await SearchTestUtils.useTestEngines("data1");
+  SearchTestUtils.setRemoteSettingsConfig([
+    { identifier: "engine1" },
+    { identifier: "engine2" },
+  ]);
   await EnterprisePolicyTesting.setupPolicyEngineWithJson(enterprisePolicy);
   // Setting the enterprise policy starts the search service initialising,
   // so we wait for that to complete before starting the test.
@@ -87,7 +90,7 @@ async function assertInstalledEngineMatches(expectedData) {
 }
 
 add_task(async function test_migration_from_pre_ids() {
-  await loadSettingsFile("data/search-legacy-no-ids.json");
+  await loadSettingsFile("settings/v6-ids-upgrade.json");
 
   const settingsFileWritten = promiseAfterSettings();
 

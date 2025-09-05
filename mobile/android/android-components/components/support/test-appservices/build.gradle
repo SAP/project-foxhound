@@ -28,10 +28,10 @@ android {
 }
 
 dependencies {
-    api ComponentsDependencies.mozilla_appservices_full_megazord_forUnitTests
+    api ComponentsDependencies.mozilla_appservices_full_megazord_libsForTests
 }
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 

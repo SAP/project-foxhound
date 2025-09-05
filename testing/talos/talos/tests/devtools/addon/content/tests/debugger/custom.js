@@ -16,7 +16,7 @@ const {
 const {
   createContext,
   findSource,
-  getCM,
+  getCMEditor,
   hoverOnToken,
   openDebuggerAndLog,
   pauseDebugger,
@@ -31,6 +31,7 @@ const {
   addBreakpoint,
   waitForPaused,
   waitForState,
+  isCm6Enabled,
 } = require("./debugger-helpers");
 
 const IFRAME_BASE_URL =
@@ -49,13 +50,9 @@ const TEST_URL = PAGES_BASE_URL + "custom/debugger/app-build/index.html";
 const MINIFIED_URL = `${IFRAME_BASE_URL}custom/debugger/app-build/static/js/minified.js`;
 
 module.exports = async function () {
-  const isCm6Enabled = Services.prefs.getBoolPref(
-    "devtools.debugger.features.codemirror-next"
-  );
-
   const tab = await testSetup(TEST_URL, { disableCache: true });
 
-  const toolbox = await openDebuggerAndLog("custom", EXPECTED, isCm6Enabled);
+  const toolbox = await openDebuggerAndLog("custom", EXPECTED);
 
   dump("Waiting for debugger panel\n");
   const panel = await toolbox.getPanelWhenReady("jsdebugger");
@@ -66,16 +63,16 @@ module.exports = async function () {
   // Reselect App.js as that's the source expected to be selected after page reload
   await selectSource(dbg, EXPECTED.file);
 
-  await reloadDebuggerAndLog("custom", toolbox, EXPECTED, isCm6Enabled);
+  await reloadDebuggerAndLog("custom", toolbox, EXPECTED);
 
   // these tests are only run on custom.jsdebugger
   await pauseDebuggerAndLog(dbg, tab, EXPECTED_FUNCTION);
   await stepDebuggerAndLog(dbg, tab, EXPECTED_FUNCTION);
 
   await testProjectSearch(dbg, tab);
-  await testPreview(dbg, tab, EXPECTED_FUNCTION, isCm6Enabled);
-  await testOpeningLargeMinifiedFile(dbg, isCm6Enabled);
-  await testPrettyPrint(dbg, toolbox, isCm6Enabled);
+  await testPreview(dbg, tab, EXPECTED_FUNCTION);
+  await testOpeningLargeMinifiedFile(dbg);
+  await testPrettyPrint(dbg, toolbox);
 
   await closeToolboxAndLog("custom.jsdebugger", toolbox);
 
@@ -202,13 +199,13 @@ async function testProjectSearch(dbg) {
   await garbageCollect();
 }
 
-async function testPreview(dbg, tab, testFunction, isCm6Enabled) {
+async function testPreview(dbg, tab, testFunction) {
   dump("Executing preview test ...\n");
   const pauseLocation = { line: 22, file: "App.js" };
 
   let test = runTest("custom.jsdebugger.preview.DAMP");
   await pauseDebugger(dbg, tab, testFunction, pauseLocation);
-  await hoverOnToken(dbg, "window.hitBreakpoint", "window", isCm6Enabled);
+  await hoverOnToken(dbg, "window.hitBreakpoint", "window");
   test.done();
 
   await removeBreakpoints(dbg);
@@ -216,7 +213,7 @@ async function testPreview(dbg, tab, testFunction, isCm6Enabled) {
   await garbageCollect();
 }
 
-async function testOpeningLargeMinifiedFile(dbg, isCm6Enabled) {
+async function testOpeningLargeMinifiedFile(dbg) {
   dump("Executing opening large minified test ...\n");
   const fileFirstMinifiedChars = `(()=>{var e,t,n,r,o={82603`;
 
@@ -226,7 +223,7 @@ async function testOpeningLargeMinifiedFile(dbg, isCm6Enabled) {
   );
   const test = runTest("custom.jsdebugger.open-large-minified-file.DAMP");
   const onSelected = selectSource(dbg, MINIFIED_URL);
-  await waitForText(dbg, fileFirstMinifiedChars, isCm6Enabled);
+  await waitForText(dbg, fileFirstMinifiedChars);
   test.done();
   await onSelected;
   fullTest.done();
@@ -239,7 +236,7 @@ async function testOpeningLargeMinifiedFile(dbg, isCm6Enabled) {
   await garbageCollect();
 }
 
-async function testPrettyPrint(dbg, toolbox, isCm6Enabled) {
+async function testPrettyPrint(dbg, toolbox) {
   const formattedFileUrl = `${MINIFIED_URL}:formatted`;
   const filePrettyChars = "82603: (e, t, n) => {\n";
 
@@ -247,15 +244,16 @@ async function testPrettyPrint(dbg, toolbox, isCm6Enabled) {
   await selectSource(dbg, MINIFIED_URL);
 
   dump("Wait until CodeMirror highlighting is done\n");
-  const cm = getCM(dbg, isCm6Enabled);
+  const cm = getCMEditor(dbg).codeMirror;
   await waitUntil(() => {
-    return isCm6Enabled
-      ? cm.isDocumentLoadComplete
-      : // For CM5 highlightFrontier is not documented but is an internal variable indicating the current
-        // line that was just highlighted. This document has only 2 lines, so wait until both
-        // are highlighted. Since there was an other document opened before, we need to do an
-        // exact check to properly wait.
-        cm.doc.highlightFrontier === 2;
+    if (isCm6Enabled()) {
+      return true;
+    }
+    // For CM5 highlightFrontier is not documented but is an internal variable indicating the current
+    // line that was just highlighted. This document has only 2 lines, so wait until both
+    // are highlighted. Since there was an other document opened before, we need to do an
+    // exact check to properly wait.
+    return cm.doc.highlightFrontier === 2;
   });
 
   const prettyPrintButton = await waitUntil(() => {
@@ -266,7 +264,7 @@ async function testPrettyPrint(dbg, toolbox, isCm6Enabled) {
   const test = runTest("custom.jsdebugger.pretty-print.DAMP");
   prettyPrintButton.click();
   await waitForSource(dbg, formattedFileUrl);
-  await waitForText(dbg, filePrettyChars, isCm6Enabled);
+  await waitForText(dbg, filePrettyChars);
   test.done();
 
   await addBreakpoint(dbg, 776, formattedFileUrl);
@@ -275,17 +273,12 @@ async function testPrettyPrint(dbg, toolbox, isCm6Enabled) {
   const reloadAndPauseInPrettyPrintedFileTest = runTest(
     "custom.jsdebugger.pretty-print.reload-and-pause.DAMP"
   );
-  await reloadDebuggerAndLog(
-    "custom.pretty-print",
-    toolbox,
-    {
-      sources: 1105,
-      sourceURL: formattedFileUrl,
-      text: filePrettyChars,
-      threadsCount: EXPECTED.threadsCount,
-    },
-    isCm6Enabled
-  );
+  await reloadDebuggerAndLog("custom.pretty-print", toolbox, {
+    sources: 1105,
+    sourceURL: formattedFileUrl,
+    text: filePrettyChars,
+    threadsCount: EXPECTED.threadsCount,
+  });
   await onPaused;
 
   // When reloading, the `togglePrettyPrint` action is called to pretty print the minified source.

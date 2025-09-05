@@ -61,7 +61,7 @@ class RenderPassEncoder final : public ObjectBase,
 
  public:
   // programmable pass encoder
-  void SetBindGroup(uint32_t aSlot, const BindGroup& aBindGroup,
+  void SetBindGroup(uint32_t aSlot, BindGroup* const aBindGroup,
                     const dom::Sequence<uint32_t>& aDynamicOffsets);
   // render encoder base
   void SetPipeline(const RenderPipeline& aPipeline);
@@ -84,6 +84,9 @@ class RenderPassEncoder final : public ObjectBase,
   void SetScissorRect(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
   void SetBlendConstant(const dom::DoubleSequenceOrGPUColorDict& color);
   void SetStencilReference(uint32_t reference);
+
+  void BeginOcclusionQuery(uint32_t queryIndex);
+  void EndOcclusionQuery();
 
   void PushDebugGroup(const nsAString& aString);
   void PopDebugGroup();

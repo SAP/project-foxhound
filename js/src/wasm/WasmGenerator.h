@@ -24,6 +24,7 @@
 #include "mozilla/MemoryReporting.h"
 
 #include "jit/MacroAssembler.h"
+#include "jit/PerfSpewer.h"
 #include "threading/ProtectedData.h"
 #include "vm/HelperThreadTask.h"
 #include "wasm/WasmCompile.h"
@@ -36,8 +37,6 @@ class OptimizedEncodingListener;
 
 namespace js {
 namespace wasm {
-
-using mozilla::DebugOnly;
 
 struct CompileTask;
 using CompileTaskPtrVector = Vector<CompileTask*, 0, SystemAllocPolicy>;
@@ -64,11 +63,16 @@ struct FuncCompileInput {
 using FuncCompileInputVector = Vector<FuncCompileInput, 8, SystemAllocPolicy>;
 
 struct FuncCompileOutput {
-  FuncCompileOutput(uint32_t index, FeatureUsage featureUsage)
-      : index(index), featureUsage(featureUsage) {}
+  FuncCompileOutput(
+      uint32_t index, FeatureUsage featureUsage,
+      CallRefMetricsRange callRefMetricsRange = CallRefMetricsRange())
+      : index(index),
+        featureUsage(featureUsage),
+        callRefMetricsRange(callRefMetricsRange) {}
 
   uint32_t index;
   FeatureUsage featureUsage;
+  CallRefMetricsRange callRefMetricsRange;
 };
 
 using FuncCompileOutputVector = Vector<FuncCompileOutput, 8, SystemAllocPolicy>;
@@ -82,14 +86,17 @@ struct CompiledCode {
   FuncCompileOutputVector funcs;
   Bytes bytes;
   CodeRangeVector codeRanges;
-  CallSiteVector callSites;
+  CallSites callSites;
   CallSiteTargetVector callSiteTargets;
-  TrapSiteVectorArray trapSites;
+  TrapSites trapSites;
   SymbolicAccessVector symbolicAccesses;
   jit::CodeLabelVector codeLabels;
   StackMaps stackMaps;
   TryNoteVector tryNotes;
   CodeRangeUnwindInfoVector codeRangeUnwindInfos;
+  CallRefMetricsPatchVector callRefMetricsPatches;
+  FuncIonPerfSpewerVector funcIonSpewers;
+  FuncBaselinePerfSpewerVector funcBaselineSpewers;
   FeatureUsage featureUsage;
 
   [[nodiscard]] bool swap(jit::MacroAssembler& masm);
@@ -106,6 +113,9 @@ struct CompiledCode {
     stackMaps.clear();
     tryNotes.clear();
     codeRangeUnwindInfos.clear();
+    callRefMetricsPatches.clear();
+    funcIonSpewers.clear();
+    funcBaselineSpewers.clear();
     featureUsage = FeatureUsage::None;
     MOZ_ASSERT(empty());
   }
@@ -115,7 +125,8 @@ struct CompiledCode {
            callSites.empty() && callSiteTargets.empty() && trapSites.empty() &&
            symbolicAccesses.empty() && codeLabels.empty() && tryNotes.empty() &&
            stackMaps.empty() && codeRangeUnwindInfos.empty() &&
-           featureUsage == FeatureUsage::None;
+           callRefMetricsPatches.empty() && funcIonSpewers.empty() &&
+           funcBaselineSpewers.empty() && featureUsage == FeatureUsage::None;
   }
 
   size_t sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const;
@@ -164,7 +175,7 @@ struct CompileTask : public HelperThreadTask {
         compilerEnv(compilerEnv),
         compileState(compileState),
         state(state),
-        lifo(defaultChunkSize) {}
+        lifo(defaultChunkSize, js::MallocArena) {}
 
   virtual ~CompileTask() = default;
 
@@ -172,6 +183,8 @@ struct CompileTask : public HelperThreadTask {
 
   void runHelperThreadTask(AutoLockHelperThreadState& locked) override;
   ThreadType threadType() override;
+
+  const char* getName() override { return "WasmCompileTask"; }
 };
 
 // A ModuleGenerator encapsulates the creation of a wasm module. During the
@@ -199,16 +212,20 @@ class MOZ_STACK_CLASS ModuleGenerator {
   const CompileState compileState_;
   UniqueChars* const error_;
   UniqueCharsVector* const warnings_;
-  const Atomic<bool>* const cancelled_;
+  const mozilla::Atomic<bool>* const cancelled_;
   const CodeMetadata* const codeMeta_;
   const CompilerEnvironment* const compilerEnv_;
 
   // Data that is used for partial tiering
   SharedCode partialTieringCode_;
 
+  // Data that is used for compiling a complete tier
+  mozilla::TimeStamp completeTierStartTime_;
+
   // Data that is moved into the Module/Code as the result of finish()
-  FuncDefRangeVector funcDefRanges_;
+  BytecodeRangeVector funcDefRanges_;
   FeatureUsageVector funcDefFeatureUsages_;
+  CallRefMetricsRangeVector funcDefCallRefMetrics_;
   FuncImportVector funcImports_;
   UniqueLinkData sharedStubsLinkData_;
   UniqueCodeBlock sharedStubsCodeBlock_;
@@ -219,14 +236,18 @@ class MOZ_STACK_CLASS ModuleGenerator {
   UniqueCodeBlock codeBlock_;
   UniqueLinkData linkData_;
   LifoAlloc lifo_;
-  Maybe<MacroAssemblerScope> masmScope_;
+  mozilla::Maybe<MacroAssemblerScope> masmScope_;
   jit::WasmMacroAssembler* masm_;
   uint32_t debugStubCodeOffset_;
   uint32_t requestTierUpStubCodeOffset_;
+  uint32_t updateCallRefMetricsStubCodeOffset_;
   CallFarJumpVector callFarJumps_;
   CallSiteTargetVector callSiteTargets_;
+  FuncIonPerfSpewerVector funcIonSpewers_;
+  FuncBaselinePerfSpewerVector funcBaselineSpewers_;
   uint32_t lastPatchedCallSite_;
   uint32_t startOfUnpatchedCallsites_;
+  uint32_t numCallRefMetrics_;
 
   // Parallel compilation
   bool parallel_;
@@ -238,7 +259,7 @@ class MOZ_STACK_CLASS ModuleGenerator {
   uint32_t batchedBytecode_;
 
   // Assertions
-  DebugOnly<bool> finishedFuncDefs_;
+  mozilla::DebugOnly<bool> finishedFuncDefs_;
 
   bool funcIsCompiledInBlock(uint32_t funcIndex) const;
   const CodeRange& funcCodeRangeInBlock(uint32_t funcIndex) const;
@@ -289,8 +310,9 @@ class MOZ_STACK_CLASS ModuleGenerator {
  public:
   ModuleGenerator(const CodeMetadata& codeMeta,
                   const CompilerEnvironment& compilerEnv,
-                  CompileState compilerState, const Atomic<bool>* cancelled,
-                  UniqueChars* error, UniqueCharsVector* warnings);
+                  CompileState compilerState,
+                  const mozilla::Atomic<bool>* cancelled, UniqueChars* error,
+                  UniqueCharsVector* warnings);
   ~ModuleGenerator();
   [[nodiscard]] bool initializeCompleteTier(
       CodeMetadataForAsmJS* codeMetaForAsmJS = nullptr);
@@ -316,9 +338,9 @@ class MOZ_STACK_CLASS ModuleGenerator {
   // it; if that in future gets cleaned up, the parameter should be changed
   // to being SharedModuleMetadata.
 
-  SharedModule finishModule(const ShareableBytes& bytecode,
-                            MutableModuleMetadata moduleMeta,
-                            JS::OptimizedEncodingListener* maybeTier2Listener);
+  SharedModule finishModule(
+      const ShareableBytes& bytecode, MutableModuleMetadata moduleMeta,
+      JS::OptimizedEncodingListener* maybeCompleteTier2Listener);
   [[nodiscard]] bool finishTier2(const Module& module);
   [[nodiscard]] bool finishPartialTier2();
 };

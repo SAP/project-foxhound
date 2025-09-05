@@ -161,7 +161,11 @@ skip-if = ["true"] # tests for breakpoint actors are obsolete bug 1524374
 ["test_dbgglobal.js"]
 
 ["test_extension_storage_actor.js"]
-skip-if = ["tsan"] # Unreasonably slow, bug 1612707
+skip-if = [
+  "tsan", # Unreasonably slow, bug 1612707
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1813406
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && ccov", # Bug 1813406
+]
 
 ["test_extension_storage_actor_upgrade.js"]
 
@@ -281,17 +285,11 @@ skip-if = ["tsan"] # Unreasonably slow, bug 1612707
 
 ["test_objectgrips-fn-apply-01.js"]
 
-["test_objectgrips-fn-apply-02.js"]
-
-["test_objectgrips-fn-apply-03.js"]
-
 ["test_objectgrips-nested-promise.js"]
 
 ["test_objectgrips-nested-proxy.js"]
 
 ["test_objectgrips-property-value-01.js"]
-
-["test_objectgrips-property-value-02.js"]
 
 ["test_objectgrips-property-value-03.js"]
 
@@ -308,8 +306,6 @@ skip-if = ["tsan"] # Unreasonably slow, bug 1612707
 ["test_pauselifetime-01.js"]
 
 ["test_pauselifetime-02.js"]
-
-["test_pauselifetime-03.js"]
 
 ["test_pauselifetime-04.js"]
 
@@ -424,7 +420,7 @@ skip-if = ["true"] # breakpoint sliding is not supported bug 1525685
 ["test_watchpoint-03.js"]
 
 ["test_watchpoint-04.js"]
-skip-if = ["apple_silicon"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
+skip-if = ["os == 'mac' && os_version == '11.20' && arch == 'aarch64'"] # Disabled due to bleedover with other tests when run in regular suites; passes in "failures" jobs
 
 ["test_watchpoint-05.js"]
 

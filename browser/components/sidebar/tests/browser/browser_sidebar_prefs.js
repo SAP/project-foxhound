@@ -3,10 +3,6 @@
 
 "use strict";
 
-registerCleanupFunction(() =>
-  Services.prefs.clearUserPref("sidebar.main.tools")
-);
-
 add_task(async function test_tools_prefs() {
   const win = await BrowserTestUtils.openNewBrowserWindow();
   const { document } = win;
@@ -45,12 +41,15 @@ add_task(async function test_tools_prefs() {
   for (const toolInput of customizeComponent.toolInputs) {
     let toolDisabledInitialState = !toolInput.checked;
     toolInput.click();
-    await BrowserTestUtils.waitForCondition(() => {
-      let toggledTool = win.SidebarController.toolsAndExtensions.get(
-        toolInput.name
-      );
-      return toggledTool.disabled === !toolDisabledInitialState;
-    }, `The entrypoint for ${toolInput.name} has been ${toolDisabledInitialState ? "enabled" : "disabled"} in the sidebar.`);
+    await BrowserTestUtils.waitForCondition(
+      () => {
+        let toggledTool = win.SidebarController.toolsAndExtensions.get(
+          toolInput.name
+        );
+        return toggledTool.disabled === !toolDisabledInitialState;
+      },
+      `The entrypoint for ${toolInput.name} has been ${toolDisabledInitialState ? "enabled" : "disabled"} in the sidebar.`
+    );
     toolEntrypointsCount = sidebar.toolButtons.length;
     checkedInputs = Array.from(customizeComponent.toolInputs).filter(
       input => input.checked
@@ -67,8 +66,8 @@ add_task(async function test_tools_prefs() {
   const updatedTools = Services.prefs.getStringPref("sidebar.main.tools");
   is(
     updatedTools,
-    "aichat,bookmarks",
-    "History and syncedtabs have been removed from the pref, and bookmarks added"
+    "bookmarks",
+    "History, aichat and syncedtabs have been removed from the pref, and bookmarks added"
   );
 
   await BrowserTestUtils.closeWindow(win);
@@ -122,23 +121,121 @@ add_task(async function test_tools_prefs() {
 });
 
 /**
- * Check that conditional sidebar tools are added and removed on pref change
+ * Check that tools pref changes happen for existing windows
  */
-add_task(async function test_conditional_tools() {
-  const win = await BrowserTestUtils.openNewBrowserWindow();
-  const sidebar = win.document.querySelector("sidebar-main");
+add_task(async function test_tool_pref_change() {
+  const sidebar = document.querySelector("sidebar-main");
   await sidebar.updateComplete;
 
   const origCount = sidebar.toolButtons.length;
   is(origCount, 1, "Expected number of initial tools");
 
-  await SpecialPowers.pushPrefEnv({ set: [["browser.ml.chat.enabled", true]] });
-  is(sidebar.toolButtons.length, origCount + 1, "Enabled tool added");
+  const origTools = Services.prefs.getStringPref("sidebar.main.tools");
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.main.tools", origTools.replace(/,?bookmarks/, "")]],
+  });
+  is(sidebar.toolButtons.length, origCount - 1, "Removed tool");
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.main.tools", origTools]] });
+  is(sidebar.toolButtons.length, origCount, "Restored tool");
+
+  await SpecialPowers.pushPrefEnv({ clear: [["sidebar.main.tools"]] });
+  is(sidebar.toolButtons.length, 3, "Restored default tools");
+});
+
+/**
+ * Check that the new sidebar is hidden/shown automatically (without a browser restart)
+ * when flipping the sidebar.revamp pref
+ */
+add_task(async function test_flip_revamp_pref() {
+  const win = await BrowserTestUtils.openNewBrowserWindow();
+  await waitForTabstripOrientation("horizontal", win);
+  const sidebar = win.document.querySelector("sidebar-main");
+
+  let verticalTabs = win.document.querySelector("#vertical-tabs");
+  ok(
+    !BrowserTestUtils.isVisible(verticalTabs),
+    "Vertical tabs slot is not visible initially"
+  );
+  // Open history sidebar
+  await toggleSidebarPanel(win, "viewHistorySidebar");
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.verticalTabs", true]] });
+  await waitForTabstripOrientation("vertical", win);
+  ok(BrowserTestUtils.isVisible(verticalTabs), "Vertical tabs slot is visible");
+
+  ok(sidebar, "Revamped sidebar is shown initially.");
+  Assert.equal(
+    Services.prefs.getStringPref("sidebar.visibility"),
+    "always-show",
+    "Sanity check the visibilty pref when verticalTabs are enabled"
+  );
+
+  await SpecialPowers.pushPrefEnv({ set: [["sidebar.revamp", false]] });
+  await waitForTabstripOrientation("horizontal", win);
+
+  await TestUtils.waitForCondition(() => {
+    let isSidebarMainShown =
+      !win.document.getElementById("sidebar-main").hidden;
+    let isSwitcherPanelShown =
+      !win.document.getElementById("sidebar-header").hidden;
+    // Vertical tabs pref should be turned off when revamp pref is turned off
+    let isVerticalTabsShown = BrowserTestUtils.isVisible(verticalTabs);
+    return !isSidebarMainShown && isSwitcherPanelShown && !isVerticalTabsShown;
+  }, "The new sidebar is hidden and the old sidebar is shown.");
+
+  ok(true, "The new sidebar is hidden and the old sidebar is shown.");
 
   await SpecialPowers.pushPrefEnv({
-    set: [["browser.ml.chat.enabled", false]],
+    set: [["sidebar.revamp", true]],
   });
-  is(sidebar.toolButtons.length, origCount, "Disabled tool removed");
+  await sidebar.updateComplete;
+  await TestUtils.waitForCondition(() => {
+    let isSidebarMainShown = !document.getElementById("sidebar-main").hidden;
+    let isSwitcherPanelShown =
+      !win.document.getElementById("sidebar-header").hidden;
+    return isSidebarMainShown && !isSwitcherPanelShown;
+  }, "The old sidebar is hidden and the new sidebar is shown.");
 
+  ok(true, "The old sidebar is hidden and the new sidebar is shown.");
   await BrowserTestUtils.closeWindow(win);
+});
+
+add_task(async function test_opening_panel_flips_has_used_pref() {
+  Services.prefs.clearUserPref("sidebar.old-sidebar.has-used");
+  Services.prefs.clearUserPref("sidebar.new-sidebar.has-used");
+
+  info("Open a panel from the legacy sidebar.");
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", false]],
+  });
+  await SidebarController.show("viewHistorySidebar");
+  ok(
+    Services.prefs.getBoolPref("sidebar.old-sidebar.has-used"),
+    "has-used pref enabled for legacy sidebar."
+  );
+  SidebarController.hide();
+  await SpecialPowers.popPrefEnv();
+
+  info("Open a panel from the revamped sidebar.");
+  await SpecialPowers.pushPrefEnv({
+    set: [["sidebar.revamp", true]],
+  });
+  await SidebarController.show("viewHistorySidebar");
+  ok(
+    Services.prefs.getBoolPref("sidebar.new-sidebar.has-used"),
+    "has-used pref enabled for revamped sidebar."
+  );
+  SidebarController.hide();
+  await SpecialPowers.popPrefEnv();
+
+  info("Sanity check: Both prefs should stay enabled.");
+  ok(
+    Services.prefs.getBoolPref("sidebar.old-sidebar.has-used"),
+    "has-used pref enabled for legacy sidebar."
+  );
+  ok(
+    Services.prefs.getBoolPref("sidebar.new-sidebar.has-used"),
+    "has-used pref enabled for revamped sidebar."
+  );
 });

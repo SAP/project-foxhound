@@ -63,7 +63,6 @@ import {
   debugError,
   fromEmitterEvent,
   filterAsync,
-  importFSPromises,
   isString,
   NETWORK_IDLE_TIME,
   timeout,
@@ -71,6 +70,7 @@ import {
   fromAbortSignal,
 } from '../common/util.js';
 import type {Viewport} from '../common/Viewport.js';
+import {environment} from '../environment.js';
 import type {ScreenRecorder} from '../node/ScreenRecorder.js';
 import {guarded} from '../util/decorators.js';
 import {
@@ -79,6 +79,7 @@ import {
   DisposableStack,
   disposeSymbol,
 } from '../util/disposable.js';
+import {stringToTypedArray} from '../util/encoding.js';
 
 import type {Browser} from './Browser.js';
 import type {BrowserContext} from './BrowserContext.js';
@@ -649,8 +650,8 @@ export abstract class Page extends EventEmitter<PageEvents> {
               fromEmitterEvent(this, PageEvent.Response).pipe(
                 map(response => {
                   return response.request();
-                })
-              )
+                }),
+              ),
             ).pipe(
               filter(request => {
                 return request.id === originalRequest.id;
@@ -658,15 +659,15 @@ export abstract class Page extends EventEmitter<PageEvents> {
               take(1),
               map(() => {
                 return -1;
-              })
-            )
+              }),
+            ),
           );
         }),
         mergeScan((acc, addend) => {
           return of(acc + addend);
         }, 0),
         takeUntil(fromEmitterEvent(this, PageEvent.Close)),
-        startWith(0)
+        startWith(0),
       )
       .subscribe(this.#inflight$);
   }
@@ -702,13 +703,13 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   override on<K extends keyof EventsWithWildcard<PageEvents>>(
     type: K,
-    handler: (event: EventsWithWildcard<PageEvents>[K]) => void
+    handler: (event: EventsWithWildcard<PageEvents>[K]) => void,
   ): this {
     if (type !== PageEvent.Request) {
       return super.on(type, handler);
     }
     let wrapper = this.#requestHandlers.get(
-      handler as (event: PageEvents[PageEvent.Request]) => void
+      handler as (event: PageEvents[PageEvent.Request]) => void,
     );
     if (wrapper === undefined) {
       wrapper = (event: HTTPRequest) => {
@@ -718,12 +719,12 @@ export abstract class Page extends EventEmitter<PageEvents> {
       };
       this.#requestHandlers.set(
         handler as (event: PageEvents[PageEvent.Request]) => void,
-        wrapper
+        wrapper,
       );
     }
     return super.on(
       type,
-      wrapper as (event: EventsWithWildcard<PageEvents>[K]) => void
+      wrapper as (event: EventsWithWildcard<PageEvents>[K]) => void,
     );
   }
 
@@ -732,14 +733,14 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   override off<K extends keyof EventsWithWildcard<PageEvents>>(
     type: K,
-    handler: (event: EventsWithWildcard<PageEvents>[K]) => void
+    handler: (event: EventsWithWildcard<PageEvents>[K]) => void,
   ): this {
     if (type === PageEvent.Request) {
       handler =
         (this.#requestHandlers.get(
           handler as (
-            event: EventsWithWildcard<PageEvents>[PageEvent.Request]
-          ) => void
+            event: EventsWithWildcard<PageEvents>[PageEvent.Request],
+          ) => void,
         ) as (event: EventsWithWildcard<PageEvents>[K]) => void) || handler;
     }
     return super.off(type, handler);
@@ -781,7 +782,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * ```
    */
   abstract waitForFileChooser(
-    options?: WaitTimeoutOptions
+    options?: WaitTimeoutOptions,
   ): Promise<FileChooser>;
 
   /**
@@ -959,7 +960,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * emulation.
    */
   abstract emulateNetworkConditions(
-    networkConditions: NetworkConditions | null
+    networkConditions: NetworkConditions | null,
   ): Promise<void>;
 
   /**
@@ -992,12 +993,17 @@ export abstract class Page extends EventEmitter<PageEvents> {
   abstract getDefaultTimeout(): number;
 
   /**
+   * Maximum navigation time in milliseconds.
+   */
+  abstract getDefaultNavigationTimeout(): number;
+
+  /**
    * Creates a locator for the provided selector. See {@link Locator} for
    * details and supported actions.
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1012,7 +1018,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}.
    */
   locator<Selector extends string>(
-    selector: Selector
+    selector: Selector,
   ): Locator<NodeFor<Selector>>;
 
   /**
@@ -1021,7 +1027,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1037,7 +1043,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   locator<Ret>(func: () => Awaitable<Ret>): Locator<Ret>;
   locator<Selector extends string, Ret>(
-    selectorOrFunc: Selector | (() => Awaitable<Ret>)
+    selectorOrFunc: Selector | (() => Awaitable<Ret>),
   ): Locator<NodeFor<Selector>> | Locator<Ret> {
     if (typeof selectorOrFunc === 'string') {
       return NodeLocator.create(this, selectorOrFunc);
@@ -1052,7 +1058,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * @internal
    */
   locatorRace<Locators extends readonly unknown[] | []>(
-    locators: Locators
+    locators: Locators,
   ): Locator<AwaitedLocator<Locators[number]>> {
     return Locator.race(locators);
   }
@@ -1063,7 +1069,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1082,7 +1088,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * Shortcut for {@link Frame.$ | Page.mainFrame().$(selector) }.
    */
   async $<Selector extends string>(
-    selector: Selector
+    selector: Selector,
   ): Promise<ElementHandle<NodeFor<Selector>> | null> {
     return await this.mainFrame().$(selector);
   }
@@ -1093,7 +1099,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1113,7 +1119,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   async $$<Selector extends string>(
     selector: Selector,
-    options?: QueryOptions
+    options?: QueryOptions,
   ): Promise<Array<ElementHandle<NodeFor<Selector>>>> {
     return await this.mainFrame().$$(selector, options);
   }
@@ -1144,7 +1150,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * const aHandle = await page.evaluateHandle(() => document.body);
    * const resultHandle = await page.evaluateHandle(
    *   body => body.innerHTML,
-   *   aHandle
+   *   aHandle,
    * );
    * console.log(await resultHandle.jsonValue());
    * await resultHandle.dispose();
@@ -1158,7 +1164,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * ```ts
    * const button = await page.evaluateHandle(() =>
-   *   document.querySelector('button')
+   *   document.querySelector('button'),
    * );
    * // can call `click` because `button` is an `ElementHandle`
    * await button.click();
@@ -1184,7 +1190,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
   ): Promise<HandleFor<Awaited<ReturnType<Func>>>> {
     pageFunction = withSourcePuppeteerURLIfNone(
       this.evaluateHandle.name,
-      pageFunction
+      pageFunction,
     );
     return await this.mainFrame().evaluateHandle(pageFunction, ...args);
   }
@@ -1213,7 +1219,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * this prototype.
    */
   abstract queryObjects<Prototype>(
-    prototypeHandle: JSHandle<Prototype>
+    prototypeHandle: JSHandle<Prototype>,
   ): Promise<JSHandle<Prototype[]>>;
 
   /**
@@ -1247,7 +1253,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * // as `value` is not on `Element`
    * const searchValue = await page.$eval(
    *   '#search',
-   *   (el: HTMLInputElement) => el.value
+   *   (el: HTMLInputElement) => el.value,
    * );
    * ```
    *
@@ -1262,13 +1268,13 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * // or if you want to be more explicit, provide it as the generic type.
    * const searchValue = await page.$eval<string>(
    *   '#search',
-   *   (el: HTMLInputElement) => el.value
+   *   (el: HTMLInputElement) => el.value,
    * );
    * ```
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1347,13 +1353,13 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * ```ts
    * const allInputValues = await page.$$eval('input', elements =>
-   *   elements.map(e => e.textContent)
+   *   elements.map(e => e.textContent),
    * );
    * ```
    *
    * @param selector -
    * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
-   * to query page for.
+   * to query the page for.
    * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
    * can be passed as-is and a
    * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
@@ -1391,19 +1397,32 @@ export abstract class Page extends EventEmitter<PageEvents> {
   }
 
   /**
-   * If no URLs are specified, this method returns cookies for the current page
-   * URL. If URLs are specified, only cookies for those URLs are returned.
+   * If no URLs are specified, this method returns cookies for the
+   * current page URL. If URLs are specified, only cookies for those
+   * URLs are returned.
+   *
+   * @deprecated Page-level cookie API is deprecated. Use
+   * {@link Browser.cookies} or {@link BrowserContext.cookies} instead.
    */
   abstract cookies(...urls: string[]): Promise<Cookie[]>;
 
+  /**
+   * @deprecated Page-level cookie API is deprecated. Use
+   * {@link Browser.deleteCookie} or {@link BrowserContext.deleteCookie}
+   * instead.
+   */
   abstract deleteCookie(...cookies: DeleteCookiesRequest[]): Promise<void>;
 
   /**
    * @example
    *
-   * ```ts
+   *```ts
    * await page.setCookie(cookieObject1, cookieObject2);
-   * ```
+   *```
+   *
+   * @deprecated Page-level cookie API is deprecated. Use
+   * {@link Browser.setCookie} or {@link BrowserContext.setCookie}
+   * instead.
    */
   abstract setCookie(...cookies: CookieParam[]): Promise<void>;
 
@@ -1419,7 +1438,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * `<script>` element.
    */
   async addScriptTag(
-    options: FrameAddScriptTagOptions
+    options: FrameAddScriptTagOptions,
   ): Promise<ElementHandle<HTMLScriptElement>> {
     return await this.mainFrame().addScriptTag(options);
   }
@@ -1435,13 +1454,13 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * or `<style>` element.
    */
   async addStyleTag(
-    options: Omit<FrameAddStyleTagOptions, 'url'>
+    options: Omit<FrameAddStyleTagOptions, 'url'>,
   ): Promise<ElementHandle<HTMLStyleElement>>;
   async addStyleTag(
-    options: FrameAddStyleTagOptions
+    options: FrameAddStyleTagOptions,
   ): Promise<ElementHandle<HTMLLinkElement>>;
   async addStyleTag(
-    options: FrameAddStyleTagOptions
+    options: FrameAddStyleTagOptions,
   ): Promise<ElementHandle<HTMLStyleElement | HTMLLinkElement>> {
     return await this.mainFrame().addStyleTag(options);
   }
@@ -1472,7 +1491,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   const page = await browser.newPage();
    *   page.on('console', msg => console.log(msg.text()));
    *   await page.exposeFunction('md5', text =>
-   *     crypto.createHash('md5').update(text).digest('hex')
+   *     crypto.createHash('md5').update(text).digest('hex'),
    *   );
    *   await page.evaluate(async () => {
    *     // use window.md5 to compute hashes
@@ -1518,7 +1537,8 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   abstract exposeFunction(
     name: string,
-    pptrFunction: Function | {default: Function}
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    pptrFunction: Function | {default: Function},
   ): Promise<void>;
 
   /**
@@ -1572,7 +1592,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   abstract setUserAgent(
     userAgent: string,
-    userAgentMetadata?: Protocol.Emulation.UserAgentMetadata
+    userAgentMetadata?: Protocol.Emulation.UserAgentMetadata,
   ): Promise<void>;
 
   /**
@@ -1687,7 +1707,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   API usage, the navigation will resolve with `null`.
    */
   async waitForNavigation(
-    options: WaitForOptions = {}
+    options: WaitForOptions = {},
   ): Promise<HTTPResponse | null> {
     return await this.mainFrame().waitForNavigation(options);
   }
@@ -1700,10 +1720,10 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * ```ts
    * const firstRequest = await page.waitForRequest(
-   *   'https://example.com/resource'
+   *   'https://example.com/resource',
    * );
    * const finalRequest = await page.waitForRequest(
-   *   request => request.url() === 'https://example.com'
+   *   request => request.url() === 'https://example.com',
    * );
    * return finalRequest.response()?.ok();
    * ```
@@ -1717,7 +1737,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   waitForRequest(
     urlOrPredicate: string | AwaitablePredicate<HTTPRequest>,
-    options: WaitTimeoutOptions = {}
+    options: WaitTimeoutOptions = {},
   ): Promise<HTTPRequest> {
     const {timeout: ms = this._timeoutSettings.timeout(), signal} = options;
     if (typeof urlOrPredicate === 'string') {
@@ -1734,9 +1754,9 @@ export abstract class Page extends EventEmitter<PageEvents> {
         fromEmitterEvent(this, PageEvent.Close).pipe(
           map(() => {
             throw new TargetCloseError('Page closed!');
-          })
-        )
-      )
+          }),
+        ),
+      ),
     );
     return firstValueFrom(observable$);
   }
@@ -1749,11 +1769,11 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * ```ts
    * const firstResponse = await page.waitForResponse(
-   *   'https://example.com/resource'
+   *   'https://example.com/resource',
    * );
    * const finalResponse = await page.waitForResponse(
    *   response =>
-   *     response.url() === 'https://example.com' && response.status() === 200
+   *     response.url() === 'https://example.com' && response.status() === 200,
    * );
    * const finalResponse = await page.waitForResponse(async response => {
    *   return (await response.text()).includes('<html>');
@@ -1770,7 +1790,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   waitForResponse(
     urlOrPredicate: string | AwaitablePredicate<HTTPResponse>,
-    options: WaitTimeoutOptions = {}
+    options: WaitTimeoutOptions = {},
   ): Promise<HTTPResponse> {
     const {timeout: ms = this._timeoutSettings.timeout(), signal} = options;
     if (typeof urlOrPredicate === 'string') {
@@ -1787,9 +1807,9 @@ export abstract class Page extends EventEmitter<PageEvents> {
         fromEmitterEvent(this, PageEvent.Close).pipe(
           map(() => {
             throw new TargetCloseError('Page closed!');
-          })
-        )
-      )
+          }),
+        ),
+      ),
     );
     return firstValueFrom(observable$);
   }
@@ -1808,7 +1828,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * @internal
    */
   waitForNetworkIdle$(
-    options: WaitForNetworkIdleOptions = {}
+    options: WaitForNetworkIdleOptions = {},
   ): Observable<void> {
     const {
       timeout: ms = this._timeoutSettings.timeout(),
@@ -1831,9 +1851,9 @@ export abstract class Page extends EventEmitter<PageEvents> {
         fromEmitterEvent(this, PageEvent.Close).pipe(
           map(() => {
             throw new TargetCloseError('Page closed!');
-          })
-        )
-      )
+          }),
+        ),
+      ),
     );
   }
 
@@ -1850,23 +1870,23 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   async waitForFrame(
     urlOrPredicate: string | ((frame: Frame) => Awaitable<boolean>),
-    options: WaitTimeoutOptions = {}
+    options: WaitTimeoutOptions = {},
   ): Promise<Frame> {
     const {timeout: ms = this.getDefaultTimeout(), signal} = options;
 
-    if (isString(urlOrPredicate)) {
-      urlOrPredicate = (frame: Frame) => {
-        return urlOrPredicate === frame.url();
-      };
-    }
+    const predicate = isString(urlOrPredicate)
+      ? (frame: Frame) => {
+          return urlOrPredicate === frame.url();
+        }
+      : urlOrPredicate;
 
     return await firstValueFrom(
       merge(
         fromEmitterEvent(this, PageEvent.FrameAttached),
         fromEmitterEvent(this, PageEvent.FrameNavigated),
-        from(this.frames())
+        from(this.frames()),
       ).pipe(
-        filterAsync(urlOrPredicate),
+        filterAsync(predicate),
         first(),
         raceWith(
           timeout(ms),
@@ -1874,10 +1894,10 @@ export abstract class Page extends EventEmitter<PageEvents> {
           fromEmitterEvent(this, PageEvent.Close).pipe(
             map(() => {
               throw new TargetCloseError('Page closed.');
-            })
-          )
-        )
-      )
+            }),
+          ),
+        ),
+      ),
     );
   }
 
@@ -1921,7 +1941,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * ```ts
    * import {KnownDevices} from 'puppeteer';
-   * const iPhone = KnownDevices['iPhone 6'];
+   * const iPhone = KnownDevices['iPhone 15 Pro'];
    *
    * (async () => {
    *   const browser = await puppeteer.launch();
@@ -2002,11 +2022,11 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   {name: 'prefers-color-scheme', value: 'dark'},
    * ]);
    * await page.evaluate(
-   *   () => matchMedia('(prefers-color-scheme: dark)').matches
+   *   () => matchMedia('(prefers-color-scheme: dark)').matches,
    * );
    * // → true
    * await page.evaluate(
-   *   () => matchMedia('(prefers-color-scheme: light)').matches
+   *   () => matchMedia('(prefers-color-scheme: light)').matches,
    * );
    * // → false
    *
@@ -2014,11 +2034,11 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   {name: 'prefers-reduced-motion', value: 'reduce'},
    * ]);
    * await page.evaluate(
-   *   () => matchMedia('(prefers-reduced-motion: reduce)').matches
+   *   () => matchMedia('(prefers-reduced-motion: reduce)').matches,
    * );
    * // → true
    * await page.evaluate(
-   *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches
+   *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches,
    * );
    * // → false
    *
@@ -2027,19 +2047,19 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   {name: 'prefers-reduced-motion', value: 'reduce'},
    * ]);
    * await page.evaluate(
-   *   () => matchMedia('(prefers-color-scheme: dark)').matches
+   *   () => matchMedia('(prefers-color-scheme: dark)').matches,
    * );
    * // → true
    * await page.evaluate(
-   *   () => matchMedia('(prefers-color-scheme: light)').matches
+   *   () => matchMedia('(prefers-color-scheme: light)').matches,
    * );
    * // → false
    * await page.evaluate(
-   *   () => matchMedia('(prefers-reduced-motion: reduce)').matches
+   *   () => matchMedia('(prefers-reduced-motion: reduce)').matches,
    * );
    * // → true
    * await page.evaluate(
-   *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches
+   *   () => matchMedia('(prefers-reduced-motion: no-preference)').matches,
    * );
    * // → false
    *
@@ -2108,6 +2128,9 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   await page.emulateVisionDeficiency('blurredVision');
    *   await page.screenshot({path: 'blurred-vision.png'});
    *
+   *   await page.emulateVisionDeficiency('reducedContrast');
+   *   await page.screenshot({path: 'reduced-contrast.png'});
+   *
    *   await browser.close();
    * })();
    * ```
@@ -2115,7 +2138,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * @param type - the type of deficiency to simulate, or `'none'` to reset.
    */
   abstract emulateVisionDeficiency(
-    type?: Protocol.Emulation.SetEmulatedVisionDeficiencyRequest['type']
+    type?: Protocol.Emulation.SetEmulatedVisionDeficiencyRequest['type'],
   ): Promise<void>;
 
   /**
@@ -2152,8 +2175,8 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    * This is either the viewport set with the previous {@link Page.setViewport}
    * call or the default viewport set via
-   * {@link BrowserConnectOptions.defaultViewport |
-   * BrowserConnectOptions.defaultViewport}.
+   * {@link ConnectOptions.defaultViewport |
+   * ConnectOptions.defaultViewport}.
    */
   abstract viewport(): Viewport | null;
 
@@ -2213,7 +2236,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
   ): Promise<Awaited<ReturnType<Func>>> {
     pageFunction = withSourcePuppeteerURLIfNone(
       this.evaluate.name,
-      pageFunction
+      pageFunction,
     );
     return await this.mainFrame().evaluate(pageFunction, ...args);
   }
@@ -2264,7 +2287,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * @param identifier - script identifier
    */
   abstract removeScriptToEvaluateOnNewDocument(
-    identifier: string
+    identifier: string,
   ): Promise<void>;
 
   /**
@@ -2278,17 +2301,15 @@ export abstract class Page extends EventEmitter<PageEvents> {
   /**
    * @internal
    */
-  async _maybeWriteBufferToFile(
+  async _maybeWriteTypedArrayToFile(
     path: string | undefined,
-    buffer: Buffer
+    typedArray: Uint8Array,
   ): Promise<void> {
     if (!path) {
       return;
     }
 
-    const fs = await importFSPromises();
-
-    await fs.writeFile(path, buffer);
+    await environment.value.fs.promises.writeFile(path, typedArray);
   }
 
   /**
@@ -2332,14 +2353,11 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * You must have {@link https://ffmpeg.org/ | ffmpeg} installed on your system.
    */
   async screencast(
-    options: Readonly<ScreencastOptions> = {}
+    options: Readonly<ScreencastOptions> = {},
   ): Promise<ScreenRecorder> {
-    const [{ScreenRecorder}, [width, height, devicePixelRatio]] =
-      await Promise.all([
-        import('../node/ScreenRecorder.js'),
-        this.#getNativePixelDimensions(),
-      ]);
-
+    const ScreenRecorder = environment.value.ScreenRecorder;
+    const [width, height, devicePixelRatio] =
+      await this.#getNativePixelDimensions();
     let crop: BoundingBox | undefined;
     if (options.crop) {
       const {
@@ -2350,12 +2368,12 @@ export abstract class Page extends EventEmitter<PageEvents> {
       } = roundRectangle(normalizeRectangle(options.crop));
       if (x < 0 || y < 0) {
         throw new Error(
-          `\`crop.x\` and \`crop.y\` must be greater than or equal to 0.`
+          `\`crop.x\` and \`crop.y\` must be greater than or equal to 0.`,
         );
       }
       if (cropWidth <= 0 || cropHeight <= 0) {
         throw new Error(
-          `\`crop.height\` and \`crop.width\` must be greater than or equal to 0.`
+          `\`crop.height\` and \`crop.width\` must be greater than or equal to 0.`,
         );
       }
 
@@ -2363,12 +2381,12 @@ export abstract class Page extends EventEmitter<PageEvents> {
       const viewportHeight = height / devicePixelRatio;
       if (x + cropWidth > viewportWidth) {
         throw new Error(
-          `\`crop.width\` cannot be larger than the viewport width (${viewportWidth}).`
+          `\`crop.width\` cannot be larger than the viewport width (${viewportWidth}).`,
         );
       }
       if (y + cropHeight > viewportHeight) {
         throw new Error(
-          `\`crop.height\` cannot be larger than the viewport height (${viewportHeight}).`
+          `\`crop.height\` cannot be larger than the viewport height (${viewportHeight}).`,
         );
       }
 
@@ -2398,7 +2416,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
       throw error;
     }
     if (options.path) {
-      const {createWriteStream} = await import('fs');
+      const {createWriteStream} = environment.value.fs;
       const stream = createWriteStream(options.path, 'binary');
       recorder.pipe(stream);
     }
@@ -2485,20 +2503,17 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *
    */
   async screenshot(
-    options: Readonly<ScreenshotOptions> & {encoding: 'base64'}
+    options: Readonly<ScreenshotOptions> & {encoding: 'base64'},
   ): Promise<string>;
-  async screenshot(options?: Readonly<ScreenshotOptions>): Promise<Buffer>;
+  async screenshot(options?: Readonly<ScreenshotOptions>): Promise<Uint8Array>;
   @guarded(function () {
     return this.browser();
   })
   async screenshot(
-    userOptions: Readonly<ScreenshotOptions> = {}
-  ): Promise<Buffer | string> {
+    userOptions: Readonly<ScreenshotOptions> = {},
+  ): Promise<Uint8Array | string> {
     using _guard = await this.browserContext().startScreenshot();
 
-    await this.bringToFront();
-
-    // TODO: use structuredClone after Node 16 support is dropped.
     const options = {
       ...userOptions,
       clip: userOptions.clip
@@ -2529,7 +2544,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
     if (options.quality !== undefined) {
       if (options.quality < 0 || options.quality > 100) {
         throw new Error(
-          `Expected 'quality' (${options.quality}) to be between 0 and 100, inclusive.`
+          `Expected 'quality' (${options.quality}) to be between 0 and 100, inclusive.`,
         );
       }
       if (
@@ -2537,7 +2552,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
         !['jpeg', 'webp'].includes(options.type)
       ) {
         throw new Error(
-          `${options.type ?? 'png'} screenshots do not support 'quality'.`
+          `${options.type ?? 'png'} screenshots do not support 'quality'.`,
         );
       }
     }
@@ -2592,9 +2607,10 @@ export abstract class Page extends EventEmitter<PageEvents> {
     if (options.encoding === 'base64') {
       return data;
     }
-    const buffer = Buffer.from(data, 'base64');
-    await this._maybeWriteBufferToFile(options.path, buffer);
-    return buffer;
+
+    const typedArray = stringToTypedArray(data, true);
+    await this._maybeWriteTypedArrayToFile(options.path, typedArray);
+    return typedArray;
   }
 
   /**
@@ -2619,13 +2635,13 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * property to force rendering of exact colors.
    */
   abstract createPDFStream(
-    options?: PDFOptions
+    options?: PDFOptions,
   ): Promise<ReadableStream<Uint8Array>>;
 
   /**
    * {@inheritDoc Page.createPDFStream}
    */
-  abstract pdf(options?: PDFOptions): Promise<Buffer>;
+  abstract pdf(options?: PDFOptions): Promise<Uint8Array>;
 
   /**
    * The page's title
@@ -2672,7 +2688,21 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * ```
    *
    * Shortcut for {@link Frame.click | page.mainFrame().click(selector[, options]) }.
-   * @param selector - A `selector` to search for element to click. If there are
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}. If there are
    * multiple elements satisfying the `selector`, the first will be clicked
    * @param options - `Object`
    * @returns Promise which resolves when the element matching `selector` is
@@ -2684,19 +2714,33 @@ export abstract class Page extends EventEmitter<PageEvents> {
   }
 
   /**
-   * This method fetches an element with `selector` and focuses it. If there's no
-   * element matching `selector`, the method throws an error.
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector }
-   * of an element to focus. If there are multiple elements satisfying the
-   * selector, the first will be focused.
-   * @returns Promise which resolves when the element matching selector is
-   * successfully focused. The promise will be rejected if there is no element
-   * matching selector.
+   * This method fetches an element with `selector` and focuses it. If
+   * there's no element matching `selector`, the method throws an error.
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}.
+   * If there are multiple elements satisfying the selector, the first
+   * will be focused.
+   * @returns Promise which resolves when the element matching selector
+   * is successfully focused. The promise will be rejected if there is
+   * no element matching selector.
    *
    * @remarks
    *
-   * Shortcut for {@link Frame.focus | page.mainFrame().focus(selector)}.
+   * Shortcut for
+   * {@link Frame.focus | page.mainFrame().focus(selector)}.
    */
   focus(selector: string): Promise<void> {
     return this.mainFrame().focus(selector);
@@ -2707,10 +2751,22 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * needed, and then uses {@link Page.mouse}
    * to hover over the center of the element.
    * If there's no element matching `selector`, the method throws an error.
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
-   * to search for element to hover. If there are multiple elements satisfying
-   * the selector, the first will be hovered.
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}. If there are
+   * multiple elements satisfying the `selector`, the first will be hovered.
    * @returns Promise which resolves when the element matching `selector` is
    * successfully hovered. Promise gets rejected if there's no element matching
    * `selector`.
@@ -2735,9 +2791,21 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * page.select('select#colors', 'red', 'green', 'blue'); // multiple selections
    * ```
    *
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | Selector}
-   * to query the page for
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}.
    * @param values - Values of options to select. If the `<select>` has the
    * `multiple` attribute, all values are considered, otherwise only the first one
    * is taken into account.
@@ -2756,9 +2824,21 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * needed, and then uses {@link Page.touchscreen}
    * to tap in the center of the element.
    * If there's no element matching `selector`, the method throws an error.
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | Selector}
-   * to search for element to tap. If there are multiple elements satisfying the
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}. If there are multiple elements satisfying the
    * selector, the first will be tapped.
    *
    * @remarks
@@ -2783,10 +2863,21 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * // Types slower, like a user
    * ```
    *
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
-   * of an element to type into. If there are multiple elements satisfying the
-   * selector, the first will be used.
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}.
    * @param text - A text to type into a focused element.
    * @param options - have property `delay` which is the Time to wait between
    * key presses in milliseconds. Defaults to `0`.
@@ -2795,7 +2886,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
   type(
     selector: string,
     text: string,
-    options?: Readonly<KeyboardTypeOptions>
+    options?: Readonly<KeyboardTypeOptions>,
   ): Promise<void> {
     return this.mainFrame().type(selector, text, options);
   }
@@ -2829,9 +2920,21 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * })();
    * ```
    *
-   * @param selector - A
-   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | selector}
-   * of an element to wait for
+   * @param selector -
+   * {@link https://pptr.dev/guides/page-interactions#selectors | selector}
+   * to query the page for.
+   * {@link https://developer.mozilla.org/en-US/docs/Web/CSS/CSS_Selectors | CSS selectors}
+   * can be passed as-is and a
+   * {@link https://pptr.dev/guides/page-interactions#non-css-selectors | Puppeteer-specific selector syntax}
+   * allows quering by
+   * {@link https://pptr.dev/guides/page-interactions#text-selectors--p-text | text},
+   * {@link https://pptr.dev/guides/page-interactions#aria-selectors--p-aria | a11y role and name},
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#xpath-selectors--p-xpath | xpath}
+   * and
+   * {@link https://pptr.dev/guides/page-interactions#querying-elements-in-shadow-dom | combining these queries across shadow roots}.
+   * Alternatively, you can specify the selector type using a
+   * {@link https://pptr.dev/guides/page-interactions#prefixed-selector-syntax | prefix}.
    * @param options - Optional waiting parameters
    * @returns Promise which resolves when element specified by selector string
    * is added to DOM. Resolves to `null` if waiting for hidden: `true` and
@@ -2854,7 +2957,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    */
   async waitForSelector<Selector extends string>(
     selector: Selector,
-    options: WaitForSelectorOptions = {}
+    options: WaitForSelectorOptions = {},
   ): Promise<ElementHandle<NodeFor<Selector>> | null> {
     return await this.mainFrame().waitForSelector(selector, options);
   }
@@ -2886,7 +2989,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * await page.waitForFunction(
    *   selector => !!document.querySelector(selector),
    *   {},
-   *   selector
+   *   selector,
    * );
    * ```
    *
@@ -2898,7 +3001,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    * await page.waitForFunction(
    *   async username => {
    *     const githubResponse = await fetch(
-   *       `https://api.github.com/users/${username}`
+   *       `https://api.github.com/users/${username}`,
    *     );
    *     const githubUser = await githubResponse.json();
    *     // show the avatar
@@ -2909,7 +3012,7 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *     img.remove();
    *   },
    *   {},
-   *   username
+   *   username,
    * );
    * ```
    *
@@ -2947,16 +3050,16 @@ export abstract class Page extends EventEmitter<PageEvents> {
    *   page.click('#connect-bluetooth'),
    * ]);
    * await devicePrompt.select(
-   *   await devicePrompt.waitForDevice(({name}) => name.includes('My Device'))
+   *   await devicePrompt.waitForDevice(({name}) => name.includes('My Device')),
    * );
    * ```
    */
   abstract waitForDevicePrompt(
-    options?: WaitTimeoutOptions
+    options?: WaitTimeoutOptions,
   ): Promise<DeviceRequestPrompt>;
 
   /** @internal */
-  [disposeSymbol](): void {
+  override [disposeSymbol](): void {
     return void this.close().catch(debugError);
   }
 
@@ -2987,7 +3090,7 @@ export const supportedMetrics = new Set<string>([
 
 /** @see https://w3c.github.io/webdriver-bidi/#normalize-rect */
 function normalizeRectangle<BoundingBoxType extends BoundingBox>(
-  clip: Readonly<BoundingBoxType>
+  clip: Readonly<BoundingBoxType>,
 ): BoundingBoxType {
   return {
     ...clip,
@@ -3013,7 +3116,7 @@ function normalizeRectangle<BoundingBoxType extends BoundingBox>(
 }
 
 function roundRectangle<BoundingBoxType extends BoundingBox>(
-  clip: Readonly<BoundingBoxType>
+  clip: Readonly<BoundingBoxType>,
 ): BoundingBoxType {
   const x = Math.round(clip.x);
   const y = Math.round(clip.y);

@@ -21,11 +21,7 @@ import androidx.compose.material.LocalContentColor
 import androidx.compose.material.Tab
 import androidx.compose.material.TabRow
 import androidx.compose.material.Text
-import androidx.compose.material.ripple.LocalRippleTheme
-import androidx.compose.material.ripple.RippleAlpha
-import androidx.compose.material.ripple.RippleTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +30,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.dimensionResource
 import androidx.compose.ui.res.painterResource
@@ -43,14 +38,14 @@ import androidx.compose.ui.unit.DpOffset
 import androidx.compose.ui.unit.dp
 import mozilla.components.browser.state.state.ContentState
 import mozilla.components.browser.state.state.TabSessionState
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.Banner
 import org.mozilla.fenix.compose.BottomSheetHandle
-import org.mozilla.fenix.compose.ContextualMenu
-import org.mozilla.fenix.compose.Divider
-import org.mozilla.fenix.compose.MenuItem
 import org.mozilla.fenix.compose.TabCounter
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
+import org.mozilla.fenix.compose.menu.DropdownMenu
+import org.mozilla.fenix.compose.menu.MenuItem
 import org.mozilla.fenix.tabstray.ext.getMenuItems
 import org.mozilla.fenix.theme.FirefoxTheme
 import kotlin.math.max
@@ -66,6 +61,7 @@ private const val TAB_COUNT_SHOW_CFR = 6
  * @param selectedPage The current page the Tabs Tray is on.
  * @param normalTabCount The total of open normal tabs.
  * @param privateTabCount The total of open private tabs.
+ * @param syncedTabCount The total of open synced tabs.
  * @param selectionMode [TabsTrayState.Mode] indicating whether the Tabs Tray is in single selection.
  * @param isInDebugMode True for debug variant or if secret menu is enabled for this session.
  * @param shouldShowTabAutoCloseBanner Whether the tab auto closer banner should be displayed.
@@ -94,6 +90,7 @@ fun TabsTrayBanner(
     selectedPage: Page,
     normalTabCount: Int,
     privateTabCount: Int,
+    syncedTabCount: Int,
     selectionMode: TabsTrayState.Mode,
     isInDebugMode: Boolean,
     shouldShowTabAutoCloseBanner: Boolean,
@@ -128,7 +125,6 @@ fun TabsTrayBanner(
     var hasAcknowledgedBanner by remember { mutableStateOf(false) }
 
     val menuItems = selectionMode.getMenuItems(
-        resources = LocalContext.current.resources,
         shouldShowInactiveButton = isInDebugMode,
         onBookmarkSelectedTabsClick = onBookmarkSelectedTabsClick,
         onCloseSelectedTabsClick = onDeleteSelectedTabsClick,
@@ -145,7 +141,9 @@ fun TabsTrayBanner(
         onAccountSettingsClick = onAccountSettingsClick,
     )
 
-    Column {
+    Column(
+        modifier = Modifier.testTag(tag = TabsTrayTestTag.bannerTestTagRoot),
+    ) {
         if (isInMultiSelectMode) {
             MultiSelectBanner(
                 menuItems = menuItems,
@@ -159,6 +157,8 @@ fun TabsTrayBanner(
                 menuItems = menuItems,
                 selectedPage = selectedPage,
                 normalTabCount = normalTabCount,
+                privateTabCount = privateTabCount,
+                syncedTabCount = syncedTabCount,
                 onTabPageIndicatorClicked = onTabPageIndicatorClicked,
                 onDismissClick = onDismissClick,
             )
@@ -192,6 +192,8 @@ private fun TabPageBanner(
     menuItems: List<MenuItem>,
     selectedPage: Page,
     normalTabCount: Int,
+    privateTabCount: Int,
+    syncedTabCount: Int,
     onTabPageIndicatorClicked: (Page) -> Unit,
     onDismissClick: () -> Unit,
 ) {
@@ -217,63 +219,67 @@ private fun TabPageBanner(
                 .height(80.dp),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            CompositionLocalProvider(LocalRippleTheme provides DisabledRippleTheme) {
-                TabRow(
-                    selectedTabIndex = selectedPage.ordinal,
-                    modifier = Modifier.fillMaxWidth(MAX_WIDTH_TAB_ROW_PERCENT),
-                    backgroundColor = Color.Transparent,
-                    contentColor = selectedColor,
-                    divider = {},
+            TabRow(
+                selectedTabIndex = selectedPage.ordinal,
+                modifier = Modifier.fillMaxWidth(MAX_WIDTH_TAB_ROW_PERCENT),
+                backgroundColor = Color.Transparent,
+                contentColor = selectedColor,
+                divider = {},
+            ) {
+                Tab(
+                    selected = selectedPage == Page.NormalTabs,
+                    onClick = { onTabPageIndicatorClicked(Page.NormalTabs) },
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .testTag(TabsTrayTestTag.normalTabsPageButton),
+                    selectedContentColor = selectedColor,
+                    unselectedContentColor = inactiveColor,
                 ) {
-                    Tab(
-                        selected = selectedPage == Page.NormalTabs,
-                        onClick = { onTabPageIndicatorClicked(Page.NormalTabs) },
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .testTag(TabsTrayTestTag.normalTabsPageButton),
-                        selectedContentColor = selectedColor,
-                        unselectedContentColor = inactiveColor,
-                    ) {
-                        val tabCounterAlpha = LocalContentColor.current.copy(alpha = LocalContentAlpha.current)
-                        TabCounter(
-                            tabCount = normalTabCount,
-                            textColor = tabCounterAlpha,
-                            iconColor = tabCounterAlpha,
-                        )
-                    }
-
-                    Tab(
-                        selected = selectedPage == Page.PrivateTabs,
-                        onClick = { onTabPageIndicatorClicked(Page.PrivateTabs) },
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .testTag(TabsTrayTestTag.privateTabsPageButton),
-                        icon = {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_private_browsing),
-                                contentDescription = stringResource(id = R.string.tabs_header_private_tabs_title),
-                            )
-                        },
-                        selectedContentColor = selectedColor,
-                        unselectedContentColor = inactiveColor,
-                    )
-
-                    Tab(
-                        selected = selectedPage == Page.SyncedTabs,
-                        onClick = { onTabPageIndicatorClicked(Page.SyncedTabs) },
-                        modifier = Modifier
-                            .fillMaxHeight()
-                            .testTag(TabsTrayTestTag.syncedTabsPageButton),
-                        icon = {
-                            Icon(
-                                painter = painterResource(id = R.drawable.ic_synced_tabs),
-                                contentDescription = stringResource(id = R.string.tabs_header_synced_tabs_title),
-                            )
-                        },
-                        selectedContentColor = selectedColor,
-                        unselectedContentColor = inactiveColor,
+                    val tabCounterAlpha = LocalContentColor.current.copy(alpha = LocalContentAlpha.current)
+                    TabCounter(
+                        tabCount = normalTabCount,
+                        textColor = tabCounterAlpha,
+                        iconColor = tabCounterAlpha,
                     )
                 }
+
+                Tab(
+                    selected = selectedPage == Page.PrivateTabs,
+                    onClick = { onTabPageIndicatorClicked(Page.PrivateTabs) },
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .testTag(TabsTrayTestTag.privateTabsPageButton),
+                    icon = {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_private_browsing),
+                            contentDescription = stringResource(
+                                id = R.string.tabs_header_private_tabs_counter_title,
+                                privateTabCount.toString(),
+                            ),
+                        )
+                    },
+                    selectedContentColor = selectedColor,
+                    unselectedContentColor = inactiveColor,
+                )
+
+                Tab(
+                    selected = selectedPage == Page.SyncedTabs,
+                    onClick = { onTabPageIndicatorClicked(Page.SyncedTabs) },
+                    modifier = Modifier
+                        .fillMaxHeight()
+                        .testTag(TabsTrayTestTag.syncedTabsPageButton),
+                    icon = {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_synced_tabs),
+                            contentDescription = stringResource(
+                                id = R.string.tabs_header_synced_tabs_counter_title,
+                                syncedTabCount.toString(),
+                            ),
+                        )
+                    },
+                    selectedContentColor = selectedColor,
+                    unselectedContentColor = inactiveColor,
+                )
             }
 
             Spacer(modifier = Modifier.weight(1.0f))
@@ -284,11 +290,14 @@ private fun TabPageBanner(
                     .align(Alignment.CenterVertically)
                     .testTag(TabsTrayTestTag.threeDotButton),
             ) {
-                ContextualMenu(
+                DropdownMenu(
                     menuItems = menuItems,
-                    showMenu = showMenu,
+                    expanded = showMenu,
                     offset = DpOffset(x = 0.dp, y = -ICON_SIZE),
-                    onDismissRequest = { showMenu = false },
+                    onDismissRequest = {
+                        showMenu = false
+                    },
+
                 )
                 Icon(
                     painter = painterResource(R.drawable.ic_menu),
@@ -391,9 +400,9 @@ private fun MultiSelectBanner(
                 tint = buttonTint,
             )
 
-            ContextualMenu(
+            DropdownMenu(
                 menuItems = menuItems,
-                showMenu = showMenu,
+                expanded = showMenu,
                 offset = DpOffset(x = 0.dp, y = -ICON_SIZE),
                 onDismissRequest = { showMenu = false },
             )
@@ -463,6 +472,7 @@ private fun TabsTrayBannerPreviewRoot(
     selectedPage: Page = Page.NormalTabs,
     normalTabCount: Int = 10,
     privateTabCount: Int = 10,
+    syncedTabCount: Int = 10,
     shouldShowTabAutoCloseBanner: Boolean = false,
 ) {
     val normalTabs = generateFakeTabsList(normalTabCount)
@@ -485,6 +495,7 @@ private fun TabsTrayBannerPreviewRoot(
                 selectedPage = selectedPage,
                 normalTabCount = normalTabCount,
                 privateTabCount = privateTabCount,
+                syncedTabCount = syncedTabCount,
                 selectionMode = selectMode,
                 isInDebugMode = true,
                 shouldShowTabAutoCloseBanner = shouldShowTabAutoCloseBanner,
@@ -514,14 +525,6 @@ private fun TabsTrayBannerPreviewRoot(
             )
         }
     }
-}
-
-private object DisabledRippleTheme : RippleTheme {
-    @Composable
-    override fun defaultColor() = Color.Unspecified
-
-    @Composable
-    override fun rippleAlpha(): RippleAlpha = RippleAlpha(0.0f, 0.0f, 0.0f, 0.0f)
 }
 
 private fun generateFakeTabsList(tabCount: Int = 10, isPrivate: Boolean = false): List<TabSessionState> =

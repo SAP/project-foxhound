@@ -9,6 +9,10 @@ const { UrlClassifierTestUtils } = ChromeUtils.importESModule(
   "resource://testing-common/UrlClassifierTestUtils.sys.mjs"
 );
 
+const { ReportBrokenSite } = ChromeUtils.importESModule(
+  "resource:///modules/ReportBrokenSite.sys.mjs"
+);
+
 const BASE_URL =
   "https://example.com/browser/browser/components/reportbrokensite/test/browser/";
 
@@ -27,7 +31,6 @@ const PREFS = {
   SEND_MORE_INFO: "ui.new-webcompat-reporter.send-more-info-link",
   NEW_REPORT_ENDPOINT: "ui.new-webcompat-reporter.new-report-endpoint",
   REPORT_SITE_ISSUE_ENABLED: "extensions.webcompat-reporter.enabled",
-  PREFERS_CONTRAST_ENABLED: "layout.css.prefers-contrast.enabled",
   TOUCH_EVENTS: "dom.w3c_touch_events.enabled",
   USE_ACCESSIBILITY_THEME: "ui.useAccessibilityTheme",
 };

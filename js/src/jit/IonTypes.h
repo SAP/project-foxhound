@@ -484,16 +484,6 @@ class SimdConstant {
   }
 };
 
-enum class IntConversionBehavior {
-  // These two try to convert the input to an int32 using ToNumber and
-  // will fail if the resulting int32 isn't strictly equal to the input.
-  Normal,             // Succeeds on -0: converts to 0.
-  NegativeZeroCheck,  // Fails on -0.
-  // These two will convert the input to an int32 with loss of precision.
-  Truncate,
-  ClampToUint8,
-};
-
 enum class IntConversionInputKind { NumbersOnly, Any };
 
 // The ordering of this enumeration is important: Anything < Value is a
@@ -593,10 +583,12 @@ static inline JSValueType ValueTypeFromMIRType(MIRType type) {
     case MIRType::MagicIsConstructing:
     case MIRType::MagicUninitializedLexical:
       return JSVAL_TYPE_MAGIC;
-    default:
-      MOZ_ASSERT(type == MIRType::Object);
+    case MIRType::Object:
       return JSVAL_TYPE_OBJECT;
+    default:
+      break;
   }
+  MOZ_CRASH("bad type");
 }
 
 static inline JSValueTag MIRTypeToTag(MIRType type) {
@@ -690,17 +682,9 @@ static inline bool IsNumberType(MIRType type) {
          type == MIRType::Float32 || type == MIRType::Int64;
 }
 
-static inline bool IsNumericType(MIRType type) {
-  return IsNumberType(type) || type == MIRType::BigInt;
-}
-
 static inline bool IsTypeRepresentableAsDouble(MIRType type) {
   return type == MIRType::Int32 || type == MIRType::Double ||
          type == MIRType::Float32;
-}
-
-static inline bool IsFloatType(MIRType type) {
-  return type == MIRType::Int32 || type == MIRType::Float32;
 }
 
 static inline bool IsFloatingPointType(MIRType type) {

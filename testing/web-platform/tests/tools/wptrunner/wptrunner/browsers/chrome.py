@@ -6,7 +6,7 @@ import time
 from mozlog.structuredlog import StructuredLogger
 
 from . import chrome_spki_certs
-from .base import BrowserError
+from .base import BrowserError, BrowserSettings
 from .base import WebDriverBrowser, require_arg
 from .base import NullBrowser  # noqa: F401
 from .base import OutputHandler
@@ -41,6 +41,8 @@ __wptrunner__ = {"product": "chrome",
                  "update_properties": "update_properties",
                  "timeout_multiplier": "get_timeout_multiplier",}
 
+from ..wpttest import Test
+
 
 def debug_args(debug_info):
     if debug_info.interactive:
@@ -61,18 +63,16 @@ def check_args(**kwargs):
 def browser_kwargs(logger, test_type, run_info_data, config, **kwargs):
     return {"binary": kwargs["binary"],
             "webdriver_binary": kwargs["webdriver_binary"],
-            "webdriver_args": kwargs.get("webdriver_args")}
+            "webdriver_args": kwargs.get("webdriver_args"),
+            "leak_check": kwargs.get("leak_check", False)}
 
 
 def executor_kwargs(logger, test_type, test_environment, run_info_data, subsuite,
                     **kwargs):
-    sanitizer_enabled = kwargs.get("sanitizer_enabled")
-    if sanitizer_enabled:
-        test_type = "crashtest"
     executor_kwargs = base_executor_kwargs(test_type, test_environment, run_info_data,
                                            subsuite, **kwargs)
     executor_kwargs["close_after_done"] = True
-    executor_kwargs["sanitizer_enabled"] = sanitizer_enabled
+    executor_kwargs["sanitizer_enabled"] = kwargs.get("sanitizer_enabled", False)
     executor_kwargs["reuse_window"] = kwargs.get("reuse_window", False)
 
     capabilities = {
@@ -132,6 +132,14 @@ def executor_kwargs(logger, test_type, test_environment, run_info_data, subsuite
     chrome_options["args"].append("--disable-infobars")
     # For WebNN tests.
     chrome_options["args"].append("--enable-features=WebMachineLearningNeuralNetwork")
+    # For Web Speech API tests.
+    chrome_options["args"].append("--enable-features=" + ",".join([
+        "InstallOnDeviceSpeechRecognition",
+        "OnDeviceWebSpeechAvailable",
+        "OnDeviceWebSpeech",
+        "MediaStreamTrackWebSpeech",
+        "WebSpeechRecognitionContext",
+    ]))
 
     # Classify `http-private`, `http-public` and https variants in the
     # appropriate IP address spaces.
@@ -206,11 +214,19 @@ def update_properties():
     return (["debug", "os", "processor"], {"os": ["version"], "processor": ["bits"]})
 
 class ChromeBrowser(WebDriverBrowser):
+
+    # Chrome browser's default startup timeout is 60 seconds. Use 65 seconds here
+    # to allow error message be displayed if that happens.
+    init_timeout: float = 65
+
     def __init__(self,
                  logger: StructuredLogger,
+                 leak_check: bool = False,
                  **kwargs: Any):
         super().__init__(logger, **kwargs)
+        self._leak_check = leak_check
         self._actual_port = None
+        self._require_webdriver_bidi: Optional[bool] = None
 
     def restart_on_test_type_change(self, new_test_type: str, old_test_type: str) -> bool:
         # Restart the test runner when switch from/to wdspec tests. Wdspec test
@@ -254,6 +270,25 @@ class ChromeBrowser(WebDriverBrowser):
     def stop(self, force: bool = False, **kwargs: Any) -> bool:
         self._actual_port = None
         return super().stop(force=force, **kwargs)
+
+    def executor_browser(self):
+        browser_cls, browser_kwargs = super().executor_browser()
+        return browser_cls, {**browser_kwargs, "leak_check": self._leak_check}
+
+    @property
+    def require_webdriver_bidi(self) -> Optional[bool]:
+        return self._require_webdriver_bidi
+
+    def settings(self, test: Test) -> BrowserSettings:
+        """ Required to store `require_webdriver_bidi` in browser settings."""
+        settings = super().settings(test)
+        self._require_webdriver_bidi = test.testdriver_features is not None and 'bidi' in test.testdriver_features
+
+        return {
+            **settings,
+            "require_webdriver_bidi": self._require_webdriver_bidi
+        }
+
 
 class ChromeDriverOutputHandler(OutputHandler):
     PORT_RE = re.compile(rb'.*was started successfully on port (\d+)\.')

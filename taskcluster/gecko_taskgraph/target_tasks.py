@@ -11,9 +11,15 @@ from datetime import datetime, timedelta
 
 import requests
 from redo import retry
-from taskgraph.parameters import Parameters
-from taskgraph.target_tasks import get_method, register_target_task
-from taskgraph.util.taskcluster import find_task_id, parse_time
+from taskgraph import create
+from taskgraph.target_tasks import register_target_task
+from taskgraph.util.parameterization import resolve_timestamps
+from taskgraph.util.taskcluster import (
+    find_task_id,
+    get_artifact,
+    get_task_definition,
+    parse_time,
+)
 
 from gecko_taskgraph import GECKO, try_option_syntax
 from gecko_taskgraph.util.attributes import (
@@ -22,7 +28,7 @@ from gecko_taskgraph.util.attributes import (
 )
 from gecko_taskgraph.util.hg import find_hg_revision_push_info, get_hg_commit_message
 from gecko_taskgraph.util.platforms import platform_family
-from gecko_taskgraph.util.taskcluster import find_task
+from gecko_taskgraph.util.taskcluster import find_task, insert_index
 
 logger = logging.getLogger(__name__)
 
@@ -40,12 +46,13 @@ UNCOMMON_TRY_TASK_LABELS = [
     r"android-hw",
     # Windows tasks
     r"windows11-64-2009-hw-ref",
+    r"windows11-64-24h2-hw-ref",
     r"windows10-aarch64-qr",
     # Linux tasks
     r"linux-",  # hide all linux32 tasks by default - bug 1599197
     r"linux1804-32",  # hide linux32 tests - bug 1599197
     # Test tasks
-    r"web-platform-tests(?!-webgpu).*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
+    r"web-platform-tests.*backlog",  # hide wpt jobs that are not implemented yet - bug 1572820
     r"-ccov",
     r"-profiling-",  # talos/raptor profiling jobs are run too often
     r"-32-.*-webgpu",  # webgpu gets little benefit from these tests.
@@ -150,6 +157,7 @@ def filter_release_tasks(task, parameters):
     if platform in (
         "linux",
         "linux64",
+        "linux64-aarch64",
         "macosx64",
         "win32",
         "win64",
@@ -257,12 +265,9 @@ def accept_raptor_android_build(platform):
         return False
     if "p6" in platform and "aarch64" in platform:
         return True
-    if "s21" in platform and "aarch64" in platform:
+    if "s24" in platform and "aarch64" in platform:
         return True
-    # Bug 1910111 temporarily disable a55
-    # if "a55" in platform and "aarch64" in platform:
-    #     return True
-    if "a51" in platform:
+    if "a55" in platform and "aarch64" in platform:
         return True
     return False
 
@@ -414,69 +419,6 @@ def target_tasks_try(full_task_graph, parameters, graph_config):
     # With no try mode, we schedule nothing, allowing the user to add tasks
     # later via treeherder.
     return []
-
-
-@register_target_task("try_select_tasks")
-def target_tasks_try_select(full_task_graph, parameters, graph_config):
-    tasks = target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config)
-    return [l for l in tasks if filter_by_uncommon_try_tasks(l)]
-
-
-@register_target_task("try_select_tasks_uncommon")
-def target_tasks_try_select_uncommon(full_task_graph, parameters, graph_config):
-    from gecko_taskgraph.decision import PER_PROJECT_PARAMETERS
-
-    projects = ("autoland", "mozilla-central")
-    if parameters["project"] not in projects:
-        projects = (parameters["project"],)
-
-    tasks = set()
-    for project in projects:
-        params = dict(parameters)
-        params["project"] = project
-        parameters = Parameters(**params)
-
-        try:
-            target_tasks_method = PER_PROJECT_PARAMETERS[project]["target_tasks_method"]
-        except KeyError:
-            target_tasks_method = "default"
-
-        tasks.update(
-            get_method(target_tasks_method)(full_task_graph, parameters, graph_config)
-        )
-
-    return sorted(tasks)
-
-
-@register_target_task("try_auto")
-def target_tasks_try_auto(full_task_graph, parameters, graph_config):
-    """Target the tasks which have indicated they should be run on autoland
-    (rather than try) via the `run_on_projects` attributes.
-
-    Should do the same thing as the `default` target tasks method.
-    """
-    params = dict(parameters)
-    params["project"] = "autoland"
-    parameters = Parameters(**params)
-
-    regex_filters = parameters["try_task_config"].get("tasks-regex")
-    include_regexes = exclude_regexes = []
-    if regex_filters:
-        include_regexes = [re.compile(r) for r in regex_filters.get("include", [])]
-        exclude_regexes = [re.compile(r) for r in regex_filters.get("exclude", [])]
-
-    return [
-        l
-        for l, t in full_task_graph.tasks.items()
-        if standard_filter(t, parameters)
-        and filter_out_shipping_phase(t, parameters)
-        and filter_out_devedition(t, parameters)
-        and filter_by_uncommon_try_tasks(t.label)
-        and filter_by_regex(t.label, include_regexes, mode="include")
-        and filter_by_regex(t.label, exclude_regexes, mode="exclude")
-        and filter_unsupported_artifact_builds(t, parameters)
-        and filter_out_shippable(t)
-    ]
 
 
 @register_target_task("default")
@@ -797,14 +739,39 @@ def target_tasks_custom_car_perf_testing(full_task_graph, parameters, graph_conf
 
         try_name = attributes.get("raptor_try_name")
 
+        if "network-bench" in try_name:
+            return False
+
         # Desktop and Android selection for CaR
-        if accept_raptor_desktop_build(platform) or accept_raptor_android_build(
-            platform
-        ):
-            if "browsertime" in try_name and (
-                "custom-car" in try_name or "cstm-car-m" in try_name
-            ):
-                if "hw-s21" in platform and "speedometer3" not in try_name:
+        if accept_raptor_desktop_build(platform):
+            if "browsertime" in try_name and "custom-car" in try_name:
+                # Bug 1898514: avoid tp6m or non-essential tp6 jobs in cron
+                if "tp6" in try_name and "essential" not in try_name:
+                    return False
+                # Bug 1928416
+                # For ARM coverage, this will only run on M2 machines at the moment.
+                if "jetstream2" in try_name:
+                    # Bug 1947649 - Disable js2 on 1400 mac for custom-car due to near perma
+                    if "m-car" in try_name and "1400" in platform:
+                        return False
+                    return True
+                return True
+        elif accept_raptor_android_build(platform):
+            if "browsertime" in try_name and "cstm-car-m" in try_name:
+                if "-nofis" not in try_name:
+                    return False
+                if "hw-s24" in platform and "speedometer3" not in try_name:
+                    return False
+                if "jetstream2" in try_name:
+                    return True
+                # Bug 1898514: avoid tp6m or non-essential tp6 jobs in cron on non-a55 platform
+                if "tp6m" in try_name and "a55" not in platform:
+                    return False
+                # Bug 1945165 Disable ebay-kleinanzeigen on cstm-car-m because of permafail
+                if (
+                    "ebay-kleinanzeigen" in try_name
+                    and "ebay-kleinanzeigen-search" not in try_name
+                ):
                     return False
                 return True
         return False
@@ -836,6 +803,9 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
         if "live" in try_name and "sheriffed" not in try_name:
             return False
 
+        if "network-bench" in try_name:
+            return False
+
         # Desktop selection
         if accept_raptor_desktop_build(platform):
             # Select some browsertime tasks as desktop smoke-tests
@@ -862,9 +832,12 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                     return True
         # Android selection
         elif accept_raptor_android_build(platform):
-            if "hw-s21" in platform and "speedometer3" not in try_name:
+            if "hw-s24" in platform and "speedometer3" not in try_name:
                 return False
-            if "chrome-m" in try_name and "essential" in try_name:
+            if "chrome-m" in try_name and "-nofis" not in try_name:
+                return False
+            # Bug 1929960 - Enable all chrome-m tp6m tests on a55 only
+            if "chrome-m" in try_name and "tp6m" in try_name and "hw-a55" in platform:
                 return True
             if "chrome-m" in try_name and (
                 ("ebay" in try_name and "live" not in try_name)
@@ -877,39 +850,23 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
             # Ignore all fennec tests here, we run those weekly
             if "fennec" in try_name:
                 return False
-            # Only run webrender tests
-            if "chrome-m" not in try_name and "-qr" not in platform:
-                return False
             # Select live site tests
             if "-live" in try_name:
                 return True
             # Select fenix resource usage tests
             if "fenix" in try_name:
-                # Bug 1816421 disable fission perf tests
-                if "-fis" in try_name:
-                    return False
                 if "-power" in try_name:
                     return True
-            # Select geckoview resource usage tests
+
             if "geckoview" in try_name:
-                # Bug 1816421 disable fission perf tests
-                if "-fis" in try_name:
-                    return False
-                # Run cpu+memory, and power tests
-                cpu_n_memory_task = "-cpu" in try_name and "-memory" in try_name
-                power_task = "-power" in try_name
-                # Ignore cpu+memory+power tests
-                if power_task and cpu_n_memory_task:
-                    return False
-                if cpu_n_memory_task:
-                    return False
-                if power_task:
-                    return "browsertime" in try_name
+                return False
             # Select browsertime-specific tests
             if "browsertime" in try_name:
                 # Don't run android CaR sp tests as we already have a cron for this.
                 if "m-car" in try_name:
                     return False
+                if "jetstream2" in try_name:
+                    return True
                 if "fenix" in try_name:
                     return False
                 if "speedometer" in try_name:
@@ -917,6 +874,32 @@ def target_tasks_general_perf_testing(full_task_graph, parameters, graph_config)
                 if "motionmark" in try_name and "1-3" in try_name:
                     if "chrome-m" in try_name:
                         return True
+        return False
+
+    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
+
+
+@register_target_task("geckoview-perftest")
+def target_tasks_geckoview_perftest(full_task_graph, parameters, graph_config):
+    """
+    Select tasks required for running geckoview tests 2 times a week.
+    """
+
+    def filter(task):
+        platform = task.attributes.get("test_platform")
+        attributes = task.attributes
+        if attributes.get("unittest_suite") != "raptor":
+            return False
+
+        if accept_raptor_android_build(platform):
+            try_name = attributes.get("raptor_try_name")
+            if "geckoview" in try_name and "browsertime" in try_name:
+                if "hw-s24" in platform and "speedometer" not in try_name:
+                    return False
+                if "live" in try_name and "cnn-amp" not in try_name:
+                    return False
+                return True
+
         return False
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
@@ -949,17 +932,24 @@ def target_tasks_speedometer_tests(full_task_graph, parameters, graph_config):
         if attributes.get("unittest_suite") != "raptor":
             return False
 
-        if accept_raptor_desktop_build(platform) or accept_raptor_android_build(
-            platform
-        ):
-            try_name = attributes.get("raptor_try_name")
-            if "hw-s21" in platform and "speedometer3" not in try_name:
-                return False
+        try_name = attributes.get("raptor_try_name")
+        if accept_raptor_desktop_build(platform):
             if (
                 "browsertime" in try_name
                 and "speedometer" in try_name
                 and "chrome" in try_name
             ):
+                return True
+        if accept_raptor_android_build(platform):
+            if "hw-s24" in platform and "speedometer3" not in try_name:
+                return False
+            if (
+                "browsertime" in try_name
+                and "speedometer" in try_name
+                and "chrome-m" in try_name
+            ):
+                if "-nofis" not in try_name:
+                    return False
                 return True
 
     return [l for l, t in full_task_graph.tasks.items() if filter(t)]
@@ -1102,7 +1092,7 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
     """Select tasks required for indexing Firefox for Searchfox web site each day"""
     index_path = (
         f"{graph_config['trust-domain']}.v2.{parameters['project']}.revision."
-        f"{parameters['head_rev']}.taskgraph.decision-searchfox-index"
+        f"{parameters['head_rev']}.searchfox-index"
     )
     if os.environ.get("MOZ_AUTOMATION"):
         print(
@@ -1116,18 +1106,28 @@ def target_tasks_searchfox(full_task_graph, parameters, graph_config):
                 raise
             print(f"Index {index_path} doesn't exist.")
         else:
-            # Assume expiry of the downstream searchfox tasks is the same as that of the cron decision task
-            expiry = parse_time(task["expires"])
-            if expiry > datetime.utcnow() + timedelta(days=7):
-                print("Skipping index tasks")
-                return []
+            # Find the earlier expiration time of existing tasks
+            taskdef = get_task_definition(task["taskId"])
+            task_graph = get_artifact(task["taskId"], "public/task-graph.json")
+            if task_graph:
+                base_time = parse_time(taskdef["created"])
+                first_expiry = min(
+                    resolve_timestamps(base_time, t["task"]["expires"])
+                    for t in task_graph.values()
+                )
+                expiry = parse_time(first_expiry)
+                if expiry > datetime.utcnow() + timedelta(days=7):
+                    print("Skipping index tasks")
+                    return []
+        if not create.testing:
+            insert_index(index_path, os.environ["TASK_ID"], use_proxy=True)
 
     return [
         "searchfox-linux64-searchfox/debug",
         "searchfox-macosx64-searchfox/debug",
         "searchfox-macosx64-aarch64-searchfox/debug",
         "searchfox-win64-searchfox/debug",
-        "searchfox-android-armv7-searchfox/debug",
+        "searchfox-android-aarch64-searchfox/debug",
         "searchfox-ios-searchfox/debug",
         "source-test-file-metadata-bugzilla-components",
         "source-test-file-metadata-test-info-all",
@@ -1144,7 +1144,7 @@ def target_tasks_build_linux64_clang_trunk_perf(
 
     # Only keep tasks generated from platform `linux1804-64-clang-trunk-qr/opt`
     def filter(task_label):
-        if "linux1804-64-clang-trunk-qr/opt" in task_label:
+        if "linux1804-64-clang-trunk-qr/opt" in task_label and "live" not in task_label:
             return True
         return False
 
@@ -1384,22 +1384,8 @@ def target_tasks_daily_beta_perf(full_task_graph, parameters, graph_config):
                 if "benchmark" in try_name:
                     return True
         elif accept_raptor_android_build(platform):
-            # Select browsertime & geckoview specific tests
             if "browsertime" and "geckoview" in try_name:
-                if "power" in try_name:
-                    return False
-                if "cpu" in try_name:
-                    return False
-                if "profiling" in try_name:
-                    return False
-                if "-live" in try_name:
-                    return False
-                if "speedometer" in try_name:
-                    return True
-                if "webgl" in try_name:
-                    return True
-                if "tp6m" in try_name:
-                    return True
+                return False
 
         return False
 
@@ -1450,24 +1436,9 @@ def target_tasks_weekly_release_perf(full_task_graph, parameters, graph_config):
                 if "youtube-playback" in try_name:
                     return True
         elif accept_raptor_android_build(platform):
-            # Select browsertime & geckoview specific tests
+
             if "browsertime" and "geckoview" in try_name:
-                if "power" in try_name:
-                    return False
-                if "cpu" in try_name:
-                    return False
-                if "profiling" in try_name:
-                    return False
-                if "-live" in try_name:
-                    return False
-                if "speedometer" in try_name:
-                    return True
-                if "webgl" in try_name:
-                    return True
-                if "tp6m" in try_name:
-                    return True
-                if "youtube-playback" in try_name:
-                    return True
+                return False
 
         return False
 
@@ -1620,16 +1591,6 @@ def target_tasks_perftest_autoland(full_task_graph, parameters, graph_config):
             yield name
 
 
-@register_target_task("l10n-cross-channel")
-def target_tasks_l10n_cross_channel(full_task_graph, parameters, graph_config):
-    """Select the set of tasks required to run l10n cross-channel."""
-
-    def filter(task):
-        return task.kind in ["l10n-cross-channel"]
-
-    return [l for l, t in full_task_graph.tasks.items() if filter(t)]
-
-
 @register_target_task("eslint-build")
 def target_tasks_eslint_build(full_task_graph, parameters, graph_config):
     """Select the task to run additional ESLint rules which require a build."""
@@ -1711,3 +1672,26 @@ def target_tasks_android_l10n_import(full_task_graph, parameters, graph_config):
 @register_target_task("android-l10n-sync")
 def target_tasks_android_l10n_sync(full_task_graph, parameters, graph_config):
     return [l for l, t in full_task_graph.tasks.items() if l == "android-l10n-sync"]
+
+
+@register_target_task("os-integration")
+def target_tasks_os_integration(full_task_graph, parameters, graph_config):
+    labels = []
+
+    for label, task in full_task_graph.tasks.items():
+        if task.attributes.get("unittest_variant") != "os-integration":
+            continue
+
+        index = label.index("-osint")
+        base_label = label[:index]
+        if base_label not in full_task_graph.tasks:
+            base_label += "-1"
+        base_task = full_task_graph.tasks[base_label]
+
+        if (
+            filter_for_project(base_task, parameters)
+            and filter_for_hg_branch(base_task, parameters)
+            and filter_tests_without_manifests(base_task, parameters)
+        ):
+            labels.append(label)
+    return labels

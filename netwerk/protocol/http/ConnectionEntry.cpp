@@ -13,6 +13,7 @@
 #define LOG_ENABLED() LOG5_ENABLED()
 
 #include "ConnectionEntry.h"
+#include "HttpConnectionUDP.h"
 #include "nsQueryObject.h"
 #include "mozilla/ChaosMode.h"
 #include "mozilla/StaticPrefs_network.h"
@@ -356,10 +357,10 @@ void ConnectionEntry::CloseIdleConnections(uint32_t maxToClose) {
   }
 }
 
-void ConnectionEntry::CloseH2WebsocketConnections() {
-  while (mH2WebsocketConns.Length()) {
-    RefPtr<HttpConnectionBase> conn(mH2WebsocketConns[0]);
-    mH2WebsocketConns.RemoveElementAt(0);
+void ConnectionEntry::CloseExtendedCONNECTConnections() {
+  while (mExtendedCONNECTConns.Length()) {
+    RefPtr<HttpConnectionBase> conn(mExtendedCONNECTConns[0]);
+    mExtendedCONNECTConns.RemoveElementAt(0);
 
     // safe to close connection since we are on the socket thread
     // closing via transaction to break connection/transaction bond
@@ -487,43 +488,53 @@ uint32_t ConnectionEntry::PruneDeadConnections() {
   return timeToNextExpire;
 }
 
+void ConnectionEntry::MakeConnectionPendingAndDontReuse(
+    HttpConnectionBase* conn) {
+  gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
+  mPendingConns.AppendElement(conn);
+  // After DontReuse(), the connection will be closed after the last
+  // transition is done.
+  conn->DontReuse();
+  LOG(("Move active connection to pending list [conn=%p]\n", conn));
+}
+
+template <typename ConnType>
+static void CheckForTrafficForConns(nsTArray<RefPtr<ConnType>>& aConns,
+                                    bool aCheck) {
+  for (uint32_t index = 0; index < aConns.Length(); ++index) {
+    RefPtr<nsHttpConnection> conn = do_QueryObject(aConns[index]);
+    if (conn) {
+      conn->CheckForTraffic(aCheck);
+    }
+  }
+}
+
 void ConnectionEntry::VerifyTraffic() {
   if (!mConnInfo->IsHttp3()) {
-    for (uint32_t index = 0; index < mPendingConns.Length(); ++index) {
-      RefPtr<nsHttpConnection> conn = do_QueryObject(mPendingConns[index]);
+    CheckForTrafficForConns(mPendingConns, true);
+    // Iterate the idle connections and unmark them for traffic checks.
+    CheckForTrafficForConns(mIdleConns, false);
+  }
+
+  uint32_t numConns = mActiveConns.Length();
+  if (numConns) {
+    // Walk the list backwards to allow us to remove entries easily.
+    for (int index = numConns - 1; index >= 0; index--) {
+      RefPtr<nsHttpConnection> conn = do_QueryObject(mActiveConns[index]);
+      RefPtr<HttpConnectionUDP> connUDP = do_QueryObject(mActiveConns[index]);
       if (conn) {
         conn->CheckForTraffic(true);
-      }
-    }
-
-    uint32_t numConns = mActiveConns.Length();
-    if (numConns) {
-      // Walk the list backwards to allow us to remove entries easily.
-      for (int index = numConns - 1; index >= 0; index--) {
-        RefPtr<nsHttpConnection> conn = do_QueryObject(mActiveConns[index]);
-        if (conn) {
-          conn->CheckForTraffic(true);
-          if (conn->EverUsedSpdy() &&
-              StaticPrefs::
-                  network_http_http2_move_to_pending_list_after_network_change()) {
-            mActiveConns.RemoveElementAt(index);
-            gHttpHandler->ConnMgr()->DecrementActiveConnCount(conn);
-            mPendingConns.AppendElement(conn);
-            // After DontReuse(), the connection will be closed after the last
-            // transition is done.
-            conn->DontReuse();
-            LOG(("Move active connection to pending list [conn=%p]\n",
-                 conn.get()));
-          }
+        if (conn->EverUsedSpdy() &&
+            StaticPrefs::
+                network_http_move_to_pending_list_after_network_change()) {
+          mActiveConns.RemoveElementAt(index);
+          MakeConnectionPendingAndDontReuse(conn);
         }
-      }
-    }
-
-    // Iterate the idle connections and unmark them for traffic checks.
-    for (uint32_t index = 0; index < mIdleConns.Length(); ++index) {
-      RefPtr<nsHttpConnection> conn = do_QueryObject(mIdleConns[index]);
-      if (conn) {
-        conn->CheckForTraffic(false);
+      } else if (connUDP &&
+                 StaticPrefs::
+                     network_http_move_to_pending_list_after_network_change()) {
+        mActiveConns.RemoveElementAt(index);
+        MakeConnectionPendingAndDontReuse(connUDP);
       }
     }
   }
@@ -557,17 +568,17 @@ void ConnectionEntry::InsertIntoActiveConns(HttpConnectionBase* conn) {
   gHttpHandler->ConnMgr()->IncrementActiveConnCount();
 }
 
-bool ConnectionEntry::IsInH2WebsocketConns(HttpConnectionBase* conn) {
-  return mH2WebsocketConns.Contains(conn);
+bool ConnectionEntry::IsInExtendedCONNECTConns(HttpConnectionBase* conn) {
+  return mExtendedCONNECTConns.Contains(conn);
 }
 
-void ConnectionEntry::InsertIntoH2WebsocketConns(HttpConnectionBase* conn) {
-  // no incrementing of connection count since it is just a "fake" connection
-  mH2WebsocketConns.AppendElement(conn);
+void ConnectionEntry::InsertIntoExtendedCONNECTConns(HttpConnectionBase* conn) {
+  // no incrementing of connection count since it is a tunneled connection
+  mExtendedCONNECTConns.AppendElement(conn);
 }
 
-void ConnectionEntry::RemoveH2WebsocketConns(HttpConnectionBase* conn) {
-  mH2WebsocketConns.RemoveElement(conn);
+void ConnectionEntry::RemoveExtendedCONNECTConns(HttpConnectionBase* conn) {
+  mExtendedCONNECTConns.RemoveElement(conn);
 }
 
 void ConnectionEntry::MakeAllDontReuseExcept(HttpConnectionBase* conn) {

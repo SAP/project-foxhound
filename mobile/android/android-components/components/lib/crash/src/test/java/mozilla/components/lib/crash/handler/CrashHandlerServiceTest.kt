@@ -47,7 +47,6 @@ class CrashHandlerServiceTest {
                 services = listOf(mock()),
                 nonFatalCrashIntent = mock(),
                 scope = scope,
-                notificationsDelegate = mock(),
             ),
         ).install(testContext)
 
@@ -67,7 +66,6 @@ class CrashHandlerServiceTest {
             "extrasPath",
             "/data/data/org.mozilla.samples.browser/files/mozilla/Crash Reports/pending/3ba5f665-8422-dc8e-a88e-fc65c081d304.extra",
         )
-        intent.putExtra("minidumpSuccess", true)
 
         service!!.startService(intent)
     }

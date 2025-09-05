@@ -7,6 +7,7 @@
 #include "nsDocShellLoadState.h"
 #include "nsIDocShell.h"
 #include "nsDocShell.h"
+#include "nsILoadInfo.h"
 #include "nsIProtocolHandler.h"
 #include "nsISHEntry.h"
 #include "nsIURIFixup.h"
@@ -27,7 +28,7 @@
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/StaticPrefs_browser.h"
 #include "mozilla/StaticPrefs_fission.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/AntitrackingMetrics.h"
 
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/NullPrincipal.h"
@@ -65,6 +66,7 @@ nsDocShellLoadState::nsDocShellLoadState(
   mForceAllowDataURI = aLoadState.ForceAllowDataURI();
   mIsExemptFromHTTPSFirstMode = aLoadState.IsExemptFromHTTPSFirstMode();
   mOriginalFrameSrc = aLoadState.OriginalFrameSrc();
+  mShouldCheckForRecursion = aLoadState.ShouldCheckForRecursion();
   mIsFormSubmission = aLoadState.IsFormSubmission();
   mLoadType = aLoadState.LoadType();
   mTarget = aLoadState.Target();
@@ -91,7 +93,7 @@ nsDocShellLoadState::nsDocShellLoadState(
   mTriggeringWindowId = aLoadState.TriggeringWindowId();
   mTriggeringStorageAccess = aLoadState.TriggeringStorageAccess();
   mTriggeringRemoteType = aLoadState.TriggeringRemoteType();
-  mWasSchemelessInput = aLoadState.WasSchemelessInput();
+  mSchemelessInput = aLoadState.SchemelessInput();
   mHttpsUpgradeTelemetry = aLoadState.HttpsUpgradeTelemetry();
   mCsp = aLoadState.Csp();
   mOriginalURIString = aLoadState.OriginalURIString();
@@ -170,6 +172,7 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mIsExemptFromHTTPSFirstMode(aOther.mIsExemptFromHTTPSFirstMode),
       mHttpsFirstDowngradeData(aOther.GetHttpsFirstDowngradeData()),
       mOriginalFrameSrc(aOther.mOriginalFrameSrc),
+      mShouldCheckForRecursion(aOther.mShouldCheckForRecursion),
       mIsFormSubmission(aOther.mIsFormSubmission),
       mLoadType(aOther.mLoadType),
       mSHEntry(aOther.mSHEntry),
@@ -199,7 +202,7 @@ nsDocShellLoadState::nsDocShellLoadState(const nsDocShellLoadState& aOther)
       mUnstrippedURI(aOther.mUnstrippedURI),
       mRemoteTypeOverride(aOther.mRemoteTypeOverride),
       mTriggeringRemoteType(aOther.mTriggeringRemoteType),
-      mWasSchemelessInput(aOther.mWasSchemelessInput),
+      mSchemelessInput(aOther.mSchemelessInput),
       mHttpsUpgradeTelemetry(aOther.mHttpsUpgradeTelemetry) {
   MOZ_DIAGNOSTIC_ASSERT(
       XRE_IsParentProcess(),
@@ -226,6 +229,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
       mForceAllowDataURI(false),
       mIsExemptFromHTTPSFirstMode(false),
       mOriginalFrameSrc(false),
+      mShouldCheckForRecursion(false),
       mIsFormSubmission(false),
       mLoadType(LOAD_NORMAL),
       mSrcdocData(VoidString()),
@@ -244,7 +248,7 @@ nsDocShellLoadState::nsDocShellLoadState(nsIURI* aURI, uint64_t aLoadIdentifier)
       mTriggeringRemoteType(XRE_IsContentProcess()
                                 ? ContentChild::GetSingleton()->GetRemoteType()
                                 : NOT_REMOTE_TYPE),
-      mWasSchemelessInput(false) {
+      mSchemelessInput(nsILoadInfo::SchemelessInputTypeUnset) {
   MOZ_ASSERT(aURI, "Cannot create a LoadState with a null URI!");
 
   // For https telemetry we set a flag indicating whether the load is https.
@@ -501,7 +505,8 @@ nsresult nsDocShellLoadState::CreateFromLoadURIOptions(
         aLoadURIOptions.mRemoteTypeOverride.Value());
   }
 
-  loadState->SetWasSchemelessInput(aLoadURIOptions.mWasSchemelessInput);
+  loadState->SetSchemelessInput(static_cast<nsILoadInfo::SchemelessInputType>(
+      aLoadURIOptions.mSchemelessInput));
 
   loadState.forget(aResult);
   return NS_OK;
@@ -669,6 +674,15 @@ void nsDocShellLoadState::SetOriginalFrameSrc(bool aOriginalFrameSrc) {
   mOriginalFrameSrc = aOriginalFrameSrc;
 }
 
+bool nsDocShellLoadState::ShouldCheckForRecursion() const {
+  return mShouldCheckForRecursion;
+}
+
+void nsDocShellLoadState::SetShouldCheckForRecursion(
+    bool aShouldCheckForRecursion) {
+  mShouldCheckForRecursion = aShouldCheckForRecursion;
+}
+
 bool nsDocShellLoadState::IsFormSubmission() const { return mIsFormSubmission; }
 
 void nsDocShellLoadState::SetIsFormSubmission(bool aIsFormSubmission) {
@@ -679,6 +693,16 @@ uint32_t nsDocShellLoadState::LoadType() const { return mLoadType; }
 
 void nsDocShellLoadState::SetLoadType(uint32_t aLoadType) {
   mLoadType = aLoadType;
+}
+
+mozilla::dom::UserNavigationInvolvement
+nsDocShellLoadState::UserNavigationInvolvement() const {
+  return mUserNavigationInvolvement;
+}
+
+void nsDocShellLoadState::SetUserNavigationInvolvement(
+    mozilla::dom::UserNavigationInvolvement aUserNavigationInvolvement) {
+  mUserNavigationInvolvement = aUserNavigationInvolvement;
 }
 
 nsISHEntry* nsDocShellLoadState::SHEntry() const { return mSHEntry; }
@@ -766,8 +790,9 @@ void nsDocShellLoadState::MaybeStripTrackerQueryStrings(
     return;
   }
 
-  Telemetry::AccumulateCategorical(
-      Telemetry::LABELS_QUERY_STRIPPING_COUNT::Navigation);
+  glean::contentblocking::query_stripping_count
+      .EnumGet(glean::contentblocking::QueryStrippingCountLabel::eNavigation)
+      .Add();
 
   nsCOMPtr<nsIURI> strippedURI;
 
@@ -786,9 +811,12 @@ void nsDocShellLoadState::MaybeStripTrackerQueryStrings(
     }
     SetURI(strippedURI);
 
-    Telemetry::AccumulateCategorical(
-        Telemetry::LABELS_QUERY_STRIPPING_COUNT::StripForNavigation);
-    Telemetry::Accumulate(Telemetry::QUERY_STRIPPING_PARAM_COUNT, numStripped);
+    glean::contentblocking::query_stripping_count
+        .EnumGet(glean::contentblocking::QueryStrippingCountLabel::
+                     eStripfornavigation)
+        .Add();
+    glean::contentblocking::query_stripping_param_count.AccumulateSingleSample(
+        numStripped);
   }
 
 #ifdef DEBUG
@@ -1139,7 +1167,7 @@ void nsDocShellLoadState::CalculateLoadURIFlags() {
 }
 
 nsLoadFlags nsDocShellLoadState::CalculateChannelLoadFlags(
-    BrowsingContext* aBrowsingContext, Maybe<bool> aUriModified,
+    BrowsingContext* aBrowsingContext, bool aUriModified,
     Maybe<bool> aIsEmbeddingBlockedError) {
   MOZ_ASSERT(aBrowsingContext);
 
@@ -1153,7 +1181,6 @@ nsLoadFlags nsDocShellLoadState::CalculateChannelLoadFlags(
   const uint32_t loadType = LoadType();
 
   // These values aren't available for loads initiated in the Parent process.
-  MOZ_ASSERT_IF(loadType == LOAD_HISTORY, aUriModified.isSome());
   MOZ_ASSERT_IF(loadType == LOAD_ERROR_PAGE, aIsEmbeddingBlockedError.isSome());
 
   if (loadType == LOAD_ERROR_PAGE) {
@@ -1179,7 +1206,7 @@ nsLoadFlags nsDocShellLoadState::CalculateChannelLoadFlags(
     case LOAD_HISTORY: {
       // Only send VALIDATE_NEVER if mLSHE's URI was never changed via
       // push/replaceState (bug 669671).
-      if (!*aUriModified) {
+      if (!aUriModified) {
         loadFlags |= nsIRequest::VALIDATE_NEVER;
       }
       break;
@@ -1310,8 +1337,10 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.ForceAllowDataURI() = mForceAllowDataURI;
   loadState.IsExemptFromHTTPSFirstMode() = mIsExemptFromHTTPSFirstMode;
   loadState.OriginalFrameSrc() = mOriginalFrameSrc;
+  loadState.ShouldCheckForRecursion() = mShouldCheckForRecursion;
   loadState.IsFormSubmission() = mIsFormSubmission;
   loadState.LoadType() = mLoadType;
+  loadState.userNavigationInvolvement() = mUserNavigationInvolvement;
   loadState.Target() = mTarget;
   loadState.TargetBrowsingContext() = mTargetBrowsingContext;
   loadState.LoadFlags() = mLoadFlags;
@@ -1335,7 +1364,7 @@ DocShellLoadStateInit nsDocShellLoadState::Serialize(
   loadState.TriggeringWindowId() = mTriggeringWindowId;
   loadState.TriggeringStorageAccess() = mTriggeringStorageAccess;
   loadState.TriggeringRemoteType() = mTriggeringRemoteType;
-  loadState.WasSchemelessInput() = mWasSchemelessInput;
+  loadState.SchemelessInput() = mSchemelessInput;
   loadState.HttpsUpgradeTelemetry() = mHttpsUpgradeTelemetry;
   loadState.Csp() = mCsp;
   loadState.OriginalURIString() = mOriginalURIString;

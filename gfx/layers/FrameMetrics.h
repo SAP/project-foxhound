@@ -15,6 +15,7 @@
 #include "mozilla/DefineEnum.h"     // for MOZ_DEFINE_ENUM
 #include "mozilla/HashFunctions.h"  // for HashGeneric
 #include "mozilla/Maybe.h"
+#include "mozilla/dom/InteractiveWidget.h"
 #include "mozilla/gfx/BasePoint.h"               // for BasePoint
 #include "mozilla/gfx/Rect.h"                    // for RoundedIn
 #include "mozilla/gfx/ScaleFactor.h"             // for ScaleFactor
@@ -749,7 +750,8 @@ struct ScrollMetadata {
       : mScrollParentId(ScrollableLayerGuid::NULL_SCROLL_ID),
         mLineScrollAmount(0, 0),
         mPageScrollAmount(0, 0),
-        mHasScrollgrab(false),
+        mInteractiveWidget(
+            dom::InteractiveWidgetUtils::DefaultInteractiveWidgetMode()),
         mIsLayersIdRoot(false),
         mIsAutoDirRootContentRTL(false),
         mForceDisableApz(false),
@@ -758,7 +760,8 @@ struct ScrollMetadata {
         mDidContentGetPainted(true),
         mForceMousewheelAutodir(false),
         mForceMousewheelAutodirHonourRoot(false),
-        mIsPaginatedPresentation(false) {}
+        mIsPaginatedPresentation(false),
+        mIsSoftwareKeyboardVisible(false) {}
 
   bool operator==(const ScrollMetadata& aOther) const {
     return mMetrics == aOther.mMetrics && mSnapInfo == aOther.mSnapInfo &&
@@ -766,7 +769,7 @@ struct ScrollMetadata {
            // don't compare mContentDescription
            mLineScrollAmount == aOther.mLineScrollAmount &&
            mPageScrollAmount == aOther.mPageScrollAmount &&
-           mHasScrollgrab == aOther.mHasScrollgrab &&
+           mInteractiveWidget == aOther.mInteractiveWidget &&
            mIsLayersIdRoot == aOther.mIsLayersIdRoot &&
            mIsAutoDirRootContentRTL == aOther.mIsAutoDirRootContentRTL &&
            mForceDisableApz == aOther.mForceDisableApz &&
@@ -777,6 +780,7 @@ struct ScrollMetadata {
            mForceMousewheelAutodirHonourRoot ==
                aOther.mForceMousewheelAutodirHonourRoot &&
            mIsPaginatedPresentation == aOther.mIsPaginatedPresentation &&
+           mIsSoftwareKeyboardVisible == aOther.mIsSoftwareKeyboardVisible &&
            mDisregardedDirection == aOther.mDisregardedDirection &&
            mOverscrollBehavior == aOther.mOverscrollBehavior &&
            mOverflow == aOther.mOverflow &&
@@ -821,10 +825,6 @@ struct ScrollMetadata {
   void SetPageScrollAmount(const LayoutDeviceIntSize& size) {
     mPageScrollAmount = size;
   }
-  void SetHasScrollgrab(bool aHasScrollgrab) {
-    mHasScrollgrab = aHasScrollgrab;
-  }
-  bool GetHasScrollgrab() const { return mHasScrollgrab; }
   void SetIsLayersIdRoot(bool aValue) { mIsLayersIdRoot = aValue; }
   bool IsLayersIdRoot() const { return mIsLayersIdRoot; }
   void SetIsAutoDirRootContentRTL(bool aValue) {
@@ -861,6 +861,18 @@ struct ScrollMetadata {
     mIsPaginatedPresentation = aValue;
   }
   bool IsPaginatedPresentation() const { return mIsPaginatedPresentation; }
+
+  void SetIsSoftwareKeyboardVisible(bool aValue) {
+    mIsSoftwareKeyboardVisible = aValue;
+  }
+  bool IsSoftwareKeyboardVisible() const { return mIsSoftwareKeyboardVisible; }
+
+  void SetInteractiveWidget(dom::InteractiveWidget aInteractiveWidget) {
+    mInteractiveWidget = aInteractiveWidget;
+  }
+  dom::InteractiveWidget GetInteractiveWidget() const {
+    return mInteractiveWidget;
+  }
 
   bool DidContentGetPainted() const { return mDidContentGetPainted; }
 
@@ -933,8 +945,11 @@ struct ScrollMetadata {
   // The value of GetPageScrollAmount(), for scroll frames.
   LayoutDeviceIntSize mPageScrollAmount;
 
-  // Whether or not this frame is for an element marked 'scrollgrab'.
-  bool mHasScrollgrab : 1;
+  // The interactive-widget of the root-content document.
+  // This is only applicable to the root-content scroll frame, it's stored in
+  // APZTreeManager as APZTreeManager::mInteractiveWidget so that it should not
+  // be checked on AsyncPanZoomController::mScrollMetadata.
+  dom::InteractiveWidget mInteractiveWidget;
 
   // Whether these framemetrics are for the root scroll frame (root element if
   // we don't have a root scroll frame) for its layers id.
@@ -984,6 +999,12 @@ struct ScrollMetadata {
   // display item per page, and the different instances may be subject
   // to different transforms, which constrains the assumptions APZ can make.
   bool mIsPaginatedPresentation : 1;
+
+  // Whether the software keyboard is currently visible.
+  // This is only applicable to the root-content scroll frame, it's stored in
+  // APZTreeManager as APZTreeManager::mIsSoftwareKeyboardVisible so that it
+  // should not be checked on AsyncPanZoomController::mScrollMetadata.
+  bool mIsSoftwareKeyboardVisible : 1;
 
   // The disregarded direction means the direction which is disregarded anyway,
   // even if the scroll frame overflows in that direction and the direction is

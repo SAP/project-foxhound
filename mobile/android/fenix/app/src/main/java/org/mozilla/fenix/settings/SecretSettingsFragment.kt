@@ -20,6 +20,7 @@ import org.mozilla.fenix.FeatureFlags
 import org.mozilla.fenix.R
 import org.mozilla.fenix.debugsettings.data.DefaultDebugSettingsRepository
 import org.mozilla.fenix.ext.components
+import org.mozilla.fenix.ext.getPreferenceKey
 import org.mozilla.fenix.ext.nav
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.ext.showToolbar
@@ -32,7 +33,7 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
         showToolbar(getString(R.string.preferences_debug_settings))
     }
 
-    @Suppress("LongMethod")
+    @Suppress("LongMethod", "CyclomaticComplexMethod")
     override fun onCreatePreferences(savedInstanceState: Bundle?, rootKey: String?) {
         val debugSettingsRepository = DefaultDebugSettingsRepository(
             context = requireContext(),
@@ -65,20 +66,19 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
-        requirePreference<SwitchPreference>(R.string.pref_key_enable_tabs_tray_to_compose).apply {
-            isVisible = true
-            isChecked = context.settings().enableTabsTrayToCompose
-            onPreferenceChangeListener = SharedPreferenceUpdater()
-        }
-
         requirePreference<SwitchPreference>(R.string.pref_key_enable_compose_top_sites).apply {
             isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.settings().enableComposeTopSites
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreference>(R.string.pref_key_use_new_bookmarks_ui).apply {
+            isVisible = true
+            isChecked = context.settings().useNewBookmarks
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreference>(R.string.pref_key_enable_compose_homepage).apply {
-            isVisible = Config.channel.isNightlyOrDebug
             isChecked = context.settings().enableComposeHomepage
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
@@ -95,8 +95,40 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
+        requirePreference<SwitchPreference>(R.string.pref_key_mars_api_enabled).apply {
+            isChecked = context.settings().marsAPIEnabled
+            onPreferenceChangeListener = object : SharedPreferenceUpdater() {
+                override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
+                    activity?.recreate()
+                    return super.onPreferenceChange(preference, newValue)
+                }
+            }
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_pocket_content_recommendations).apply {
+            isChecked = context.settings().showContentRecommendations
+            onPreferenceChangeListener = object : SharedPreferenceUpdater() {
+                override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
+                    activity?.recreate()
+                    return super.onPreferenceChange(preference, newValue)
+                }
+            }
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_enable_unified_trust_panel).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().enableUnifiedTrustPanel
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_enable_trending_searches).apply {
+            isVisible = Config.channel.isNightlyOrDebug
+            isChecked = context.settings().isTrendingSearchesVisible
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
         requirePreference<SwitchPreference>(R.string.pref_key_enable_fxsuggest).apply {
-            isVisible = FeatureFlags.fxSuggest
+            isVisible = FeatureFlags.FX_SUGGEST
             isChecked = context.settings().enableFxSuggest
             onPreferenceChangeListener = object : Preference.OnPreferenceChangeListener {
                 override fun onPreferenceChange(preference: Preference, newValue: Any?): Boolean {
@@ -114,6 +146,12 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
                     return true
                 }
             }
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_doh_settings_enabled).apply {
+            isVisible = Config.channel.isDebug
+            isChecked = context.settings().showDohEntryPoint
+            onPreferenceChangeListener = SharedPreferenceUpdater()
         }
 
         requirePreference<SwitchPreference>(R.string.pref_key_should_enable_felt_privacy).apply {
@@ -153,6 +191,26 @@ class SecretSettingsFragment : PreferenceFragmentCompat() {
         requirePreference<SwitchPreference>(R.string.pref_key_microsurvey_feature_enabled).apply {
             isVisible = true
             isChecked = context.settings().microsurveyFeatureEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreference>(
+            R.string.pref_key_set_as_default_browser_prompt_enabled,
+        ).apply {
+            isVisible = true
+            isChecked = context.settings().setAsDefaultBrowserPromptForExistingUsersEnabled
+            onPreferenceChangeListener = SharedPreferenceUpdater()
+        }
+
+        requirePreference<SwitchPreference>(R.string.pref_key_persistent_debug_menu).apply {
+            isVisible = true
+            // We look up the actual value of the pref, not the `showSecretDebugMenuThisSession` setting because
+            // the setting value might be set to `true` by the `SecretDebugMenuTrigger` logic for the duration of
+            // the session.
+            isChecked = context.settings().preferences.getBoolean(
+                context.getPreferenceKey(R.string.pref_key_persistent_debug_menu),
+                false,
+            )
             onPreferenceChangeListener = SharedPreferenceUpdater()
         }
     }

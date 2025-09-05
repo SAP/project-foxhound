@@ -29,17 +29,29 @@ var gExceptionPaths = [
   "chrome://activity-stream/content/data/content/tippytop/images/",
   "chrome://activity-stream/content/data/content/tippytop/favicons/",
   // These resources are referenced by messages delivered through Remote Settings
-  "chrome://activity-stream/content/data/content/assets/remote/",
   "chrome://activity-stream/content/data/content/assets/mobile-download-qr-new-user-cn.svg",
   "chrome://activity-stream/content/data/content/assets/mobile-download-qr-existing-user-cn.svg",
+  "chrome://activity-stream/content/data/content/assets/mr-amo-collection.svg",
   "chrome://activity-stream/content/data/content/assets/person-typing.svg",
+  "chrome://activity-stream/content/data/content/assets/tabs-side-zap-transparent.svg",
+  "chrome://activity-stream/content/data/content/assets/tabs-top-zap-transparent.svg",
+  "chrome://activity-stream/content/data/content/assets/nuo-taborientation.svg",
+  "chrome://activity-stream/content/data/content/assets/euo-tab-orientation.svg",
+  "chrome://activity-stream/content/data/content/assets/euo-chatbot.svg",
   "chrome://browser/content/assets/moz-vpn.svg",
   "chrome://browser/content/assets/vpn-logo.svg",
   "chrome://browser/content/assets/focus-promo.png",
   "chrome://browser/content/assets/klar-qr-code.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-box-on-cloud.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-devices.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-locked-box.svg",
+  "chrome://browser/content/asrouter/assets/fox-with-mobile.svg",
 
   // toolkit/components/pdfjs/content/build/pdf.js
   "resource://pdf.js/web/images/",
+  // This file is only loaded in using a dynamic import in pdf.js in case wasm
+  // is not available.
+  "resource://pdf.js/web/wasm/openjpeg_nowasm_fallback.js",
 
   // Exclude the form autofill path that has been moved out of the extensions to
   // toolkit, see bug 1691821.
@@ -84,6 +96,15 @@ var gExceptionPaths = [
 
   // Strip on Share parameter lists
   "chrome://global/content/antitracking/",
+
+  // CSS file is referenced inside JS in login-form.mjs
+  "chrome://global/content/megalist/LoginFormComponent/",
+
+  // The ONNX runtime picks files to run programmaticaly
+  "chrome://global/content/ml/",
+
+  // The profile avatars are directly referenced.
+  "chrome://browser/content/profiles/assets/",
 ];
 
 // These are not part of the omni.ja file, so we find them only when running
@@ -109,6 +130,10 @@ var allowlist = [
   // security/manager/pki/resources/content/device_manager.js
   { file: "chrome://pippki/content/load_device.xhtml" },
 
+  // Intentionally unreferenced, see bug 1941134
+  { file: "resource://gre/res/designmode.css" },
+  { file: "resource://gre/res/EditorOverride.css" },
+
   // The l10n build system can't package string files only for some platforms.
   // See bug 1339424 for why this is hard to fix.
   {
@@ -125,9 +150,6 @@ var allowlist = [
   {
     file: "resource://app/localization/en-US/browser/linuxDesktopEntry.ftl",
   },
-
-  // toolkit/content/aboutRights-unbranded.xhtml doesn't use aboutRights.css
-  { file: "chrome://global/skin/aboutRights.css", skipUnofficial: true },
 
   // devtools/client/inspector/bin/dev-server.js
   {
@@ -161,6 +183,9 @@ var allowlist = [
 
   // toolkit/mozapps/extensions/AddonContentPolicy.cpp
   { file: "resource://gre/localization/en-US/toolkit/global/cspErrors.ftl" },
+
+  // toolkit/components/antitracking/bouncetrackingprotection/BounceTrackingProtection.cpp
+  { file: "resource://gre/localization/en-US/toolkit/global/antiTracking.ftl" },
 
   // The l10n build system can't package string files only for some platforms.
   {
@@ -288,18 +313,21 @@ var allowlist = [
   // Referenced programmatically
   { file: "chrome://browser/content/backup/BackupManifest.1.schema.json" },
   { file: "chrome://browser/content/backup/ArchiveJSONBlock.1.schema.json" },
+
+  // Bug 1733498 - Migrate necko errors l10n strings from .properties to Fluent
+  {
+    file: "resource://gre/localization/en-US/netwerk/necko.ftl",
+  },
+
+  // A QA and dev debug tool.
+  { file: "chrome://browser/content/places/interactionsViewer.html" },
 ];
 
 if (AppConstants.NIGHTLY_BUILD) {
   allowlist.push(
-    ...[
-      // This is nightly-only debug tool.
-      { file: "chrome://browser/content/places/interactionsViewer.html" },
-
-      // A debug tool that is only available in Nightly builds, and is accessed
-      // directly by developers via the chrome URI (bug 1888491)
-      { file: "chrome://browser/content/backup/debug.html" },
-    ]
+    // A debug tool that is only available in Nightly builds, and is accessed
+    // directly by developers via the chrome URI (bug 1888491)
+    { file: "chrome://browser/content/backup/debug.html" }
   );
 }
 
@@ -350,9 +378,6 @@ allowlist = new Set(
 const ignorableAllowlist = new Set([
   // The following files are outside of the omni.ja file, so we only catch them
   // when testing on a non-packaged build.
-
-  // toolkit/mozapps/extensions/nsBlocklistService.js
-  "resource://app/blocklist.xml",
 
   // dom/media/gmp/GMPParent.cpp
   "resource://gre/gmp-clearkey/0.1/manifest.json",
@@ -467,8 +492,15 @@ function parseManifest(manifestUri) {
             Services.io.newURI(argv[0]).specIgnoringRef
           );
         }
-      } else if (type == "category" && gInterestingCategories.has(argv[0])) {
-        gReferencesFromCode.set(argv[2], null);
+      } else if (type == "category") {
+        if (gInterestingCategories.has(argv[0])) {
+          gReferencesFromCode.set(argv[2], null);
+        } else if (argv[1].startsWith("resource://")) {
+          // Assume that any resource paths immediately after the category name
+          // are for use with BrowserUtils.callModulesFromCategory (rather than
+          // having to hardcode a list of categories in this test).
+          gReferencesFromCode.set(argv[1], null);
+        }
       } else if (type == "resource") {
         trackResourcePrefix(argv[0]);
       } else if (type == "component") {

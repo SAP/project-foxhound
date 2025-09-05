@@ -334,12 +334,17 @@ class RefTest(object):
         if not platform.system() == "Linux":
             return ""
 
-        theme_cmd = "gsettings get org.gnome.desktop.interface gtk-theme"
-        theme = subprocess.check_output(theme_cmd, shell=True, universal_newlines=True)
-        if theme:
-            theme = theme.strip("\n")
-            theme = theme.strip("'")
-        return theme.strip()
+        try:
+            theme_cmd = "gsettings get org.gnome.desktop.interface gtk-theme"
+            theme = subprocess.check_output(
+                theme_cmd, shell=True, universal_newlines=True
+            )
+            if theme:
+                theme = theme.strip("\n")
+                theme = theme.strip("'")
+            return theme.strip()
+        except subprocess.CalledProcessError:
+            return ""
 
     def getFullPath(self, path):
         "Get an absolute path relative to self.oldcwd."
@@ -481,6 +486,11 @@ class RefTest(object):
             prefs["reftest.tests"] = testlist
         elif manifests:
             prefs["reftest.manifests"] = json.dumps(manifests)
+
+        # Avoid unncessary recursion when MOZHARNESS_TEST_PATHS is set
+        prefs["reftest.mozharness_test_paths"] = (
+            len(os.environ.get("MOZHARNESS_TEST_PATHS", "")) > 0
+        )
 
         # default fission to True
         prefs["fission.autostart"] = True

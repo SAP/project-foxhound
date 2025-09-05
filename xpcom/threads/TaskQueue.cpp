@@ -7,6 +7,7 @@
 #include "mozilla/TaskQueue.h"
 
 #include "mozilla/ProfilerRunnable.h"
+#include "mozilla/FlowMarkers.h"
 #include "nsIEventTarget.h"
 #include "nsITargetShutdownTask.h"
 #include "nsThreadUtils.h"
@@ -111,6 +112,8 @@ nsresult TaskQueue::DispatchLocked(nsCOMPtr<nsIRunnable>& aRunnable,
     return currentThread->TailDispatcher().AddTask(this, aRunnable.forget());
   }
 
+  PROFILER_MARKER("TaskQueue::DispatchLocked", OTHER, {},
+                  FlowMarker, Flow::FromPointer(aRunnable.get()));
   LogRunnable::LogDispatch(aRunnable);
   mTasks.Push({std::move(aRunnable), aFlags});
 

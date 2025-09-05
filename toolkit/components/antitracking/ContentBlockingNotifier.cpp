@@ -126,6 +126,9 @@ void ReportBlockingToConsole(uint64_t aWindowID, nsIURI* aURI,
               nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
       aRejectedReason ==
           static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
               nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||
       aRejectedReason ==
           static_cast<uint32_t>(
@@ -180,6 +183,8 @@ void ReportBlockingToConsole(uint64_t aWindowID, nsIURI* aURI,
 
           case uint32_t(
               nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN):
+          case uint32_t(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER):
             message = "CookiePartitionedForeign2";
             category = "cookiePartitionedForeign"_ns;
             break;
@@ -297,6 +302,16 @@ void NotifyBlockingDecision(nsIChannel* aTrackingChannel,
   nsCOMPtr<nsIClassifiedChannel> classifiedChannel =
       do_QueryInterface(aTrackingChannel);
   if (!classifiedChannel) {
+    return;
+  }
+
+  if (aRejectedReason ==
+      nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER) {
+    ContentBlockingNotifier::OnEvent(
+        aTrackingChannel, true,
+        nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER,
+        trackingOrigin);
+    // Stop notifying the tracker cookie loaded events if they are partitioned.
     return;
   }
 
@@ -443,6 +458,9 @@ void ContentBlockingNotifier::OnDecision(nsIChannel* aChannel,
               nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
       aRejectedReason ==
           static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
               nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||
       aRejectedReason ==
           static_cast<uint32_t>(
@@ -480,6 +498,9 @@ void ContentBlockingNotifier::OnDecision(nsPIDOMWindowInner* aWindow,
       aRejectedReason ==
           static_cast<uint32_t>(
               nsIWebProgressListener::STATE_COOKIES_PARTITIONED_FOREIGN) ||
+      aRejectedReason ==
+          static_cast<uint32_t>(
+              nsIWebProgressListener::STATE_COOKIES_PARTITIONED_TRACKER) ||
       aRejectedReason ==
           static_cast<uint32_t>(
               nsIWebProgressListener::STATE_COOKIES_BLOCKED_ALL) ||

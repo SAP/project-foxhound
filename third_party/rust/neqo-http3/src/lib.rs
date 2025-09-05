@@ -4,8 +4,6 @@
 // option. This file may not be copied, modified, or distributed
 // except according to those terms.
 
-#![allow(clippy::module_name_repetitions)] // This lint doesn't work here.
-
 /*!
 
 # The HTTP/3 protocol
@@ -147,6 +145,7 @@ mod frames;
 mod headers_checks;
 mod priority;
 mod push_controller;
+mod push_id;
 mod qlog;
 mod qpack_decoder_receiver;
 mod qpack_encoder_receiver;
@@ -176,6 +175,7 @@ use neqo_transport::{
     AppError, Connection, Error as TransportError, RecvStreamStats, SendStreamStats,
 };
 pub use priority::Priority;
+pub use push_id::PushId;
 pub use server::Http3Server;
 pub use server_events::{
     Http3OrWebTransportStream, Http3ServerEvent, WebTransportRequest, WebTransportServerEvent,

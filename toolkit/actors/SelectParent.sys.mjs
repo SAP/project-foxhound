@@ -281,6 +281,31 @@ export var SelectParentHelper = {
   },
 
   open(browser, menulist, rect, isOpenedViaTouch, selectParentActor) {
+    const canOpen = (() => {
+      if (!menulist.ownerDocument.hasFocus()) {
+        // Don't open in inactive browser windows.
+        return false;
+      }
+      if (browser) {
+        if (!browser.browsingContext.isActive) {
+          // Don't open in inactive tabs.
+          return false;
+        }
+        let tabbrowser = browser.getTabBrowser();
+        if (tabbrowser && tabbrowser.selectedBrowser != browser) {
+          // AsyncTabSwitcher might delay activating our browser, check
+          // explicitly for tabbrowser.
+          return false;
+        }
+      }
+      return true;
+    })();
+
+    if (!canOpen) {
+      selectParentActor.sendAsyncMessage("Forms:DismissedDropDown", {});
+      return;
+    }
+
     this._actor = selectParentActor;
     menulist.hidden = false;
     this._currentBrowser = browser;
@@ -294,6 +319,7 @@ export var SelectParentHelper = {
     let win = menulist.ownerGlobal;
     if (browser) {
       browser.constrainPopup(menupopup);
+      browser.style.pointerEvents = "none";
     } else {
       menupopup.setConstraintRect(new win.DOMRect(0, 0, 0, 0));
     }
@@ -380,7 +406,10 @@ export var SelectParentHelper = {
         let popup = event.target;
         this._unregisterListeners(popup);
         popup.parentNode.hidden = true;
-        this._currentBrowser = null;
+        if (this._currentBrowser) {
+          this._currentBrowser.style.pointerEvents = "";
+          this._currentBrowser = null;
+        }
         this._currentMenulist = null;
         this._selectRect = null;
         this._currentZoom = 1;

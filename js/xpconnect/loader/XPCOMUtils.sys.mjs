@@ -31,37 +31,25 @@ function redefine(object, prop, value) {
   return value;
 }
 
+/**
+ * XPCOMUtils contains helpers to make lazily loading scripts, modules, prefs
+ * and XPCOM services more ergonomic for JS consumers.
+ *
+ * @class
+ */
 export var XPCOMUtils = {
-  /**
-   * Defines a getter on a specified object that will be created upon first use.
-   *
-   * @param aObject
-   *        The object to define the lazy getter on.
-   * @param aName
-   *        The name of the getter to define on aObject.
-   * @param aLambda
-   *        A function that returns what the getter should return.  This will
-   *        only ever be called once.
-   */
-  defineLazyGetter(aObject, aName, aLambda) {
-    console.warn(
-      "Please use ChromeUtils.defineLazyGetter instead of XPCOMUtils.defineLazyGetter. XPCOMUtils.defineLazyGetter will be removed soon."
-    );
-    ChromeUtils.defineLazyGetter(aObject, aName, aLambda);
-  },
-
   /**
    * Defines a getter on a specified object for a script.  The script will not
    * be loaded until first use.
    *
-   * @param aObject
+   * @param {object} aObject
    *        The object to define the lazy getter on.
-   * @param aNames
+   * @param {string|string[]} aNames
    *        The name of the getter to define on aObject for the script.
    *        This can be a string if the script exports only one symbol,
    *        or an array of strings if the script can be first accessed
    *        from several different symbols.
-   * @param aResource
+   * @param {string} aResource
    *        The URL used to obtain the script.
    */
   defineLazyScriptGetter(aObject, aNames, aResource) {
@@ -99,7 +87,7 @@ export var XPCOMUtils = {
   /**
    * Defines a getter property on the given object for each of the given
    * global names as accepted by Cu.importGlobalProperties. These
-   * properties are imported into the shared JSM module global, and then
+   * properties are imported into the shared system global, and then
    * copied onto the given object, no matter which global the object
    * belongs to.
    *
@@ -125,13 +113,13 @@ export var XPCOMUtils = {
    * Defines a getter on a specified object for a service.  The service will not
    * be obtained until first use.
    *
-   * @param aObject
+   * @param {object} aObject
    *        The object to define the lazy getter on.
-   * @param aName
+   * @param {string} aName
    *        The name of the getter to define on aObject for the service.
-   * @param aContract
+   * @param {string} aContract
    *        The contract used to obtain the service.
-   * @param aInterfaceName
+   * @param {string} aInterfaceName
    *        The name of the interface to query the service to.
    */
   defineLazyServiceGetter(aObject, aName, aContract, aInterfaceName) {
@@ -147,9 +135,9 @@ export var XPCOMUtils = {
    * Defines a lazy service getter on a specified object for each
    * property in the given object.
    *
-   * @param aObject
+   * @param {object} aObject
    *        The object to define the lazy getter on.
-   * @param aServices
+   * @param {object} aServices
    *        An object with a property for each service to be
    *        imported, where the property name is the name of the
    *        symbol to define, and the value is a 1 or 2 element array
@@ -171,40 +159,23 @@ export var XPCOMUtils = {
   },
 
   /**
-   * Defines a lazy module getter on a specified object for each
-   * property in the given object.
-   *
-   * @param aObject
-   *        The object to define the lazy getter on.
-   * @param aModules
-   *        An object with a property for each module property to be
-   *        imported, where the property name is the name of the
-   *        imported symbol and the value is the module URI.
-   */
-  defineLazyModuleGetters(aObject, aModules) {
-    for (let [name, module] of Object.entries(aModules)) {
-      ChromeUtils.defineModuleGetter(aObject, name, module);
-    }
-  },
-
-  /**
    * Defines a getter on a specified object for preference value. The
    * preference is read the first time that the property is accessed,
    * and is thereafter kept up-to-date using a preference observer.
    *
-   * @param aObject
+   * @param {object} aObject
    *        The object to define the lazy getter on.
-   * @param aName
+   * @param {string} aName
    *        The name of the getter property to define on aObject.
-   * @param aPreference
+   * @param {string} aPreference
    *        The name of the preference to read.
-   * @param aDefaultPrefValue
+   * @param {any} aDefaultPrefValue
    *        The default value to use, if the preference is not defined.
    *        This is the default value of the pref, before applying aTransform.
-   * @param aOnUpdate
+   * @param {Function} aOnUpdate
    *        A function to call upon update. Receives as arguments
    *         `(aPreference, previousValue, newValue)`
-   * @param aTransform
+   * @param {Function} aTransform
    *        An optional function to transform the value.  If provided,
    *        this function receives the new preference value as an argument
    *        and its return value is used by the getter.
@@ -314,6 +285,15 @@ export var XPCOMUtils = {
 
   /**
    * Defines a non-writable property on an object.
+   *
+   * @param {object} aObj
+   *        The object to define the property on.
+   *
+   * @param {string} aName
+   *        The name of the non-writable property to define on aObject.
+   *
+   * @param {any} aValue
+   *        The value of the non-writable property.
    */
   defineConstant(aObj, aName, aValue) {
     Object.defineProperty(aObj, aName, {

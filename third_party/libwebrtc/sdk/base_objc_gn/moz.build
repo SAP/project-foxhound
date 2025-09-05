@@ -39,10 +39,10 @@ LOCAL_INCLUDES += [
     "!/ipc/ipdl/_ipdlheaders",
     "!/third_party/libwebrtc/gen",
     "/ipc/chromium/src",
+    "/third_party/abseil-cpp/",
     "/third_party/libwebrtc/",
     "/third_party/libwebrtc/sdk/objc/",
     "/third_party/libwebrtc/sdk/objc/base/",
-    "/third_party/libwebrtc/third_party/abseil-cpp/",
     "/tools/profiler/public"
 ]
 
@@ -51,6 +51,7 @@ UNIFIED_SOURCES += [
     "/third_party/libwebrtc/sdk/objc/base/RTCLogging.mm",
     "/third_party/libwebrtc/sdk/objc/base/RTCVideoCapturer.m",
     "/third_party/libwebrtc/sdk/objc/base/RTCVideoCodecInfo.m",
+    "/third_party/libwebrtc/sdk/objc/base/RTCVideoEncoderFactory.mm",
     "/third_party/libwebrtc/sdk/objc/base/RTCVideoEncoderQpThresholds.m",
     "/third_party/libwebrtc/sdk/objc/base/RTCVideoEncoderSettings.m",
     "/third_party/libwebrtc/sdk/objc/base/RTCVideoFrame.mm"

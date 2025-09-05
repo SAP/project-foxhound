@@ -29,6 +29,11 @@ namespace xsimd
         template <class A, class T, size_t I>
         XSIMD_INLINE batch<T, A> insert(batch<T, A> const& self, T val, index<I>, requires_arch<generic>) noexcept;
 
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint16_t, A>* matrix_begin, batch<uint16_t, A>* matrix_end, requires_arch<generic>) noexcept;
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint8_t, A>* matrix_begin, batch<uint8_t, A>* matrix_end, requires_arch<generic>) noexcept;
+
         namespace detail
         {
             XSIMD_INLINE void split_avx(__m256i val, __m128i& low, __m128i& high) noexcept
@@ -1593,6 +1598,159 @@ namespace xsimd
         {
             return bitwise_cast<T>(
                 swizzle(bitwise_cast<double>(self), mask));
+        }
+        // transpose
+        template <class A>
+        XSIMD_INLINE void transpose(batch<float, A>* matrix_begin, batch<float, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<float, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            // See
+            // https://stackoverflow.com/questions/25622745/transpose-an-8x8-float-using-avx-avx2
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1],
+                 r2 = matrix_begin[2], r3 = matrix_begin[3],
+                 r4 = matrix_begin[4], r5 = matrix_begin[5],
+                 r6 = matrix_begin[6], r7 = matrix_begin[7];
+
+            auto t0 = _mm256_unpacklo_ps(r0, r1);
+            auto t1 = _mm256_unpackhi_ps(r0, r1);
+            auto t2 = _mm256_unpacklo_ps(r2, r3);
+            auto t3 = _mm256_unpackhi_ps(r2, r3);
+            auto t4 = _mm256_unpacklo_ps(r4, r5);
+            auto t5 = _mm256_unpackhi_ps(r4, r5);
+            auto t6 = _mm256_unpacklo_ps(r6, r7);
+            auto t7 = _mm256_unpackhi_ps(r6, r7);
+
+            r0 = _mm256_shuffle_ps(t0, t2, _MM_SHUFFLE(1, 0, 1, 0));
+            r1 = _mm256_shuffle_ps(t0, t2, _MM_SHUFFLE(3, 2, 3, 2));
+            r2 = _mm256_shuffle_ps(t1, t3, _MM_SHUFFLE(1, 0, 1, 0));
+            r3 = _mm256_shuffle_ps(t1, t3, _MM_SHUFFLE(3, 2, 3, 2));
+            r4 = _mm256_shuffle_ps(t4, t6, _MM_SHUFFLE(1, 0, 1, 0));
+            r5 = _mm256_shuffle_ps(t4, t6, _MM_SHUFFLE(3, 2, 3, 2));
+            r6 = _mm256_shuffle_ps(t5, t7, _MM_SHUFFLE(1, 0, 1, 0));
+            r7 = _mm256_shuffle_ps(t5, t7, _MM_SHUFFLE(3, 2, 3, 2));
+
+            matrix_begin[0] = _mm256_permute2f128_ps(r0, r4, 0x20);
+            matrix_begin[1] = _mm256_permute2f128_ps(r1, r5, 0x20);
+            matrix_begin[2] = _mm256_permute2f128_ps(r2, r6, 0x20);
+            matrix_begin[3] = _mm256_permute2f128_ps(r3, r7, 0x20);
+            matrix_begin[4] = _mm256_permute2f128_ps(r0, r4, 0x31);
+            matrix_begin[5] = _mm256_permute2f128_ps(r1, r5, 0x31);
+            matrix_begin[6] = _mm256_permute2f128_ps(r2, r6, 0x31);
+            matrix_begin[7] = _mm256_permute2f128_ps(r3, r7, 0x31);
+        }
+
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint32_t, A>* matrix_begin, batch<uint32_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<float, A>*>(matrix_begin), reinterpret_cast<batch<float, A>*>(matrix_end), A {});
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<int32_t, A>* matrix_begin, batch<int32_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<float, A>*>(matrix_begin), reinterpret_cast<batch<float, A>*>(matrix_end), A {});
+        }
+
+        template <class A>
+        XSIMD_INLINE void transpose(batch<double, A>* matrix_begin, batch<double, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<double, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1],
+                 r2 = matrix_begin[2], r3 = matrix_begin[3];
+
+            auto t0 = _mm256_unpacklo_pd(r0, r1); // r00 r10 r01 r11
+            auto t1 = _mm256_unpackhi_pd(r0, r1); // r02 r12 r03 r13
+            auto t2 = _mm256_unpacklo_pd(r2, r3); // r20 r30 r21 r31
+            auto t3 = _mm256_unpackhi_pd(r2, r3); // r22 r32 r23 r33
+
+            matrix_begin[0] = _mm256_permute2f128_pd(t0, t2, 0x20);
+            matrix_begin[1] = _mm256_permute2f128_pd(t1, t3, 0x20);
+            matrix_begin[2] = _mm256_permute2f128_pd(t0, t2, 0x31);
+            matrix_begin[3] = _mm256_permute2f128_pd(t1, t3, 0x31);
+        }
+
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint64_t, A>* matrix_begin, batch<uint64_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<double, A>*>(matrix_begin), reinterpret_cast<batch<double, A>*>(matrix_end), A {});
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<int64_t, A>* matrix_begin, batch<int64_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<double, A>*>(matrix_begin), reinterpret_cast<batch<double, A>*>(matrix_end), A {});
+        }
+
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint16_t, A>* matrix_begin, batch<uint16_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<uint16_t, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            batch<uint16_t, sse4_2> tmp_lo0[8];
+            for (int i = 0; i < 8; ++i)
+                tmp_lo0[i] = _mm256_castsi256_si128(matrix_begin[i]);
+            transpose(tmp_lo0 + 0, tmp_lo0 + 8, sse4_2 {});
+
+            batch<uint16_t, sse4_2> tmp_hi0[8];
+            for (int i = 0; i < 8; ++i)
+                tmp_hi0[i] = _mm256_castsi256_si128(matrix_begin[8 + i]);
+            transpose(tmp_hi0 + 0, tmp_hi0 + 8, sse4_2 {});
+
+            batch<uint16_t, sse4_2> tmp_lo1[8];
+            for (int i = 0; i < 8; ++i)
+                tmp_lo1[i] = _mm256_extractf128_si256(matrix_begin[i], 1);
+            transpose(tmp_lo1 + 0, tmp_lo1 + 8, sse4_2 {});
+
+            batch<uint16_t, sse4_2> tmp_hi1[8];
+            for (int i = 0; i < 8; ++i)
+                tmp_hi1[i] = _mm256_extractf128_si256(matrix_begin[8 + i], 1);
+            transpose(tmp_hi1 + 0, tmp_hi1 + 8, sse4_2 {});
+
+            for (int i = 0; i < 8; ++i)
+                matrix_begin[i] = detail::merge_sse(tmp_lo0[i], tmp_hi0[i]);
+            for (int i = 0; i < 8; ++i)
+                matrix_begin[i + 8] = detail::merge_sse(tmp_lo1[i], tmp_hi1[i]);
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<int16_t, A>* matrix_begin, batch<int16_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<uint16_t, A>*>(matrix_begin), reinterpret_cast<batch<uint16_t, A>*>(matrix_end), A {});
+        }
+
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint8_t, A>* matrix_begin, batch<uint8_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<uint8_t, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            batch<uint8_t, sse4_2> tmp_lo0[16];
+            for (int i = 0; i < 16; ++i)
+                tmp_lo0[i] = _mm256_castsi256_si128(matrix_begin[i]);
+            transpose(tmp_lo0 + 0, tmp_lo0 + 16, sse4_2 {});
+
+            batch<uint8_t, sse4_2> tmp_hi0[16];
+            for (int i = 0; i < 16; ++i)
+                tmp_hi0[i] = _mm256_castsi256_si128(matrix_begin[16 + i]);
+            transpose(tmp_hi0 + 0, tmp_hi0 + 16, sse4_2 {});
+
+            batch<uint8_t, sse4_2> tmp_lo1[16];
+            for (int i = 0; i < 16; ++i)
+                tmp_lo1[i] = _mm256_extractf128_si256(matrix_begin[i], 1);
+            transpose(tmp_lo1 + 0, tmp_lo1 + 16, sse4_2 {});
+
+            batch<uint8_t, sse4_2> tmp_hi1[16];
+            for (int i = 0; i < 16; ++i)
+                tmp_hi1[i] = _mm256_extractf128_si256(matrix_begin[16 + i], 1);
+            transpose(tmp_hi1 + 0, tmp_hi1 + 16, sse4_2 {});
+
+            for (int i = 0; i < 16; ++i)
+                matrix_begin[i] = detail::merge_sse(tmp_lo0[i], tmp_hi0[i]);
+            for (int i = 0; i < 16; ++i)
+                matrix_begin[i + 16] = detail::merge_sse(tmp_lo1[i], tmp_hi1[i]);
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<int8_t, A>* matrix_begin, batch<int8_t, A>* matrix_end, requires_arch<avx>) noexcept
+        {
+            return transpose(reinterpret_cast<batch<uint8_t, A>*>(matrix_begin), reinterpret_cast<batch<uint8_t, A>*>(matrix_end), A {});
         }
 
         // trunc

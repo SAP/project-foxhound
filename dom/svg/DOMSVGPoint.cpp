@@ -37,7 +37,8 @@ class MOZ_RAII AutoChangePointNotifier {
   DOMSVGPoint* const mValue;
 };
 
-static SVGAttrTearoffTable<SVGPoint, DOMSVGPoint> sSVGTranslateTearOffTable;
+MOZ_CONSTINIT static SVGAttrTearoffTable<SVGPoint, DOMSVGPoint>
+    sSVGTranslateTearOffTable;
 
 // We could use NS_IMPL_CYCLE_COLLECTION(, except that in Unlink() we need to
 // clear our list's weak ref to us to be safe. (The other option would be to
@@ -71,9 +72,9 @@ float DOMSVGPoint::X() {
   return InternalItem().mX;
 }
 
-void DOMSVGPoint::SetX(float aX, ErrorResult& rv) {
+void DOMSVGPoint::SetX(float aX, ErrorResult& aRv) {
   if (mIsAnimValItem) {
-    rv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
+    aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
     return;
   }
 
@@ -96,9 +97,9 @@ float DOMSVGPoint::Y() {
   return InternalItem().mY;
 }
 
-void DOMSVGPoint::SetY(float aY, ErrorResult& rv) {
+void DOMSVGPoint::SetY(float aY, ErrorResult& aRv) {
   if (mIsAnimValItem) {
-    rv.Throw(NS_ERROR_DOM_NO_MODIFICATION_ALLOWED_ERR);
+    aRv.ThrowNoModificationAllowedError("Animated values cannot be set");
     return;
   }
   auto& val = InternalItem();

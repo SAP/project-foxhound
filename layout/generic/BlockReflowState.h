@@ -110,6 +110,9 @@ class BlockReflowState {
    * our coordinate system, which is the content box, with (0, 0) in the
    * upper left.
    *
+   * The parameter aCBWM is the containing block's writing mode, which is
+   * NOT necessarily the mode currently being used by the float manager.
+   *
    * Returns whether there are floats present at the given block-direction
    * coordinate and within the inline size of the content rect.
    *
@@ -121,21 +124,24 @@ class BlockReflowState {
    * negative value (in which case a 0-ISize float-avoiding block *should not*
    * be considered as fitting, because it would intersect some float).
    */
-  nsFlowAreaRect GetFloatAvailableSpace() const {
-    return GetFloatAvailableSpace(mBCoord);
+  nsFlowAreaRect GetFloatAvailableSpace(WritingMode aCBWM) const {
+    return GetFloatAvailableSpace(aCBWM, mBCoord);
   }
-  nsFlowAreaRect GetFloatAvailableSpaceForPlacingFloat(nscoord aBCoord) const {
-    return GetFloatAvailableSpaceWithState(aBCoord, ShapeType::Margin, nullptr);
-  }
-  nsFlowAreaRect GetFloatAvailableSpace(nscoord aBCoord) const {
-    return GetFloatAvailableSpaceWithState(aBCoord, ShapeType::ShapeOutside,
+  nsFlowAreaRect GetFloatAvailableSpaceForPlacingFloat(WritingMode aCBWM,
+                                                       nscoord aBCoord) const {
+    return GetFloatAvailableSpaceWithState(aCBWM, aBCoord, ShapeType::Margin,
                                            nullptr);
   }
+  nsFlowAreaRect GetFloatAvailableSpace(WritingMode aCBWM,
+                                        nscoord aBCoord) const {
+    return GetFloatAvailableSpaceWithState(aCBWM, aBCoord,
+                                           ShapeType::ShapeOutside, nullptr);
+  }
   nsFlowAreaRect GetFloatAvailableSpaceWithState(
-      nscoord aBCoord, ShapeType aShapeType,
+      WritingMode aCBWM, nscoord aBCoord, ShapeType aShapeType,
       nsFloatManager::SavedState* aState) const;
   nsFlowAreaRect GetFloatAvailableSpaceForBSize(
-      nscoord aBCoord, nscoord aBSize,
+      WritingMode aCBWM, nscoord aBCoord, nscoord aBSize,
       nsFloatManager::SavedState* aState) const;
 
   // @return true if AddFloat was able to place the float; false if the float
@@ -168,7 +174,7 @@ class BlockReflowState {
     FloatsPushedOrSplit,
   };
   std::tuple<nscoord, ClearFloatsResult> ClearFloats(
-      nscoord aBCoord, StyleClear aClearType,
+      nscoord aBCoord, UsedClear aClearType,
       nsIFrame* aFloatAvoidingBlock = nullptr);
 
   nsFloatManager* FloatManager() const {
@@ -397,7 +403,7 @@ class BlockReflowState {
 
   // Cache the result of nsBlockFrame::FindTrailingClear() from mBlock's
   // prev-in-flows. See nsBlockFrame::ReflowPushedFloats().
-  StyleClear mTrailingClearFromPIF;
+  UsedClear mTrailingClearFromPIF;
 
   // The amount of computed content block-size "consumed" by our previous
   // continuations.

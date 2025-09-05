@@ -93,7 +93,7 @@ impl Components<'_> {
     }
 }
 
-impl<'source, 'temp> Lowerer<'source, 'temp> {
+impl<'source> Lowerer<'source, '_> {
     /// Generate Naga IR for a type constructor expression.
     ///
     /// The `constructor` value represents the head of the constructor
@@ -490,8 +490,8 @@ impl<'source, 'temp> Lowerer<'source, 'temp> {
                         NonZeroU32::new(u32::try_from(components.len()).unwrap()).unwrap(),
                     ),
                     stride: {
-                        self.layouter.update(ctx.module.to_ctx()).unwrap();
-                        self.layouter[base].to_stride()
+                        ctx.layouter.update(ctx.module.to_ctx()).unwrap();
+                        ctx.layouter[base].to_stride()
                     },
                 };
                 let ty = ctx.ensure_type_exists(inner);
@@ -530,11 +530,11 @@ impl<'source, 'temp> Lowerer<'source, 'temp> {
 
             // Bad conversion (type cast)
             (Components::One { span, ty_inner, .. }, constructor) => {
-                let from_type = ty_inner.to_wgsl(&ctx.module.to_ctx());
+                let from_type = ty_inner.to_wgsl(&ctx.module.to_ctx()).into();
                 return Err(Error::BadTypeCast {
                     span,
                     from_type,
-                    to_type: constructor.to_error_string(ctx),
+                    to_type: constructor.to_error_string(ctx).into(),
                 });
             }
 
@@ -578,8 +578,13 @@ impl<'source, 'temp> Lowerer<'source, 'temp> {
                 Constructor::Type(ty)
             }
             ast::ConstructorType::PartialVector { size } => Constructor::PartialVector { size },
-            ast::ConstructorType::Vector { size, scalar } => {
-                let ty = ctx.ensure_type_exists(scalar.to_inner_vector(size));
+            ast::ConstructorType::Vector { size, ty, ty_span } => {
+                let ty = self.resolve_ast_type(ty, &mut ctx.as_const())?;
+                let scalar = match ctx.module.types[ty].inner {
+                    crate::TypeInner::Scalar(sc) => sc,
+                    _ => return Err(Error::UnknownScalarType(ty_span)),
+                };
+                let ty = ctx.ensure_type_exists(crate::TypeInner::Vector { size, scalar });
                 Constructor::Type(ty)
             }
             ast::ConstructorType::PartialMatrix { columns, rows } => {
@@ -588,22 +593,31 @@ impl<'source, 'temp> Lowerer<'source, 'temp> {
             ast::ConstructorType::Matrix {
                 rows,
                 columns,
-                width,
+                ty,
+                ty_span,
             } => {
-                let ty = ctx.ensure_type_exists(crate::TypeInner::Matrix {
-                    columns,
-                    rows,
-                    scalar: crate::Scalar::float(width),
-                });
+                let ty = self.resolve_ast_type(ty, &mut ctx.as_const())?;
+                let scalar = match ctx.module.types[ty].inner {
+                    crate::TypeInner::Scalar(sc) => sc,
+                    _ => return Err(Error::UnknownScalarType(ty_span)),
+                };
+                let ty = match scalar.kind {
+                    crate::ScalarKind::Float => ctx.ensure_type_exists(crate::TypeInner::Matrix {
+                        columns,
+                        rows,
+                        scalar,
+                    }),
+                    _ => return Err(Error::BadMatrixScalarKind(ty_span, scalar)),
+                };
                 Constructor::Type(ty)
             }
             ast::ConstructorType::PartialArray => Constructor::PartialArray,
             ast::ConstructorType::Array { base, size } => {
-                let base = self.resolve_ast_type(base, &mut ctx.as_global())?;
-                let size = self.array_size(size, &mut ctx.as_global())?;
+                let base = self.resolve_ast_type(base, &mut ctx.as_const())?;
+                let size = self.array_size(size, &mut ctx.as_const())?;
 
-                self.layouter.update(ctx.module.to_ctx()).unwrap();
-                let stride = self.layouter[base].to_stride();
+                ctx.layouter.update(ctx.module.to_ctx()).unwrap();
+                let stride = ctx.layouter[base].to_stride();
 
                 let ty = ctx.ensure_type_exists(crate::TypeInner::Array { base, size, stride });
                 Constructor::Type(ty)

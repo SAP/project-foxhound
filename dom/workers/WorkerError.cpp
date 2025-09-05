@@ -323,8 +323,8 @@ void WorkerErrorReport::ReportError(
 
         MOZ_ASSERT(globalScope->GetWrapperPreserveColor() == global);
 
-        RefPtr<ErrorEvent> event =
-            ErrorEvent::Constructor(aTarget, u"error"_ns, init);
+        RefPtr<ErrorEvent> event = ErrorEvent::Constructor(
+            aTarget ? aTarget : globalScope, u"error"_ns, init);
         event->SetTrusted(true);
 
         if (NS_FAILED(EventDispatcher::DispatchDOMEvent(
@@ -437,6 +437,17 @@ void WorkerErrorReport::LogErrorToConsole(const ErrorData& aReport,
   fprintf(stderr, kErrorString, msg.get(), aReport.filename().get(),
           aReport.lineNumber());
   fflush(stderr);
+}
+
+/* static */
+void WorkerErrorReport::LogErrorToConsole(const nsAString& aMessage) {
+  AssertIsOnMainThread();
+
+  nsCOMPtr<nsIConsoleService> consoleService =
+      do_GetService(NS_CONSOLESERVICE_CONTRACTID);
+  NS_WARNING_ASSERTION(consoleService, "Failed to get console service!");
+
+  consoleService->LogStringMessage(aMessage.BeginReading());
 }
 
 /* static */

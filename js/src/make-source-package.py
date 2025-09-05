@@ -180,6 +180,7 @@ rsync_filter_list = """
 
 + /.cargo/config.toml.in
 
++ /third_party/fmt/**
 + /third_party/function2/**
 - /third_party/python/gyp
 + /third_party/python/**
@@ -191,6 +192,7 @@ rsync_filter_list = """
 + /testing/mach_commands.py
 + /testing/moz.build
 + /testing/mozbase/**
++ /testing/mozharness/**
 + /testing/performance/**
 + /testing/test/**
 + /testing/web-platform/*.ini

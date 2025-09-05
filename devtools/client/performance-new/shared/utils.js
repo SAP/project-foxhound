@@ -464,14 +464,6 @@ const featureDescriptions = [
     title: "Record screenshots of all browser windows.",
   },
   {
-    name: "JSTracer",
-    value: "jstracer",
-    title: "Trace JS engine",
-    experimental: true,
-    disabledReason:
-      "JS Tracer is currently disabled due to crashes. See Bug 1565788.",
-  },
-  {
     name: "IPC Messages",
     value: "ipcmessages",
     title: "Track IPC messages.",
@@ -572,6 +564,25 @@ const featureDescriptions = [
     name: "Network Bandwidth",
     value: "bandwidth",
     title: "Record the network bandwidth used between every profiler sample.",
+  },
+  {
+    name: "JS Execution Tracing",
+    value: "tracing",
+    title:
+      "Disable periodic stack sampling, and capture information about every JS function executed.",
+    experimental: true,
+  },
+  {
+    name: "Sandbox profiling",
+    value: "sandbox",
+    title: "Report sandbox syscalls and logs in the profiler.",
+  },
+  {
+    name: "Flows",
+    value: "flows",
+    title:
+      "Include all flow-related markers. These markers show the program flow better but " +
+      "can cause more overhead in some places than normal.",
   },
 ];
 

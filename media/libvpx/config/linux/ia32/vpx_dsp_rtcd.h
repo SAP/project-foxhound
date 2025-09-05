@@ -1,5 +1,5 @@
 /*
- *  Copyright (c) 2024 The WebM project authors. All Rights Reserved.
+ *  Copyright (c) 2025 The WebM project authors. All Rights Reserved.
  *
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
@@ -1611,4 +1611,4 @@ static void setup_rtcd_internal(void)
 }  // extern "C"
 #endif
 
-#endif
+#endif  // VPX_DSP_RTCD_H_

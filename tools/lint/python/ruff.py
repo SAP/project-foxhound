@@ -11,28 +11,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-import mozfile
 from mozlint import result
 
 here = os.path.abspath(os.path.dirname(__file__))
-RUFF_REQUIREMENTS_PATH = os.path.join(here, "ruff_requirements.txt")
-
-RUFF_NOT_FOUND = """
-Could not find ruff! Install ruff and try again.
-
-    $ pip install -U --require-hashes -r {}
-""".strip().format(
-    RUFF_REQUIREMENTS_PATH
-)
-
-
-RUFF_INSTALL_ERROR = """
-Unable to install correct version of ruff!
-Try to install it manually with:
-    $ pip install -U --require-hashes -r {}
-""".strip().format(
-    RUFF_REQUIREMENTS_PATH
-)
 
 
 def default_bindir():
@@ -61,32 +42,6 @@ def get_ruff_version(binary):
     if matches:
         return matches[1]
     print("Error: Could not parse the version '{}'".format(output))
-
-
-def setup(root, log, **lintargs):
-    virtualenv_bin_path = lintargs.get("virtualenv_bin_path")
-    binary = mozfile.which("ruff", path=(virtualenv_bin_path, default_bindir()))
-
-    if binary and os.path.isfile(binary):
-        log.debug(f"Looking for ruff at {binary}")
-        version = get_ruff_version(binary)
-        versions = [
-            line.split()[0].strip()
-            for line in open(RUFF_REQUIREMENTS_PATH).readlines()
-            if line.startswith("ruff==")
-        ]
-        if [f"ruff=={version}"] == versions:
-            log.debug("ruff is present with expected version {}".format(version))
-            return 0
-        else:
-            log.debug("ruff is present but unexpected version {}".format(version))
-
-    virtualenv_manager = lintargs["virtualenv_manager"]
-    try:
-        virtualenv_manager.install_pip_requirements(RUFF_REQUIREMENTS_PATH, quiet=True)
-    except subprocess.CalledProcessError:
-        print(RUFF_INSTALL_ERROR)
-        return 1
 
 
 def run_process(config, cmd, **kwargs):
@@ -125,7 +80,7 @@ def lint(paths, config, log, **lintargs):
 
     args = ["ruff", "check", "--force-exclude"] + paths + non_py_files
 
-    if config["exclude"]:
+    if config.get("exclude"):
         args.append(f"--extend-exclude={','.join(config['exclude'])}")
 
     process_kwargs = {"processStderrLine": lambda line: log.debug(line)}
@@ -135,17 +90,20 @@ def lint(paths, config, log, **lintargs):
         # Do a first pass with --fix-only as the json format doesn't return the
         # number of fixed issues.
         fix_args = args + ["--fix-only"]
+        if not lintargs.get("warning"):
+            # Don't fix warnings to limit unrelated changes sneaking into patches.
+            # except when  --fix -W  is passed
+            fix_args.append(f"--extend-ignore={','.join(warning_rules)}")
 
-        # Don't fix warnings to limit unrelated changes sneaking into patches.
-        fix_args.append(f"--extend-ignore={','.join(warning_rules)}")
+        log.debug(f"Running --fix: {fix_args}")
         output = run_process(config, fix_args, **process_kwargs)
         matches = re.match(r"Fixed (\d+) errors?.", output)
         if matches:
             fixed = int(matches[1])
-
+    args += ["--output-format=json"]
     log.debug(f"Running with args: {args}")
 
-    output = run_process(config, args + ["--format=json"], **process_kwargs)
+    output = run_process(config, args, **process_kwargs)
     if not output:
         return []
 

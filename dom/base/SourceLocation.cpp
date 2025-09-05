@@ -5,6 +5,7 @@
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #include "mozilla/SourceLocation.h"
+#include "mozilla/ThreadLocal.h"
 #include "nsContentUtils.h"
 #include "jsapi.h"
 
@@ -21,19 +22,37 @@ SourceLocation::SourceLocation(nsCOMPtr<nsIURI>&& aResource, uint32_t aLine,
                                uint32_t aCol)
     : mResource(std::move(aResource)), mLine(aLine), mColumn(aCol) {}
 
+static MOZ_THREAD_LOCAL(const JSCallingLocation*) tlsFallback;
+const JSCallingLocation* JSCallingLocation::GetFallback() {
+  if (!tlsFallback.initialized()) {
+    return nullptr;
+  }
+  return tlsFallback.get();
+}
+
+void JSCallingLocation::SetFallback(const JSCallingLocation* aFallback) {
+  if (!tlsFallback.init()) {
+    return;
+  }
+  tlsFallback.set(aFallback);
+}
+
 JSCallingLocation JSCallingLocation::Get() {
   return Get(nsContentUtils::GetCurrentJSContext());
 }
 
 JSCallingLocation JSCallingLocation::Get(JSContext* aCx) {
   JSCallingLocation result;
+  if (const JSCallingLocation* loc = GetFallback()) {
+    result = *loc;
+  }
   if (!aCx) {
     return result;
   }
   JS::AutoFilename filename;
   uint32_t line;
   JS::ColumnNumberOneOrigin column;
-  if (!JS::DescribeScriptedCaller(aCx, &filename, &line, &column)) {
+  if (!JS::DescribeScriptedCaller(&filename, aCx, &line, &column)) {
     return result;
   }
   nsCString file;

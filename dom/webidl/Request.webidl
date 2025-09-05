@@ -7,6 +7,9 @@
  * https://fetch.spec.whatwg.org/#request-class
  */
 
+
+interface Principal;
+
 typedef (Request or UTF8String) RequestInfo;
 typedef unsigned long nsContentPolicyType;
 
@@ -77,6 +80,9 @@ dictionary RequestInit {
   [ChromeOnly]
   boolean mozErrors;
 
+  [ChromeOnly]
+  Principal triggeringPrincipal;
+
   AbortSignal? signal;
 
   [Pref="network.fetchpriority.enabled"]
@@ -89,7 +95,7 @@ dictionary RequestInit {
 enum RequestDestination {
   "",
   "audio", "audioworklet", "document", "embed", "font", "frame", "iframe",
-  "image", "manifest", "object", "paintworklet", "report", "script",
+  "image", "json", "manifest", "object", "paintworklet", "report", "script",
   "sharedworker", "style",  "track", "video", "worker", "xslt"
 };
 

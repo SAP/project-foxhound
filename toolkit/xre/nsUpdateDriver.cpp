@@ -79,13 +79,13 @@ static nsresult GetCurrentWorkingDir(nsACString& aOutPath) {
 
 #if defined(XP_WIN)
   wchar_t wpath[MAX_PATH];
-  if (!_wgetcwd(wpath, ArrayLength(wpath))) {
+  if (!_wgetcwd(wpath, std::size(wpath))) {
     return NS_ERROR_FAILURE;
   }
   CopyUTF16toUTF8(nsDependentString(wpath), aOutPath);
 #else
   char path[MAXPATHLEN];
-  if (!getcwd(path, ArrayLength(path))) {
+  if (!getcwd(path, std::size(path))) {
     return NS_ERROR_FAILURE;
   }
   aOutPath = path;
@@ -146,33 +146,49 @@ static bool GetStatusFile(nsIFile* dir, nsCOMPtr<nsIFile>& result) {
   return GetFile(dir, "update.status"_ns, result);
 }
 
+static void GetPidString(nsACString& output) {
+  output.Truncate(0);
+  output.AppendInt((int32_t)getpid());
+}
+
 /**
- * Get the contents of the update.status file when the update.status file can
- * be opened with read and write access. The reason it is opened for both read
- * and write is to prevent trying to update when the user doesn't have write
- * access to the update directory.
+ * Get the contents of the file when it can be opened with read and write
+ * access. The reason it is opened for both read and write is to prevent trying
+ * to update when the user doesn't have write access to the update directory.
+ * Otherwise we will loop infinitely and try to install it over and over.
  *
- * @param statusFile the status file object.
- * @param buf        the buffer holding the file contents
+ * @param  file
+ *         The file object.
+ * @param  buf
+ *         The buffer holding the file contents.
  *
- * @return true if successful, false otherwise.
+ * @return The result of `PR_Read`: number of characters read or -1 on error.
  */
 template <size_t Size>
-static bool GetStatusFileContents(nsIFile* statusFile, char (&buf)[Size]) {
-  static_assert(
-      Size > 16,
-      "Buffer needs to be large enough to hold the known status codes");
-
+static int32_t ReadWritableFile(nsIFile* file, char (&buf)[Size]) {
   PRFileDesc* fd = nullptr;
-  nsresult rv = statusFile->OpenNSPRFileDesc(PR_RDWR, 0660, &fd);
+  nsresult rv = file->OpenNSPRFileDesc(PR_RDWR, 0660, &fd);
   if (NS_FAILED(rv)) {
-    return false;
+    return 0;
   }
 
   const int32_t n = PR_Read(fd, buf, Size);
   PR_Close(fd);
 
-  return (n >= 0);
+  return n;
+}
+
+static nsresult WriteFile(nsIFile* file, nsACString& toWrite) {
+  PRFileDesc* fd = nullptr;
+  nsresult rv = file->OpenNSPRFileDesc(PR_WRONLY | PR_CREATE_FILE | PR_TRUNCATE,
+                                       0660, &fd);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  const int32_t n =
+      PR_Write(fd, PromiseFlatCString(toWrite).get(), toWrite.Length());
+  PR_Close(fd);
+
+  return (unsigned long)n == toWrite.Length() ? NS_OK : NS_ERROR_FAILURE;
 }
 
 enum UpdateStatus {
@@ -196,8 +212,9 @@ enum UpdateStatus {
 static UpdateStatus GetUpdateStatus(nsIFile* dir,
                                     nsCOMPtr<nsIFile>& statusFile) {
   if (GetStatusFile(dir, statusFile)) {
+    // This buffer must be big enough to hold all valid status codes
     char buf[32];
-    if (GetStatusFileContents(statusFile, buf)) {
+    if (ReadWritableFile(statusFile, buf) >= 0) {
       const char kPending[] = "pending";
       const char kPendingService[] = "pending-service";
       const char kPendingElevate[] = "pending-elevate";
@@ -257,6 +274,73 @@ static bool IsOlderVersion(nsIFile* versionFile, const char* appVersion) {
   }
 
   return mozilla::Version(appVersion) > buf;
+}
+
+nsresult GetUpdatePatchDir(nsIFile* updRootDir, nsIFile** updatesDirOut) {
+  nsresult rv;
+  nsCOMPtr<nsIFile> updatesDir;
+  rv = updRootDir->Clone(getter_AddRefs(updatesDir));
+  rv = updatesDir->AppendNative("updates"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = updatesDir->AppendNative("0"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  updatesDir.forget(updatesDirOut);
+  return NS_OK;
+}
+
+nsresult IsMultiSessionInstallLockoutActive(nsIFile* updRootDir,
+                                            bool& isActive) {
+  nsresult rv;
+
+  nsCOMPtr<nsIFile> timestampFile;
+  rv = GetUpdatePatchDir(updRootDir, getter_AddRefs(timestampFile));
+  NS_ENSURE_SUCCESS(rv, rv);
+  rv = timestampFile->AppendNative("update.timestamp"_ns);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  // Let's make sure we can hold any valid, unsigned 64 bit integer plus a null.
+  // Maximum 64 bit integer: 18446744073709551615 (20 characters)
+  const size_t bufferSize = 21;
+  char buffer[bufferSize];
+  int32_t readLen = ReadWritableFile(timestampFile, buffer);
+  NS_ENSURE_TRUE(readLen >= 0 && readLen < static_cast<int32_t>(bufferSize),
+                 NS_ERROR_FAILURE);
+  buffer[readLen] = '\0';
+
+  // If we couldn't read anything from the file, the lockout is not active.
+  if (readLen == 0) {
+    isActive = false;
+    return NS_OK;
+  }
+
+  nsDependentCString timestampString(buffer);
+  // This timestamp represents the end of the Multi Session Install Lockout.
+  uint64_t msilEnd = timestampString.ToInteger64(&rv);
+  NS_ENSURE_SUCCESS(rv, rv);
+
+  uint64_t now = PR_Now() / PR_USEC_PER_MSEC;
+
+  isActive = now < msilEnd;
+
+#ifdef DEBUG
+  printf_stderr("Multi Session Install Lockout %s active\n",
+                isActive ? "is" : "is not");
+#endif
+
+  return NS_OK;
+}
+
+nsresult WriteUpdateCompleteTestFile(nsIFile* updRootDir) {
+  nsCOMPtr<nsIFile> outputFile;
+  nsresult rv = updRootDir->Clone(getter_AddRefs(outputFile));
+  NS_ENSURE_SUCCESS(rv, rv);
+  outputFile->AppendNative("test_process_updates.txt"_ns);
+
+  nsAutoCString pid;
+  GetPidString(pid);
+
+  return WriteFile(outputFile, pid);
 }
 
 /**
@@ -362,7 +446,9 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
 
   // appFilePath and workingDirPath are only used when the application will be
   // restarted.
+#ifndef XP_MACOSX
   nsAutoCString appFilePath;
+#endif
   nsAutoCString workingDirPath;
   if (restart) {
     // Get the path to the current working directory.
@@ -372,7 +458,9 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
     }
 
     // Get the application file path used by the updater to restart the
-    // application after the update has finished.
+    // application after the update has finished. Note that macOS uses the
+    // path to the application bundle, i.e. installDirPath, to relaunch the
+    // application.
     nsCOMPtr<nsIFile> appFile;
     XRE_GetBinaryPath(getter_AddRefs(appFile));
     if (!appFile) {
@@ -386,7 +474,7 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
       return;
     }
     CopyUTF16toUTF8(appFilePathW, appFilePath);
-#else
+#elif !defined(XP_MACOSX)
     rv = appFile->GetNativePath(appFilePath);
     if (NS_FAILED(rv)) {
       return;
@@ -495,7 +583,7 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
     // which is ignored by the updater.
     pid.AssignLiteral("0");
 #else
-    pid.AppendInt((int32_t)getpid());
+    GetPidString(pid);
 #endif
     if (isStaged) {
       // Append a special token to the PID in order to inform the updater that
@@ -525,7 +613,11 @@ static void ApplyUpdate(nsIFile* greDir, nsIFile* updateDir, nsIFile* appDir,
   argv[4] = (char*)pid.get();
   if (restart && appArgc) {
     argv[5] = (char*)workingDirPath.get();
+#if defined(XP_MACOSX)
+    argv[6] = (char*)installDirPath.get();
+#else
     argv[6] = (char*)appFilePath.get();
+#endif
     for (int i = 1; i < appArgc; ++i) {
       argv[6 + i] = appArgv[i];
     }
@@ -672,11 +764,7 @@ nsresult ProcessUpdates(nsIFile* greDir, nsIFile* appDir, nsIFile* updRootDir,
 #endif
 
   nsCOMPtr<nsIFile> updatesDir;
-  rv = updRootDir->Clone(getter_AddRefs(updatesDir));
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = updatesDir->AppendNative("updates"_ns);
-  NS_ENSURE_SUCCESS(rv, rv);
-  rv = updatesDir->AppendNative("0"_ns);
+  rv = GetUpdatePatchDir(updRootDir, getter_AddRefs(updatesDir));
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Return early since there isn't a valid update when the update application

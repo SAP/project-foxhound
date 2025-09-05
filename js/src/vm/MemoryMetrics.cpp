@@ -10,6 +10,7 @@
 
 #include <algorithm>
 
+#include "gc/BufferAllocator.h"
 #include "gc/GC.h"
 #include "gc/Memory.h"
 #include "gc/Nursery.h"
@@ -34,7 +35,6 @@
 #include "wasm/WasmInstance-inl.h"
 
 using mozilla::MallocSizeOf;
-using mozilla::PodCopy;
 
 using namespace js;
 
@@ -189,14 +189,10 @@ struct StatsClosure {
 };
 
 static void DecommittedPagesChunkCallback(JSRuntime* rt, void* data,
-                                          gc::TenuredChunk* chunk,
+                                          gc::ArenaChunk* chunk,
                                           const JS::AutoRequireNoGC& nogc) {
-  size_t n = 0;
-  for (uint32_t word : chunk->decommittedPages.Storage()) {
-    n += mozilla::CountPopulation32(word);
-  }
-
-  *static_cast<size_t*>(data) += n * gc::PageSize;
+  auto* gcHeapDecommittedPages = static_cast<size_t*>(data);
+  *gcHeapDecommittedPages += chunk->decommittedPages.Count() * gc::PageSize;
 }
 
 static void StatsZoneCallback(JSRuntime* rt, void* data, Zone* zone,
@@ -218,6 +214,9 @@ static void StatsZoneCallback(JSRuntime* rt, void* data, Zone* zone,
       &rtStats->runtime.atomsMarkBitmaps, &zStats.compartmentObjects,
       &zStats.crossCompartmentWrappersTables, &zStats.compartmentsPrivateData,
       &zStats.scriptCountsMap);
+  zone->bufferAllocator.addSizeOfExcludingThis(&zStats.gcBuffers.usedBytes,
+                                               &zStats.gcBuffers.freeBytes,
+                                               &zStats.gcBuffers.adminBytes);
 }
 
 static void StatsRealmCallback(JSContext* cx, void* data, Realm* realm,
@@ -527,6 +526,13 @@ static void StatsCellCallback(JSRuntime* rt, void* data, JS::GCCellPtr cellptr,
       break;
     }
 
+    case JS::TraceKind::SmallBuffer: {
+      // Note that this overlaps with memory that is also reported as part of
+      // the owning cell.
+      zStats->smallBuffersGCHeap += thingSize;
+      break;
+    }
+
     default:
       MOZ_CRASH("invalid traceKind in StatsCellCallback");
   }
@@ -732,7 +738,7 @@ static bool CollectRuntimeStatsHelper(JSContext* cx, RuntimeStats* rtStats,
   size_t numDirtyChunks =
       (rtStats->gcHeapChunkTotal - rtStats->gcHeapUnusedChunks) / gc::ChunkSize;
   size_t perChunkAdmin =
-      sizeof(gc::TenuredChunk) - (sizeof(gc::Arena) * gc::ArenasPerChunk);
+      sizeof(gc::ArenaChunk) - (sizeof(gc::Arena) * gc::ArenasPerChunk);
   rtStats->gcHeapChunkAdmin = numDirtyChunks * perChunkAdmin;
 
   // |gcHeapUnusedArenas| is the only thing left.  Compute it in terms of

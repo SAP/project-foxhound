@@ -30,6 +30,8 @@
 #include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/HTMLScriptElement.h"
 #include "mozilla/dom/HTMLScriptElementBinding.h"
+#include "mozilla/dom/TrustedTypeUtils.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/StaticPrefs_dom.h"
 
@@ -171,9 +173,9 @@ void HTMLScriptElement::GetInnerHTML(nsAString& aInnerHTML,
   MarkTaintSourceElement(aInnerHTML, "script.innerHTML", this);
 }
 
-void HTMLScriptElement::SetInnerHTML(const nsAString& aInnerHTML,
-                                     nsIPrincipal* aScriptedPrincipal,
-                                     ErrorResult& aError) {
+void HTMLScriptElement::SetInnerHTMLTrusted(const nsAString& aInnerHTML,
+                                            nsIPrincipal* aSubjectPrincipal,
+                                            ErrorResult& aError) {
   aError = nsContentUtils::SetNodeTextContent(this, aInnerHTML, true);
   // Foxhound: script.innerHTML sink
   ReportTaintSink(aInnerHTML, "script.innerHTML", this); 
@@ -185,10 +187,103 @@ void HTMLScriptElement::GetText(nsAString& aValue, ErrorResult& aRv) const {
   }
 }
 
-void HTMLScriptElement::SetText(const nsAString& aValue, ErrorResult& aRv) {
-  aRv = nsContentUtils::SetNodeTextContent(this, aValue, true);
+void HTMLScriptElement::GetText(OwningTrustedScriptOrString& aValue,
+                                ErrorResult& aRv) const {
+  GetText(aValue.SetAsString(), aRv);
+}
+
+void HTMLScriptElement::SetText(const TrustedScriptOrString& aValue,
+                                ErrorResult& aRv) {
+  constexpr nsLiteralString sink = u"HTMLScriptElement text"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aValue, sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aRv);
+  
+  if (aRv.Failed()) {
+    return;
+  }
+
   // Foxhound: script.text sink
-  ReportTaintSink(aValue, "script.text", this); 
+  ReportTaintSink(*compliantString, "script.text", this);      
+
+  aRv = nsContentUtils::SetNodeTextContent(this, *compliantString, true);
+}
+
+void HTMLScriptElement::GetInnerText(
+    OwningTrustedScriptOrNullIsEmptyString& aValue, ErrorResult& aError) {
+  DOMString innerText;
+  nsGenericHTMLElement::GetInnerText(innerText, aError);
+  if (aError.Failed()) {
+    return;
+  }
+  aValue.SetAsNullIsEmptyString() = innerText.AsAString();
+}
+
+void HTMLScriptElement::SetInnerText(
+    const TrustedScriptOrNullIsEmptyString& aValue, ErrorResult& aError) {
+  constexpr nsLiteralString sink = u"HTMLScriptElement innerText"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aValue, sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+  if (aError.Failed()) {
+    return;
+  }
+  nsGenericHTMLElement::SetInnerText(*compliantString);
+}
+
+void HTMLScriptElement::GetTrustedScriptOrStringTextContent(
+    Nullable<OwningTrustedScriptOrString>& aTextContent,
+    mozilla::OOMReporter& aError) {
+  FragmentOrElement::GetTextContentInternal(
+      aTextContent.SetValue().SetAsString(), aError);
+}
+
+void HTMLScriptElement::SetTrustedScriptOrStringTextContent(
+    const Nullable<TrustedScriptOrString>& aTextContent,
+    nsIPrincipal* aSubjectPrincipal, mozilla::ErrorResult& aError) {
+  constexpr nsLiteralString sink = u"HTMLScriptElement textContent"_ns;
+  Maybe<nsAutoString> compliantStringHolder;
+  if (aTextContent.IsNull()) {
+    Nullable<TrustedScriptOrString> emptyString;
+    emptyString.SetValue().SetStringLiteral(u"");
+    SetTrustedScriptOrStringTextContent(emptyString, aSubjectPrincipal, aError);
+    return;
+  }
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aTextContent.Value(), sink, kTrustedTypesOnlySinkGroup, *this,
+          compliantStringHolder, aError);
+  if (aError.Failed()) {
+    return;
+  }
+  SetTextContentInternal(*compliantString, aSubjectPrincipal, aError);
+}
+
+void HTMLScriptElement::GetSrc(OwningTrustedScriptURLOrString& aSrc) {
+  GetURIAttr(nsGkAtoms::src, nullptr, aSrc.SetAsString());
+}
+
+void HTMLScriptElement::SetSrc(const TrustedScriptURLOrString& aSrc,
+                               nsIPrincipal* aTriggeringPrincipal,
+                               ErrorResult& aRv) {
+  constexpr nsLiteralString sink = u"HTMLScriptElement src"_ns;
+
+  Maybe<nsAutoString> compliantStringHolder;
+  const nsAString* compliantString =
+      TrustedTypeUtils::GetTrustedTypesCompliantString(
+          aSrc, sink, kTrustedTypesOnlySinkGroup, *this, compliantStringHolder,
+          aRv);
+  if (aRv.Failed()) {
+    return;
+  }
+
+  SetHTMLAttr(nsGkAtoms::src, *compliantString, aTriggeringPrincipal, aRv);
 }
 
 // variation of this code in SVGScriptElement - check if changes

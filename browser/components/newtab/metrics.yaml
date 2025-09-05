@@ -135,6 +135,14 @@ newtab:
             * `other`
           (See `ONBOARDING_ALLOWED_PAGE_VALUES`).
         type: string
+      window_inner_height:
+        description: >
+          The height of the page window at time of load.
+        type: string
+      window_inner_width:
+        description: >
+          The width of the page window at time of load.
+        type: string
     send_in_pings:
       - newtab
 
@@ -343,7 +351,33 @@ newtab:
         type: string
       had_previous_wallpaper:
         description: >
-          Wheather or not user had a previously set wallpaper
+          Whether or not user had a previously set wallpaper
+        type: boolean
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  wallpaper_upload:
+    type: event
+    description: >
+      Recorded when a user uploads a custom wallpaper
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943663
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943663
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      had_previous_wallpaper:
+          description: >
+            Whether or not user had a previously set wallpaper
+          type: boolean
+      had_uploaded_previously:
+        description: >
+          Whether or not user had a previously uploaded a custom wallpaper
         type: boolean
       newtab_visit_id: *newtab_visit_id
     send_in_pings:
@@ -521,6 +555,346 @@ newtab:
       send_in_pings:
         - newtab
 
+  fakespot_dismiss:
+    type: event
+    description: >
+      Recorded when a user dissmisses TBR fakespot feed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  fakespot_about_click:
+    type: event
+    description: >
+      Recorded when a user the 'About Fakespot' link in TBR fakespot feed context menu
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  fakespot_click:
+    type: event
+    description: >
+      Recorded when a user clicks on a card in TBR fakespot feed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      product_id:
+        description: >
+          id of fakespot product
+        type: string
+      category:
+        description: >
+          category of fakespot product
+        type: string
+    send_in_pings:
+      - newtab
+
+  fakespot_product_impression:
+    type: event
+    description: >
+      Recorded when a user triggers an impression on a card in TBR fakespot feed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      product_title:
+        description: >
+          title of fakespot product
+        type: string
+      product_id:
+        description: >
+          id of fakespot product
+        type: string
+      category:
+        description: >
+          category of fakespot product
+        type: string
+    send_in_pings:
+      - newtab
+
+  fakespot_cta_click:
+    type: event
+    description: >
+      Recorded when a user clicks on the CTA in TBR fakespot feed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+    send_in_pings:
+      - newtab
+
+  fakespot_category:
+    type: event
+    description: >
+      Recorded when a user changes the category in TBR fakespot feed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1924873
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      category:
+        description: >
+          category that user selected
+        type: string
+    send_in_pings:
+      - newtab
+
+  sections_impression:
+    type: event
+    description: >
+      Recorded when a section is viewport and triggers an impression event
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1927916
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1938215
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1927916
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      section:
+        description: >
+          section that had impression event
+        type: string
+      section_position:
+        description: >
+          position of section on newtab
+        type: string
+      is_secton_followed:
+        description: >
+          If click belongs in a section, if that section is followed
+        type: boolean
+    send_in_pings:
+      - newtab
+
+  sections_follow_section:
+    type: event
+    description: >
+      Recorded when a section is followed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      section:
+        description: >
+          section that had impression event
+        type: string
+      section_position:
+        description: >
+          position of section on newtab
+        type: string
+      event_source:
+        description: >
+          Where the source of the event originated ("button", "context menu", etc.)
+        type: string
+    send_in_pings:
+      - newtab
+
+  sections_unfollow_section:
+    type: event
+    description: >
+      Recorded when a section is unfollowed
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      section:
+        description: >
+          section that had impression event
+        type: string
+      section_position:
+        description: >
+          position of section on newtab
+        type: string
+      event_source:
+        description: >
+          Where the source of the event originated ("button", "context menu", etc.)
+        type: string
+    send_in_pings:
+      - newtab
+
+  sections_block_section:
+    type: event
+    description: >
+      Recorded when a section is blocked
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1932191
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      section:
+        description: >
+          section that had impression event
+        type: string
+      section_position:
+        description: >
+          position of section on newtab
+        type: string
+      event_source:
+        description: >
+          Where the source of the event originated ("button", "context menu", etc.)
+        type: string
+    send_in_pings:
+      - newtab
+
+  sections_unblock_section:
+    type: event
+    description: >
+      Recorded when a section is unblocked
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1940566
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1940566
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - mcrawford@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      section:
+        description: >
+          section that had unblock event
+        type: string
+      section_position:
+        description: >
+          position of section on newtab
+        type: string
+      event_source:
+        description: >
+          Where the source of the event originated ("button", "context menu", etc.)
+        type: string
+    send_in_pings:
+      - newtab
+
+  inline_selection_impression:
+    type: event
+    description: >
+      Recorded when there is an impression on the inline selection component
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943474
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943474
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      position:
+        description: >
+          position of the inline selection component (index point within sections)
+        type: string
+    send_in_pings:
+      - newtab
+
+  inline_selection_click:
+    type: event
+    description: >
+      Recorded when there is a click on the inline selection component
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943474
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1943474
+    data_sensitivity:
+      - interaction
+    notification_emails:
+      - nbarrett@mozilla.com
+    expires: never
+    extra_keys:
+      newtab_visit_id: *newtab_visit_id
+      topic:
+        description: >
+          unique id of topic that was clicked
+        type: string
+      is_followed:
+        description: >
+          whether the click followed a topic or unfollowed. True for followed, false for unfollowed
+        type: boolean
+      position:
+        description: >
+          position of the inline selection component (index point within sections)
+        type: string
+      topic_position:
+        description: >
+          position of the topic within the inline selection component (index point starting at 0)
+        type: string
+    send_in_pings:
+      - newtab
+
 newtab.search:
   enabled:
     lifetime: application
@@ -557,12 +931,15 @@ newtab.handoff_preference:
       enabled or disabled
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1864496
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892148
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1940643
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1864496
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1892148
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1940643
     data_sensitivity:
       - interaction
-    expires: 137
+    expires: 144
     notification_emails:
       - fx-search-telemetry@mozilla.com
 
@@ -941,6 +1318,7 @@ pocket:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854245
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1937200
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105#c11
@@ -958,8 +1336,11 @@ pocket:
     extra_keys:
       newtab_visit_id: *newtab_visit_id
       is_sponsored: &is_sponsored_pocket
-        description: Whether the pocket tile was sponsored (has an ad shim).
+        description: Whether the pocket tile was sponsored (has an ad callback).
         type: boolean
+      format: &format
+        description: For sponsored content only, was it a standard spoc, or a new IAB rectangle spoc. Can be "spoc" or "rectangle"
+        type: string
       position: &pocket_position
         description: The position (0-index) of the pocket tile.
         type: quantity
@@ -978,10 +1359,17 @@ pocket:
       scheduled_corpus_item_id: &scheduled_corpus_item_id
         description: >
           A content identifier.
-          For organic Pocket recommendations it is an opaque id produced by
-          Pocket's recommendation systems.
-          For sponsored Pocket content it is Kevel's "ad ID".
+          For organic Newtab recommendations it is an opaque id produced by
+          Newtab's recommendation systems that corresponds uniquely to
+          a piece of content scheduled for a specific day on a specific surface.
           This is the replacement for tile_id.
+        type: string
+      corpus_item_id: &corpus_item_id
+        description: >
+          A content identifier.
+          For organic Newtab recommendations it is an opaque id produced by
+          Newtab's recommendation systems that corresponds uniquely to the URL.
+          This is the replacement for tile_id and scheduled_corpus_item_id.
         type: string
       received_rank: &received_rank
         description: The rank or order of the recommendation at the time it was sent to the client.
@@ -996,6 +1384,22 @@ pocket:
         description: >
           The list of topics the user selected
         type: string
+      is_list_card:
+        description: >
+          Where the article card is in the list component
+        type: boolean
+      section:
+        description: >
+          If click belongs in a section, the name of the section
+        type: string
+      section_position:
+        description: >
+          If click belongs in a section, the numberic position of the section
+        type: string
+      is_secton_followed:
+        description: >
+          If click belongs in a section, if that section is followed
+        type: boolean
     send_in_pings:
       - newtab
 
@@ -1010,6 +1414,7 @@ pocket:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854245
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1937200
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105#c11
@@ -1023,14 +1428,17 @@ pocket:
       - najiang@mozilla.com
       - lina@mozilla.com
       - sdowne@mozilla.com
+      - mcrawford@mozilla.ccocm
     expires: never
     extra_keys:
       newtab_visit_id: *newtab_visit_id
       is_sponsored: *is_sponsored_pocket
+      format: *format
       position: *pocket_position
       recommendation_id: *recommendation_id
       tile_id: *pocket_tile_id
       scheduled_corpus_item_id: *scheduled_corpus_item_id
+      corpus_item_id: *corpus_item_id
       received_rank: *received_rank
       recommended_at: *recommended_at
       matches_selected_topic:
@@ -1045,6 +1453,22 @@ pocket:
         description: >
           The list of topics the user selected
         type: string
+      is_list_card:
+        description: >
+          Where the article card is in the list component
+        type: boolean
+      section:
+        description: >
+          If click belongs in a section, the name of the section
+        type: string
+      section_position:
+        description: >
+          If click belongs in a section, the numberic position of the section
+        type: string
+      is_secton_followed:
+        description: >
+          If click belongs in a section, if that section is followed
+        type: boolean
     send_in_pings:
       - newtab
 
@@ -1054,22 +1478,42 @@ pocket:
       Recorded when a pocket tile is dismissed.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1937200
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
     data_sensitivity:
       - interaction
     notification_emails:
       - sdowne@mozilla.com
+      - mcrawford@mozilla.com
     expires: never
     extra_keys:
       newtab_visit_id: *newtab_visit_id
       is_sponsored: *is_sponsored_pocket
+      format: *format
       position: *pocket_position
       recommendation_id: *recommendation_id
       tile_id: *pocket_tile_id
       scheduled_corpus_item_id: *scheduled_corpus_item_id
+      corpus_item_id: *corpus_item_id
       received_rank: *received_rank
       recommended_at: *recommended_at
+      is_list_card:
+        description: >
+          Where the article card is in the list component
+        type: boolean
+      section:
+        description: >
+          If click belongs in a section, the name of the section
+        type: string
+      section_position:
+        description: >
+          If click belongs in a section, the numberic position of the section
+        type: string
+      is_secton_followed:
+        description: >
+          If click belongs in a section, if that section is followed
+        type: boolean
     send_in_pings:
       - newtab
 
@@ -1085,6 +1529,7 @@ pocket:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1854245
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1862670
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1937200
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1786612
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1817105#c11
@@ -1102,10 +1547,12 @@ pocket:
     extra_keys:
       newtab_visit_id: *newtab_visit_id
       is_sponsored: *is_sponsored_pocket
+      format: *format
       position: *pocket_position
       recommendation_id: *recommendation_id
       tile_id: *pocket_tile_id
       scheduled_corpus_item_id: *scheduled_corpus_item_id
+      corpus_item_id: *corpus_item_id
       received_rank: *received_rank
       recommended_at: *recommended_at
       topic:
@@ -1120,7 +1567,22 @@ pocket:
         description: >
           The list of topics the user selected
         type: string
-
+      is_list_card:
+        description: >
+          Where the article card is in the list component
+        type: boolean
+      section:
+        description: >
+          If click belongs in a section, the name of the section
+        type: string
+      section_position:
+        description: >
+          If click belongs in a section, the numberic position of the section
+        type: string
+      is_secton_followed:
+        description: >
+          If click belongs in a section, if that section is followed
+        type: boolean
     send_in_pings:
       - newtab
 
@@ -1224,6 +1686,7 @@ pocket:
       options in the context menu.
     bugs:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1902099
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1937200
     data_reviews:
       - https://bugzilla.mozilla.org/show_bug.cgi?id=1902099
     data_sensitivity:
@@ -1244,11 +1707,28 @@ pocket:
           If the user clicked thumbs down.
         type: boolean
       scheduled_corpus_item_id: *scheduled_corpus_item_id
+      corpus_item_id: *corpus_item_id
       received_rank: *received_rank
       recommended_at: *recommended_at
       topic:
         description: The topic of the recommendation. Like "entertainment".
         type: string
+      is_list_card:
+        description: >
+          Where the article card is in the list component
+        type: boolean
+      section:
+        description: >
+          If event belongs in a section, the name of the section
+        type: string
+      section_position:
+        description: >
+          If event belongs in a section, the numberic position of the section
+        type: string
+      is_secton_followed:
+        description: >
+          If event belongs in a section, if that section is followed
+        type: boolean
     send_in_pings:
       - newtab
 
@@ -2042,3 +2522,878 @@ top_sites: # Replacement for PingCentre "topsites-impression|click" pings.
     expires: never
     send_in_pings:
       - top-sites
+
+activity_stream:
+  end_session:
+    type: event
+    description: >
+      This is recorded with every session ended in Activity Stream.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.end#session.
+    bugs:
+      - https://bugzil.la/1429497
+      - https://bugzil.la/1429489
+    data_reviews:
+      - https://bugzil.la/1429497
+      - https://bugzil.la/1429489
+    notification_emails:
+      - najiang@mozilla.com
+      - msamuel@mozilla.com
+    expires: never
+    extra_keys:
+      value:
+        description: >
+          The session duration. Mirrors to the Legacy Telemetry
+          event's `value` parameter.
+        type: quantity
+      addon_version:
+        description: >
+          The Activity Stream addon version.
+        type: string
+      session_id:
+        description: >
+          The ID of the Activity Stream session in which the event occurred
+        type: string
+      page:
+        description: >
+          about:home or about_newtab - the page where the event occurred
+        type: string
+      user_prefs:
+        description: >
+          An integer representaing a user's A-S settings.
+        type: quantity
+    telemetry_mirror: Activity_stream_End_Session
+
+  event_archive_from_pocket:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#ARCHIVE_FROM_POCKET.
+    bugs: &activity_stream_event_bugs
+      - https://bugzil.la/1429497
+      - https://bugzil.la/1429489
+      - https://bugzil.la/1514732
+    data_reviews: &activity_stream_event_data_reviews
+      - https://bugzil.la/1429497
+      - https://bugzil.la/1429489
+      - https://bugzil.la/1514732
+    notification_emails: &activity_stream_event_emails
+      - najiang@mozilla.com
+      - msamuel@mozilla.com
+      - rrosario@mozilla.com
+    expires: never
+    extra_keys: &activity_stream_event_extra
+      value:
+        description: >
+          The `value` of the event. Mirrors to the Legacy Telemetry
+          event's `value` parameter.
+        type: string
+      addon_version:
+        description: >
+          The Activity Stream addon version.
+        type: string
+      session_id:
+        description: >
+          The ID of the Activity Stream session in which the event occurred
+        type: string
+      page:
+        description: >
+          about:home or about_newtab - the page where the event occurred
+        type: string
+      user_prefs:
+        description: >
+          An integer representaing a user's A-S settings.
+        type: quantity
+      action_position:
+        description: >
+          The index of card receiving interactions.
+        type: quantity
+    telemetry_mirror: Activity_stream_Event_ArchiveFromPocket
+
+  event_block:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#BLOCK.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Block
+
+  event_bookmark_add:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#BOOKMARK_ADD.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_BookmarkAdd
+
+  event_bookmark_delete:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#BOOKMARK_DELETE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_BookmarkDelete
+
+  event_click:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#CLICK.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Click
+
+  event_click_privacy_info:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#CLICK_PRIVACY_INFO.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_ClickPrivacyInfo
+
+  event_close_newtab_prefs:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#CLOSE_NEWTAB_PREFS.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_CloseNewtabPrefs
+
+  event_show_personalize:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SHOW_PERSONALIZE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_ShowPersonalize
+
+  event_hide_personalize:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#HIDE_PERSONALIZE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_HidePersonalize
+
+  event_delete:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DELETE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Delete
+
+  event_delete_from_pocket:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DELETE_FROM_POCKET.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_DeleteFromPocket
+
+  event_delete_confirm:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DELETE_CONFIRM.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_DeleteConfirm
+
+  event_dialog_cancel:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DIALOG_CANCEL.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_DialogCancel
+
+  event_dialog_open:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DIALOG_OPEN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_DialogOpen
+
+  event_drag:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DRAG.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Drag
+
+  event_drop:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DROP.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Drop
+
+  event_impression:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#IMPRESSION.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Impression
+
+  event_migration_cancel:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MIGRATION_CANCEL.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MigrationCancel
+
+  event_migration_start:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MIGRATION_START.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MigrationStart
+
+  event_open_newtab_prefs:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#OPEN_NEWTAB_PREFS.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_OpenNewtabPrefs
+
+  event_open_new_window:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#OPEN_NEW_WINDOW.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_OpenNewWindow
+
+  event_open_private_window:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#OPEN_PRIVATE_WINDOW.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_OpenPrivateWindow
+
+  event_pin:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#PIN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Pin
+
+  event_pocket_thumbs_down:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#POCKET_THUMBS_DOWN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_PocketThumbsDown
+
+  event_pocket_thumbs_up:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#POCKET_THUMBS_UP.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_PocketThumbsUp
+
+  event_fakespot_click:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#FAKESPOT_CLICK.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_FakespotClick
+
+  event_fakespot_category:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#FAKESPOT_CATEGORY.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_FakespotCategory
+
+  event_pref_changed:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#PREF_CHANGED.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_PrefChanged
+
+  event_preview_request:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#PREVIEW_REQUEST.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_PreviewRequest
+
+  event_save_to_pocket:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SAVE_TO_POCKET.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SaveToPocket
+
+  event_search:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SEARCH.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Search
+
+  event_search_edit_add:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SEARCH_EDIT_ADD.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SearchEditAdd
+
+  event_search_edit_close:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SEARCH_EDIT_CLOSE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SearchEditClose
+
+  event_search_edit_delete:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SEARCH_EDIT_DELETE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SearchEditDelete
+
+  event_search_handoff:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SEARCH_HANDOFF.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SearchHandoff
+
+  event_show_privacy_info:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SHOW_PRIVACY_INFO.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_ShowPrivacyInfo
+
+  event_skipped_signin:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SKIPPED_SIGNIN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SkippedSignin
+
+  event_submit_email:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#SUBMIT_EMAIL.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_SubmitEmail
+
+  event_disclaimer_acked:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#DISCLAIMER_ACKED.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_DisclaimerAcked
+
+  event_menu_add_search:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_ADD_SEARCH.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuAddSearch
+
+  event_menu_add_topsite:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_ADD_TOPSITE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuAddTopsite
+
+  event_menu_collapse:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_COLLAPSE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuCollapse
+
+  event_menu_expand:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_EXPAND.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuExpand
+
+  event_menu_manage:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_MANAGE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuManage
+
+  event_menu_move_down:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_MOVE_DOWN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuMoveDown
+
+  event_menu_move_up:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_MOVE_UP.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuMoveUp
+
+  event_menu_privacy_notice:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_PRIVACY_NOTICE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuPrivacyNotice
+
+  event_menu_remove:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#MENU_REMOVE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_MenuRemove
+
+  event_top_sites_edit:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#TOP_SITES_EDIT.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_TopSitesEdit
+
+  event_top_sites_edit_close:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#TOP_SITES_EDIT_CLOSE.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_TopSitesEditClose
+
+  event_topsite_sponsor_info:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#TOPSITE_SPONSOR_INFO.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_TopsiteSponsorInfo
+
+  event_unpin:
+    type: event
+    description: >
+      This is recorded with every user interaction on Activity Stream
+      elements.
+      This event was generated to correspond to the Legacy Telemetry event
+      activity_stream.event#UNPIN.
+    bugs: *activity_stream_event_bugs
+    data_reviews: *activity_stream_event_data_reviews
+    notification_emails: *activity_stream_event_emails
+    expires: never
+    extra_keys: *activity_stream_event_extra
+    telemetry_mirror: Activity_stream_Event_Unpin
+
+deletion.request:
+  impression_id:
+    type: string
+    description: >
+      An identifier used by user interaction pings in Pocket/newtab and
+      Messaging System.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar deletion.request.impression_id.
+    bugs:
+      - https://bugzil.la/1602064
+    data_reviews:
+      - https://bugzil.la/1602064
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    send_in_pings: ["deletion-request"]
+    telemetry_mirror: DELETION_REQUEST_IMPRESSION_ID
+
+  context_id:
+    type: string
+    description: >
+      An identifier to identify users for Contextual Services user
+      interaction pings.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar deletion.request.context_id.
+    bugs:
+      - https://bugzil.la/1729474
+    data_reviews:
+      - https://bugzil.la/1729474
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    send_in_pings: ["deletion-request"]
+    telemetry_mirror: DELETION_REQUEST_CONTEXT_ID
+
+contextual.services.topsites:
+  impression:
+    type: labeled_counter
+    description: >
+      A keyed uint recording how many times the user has viewed the
+      sponsored TopSites on the newtab page. The key is a combination of
+      the source and the placement of the TopSites tile (1-based). such as
+      'urlbar_1', 'newtab_2'.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar contextual.services.topsites.impression.
+    bugs:
+      - https://bugzil.la/1688698
+    data_reviews:
+      - https://bugzil.la/1688698
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    telemetry_mirror: CONTEXTUAL_SERVICES_TOPSITES_IMPRESSION
+
+  click:
+    type: labeled_counter
+    description: >
+      A keyed uint recording how many times the user has clicked on the
+      sponsored TopSites on the newtab page. The key is a combination of
+      the source and the placement of the TopSites tile (1-based). such as
+      'urlbar_1', 'newtab_2'.
+      This metric was generated to correspond to the Legacy Telemetry
+      scalar contextual.services.topsites.click.
+    bugs:
+      - https://bugzil.la/1688698
+    data_reviews:
+      - https://bugzil.la/1688698
+    notification_emails:
+      - najiang@mozilla.com
+    expires: never
+    telemetry_mirror: CONTEXTUAL_SERVICES_TOPSITES_CLICK

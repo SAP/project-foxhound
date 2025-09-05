@@ -19,7 +19,8 @@ import { endTruncateStr } from "./utils";
 import { truncateMiddleText } from "../utils/text";
 import { memoizeLast } from "../utils/memoizeLast";
 import { renderWasmText } from "./wasm";
-import { toEditorLine } from "./editor/index";
+import { toWasmSourceLine, getEditor } from "./editor/index";
+import { features } from "./prefs";
 export { isMinified } from "./isMinified";
 
 import { isFulfilled } from "./async-value";
@@ -346,9 +347,11 @@ export const getLineText = memoizeLast((sourceId, asyncContent, line) => {
   const content = asyncContent.value;
 
   if (content.type === "wasm") {
-    const editorLine = toEditorLine(sourceId, line);
-    const lines = renderWasmText(sourceId, content);
-    return lines[editorLine] || "";
+    const editor = getEditor();
+    const lines = features.codemirrorNext
+      ? editor.renderWasmText(content)
+      : renderWasmText(sourceId, content);
+    return lines[toWasmSourceLine(sourceId, line)] || "";
   }
 
   const lineText = getNthLine(content.value, line - 1);
@@ -367,8 +370,6 @@ export function getTextAtPosition(sourceId, asyncContent, location) {
  *
  * @param {Object} source
  *        The reducer source object.
- * @param {Object} symbols
- *        The reducer symbol object for the given source.
  * @param {Boolean} isBlackBoxed
  *        To be set to true, when the given source is blackboxed.
  * @param {Boolean} hasPrettyTab
@@ -379,7 +380,6 @@ export function getTextAtPosition(sourceId, asyncContent, location) {
  */
 export function getSourceClassnames(
   source,
-  symbols,
   isBlackBoxed,
   hasPrettyTab = false
 ) {
@@ -399,10 +399,6 @@ export function getSourceClassnames(
 
   if (isBlackBoxed) {
     return "blackBox";
-  }
-
-  if (symbols && symbols.framework) {
-    return symbols.framework.toLowerCase();
   }
 
   if (isUrlExtension(source.url)) {

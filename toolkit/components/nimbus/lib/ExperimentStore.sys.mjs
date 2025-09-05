@@ -348,11 +348,10 @@ export class ExperimentStore extends SharedDataMap {
   }
 
   /**
-   * Remove inactive enrollments older than 6 months
+   * Remove inactive enrollments older than 12 months
    */
   _cleanupOldRecipes() {
-    // Roughly six months
-    const threshold = 15552000000;
+    const threshold = 365.25 * 24 * 3600 * 1000;
     const nowTimestamp = new Date().getTime();
     const recipesToRemove = this.getAll().filter(
       experiment =>
@@ -366,6 +365,11 @@ export class ExperimentStore extends SharedDataMap {
   }
 
   _emitUpdates(enrollment) {
+    const updateEvent = { slug: enrollment.slug, active: enrollment.active };
+    if (!enrollment.active) {
+      updateEvent.unenrollReason = enrollment.unenrollReason;
+    }
+    this.emit("update", updateEvent);
     this.emit(`update:${enrollment.slug}`, enrollment);
     const featureIds =
       enrollment.featureIds || getAllBranchFeatureIds(enrollment.branch);

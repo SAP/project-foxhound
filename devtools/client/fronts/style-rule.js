@@ -48,13 +48,20 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
    * trait is true; otherwise a RuleModificationList will be
    * returned.
    *
+   * @param {Window} win
+   *                 This is needed by the RuleRewriter.
    * @param {CssPropertiesFront} cssProperties
    *                             This is needed by the RuleRewriter.
    * @return {RuleModificationList}
    */
-  startModifyingProperties(cssProperties) {
+  startModifyingProperties(win, cssProperties) {
     if (this.canSetRuleText) {
-      return new RuleRewriter(cssProperties.isKnown, this, this.authoredText);
+      return new RuleRewriter(
+        win,
+        cssProperties.isKnown,
+        this,
+        this.authoredText
+      );
     }
     return new RuleModificationList(this);
   }
@@ -70,6 +77,9 @@ class StyleRuleFront extends FrontClassWithSpec(styleRuleSpec) {
   }
   get cssText() {
     return this._form.cssText;
+  }
+  get isNestedDeclarations() {
+    return !!this._form.isNestedDeclarations;
   }
   get authoredText() {
     return typeof this._form.authoredText === "string"

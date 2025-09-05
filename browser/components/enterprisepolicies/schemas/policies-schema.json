@@ -268,8 +268,54 @@
         "DefaultResult": {
           "type": "number"
         },
+        "TimeoutResult": {
+          "type": "number"
+        },
         "BypassForSameTabOperations": {
           "type": "boolean"
+        },
+        "InterceptionPoints": {
+          "type": "object",
+          "properties": {
+            "Clipboard": {
+              "type": "object",
+              "properties": {
+                "Enabled": {
+                  "type": "boolean"
+                },
+                "PlainTextOnly": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "DragAndDrop": {
+              "type": "object",
+              "properties": {
+                "Enabled": {
+                  "type": "boolean"
+                },
+                "PlainTextOnly": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "FileUpload": {
+              "type": "object",
+              "properties": {
+                "Enabled": {
+                  "type": "boolean"
+                }
+              }
+            },
+            "Print": {
+              "type": "object",
+              "properties": {
+                "Enabled": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
         }
       }
     },
@@ -710,6 +756,9 @@
             },
             "temporarily_allow_weak_signatures": {
               "type": "boolean"
+            },
+            "private_browsing": {
+              "type": "boolean"
             }
           }
         }
@@ -932,6 +981,10 @@
     },
 
     "ManualAppUpdateOnly": {
+      "type": "boolean"
+    },
+
+    "MicrosoftEntraSSO": {
       "type": "boolean"
     },
 
@@ -1486,6 +1539,9 @@
           "type": "boolean"
         },
         "MoreFromMozilla": {
+          "type": "boolean"
+        },
+        "FirefoxLabs": {
           "type": "boolean"
         },
         "Locked": {

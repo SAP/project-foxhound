@@ -11,11 +11,8 @@ import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.helpers.AppAndSystemHelper.runWithCondition
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper.appContext
 import org.mozilla.fenix.helpers.TestSetup
-import org.mozilla.fenix.nimbus.FxNimbus
-import org.mozilla.fenix.nimbus.Translations
 import org.mozilla.fenix.ui.robots.homeScreen
 import org.mozilla.fenix.ui.robots.navigationToolbar
 
@@ -44,20 +41,11 @@ class CookieBannerBlockerTest : TestSetup() {
     @Test
     fun verifyCFRAfterBlockingTheCookieBanner() {
         runWithCondition(appContext.settings().shouldUseCookieBannerPrivateMode) {
-            // Prevents translations from opening a popup on the .be language site
-            FxNimbus.features.translations.withInitializer { _, _ ->
-                Translations(
-                    mainFlowToolbarEnabled = false,
-                    mainFlowBrowserMenuEnabled = false,
-                )
-            }
-
             homeScreen {
             }.togglePrivateBrowsingMode()
 
             navigationToolbar {
-            }.enterURLAndEnterToBrowser("voetbal24.be".toUri()) {
-                waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            }.enterURLAndEnterToBrowser("materiel.net".toUri()) {
                 verifyCookieBannerExists(exists = false)
                 verifyCookieBannerBlockerCFRExists(exists = true)
             }

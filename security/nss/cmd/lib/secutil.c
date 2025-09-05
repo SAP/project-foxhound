@@ -42,11 +42,7 @@ static char consoleName[] = {
 #ifdef XP_UNIX
     "/dev/tty"
 #else
-#ifdef XP_OS2
-    "\\DEV\\CON"
-#else
     "CON:"
-#endif
 #endif
 };
 
@@ -1574,7 +1570,7 @@ printStringWithoutCRLF(FILE *out, const char *str)
 }
 
 int
-SECU_PrintDumpDerIssuerAndSerial(FILE *out, SECItem *der, char *m,
+SECU_PrintDumpDerIssuerAndSerial(FILE *out, const SECItem *der, const char *m,
                                  int level)
 {
     PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
@@ -2407,7 +2403,7 @@ SECU_PrintCertAttributes(FILE *out, CERTAttribute **attrs, char *m, int level)
 
 /* sometimes a PRErrorCode, other times a SECStatus.  Sigh. */
 int
-SECU_PrintCertificateRequest(FILE *out, SECItem *der, char *m, int level)
+SECU_PrintCertificateRequest(FILE *out, const SECItem *der, const char *m, int level)
 {
     PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     CERTCertificateRequest *cr;
@@ -2766,7 +2762,7 @@ secu_PrintSignerInfo(FILE *out, SEC_PKCS7SignerInfo *info,
    some */
 
 void
-SECU_PrintCRLInfo(FILE *out, CERTCrl *crl, char *m, int level)
+SECU_PrintCRLInfo(FILE *out, CERTCrl *crl, const char *m, int level)
 {
     CERTCrlEntry *entry;
     int iv;
@@ -2846,7 +2842,7 @@ secu_PrintPKCS7Signed(FILE *out, SEC_PKCS7SignedData *src,
         while ((aCert = src->rawCerts[iv++]) != NULL) {
             snprintf(om, sizeof(om), "Certificate (%x)", iv);
             rv = SECU_PrintSignedData(out, aCert, om, level + 2,
-                                      (SECU_PPFunc)SECU_PrintCertificate);
+                                      SECU_PrintCertificate);
             if (rv)
                 return rv;
         }
@@ -2973,7 +2969,7 @@ secu_PrintPKCS7SignedAndEnveloped(FILE *out,
         while ((aCert = src->rawCerts[iv++]) != NULL) {
             snprintf(om, sizeof(om), "Certificate (%x)", iv);
             rv = SECU_PrintSignedData(out, aCert, om, level + 2,
-                                      (SECU_PPFunc)SECU_PrintCertificate);
+                                      SECU_PrintCertificate);
             if (rv)
                 return rv;
         }
@@ -3013,7 +3009,7 @@ secu_PrintPKCS7SignedAndEnveloped(FILE *out,
 }
 
 int
-SECU_PrintCrl(FILE *out, SECItem *der, char *m, int level)
+SECU_PrintCrl(FILE *out, const SECItem *der, const char *m, int level)
 {
     PLArenaPool *arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
     CERTCrl *c = NULL;
@@ -3178,8 +3174,8 @@ secu_PrintPKCS12Bag(FILE *out, SECItem *item, const char *desc, int level)
     switch (bagTag) {
         case SEC_OID_PKCS12_V1_KEY_BAG_ID:
             /* Future we need to print out raw private keys. Not a priority since
-         * p12util can't create files with unencrypted private keys, but
-         * some tools can and do */
+             * p12util can't create files with unencrypted private keys, but
+             * some tools can and do */
             SECU_PrintAny(out, &bagValue, "Private Key", level);
             break;
         case SEC_OID_PKCS12_V1_PKCS8_SHROUDED_KEY_BAG_ID:
@@ -3210,10 +3206,10 @@ secu_PrintPKCS12Bag(FILE *out, SECItem *item, const char *desc, int level)
         case SEC_OID_PKCS12_SDSI_CERT_BAG:
             if (strcmp(desc, "Crl Bag") == 0) {
                 rv = SECU_PrintSignedData(out, &bagValue, NULL, level + 1,
-                                          (SECU_PPFunc)SECU_PrintCrl);
+                                          SECU_PrintCrl);
             } else {
                 rv = SECU_PrintSignedData(out, &bagValue, NULL, level + 1,
-                                          (SECU_PPFunc)SECU_PrintCertificate);
+                                          SECU_PrintCertificate);
             }
             break;
         case SEC_OID_PKCS12_V1_SAFE_CONTENTS_BAG_ID:
@@ -3592,7 +3588,7 @@ SEC_PrintCertificateAndTrust(CERTCertificate *cert,
     data.len = cert->derCert.len;
 
     rv = SECU_PrintSignedData(stdout, &data, label, 0,
-                              (SECU_PPFunc)SECU_PrintCertificate);
+                              SECU_PrintCertificate);
     if (rv) {
         return (SECFailure);
     }
@@ -4239,6 +4235,11 @@ groupNameToNamedGroup(char *name)
     if (PL_strlen(name) == 11) {
         if (!strncmp(name, "xyber768d00", 11)) {
             return ssl_grp_kem_xyber768d00;
+        }
+    }
+    if (PL_strlen(name) == 14) {
+        if (!strncmp(name, "mlkem768x25519", 14)) {
+            return ssl_grp_kem_mlkem768x25519;
         }
     }
 

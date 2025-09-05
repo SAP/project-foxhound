@@ -187,9 +187,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint32_t TailBlockingDelayMax() { return mTailDelayMax; }
   uint32_t TailBlockingTotalMax() { return mTailTotalMax; }
 
-  uint32_t ThrottlingReadLimit() {
-    return mThrottleVersion == 1 ? 0 : mThrottleReadLimit;
-  }
+  uint32_t ThrottlingReadLimit() { return 0; }
   int32_t SendWindowSize() { return mSendWindowSize * 1024; }
 
   // TCP Keepalive configuration values.
@@ -241,6 +239,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // cache support
   uint32_t GenerateUniqueID() { return ++mLastUniqueID; }
   uint32_t SessionStartTime() { return mSessionStartTime; }
+
+  void GenerateIdempotencyKeyForPost(const uint32_t aPostId,
+                                     nsILoadInfo* aLoadInfo,
+                                     nsACString& aOutKey);
 
   //
   // Connection management methods:
@@ -296,14 +298,13 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
     return mConnMgr->GetSocketThreadTarget(target);
   }
 
-  [[nodiscard]] nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
-                                            nsIInterfaceRequestor* callbacks,
-                                            uint32_t caps = 0,
-                                            bool aFetchHTTPSRR = false) {
+  [[nodiscard]] nsresult MaybeSpeculativeConnectWithHTTPSRR(
+      nsHttpConnectionInfo* ci, nsIInterfaceRequestor* callbacks, uint32_t caps,
+      bool aFetchHTTPSRR) {
     TickleWifi(callbacks);
     RefPtr<nsHttpConnectionInfo> clone = ci->Clone();
     return mConnMgr->SpeculativeConnect(clone, callbacks, caps, nullptr,
-                                        aFetchHTTPSRR | EchConfigEnabled());
+                                        aFetchHTTPSRR);
   }
 
   [[nodiscard]] nsresult SpeculativeConnect(nsHttpConnectionInfo* ci,
@@ -433,8 +434,7 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
                                                  int32_t port,
                                                  nsACString& hostLine);
 
-  static uint8_t UrgencyFromCoSFlags(uint32_t cos,
-                                     int32_t aSupportsPriority = 0);
+  static uint8_t UrgencyFromCoSFlags(uint32_t cos, int32_t aSupportsPriority);
 
   SpdyInformation* SpdyInfo() { return &mSpdyInfo; }
   bool IsH2MandatorySuiteEnabled() { return mH2MandatorySuiteEnabled; }
@@ -476,8 +476,6 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   bool IsBeforeLastActiveTabLoadOptimization(TimeStamp const& when);
 
   HttpTrafficAnalyzer* GetHttpTrafficAnalyzer();
-
-  bool GetThroughCaptivePortal() { return mThroughCaptivePortal; }
 
   nsresult CompleteUpgrade(HttpTransactionShell* aTrans,
                            nsIHttpUpgradeListener* aUpgradeListener);
@@ -523,6 +521,9 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   //
   void BuildUserAgent();
   void InitUserAgentComponents();
+#ifdef XP_MACOSX
+  void InitMSAuthorities();
+#endif
   static void PrefsChanged(const char* pref, void* self);
   void PrefsChanged(const char* pref);
 
@@ -590,11 +591,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   uint8_t mMaxPersistentConnectionsPerProxy{4};
 
   bool mThrottleEnabled{true};
-  uint32_t mThrottleVersion{2};
   uint32_t mThrottleSuspendFor{3000};
   uint32_t mThrottleResumeFor{200};
-  uint32_t mThrottleReadLimit{8000};
-  uint32_t mThrottleReadInterval{500};
   uint32_t mThrottleHoldTime{600};
   uint32_t mThrottleMaxTime{3000};
 
@@ -637,6 +635,8 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // useragent components
   nsCString mLegacyAppName{"Mozilla"};
   nsCString mLegacyAppVersion{"5.0"};
+  uint64_t mIdempotencyKeySeed;
+  uint64_t mPrivateBrowsingIdempotencyKeySeed;
   nsCString mPlatform;
   nsCString mOscpu;
   nsCString mMisc;
@@ -826,6 +826,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   void ExcludeHTTPSRRHost(const nsACString& aHost);
   [[nodiscard]] bool IsHostExcludedForHTTPSRR(const nsACString& aHost);
 
+#ifdef XP_MACOSX
+  [[nodiscard]] bool IsHostMSAuthority(const nsACString& aHost);
+#endif
+
  private:
   nsTHashSet<nsCString> mExcludedHttp2Origins;
   nsTHashSet<nsCString> mExcludedHttp3Origins;
@@ -833,7 +837,10 @@ class nsHttpHandler final : public nsIHttpProtocolHandler,
   // A set of hosts that we should not upgrade to HTTPS with HTTPS RR.
   nsTHashSet<nsCString> mExcludedHostsForHTTPSRRUpgrade;
 
-  Atomic<bool, Relaxed> mThroughCaptivePortal{false};
+#ifdef XP_MACOSX
+  // A list of trusted Microsoft SSO authority URLs
+  nsTHashSet<nsCString> mMSAuthorities;
+#endif
 
   // The mapping of channel id and the weak pointer of nsHttpChannel.
   nsTHashMap<nsUint64HashKey, nsWeakPtr> mIDToHttpChannelMap;

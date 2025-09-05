@@ -46,13 +46,13 @@ add_setup(async function () {
   server.registerContentType("sjs", "sjs");
 
   let getEngineData = {
-    baseURL: gDataUrl,
+    baseURL: `${gHttpURL}/sjs/`,
     name: "GET suggestion engine",
     method: "GET",
   };
 
   let postEngineData = {
-    baseURL: gDataUrl,
+    baseURL: `${gHttpURL}/sjs/`,
     name: "POST suggestion engine",
     method: "POST",
   };
@@ -64,23 +64,25 @@ add_setup(async function () {
   };
 
   let alternateJSONSuggestEngineData = {
-    baseURL: gDataUrl,
+    baseURL: `${gHttpURL}/sjs/`,
     name: "Alternative JSON suggestion type",
     method: "GET",
     alternativeJSONType: true,
   };
 
   getEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(getEngineData)}`,
+    url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify(getEngineData)}`,
   });
   postEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(postEngineData)}`,
+    url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify(postEngineData)}`,
   });
   unresolvableEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(unresolvableEngineData)}`,
+    url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify(
+      unresolvableEngineData
+    )}`,
   });
   alternateJSONEngine = await SearchTestUtils.installOpenSearchEngine({
-    url: `${gDataUrl}engineMaker.sjs?${JSON.stringify(
+    url: `${gHttpURL}/sjs/engineMaker.sjs?${JSON.stringify(
       alternateJSONSuggestEngineData
     )}`,
   });
@@ -121,32 +123,6 @@ add_task(async function simple_remote_no_local_result() {
   Assert.equal(result.remote[0].value, "Mozilla");
   Assert.equal(result.remote[1].value, "modern");
   Assert.equal(result.remote[2].value, "mom");
-
-  assertLatencyHistogram(histogram, true);
-});
-
-add_task(async function simple_remote_no_local_result_telemetry() {
-  Services.telemetry.clearScalars();
-
-  let histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
-    SEARCH_TELEMETRY_LATENCY
-  );
-
-  let controller = new SearchSuggestionController();
-  await controller.fetch("mo", false, getEngine);
-
-  let scalars = {};
-  const key = "browser.search.data_transferred";
-
-  await TestUtils.waitForCondition(() => {
-    scalars =
-      Services.telemetry.getSnapshotForKeyedScalars("main", false).parent || {};
-    return key in scalars;
-  }, "should have the expected keyed scalars");
-
-  const scalar = scalars[key];
-  Assert.ok(`sggt-${ENGINE_NAME}` in scalar, "correct telemetry category");
-  Assert.notEqual(scalar[`sggt-${ENGINE_NAME}`], 0, "bandwidth logged");
 
   assertLatencyHistogram(histogram, true);
 });
@@ -579,9 +555,7 @@ add_task(async function stop_search() {
   let histogram = TelemetryTestUtils.getAndClearKeyedHistogram(
     SEARCH_TELEMETRY_LATENCY
   );
-  let controller = new SearchSuggestionController(() => {
-    do_throw("The callback shouldn't be called after stop()");
-  });
+  let controller = new SearchSuggestionController();
   let resultPromise = controller.fetch("mo", false, getEngine);
   controller.stop();
   await resultPromise.then(result => {

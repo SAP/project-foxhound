@@ -89,7 +89,7 @@ impl DecoderInstructionReader {
     /// 2) `ClosedCriticalStream`
     /// 3) other errors will be translated to `DecoderStream` by the caller of this function.
     pub fn read_instructions<R: ReadByte>(&mut self, recv: &mut R) -> Res<DecoderInstruction> {
-        qdebug!([self], "read a new instraction");
+        qdebug!("[{self}] read a new instruction");
         loop {
             match &mut self.state {
                 DecoderInstructionReaderState::ReadInstruction => {
@@ -108,7 +108,7 @@ impl DecoderInstructionReader {
                 }
                 DecoderInstructionReaderState::ReadInt { reader } => {
                     let val = reader.read(recv)?;
-                    qtrace!([self], "varint read {}", val);
+                    qtrace!("[{self}] varint read {val}");
                     match &mut self.instruction {
                         DecoderInstruction::InsertCountIncrement { increment: v } => {
                             *v = val;
@@ -128,7 +128,7 @@ impl DecoderInstructionReader {
                             ));
                         }
                         DecoderInstruction::NoInstruction => {
-                            unreachable!("This instruction cannot be in this state.");
+                            unreachable!("This instruction cannot be in this state");
                         }
                     }
                 }
@@ -158,7 +158,7 @@ mod test {
     }
 
     #[test]
-    fn test_encoding_decoding_instructions() {
+    fn encoding_decoding_instructions() {
         test_encoding_decoding(DecoderInstruction::InsertCountIncrement { increment: 1 });
         test_encoding_decoding(DecoderInstruction::InsertCountIncrement { increment: 10_000 });
 
@@ -197,7 +197,7 @@ mod test {
     }
 
     #[test]
-    fn test_encoding_decoding_instructions_slow_reader() {
+    fn encoding_decoding_instructions_slow_reader() {
         test_encoding_decoding_slow_reader(DecoderInstruction::InsertCountIncrement {
             increment: 10_000,
         });
@@ -210,7 +210,7 @@ mod test {
     }
 
     #[test]
-    fn test_decoding_error() {
+    fn decoding_error() {
         let mut test_receiver: TestReceiver = TestReceiver::default();
         // InsertCountIncrement with overflow
         test_receiver.write(&[

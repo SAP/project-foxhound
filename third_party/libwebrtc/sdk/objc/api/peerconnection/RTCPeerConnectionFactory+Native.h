@@ -10,20 +10,15 @@
 
 #import "RTCPeerConnectionFactory.h"
 
+#include "api/audio/audio_device.h"
+#include "api/audio/audio_processing.h"
+#include "api/audio_codecs/audio_decoder_factory.h"
+#include "api/audio_codecs/audio_encoder_factory.h"
+#include "api/peer_connection_interface.h"
 #include "api/scoped_refptr.h"
-
-namespace webrtc {
-
-class AudioDeviceModule;
-class AudioEncoderFactory;
-class AudioDecoderFactory;
-class NetworkControllerFactoryInterface;
-class VideoEncoderFactory;
-class VideoDecoderFactory;
-class AudioProcessing;
-struct PeerConnectionDependencies;
-
-}  // namespace webrtc
+#include "api/transport/network_control.h"
+#include "api/video_codecs/video_decoder_factory.h"
+#include "api/video_codecs/video_encoder_factory.h"
 
 NS_ASSUME_NONNULL_BEGIN
 
@@ -33,10 +28,12 @@ NS_ASSUME_NONNULL_BEGIN
 @interface RTC_OBJC_TYPE (RTCPeerConnectionFactory)
 ()
 
-    - (instancetype)initNative NS_DESIGNATED_INITIALIZER;
-
 /* Initializer used when WebRTC is compiled with no media support */
 - (instancetype)initWithNoMedia;
+
+/* Initialize object with provided dependencies and with media support. */
+- (instancetype)initWithMediaAndDependencies:
+    (webrtc::PeerConnectionFactoryDependencies)dependencies;
 
 /* Initialize object with injectable native audio/video encoder/decoder factories */
 - (instancetype)initWithNativeAudioEncoderFactory:

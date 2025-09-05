@@ -89,8 +89,13 @@ mozilla::ipc::IPCResult FetchChild::RecvOnResponseAvailableInternal(
     if (mFetchObserver) {
       mFetchObserver->SetState(FetchState::Complete);
     }
+
+    // mFetchObserver->SetState runs JS and a blocking JS function can run
+    // queued runnables, including ActorDestroy that nullifies mPromise.
+    if (!mPromise) {
+      return IPC_OK();
+    }
     nsCOMPtr<nsIGlobalObject> global;
-    // global = mWorkerRef->Private()->GlobalScope();
     global = mPromise->GetGlobalObject();
     RefPtr<Response> response =
         new Response(global, internalResponse.clonePtr(), mSignalImpl);
@@ -105,6 +110,12 @@ mozilla::ipc::IPCResult FetchChild::RecvOnResponseAvailableInternal(
        this, static_cast<int32_t>(internalResponse->GetErrorCode())));
   if (mFetchObserver) {
     mFetchObserver->SetState(FetchState::Errored);
+  }
+
+  // mFetchObserver->SetState runs JS and a blocking JS function can run queued
+  // runnables, including ActorDestroy that nullifies mPromise.
+  if (!mPromise) {
+    return IPC_OK();
   }
   mPromise->MaybeRejectWithTypeError<MSG_FETCH_FAILED>();
   return IPC_OK();
@@ -127,6 +138,12 @@ mozilla::ipc::IPCResult FetchChild::RecvOnResponseEnd(ResponseEndArgs&& aArgs) {
         ("FetchChild::RecvOnResponseEnd [%p] endReason is eAborted", this));
     if (mFetchObserver) {
       mFetchObserver->SetState(FetchState::Errored);
+    }
+
+    // mFetchObserver->SetState runs JS and a blocking JS function can run
+    // queued runnables, including ActorDestroy that nullifies mPromise.
+    if (!mPromise) {
+      return IPC_OK();
     }
     mPromise->MaybeReject(NS_ERROR_DOM_ABORT_ERR);
   }
@@ -255,7 +272,6 @@ RefPtr<FetchChild> FetchChild::CreateForMainThread(
     RefPtr<FetchObserver> aObserver) {
   RefPtr<FetchChild> actor = MakeRefPtr<FetchChild>(
       std::move(aPromise), std::move(aSignalImpl), std::move(aObserver));
-  actor->mIsKeepAliveRequest = true;
   FETCH_LOG(("FetchChild::CreateForMainThread actor[%p]", actor.get()));
 
   return actor;
@@ -396,7 +412,7 @@ void FetchChild::RunAbortAlgorithm() {
     return;
   }
   if (mWorkerRef || mIsKeepAliveRequest) {
-    Unused << SendAbortFetchOp();
+    Unused << SendAbortFetchOp(true);
   }
 }
 
@@ -404,13 +420,14 @@ void FetchChild::DoFetchOp(const FetchOpArgs& aArgs) {
   FETCH_LOG(("FetchChild::DoFetchOp [%p]", this));
   // we need to store this for keepalive request
   // as we need to update the load group during actor termination
+  mIsKeepAliveRequest = aArgs.request().keepalive();
   if (mIsKeepAliveRequest) {
     mKeepaliveRequestSize =
         aArgs.request().bodySize() > 0 ? aArgs.request().bodySize() : 0;
   }
   if (mSignalImpl) {
     if (mSignalImpl->Aborted()) {
-      Unused << SendAbortFetchOp();
+      Unused << SendAbortFetchOp(true);
       return;
     }
     Follow(mSignalImpl);
@@ -419,6 +436,10 @@ void FetchChild::DoFetchOp(const FetchOpArgs& aArgs) {
 }
 
 void FetchChild::Shutdown() {
+  // This is invoked for worker fetch requests only.
+  // We need to modify this to be invoked for main-thread fetch requests as
+  // well. Typically during global teardown. See Bug 1901082
+
   FETCH_LOG(("FetchChild::Shutdown [%p]", this));
   if (mIsShutdown) {
     return;
@@ -434,22 +455,7 @@ void FetchChild::Shutdown() {
   Unfollow();
   mSignalImpl = nullptr;
   mCSPEventListener = nullptr;
-  // TODO
-  // For workers we need to skip aborting the fetch requests if keepalive is set
-  // This is just a quick fix for Worker.
-  // Usually, we want FetchChild to get destroyed while FetchParent calls
-  // Senddelete(). When Worker shutdown, FetchChild must call
-  // FetchChild::SendAbortFetchOp() to parent, and let FetchParent decide if
-  // canceling the underlying fetch() or not. But currently, we have no good way
-  // to distinguish whether the abort is intent by script or by Worker/Window
-  // shutdown. So, we provide a quick fix here, which makes
-  // FetchChild/FetchParent live a bit longer, but corresponding resources are
-  // released in FetchChild::Shutdown(), so this quick fix should not cause any
-  // leaking.
-  // And we will fix it in Bug 1901082
-  if (!mIsKeepAliveRequest) {
-    Unused << SendAbortFetchOp();
-  }
+  SendAbortFetchOp(false);
 
   mWorkerRef = nullptr;
 }
@@ -458,18 +464,16 @@ void FetchChild::ActorDestroy(ActorDestroyReason aReason) {
   FETCH_LOG(("FetchChild::ActorDestroy [%p]", this));
   // for keepalive request decrement the pending keepalive count
   if (mIsKeepAliveRequest) {
-    // we only support keepalive for main thread fetch requests
-    // See Bug 1901759
-    // For workers we need to dispatch a runnable to the main thread for
-    // updating the loadgroup
-
-    MOZ_ASSERT(NS_IsMainThread());
-    MOZ_ASSERT(mPromise->GetGlobalObject());
-    nsCOMPtr<nsILoadGroup> loadGroup =
-        FetchUtil::GetLoadGroupFromGlobal(mPromise->GetGlobalObject());
-    if (loadGroup) {
-      FetchUtil::DecrementPendingKeepaliveRequestSize(loadGroup,
-                                                      mKeepaliveRequestSize);
+    // For workers we do not have limit per load group rather we have limit
+    // per request
+    if (NS_IsMainThread()) {
+      MOZ_ASSERT(mPromise->GetGlobalObject());
+      nsCOMPtr<nsILoadGroup> loadGroup =
+          FetchUtil::GetLoadGroupFromGlobal(mPromise->GetGlobalObject());
+      if (loadGroup) {
+        FetchUtil::DecrementPendingKeepaliveRequestSize(loadGroup,
+                                                        mKeepaliveRequestSize);
+      }
     }
   }
   mPromise = nullptr;

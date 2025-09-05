@@ -40,6 +40,9 @@ support-files = ["file_multiple_redirection.sjs"]
 ["test_redirect_downgrade.html"]
 support-files = ["file_redirect_downgrade.sjs"]
 
+["test_redirect_http_error.html"]
+support-files = ["file_redirect_error.sjs"]
+
 ["test_redirect_upgrade.html"]
 scheme = "https"
 support-files = ["file_redirect.sjs"]
@@ -54,6 +57,9 @@ support-files = [
   "file_upgrade_insecure_server.sjs",
 ]
 skip-if = ["true"] # Bug 1727101, Bug 1727925
+
+["test_slow_non_standard_port.html"]
+support-files = ["file_slow_non_standard_port.sjs"]
 
 ["test_toplevel_cookies.html"]
 support-files = ["file_toplevel_cookies.sjs"]

@@ -1,0 +1,73 @@
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+
+@import url("chrome://browser/content/profiles/profiles-pages.css");
+
+#profile-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-medium);
+}
+
+#header-avatar {
+  -moz-context-properties: fill, stroke;
+
+  width: var(--header-avatar-size);
+  height: var(--header-avatar-size);
+  border-radius: var(--border-radius-circle);
+}
+
+#profile-name-area {
+  display: flex;
+  flex-direction: column;
+}
+
+#profile-name {
+  width: min(400px, 100%);
+  margin: 0;
+
+  &:invalid {
+    border-color: var(--outline-color-error);
+    outline-color: var(--outline-color-error);
+  }
+}
+
+.message-parent {
+  position: relative;
+}
+
+.message {
+  display: inline-flex;
+  gap: var(--space-xsmall);
+  padding: var(--space-xsmall);
+
+  position: absolute;
+  inset-inline-start: 0;
+
+  &[hidden] {
+    visibility: hidden;
+  }
+
+  > .message-icon {
+    -moz-context-properties: fill, stroke;
+    fill: currentColor;
+    stroke: currentColor;
+    align-self: center;
+  }
+}
+
+#error-icon,
+#error-message {
+  color: var(--icon-color-critical);
+}
+
+#saved-icon {
+  color: var(--icon-color-success);
+}
+
+#avatars::part(inputs),
+#themes::part(inputs) {
+  flex-direction: row;
+  flex-wrap: wrap;
+}

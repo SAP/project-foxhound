@@ -34,12 +34,16 @@ suites:
             perfstats: ""
             webpagetest-firefox: ""
             webpagetest-chrome: ""
-            android-startup: ""
 
     browser/base/content/test:
         description: "Performance tests from the 'browser/base/content/test' folder."
         tests:
             Dom-size: ""
+
+    browser/components/translations/tests/browser:
+        description: "Performance tests for Translations models on Firefox Desktop"
+        tests:
+            "Full-Page Translation (Spanish to English)": ""
 
     dom/serviceworkers/test/performance:
         description: "Performance tests running through Mochitest for Service Workers"
@@ -48,3 +52,22 @@ suites:
             "Service Worker Fetch": ""
             "Service Worker Registration": ""
             "Service Worker Update": ""
+
+    toolkit/components/ml/tests/browser:
+        description: "Performance tests running through Mochitest for ML Models"
+        tests:
+            "ML Test Model": ""
+            "ML Test Multi Model": ""
+            "ML Suggest Feature": ""
+            "ML Suggest Inference Model": ""
+            "ML Autofill Model": ""
+            "ML Summarizer Model": ""
+            "ML Smart Tab Model": ""
+
+    intl/benchmarks/test/xpcshell:
+        description: "Performance tests running through XPCShell for Intl code"
+        tests:
+            "IntlDateTimeFormat": ""
+            "IntlLocale": ""
+            "IntlNumberFormat": ""
+            "IntlPluralRules": ""

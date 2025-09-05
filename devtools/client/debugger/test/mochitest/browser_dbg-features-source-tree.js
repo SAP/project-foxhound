@@ -365,8 +365,17 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
   // Framework icons are only displayed when we parse the source,
   // which happens when we select the source
   assertSourceIcon(dbg, "react-component-module.js", "javascript");
-  await selectSource(dbg, "react-component-module.js");
-  assertSourceIcon(dbg, "react-component-module.js", "react");
+  const onResumed = SpecialPowers.spawn(
+    gBrowser.selectedBrowser,
+    [],
+    function () {
+      content.eval("pauseInReact()");
+    }
+  );
+  await waitForPaused(dbg);
+  assertSourceIcon(dbg, "react-component-module.js", "javascript");
+  await resume(dbg);
+  await onResumed;
 
   info("Verify blackbox source icon");
   await selectSource(dbg, "script.js");
@@ -437,26 +446,40 @@ add_task(async function testSourceTreeOnTheIntegrationTestPage() {
 add_task(async function testSourceTreeWithWebExtensionContentScript() {
   const extension = await installAndStartContentScriptExtension();
 
-  info("Without the chrome preference, the content script doesn't show up");
-  await pushPref("devtools.chrome.enabled", false);
+  // Ensure that the setting to show content script is off before running the test
+  await pushPref("devtools.debugger.show-content-scripts", false);
   let dbg = await initDebugger("doc-content-script-sources.html");
   // Let some time for unexpected source to appear
   await wait(1000);
-  await waitForSourcesInSourceTree(dbg, []);
+  // There is no content script, but still html pages inline sources
+  await waitForSourcesInSourceTree(dbg, [
+    "doc-content-script-sources.html",
+    "doc-strict.html",
+  ]);
   await dbg.toolbox.closeToolbox();
 
-  info("With the chrome preference, the content script shows up");
-  await pushPref("devtools.chrome.enabled", true);
   const toolbox = await openToolboxForTab(gBrowser.selectedTab, "jsdebugger");
   dbg = createDebuggerContext(toolbox);
-  await waitForSourcesInSourceTree(dbg, ["content_script.js"]);
+
+  info("Enable the content script setting");
+  await toggleSourcesTreeSettingsMenuItem(dbg, {
+    className: ".debugger-settings-menu-item-show-content-scripts",
+    isChecked: false,
+  });
+
+  await waitForSourcesInSourceTree(dbg, [
+    "doc-content-script-sources.html",
+    "doc-strict.html",
+    "content_script.js",
+  ]);
   await selectSource(dbg, "content_script.js");
   ok(
     findElementWithSelector(dbg, ".sources-list .focused"),
     "Source is focused"
   );
 
-  const contentScriptGroupItem = findSourceNodeWithText(
+  // Note that the thread item also contains the extension name
+  const contentScriptGroupItem = findSourceTreeGroupByName(
     dbg,
     "Test content script extension"
   );

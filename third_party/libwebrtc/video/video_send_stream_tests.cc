@@ -8,39 +8,82 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 #include <algorithm>  // max
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <map>
 #include <memory>
+#include <numeric>
+#include <optional>
+#include <set>
+#include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"
 #include "absl/strings/match.h"
+#include "absl/types/variant.h"
+#include "api/array_view.h"
+#include "api/environment/environment.h"
+#include "api/environment/environment_factory.h"
+#include "api/fec_controller_override.h"
+#include "api/make_ref_counted.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "api/scoped_refptr.h"
 #include "api/sequence_checker.h"
+#include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/test/metrics/global_metrics_logger_and_exporter.h"
 #include "api/test/metrics/metric.h"
 #include "api/test/simulated_network.h"
+#include "api/test/video/function_video_encoder_factory.h"
+#include "api/transport/bitrate_settings.h"
+#include "api/units/data_rate.h"
 #include "api/units/time_delta.h"
 #include "api/video/builtin_video_bitrate_allocator_factory.h"
 #include "api/video/encoded_image.h"
 #include "api/video/video_bitrate_allocation.h"
+#include "api/video/video_bitrate_allocator.h"
+#include "api/video/video_bitrate_allocator_factory.h"
+#include "api/video/video_codec_type.h"
+#include "api/video/video_content_type.h"
+#include "api/video/video_frame_type.h"
+#include "api/video/video_rotation.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
+#include "api/video_codecs/scalability_mode.h"
+#include "api/video_codecs/sdp_video_format.h"
+#include "api/video_codecs/video_codec.h"
 #include "api/video_codecs/video_encoder.h"
+#include "call/audio_receive_stream.h"
+#include "call/audio_send_stream.h"
 #include "call/call.h"
 #include "call/fake_network_pipe.h"
-#include "call/rtp_transport_controller_send.h"
+#include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
 #include "media/engine/internal_encoder_factory.h"
 #include "media/engine/simulcast_encoder_adapter.h"
 #include "media/engine/webrtc_video_engine.h"
+#include "modules/include/module_common_types_public.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/include/rtp_header_extension_map.h"
+#include "modules/rtp_rtcp/include/rtp_rtcp_defines.h"
 #include "modules/rtp_rtcp/source/create_video_rtp_depacketizer.h"
+#include "modules/rtp_rtcp/source/rtcp_packet/report_block.h"
 #include "modules/rtp_rtcp/source/rtcp_sender.h"
 #include "modules/rtp_rtcp/source/rtp_header_extensions.h"
 #include "modules/rtp_rtcp/source/rtp_packet.h"
 #include "modules/rtp_rtcp/source/rtp_rtcp_impl2.h"
+#include "modules/rtp_rtcp/source/rtp_rtcp_interface.h"
 #include "modules/rtp_rtcp/source/rtp_util.h"
+#include "modules/rtp_rtcp/source/video_rtp_depacketizer.h"
 #include "modules/rtp_rtcp/source/video_rtp_depacketizer_vp9.h"
 #include "modules/video_coding/codecs/interface/common_constants.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
+#include "modules/video_coding/codecs/vp8/include/vp8_globals.h"
 #include "modules/video_coding/codecs/vp9/include/vp9.h"
+#include "modules/video_coding/codecs/vp9/include/vp9_globals.h"
 #include "modules/video_coding/svc/create_scalability_structure.h"
 #include "modules/video_coding/svc/scalability_mode_util.h"
 #include "modules/video_coding/svc/scalable_video_controller.h"
@@ -48,31 +91,33 @@
 #include "rtc_base/event.h"
 #include "rtc_base/experiments/alr_experiment.h"
 #include "rtc_base/logging.h"
-#include "rtc_base/platform_thread.h"
+#include "rtc_base/network_route.h"
 #include "rtc_base/rate_limiter.h"
 #include "rtc_base/strings/string_builder.h"
 #include "rtc_base/synchronization/mutex.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/thread.h"
+#include "rtc_base/thread_annotations.h"
 #include "rtc_base/time_utils.h"
 #include "rtc_base/unique_id_generator.h"
 #include "system_wrappers/include/sleep.h"
 #include "test/call_test.h"
 #include "test/configurable_frame_size_encoder.h"
+#include "test/encoder_settings.h"
 #include "test/fake_encoder.h"
-#include "test/fake_texture_frame.h"
+#include "test/field_trial.h"
 #include "test/frame_forwarder.h"
 #include "test/frame_generator_capturer.h"
 #include "test/frame_utils.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
-#include "test/network/simulated_network.h"
 #include "test/null_transport.h"
 #include "test/rtcp_packet_parser.h"
 #include "test/rtp_rtcp_observer.h"
+#include "test/scoped_key_value_config.h"
 #include "test/video_encoder_proxy_factory.h"
 #include "test/video_test_constants.h"
-#include "video/config/encoder_stream_factory.h"
-#include "video/send_statistics_proxy.h"
+#include "video/config/video_encoder_config.h"
 #include "video/transport_adapter.h"
 #include "video/video_send_stream_impl.h"
 
@@ -83,7 +128,7 @@ class VideoSendStreamPeer {
   explicit VideoSendStreamPeer(webrtc::VideoSendStream* base_class_stream)
       : internal_stream_(
             static_cast<internal::VideoSendStreamImpl*>(base_class_stream)) {}
-  absl::optional<float> GetPacingFactorOverride() const {
+  std::optional<float> GetPacingFactorOverride() const {
     return internal_stream_->GetPacingFactorOverride();
   }
 
@@ -143,7 +188,8 @@ class VideoSendStreamTest : public test::CallTest {
   }
 
  protected:
-  void TestNackRetransmission(uint32_t retransmit_ssrc,
+  void TestNackRetransmission(uint32_t media_ssrc,
+                              uint32_t retransmit_ssrc,
                               uint8_t retransmit_payload_type);
   void TestPacketFragmentationSize(VideoFormat format, bool with_fec);
 
@@ -957,15 +1003,17 @@ TEST_F(VideoSendStreamTest, SupportsFlexfecWithMultithreadedH264) {
 }
 
 void VideoSendStreamTest::TestNackRetransmission(
+    uint32_t media_ssrc,
     uint32_t retransmit_ssrc,
     uint8_t retransmit_payload_type) {
   class NackObserver : public test::SendTest {
    public:
-    explicit NackObserver(uint32_t retransmit_ssrc,
+    explicit NackObserver(uint32_t media_ssrc,
+                          uint32_t retransmit_ssrc,
                           uint8_t retransmit_payload_type)
         : SendTest(test::VideoTestConstants::kDefaultTimeout),
-          send_count_(0),
           retransmit_count_(0),
+          media_ssrc_(media_ssrc),
           retransmit_ssrc_(retransmit_ssrc),
           retransmit_payload_type_(retransmit_payload_type) {}
 
@@ -974,78 +1022,79 @@ void VideoSendStreamTest::TestNackRetransmission(
       RtpPacket rtp_packet;
       EXPECT_TRUE(rtp_packet.Parse(packet));
 
-      // NACK packets two times at some arbitrary points.
-      const int kNackedPacketsAtOnceCount = 3;
-      const int kRetransmitTarget = kNackedPacketsAtOnceCount * 2;
+      uint16_t sequence_number = rtp_packet.SequenceNumber();
+      if (rtp_packet.payload_size() >= 2 &&
+          rtp_packet.Ssrc() == retransmit_ssrc_ &&
+          retransmit_ssrc_ != media_ssrc_) {
+        // Assume correct RTX packet. Extract original sequence number.
+        rtc::ArrayView<const uint8_t> payload = rtp_packet.payload();
+        sequence_number = (payload[0] << 8) + payload[1];
+      }
 
-      // Skip padding packets because they will never be retransmitted.
-      if (rtp_packet.payload_size() == 0) {
+      if (auto it = pending_retransmission_.find(sequence_number) !=
+                    pending_retransmission_.end()) {
+        // Count each observer retransmission only once, so that any RTX-based
+        // padding doesn't double count.
+        pending_retransmission_.erase(it);
+        ++retransmit_count_;
+        if (retransmit_count_ >= 3) {
+          // Three unique retransmissions observed, should be enough for anyone.
+          observation_complete_.Set();
+        }
         return SEND_PACKET;
       }
 
-      ++send_count_;
+      // Skip padding packets and RTX packets, they will never be retransmitted.
+      if (rtp_packet.payload_size() == 0 ||
+          (rtp_packet.Ssrc() == retransmit_ssrc_ &&
+           retransmit_ssrc_ != media_ssrc_)) {
+        return SEND_PACKET;
+      }
 
-      // NACK packets at arbitrary points.
-      if (send_count_ % 25 == 0) {
+      // Immediately add any new media packet to the pending set.
+      const Timestamp now = env_.clock().CurrentTime();
+      pending_retransmission_.emplace(sequence_number, now);
+
+      // Find all requests we have not yet gotten a retransmission for,
+      // filtering out only those entries which have not be sent or requested
+      // within the last 50ms. A grace period is needed since the sender will
+      // not respond to a NACK within the first RTT of sending a message.
+      const TimeDelta kNackInterval = TimeDelta::Millis(50);
+      const size_t kMaxNackSize = 100;
+
+      std::vector<uint16_t> sequence_numbers;
+      for (auto& kv : pending_retransmission_) {
+        if (now - kv.second >= kNackInterval) {
+          sequence_numbers.push_back(kv.first);
+          kv.second = now;
+
+          if (sequence_numbers.size() >= kMaxNackSize) {
+            break;
+          }
+        }
+      }
+
+      if (!sequence_numbers.empty()) {
+        // Inject a NACK message for the found sequence numbers.
         RTCPSender::Configuration config;
-        config.clock = Clock::GetRealTimeClock();
         config.outgoing_transport = transport_adapter_.get();
         config.rtcp_report_interval = TimeDelta::Millis(kRtcpIntervalMs);
         config.local_media_ssrc =
             test::VideoTestConstants::kReceiverLocalVideoSsrc;
-        RTCPSender rtcp_sender(config);
+        RTCPSender rtcp_sender(env_, config);
 
         rtcp_sender.SetRTCPStatus(RtcpMode::kReducedSize);
         rtcp_sender.SetRemoteSSRC(test::VideoTestConstants::kVideoSendSsrcs[0]);
 
         RTCPSender::FeedbackState feedback_state;
-        uint16_t nack_sequence_numbers[kNackedPacketsAtOnceCount];
-        int nack_count = 0;
-        for (uint16_t sequence_number :
-             sequence_numbers_pending_retransmission_) {
-          if (nack_count < kNackedPacketsAtOnceCount) {
-            nack_sequence_numbers[nack_count++] = sequence_number;
-          } else {
-            break;
-          }
-        }
-
-        EXPECT_EQ(0, rtcp_sender.SendRTCP(feedback_state, kRtcpNack, nack_count,
-                                          nack_sequence_numbers));
+        EXPECT_EQ(0, rtcp_sender.SendRTCP(feedback_state, kRtcpNack,
+                                          sequence_numbers.size(),
+                                          sequence_numbers.data()));
       }
 
-      uint16_t sequence_number = rtp_packet.SequenceNumber();
-      if (rtp_packet.Ssrc() == retransmit_ssrc_ &&
-          retransmit_ssrc_ != test::VideoTestConstants::kVideoSendSsrcs[0]) {
-        // Not kVideoSendSsrcs[0], assume correct RTX packet. Extract sequence
-        // number.
-        const uint8_t* rtx_header = rtp_packet.payload().data();
-        sequence_number = (rtx_header[0] << 8) + rtx_header[1];
-      }
-
-      auto it = sequence_numbers_pending_retransmission_.find(sequence_number);
-      if (it == sequence_numbers_pending_retransmission_.end()) {
-        // Not currently pending retransmission. Add it to retransmission queue
-        // if media and limit not reached.
-        if (rtp_packet.Ssrc() == test::VideoTestConstants::kVideoSendSsrcs[0] &&
-            rtp_packet.payload_size() > 0 &&
-            retransmit_count_ +
-                    sequence_numbers_pending_retransmission_.size() <
-                kRetransmitTarget) {
-          sequence_numbers_pending_retransmission_.insert(sequence_number);
-          return DROP_PACKET;
-        }
-      } else {
-        // Packet is a retransmission, remove it from queue and check if done.
-        sequence_numbers_pending_retransmission_.erase(it);
-        if (++retransmit_count_ == kRetransmitTarget) {
-          EXPECT_EQ(retransmit_ssrc_, rtp_packet.Ssrc());
-          EXPECT_EQ(retransmit_payload_type_, rtp_packet.PayloadType());
-          observation_complete_.Set();
-        }
-      }
-
-      return SEND_PACKET;
+      // Drop media packet, otherwise transport feeback may indirectly ack the
+      // packet and remove it from the packet history.
+      return DROP_PACKET;
     }
 
     void ModifyVideoConfigs(
@@ -1066,13 +1115,15 @@ void VideoSendStreamTest::TestNackRetransmission(
       EXPECT_TRUE(Wait()) << "Timed out while waiting for NACK retransmission.";
     }
 
+    const Environment env_ = CreateEnvironment();
     std::unique_ptr<internal::TransportAdapter> transport_adapter_;
-    int send_count_;
     int retransmit_count_;
+    const uint32_t media_ssrc_;
     const uint32_t retransmit_ssrc_;
     const uint8_t retransmit_payload_type_;
-    std::set<uint16_t> sequence_numbers_pending_retransmission_;
-  } test(retransmit_ssrc, retransmit_payload_type);
+    // Map from sequence number to timestamp for transmission or last NACK.
+    std::map<uint16_t, Timestamp> pending_retransmission_;
+  } test(media_ssrc, retransmit_ssrc, retransmit_payload_type);
 
   RunBaseTest(&test);
 }
@@ -1080,12 +1131,14 @@ void VideoSendStreamTest::TestNackRetransmission(
 TEST_F(VideoSendStreamTest, RetransmitsNack) {
   // Normal NACKs should use the send SSRC.
   TestNackRetransmission(test::VideoTestConstants::kVideoSendSsrcs[0],
+                         test::VideoTestConstants::kVideoSendSsrcs[0],
                          test::VideoTestConstants::kFakeVideoSendPayloadType);
 }
 
 TEST_F(VideoSendStreamTest, RetransmitsNackOverRtx) {
   // NACKs over RTX should use a separate SSRC.
-  TestNackRetransmission(test::VideoTestConstants::kSendRtxSsrcs[0],
+  TestNackRetransmission(test::VideoTestConstants::kVideoSendSsrcs[0],
+                         test::VideoTestConstants::kSendRtxSsrcs[0],
                          test::VideoTestConstants::kSendRtxPayloadType);
 }
 
@@ -1227,12 +1280,11 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
             packets_lost_,  // Cumulative lost.
             loss_ratio);    // Loss percent.
         RTCPSender::Configuration config;
-        config.clock = Clock::GetRealTimeClock();
         config.receive_statistics = &lossy_receive_stats;
         config.outgoing_transport = transport_adapter_.get();
         config.rtcp_report_interval = TimeDelta::Millis(kRtcpIntervalMs);
         config.local_media_ssrc = test::VideoTestConstants::kVideoSendSsrcs[0];
-        RTCPSender rtcp_sender(config);
+        RTCPSender rtcp_sender(env_, config);
 
         rtcp_sender.SetRTCPStatus(RtcpMode::kReducedSize);
         rtcp_sender.SetRemoteSSRC(test::VideoTestConstants::kVideoSendSsrcs[0]);
@@ -1293,6 +1345,7 @@ void VideoSendStreamTest::TestPacketFragmentationSize(VideoFormat format,
       EXPECT_TRUE(Wait()) << "Timed out while observing incoming RTP packets.";
     }
 
+    const Environment env_ = CreateEnvironment();
     std::unique_ptr<internal::TransportAdapter> transport_adapter_;
     test::ConfigurableFrameSizeEncoder encoder_;
     test::VideoEncoderProxyFactory encoder_factory_;
@@ -1423,7 +1476,7 @@ TEST_F(VideoSendStreamTest, NoPaddingWhenVideoIsMuted) {
     TestState test_state_ = kBeforeStopCapture;
     Clock* const clock_;
     Mutex mutex_;
-    absl::optional<int64_t> last_packet_time_ms_ RTC_GUARDED_BY(mutex_);
+    std::optional<int64_t> last_packet_time_ms_ RTC_GUARDED_BY(mutex_);
     test::FrameGeneratorCapturer* capturer_ RTC_GUARDED_BY(mutex_);
   } test;
 
@@ -1460,7 +1513,7 @@ TEST_F(VideoSendStreamTest, PaddingIsPrimarilyRetransmissions) {
       const int kNetworkDelayMs = 50;
       BuiltInNetworkBehaviorConfig config;
       config.loss_percent = 10;
-      config.link_capacity_kbps = kCapacityKbps;
+      config.link_capacity = DataRate::KilobitsPerSec(kCapacityKbps);
       config.queue_delay_ms = kNetworkDelayMs;
       return config;
     }
@@ -1560,10 +1613,9 @@ TEST_F(VideoSendStreamTest, MinTransmitBitrateRespectsRemb) {
                                    receive_streams) override {
       stream_ = send_stream;
       RtpRtcpInterface::Configuration config;
-      config.clock = Clock::GetRealTimeClock();
       config.outgoing_transport = feedback_transport_.get();
       config.retransmission_rate_limiter = &retranmission_rate_limiter_;
-      rtp_rtcp_ = ModuleRtpRtcpImpl2::Create(config);
+      rtp_rtcp_ = std::make_unique<ModuleRtpRtcpImpl2>(env_, config);
       rtp_rtcp_->SetRTCPStatus(RtcpMode::kReducedSize);
     }
 
@@ -1588,6 +1640,7 @@ TEST_F(VideoSendStreamTest, MinTransmitBitrateRespectsRemb) {
     }
 
     TaskQueueBase* const task_queue_;
+    const Environment env_ = CreateEnvironment();
     std::unique_ptr<ModuleRtpRtcpImpl2> rtp_rtcp_;
     std::unique_ptr<internal::TransportAdapter> feedback_transport_;
     RateLimiter retranmission_rate_limiter_;
@@ -2697,7 +2750,8 @@ TEST_F(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
               CreateBuiltinVideoBitrateAllocatorFactory()) {}
 
    private:
-    std::unique_ptr<VideoBitrateAllocator> CreateVideoBitrateAllocator(
+    std::unique_ptr<VideoBitrateAllocator> Create(
+        const Environment& env,
         const VideoCodec& codec) override {
       EXPECT_GE(codec.startBitrate, codec.minBitrate);
       EXPECT_LE(codec.startBitrate, codec.maxBitrate);
@@ -2722,7 +2776,7 @@ TEST_F(VideoSendStreamTest, ReconfigureBitratesSetsEncoderBitratesCorrectly) {
       ++num_rate_allocator_creations_;
       create_rate_allocator_event_.Set();
 
-      return bitrate_allocator_factory_->CreateVideoBitrateAllocator(codec);
+      return bitrate_allocator_factory_->Create(env, codec);
     }
 
     int32_t InitEncode(const VideoCodec* codecSettings,
@@ -3312,10 +3366,10 @@ class Vp9HeaderObserver : public test::SendTest {
   }
 
   ScalableVideoController::StreamLayersConfig GetScalabilityConfig() const {
-    absl::optional<ScalabilityMode> scalability_mode =
+    std::optional<ScalabilityMode> scalability_mode =
         ScalabilityModeFromString(params_.scalability_mode);
     EXPECT_TRUE(scalability_mode.has_value());
-    absl::optional<ScalableVideoController::StreamLayersConfig> config =
+    std::optional<ScalableVideoController::StreamLayersConfig> config =
         ScalabilityStructureConfig(*scalability_mode);
     EXPECT_TRUE(config.has_value());
     EXPECT_EQ(config->num_spatial_layers, params_.num_spatial_layers);
@@ -3327,8 +3381,8 @@ class Vp9HeaderObserver : public test::SendTest {
   VideoCodecVP9 vp9_settings_;
   webrtc::VideoEncoderConfig encoder_config_;
   bool last_packet_marker_ = false;
-  absl::optional<uint16_t> last_packet_sequence_number_;
-  absl::optional<uint32_t> last_packet_timestamp_;
+  std::optional<uint16_t> last_packet_sequence_number_;
+  std::optional<uint32_t> last_packet_timestamp_;
   RTPVideoHeaderVP9 last_vp9_;
   std::map<int, int> last_temporal_idx_by_spatial_idx_;
   Mutex mutex_;
@@ -3447,7 +3501,7 @@ void VideoSendStreamTest::TestVp9NonFlexMode(
         vp9_settings_.numberOfSpatialLayers = params_.num_spatial_layers;
         vp9_settings_.interLayerPred = params_.inter_layer_pred;
       } else {
-        absl::optional<ScalabilityMode> mode =
+        std::optional<ScalabilityMode> mode =
             ScalabilityModeFromString(params_.scalability_mode);
         encoder_config->simulcast_layers[0].scalability_mode = mode;
         EXPECT_TRUE(mode.has_value());
@@ -3459,8 +3513,8 @@ void VideoSendStreamTest::TestVp9NonFlexMode(
           GetScalabilityConfig();
       int required_divisibility = 1;
       for (int sl_idx = 0; sl_idx < config.num_spatial_layers; ++sl_idx) {
-        required_divisibility = cricket::LeastCommonMultiple(
-            required_divisibility, config.scaling_factor_den[sl_idx]);
+        required_divisibility =
+            std::lcm(required_divisibility, config.scaling_factor_den[sl_idx]);
       }
       return required_divisibility;
     }
@@ -3776,7 +3830,7 @@ TEST_F(VideoSendStreamTest, RemoveOverheadFromBandwidth) {
 class PacingFactorObserver : public test::SendTest {
  public:
   PacingFactorObserver(bool configure_send_side,
-                       absl::optional<float> expected_pacing_factor)
+                       std::optional<float> expected_pacing_factor)
       : test::SendTest(test::VideoTestConstants::kDefaultTimeout),
         configure_send_side_(configure_send_side),
         expected_pacing_factor_(expected_pacing_factor) {}
@@ -3832,7 +3886,7 @@ class PacingFactorObserver : public test::SendTest {
 
  private:
   const bool configure_send_side_;
-  const absl::optional<float> expected_pacing_factor_;
+  const std::optional<float> expected_pacing_factor_;
 };
 
 std::string GetAlrProbingExperimentString() {
@@ -3853,7 +3907,7 @@ TEST_F(VideoSendStreamTest, AlrConfiguredWhenSendSideOn) {
 TEST_F(VideoSendStreamTest, AlrNotConfiguredWhenSendSideOff) {
   test::ScopedFieldTrials alr_experiment(GetAlrProbingExperimentString());
   // Send-side bwe off, use configuration should not be overridden.
-  PacingFactorObserver test_without_send_side(false, absl::nullopt);
+  PacingFactorObserver test_without_send_side(false, std::nullopt);
   RunBaseTest(&test_without_send_side);
 }
 
@@ -4075,10 +4129,6 @@ void VideoSendStreamTest::TestTemporalLayers(
           test::VideoTestConstants::kVideoSendPayloadType;
       encoder_config->video_format.name = payload_name_;
       encoder_config->codec_type = PayloadStringToCodecType(payload_name_);
-      encoder_config->video_stream_factory =
-          rtc::make_ref_counted<cricket::EncoderStreamFactory>(
-              payload_name_, /*max_qp=*/56, /*is_screenshare=*/false,
-              /*conference_mode=*/false, encoder_info);
       encoder_config->max_bitrate_bps = kMaxBitrateBps;
       if (absl::EqualsIgnoreCase(payload_name_, "VP9")) {
         encoder_config->encoder_specific_settings = rtc::make_ref_counted<
@@ -4120,7 +4170,7 @@ void VideoSendStreamTest::TestTemporalLayers(
       parsed.timestamp = rtp_packet.Timestamp();
       parsed.ssrc = rtp_packet.Ssrc();
 
-      absl::optional<VideoRtpDepacketizer::ParsedRtpPayload> parsed_payload =
+      std::optional<VideoRtpDepacketizer::ParsedRtpPayload> parsed_payload =
           depacketizer_->Parse(rtp_packet.PayloadBuffer());
       EXPECT_TRUE(parsed_payload);
 

@@ -16,7 +16,7 @@ add_setup(async function () {
   await gCUITestUtils.addSearchBar();
   win = await BrowserTestUtils.openNewBrowserWindow();
 
-  searchBar = win.BrowserSearch.searchBar;
+  searchBar = win.document.getElementById("searchbar");
   searchPopup = win.document.getElementById("PopupSearchAutoComplete");
   searchIcon = searchBar.querySelector(".searchbar-search-button");
 
@@ -37,17 +37,11 @@ add_setup(async function () {
 });
 
 add_task(async function nonEmptySearch() {
-  searchBar.focus();
-  searchBar.value = SEARCH_WORD;
-
-  let promise = promiseEvent(searchPopup, "popupshown");
-  info("Opening search panel");
-  EventUtils.synthesizeMouseAtCenter(searchIcon, {}, win);
-  await promise;
+  await openPopup(SEARCH_WORD);
 
   let engineNameBox = searchPopup.querySelector(".searchbar-engine-name");
 
-  promise = BrowserTestUtils.browserLoaded(
+  let promise = BrowserTestUtils.browserLoaded(
     win.gBrowser.selectedBrowser,
     false,
     `http://mochi.test:8888/browser/browser/components/search/test/browser/?search&test=${SEARCH_WORD}`
@@ -58,22 +52,48 @@ add_task(async function nonEmptySearch() {
 });
 
 add_task(async function emptySearch() {
-  searchBar.focus();
-  searchBar.value = "";
-
-  let promise = promiseEvent(searchPopup, "popupshown");
-  info("Opening search panel");
-  EventUtils.synthesizeMouseAtCenter(searchIcon, {}, win);
-  await promise;
+  await openPopup("");
 
   let engineNameBox = searchPopup.querySelector(".searchbar-engine-name");
-
   EventUtils.synthesizeMouseAtCenter(engineNameBox, {}, win);
-
   await TestUtils.waitForTick();
+
   Assert.equal(
     win.gBrowser.selectedBrowser.ownerDocument.activeElement,
     searchBar.textbox,
     "Focus stays in the searchbar"
   );
 });
+
+add_task(async function emptySearchShift() {
+  await openPopup("");
+
+  let engineNameBox = searchPopup.querySelector(".searchbar-engine-name");
+
+  let promise = BrowserTestUtils.browserLoaded(
+    win.gBrowser.selectedBrowser,
+    false
+  );
+  EventUtils.synthesizeMouseAtCenter(engineNameBox, { shiftKey: true }, win);
+  let url = await promise;
+
+  Assert.equal(
+    url,
+    "http://mochi.test:8888/browser/browser/components/search/test/browser/",
+    "Opening search form successful"
+  );
+});
+
+async function openPopup(searchBarValue) {
+  searchBar.focus();
+  searchBar.value = searchBarValue;
+  if (searchBar.textbox.popupOpen) {
+    info("searchPanel is already open");
+    return;
+  }
+  let shownPromise = promiseEvent(searchPopup, "popupshown");
+  let builtPromise = promiseEvent(searchPopup.oneOffButtons, "rebuild");
+  info("Opening search panel");
+  EventUtils.synthesizeMouseAtCenter(searchIcon, {}, win);
+  await Promise.all([shownPromise, builtPromise]);
+}

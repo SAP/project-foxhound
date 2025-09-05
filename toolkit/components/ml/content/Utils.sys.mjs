@@ -3,80 +3,6 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/. */
 
 /**
- * Converts an ArrayBuffer to a Blob URL.
- *
- * @param {ArrayBuffer} buffer - The ArrayBuffer to convert.
- * @returns {string} The Blob URL.
- */
-export function arrayBufferToBlobURL(buffer) {
-  let blob = new Blob([buffer], { type: "application/wasm" });
-  return URL.createObjectURL(blob);
-}
-
-/**
- * Validate some simple Wasm that uses a SIMD operation.
- */
-export function detectSimdSupport() {
-  return WebAssembly.validate(
-    new Uint8Array(
-      // ```
-      // ;; Detect SIMD support.
-      // ;; Compile by running: wat2wasm --enable-all simd-detect.wat
-      //
-      // (module
-      //   (func (result v128)
-      //     i32.const 0
-      //     i8x16.splat
-      //     i8x16.popcnt
-      //   )
-      // )
-      // ```
-
-      // prettier-ignore
-      [
-        0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00, 0x01, 0x05, 0x01, 0x60, 0x00,
-        0x01, 0x7b, 0x03, 0x02, 0x01, 0x00, 0x0a, 0x0a, 0x01, 0x08, 0x00, 0x41, 0x00,
-        0xfd, 0x0f, 0xfd, 0x62, 0x0b
-      ]
-    )
-  );
-}
-
-let cachedRuntimeWasmFilename = null;
-
-/**
- * Determines the appropriate WebAssembly (Wasm) filename based on the runtime capabilities of the browser.
- * This function considers both SIMD and multi-threading support.
- * It returns a filename that matches the browser's capabilities, ensuring the most optimized version of the Wasm file is used.
- *
- * The result is cached to avoid re-computation.
- *
- * @param {Window|null} browsingContext - The browsing context to use for feature detection.
- * @returns {string} The filename of the Wasm file best suited for the current browser's capabilities.
- */
-export function getRuntimeWasmFilename(browsingContext = null) {
-  if (cachedRuntimeWasmFilename != null) {
-    return cachedRuntimeWasmFilename;
-  }
-
-  // The cross-origin isolation flag is used to determine if we have multi-threading support.
-  const hasMultiThreadSupport = browsingContext
-    ? browsingContext.crossOriginIsolated
-    : false;
-
-  let res;
-  if (detectSimdSupport()) {
-    res = hasMultiThreadSupport
-      ? "ort-wasm-simd-threaded.wasm"
-      : "ort-wasm-simd.wasm";
-  } else {
-    res = hasMultiThreadSupport ? "ort-wasm-threaded.wasm" : "ort-wasm.wasm";
-  }
-  cachedRuntimeWasmFilename = res;
-  return res;
-}
-
-/**
  * Enumeration for the progress status text.
  */
 export const ProgressStatusText = Object.freeze({
@@ -98,6 +24,8 @@ export const ProgressType = Object.freeze({
   DOWNLOAD: "downloading",
   // The value of the operation type when loading from cache
   LOAD_FROM_CACHE: "loading_from_cache",
+  // The value of the operation type when running the model
+  INFERENCE: "running_inference",
 });
 
 /**
@@ -390,11 +318,11 @@ export class MultiProgressAggregator {
 /**
  * Converts a model and its headers to a Response object.
  *
- * @param {ArrayBuffer} modelFile
+ * @param {string} modelFilePath - path to the model file in Origin Private FileSystem (OPFS).
  * @param {object|null} headers
  * @returns {Response} The generated Response instance
  */
-export function modelToResponse(modelFile, headers) {
+export async function modelToResponse(modelFilePath, headers) {
   let responseHeaders = {};
 
   if (headers) {
@@ -406,10 +334,147 @@ export function modelToResponse(modelFile, headers) {
     }
   }
 
-  return new Response(modelFile, {
+  const file = await (await getFileHandleFromOPFS(modelFilePath)).getFile();
+
+  return new Response(file.stream(), {
     status: 200,
     headers: responseHeaders,
   });
+}
+
+/**
+ * Retrieves a handle to a directory at the specified path in the Origin Private File System (OPFS).
+ *
+ * @param {string|null} path - The path to the directory, using "/" as the directory separator.
+ *                        Example: "subdir1/subdir2/subdir3"
+ *                        If null, returns the root.
+ * @param {object} options - Configuration object
+ * @param {boolean} options.create - if `true` (default is false), create any missing subdirectories.
+ * @returns {Promise<FileSystemDirectoryHandle>} - A promise that resolves to the directory handle
+ *                                                 for the specified path.
+ */
+export async function getDirectoryHandleFromOPFS(
+  path = null,
+  { create = false } = {}
+) {
+  let currentNavigator = globalThis.navigator;
+  if (!currentNavigator) {
+    currentNavigator = Services.wm.getMostRecentBrowserWindow().navigator;
+  }
+  let directoryHandle = await currentNavigator.storage.getDirectory();
+
+  if (!path) {
+    return directoryHandle;
+  }
+
+  // Split the `path` into directory components.
+  const components = path.split("/").filter(Boolean);
+
+  // Traverse or creates subdirectories based on the path components.
+  for (const dirName of components) {
+    directoryHandle = await directoryHandle.getDirectoryHandle(dirName, {
+      create,
+    });
+  }
+
+  return directoryHandle;
+}
+
+/**
+ * Retrieves a handle to a file at the specified file path in the Origin Private File System (OPFS).
+ *
+ * @param {string} filePath - The path to the file, using "/" as the directory separator.
+ *                            Example: "subdir1/subdir2/filename.txt"
+ * @param {object} options - Configuration object
+ * @param {boolean} options.create - if `true` (default is false), create any missing directories
+ *                                   and the file itself.
+ * @returns {Promise<FileSystemFileHandle>} - A promise that resolves to the file handle
+ *                                            for the specified file.
+ */
+export async function getFileHandleFromOPFS(filePath, { create = false } = {}) {
+  // Extract the directory path and filename from the filePath.
+  const lastSlashIndex = filePath.lastIndexOf("/");
+  const fileName = filePath.substring(lastSlashIndex + 1);
+  const dirPath = filePath.substring(0, lastSlashIndex);
+
+  // Get or create the directory handle for the file's parent directory.
+  const directoryHandle = await getDirectoryHandleFromOPFS(dirPath, { create });
+
+  // Retrieve or create the file handle within the directory.
+  const fileHandle = await directoryHandle.getFileHandle(fileName, { create });
+
+  return fileHandle;
+}
+
+/**
+ * Delete a file or directory from the Origin Private File System (OPFS).
+ *
+ * @param {string} path - The path to delete, using "/" as the directory separator.
+ * @param {object} options - Configuration object
+ * @param {boolean} options.recursive - if `true` (default is false) a directory path
+ *                                      is recursively deleted.
+ * @returns {Promise<void>} A promise that resolves when the path has been successfully deleted.
+ */
+export async function removeFromOPFS(path, { recursive = false } = {}) {
+  // Extract the root directory and basename from the path.
+  const lastSlashIndex = path.lastIndexOf("/");
+  const fileName = path.substring(lastSlashIndex + 1);
+  const dirPath = path.substring(0, lastSlashIndex);
+
+  const directoryHandle = await getDirectoryHandleFromOPFS(dirPath);
+  if (!directoryHandle) {
+    throw new Error("Directory does not exist: " + dirPath);
+  }
+  await directoryHandle.removeEntry(fileName, { recursive });
+}
+
+/**
+ * Reads the body of a fetch `Response` object and writes it to a provided `WritableStream`,
+ * tracking progress and reporting it via a callback.
+ *
+ * @param {Response} response - The fetch `Response` object containing the body to read.
+ * @param {WritableStream} writableStream - The destination stream where the response body
+ *                                          will be written.
+ * @param {?function(ProgressAndStatusCallbackParams):void} progressCallback The function to call with progress updates.
+ */
+export async function readResponseToWriter(
+  response,
+  writableStream,
+  progressCallback
+) {
+  // Attempts to retrieve the `Content-Length` header from the response to estimate total size.
+  const contentLength = response.headers.get("Content-Length");
+  if (!contentLength) {
+    console.warn(
+      "Unable to determine content-length from response headers. Progress percentage will be approximated."
+    );
+  }
+  let totalSize = parseInt(contentLength ?? "0");
+
+  let loadedSize = 0;
+
+  // Creates a `TransformStream` to monitor the transfer progress of each chunk.
+  const progressStream = new TransformStream({
+    transform(chunk, controller) {
+      controller.enqueue(chunk); // Pass the chunk along to the writable stream
+      loadedSize += chunk.length;
+      totalSize = Math.max(totalSize, loadedSize);
+
+      // Reports progress updates via the `progressCallback` function if provided.
+      progressCallback?.(
+        new ProgressAndStatusCallbackParams({
+          progress: (loadedSize / totalSize) * 100,
+          totalLoaded: loadedSize,
+          currentLoaded: chunk.length,
+          total: totalSize,
+          units: "bytes",
+        })
+      );
+    },
+  });
+
+  // Pipes the response body through the progress stream into the writable stream.
+  await response.body.pipeThrough(progressStream).pipeTo(writableStream);
 }
 
 // Create a "namespace" to make it easier to import multiple names.
@@ -418,3 +483,135 @@ Progress.ProgressAndStatusCallbackParams = ProgressAndStatusCallbackParams;
 Progress.ProgressStatusText = ProgressStatusText;
 Progress.ProgressType = ProgressType;
 Progress.readResponse = readResponse;
+Progress.readResponseToWriter = readResponseToWriter;
+
+// OPFS operations
+export var OPFS = OPFS || {};
+OPFS.getFileHandle = getFileHandleFromOPFS;
+OPFS.getDirectoryHandle = getDirectoryHandleFromOPFS;
+OPFS.remove = removeFromOPFS;
+
+export async function getInferenceProcessInfo() {
+  // for now we only have a single inference process.
+  let info = await ChromeUtils.requestProcInfo();
+
+  for (const child of info.children) {
+    if (child.type === "inference") {
+      return {
+        pid: child.pid,
+        memory: child.memory,
+        cpuTime: child.cpuTime,
+        cpuCycleCount: child.cpuCycleCount,
+      };
+    }
+  }
+  return {};
+}
+
+const ALWAYS_ALLOWED_HUBS = [
+  "chrome://",
+  "resource://",
+  "http://localhost/",
+  "https://localhost/",
+];
+
+/**
+ * Enum for URL rejection types.
+ *
+ * Defines the type of rejection for a URL:
+ *
+ * - "DENIED" is for URLs explicitly disallowed by the deny list.
+ * - "NONE" is for URLs allowed by the allow list.
+ * - "DISALLOWED" is for URLs not matching any entry in either list.
+ *
+ * @readonly
+ * @enum {string}
+ */
+export const RejectionType = {
+  DENIED: "DENIED",
+  NONE: "NONE",
+  DISALLOWED: "DISALLOWED",
+};
+
+/**
+ * Class for checking URLs against allow and deny lists.
+ */
+export class URLChecker {
+  /**
+   * Creates an instance of URLChecker.
+   *
+   * @param {Array<{filter: 'ALLOW'|'DENY', urlPrefix: string}>} allowDenyList - Array of URL patterns with filters.
+   */
+  constructor(allowDenyList = null) {
+    if (allowDenyList) {
+      this.allowList = allowDenyList
+        .filter(entry => entry.filter === "ALLOW")
+        .map(entry => entry.urlPrefix.toLowerCase());
+
+      this.denyList = allowDenyList
+        .filter(entry => entry.filter === "DENY")
+        .map(entry => entry.urlPrefix.toLowerCase());
+    } else {
+      this.allowList = [];
+      this.denyList = [];
+    }
+
+    // Always allowed
+    for (const url of ALWAYS_ALLOWED_HUBS) {
+      this.allowList.push(url);
+    }
+  }
+
+  /**
+   * Normalizes localhost URLs to ignore user info, port, and path details.
+   *
+   * @param {string} url - The URL to normalize.
+   * @returns {string} - Normalized URL.
+   */
+  normalizeLocalhost(url) {
+    const parsedURL = URL.parse(url);
+    if (parsedURL?.hostname === "localhost") {
+      // Normalize to only scheme and localhost without port or user info
+      return `${parsedURL.protocol}//localhost/`;
+    }
+    return url;
+  }
+
+  /**
+   * Checks if a given URL is allowed based on allowList and denyList patterns.
+   *
+   * @param {string} url - The URL to check.
+   * @returns {{ allowed: boolean, rejectionType: string }} - Returns an object with:
+   *    - `allowed`: true if the URL is allowed, otherwise false.
+   *    - `rejectionType`:
+   *       - "DENIED" if the URL matches an entry in the denyList,
+   *       - "NONE" if the URL matches an entry in the allowList,
+   *       - "DISALLOWED" if the URL does not match any entry in either list.
+   */
+  allowedURL(url) {
+    const normalizedURL = this.normalizeLocalhost(url).toLowerCase();
+
+    // Check if the URL is denied by any entry in the denyList
+    if (this.denyList.some(prefix => normalizedURL.startsWith(prefix))) {
+      return { allowed: false, rejectionType: RejectionType.DENIED };
+    }
+
+    // Check if the URL is allowed by any entry in the allowList
+    if (this.allowList.some(prefix => normalizedURL.startsWith(prefix))) {
+      return { allowed: true, rejectionType: RejectionType.NONE };
+    }
+
+    // If no matches, return a default rejectionType
+    return { allowed: false, rejectionType: RejectionType.DISALLOWED };
+  }
+}
+
+/**
+ * Returns the optimal CPU concurrency for ML
+ *
+ * @returns {number} The number of threads we should be using
+ */
+export function getOptimalCPUConcurrency() {
+  let mlUtils = Cc["@mozilla.org/ml-utils;1"].createInstance(Ci.nsIMLUtils);
+  return mlUtils.getOptimalCPUConcurrency();
+}

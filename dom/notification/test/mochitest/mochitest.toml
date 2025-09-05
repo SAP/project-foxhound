@@ -1,12 +1,11 @@
 [DEFAULT]
-
+scheme = "https"
 support-files = [
   "MockAlertsService.js",
   "NotificationTest.js",
 ]
 
 ["test_notification_basics.html"]
-scheme = "https" # requestPermission requires HTTPS
 skip-if = [
   "xorigin", # Bug 1792790
   "os == 'android'", # Bug 1816427, Notification.onshow/close are broken on Android
@@ -14,18 +13,20 @@ skip-if = [
 
 ["test_notification_crossorigin_iframe.html"]
 support-files = ["blank.html"]
-scheme = "https"
-# This test needs to be run on HTTP (not HTTPS).
 
+["test_notification_crossorigin_iframe_nested_glean.html"]
+support-files = ["blank.html"]
+
+# This test needs to be run on HTTP (not HTTPS).
 ["test_notification_insecure_context.html"]
 skip-if = [
   "http3",
   "http2",
 ]
+scheme = "http"
 
 ["test_notification_permissions.html"]
 support-files = ["blank.html"]
-scheme = "https"
 
 ["test_notification_serviceworker_constructor_error.html"]
 support-files = ["notification_constructor_error.js"]
@@ -39,7 +40,6 @@ support-files = [
 
 ["test_notification_serviceworker_openWindow_nested.html"]
 skip-if = [
-  "os == 'android'", # Bug 1620052
   "xorigin", # Bug 1792790
   "condprof",  #: timed out
   "http3",
@@ -55,7 +55,6 @@ tags = "openwindow"
 
 ["test_notification_serviceworker_openWindow.html"]
 skip-if = [
-  "os == 'android'",  # Bug 1620052
   "xorigin",  # JavaScript error: http://mochi.xorigin-test:8888/tests/SimpleTest/TestRunner.js, line 157: SecurityError: Permission denied to access property "wrappedJSObject" on cross-origin object
   "http3",
   "http2",
@@ -67,6 +66,19 @@ support-files = [
 ]
 tags = "openwindow"
 
+["test_notification_serviceworker_show.html"]
+skip-if = ["xorigin"] # Bug 1792790
+support-files = [
+  "notification_show_sw.js",
+]
+
+["test_notification_swr_worker_show.html"]
+skip-if = ["xorigin"] # Bug 1792790
+support-files = [
+  "notification_empty_sw.js",
+  "notification_show_dedicated.js",
+]
+
 ["test_notification_worker_child.html"]
 skip-if = [
   "os == 'android'", # Bug 1816427, Notification.onshow/close are broken on Android
@@ -74,6 +86,11 @@ skip-if = [
 support-files = [
   "notification_worker_child-child.js",
   "notification_worker_child-parent.js",
+]
+
+["test_notification_worker_click.html"]
+skip-if = [
+  "os == 'android'", # Bug 1816427, Notification.onshow/close are broken on Android
 ]
 
 ["test_notification_worker_permission.html"]

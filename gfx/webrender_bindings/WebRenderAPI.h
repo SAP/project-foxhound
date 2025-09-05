@@ -157,7 +157,7 @@ class TransactionBuilder final {
   void AddExternalImage(ImageKey key, const ImageDescriptor& aDescriptor,
                         ExternalImageId aExtID,
                         wr::ExternalImageType aImageType,
-                        uint8_t aChannelIndex = 0);
+                        uint8_t aChannelIndex = 0, bool aNormalizedUvs = false);
 
   void UpdateImageBuffer(wr::ImageKey aKey, const ImageDescriptor& aDescriptor,
                          wr::Vec<uint8_t>& aBytes);
@@ -171,14 +171,13 @@ class TransactionBuilder final {
   void UpdateExternalImage(ImageKey aKey, const ImageDescriptor& aDescriptor,
                            ExternalImageId aExtID,
                            wr::ExternalImageType aImageType,
-                           uint8_t aChannelIndex = 0);
+                           uint8_t aChannelIndex = 0,
+                           bool aNormalizedUvs = false);
 
-  void UpdateExternalImageWithDirtyRect(ImageKey aKey,
-                                        const ImageDescriptor& aDescriptor,
-                                        ExternalImageId aExtID,
-                                        wr::ExternalImageType aImageType,
-                                        const wr::DeviceIntRect& aDirtyRect,
-                                        uint8_t aChannelIndex = 0);
+  void UpdateExternalImageWithDirtyRect(
+      ImageKey aKey, const ImageDescriptor& aDescriptor, ExternalImageId aExtID,
+      wr::ExternalImageType aImageType, const wr::DeviceIntRect& aDirtyRect,
+      uint8_t aChannelIndex = 0, bool aNormalizedUvs = false);
 
   void SetBlobImageVisibleArea(BlobImageKey aKey,
                                const wr::DeviceIntRect& aArea);
@@ -186,6 +185,10 @@ class TransactionBuilder final {
   void DeleteImage(wr::ImageKey aKey);
 
   void DeleteBlobImage(wr::BlobImageKey aKey);
+
+  void AddSnapshotImage(wr::SnapshotImageKey aKey);
+
+  void DeleteSnapshotImage(wr::SnapshotImageKey aKey);
 
   void AddRawFont(wr::FontKey aKey, wr::Vec<uint8_t>& aBytes, uint32_t aIndex);
 
@@ -533,6 +536,7 @@ struct MOZ_STACK_CLASS StackingContextParams : public WrStackingContextParams {
             nullptr,
             nullptr,
             nullptr,
+            nullptr,
             wr::TransformStyle::Flat,
             wr::WrReferenceFrameKind::Transform,
             false,
@@ -705,6 +709,14 @@ class DisplayListBuilder final {
                      bool aSupportsExternalCompositing = false);
 
   void PushP010Image(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
+                     bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
+                     wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
+                     wr::WrYuvColorSpace aColorSpace,
+                     wr::WrColorRange aColorRange, wr::ImageRendering aFilter,
+                     bool aPreferCompositorSurface = false,
+                     bool aSupportsExternalCompositing = false);
+
+  void PushNV16Image(const wr::LayoutRect& aBounds, const wr::LayoutRect& aClip,
                      bool aIsBackfaceVisible, wr::ImageKey aImageChannel0,
                      wr::ImageKey aImageChannel1, wr::WrColorDepth aColorDepth,
                      wr::WrYuvColorSpace aColorSpace,

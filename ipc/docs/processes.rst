@@ -136,7 +136,7 @@ strive for simplicity.
 
 In the spirit of creating a *responsible* process, the sample will connect
 several components that any deployed Gecko process is likely to need.  These
-include configuring a sandbox, `registration with the CrashReporter service`_
+include configuring a sandbox, :ref:`registration with the CrashReporter service <Crash Reporter>`
 and ("minimal") XPCOM initialization.  Consult documentation for these
 components for more information on their integration.
 
@@ -150,8 +150,6 @@ Once that is done, the new process will be cleanly destroyed.
 
 Code for the complete demo can be found `here
 <https://phabricator.services.mozilla.com/D119038>`_.
-
-.. _registration with the CrashReporter service: `Crash Reporter`_
 
 Common Architecture
 ~~~~~~~~~~~~~~~~~~~
@@ -320,7 +318,7 @@ process there.
   <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/toolkit/locales/en-US/toolkit/global/processTypes.ftl#39-57>`_
   for your process, if needed
 - Hashmap from process type to user-facing string above in `const ProcessType
-  <https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/ProcessType.sys.mjs#10-16`_
+  <https://searchfox.org/mozilla-central/rev/c5c002f81f08a73e04868e0c2bf0eb113f200b03/toolkit/modules/ProcessType.sys.mjs#10-16>`_
 - For `about:processes` you will probably want to follow the following steps:
 
   + Add handling for your new process type producing a unique `fluentName <https://searchfox.org/mozilla-central/rev/be4604e4be8c71b3c1dbff2398a5b05f15411673/toolkit/components/aboutprocesses/content/aboutProcesses.js#472-539>`_, i.e., constructing a dynamic name is highly discouraged
@@ -525,12 +523,8 @@ Windows Sandbox
 _______________
 
 - Introduce a new ``SandboxBroker::SetSecurityLevelForXXXProcess()`` that
-  defines the new sandbox in both
-
-  + the sandbox broker basing yourself on that `example
-    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp#1241-1344>`_
-  + the remote sandbox broker getting `inspired by
-    <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/win/src/remotesandboxbroker/remoteSandboxBroker.cpp#161-165>`_
+  defines the new sandbox in the sandbox broker basing yourself on this
+  `example <https://searchfox.org/mozilla-central/rev/d4b9c457db637fde655592d9e2048939b7ab2854/security/sandbox/win/src/sandboxbroker/sandboxBroker.cpp#1241-1344>`_
 
 - Add new case handling in ``WindowsProcessLauncher::DoSetup()`` calling
   ``SandboxBroker::SetSecurityLevelForXXXProcess()`` in `GeckoChildProcessHost
@@ -850,9 +844,8 @@ Above, we saw that this is started by ``Host::MakeBridgeAndResolve`` after the
 
       auto resolveFail = MakeScopeExit([&] { mResolver(Nothing()); });
 
-      // Parent side is first PID (main/content), child is second (demo).
-      nsresult rv = PDempHelpline::CreateEndpoints(
-          mParentPid, base::GetProcId(GetChildProcessHandle()), &parent, &child);
+      // Parent side is first argument (main/content), child is second (demo).
+      nsresult rv = PDempHelpline::CreateEndpoints(&parent, &child);
 
       // ...
 
@@ -1225,8 +1218,8 @@ current debug session.  The command can be added to ``.gdbinit`` for ease.  At
 the time of this writing, lldb does not support automatically connecting to
 newly spawned processes.
 
-Finally, Linux users can use ``rr`` for time-travel debugging.  See `Debugging
-Firefox with rr`_ for details.
+Finally, Linux users can use ``rr`` for time-travel debugging.  See :ref:`Debugging
+Firefox with rr <Debugging Firefox with rr>` for details.
 
 These solutions are not always desirable.  For example, the fact that they hook
 *all* spawned processes can mean that targeting breakpoints to one process

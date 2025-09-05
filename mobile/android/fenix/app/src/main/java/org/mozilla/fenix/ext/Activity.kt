@@ -6,6 +6,7 @@ package org.mozilla.fenix.ext
 
 import android.app.Activity
 import android.app.role.RoleManager
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.provider.Settings
@@ -33,6 +34,7 @@ import org.mozilla.fenix.addons.AddonsManagementFragmentDirections
 import org.mozilla.fenix.components.menu.MenuDialogFragmentDirections
 import org.mozilla.fenix.customtabs.EXTRA_IS_SANDBOX_CUSTOM_TAB
 import org.mozilla.fenix.customtabs.ExternalAppBrowserActivity
+import org.mozilla.fenix.debugsettings.gleandebugtools.GleanDebugToolsFragmentDirections
 import org.mozilla.fenix.exceptions.trackingprotection.TrackingProtectionExceptionsFragmentDirections
 import org.mozilla.fenix.home.HomeFragmentDirections
 import org.mozilla.fenix.library.bookmarks.BookmarkFragmentDirections
@@ -45,6 +47,7 @@ import org.mozilla.fenix.settings.SettingsFragmentDirections
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.settings.TrackingProtectionFragmentDirections
 import org.mozilla.fenix.settings.about.AboutFragmentDirections
+import org.mozilla.fenix.settings.doh.DohSettingsFragmentDirections
 import org.mozilla.fenix.settings.logins.fragment.LoginDetailFragmentDirections
 import org.mozilla.fenix.settings.logins.fragment.SavedLoginsAuthFragmentDirections
 import org.mozilla.fenix.settings.search.SaveSearchEngineFragmentDirections
@@ -52,11 +55,11 @@ import org.mozilla.fenix.settings.search.SearchEngineFragmentDirections
 import org.mozilla.fenix.settings.studies.StudiesFragmentDirections
 import org.mozilla.fenix.settings.wallpaper.WallpaperSettingsFragmentDirections
 import org.mozilla.fenix.share.AddNewDeviceFragmentDirections
-import org.mozilla.fenix.shopping.ReviewQualityCheckFragmentDirections
 import org.mozilla.fenix.tabstray.TabsTrayFragmentDirections
 import org.mozilla.fenix.trackingprotection.TrackingProtectionPanelDialogFragmentDirections
 import org.mozilla.fenix.translations.TranslationsDialogFragmentDirections
 import org.mozilla.fenix.translations.preferences.downloadlanguages.DownloadLanguagesPreferenceFragmentDirections
+import org.mozilla.fenix.webcompat.ui.WebCompatReporterFragmentDirections
 import java.security.InvalidParameterException
 
 /**
@@ -154,7 +157,7 @@ fun Activity.openSetDefaultBrowserOption(
  * This method checks if the app can prompt the user to set it as the default browser
  * based on the Android version and the availability of the ROLE_BROWSER.
  */
-fun Activity.isDefaultBrowserPromptSupported(): Boolean {
+fun Context.isDefaultBrowserPromptSupported(): Boolean {
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
         getSystemService(RoleManager::class.java).also {
             if (it.isRoleAvailable(RoleManager.ROLE_BROWSER) && !it.isRoleHeld(
@@ -198,11 +201,9 @@ private fun Activity.openDefaultBrowserSumoPage(
         topic = SupportUtils.SumoTopic.SET_AS_DEFAULT_BROWSER,
     )
     if (useCustomTab) {
-        startActivity(
-            SupportUtils.createSandboxCustomTabIntent(
-                context = this,
-                url = sumoDefaultBrowserUrl,
-            ),
+        SupportUtils.launchSandboxCustomTab(
+            context = this,
+            url = sumoDefaultBrowserUrl,
         )
     } else {
         (this as HomeActivity).openToBrowserAndLoad(
@@ -286,12 +287,16 @@ private fun getHomeNavDirections(
 
     BrowserDirection.FromHistory -> HistoryFragmentDirections.actionGlobalBrowser()
 
+    BrowserDirection.FromGleanDebugToolsFragment -> GleanDebugToolsFragmentDirections.actionGlobalBrowser()
+
     BrowserDirection.FromHistoryMetadataGroup -> HistoryMetadataGroupFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromTrackingProtectionExceptions ->
         TrackingProtectionExceptionsFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromHttpsOnlyMode -> HttpsOnlyFragmentDirections.actionGlobalBrowser()
+
+    BrowserDirection.FromDnsOverHttps -> DohSettingsFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromAbout -> AboutFragmentDirections.actionGlobalBrowser()
 
@@ -321,8 +326,6 @@ private fun getHomeNavDirections(
 
     BrowserDirection.FromStudiesFragment -> StudiesFragmentDirections.actionGlobalBrowser()
 
-    BrowserDirection.FromReviewQualityCheck -> ReviewQualityCheckFragmentDirections.actionGlobalBrowser()
-
     BrowserDirection.FromAddonsManagementFragment -> AddonsManagementFragmentDirections.actionGlobalBrowser()
 
     BrowserDirection.FromTranslationsDialogFragment -> TranslationsDialogFragmentDirections.actionGlobalBrowser()
@@ -331,6 +334,9 @@ private fun getHomeNavDirections(
 
     BrowserDirection.FromDownloadLanguagesPreferenceFragment ->
         DownloadLanguagesPreferenceFragmentDirections.actionGlobalBrowser()
+
+    BrowserDirection.FromWebCompatReporterFragment ->
+        WebCompatReporterFragmentDirections.actionGlobalBrowser()
 }
 
 const val REQUEST_CODE_BROWSER_ROLE = 1

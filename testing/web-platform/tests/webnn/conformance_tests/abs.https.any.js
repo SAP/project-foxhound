@@ -1,5 +1,5 @@
 // META: title=test WebNN API element-wise abs operation
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -29,7 +29,7 @@ const absTests = [
       'inputs': {
         'absInput': {
           'data': [49.837242126464844],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -40,7 +40,7 @@ const absTests = [
       'expectedOutputs': {
         'absOutput': {
           'data': [49.837242126464844],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       }
     }
@@ -51,7 +51,7 @@ const absTests = [
       'inputs': {
         'absInput': {
           'data': [-91.03521728515625],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -62,7 +62,7 @@ const absTests = [
       'expectedOutputs': {
         'absOutput': {
           'data': [91.03521728515625],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       }
     }
@@ -82,7 +82,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'},
+          'descriptor': {shape: [24], dataType: 'float32'},
           'constant': true
         }
       },
@@ -103,7 +103,7 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -123,7 +123,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -143,7 +143,7 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -163,7 +163,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -183,7 +183,7 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       }
     }
@@ -203,7 +203,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -223,7 +223,7 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -243,7 +243,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -263,7 +263,7 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       }
     }
@@ -283,7 +283,7 @@ const absTests = [
             30.097660064697266,  -74.21503448486328, 95.60974884033203,
             6.614287376403809,   31.2832088470459,   -53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -303,7 +303,238 @@ const absTests = [
             30.097660064697266, 74.21503448486328, 95.60974884033203,
             6.614287376403809,  31.2832088470459,  53.206058502197266
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
+        }
+      }
+    }
+  },
+
+  // float16 tests
+  {
+    'name': 'abs float16 positive 0D scalar',
+    'graph': {
+      'inputs': {
+        'absInput':
+            {'data': [49.84375], 'descriptor': {shape: [], dataType: 'float16'}}
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput':
+            {'data': [49.84375], 'descriptor': {shape: [], dataType: 'float16'}}
+      }
+    }
+  },
+  {
+    'name': 'abs float16 negative 0D scalar',
+    'graph': {
+      'inputs': {
+        'absInput':
+            {'data': [-91.0625], 'descriptor': {shape: [], dataType: 'float16'}}
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput':
+            {'data': [91.0625], 'descriptor': {shape: [], dataType: 'float16'}}
+      }
+    }
+  },
+  {
+    'name': 'abs float16 1D constant tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'},
+          'constant': true
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'abs float16 1D tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'abs float16 2D tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [4, 6], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [4, 6], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'abs float16 3D tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [2, 3, 4], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [2, 3, 4], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'abs float16 4D tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'abs float16 5D tensor',
+    'graph': {
+      'inputs': {
+        'absInput': {
+          'data': [
+            49.84375,  82.0625,  3.19921875, 85.1875,     88.9375,   -91.0625,
+            31.453125, -29.3125, -92.4375,   -15.5234375, 80.9375,   -38.21875,
+            53.0625,   99.625,   -21.28125,  90,          18.328125, -33.0625,
+            30.09375,  -74.1875, 95.625,     6.61328125,  31.28125,  -53.21875
+          ],
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'abs',
+        'arguments': [{'input': 'absInput'}],
+        'outputs': 'absOutput'
+      }],
+      'expectedOutputs': {
+        'absOutput': {
+          'data': [
+            49.84375,  82.0625, 3.19921875, 85.1875,    88.9375,   91.0625,
+            31.453125, 29.3125, 92.4375,    15.5234375, 80.9375,   38.21875,
+            53.0625,   99.625,  21.28125,   90,         18.328125, 33.0625,
+            30.09375,  74.1875, 95.625,     6.61328125, 31.28125,  53.21875
+          ],
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float16'}
         }
       }
     }
@@ -313,7 +544,7 @@ const absTests = [
 if (navigator.ml) {
   absTests.forEach((test) => {
     webnn_conformance_test(
-        buildGraphAndCompute, getAbsPrecisionTolerance, test);
+        buildAndExecuteGraph, getAbsPrecisionTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

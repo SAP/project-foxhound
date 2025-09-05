@@ -7,12 +7,17 @@ import React, {
   Component,
   createFactory,
 } from "devtools/client/shared/vendor/react";
-import { div, button } from "devtools/client/shared/vendor/react-dom-factories";
+import {
+  div,
+  button,
+  footer,
+} from "devtools/client/shared/vendor/react-dom-factories";
 import SearchInput from "../shared/SearchInput";
+import EventListeners from "../shared/EventListeners";
 import { connect } from "devtools/client/shared/vendor/react-redux";
 import {
   getSelectedTraceIndex,
-  getTopTraces,
+  getFilteredTopTraces,
   getAllTraces,
   getTraceChildren,
   getTraceParents,
@@ -21,17 +26,35 @@ import {
   getAllTraceCount,
   getIsCurrentlyTracing,
   getRuntimeVersions,
+  getTraceHighlightedDomEvents,
+  getTraceMatchingSearchTraces,
+  getTraceMatchingSearchException,
+  getTraceMatchingSearchValueOrGrip,
+  getIsTracingValues,
 } from "../../selectors/index";
+import { NO_SEARCH_VALUE } from "../../reducers/tracer-frames";
+
+const { throttle } = require("resource://devtools/shared/throttle.js");
 const VirtualizedTree = require("resource://devtools/client/shared/components/VirtualizedTree.js");
 const FrameView = createFactory(
   require("resource://devtools/client/shared/components/Frame.js")
 );
+import Reps from "devtools/client/shared/components/reps/index";
+const {
+  REPS: { Rep },
+  MODE,
+} = Reps;
 const {
   TRACER_FIELDS_INDEXES,
 } = require("resource://devtools/server/actors/tracer.js");
 const {
   HTMLTooltip,
 } = require("resource://devtools/client/shared/widgets/tooltip/HTMLTooltip.js");
+
+const {
+  TabPanel,
+  Tabs,
+} = require("resource://devtools/client/shared/components/tabs/Tabs.js");
 
 import actions from "../../actions/index";
 
@@ -58,11 +81,20 @@ export class Tracer extends Component {
 
       // Number of trace rendered in the timeline and the tree (considering the tree is expanded, less may be displayed based on collapsing)
       renderedTraceCount: 0,
+
+      // Index of the currently selected tab (traces or events)
+      selectedTabIndex: 0,
     };
 
     this.onSliderClick = this.onSliderClick.bind(this);
     this.onSliderWheel = this.onSliderWheel.bind(this);
     this.resetZoom = this.resetZoom.bind(this);
+
+    // Throttle requests to update the trace argument search query as it is a costly operation
+    this.throttledUpdateSearch = throttle(
+      this.throttledUpdateSearch.bind(this),
+      250
+    );
   }
 
   UNSAFE_componentWillReceiveProps(nextProps) {
@@ -131,7 +163,7 @@ export class Tracer extends Component {
         tooltip.panel.innerHTML = "";
         const el = document.createElement("div");
         el.classList.add("tracer-dom-event", eventType);
-        el.textContent = eventName;
+        el.textContent = `DOM | ${eventName}`;
         tooltip.panel.append(
           el,
           document.createElement("hr"),
@@ -169,7 +201,7 @@ export class Tracer extends Component {
     }
   }
 
-  renderTree() {
+  renderCallTree() {
     let {
       selectedTraceIndex,
       topTraces,
@@ -177,8 +209,10 @@ export class Tracer extends Component {
       traceChildren,
       traceParents,
     } = this.props;
-    if (!topTraces.length) {
+    // Print warning message when there is no trace recorded yet
+    if (!allTraces.length) {
       if (!this.props.isTracing) {
+        // We can't yet distinguish being completely off or pending for next interaction or load
         return div(
           { className: "tracer-message" },
           "Tracer is off, or pending for next interaction/load."
@@ -190,7 +224,21 @@ export class Tracer extends Component {
       );
     }
 
-    const { searchStrings } = this.state;
+    // If there is some traces in allTraces but none in topTraces,
+    // it means that they were all filtered out.
+    if (!topTraces.length) {
+      // Use distinct message when we are showing only a slice of the record, of the whole record
+      if (this.state.renderedTraceCount != this.props.traceCount) {
+        return div(
+          { className: "tracer-message" },
+          "All traces have been filtered out, in the slice of the record"
+        );
+      }
+      return div(
+        { className: "tracer-message" },
+        "All traces have been filtered out"
+      );
+    }
 
     // Indexes are floating number, so convert them to a decimal number as indexes in the trace array
     let { startIndex, endIndex } = this.state;
@@ -245,27 +293,6 @@ export class Tracer extends Component {
         results.push(startIndex);
         collectAllSiblings(traceParents, traceChildren, startIndex, results);
         topTraces.unshift(...results);
-      }
-    }
-
-    if (searchStrings) {
-      topTraces = topTraces.filter(traceIndex => {
-        const trace = allTraces[traceIndex];
-        if (trace[TRACER_FIELDS_INDEXES.TYPE] != "event") {
-          return false;
-        }
-        let label = trace[TRACER_FIELDS_INDEXES.EVENT_NAME];
-        if (!label) {
-          return false;
-        }
-        label = label.toLowerCase();
-        return searchStrings.some(search => label.includes(search));
-      });
-      if (!topTraces.length) {
-        return div(
-          { className: "tracer-message" },
-          "No trace matches for the current search"
-        );
       }
     }
 
@@ -337,7 +364,7 @@ export class Tracer extends Component {
                   this.focusOnTrace(traceIndex);
                 },
               },
-              eventName
+              `DOM | ${eventName}`
             )
           );
         }
@@ -400,47 +427,21 @@ export class Tracer extends Component {
     const yInSlider = event.clientY - top;
     const mousePositionRatio = yInSlider / height;
 
-    const index =
-      this.state.startIndex +
-      Math.floor(mousePositionRatio * this.state.renderedTraceCount);
+    // Indexes and ratios are floating number whereas
+    // we expect to pass an array index to `selectTrace`.
+    const index = Math.round(
+      this.state.startIndex + mousePositionRatio * this.state.renderedTraceCount
+    );
+
+    const { traceParents } = this.props;
+    const parentIndex = getTraceParentIndex(traceParents, index);
+    // Ignore the click if we clicked on a filtered out / not-rendered trace.
+    // `topTraces` contains the visible top-most parent trace indexes.
+    if (!this.props.topTraces.includes(parentIndex)) {
+      return;
+    }
 
     this.props.selectTrace(index);
-  }
-
-  searchInputOnChange = e => {
-    // Support multiple search strings being comma separated,
-    // ignore any extra white space and do a case insensitive search,
-    // ignore empty search strings,
-    const searchStrings = e.target.value
-      .split(",")
-      .map(search => search.trim().toLowerCase())
-      .filter(search => !!search.length);
-    if (searchStrings.length) {
-      this.setState({
-        searchStrings,
-      });
-    } else {
-      this.setState({
-        searchStrings: null,
-      });
-    }
-  };
-
-  renderSearchInput() {
-    return React.createElement(SearchInput, {
-      query: this.state.query,
-      count: 0,
-      placeholder: "Search DOM Events (comma separated list)",
-      size: "small",
-      showErrorEmoji: false,
-      isLoading: false,
-      onChange: this.searchInputOnChange,
-      onKeyDown: () => {},
-      showClose: false,
-      showExcludePatterns: false,
-      showSearchModifiers: false,
-      searchOptions: {},
-    });
   }
 
   onSliderWheel(event) {
@@ -528,6 +529,9 @@ export class Tracer extends Component {
   }
 
   focusOnTrace(traceIndex) {
+    // Force selecting the call traces panel
+    this.setState({ selectedTabIndex: 0 });
+
     const lastTraceIndex = findLastTraceIndex(
       this.props.traceChildren,
       traceIndex
@@ -596,6 +600,9 @@ export class Tracer extends Component {
     const { topTraces, allTraces, traceChildren } = this.props;
     const { startIndex, endIndex } = this.state;
 
+    // Compute only once the percentage value for 1px
+    const onePixelPercent = 1 / this.refs.timeline.clientHeight;
+
     const displayedTraceEvents = [];
     for (const traceIndex of topTraces) {
       // Match the last event index in order to allow showing partial event
@@ -610,19 +617,33 @@ export class Tracer extends Component {
     }
 
     return displayedTraceEvents.map(traceIndex => {
-      const eventPositionInPercent = this.tracePositionInPercent(traceIndex);
-      const lastTraceIndex = findLastTraceIndex(traceChildren, traceIndex);
-      const eventHeightInPercent = Math.round(
-        ((lastTraceIndex - traceIndex) / this.state.renderedTraceCount) * 100
-      );
       const trace = allTraces[traceIndex];
       if (trace[TRACER_FIELDS_INDEXES.TYPE] != "event") {
         return null;
       }
+
+      const eventPositionInPercent = this.tracePositionInPercent(traceIndex);
+      const lastTraceIndex = findLastTraceIndex(traceChildren, traceIndex);
+      const eventHeightInPercentFloat =
+        ((lastTraceIndex - traceIndex) / this.state.renderedTraceCount) * 100;
+      const eventHeightInPercent = Math.round(eventHeightInPercentFloat);
       const eventName = trace[TRACER_FIELDS_INDEXES.EVENT_NAME];
       const eventType = getEventClassNameFromTraceEventName(eventName);
+
+      // Is it being highlighted when hovering a category of events or one specific event in the DOM events panel
+      const highlighted = this.props.highlightedDomEvents.includes(eventName);
+
+      // Give some hint to the CSS to know if the item is smaller than a pixel.
+      // It will still be visible, but we can stop some expensive stylings.
+      let sizeClass = "";
+      if (eventHeightInPercent < onePixelPercent) {
+        sizeClass = "size-subpixel";
+      }
+
       return div({
-        className: `tracer-slider-event ${eventType}`,
+        className: `tracer-slider-event ${eventType}${
+          highlighted ? " highlighted" : ""
+        } ${sizeClass}`,
         "data-trace-index": traceIndex,
         style: {
           top: `${eventPositionInPercent}%`,
@@ -680,15 +701,17 @@ export class Tracer extends Component {
         classnames.push("selected-after");
       }
     }
+
+    const isZoomed = this.state.renderedTraceCount != this.props.traceCount;
     return div(
       {
         className: "tracer-timeline",
-        ref: "timeline",
-        onWheel: this.onSliderWheel,
       },
       div(
         {
           className: `tracer-slider-box ${classnames.join(" ")}`,
+          ref: "timeline",
+          onWheel: this.onSliderWheel,
         },
         div(
           {
@@ -714,13 +737,132 @@ export class Tracer extends Component {
           this.renderEventsInSlider(),
           this.renderMutationsInSlider()
         )
-      )
+      ),
+      isZoomed
+        ? button(
+            {
+              className: "tracer-reset-zoom",
+              onClick: this.resetZoom,
+            },
+            "Reset zoom"
+          )
+        : null
     );
   }
 
-  render() {
-    const isZoomed = this.state.renderedTraceCount != this.props.traceCount;
+  searchInputOnChange = e => {
+    const searchString = e.target.value;
 
+    // Throttle the calls to searchTraceArgument as that a costly operation
+    this.throttledUpdateSearch(searchString);
+  };
+
+  throttledUpdateSearch(searchString) {
+    this.props.searchTraceArguments(searchString);
+  }
+
+  /**
+   * Select the next or previous trace according to the current search string
+   *
+   * @param {Boolean} goForward
+   *                  Select the next matching trace if true,
+   *                  otherwise select the previous one.
+   */
+  selectNextMatchingTrace = goForward => {
+    const { tracesMatchingSearch, allTraces } = this.props;
+    const selectedTrace = allTraces[this.props.selectedTraceIndex];
+    const currentIndexInMatchingArray =
+      tracesMatchingSearch.indexOf(selectedTrace);
+
+    let nextIndexInMatchingArray;
+    if (goForward) {
+      // If we aren't selecting any of the matching traces, or the last one,
+      // select the first matching trace.
+      if (
+        currentIndexInMatchingArray == -1 ||
+        currentIndexInMatchingArray == tracesMatchingSearch.length - 1
+      ) {
+        nextIndexInMatchingArray = 0;
+      } else {
+        nextIndexInMatchingArray = currentIndexInMatchingArray + 1;
+      }
+    } else if (
+      currentIndexInMatchingArray == -1 ||
+      currentIndexInMatchingArray == 0
+    ) {
+      nextIndexInMatchingArray = tracesMatchingSearch.length - 1;
+    } else {
+      nextIndexInMatchingArray = currentIndexInMatchingArray - 1;
+    }
+
+    // `selectTrace` expect a trace index (and not a trace object)
+    const nextTraceIndex = allTraces.indexOf(
+      tracesMatchingSearch[nextIndexInMatchingArray]
+    );
+
+    this.props.selectTrace(nextTraceIndex);
+  };
+
+  renderCallTreeSearchInput() {
+    const { tracesMatchingSearch, searchExceptionMessage, searchValueOrGrip } =
+      this.props;
+    return [
+      React.createElement(SearchInput, {
+        // <SearchInput> only use `count` to show the arrow icons,
+        // force it to always display them with such count.
+        count: 2,
+
+        placeholder: `Search for function call argument values ("foo", 42, $0, $("canvas"), …)`,
+        size: "small",
+        showClose: false,
+        onChange: this.searchInputOnChange,
+        onKeyDown: e => {
+          if (e.key == "Enter") {
+            // Shift key will reverse the selection direction
+            this.selectNextMatchingTrace(!e.shiftKey);
+          }
+        },
+        handlePrev: () => this.selectNextMatchingTrace(false),
+        handleNext: () => this.selectNextMatchingTrace(true),
+      }),
+
+      // When this isn't a valid primitive type, we try to evaluate on the server
+      // and show the exception, if one was thrown
+      searchExceptionMessage
+        ? div({ className: "search-exception" }, searchExceptionMessage)
+        : null,
+
+      this.props.allTraces.length && !this.props.traceValues
+        ? div(
+            { className: "search-exception" },
+            "Need to enable tracing values to search for values"
+          )
+        : null,
+
+      // When we have a valid search string, either matching a primitive type or an object,
+      // we display it here, alongside the number of matches
+      this.props.traceValues && searchValueOrGrip != NO_SEARCH_VALUE
+        ? div(
+            { className: "search-value" },
+            "Searching for:",
+            Rep({
+              object: searchValueOrGrip,
+              mode: MODE.SHORT,
+              onDOMNodeClick: () =>
+                this.props.openElementInInspector(searchValueOrGrip),
+              onInspectIconClick: () =>
+                this.props.openElementInInspector(searchValueOrGrip),
+              onDOMNodeMouseOver: () =>
+                this.props.highlightDomElement(searchValueOrGrip),
+              onDOMNodeMouseOut: () => this.props.unHighlightDomElement(),
+            }),
+            ` (${tracesMatchingSearch.length} match(es))`
+          )
+        : null,
+    ];
+  }
+
+  render() {
     const { runtimeVersions } = this.props;
 
     return div(
@@ -749,25 +891,49 @@ export class Tracer extends Component {
               },
               `Client and remote runtime have different versions (${runtimeVersions.localPlatformVersion} vs ${runtimeVersions.remotePlatformVersion}) . The Tracer may be broken because of protocol changes between these two versions. Please upgrade or downgrade one of the two to use the same major version.`
             )
-          : null,
-        this.renderSearchInput()
+          : null
       ),
-      isZoomed
-        ? div(
-            {
-              className: "tracer-timeline-toolbar",
-            },
-            button(
-              {
-                className: "tracer-reset-zoom",
-                onClick: this.resetZoom,
-              },
-              "Reset zoom"
+      this.renderVerticalSliders(),
+      React.createElement(
+        Tabs,
+        {
+          activeTab: this.state.selectedTabIndex || 0,
+          onAfterChange: index => {
+            this.setState({ selectedTabIndex: index });
+          },
+        },
+        React.createElement(
+          TabPanel,
+          {
+            id: "tracer-traces",
+            title: "Call Traces",
+          },
+          div(
+            { className: "call-tree-container" },
+            ...this.renderCallTreeSearchInput(),
+            this.renderCallTree()
+          )
+        ),
+        React.createElement(
+          TabPanel,
+          {
+            id: "tracer-events",
+            title: "DOM Events",
+          },
+          div(
+            { className: "event-listeners-container" },
+            React.createElement(EventListeners, {
+              panelKey: "tracer",
+            }),
+            footer(
+              null,
+              `${
+                isMacOS ? "Cmd" : "Ctrl"
+              } + Click to select only one category or event`
             )
           )
-        : null,
-      this.renderVerticalSliders(),
-      this.renderTree()
+        )
+      )
     );
   }
 }
@@ -820,21 +986,43 @@ function collectAllSiblings(traceParents, traceChildren, traceIndex, results) {
  */
 function getEventClassNameFromTraceEventName(eventName) {
   let eventType = "other";
-  // `eventName` looks like this: `DOM | ${domEventName}`
-  // Use a space before each event name in order to be sure to match the beginning
-  // of the dom event name.
-  if (eventName.includes(" mouse") || eventName.includes(" click")) {
+  // Bug 1916755 should be using DOM Event categories instead of having such a custom mapping
+  if (
+    eventName.startsWith("global.mouse") ||
+    eventName.startsWith("global.click") ||
+    eventName.startsWith("node.mouse") ||
+    eventName.startsWith("node.click")
+  ) {
     eventType = "mouse";
-  } else if (eventName.includes(" key")) {
+  } else if (
+    eventName.startsWith("global.key") ||
+    eventName.startsWith("node.key")
+  ) {
     eventType = "key";
   }
   return eventType;
 }
 
+/**
+ * Return the index of the top-most parent frame for a given trace index.
+ *
+ * @param {Object} traceParents
+ *                 The reducer data containing parent trace index for all the traces.
+ * @param {Number} traceIndex
+ * @return {Number} The top-most parent trace index
+ */
+function getTraceParentIndex(traceParents, index) {
+  const parentIndex = traceParents[index];
+  if (parentIndex == undefined) {
+    return index;
+  }
+  return getTraceParentIndex(traceParents, parentIndex);
+}
+
 const mapStateToProps = state => {
   return {
     isTracing: getIsCurrentlyTracing(state),
-    topTraces: getTopTraces(state),
+    topTraces: getFilteredTopTraces(state),
     allTraces: getAllTraces(state),
     traceChildren: getTraceChildren(state),
     traceParents: getTraceParents(state),
@@ -843,9 +1031,18 @@ const mapStateToProps = state => {
     traceCount: getAllTraceCount(state),
     selectedTraceIndex: getSelectedTraceIndex(state),
     runtimeVersions: getRuntimeVersions(state),
+    highlightedDomEvents: getTraceHighlightedDomEvents(state),
+    tracesMatchingSearch: getTraceMatchingSearchTraces(state),
+    searchExceptionMessage: getTraceMatchingSearchException(state),
+    searchValueOrGrip: getTraceMatchingSearchValueOrGrip(state),
+    traceValues: getIsTracingValues(state),
   };
 };
 
 export default connect(mapStateToProps, {
   selectTrace: actions.selectTrace,
+  searchTraceArguments: actions.searchTraceArguments,
+  openElementInInspector: actions.openElementInInspectorCommand,
+  highlightDomElement: actions.highlightDomElement,
+  unHighlightDomElement: actions.unHighlightDomElement,
 })(Tracer);

@@ -12,15 +12,13 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsINode.h"
+#include "mozilla/intl/Segmenter.h"
+#include "mozilla/RangeBoundary.h"
 
 #define NS_FIND_CONTRACTID "@mozilla.org/embedcomp/rangefind;1"
 
-#define NS_FIND_CID                                  \
-  {                                                  \
-    0x471f4944, 0x1dd2, 0x11b2, {                    \
-      0x87, 0xac, 0x90, 0xbe, 0x0a, 0x51, 0xd6, 0x09 \
-    }                                                \
-  }
+#define NS_FIND_CID \
+  {0x471f4944, 0x1dd2, 0x11b2, {0x87, 0xac, 0x90, 0xbe, 0x0a, 0x51, 0xd6, 0x09}}
 
 class nsFind : public nsIFind {
  public:
@@ -41,6 +39,14 @@ class nsFind : public nsIFind {
     mWordEndBounded = aWordEndBounded;
   }
 
+  void SetNodeIndexCache(nsContentUtils::NodeIndexCache* aCache) {
+    mNodeIndexCache = aCache;
+  }
+
+  already_AddRefed<nsRange> FindFromRangeBoundaries(
+      const nsAString& aPatText, const mozilla::RangeBoundary& aStartPoint,
+      const mozilla::RangeBoundary& aEndPoint);
+
  protected:
   virtual ~nsFind() = default;
 
@@ -51,7 +57,8 @@ class nsFind : public nsIFind {
 
   bool mWordStartBounded = false;
   bool mWordEndBounded = false;
-
+  mozilla::intl::WordBreakIteratorUtf16 mWordBreakIter{nullptr};
+  nsContentUtils::NodeIndexCache* mNodeIndexCache = nullptr;
   struct State;
   class StateRestorer;
 
@@ -63,7 +70,7 @@ class nsFind : public nsIFind {
   //
   // This could be improved because some languages require more context than two
   // characters to determine where line breaks can occur
-  bool BreakInBetween(char32_t x, char32_t y) const;
+  bool BreakInBetween(char32_t x, char32_t y);
 
   // Get the first character from the next node (last if mFindBackward).
   //

@@ -389,7 +389,7 @@ TokenStreamCharsBase<Unit>::TokenStreamCharsBase(FrontendContext* fc,
                                                  size_t length,
                                                  const StringTaint& taint,
                                                  size_t startOffset)
-    : TokenStreamCharsShared(fc, parserAtoms, taint),
+    : TokenStreamCharsShared(fc, parserAtoms),
       sourceUnits(units, length, startOffset, taint) {}
 
 bool FillCharBufferFromSourceNormalizingAsciiLineBreaks(CharBuffer& charBuffer,
@@ -2980,17 +2980,6 @@ template <typename Unit, class AnyCharsAccess>
         break;
 
       case '#': {
-#ifdef ENABLE_RECORD_TUPLE
-        if (matchCodeUnit('{')) {
-          simpleKind = TokenKind::HashCurly;
-          break;
-        }
-        if (matchCodeUnit('[')) {
-          simpleKind = TokenKind::HashBracket;
-          break;
-        }
-#endif
-
         TokenStart start(this->sourceUnits, -1);
         const Unit* identStart = this->sourceUnits.addressOfNextCodeUnit() - 1;
         IdentifierEscapes sawEscape;

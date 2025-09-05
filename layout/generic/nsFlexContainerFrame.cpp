@@ -536,8 +536,8 @@ class nsFlexContainerFrame::FlexItem final {
   bool HasAnyAutoMargin() const { return mHasAnyAutoMargin; }
 
   BaselineSharingGroup ItemBaselineSharingGroup() const {
-    MOZ_ASSERT(mAlignSelf._0 == StyleAlignFlags::BASELINE ||
-                   mAlignSelf._0 == StyleAlignFlags::LAST_BASELINE,
+    MOZ_ASSERT(mAlignSelf == StyleAlignFlags::BASELINE ||
+                   mAlignSelf == StyleAlignFlags::LAST_BASELINE,
                "mBaselineSharingGroup only gets a meaningful value "
                "for baseline-aligned items");
     return mBaselineSharingGroup;
@@ -564,7 +564,7 @@ class nsFlexContainerFrame::FlexItem final {
 
   WritingMode GetWritingMode() const { return mWM; }
   WritingMode ContainingBlockWM() const { return mCBWM; }
-  StyleAlignSelf AlignSelf() const { return mAlignSelf; }
+  StyleAlignFlags AlignSelf() const { return mAlignSelf; }
   StyleAlignFlags AlignSelfFlags() const { return mAlignSelfFlags; }
 
   // Returns the flex factor (flex-grow or flex-shrink), depending on
@@ -693,7 +693,7 @@ class nsFlexContainerFrame::FlexItem final {
     // Before we've resolved flexible lengths, we keep mMainSize set to
     // the 'hypothetical main size', which is the flex base size, clamped
     // to the [min,max] range:
-    mMainSize = NS_CSS_MINMAX(mFlexBaseSize, mMainMinSize, mMainMaxSize);
+    mMainSize = CSSMinMax(mFlexBaseSize, mMainMinSize, mMainMaxSize);
 
     FLEX_ITEM_LOG(mFrame, "Set flex base size: %d, hypothetical main size: %d",
                   mFlexBaseSize, mMainSize);
@@ -799,11 +799,6 @@ class nsFlexContainerFrame::FlexItem final {
   }
 
   void SetHadMeasuringReflow() { mHadMeasuringReflow = true; }
-
-  void SetIsStretched() {
-    MOZ_ASSERT(mIsFrozen, "main size should be resolved before this");
-    mIsStretched = true;
-  }
 
   void SetIsFlexBaseSizeContentBSize() { mIsFlexBaseSizeContentBSize = true; }
 
@@ -960,7 +955,7 @@ class nsFlexContainerFrame::FlexItem final {
 
   // My "align-self" computed value (with "auto" swapped out for parent"s
   // "align-items" value, in our constructor).
-  StyleAlignSelf mAlignSelf{StyleAlignFlags::AUTO};
+  StyleAlignFlags mAlignSelf{StyleAlignFlags::AUTO};
 
   // Flags for 'align-self' (safe/unsafe/legacy).
   StyleAlignFlags mAlignSelfFlags{0};
@@ -1381,6 +1376,44 @@ StyleAlignFlags nsFlexContainerFrame::CSSAlignmentForAbsPosChild(
   return (alignment | alignmentFlags);
 }
 
+std::pair<StyleAlignFlags, StyleAlignFlags>
+nsFlexContainerFrame::UsedAlignSelfAndFlagsForItem(
+    const nsIFrame* aFlexItem) const {
+  MOZ_ASSERT(aFlexItem->IsFlexItem());
+
+  if (IsLegacyBox(this)) {
+    // For -webkit-{inline-}box and -moz-{inline-}box, we need to:
+    // (1) Use prefixed "box-align" instead of "align-items" to determine the
+    //     container's cross-axis alignment behavior.
+    // (2) Suppress the ability for flex items to override that with their own
+    //     cross-axis alignment. (The legacy box model doesn't support this.)
+    // So, each FlexItem simply copies the container's converted "align-items"
+    // value and disregards their own "align-self" property.
+    const StyleAlignFlags alignSelf =
+        ConvertLegacyStyleToAlignItems(StyleXUL());
+    const StyleAlignFlags flags = {0};
+    return {alignSelf, flags};
+  }
+
+  // Note: we don't need to call nsLayoutUtils::GetStyleFrame(aFlexItem) because
+  // the table wrapper frame inherits 'align-self' property from the table
+  // frame.
+  StyleAlignSelf usedAlignSelf =
+      aFlexItem->StylePosition()->UsedAlignSelf(Style());
+  if (MOZ_LIKELY(usedAlignSelf._0 == StyleAlignFlags::NORMAL)) {
+    // For flex items, 'align-self:normal' behaves as 'align-self:stretch'.
+    // https://drafts.csswg.org/css-align-3/#align-flex
+    usedAlignSelf = {StyleAlignFlags::STRETCH};
+  }
+
+  // Store the <overflow-position> bits in flags, and strip the bits from the
+  // used align-self value.
+  const StyleAlignFlags flags = usedAlignSelf._0 & StyleAlignFlags::FLAG_BITS;
+  const StyleAlignFlags alignSelf =
+      usedAlignSelf._0 & ~StyleAlignFlags::FLAG_BITS;
+  return {alignSelf, flags};
+}
+
 void nsFlexContainerFrame::GenerateFlexItemForChild(
     FlexLine& aLine, nsIFrame* aChildFrame,
     const ReflowInput& aParentReflowInput,
@@ -1536,22 +1569,9 @@ void nsFlexContainerFrame::GenerateFlexItemForChild(
   ResolveAutoFlexBasisAndMinSize(item, childRI, aAxisTracker);
 }
 
-// Static helper-functions for ResolveAutoFlexBasisAndMinSize():
-// -------------------------------------------------------------
-// Partially resolves "min-[width|height]:auto" and returns the resulting value.
-// By "partially", I mean we don't consider the min-content size (but we do
-// consider the main-size and main max-size properties, and the preferred aspect
-// ratio). The caller is responsible for computing & considering the min-content
-// size in combination with the partially-resolved value that this function
-// returns.
-//
-// Basically, this function gets the specified size suggestion; if not, the
-// transferred size suggestion; if both sizes do not exist, return nscoord_MAX.
-//
-// Spec reference: https://drafts.csswg.org/css-flexbox-1/#min-size-auto
-static nscoord PartiallyResolveAutoMinSize(
+nscoord nsFlexContainerFrame::PartiallyResolveAutoMinSize(
     const FlexItem& aFlexItem, const ReflowInput& aItemReflowInput,
-    const FlexboxAxisTracker& aAxisTracker) {
+    const FlexboxAxisTracker& aAxisTracker) const {
   MOZ_ASSERT(aFlexItem.NeedsMinSizeAutoResolution(),
              "only call for FlexItems that need min-size auto resolution");
 
@@ -1566,38 +1586,49 @@ static nscoord PartiallyResolveAutoMinSize(
           ? aFlexItem.BorderPadding().Size(cbWM)
           : LogicalSize(cbWM);
 
-  // If this flex item is a compressible replaced element list in CSS Sizing 3
-  // §5.2.2, CSS Sizing 3 §5.2.1c requires us to resolve the percentage part of
-  // the preferred main size property against zero, yielding a definite
-  // specified size suggestion. Here we can use a zero percentage basis to
-  // fulfill this requirement.
-  const auto percentBasis =
-      aFlexItem.Frame()->IsPercentageResolvedAgainstZero(mainStyleSize,
-                                                         maxMainStyleSize)
-          ? LogicalSize(cbWM, 0, 0)
-          : aItemReflowInput.mContainingBlockSize.ConvertTo(cbWM, itemWM);
+  // Return the percentage basis in cbWM for computing the specified size
+  // suggestion.
+  auto PercentageBasisForItem = [&]() {
+    // If this flex item is a compressible replaced element, according to the
+    // list in CSS Sizing 3 §5.2.2, then CSS Sizing 3 §5.2.1c requires us to
+    // resolve the percentage part of the preferred main size property against
+    // zero, yielding a definite specified size suggestion. Here we can use a
+    // zero percentage basis to fulfill this requirement.
+    if (aFlexItem.Frame()->IsPercentageResolvedAgainstZero(mainStyleSize,
+                                                           maxMainStyleSize)) {
+      return LogicalSize(cbWM, 0, 0);
+    }
+    return aItemReflowInput.mContainingBlockSize.ConvertTo(cbWM, itemWM);
+  };
 
   // Compute the specified size suggestion, which is the main-size property if
   // it's definite.
   nscoord specifiedSizeSuggestion = nscoord_MAX;
 
   if (aAxisTracker.IsRowOriented()) {
+    // TODO(dholbert): We need to handle 'stretch' (and its prefixed aliases)
+    // here; that's tracked in bug 1936942.  (Note that we do handle 'stretch'
+    // in our column-oriented "else" clause below, via the call to
+    // ComputeBSizeValueHandlingStretch.)
     if (mainStyleSize.IsLengthPercentage()) {
       // NOTE: We ignore extremum inline-size. This is OK because the caller is
       // responsible for computing the min-content inline-size and min()'ing it
       // with the value we return.
       specifiedSizeSuggestion = aFlexItem.Frame()->ComputeISizeValue(
-          cbWM, percentBasis, boxSizingAdjust,
+          cbWM, PercentageBasisForItem(), boxSizingAdjust,
           mainStyleSize.AsLengthPercentage());
     }
   } else {
-    if (!nsLayoutUtils::IsAutoBSize(mainStyleSize, percentBasis.BSize(cbWM))) {
-      // NOTE: We ignore auto and extremum block-size. This is OK because the
-      // caller is responsible for computing the min-content block-size and
-      // min()'ing it with the value we return.
-      specifiedSizeSuggestion = nsLayoutUtils::ComputeBSizeValue(
-          percentBasis.BSize(cbWM), boxSizingAdjust.BSize(cbWM),
-          mainStyleSize.AsLengthPercentage());
+    // NOTE: We ignore specified block-sizes that behave as 'auto', as
+    // identified by IsAutoBSize(); that's OK because the caller is responsible
+    // for computing the content-based block-size and and min()'ing it with the
+    // value we return.
+    const auto percentageBasisBSize = PercentageBasisForItem().BSize(cbWM);
+    if (!nsLayoutUtils::IsAutoBSize(mainStyleSize, percentageBasisBSize)) {
+      specifiedSizeSuggestion = nsLayoutUtils::ComputeBSizeValueHandlingStretch(
+          percentageBasisBSize, aFlexItem.MarginSizeInMainAxis(),
+          aFlexItem.BorderPaddingSizeInMainAxis(), boxSizingAdjust.BSize(cbWM),
+          mainStyleSize);
     }
   }
 
@@ -1658,10 +1689,18 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
   nscoord resolvedMinSize;  // (only set/used if isMainMinSizeAuto==true)
   bool minSizeNeedsToMeasureContent = false;  // assume the best
   if (isMainMinSizeAuto) {
-    // Resolve the min-size, except for considering the min-content size.
-    // (We'll consider that later, if we need to.)
-    resolvedMinSize =
-        PartiallyResolveAutoMinSize(aFlexItem, aItemReflowInput, aAxisTracker);
+    if (IsLegacyBox(this)) {
+      // Allow flex items in a legacy flex container to shrink below their
+      // automatic minimum size by setting the resolved minimum size to zero.
+      // This behavior is not in the spec, but it aligns with blink and webkit's
+      // implementation.
+      resolvedMinSize = 0;
+    } else {
+      // Resolve the min-size, except for considering the min-content size.
+      // (We'll consider that later, if we need to.)
+      resolvedMinSize = PartiallyResolveAutoMinSize(aFlexItem, aItemReflowInput,
+                                                    aAxisTracker);
+    }
     if (resolvedMinSize > 0) {
       // If resolvedMinSize were already at 0, we could skip calculating content
       // size suggestion because it can't go any lower.
@@ -1687,6 +1726,9 @@ void nsFlexContainerFrame::ResolveAutoFlexBasisAndMinSize(
         const nscoord availISize = 0;  // for min-content size
         StyleSizeOverrides sizeOverrides;
         sizeOverrides.mStyleISize.emplace(StyleSize::Auto());
+        if (aFlexItem.IsStretched()) {
+          sizeOverrides.mStyleBSize.emplace(aFlexItem.StyleCrossSize());
+        }
         const auto sizeInItemWM = aFlexItem.Frame()->ComputeSize(
             aItemReflowInput.mRenderingContext, itemWM,
             aItemReflowInput.mContainingBlockSize, availISize,
@@ -2064,9 +2106,7 @@ const CachedBAxisMeasurement& nsFlexContainerFrame::MeasureBSizeForFlexItem(
 
 /* virtual */
 void nsFlexContainerFrame::MarkIntrinsicISizesDirty() {
-  mCachedMinISize = NS_INTRINSIC_ISIZE_UNKNOWN;
-  mCachedPrefISize = NS_INTRINSIC_ISIZE_UNKNOWN;
-
+  mCachedIntrinsicSizes.Clear();
   nsContainerFrame::MarkIntrinsicISizesDirty();
 }
 
@@ -2083,11 +2123,6 @@ nscoord nsFlexContainerFrame::MeasureFlexItemContentBSize(
   StyleSizeOverrides sizeOverrides;
   if (aFlexItem.IsStretched()) {
     sizeOverrides.mStyleISize.emplace(aFlexItem.StyleCrossSize());
-    // Suppress any AspectRatio that we might have to prevent ComputeSize() from
-    // transferring our inline-size override through the aspect-ratio to set the
-    // block-size, because that would prevent us from measuring the content
-    // block-size.
-    sizeOverrides.mAspectRatio.emplace(AspectRatio());
     FLEX_LOGV("Cross size override: %d", aFlexItem.CrossSize());
   }
   sizeOverrides.mStyleBSize.emplace(StyleSize::Auto());
@@ -2106,7 +2141,7 @@ nscoord nsFlexContainerFrame::MeasureFlexItemContentBSize(
   if (aForceBResizeForMeasuringReflow) {
     childRIForMeasuringBSize.SetBResize(true);
     // Not 100% sure this is needed, but be conservative for now:
-    childRIForMeasuringBSize.mFlags.mIsBResizeForPercentages = true;
+    childRIForMeasuringBSize.SetBResizeForPercentages(true);
   }
 
   const CachedBAxisMeasurement& measurement =
@@ -2142,36 +2177,16 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
   MOZ_ASSERT(mFrame, "expecting a non-null child frame");
   MOZ_ASSERT(!mFrame->IsPlaceholderFrame(),
              "placeholder frames should not be treated as flex items");
-  MOZ_ASSERT(!mFrame->HasAnyStateBits(NS_FRAME_OUT_OF_FLOW),
-             "out-of-flow frames should not be treated as flex items");
+  MOZ_ASSERT(mFrame->IsFlexItem(), "mFrame must be a flex item!");
   MOZ_ASSERT(mIsInlineAxisMainAxis ==
                  nsFlexContainerFrame::IsItemInlineAxisMainAxis(mFrame),
              "public API should be consistent with internal state (about "
              "whether flex item's inline axis is flex container's main axis)");
 
-  const ReflowInput* containerRS = aFlexItemReflowInput.mParentReflowInput;
-  if (IsLegacyBox(containerRS->mFrame)) {
-    // For -webkit-{inline-}box and -moz-{inline-}box, we need to:
-    // (1) Use prefixed "box-align" instead of "align-items" to determine the
-    //     container's cross-axis alignment behavior.
-    // (2) Suppress the ability for flex items to override that with their own
-    //     cross-axis alignment. (The legacy box model doesn't support this.)
-    // So, each FlexItem simply copies the container's converted "align-items"
-    // value and disregards their own "align-self" property.
-    const nsStyleXUL* containerStyleXUL = containerRS->mFrame->StyleXUL();
-    mAlignSelf = {ConvertLegacyStyleToAlignItems(containerStyleXUL)};
-    mAlignSelfFlags = {0};
-  } else {
-    mAlignSelf = aFlexItemReflowInput.mStylePosition->UsedAlignSelf(
-        containerRS->mFrame->Style());
-    if (MOZ_LIKELY(mAlignSelf._0 == StyleAlignFlags::NORMAL)) {
-      mAlignSelf = {StyleAlignFlags::STRETCH};
-    }
-
-    // Store and strip off the <overflow-position> bits
-    mAlignSelfFlags = mAlignSelf._0 & StyleAlignFlags::FLAG_BITS;
-    mAlignSelf._0 &= ~StyleAlignFlags::FLAG_BITS;
-  }
+  const auto* container =
+      static_cast<nsFlexContainerFrame*>(mFrame->GetParent());
+  std::tie(mAlignSelf, mAlignSelfFlags) =
+      container->UsedAlignSelfAndFlagsForItem(mFrame);
 
   // Our main-size is considered definite if any of these are true:
   // (a) main axis is the item's inline axis.
@@ -2198,9 +2213,10 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
     // The item's block-axis is the flex container's main axis. So, the flex
     // item's main size is its BSize, and is considered definite under certain
     // conditions laid out for definite flex-item main-sizes in the spec.
+    const ReflowInput* containerRI = aFlexItemReflowInput.mParentReflowInput;
     if (aAxisTracker.IsRowOriented() ||
-        (containerRS->ComputedBSize() != NS_UNCONSTRAINEDSIZE &&
-         !containerRS->mFlags.mTreatBSizeAsIndefinite)) {
+        (containerRI->ComputedBSize() != NS_UNCONSTRAINEDSIZE &&
+         !containerRI->mFlags.mTreatBSizeAsIndefinite)) {
       // The flex *container* has a definite main-size (either by being
       // row-oriented [and using its own inline size which is by definition
       // definite, or by being column-oriented and having a definite
@@ -2228,7 +2244,7 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
 #ifdef DEBUG
   {
     for (const auto side : LogicalSides::All) {
-      if (styleMargin->mMargin.Get(side, mCBWM).IsAuto()) {
+      if (styleMargin->GetMargin(side, mCBWM).IsAuto()) {
         MOZ_ASSERT(GetMarginComponentForSide(side) == 0,
                    "Someone else tried to resolve our auto margin");
       }
@@ -2236,11 +2252,11 @@ FlexItem::FlexItem(ReflowInput& aFlexItemReflowInput, float aFlexGrow,
   }
 #endif  // DEBUG
 
-  if (mAlignSelf._0 == StyleAlignFlags::BASELINE ||
-      mAlignSelf._0 == StyleAlignFlags::LAST_BASELINE) {
+  if (mAlignSelf == StyleAlignFlags::BASELINE ||
+      mAlignSelf == StyleAlignFlags::LAST_BASELINE) {
     // Check which of the item's baselines we're meant to use (first vs. last)
     const bool usingItemFirstBaseline =
-        (mAlignSelf._0 == StyleAlignFlags::BASELINE);
+        (mAlignSelf == StyleAlignFlags::BASELINE);
     if (IsBlockAxisCrossAxis()) {
       // The flex item wants to be aligned in the cross axis using one of its
       // baselines; and the cross axis is the item's block axis, so
@@ -2307,7 +2323,7 @@ FlexItem::FlexItem(nsIFrame* aChildFrame, nscoord aCrossSize,
       // just share container's WM for simplicity:
       mIsFrozen(true),
       mIsStrut(true),  // (this is the constructor for making struts, after all)
-      mAlignSelf({StyleAlignFlags::FLEX_START}) {
+      mAlignSelf(StyleAlignFlags::FLEX_START) {
   MOZ_ASSERT(mFrame, "expecting a non-null child frame");
   MOZ_ASSERT(mFrame->StyleVisibility()->IsCollapse(),
              "Should only make struts for children with 'visibility:collapse'");
@@ -2330,6 +2346,15 @@ bool FlexItem::IsMinSizeAutoResolutionNeeded() const {
   const auto& mainMinSize =
       Frame()->StylePosition()->MinSize(MainAxis(), ContainingBlockWM());
 
+  // "min-{height,width}:stretch" never produces an automatic minimum size. You
+  // might think it would result in an automatic min-size if the containing
+  // block size is indefinite, but "stretch" is instead treated as 0px in that
+  // case rather than auto. This WPT requires this behavior:
+  // https://wpt.live/css/css-sizing/stretch/indefinite-4.html More details &
+  // discussion here: https://github.com/w3c/csswg-drafts/issues/11006
+  if (mainMinSize.BehavesLikeStretchOnBlockAxis()) {
+    return false;
+  }
   return IsAutoOrEnumOnBSize(mainMinSize, IsInlineAxisMainAxis()) &&
          !Frame()->StyleDisplay()->IsScrollableOverflow();
 }
@@ -2447,10 +2472,10 @@ void FlexItem::ResolveFlexBaseSizeFromAspectRatio(
 
 uint32_t FlexItem::NumAutoMarginsInAxis(LogicalAxis aAxis) const {
   uint32_t numAutoMargins = 0;
-  const auto& styleMargin = mFrame->StyleMargin()->mMargin;
+  const auto* styleMargin = mFrame->StyleMargin();
   for (const auto edge : {LogicalEdge::Start, LogicalEdge::End}) {
     const auto side = MakeLogicalSide(aAxis, edge);
-    if (styleMargin.Get(side, mCBWM).IsAuto()) {
+    if (styleMargin->GetMargin(side, mCBWM).IsAuto()) {
       numAutoMargins++;
     }
   }
@@ -2485,8 +2510,16 @@ bool FlexItem::CanMainSizeInfluenceCrossSize() const {
 
   if (IsInlineAxisCrossAxis()) {
     // If we get here, this function is really asking: "can changes to this
-    // item's block size have an influence on its inline size"?  For blocks and
-    // tables, the answer is "no".
+    // item's block size have an influence on its inline size"?
+
+    // If a flex item's intrinsic inline size or its descendants' inline size
+    // contributions depend on the item's block size, the answer is "yes".
+    if (mFrame->HasAnyStateBits(
+            NS_FRAME_DESCENDANT_INTRINSIC_ISIZE_DEPENDS_ON_BSIZE)) {
+      return true;
+    }
+    // For blocks and tables, the answer is "no" (aside from the above special
+    // case).
     if (mFrame->IsBlockFrame() || mFrame->IsTableWrapperFrame()) {
       // XXXdholbert (Maybe use an IsFrameOfType query or something more
       // general to test this across all frame types? For now, I'm just
@@ -3458,6 +3491,26 @@ MainAxisPositionTracker::MainAxisPositionTracker(
   // Subtract space required for row/col gap from the remaining packing space
   mPackingSpaceRemaining -= aLine->SumOfGaps();
 
+  // If packing space is negative or we only have one item, 'space-between'
+  // falls back to 'safe flex-start'[1], and 'space-around' & 'space-evenly'
+  // fall back to 'safe center'. In those cases, it's simplest to just pretend
+  // we have a different 'justify-content' value and share code.
+  // https://drafts.csswg.org/css-align-3/#distribution-values
+  if (mPackingSpaceRemaining < 0 || aLine->NumItems() == 1) {
+    if (mJustifyContent.primary == StyleAlignFlags::SPACE_BETWEEN) {
+      // [1]  XXXdholbert Per spec, we should do...
+      //   justifyContentFlags = StyleAlignFlags::SAFE;
+      // ...here, but for now let's not do that since it causes overflow to be
+      // inadvertently clipped in situations with a reversed main axis!
+      // See https://github.com/w3c/csswg-drafts/issues/11937
+      mJustifyContent.primary = StyleAlignFlags::FLEX_START;
+    } else if (mJustifyContent.primary == StyleAlignFlags::SPACE_AROUND ||
+               mJustifyContent.primary == StyleAlignFlags::SPACE_EVENLY) {
+      justifyContentFlags = StyleAlignFlags::SAFE;
+      mJustifyContent.primary = StyleAlignFlags::CENTER;
+    }
+  }
+
   if (mPackingSpaceRemaining <= 0) {
     // No available packing space to use for resolving auto margins.
     mNumAutoMarginsInMainAxis = 0;
@@ -3465,19 +3518,6 @@ MainAxisPositionTracker::MainAxisPositionTracker(
     // all justify options fall back to 'start'
     if (justifyContentFlags & StyleAlignFlags::SAFE) {
       mJustifyContent.primary = StyleAlignFlags::START;
-    }
-  }
-
-  // If packing space is negative or we only have one item, 'space-between'
-  // falls back to 'flex-start', and 'space-around' & 'space-evenly' fall back
-  // to 'center'. In those cases, it's simplest to just pretend we have a
-  // different 'justify-content' value and share code.
-  if (mPackingSpaceRemaining < 0 || aLine->NumItems() == 1) {
-    if (mJustifyContent.primary == StyleAlignFlags::SPACE_BETWEEN) {
-      mJustifyContent.primary = StyleAlignFlags::FLEX_START;
-    } else if (mJustifyContent.primary == StyleAlignFlags::SPACE_AROUND ||
-               mJustifyContent.primary == StyleAlignFlags::SPACE_EVENLY) {
-      mJustifyContent.primary = StyleAlignFlags::CENTER;
     }
   }
 
@@ -3529,9 +3569,9 @@ MainAxisPositionTracker::MainAxisPositionTracker(
 
 void MainAxisPositionTracker::ResolveAutoMarginsInMainAxis(FlexItem& aItem) {
   if (mNumAutoMarginsInMainAxis) {
-    const auto& styleMargin = aItem.Frame()->StyleMargin()->mMargin;
+    const auto* styleMargin = aItem.Frame()->StyleMargin();
     for (const auto side : {StartSide(), EndSide()}) {
-      if (styleMargin.Get(side, mWM).IsAuto()) {
+      if (styleMargin->GetMargin(side, mWM).IsAuto()) {
         // NOTE: This integer math will skew the distribution of remainder
         // app-units towards the end, which is fine.
         nscoord curAutoMarginSize =
@@ -3634,29 +3674,32 @@ CrossAxisPositionTracker::CrossAxisPositionTracker(
              "GenerateFlexLines should've produced at least 1 line");
   mPackingSpaceRemaining -= aCrossGapSize * (numLines - 1);
 
-  // If <overflow-position> is 'safe' and packing space is negative
-  // all align options fall back to 'start'
-  if ((alignContentFlags & StyleAlignFlags::SAFE) &&
-      mPackingSpaceRemaining < 0) {
-    mAlignContent.primary = StyleAlignFlags::START;
-  }
-
-  // If packing space is negative, 'space-between' and 'stretch' behave like
-  // 'flex-start', and 'space-around' and 'space-evenly' behave like 'center'.
-  // In those cases, it's simplest to just pretend we have a different
-  // 'align-content' value and share code. (If we only have one line, all of
-  // the 'space-*' keywords fall back as well, but 'stretch' doesn't because
-  // even a single line can still stretch.)
+  // If packing space is negative, 'stretch' behaves like 'flex-start',
+  // 'space-between' behaves like 'safe flex-start', and 'space-around' and
+  // 'space-evenly' behave like 'safe center'. In those cases, it's simplest to
+  // just pretend we have a different 'align-content' value and share code. (If
+  // we only have one line, all of the 'space-*' keywords fall back as well, but
+  // 'stretch' doesn't because even a single line can still stretch.)
+  // https://drafts.csswg.org/css-align-3/#distribution-values
   if (mPackingSpaceRemaining < 0 &&
       mAlignContent.primary == StyleAlignFlags::STRETCH) {
     mAlignContent.primary = StyleAlignFlags::FLEX_START;
   } else if (mPackingSpaceRemaining < 0 || numLines == 1) {
     if (mAlignContent.primary == StyleAlignFlags::SPACE_BETWEEN) {
+      alignContentFlags = StyleAlignFlags::SAFE;
       mAlignContent.primary = StyleAlignFlags::FLEX_START;
     } else if (mAlignContent.primary == StyleAlignFlags::SPACE_AROUND ||
                mAlignContent.primary == StyleAlignFlags::SPACE_EVENLY) {
+      alignContentFlags = StyleAlignFlags::SAFE;
       mAlignContent.primary = StyleAlignFlags::CENTER;
     }
+  }
+
+  // If <overflow-position> is 'safe' and packing space is negative
+  // all align options fall back to 'start'
+  if ((alignContentFlags & StyleAlignFlags::SAFE) &&
+      mPackingSpaceRemaining < 0) {
+    mAlignContent.primary = StyleAlignFlags::START;
   }
 
   // Map 'start'/'end' to 'flex-start'/'flex-end'.
@@ -3761,11 +3804,11 @@ void FlexLine::ComputeCrossSizeAndBaseline(
   for (const FlexItem& item : Items()) {
     nscoord curOuterCrossSize = item.OuterCrossSize();
 
-    if ((item.AlignSelf()._0 == StyleAlignFlags::BASELINE ||
-         item.AlignSelf()._0 == StyleAlignFlags::LAST_BASELINE) &&
+    if ((item.AlignSelf() == StyleAlignFlags::BASELINE ||
+         item.AlignSelf() == StyleAlignFlags::LAST_BASELINE) &&
         item.NumAutoMarginsInCrossAxis() == 0) {
       const bool usingItemFirstBaseline =
-          (item.AlignSelf()._0 == StyleAlignFlags::BASELINE);
+          (item.AlignSelf() == StyleAlignFlags::BASELINE);
 
       // Find distance from our item's cross-start and cross-end margin-box
       // edges to its baseline.
@@ -3868,7 +3911,8 @@ void FlexItem::ResolveStretchedCrossSize(nscoord aLineCrossSize) {
   // We stretch IFF we are align-self:stretch, have no auto margins in
   // cross axis, and have cross-axis size property == "auto". If any of those
   // conditions don't hold up, we won't stretch.
-  if (mAlignSelf._0 != StyleAlignFlags::STRETCH ||
+  // https://drafts.csswg.org/css-flexbox-1/#valdef-align-items-stretch
+  if (mAlignSelf != StyleAlignFlags::STRETCH ||
       NumAutoMarginsInCrossAxis() != 0 || !IsCrossSizeAuto()) {
     return;
   }
@@ -3883,7 +3927,7 @@ void FlexItem::ResolveStretchedCrossSize(nscoord aLineCrossSize) {
   // remains as our item's cross-size (clamped to its min/max range).
   nscoord stretchedSize = aLineCrossSize - MarginBorderPaddingSizeInCrossAxis();
 
-  stretchedSize = NS_CSS_MINMAX(stretchedSize, mCrossMinSize, mCrossMaxSize);
+  stretchedSize = CSSMinMax(stretchedSize, mCrossMinSize, mCrossMaxSize);
 
   // Update the cross-size & make a note that it's stretched, so we know to
   // override the reflow input's computed cross-size in our final reflow.
@@ -3924,9 +3968,9 @@ void SingleLineCrossAxisPositionTracker::ResolveAutoMarginsInCrossAxis(
 
   // OK, we have at least one auto margin and we have some available space.
   // Give each auto margin a share of the space.
-  const auto& styleMargin = aItem.Frame()->StyleMargin()->mMargin;
+  const auto* styleMargin = aItem.Frame()->StyleMargin();
   for (const auto side : {StartSide(), EndSide()}) {
-    if (styleMargin.Get(side, mWM).IsAuto()) {
+    if (styleMargin->GetMargin(side, mWM).IsAuto()) {
       MOZ_ASSERT(aItem.GetMarginComponentForSide(side) == 0,
                  "Expecting auto margins to have value '0' before we "
                  "update them");
@@ -3950,7 +3994,7 @@ void SingleLineCrossAxisPositionTracker::EnterAlignPackingSpace(
     return;
   }
 
-  StyleAlignFlags alignSelf = aItem.AlignSelf()._0;
+  StyleAlignFlags alignSelf = aItem.AlignSelf();
   // NOTE: 'stretch' behaves like 'flex-start' once we've stretched any
   // auto-sized items (which we've already done).
   if (alignSelf == StyleAlignFlags::STRETCH) {
@@ -3992,7 +4036,9 @@ void SingleLineCrossAxisPositionTracker::EnterAlignPackingSpace(
     // No space to skip over -- we're done.
   } else if (alignSelf == StyleAlignFlags::FLEX_END) {
     mPosition += aLine.LineCrossSize() - aItem.OuterCrossSize();
-  } else if (alignSelf == StyleAlignFlags::CENTER) {
+  } else if (alignSelf == StyleAlignFlags::CENTER ||
+             alignSelf == StyleAlignFlags::ANCHOR_CENTER) {
+    // TODO(dshin, Bug 1909339): For now, treat `anchor-center` as `center`.
     // Note: If cross-size is odd, the "after" space will get the extra unit.
     mPosition += (aLine.LineCrossSize() - aItem.OuterCrossSize()) / 2;
   } else if (alignSelf == StyleAlignFlags::BASELINE ||
@@ -4511,7 +4557,7 @@ void nsFlexContainerFrame::SizeItemInCrossAxis(ReflowInput& aChildReflowInput,
   MOZ_ASSERT(!aItem.HadMeasuringReflow(),
              "We shouldn't need more than one measuring reflow");
 
-  if (aItem.AlignSelf()._0 == StyleAlignFlags::STRETCH) {
+  if (aItem.AlignSelf() == StyleAlignFlags::STRETCH) {
     // This item's got "align-self: stretch", so we probably imposed a
     // stretched computed cross-size on it during its previous
     // reflow. We're not imposing that BSize for *this* "measuring" reflow, so
@@ -4521,7 +4567,7 @@ void nsFlexContainerFrame::SizeItemInCrossAxis(ReflowInput& aChildReflowInput,
     // weren't, then we would've taken the early-return above.)
     aChildReflowInput.SetBResize(true);
     // Not 100% sure this is needed, but be conservative for now:
-    aChildReflowInput.mFlags.mIsBResizeForPercentages = true;
+    aChildReflowInput.SetBResizeForPercentages(true);
   }
 
   // Potentially reflow the item, and get the sizing info.
@@ -4601,10 +4647,16 @@ void nsFlexContainerFrame::Reflow(nsPresContext* aPresContext,
   WritingMode wm = aReflowInput.GetWritingMode();
   const nsStylePosition* stylePos = StylePosition();
   const auto& bsize = stylePos->BSize(wm);
-  if (bsize.HasPercent() || (StyleDisplay()->IsAbsolutelyPositionedStyle() &&
-                             (bsize.IsAuto() || !bsize.IsLengthPercentage()) &&
-                             !stylePos->mOffset.GetBStart(wm).IsAuto() &&
-                             !stylePos->mOffset.GetBEnd(wm).IsAuto())) {
+  const auto positionProperty = StyleDisplay()->mPosition;
+  if (bsize.HasPercent() ||
+      (StyleDisplay()->IsAbsolutelyPositionedStyle() &&
+       (bsize.IsAuto() || !bsize.IsLengthPercentage()) &&
+       !stylePos
+            ->GetAnchorResolvedInset(LogicalSide::BStart, wm, positionProperty)
+            ->IsAuto() &&
+       !stylePos
+            ->GetAnchorResolvedInset(LogicalSide::BEnd, wm, positionProperty)
+            ->IsAuto())) {
     AddStateBits(NS_FRAME_CONTAINS_RELATIVE_BSIZE);
   }
 
@@ -4864,7 +4916,7 @@ Maybe<nscoord> nsFlexContainerFrame::GetNaturalBaselineBOffset(
 }
 
 void nsFlexContainerFrame::UnionInFlowChildOverflow(
-    OverflowAreas& aOverflowAreas) {
+    OverflowAreas& aOverflowAreas, bool aAsIfScrolled) {
   // The CSS Overflow spec [1] requires that a scrollable container's
   // scrollable overflow should include the following areas.
   //
@@ -4882,6 +4934,7 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
   //
   // [1] https://drafts.csswg.org/css-overflow-3/#scrollable.
   const bool isScrolledContent =
+      aAsIfScrolled ||
       Style()->GetPseudoType() == PseudoStyleType::scrolledContent;
   bool anyScrolledContentItem = false;
   // Union of normal-positioned margin boxes for all the items.
@@ -4900,7 +4953,7 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
     if (useMozBoxCollapseBehavior && f->StyleVisibility()->IsCollapse()) {
       continue;
     }
-    ConsiderChildOverflow(aOverflowAreas, f);
+    ConsiderChildOverflow(aOverflowAreas, f, aAsIfScrolled);
     if (!isScrolledContent) {
       continue;
     }
@@ -4931,8 +4984,9 @@ void nsFlexContainerFrame::UnionInFlowChildOverflow(
   }
 }
 
-void nsFlexContainerFrame::UnionChildOverflow(OverflowAreas& aOverflowAreas) {
-  UnionInFlowChildOverflow(aOverflowAreas);
+void nsFlexContainerFrame::UnionChildOverflow(OverflowAreas& aOverflowAreas,
+                                              bool aAsIfScrolled) {
+  UnionInFlowChildOverflow(aOverflowAreas, aAsIfScrolled);
   // Union with child frames, skipping the principal list since we already
   // handled those above.
   nsLayoutUtils::UnionChildOverflow(this, aOverflowAreas,
@@ -6413,8 +6467,8 @@ void nsFlexContainerFrame::ReflowPlaceholders(
   }
 }
 
-nscoord nsFlexContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
-                                                    IntrinsicISizeType aType) {
+nscoord nsFlexContainerFrame::ComputeIntrinsicISize(
+    const IntrinsicSizeInput& aInput, IntrinsicISizeType aType) {
   if (Maybe<nscoord> containISize = ContainIntrinsicISize()) {
     return *containISize;
   }
@@ -6434,6 +6488,8 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
 
   const bool useMozBoxCollapseBehavior =
       StyleVisibility()->UseLegacyCollapseBehavior();
+  const bool isSingleLine = StyleFlexWrap::Nowrap == stylePos->mFlexWrap;
+  const auto flexWM = GetWritingMode();
 
   // The loop below sets aside space for a gap before each item besides the
   // first. This bool helps us handle that special-case.
@@ -6452,8 +6508,80 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
       continue;
     }
 
-    nscoord childISize =
-        nsLayoutUtils::IntrinsicForContainer(aContext, childFrame, aType);
+    const auto childWM = childFrame->GetWritingMode();
+    const IntrinsicSizeInput childInput(aInput, childWM, flexWM);
+    const auto* childStylePos =
+        nsLayoutUtils::GetStyleFrame(childFrame)->StylePosition();
+
+    // A flex item with a definite block size can transfer its block size to the
+    // inline-axis via its own aspect-ratio or serve as a percentage basis for
+    // its children with aspect-ratios. Both can influence the item's intrinsic
+    // inline size contribution to the flex container's intrinsic inline size.
+    //
+    // This helper function determines whether we should "pre-stretch" a flex
+    // item's cross size (with that size considered to be definite) based on the
+    // flex container's definite cross size.
+    //
+    // Note: The logic here is similar to the "pre-stretch" in
+    // GenerateFlexItemForChild().
+    const bool childShouldStretchCrossSize = [&]() {
+      if (!isSingleLine || axisTracker.IsColumnOriented()) {
+        // We only perform "pre-stretch" for the item's cross size if the flex
+        // container is single-line and row-oriented.
+        return false;
+      }
+      if (!aInput.mPercentageBasisForChildren ||
+          aInput.mPercentageBasisForChildren->BSize(flexWM) ==
+              NS_UNCONSTRAINEDSIZE) {
+        // The flex container does not have a definite cross size to stretch the
+        // items.
+        //
+        // Note: if the flex container has a definite cross size (for items to
+        // pre-stretch to fill), it should be passed down in
+        // mPercentageBasisForChildren -- specifically in the BSize component,
+        // given that we know the flex container is row-oriented at this point.
+        return false;
+      }
+      [[maybe_unused]] auto [alignSelf, flags] =
+          UsedAlignSelfAndFlagsForItem(childFrame);
+      if (alignSelf != StyleAlignFlags::STRETCH ||
+          !childStylePos->BSize(flexWM).IsAuto() ||
+          childFrame->StyleMargin()->HasBlockAxisAuto(flexWM)) {
+        // Similar to FlexItem::ResolveStretchedCrossSize(), we only stretch
+        // the item if it satisfies all the following conditions:
+        // - used align-self value is 'stretch' (CSSAlignmentForFlexItem() has
+        //   converted 'normal' to 'stretch')
+        // - a cross-axis size property of value "auto"
+        // - no auto margins in the cross-axis
+        // https://drafts.csswg.org/css-flexbox-1/#valdef-align-items-stretch
+        return false;
+      }
+      // Let's stretch the item's cross size.
+      return true;
+    }();
+
+    StyleSizeOverrides sizeOverrides;
+    if (childShouldStretchCrossSize) {
+      const auto offsetData = childFrame->IntrinsicBSizeOffsets();
+      const nscoord boxSizingToMarginEdgeSize =
+          childStylePos->mBoxSizing == StyleBoxSizing::Content
+              ? offsetData.MarginBorderPadding()
+              : offsetData.margin;
+      const nscoord stretchedCrossSize =
+          std::max(0, aInput.mPercentageBasisForChildren->BSize(flexWM) -
+                          boxSizingToMarginEdgeSize);
+      const auto stretchedStyleCrossSize = StyleSize::LengthPercentage(
+          LengthPercentage::FromAppUnits(stretchedCrossSize));
+      // The size override is in the child's own writing mode.
+      if (flexWM.IsOrthogonalTo(childWM)) {
+        sizeOverrides.mStyleISize.emplace(stretchedStyleCrossSize);
+      } else {
+        sizeOverrides.mStyleBSize.emplace(stretchedStyleCrossSize);
+      }
+    }
+    nscoord childISize = nsLayoutUtils::IntrinsicForContainer(
+        childInput.mContext, childFrame, aType,
+        childInput.mPercentageBasisForChildren, 0, sizeOverrides);
 
     // * For a row-oriented single-line flex container, the intrinsic
     // {min/pref}-isize is the sum of its items' {min/pref}-isizes and
@@ -6462,7 +6590,6 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
     // is the max of its items' min isizes.
     // * For a row-oriented multi-line flex container, the intrinsic
     // pref isize is former (sum), and its min isize is the latter (max).
-    bool isSingleLine = (StyleFlexWrap::Nowrap == stylePos->mFlexWrap);
     if (axisTracker.IsRowOriented() &&
         (isSingleLine || aType == IntrinsicISizeType::PrefISize)) {
       containerISize += childISize;
@@ -6478,15 +6605,11 @@ nscoord nsFlexContainerFrame::ComputeIntrinsicISize(gfxContext* aContext,
   return containerISize;
 }
 
-nscoord nsFlexContainerFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsFlexContainerFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                              IntrinsicISizeType aType) {
-  nscoord& cachedISize = aType == IntrinsicISizeType::MinISize
-                             ? mCachedMinISize
-                             : mCachedPrefISize;
-  if (cachedISize == NS_INTRINSIC_ISIZE_UNKNOWN) {
-    cachedISize = ComputeIntrinsicISize(aContext, aType);
-  }
-  return cachedISize;
+  return mCachedIntrinsicSizes.GetOrSet(*this, aType, aInput, [&] {
+    return ComputeIntrinsicISize(aInput, aType);
+  });
 }
 
 int32_t nsFlexContainerFrame::GetNumLines() const {

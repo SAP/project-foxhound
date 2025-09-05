@@ -24,15 +24,16 @@
 #include <array>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 
 #include "absl/base/nullability.h"
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "api/array_view.h"
 #include "api/audio/audio_processing_statistics.h"
 #include "api/audio/echo_control.h"
+#include "api/environment/environment.h"
 #include "api/ref_count.h"
 #include "api/scoped_refptr.h"
 #include "api/task_queue/task_queue_base.h"
@@ -49,8 +50,6 @@ class StreamConfig;
 class ProcessingConfig;
 
 class EchoDetector;
-class CustomAudioAnalyzer;
-class CustomProcessing;
 
 // The Audio Processing Module (APM) provides a collection of voice processing
 // components designed for real-time communications software.
@@ -87,7 +86,6 @@ class CustomProcessing;
 // float interfaces use deinterleaved data.
 //
 // Usage example, omitting error checking:
-// rtc::scoped_refptr<AudioProcessing> apm = AudioProcessingBuilder().Create();
 //
 // AudioProcessing::Config config;
 // config.echo_canceller.enabled = true;
@@ -103,7 +101,8 @@ class CustomProcessing;
 //
 // config.high_pass_filter.enabled = true;
 //
-// apm->ApplyConfig(config)
+// scoped_refptr<AudioProcessing> apm =
+//     BuiltinAudioProcessingBuilder(config).Build(CreateEnvironment());
 //
 // // Start a voice call...
 //
@@ -221,6 +220,7 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
       bool analyze_linear_aec_output_when_available = false;
     } noise_suppression;
 
+    // TODO(bugs.webrtc.org/357281131): Deprecated. Stop using and remove.
     // Enables transient suppression.
     struct TransientSuppression {
       bool enabled = false;
@@ -734,67 +734,50 @@ class RTC_EXPORT AudioProcessing : public RefCountInterface {
   static int GetFrameSize(int sample_rate_hz) { return sample_rate_hz / 100; }
 };
 
-class RTC_EXPORT AudioProcessingBuilder {
+class AudioProcessingBuilderInterface {
  public:
-  AudioProcessingBuilder();
-  AudioProcessingBuilder(const AudioProcessingBuilder&) = delete;
-  AudioProcessingBuilder& operator=(const AudioProcessingBuilder&) = delete;
-  ~AudioProcessingBuilder();
+  virtual ~AudioProcessingBuilderInterface() = default;
 
-  // Sets the APM configuration.
-  AudioProcessingBuilder& SetConfig(const AudioProcessing::Config& config) {
-    config_ = config;
-    return *this;
-  }
+  virtual absl::Nullable<scoped_refptr<AudioProcessing>> Build(
+      const Environment& env) = 0;
+};
 
-  // Sets the echo controller factory to inject when APM is created.
-  AudioProcessingBuilder& SetEchoControlFactory(
-      std::unique_ptr<EchoControlFactory> echo_control_factory) {
-    echo_control_factory_ = std::move(echo_control_factory);
-    return *this;
-  }
+// Returns builder that returns the `audio_processing` ignoring the extra
+// construction parameter `env`.
+// nullptr `audio_processing` is not supported as in some scenarios that imply
+// no audio processing, while in others - default builtin audio processing.
+// Callers should be explicit which of these two behaviors they want.
+absl::Nonnull<std::unique_ptr<AudioProcessingBuilderInterface>>
+CustomAudioProcessing(
+    absl::Nonnull<scoped_refptr<AudioProcessing>> audio_processing);
 
-  // Sets the capture post-processing sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetCapturePostProcessing(
-      std::unique_ptr<CustomProcessing> capture_post_processing) {
-    capture_post_processing_ = std::move(capture_post_processing);
-    return *this;
-  }
+// Experimental interface for a custom analysis submodule.
+class CustomAudioAnalyzer {
+ public:
+  // (Re-) Initializes the submodule.
+  virtual void Initialize(int sample_rate_hz, int num_channels) = 0;
+  // Analyzes the given capture or render signal.
+  virtual void Analyze(const AudioBuffer* audio) = 0;
+  // Returns a string representation of the module state.
+  virtual std::string ToString() const = 0;
 
-  // Sets the render pre-processing sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetRenderPreProcessing(
-      std::unique_ptr<CustomProcessing> render_pre_processing) {
-    render_pre_processing_ = std::move(render_pre_processing);
-    return *this;
-  }
+  virtual ~CustomAudioAnalyzer() {}
+};
 
-  // Sets the echo detector to inject when APM is created.
-  AudioProcessingBuilder& SetEchoDetector(
-      rtc::scoped_refptr<EchoDetector> echo_detector) {
-    echo_detector_ = std::move(echo_detector);
-    return *this;
-  }
+// Interface for a custom processing submodule.
+class CustomProcessing {
+ public:
+  // (Re-)Initializes the submodule.
+  virtual void Initialize(int sample_rate_hz, int num_channels) = 0;
+  // Processes the given capture or render signal.
+  virtual void Process(AudioBuffer* audio) = 0;
+  // Returns a string representation of the module state.
+  virtual std::string ToString() const = 0;
+  // Handles RuntimeSettings. TODO(webrtc:9262): make pure virtual
+  // after updating dependencies.
+  virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting);
 
-  // Sets the capture analyzer sub-module to inject when APM is created.
-  AudioProcessingBuilder& SetCaptureAnalyzer(
-      std::unique_ptr<CustomAudioAnalyzer> capture_analyzer) {
-    capture_analyzer_ = std::move(capture_analyzer);
-    return *this;
-  }
-
-  // Creates an APM instance with the specified config or the default one if
-  // unspecified. Injects the specified components transferring the ownership
-  // to the newly created APM instance - i.e., except for the config, the
-  // builder is reset to its initial state.
-  rtc::scoped_refptr<AudioProcessing> Create();
-
- private:
-  AudioProcessing::Config config_;
-  std::unique_ptr<EchoControlFactory> echo_control_factory_;
-  std::unique_ptr<CustomProcessing> capture_post_processing_;
-  std::unique_ptr<CustomProcessing> render_pre_processing_;
-  rtc::scoped_refptr<EchoDetector> echo_detector_;
-  std::unique_ptr<CustomAudioAnalyzer> capture_analyzer_;
+  virtual ~CustomProcessing() {}
 };
 
 class StreamConfig {
@@ -886,35 +869,6 @@ class ProcessingConfig {
   StreamConfig streams[StreamName::kNumStreamNames];
 };
 
-// Experimental interface for a custom analysis submodule.
-class CustomAudioAnalyzer {
- public:
-  // (Re-) Initializes the submodule.
-  virtual void Initialize(int sample_rate_hz, int num_channels) = 0;
-  // Analyzes the given capture or render signal.
-  virtual void Analyze(const AudioBuffer* audio) = 0;
-  // Returns a string representation of the module state.
-  virtual std::string ToString() const = 0;
-
-  virtual ~CustomAudioAnalyzer() {}
-};
-
-// Interface for a custom processing submodule.
-class CustomProcessing {
- public:
-  // (Re-)Initializes the submodule.
-  virtual void Initialize(int sample_rate_hz, int num_channels) = 0;
-  // Processes the given capture or render signal.
-  virtual void Process(AudioBuffer* audio) = 0;
-  // Returns a string representation of the module state.
-  virtual std::string ToString() const = 0;
-  // Handles RuntimeSettings. TODO(webrtc:9262): make pure virtual
-  // after updating dependencies.
-  virtual void SetRuntimeSetting(AudioProcessing::RuntimeSetting setting);
-
-  virtual ~CustomProcessing() {}
-};
-
 // Interface for an echo detector submodule.
 class EchoDetector : public RefCountInterface {
  public:
@@ -932,8 +886,8 @@ class EchoDetector : public RefCountInterface {
       rtc::ArrayView<const float> capture_audio) = 0;
 
   struct Metrics {
-    absl::optional<double> echo_likelihood;
-    absl::optional<double> echo_likelihood_recent_max;
+    std::optional<double> echo_likelihood;
+    std::optional<double> echo_likelihood_recent_max;
   };
 
   // Collect current metrics from the echo detector.

@@ -320,7 +320,8 @@ for (let testcase of TESTCASES) {
 
     // Child process
     const handler = new FormAutofillHandler(formLike);
-    const fields = handler.collectFormFields();
+    const fields = FormAutofillHandler.collectFormFieldDetails(handler.form);
+    handler.setIdentifiedFieldDetails(fields);
     const filledData = handler.collectFormFilledData();
 
     // Parent process

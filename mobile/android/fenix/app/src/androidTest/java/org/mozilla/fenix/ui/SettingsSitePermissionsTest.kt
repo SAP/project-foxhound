@@ -40,9 +40,7 @@ class SettingsSitePermissionsTest : TestSetup() {
     @get:Rule
     val activityTestRule = AndroidComposeTestRule(
         HomeActivityTestRule(
-            isJumpBackInCFREnabled = false,
             isPWAsPromptEnabled = false,
-            isTCPCFREnabled = false,
             isDeleteSitePermissionsEnabled = true,
         ),
     ) { it.activity }
@@ -53,9 +51,13 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
-            verifySitePermissionsToolbarTitle()
+        }.openSettingsSubMenuSiteSettings {
+            verifySiteSettingsToolbarTitle()
             verifyToolbarGoBackButton()
+            verifyContentHeading()
+            verifyAlwaysRequestDesktopSiteOption()
+            verifyAlwaysRequestDesktopSiteToggleIsEnabled(enabled = false)
+            verifyPermissionsHeading()
             verifySitePermissionOption("Autoplay", "Block audio only")
             verifySitePermissionOption("Camera", "Blocked by Android")
             verifySitePermissionOption("Location", "Blocked by Android")
@@ -77,7 +79,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openCamera {
             verifyBlockedByAndroidSection()
         }.goBack {
@@ -118,7 +120,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openAutoPlay {
             verifySitePermissionsAutoPlaySubMenuItems()
             exitMenu()
@@ -183,7 +185,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openAutoPlay {
             selectAutoplayOption("Allow audio and video")
             exitMenu()
@@ -218,7 +220,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openAutoPlay {
             selectAutoplayOption("Allow audio and video")
             exitMenu()
@@ -245,7 +247,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openAutoPlay {
             selectAutoplayOption("Block audio and video")
             exitMenu()
@@ -276,7 +278,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         homeScreen {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openAutoPlay {
             selectAutoplayOption("Block audio and video")
             exitMenu()
@@ -312,7 +314,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             navigationToolbar {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openCamera {
                 verifySitePermissionsCommonSubMenuItems()
                 selectPermissionSettingOption("Blocked")
@@ -338,7 +340,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             navigationToolbar {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openMicrophone {
                 verifySitePermissionsCommonSubMenuItems()
                 selectPermissionSettingOption("Blocked")
@@ -363,7 +365,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             navigationToolbar {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openLocation {
                 verifySitePermissionsCommonSubMenuItems()
                 selectPermissionSettingOption("Blocked")
@@ -388,7 +390,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             navigationToolbar {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openNotification {
                 verifyNotificationSubMenuItems()
                 selectPermissionSettingOption("Blocked")
@@ -413,7 +415,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             navigationToolbar {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openPersistentStorage {
                 verifySitePermissionsPersistentStorageSubMenuItems()
                 selectPermissionSettingOption("Blocked")
@@ -436,7 +438,7 @@ class SettingsSitePermissionsTest : TestSetup() {
             browserScreen {
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openDRMControlledContent {
                 verifyDRMControlledContentSubMenuItems()
                 selectDRMControlledContentPermissionSettingOption("Blocked")
@@ -448,7 +450,7 @@ class SettingsSitePermissionsTest : TestSetup() {
                 verifyPageContent("DRM-controlled content not allowed")
             }.openThreeDotMenu {
             }.openSettings {
-            }.openSettingsSubMenuSitePermissions {
+            }.openSettingsSubMenuSiteSettings {
             }.openDRMControlledContent {
                 selectDRMControlledContentPermissionSettingOption("Allowed")
                 exitMenu()
@@ -474,7 +476,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         }.clickPagePermissionButton(true) {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openExceptions {
             verifyExceptionCreated(permissionsTestPageHost, true)
             clickClearPermissionsOnAllSites()
@@ -496,7 +498,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         }.clickPagePermissionButton(true) {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openExceptions {
             verifyExceptionCreated(permissionsTestPageHost, true)
             openSiteExceptionsDetails(permissionsTestPageHost)
@@ -519,7 +521,7 @@ class SettingsSitePermissionsTest : TestSetup() {
         }.clickPagePermissionButton(true) {
         }.openThreeDotMenu {
         }.openSettings {
-        }.openSettingsSubMenuSitePermissions {
+        }.openSettingsSubMenuSiteSettings {
         }.openExceptions {
             verifyExceptionCreated(permissionsTestPageHost, true)
             openSiteExceptionsDetails(permissionsTestPageHost)

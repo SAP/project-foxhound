@@ -378,6 +378,7 @@ Result<already_AddRefed<VideoData>, MediaResult> VideoData::CreateAndCopyData(
                "Wrong format?");
   PlanarYCbCrImage* videoImage = v->mImage->AsPlanarYCbCrImage();
   MOZ_ASSERT(videoImage);
+  videoImage->SetColorDepth(aBuffer.mColorDepth);
 
   if (MediaResult r = VideoData::SetVideoDataToImage(
           videoImage, aInfo, aBuffer, aPicture, true /* aCopyData */);
@@ -484,7 +485,7 @@ nsCString VideoData::ToString() const {
       "D3D9_RGB32_TEXTURE",
       "OVERLAY_IMAGE",
       "D3D11_SHARE_HANDLE_TEXTURE",
-      "D3D11_TEXTURE_IMF_SAMPLE",
+      "D3D11_TEXTURE_ZERO_COPY",
       "TEXTURE_WRAPPER",
       "GPU_VIDEO",
       "DMABUF",

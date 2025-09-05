@@ -170,21 +170,19 @@ class ProcessExecutionMixin(LoggingMixin):
             p.processOutput()
             status = None
             sig = None
-            # XXX: p.wait() sometimes fails to detect the process exit and never returns a status code.
-            # Time out and check if the pid still exists.
-            # See bug 1845125 for example.
-            while status is None and p.pid_exists(p.pid):
+            while status is None:
                 try:
                     if sig is None:
-                        status = p.wait(5)
+                        status = p.wait()
                     else:
                         status = p.kill(sig=sig)
                 except KeyboardInterrupt:
                     if sig is None:
                         sig = signal.SIGINT
                     elif sig == signal.SIGINT:
-                        # If we've already tried SIGINT, escalate.
-                        sig = signal.SIGKILL
+                        # If we've already tried SIGINT, escalate (if possible).
+                        # Note: SIGKILL is not available on Windows.
+                        getattr(signal, "SIGKILL", sig)
 
         if ensure_exit_code is False:
             return status
@@ -193,7 +191,9 @@ class ProcessExecutionMixin(LoggingMixin):
             ensure_exit_code = 0
 
         if status != ensure_exit_code:
-            raise Exception(f"Process executed with non-0 exit code {status}: {args}")
+            raise Exception(
+                f"Process executed with non-0 exit code {status}: {' '.join(shellutil.quote(arg) for arg in args)}"
+            )
 
         return status
 

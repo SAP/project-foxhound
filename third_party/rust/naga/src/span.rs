@@ -11,6 +11,7 @@ pub struct Span {
 
 impl Span {
     pub const UNDEFINED: Self = Self { start: 0, end: 0 };
+
     /// Creates a new `Span` from a range of byte indices
     ///
     /// Note: end is exclusive, it doesn't belong to the `Span`
@@ -238,7 +239,7 @@ impl<E> WithSpan<E> {
         Some(self.spans[0].0.location(source))
     }
 
-    fn diagnostic(&self) -> codespan_reporting::diagnostic::Diagnostic<()>
+    pub(crate) fn diagnostic(&self) -> codespan_reporting::diagnostic::Diagnostic<()>
     where
         E: Error,
     {
@@ -313,7 +314,9 @@ impl<E> WithSpan<E> {
 
 /// Convenience trait for [`Error`] to be able to apply spans to anything.
 pub(crate) trait AddSpan: Sized {
+    /// The returned output type.
     type Output;
+
     /// See [`WithSpan::new`].
     fn with_span(self) -> Self::Output;
     /// See [`WithSpan::with_span`].
@@ -322,6 +325,30 @@ pub(crate) trait AddSpan: Sized {
     fn with_span_context(self, span_context: SpanContext) -> Self::Output;
     /// See [`WithSpan::with_handle`].
     fn with_span_handle<T, A: SpanProvider<T>>(self, handle: Handle<T>, arena: &A) -> Self::Output;
+}
+
+impl<E> AddSpan for E {
+    type Output = WithSpan<Self>;
+
+    fn with_span(self) -> WithSpan<Self> {
+        WithSpan::new(self)
+    }
+
+    fn with_span_static(self, span: Span, description: &'static str) -> WithSpan<Self> {
+        WithSpan::new(self).with_span(span, description)
+    }
+
+    fn with_span_context(self, span_context: SpanContext) -> WithSpan<Self> {
+        WithSpan::new(self).with_context(span_context)
+    }
+
+    fn with_span_handle<T, A: SpanProvider<T>>(
+        self,
+        handle: Handle<T>,
+        arena: &A,
+    ) -> WithSpan<Self> {
+        WithSpan::new(self).with_handle(handle, arena)
+    }
 }
 
 /// Trait abstracting over getting a span from an [`Arena`] or a [`UniqueArena`].
@@ -350,36 +377,12 @@ impl<T> SpanProvider<T> for UniqueArena<T> {
     }
 }
 
-impl<E> AddSpan for E
-where
-    E: Error,
-{
-    type Output = WithSpan<Self>;
-    fn with_span(self) -> WithSpan<Self> {
-        WithSpan::new(self)
-    }
-
-    fn with_span_static(self, span: Span, description: &'static str) -> WithSpan<Self> {
-        WithSpan::new(self).with_span(span, description)
-    }
-
-    fn with_span_context(self, span_context: SpanContext) -> WithSpan<Self> {
-        WithSpan::new(self).with_context(span_context)
-    }
-
-    fn with_span_handle<T, A: SpanProvider<T>>(
-        self,
-        handle: Handle<T>,
-        arena: &A,
-    ) -> WithSpan<Self> {
-        WithSpan::new(self).with_handle(handle, arena)
-    }
-}
-
 /// Convenience trait for [`Result`], adding a [`MapErrWithSpan::map_err_inner`]
 /// mapping to [`WithSpan::and_then`].
-pub trait MapErrWithSpan<E, E2>: Sized {
+pub(crate) trait MapErrWithSpan<E, E2>: Sized {
+    /// The returned output type.
     type Output: Sized;
+
     fn map_err_inner<F, E3>(self, func: F) -> Self::Output
     where
         F: FnOnce(E) -> WithSpan<E3>,
@@ -388,6 +391,7 @@ pub trait MapErrWithSpan<E, E2>: Sized {
 
 impl<T, E, E2> MapErrWithSpan<E, E2> for Result<T, WithSpan<E>> {
     type Output = Result<T, WithSpan<E2>>;
+
     fn map_err_inner<F, E3>(self, func: F) -> Result<T, WithSpan<E2>>
     where
         F: FnOnce(E) -> WithSpan<E3>,

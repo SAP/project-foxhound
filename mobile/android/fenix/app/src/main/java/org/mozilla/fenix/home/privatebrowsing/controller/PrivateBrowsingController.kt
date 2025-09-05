@@ -10,8 +10,7 @@ import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.BrowserFragmentDirections
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.AppStore
-import org.mozilla.fenix.components.appstate.AppAction
+import org.mozilla.fenix.browser.browsingmode.BrowsingModeManager
 import org.mozilla.fenix.ext.settings
 import org.mozilla.fenix.home.privatebrowsing.interactor.PrivateBrowsingInteractor
 import org.mozilla.fenix.settings.SupportUtils
@@ -36,8 +35,8 @@ interface PrivateBrowsingController {
  */
 class DefaultPrivateBrowsingController(
     private val activity: HomeActivity,
-    private val appStore: AppStore,
     private val navController: NavController,
+    private val browsingModeManager: BrowsingModeManager,
 ) : PrivateBrowsingController {
 
     override fun handleLearnMoreClicked() {
@@ -52,13 +51,11 @@ class DefaultPrivateBrowsingController(
     }
 
     override fun handlePrivateModeButtonClicked(newMode: BrowsingMode) {
+        browsingModeManager.mode = newMode
+
         if (newMode == BrowsingMode.Private) {
             activity.settings().incrementNumTimesPrivateModeOpened()
         }
-
-        appStore.dispatch(
-            AppAction.ModeChange(newMode),
-        )
 
         if (navController.currentDestination?.id == R.id.searchDialogFragment) {
             navController.navigate(

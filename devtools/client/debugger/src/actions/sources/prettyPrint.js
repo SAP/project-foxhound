@@ -31,9 +31,22 @@ import { memoizeableAction } from "../../utils/memoizableAction";
 
 import DevToolsUtils from "devtools/shared/DevToolsUtils";
 
+/**
+ * Replace all line breaks with standard \n line breaks for easier parsing.
+ */
 const LINE_BREAK_REGEX = /\r\n?|\n|\u2028|\u2029/g;
+function sanitizeLineBreaks(str) {
+  return str.replace(LINE_BREAK_REGEX, "\n");
+}
+
+/**
+ * Retrieve all line breaks in the provided string.
+ * Note: this assumes the line breaks were previously sanitized with
+ * `sanitizeLineBreaks` defined above.
+ */
+const SIMPLE_LINE_BREAK_REGEX = /\n/g;
 function matchAllLineBreaks(str) {
-  return Array.from(str.matchAll(LINE_BREAK_REGEX));
+  return Array.from(str.matchAll(SIMPLE_LINE_BREAK_REGEX));
 }
 
 function getPrettyOriginalSourceURL(generatedSource) {
@@ -117,7 +130,11 @@ async function prettyPrintHtmlFile({
 }) {
   const url = getPrettyOriginalSourceURL(generatedSource);
   const contentValue = content.value;
-  const htmlFileText = contentValue.value;
+
+  // Original source may contain unix-style & windows-style breaks.
+  // SpiderMonkey works a sanitized version of the source using only \n (unix).
+  // Sanitize before parsing the source to align with SpiderMonkey.
+  const htmlFileText = sanitizeLineBreaks(contentValue.value);
   const prettyPrintWorkerResult = { code: htmlFileText };
 
   const allLineBreaks = matchAllLineBreaks(htmlFileText);
@@ -207,9 +224,8 @@ async function prettyPrintHtmlFile({
 
   // `getSourceMap` allow us to collect the computed source map resulting of the calls
   // to `prettyPrint` with the same taskId.
-  prettyPrintWorkerResult.sourceMap = await prettyPrintWorker.getSourceMap(
-    prettyPrintTaskId
-  );
+  prettyPrintWorkerResult.sourceMap =
+    await prettyPrintWorker.getSourceMap(prettyPrintTaskId);
 
   // Sort replacement in reverse order so we can replace code in the HTML file more easily
   replacements.sort((a, b) => a.startIndex < b.startIndex);
@@ -274,7 +290,7 @@ function selectPrettyLocation(prettySource) {
  * @returns Promise
  *          A promise that resolves to the Pretty print/original source object.
  */
-export async function prettyPrintSource(source, thunkArgs) {
+export async function doPrettyPrintSource(source, thunkArgs) {
   const { dispatch, getState } = thunkArgs;
   recordEvent("pretty_print");
 
@@ -319,7 +335,7 @@ export async function prettyPrintSource(source, thunkArgs) {
 
 // Use memoization in order to allow calling this actions many times
 // while ensuring creating the pretty source only once.
-const memoizedPrettyPrintSource = memoizeableAction("setSymbols", {
+export const prettyPrintSource = memoizeableAction("prettyPrintSource", {
   getValue: (source, { getState }) => {
     // Lookup for an already existing pretty source
     const url = getPrettyOriginalSourceURL(source);
@@ -332,12 +348,12 @@ const memoizedPrettyPrintSource = memoizeableAction("setSymbols", {
     return fulfilled(s);
   },
   createKey: source => source.id,
-  action: (source, thunkArgs) => prettyPrintSource(source, thunkArgs),
+  action: (source, thunkArgs) => doPrettyPrintSource(source, thunkArgs),
 });
 
 export function prettyPrintAndSelectSource(source) {
   return async ({ dispatch }) => {
-    const prettySource = await dispatch(memoizedPrettyPrintSource(source));
+    const prettySource = await dispatch(prettyPrintSource(source));
 
     // Select the pretty/original source based on the location we may
     // have had against the minified/generated source.
@@ -347,7 +363,7 @@ export function prettyPrintAndSelectSource(source) {
     // * fetching symbols/inline scope
     // * fetching breakable lines
     //
-    // This isn't part of memoizedTogglePrettyPrint/doTogglePrettyPrint
+    // This isn't part of prettyPrintSource/doPrettyPrintSource
     // because if the source is already pretty printed, the memoization
     // would avoid trying to update to the mapped location based
     // on current location on the minified source.

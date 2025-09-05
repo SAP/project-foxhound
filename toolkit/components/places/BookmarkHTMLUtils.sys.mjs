@@ -81,7 +81,7 @@ function base64EncodeString(aString) {
   let stream = Cc["@mozilla.org/io/string-input-stream;1"].createInstance(
     Ci.nsIStringInputStream
   );
-  stream.setData(aString, aString.length);
+  stream.setByteStringData(aString);
   let encoder = Cc["@mozilla.org/scriptablebase64encoder;1"].createInstance(
     Ci.nsIScriptableBase64Encoder
   );
@@ -234,19 +234,13 @@ export var BookmarkHTMLUtils = Object.freeze({
    */
   async exportToFile(aFilePath) {
     let [bookmarks, count] = await lazy.PlacesBackups.getBookmarksTree();
-    let startTime = Date.now();
+    let timerId = Glean.places.exportTohtml.start();
 
     // Report the time taken to convert the tree to HTML.
     let exporter = new BookmarkExporter(bookmarks);
     await exporter.exportToFile(aFilePath);
 
-    try {
-      Services.telemetry
-        .getHistogramById("PLACES_EXPORT_TOHTML_MS")
-        .add(Date.now() - startTime);
-    } catch (ex) {
-      console.error("Unable to report telemetry.");
-    }
+    Glean.places.exportTohtml.stopAndAccumulate(timerId);
 
     return count;
   },
@@ -826,6 +820,7 @@ BookmarkImporter.prototype = {
       bookmarkCount += bookmarks.filter(
         bookmark => bookmark.type == PlacesUtils.bookmarks.TYPE_BOOKMARK
       ).length;
+
       insertFaviconsForTree(tree);
     }
     return bookmarkCount;
@@ -1080,34 +1075,28 @@ BookmarkExporter.prototype = {
  * @param {Object} node The bookmark node for icons to be inserted.
  */
 function insertFaviconForNode(node) {
-  if (node.icon) {
-    try {
-      PlacesUtils.favicons.setFaviconForPage(
-        Services.io.newURI(node.url),
-        // Create a fake favicon URI to use (FIXME: bug 523932)
-        Services.io.newURI("fake-favicon-uri:" + node.url),
-        Services.io.newURI(node.icon)
-      );
-    } catch (ex) {
-      console.error("Failed to import favicon data:", ex);
-    }
-  }
-
-  if (!node.iconUri) {
+  if (!node.icon && !node.iconUri) {
+    // No favicon information.
     return;
   }
 
   try {
-    PlacesUtils.favicons.setAndFetchFaviconForPage(
-      Services.io.newURI(node.url),
-      Services.io.newURI(node.iconUri),
-      false,
-      PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal()
-    );
+    // If icon is not specified, suppose iconUri may contain a data uri.
+    let faviconDataURI = Services.io.newURI(node.icon || node.iconUri);
+    if (!faviconDataURI.schemeIs("data")) {
+      return;
+    }
+
+    PlacesUtils.favicons
+      .setFaviconForPage(
+        Services.io.newURI(node.url),
+        // Use iconUri otherwise create a fake favicon URI to use (FIXME: bug 523932)
+        Services.io.newURI(node.iconUri ?? "fake-favicon-uri:" + node.url),
+        faviconDataURI
+      )
+      .catch(console.error);
   } catch (ex) {
-    console.error("Failed to import favicon URI:" + ex);
+    console.error("Failed to import favicon data:", ex);
   }
 }
 

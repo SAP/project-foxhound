@@ -4,7 +4,6 @@
 
 const {
   DebounceCallback,
-  IdlePromise,
   PollPromise,
   Sleep,
   TimedPromise,
@@ -66,24 +65,6 @@ class MockTimer {
     this.cancelled = true;
   }
 }
-
-add_task(function test_executeSoon_callback() {
-  // executeSoon() is already defined for xpcshell in head.js. As such import
-  // our implementation into a custom namespace.
-  let sync = ChromeUtils.importESModule(
-    "chrome://remote/content/marionette/sync.sys.mjs"
-  );
-
-  for (let func of ["foo", null, true, [], {}]) {
-    Assert.throws(() => sync.executeSoon(func), /TypeError/);
-  }
-
-  let a;
-  sync.executeSoon(() => {
-    a = 1;
-  });
-  executeSoon(() => equal(1, a));
-});
 
 add_task(function test_PollPromise_funcTypes() {
   for (let type of ["foo", 42, null, undefined, true, [], {}]) {
@@ -246,26 +227,6 @@ add_task(async function test_Sleep() {
   }
   Assert.throws(() => new Sleep(1.2), /RangeError/);
   Assert.throws(() => new Sleep(-1), /RangeError/);
-});
-
-add_task(async function test_IdlePromise() {
-  let called = false;
-  let win = {
-    requestAnimationFrame(callback) {
-      called = true;
-      callback();
-    },
-  };
-  await IdlePromise(win);
-  ok(called);
-});
-
-add_task(async function test_IdlePromiseAbortWhenWindowClosed() {
-  let win = {
-    closed: true,
-    requestAnimationFrame() {},
-  };
-  await IdlePromise(win);
 });
 
 add_task(function test_DebounceCallback_constructor() {

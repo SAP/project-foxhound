@@ -125,9 +125,8 @@ nsReflowStatus nsPageFrame::ReflowPageContent(
   // the document is intended to fit the paper size exactly, and the client is
   // taking full responsibility for what happens around the edges.
   if (mPD->mPrintSettings->GetHonorPageRuleMargins()) {
-    const auto& margin = kidReflowInput.mStyleMargin->mMargin;
     for (const auto side : mozilla::AllPhysicalSides()) {
-      if (!margin.Get(side).IsAuto()) {
+      if (!kidReflowInput.mStyleMargin->GetMargin(side).IsAuto()) {
         // Computed margins are already in the coordinate space of the content,
         // do not scale.
         const nscoord computed =
@@ -336,11 +335,19 @@ void nsPageFrame::DrawHeaderFooter(
     const nsString& aStrCenter, const nsString& aStrRight, const nsRect& aRect,
     nscoord aAscent, nscoord aHeight) {
   int32_t numStrs = 0;
-  if (!aStrLeft.IsEmpty()) numStrs++;
-  if (!aStrCenter.IsEmpty()) numStrs++;
-  if (!aStrRight.IsEmpty()) numStrs++;
+  if (!aStrLeft.IsEmpty()) {
+    numStrs++;
+  }
+  if (!aStrCenter.IsEmpty()) {
+    numStrs++;
+  }
+  if (!aStrRight.IsEmpty()) {
+    numStrs++;
+  }
 
-  if (numStrs == 0) return;
+  if (numStrs == 0) {
+    return;
+  }
   const nscoord contentWidth =
       aRect.width - (mPD->mEdgePaperMargin.left + mPD->mEdgePaperMargin.right);
   const nscoord strSpace = contentWidth / numStrs;
@@ -463,7 +470,8 @@ class nsDisplayHeaderFooter final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayHeaderFooter);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayHeaderFooter)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayHeaderFooter)
 
   virtual void Paint(nsDisplayListBuilder* aBuilder,
                      gfxContext* aCtx) override {
@@ -499,7 +507,7 @@ static void PaintMarginGuides(nsIFrame* aFrame, DrawTarget* aDrawTarget,
                        JoinStyle::MITER_OR_BEVEL, CapStyle::BUTT,
                        /* mitre limit (default, not used) */ 10.0f,
                        /* set dash pattern of 2px stroke, 2px gap */
-                       ArrayLength(dashes), dashes,
+                       std::size(dashes), dashes,
                        /* dash offset */ 0.0f);
   DrawOptions options;
 

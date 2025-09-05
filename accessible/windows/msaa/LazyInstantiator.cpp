@@ -210,7 +210,7 @@ bool LazyInstantiator::IsBlockedInjection() {
     return false;
   }
 
-  for (size_t index = 0, len = ArrayLength(gBlockedInprocDlls); index < len;
+  for (size_t index = 0, len = std::size(gBlockedInprocDlls); index < len;
        ++index) {
     const DllBlockInfo& blockedDll = gBlockedInprocDlls[index];
     HMODULE module = ::GetModuleHandleW(blockedDll.mName);
@@ -247,8 +247,7 @@ bool LazyInstantiator::ShouldInstantiate(const DWORD aClientPid) {
     nsAutoString leafName;
     rv = clientExe->GetLeafName(leafName);
     if (NS_SUCCEEDED(rv)) {
-      for (size_t i = 0, len = ArrayLength(gBlockedRemoteClients); i < len;
-           ++i) {
+      for (size_t i = 0, len = std::size(gBlockedRemoteClients); i < len; ++i) {
         if (leafName.EqualsIgnoreCase(gBlockedRemoteClients[i])) {
           // If client exe is in our blocklist, do not instantiate.
           return false;
@@ -352,17 +351,6 @@ void LazyInstantiator::TransplantRefCnt() {
 
 HRESULT
 LazyInstantiator::MaybeResolveRoot() {
-  if (!NS_IsMainThread()) {
-    MOZ_ASSERT_UNREACHABLE("Called on a background thread!");
-    // Bug 1814780: This should never happen, since a caller should only be able
-    // to get this via AccessibleObjectFromWindow/AccessibleObjectFromEvent or
-    // WM_GETOBJECT/ObjectFromLresult, which should marshal any calls on
-    // a background thread to the main thread. Nevertheless, Windows sometimes
-    // calls QueryInterface from a background thread! To avoid crashes, fail
-    // gracefully here.
-    return RPC_E_WRONG_THREAD;
-  }
-
   if (mWeakAccessible) {
     return S_OK;
   }
@@ -420,6 +408,11 @@ LazyInstantiator::MaybeResolveRoot() {
   }
 
 IMPL_IUNKNOWN_QUERY_HEAD(LazyInstantiator)
+if (NS_WARN_IF(!NS_IsMainThread())) {
+  // Bug 1814780, bug 1949617: The COM marshaler sometimes calls QueryInterface
+  // on the wrong thread.
+  return RPC_E_WRONG_THREAD;
+}
 IMPL_IUNKNOWN_QUERY_IFACE_AMBIGIOUS(IUnknown, IAccessible)
 IMPL_IUNKNOWN_QUERY_IFACE(IAccessible)
 IMPL_IUNKNOWN_QUERY_IFACE(IDispatch)

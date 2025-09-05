@@ -52,21 +52,24 @@ import org.hamcrest.Matchers
 import org.junit.Assert.assertTrue
 import org.mozilla.fenix.R
 import org.mozilla.fenix.helpers.Constants.LISTS_MAXSWIPES
+import org.mozilla.fenix.helpers.Constants.RETRY_COUNT
 import org.mozilla.fenix.helpers.Constants.TAG
 import org.mozilla.fenix.helpers.DataGenerationHelper.getStringResource
 import org.mozilla.fenix.helpers.HomeActivityComposeTestRule
+import org.mozilla.fenix.helpers.MatcherHelper.assertItemIsChecked
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectExists
 import org.mozilla.fenix.helpers.MatcherHelper.assertUIObjectIsGone
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
+import org.mozilla.fenix.helpers.MatcherHelper.itemWithClassNameAndIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResId
-import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndDescription
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndIndex
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdAndText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithResIdContainingText
 import org.mozilla.fenix.helpers.MatcherHelper.itemWithText
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTime
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.appName
 import org.mozilla.fenix.helpers.TestHelper.mDevice
@@ -365,13 +368,13 @@ class HomeScreenRobot {
         Log.i(TAG, "verifyExistingTopSitesTabs: Trying to scroll into view the top sites list")
         homeScreenList().scrollIntoView(itemWithResId("$packageName:id/top_sites_list"))
         Log.i(TAG, "verifyExistingTopSitesTabs: Scrolled into view the top sites list")
-        Log.i(TAG, "verifyExistingTopSitesTabs: Waiting for $waitingTime ms for top site: $title to exist")
+        Log.i(TAG, "verifyExistingTopSitesTabs: Waiting for $waitingTimeLong ms for top site: $title to exist")
         mDevice.findObject(
             UiSelector()
                 .resourceId("$packageName:id/top_site_title")
                 .textContains(title),
-        ).waitForExists(waitingTime)
-        Log.i(TAG, "verifyExistingTopSitesTabs: Waited for $waitingTime ms for top site: $title to exist")
+        ).waitForExists(waitingTimeLong)
+        Log.i(TAG, "verifyExistingTopSitesTabs: Waited for $waitingTimeLong ms for top site: $title to exist")
         Log.i(TAG, "verifyExistingTopSitesTabs: Trying to verify top site: $title is visible")
         onView(allOf(withId(R.id.top_sites_list)))
             .check(matches(hasDescendant(withText(title))))
@@ -404,6 +407,10 @@ class HomeScreenRobot {
     fun verifyTopSiteContextMenuItems() {
         mDevice.waitNotNull(
             findObject(By.text("Open in private tab")),
+            waitingTime,
+        )
+        mDevice.waitNotNull(
+            findObject(By.text("Edit")),
             waitingTime,
         )
         mDevice.waitNotNull(
@@ -515,6 +522,9 @@ class HomeScreenRobot {
 //    }
 
     fun verifyDiscoverMoreStoriesButton() {
+        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the \"Powered By Pocket\" home screen section")
+        homeScreenList().scrollIntoView(mDevice.findObject(UiSelector().resourceId("pocket.header")))
+        Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the \"Powered By Pocket\" home screen section")
         Log.i(TAG, "verifyDiscoverMoreStoriesButton: Trying to scroll into view the Pocket \"Discover more\" button")
         pocketStoriesList().scrollIntoView(UiSelector().text("Discover more"))
         Log.i(TAG, "verifyDiscoverMoreStoriesButton: Scrolled into view the Pocket \"Discover more\" button")
@@ -589,24 +599,6 @@ class HomeScreenRobot {
         }
     }
 
-    fun verifyJumpBackInMessage(composeTestRule: ComposeTestRule, exists: Boolean) {
-        if (exists) {
-            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message exists")
-            composeTestRule
-                .onNodeWithText(
-                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
-                ).assertExists()
-            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message exists")
-        } else {
-            Log.i(TAG, "verifyJumpBackInMessage: Trying to verify that the jump back in contextual message does not exist")
-            composeTestRule
-                .onNodeWithText(
-                    getStringResource(R.string.onboarding_home_screen_jump_back_contextual_hint_2),
-                ).assertDoesNotExist()
-            Log.i(TAG, "verifyJumpBackInMessage: Verified that the jump back in contextual message does not exist")
-        }
-    }
-
     fun getProvokingStoryPublisher(position: Int): String {
         val publisher = mDevice.findObject(
             UiSelector()
@@ -621,18 +613,25 @@ class HomeScreenRobot {
         return publisher
     }
 
-    fun verifyToolbarPosition(defaultPosition: Boolean) {
-        Log.i(TAG, "verifyToolbarPosition: Trying to verify toolbar is set to top: $defaultPosition")
+    fun verifyAddressBarPosition(bottomPosition: Boolean) {
+        Log.i(TAG, "verifyAddressBarPosition: Trying to verify toolbar is set to top: $bottomPosition")
         onView(withId(R.id.toolbarLayout))
             .check(
-                if (defaultPosition) {
+                if (bottomPosition) {
                     isPartiallyBelow(withId(R.id.sessionControlRecyclerView))
                 } else {
                     isCompletelyAbove(withId(R.id.homeAppBar))
                 },
             )
-        Log.i(TAG, "verifyToolbarPosition: Verified toolbar position is set to top: $defaultPosition")
+        Log.i(TAG, "verifyAddressBarPosition: Verified toolbar position is set to top: $bottomPosition")
     }
+
+    fun verifyNavigationToolbarIsSetToTheBottomOfTheHomeScreen() {
+        Log.i(TAG, "verifyAddressBarPosition: Trying to verify that the navigation toolbar is set to bottom")
+        onView(withId(R.id.toolbar_navbar_container)).check(isPartiallyBelow(withId(R.id.sessionControlRecyclerView)))
+        Log.i(TAG, "verifyAddressBarPosition: Verified that the navigation toolbar is set to bottom")
+    }
+
     fun verifyNimbusMessageCard(title: String, text: String, action: String) {
         val textView = UiSelector()
             .className(ComposeView::class.java)
@@ -655,7 +654,52 @@ class HomeScreenRobot {
         Log.i(TAG, "verifyIfInPrivateOrNormalMode: Verified private browsing mode is enabled: $privateBrowsingEnabled")
     }
 
+    fun verifySetAsDefaultBrowserDialogWhileFirefoxIsNotSetAsDefaultBrowser() {
+        assertUIObjectExists(
+            itemContainingText("Set Firefox Fenix as your default browser app?"),
+            itemContainingText(appName),
+            itemContainingText("Cancel"),
+            itemContainingText("Set as default"),
+        )
+        assertItemIsChecked(
+            firefoxOptionSetAsDefaultBrowserDialogRadioButton(),
+            isChecked = false,
+        )
+    }
+
     class Transition {
+
+        fun openTabDrawerFromRedesignedToolbar(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
+            for (i in 1..RETRY_COUNT) {
+                try {
+                    Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Started try #$i")
+                    assertUIObjectExists(tabsCounterFromRedesignedToolbar())
+                    Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Trying to click the tab counter button")
+                    tabsCounter().click()
+                    Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Clicked the tab counter button")
+                    Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Trying to verify the tabs tray exists")
+                    composeTestRule.onNodeWithTag(TabsTrayTestTag.tabsTray).assertExists()
+                    Log.i(TAG, "openTabDrawer: Verified the tabs tray exists")
+
+                    break
+                } catch (e: AssertionError) {
+                    Log.i(TAG, "openTabDrawerFromRedesignedToolbar: AssertionError caught, executing fallback methods")
+                    if (i == RETRY_COUNT) {
+                        throw e
+                    } else {
+                        Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Waiting for device to be idle")
+                        mDevice.waitForIdle()
+                        Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Waited for device to be idle")
+                    }
+                }
+            }
+            Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Trying to verify the tabs tray new tab FAB button exists")
+            composeTestRule.onNodeWithTag(TabsTrayTestTag.fab).assertExists()
+            Log.i(TAG, "openTabDrawerFromRedesignedToolbar: Verified the tabs tray new tab FAB button exists")
+
+            TabDrawerRobot(composeTestRule).interact()
+            return TabDrawerRobot.Transition(composeTestRule)
+        }
 
         fun openTabDrawer(composeTestRule: HomeActivityComposeTestRule, interact: TabDrawerRobot.() -> Unit): TabDrawerRobot.Transition {
             Log.i(TAG, "openTabDrawer: Waiting for device to be idle for $waitingTime ms")
@@ -694,6 +738,15 @@ class HomeScreenRobot {
 
             ThreeDotMenuMainRobot().interact()
             return ThreeDotMenuMainRobot.Transition()
+        }
+
+        fun openThreeDotMenuFromRedesignedToolbar(composeTestRule: ComposeTestRule, interact: ThreeDotMenuMainRobotCompose.() -> Unit): ThreeDotMenuMainRobotCompose.Transition {
+            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Trying to click main menu button")
+            itemWithDescription(getStringResource(R.string.content_description_menu)).click()
+            Log.i(TAG, "openThreeDotMenuFromRedesignedToolbar: Clicked main menu button")
+
+            ThreeDotMenuMainRobotCompose(composeTestRule).interact()
+            return ThreeDotMenuMainRobotCompose.Transition(composeTestRule)
         }
 
         fun openSearch(interact: SearchRobot.() -> Unit): SearchRobot.Transition {
@@ -1014,20 +1067,14 @@ class HomeScreenRobot {
             return BrowserRobot.Transition()
         }
 
-        fun clickPocketDiscoverMoreButton(interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
+        fun clickPocketDiscoverMoreButton(composeTestRule: ComposeTestRule, interact: BrowserRobot.() -> Unit): BrowserRobot.Transition {
             Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to scroll into view the \"Discover more\" button")
-            pocketStoriesList()
-                .scrollIntoView(UiSelector().text("Discover more"))
+            pocketStoriesList().scrollToEnd(3)
             Log.i(TAG, "clickPocketDiscoverMoreButton: Scrolled into view the \"Discover more\" button")
 
-            mDevice.findObject(UiSelector().text("Discover more")).also {
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Waiting for $waitingTime ms for \"Discover more\" button to exist")
-                it.waitForExists(waitingTimeShort)
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Waited for $waitingTime ms for \"Discover more\" button to exist")
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to click \"Discover more\" button")
-                it.click()
-                Log.i(TAG, "clickPocketDiscoverMoreButton: Clicked \"Discover more\" button")
-            }
+            Log.i(TAG, "clickPocketDiscoverMoreButton: Trying to click the \"Discover more\" button")
+            composeTestRule.onNodeWithTag("pocket.discover.more.story").performClick()
+            Log.i(TAG, "clickPocketDiscoverMoreButton: Clicked the \"Discover more\" button")
 
             BrowserRobot().interact()
             return BrowserRobot.Transition()
@@ -1077,9 +1124,9 @@ fun homeScreen(interact: HomeScreenRobot.() -> Unit): HomeScreenRobot.Transition
     return HomeScreenRobot.Transition()
 }
 
-fun homeScreenWithComposeTopSites(composeTestRule: HomeActivityComposeTestRule, interact: ComposeTopSitesRobot.() -> Unit): ComposeTopSitesRobot.Transition {
-    ComposeTopSitesRobot(composeTestRule).interact()
-    return ComposeTopSitesRobot.Transition(composeTestRule)
+fun homeScreenWithComposeTopSites(composeTestRule: HomeActivityComposeTestRule, interact: TopSitesRobotCompose.() -> Unit): TopSitesRobotCompose.Transition {
+    TopSitesRobotCompose(composeTestRule).interact()
+    return TopSitesRobotCompose.Transition(composeTestRule)
 }
 
 private fun homeScreenList() =
@@ -1093,7 +1140,10 @@ private fun threeDotButton() = onView(allOf(withId(R.id.menuButton)))
 
 private fun saveTabsToCollectionButton() = onView(withId(R.id.add_tabs_to_collections_button))
 
-private fun tabsCounter() = onView(withId(R.id.tab_button))
+private fun tabsCounterFromRedesignedToolbar() = itemWithResId("$packageName:id/counter_box")
+
+private fun tabsCounter() =
+    mDevice.findObject(By.res("$packageName:id/counter_root"))
 
 private fun sponsoredShortcut(sponsoredShortcutTitle: String) =
     onView(
@@ -1112,10 +1162,7 @@ private fun privateBrowsingButton() =
     itemWithResId("$packageName:id/privateBrowsingButton")
 
 private fun isPrivateModeEnabled(): Boolean =
-    itemWithResIdAndDescription(
-        "$packageName:id/privateBrowsingButton",
-        "Disable private browsing",
-    ).exists()
+    itemWithResId("$packageName:id/privateBrowsingButton").isChecked
 
 private fun homepageWordmark() =
     itemWithResId("$packageName:id/wordmark")
@@ -1153,3 +1200,11 @@ private fun sponsorsAndPrivacyButton() =
 
 private fun pocketStoriesList() =
     UiScrollable(UiSelector().resourceId("pocket.stories")).setAsHorizontalList()
+
+private fun firefoxOptionSetAsDefaultBrowserDialogRadioButton() =
+    itemWithClassNameAndIndex(
+        className = "android.widget.RadioButton",
+        index = 2,
+    ).getFromParent(
+        UiSelector().className("android.widget.LinearLayout").index(1),
+    )

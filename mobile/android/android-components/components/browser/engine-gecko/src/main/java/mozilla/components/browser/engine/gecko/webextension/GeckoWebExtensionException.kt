@@ -13,6 +13,7 @@ import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_CORR
 import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_INCOMPATIBLE
 import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_NETWORK_FAILURE
 import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_SIGNEDSTATE_REQUIRED
+import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_SOFT_BLOCKED
 import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_UNSUPPORTED_ADDON_TYPE
 import org.mozilla.geckoview.WebExtension.InstallException.ErrorCodes.ERROR_USER_CANCELED
 
@@ -34,7 +35,9 @@ class GeckoWebExtensionException(throwable: Throwable) : WebExtensionException(t
                     )
 
                     ERROR_BLOCKLISTED -> WebExtensionInstallException.Blocklisted(
+                        extensionId = throwable.extensionId,
                         extensionName = throwable.extensionName,
+                        extensionVersion = throwable.extensionVersion,
                         throwable,
                     )
 
@@ -62,6 +65,13 @@ class GeckoWebExtensionException(throwable: Throwable) : WebExtensionException(t
 
                     ERROR_ADMIN_INSTALL_ONLY -> WebExtensionInstallException.AdminInstallOnly(
                         extensionName = throwable.extensionName,
+                        throwable,
+                    )
+
+                    ERROR_SOFT_BLOCKED -> WebExtensionInstallException.SoftBlocked(
+                        extensionId = throwable.extensionId,
+                        extensionName = throwable.extensionName,
+                        extensionVersion = throwable.extensionVersion,
                         throwable,
                     )
 

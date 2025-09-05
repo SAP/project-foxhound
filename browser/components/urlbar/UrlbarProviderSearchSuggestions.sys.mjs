@@ -575,9 +575,8 @@ class ProviderSearchSuggestions extends UrlbarProvider {
     }
 
     // Check if the user entered an engine alias directly.
-    let engineMatch = await lazy.UrlbarSearchUtils.engineForAlias(
-      possibleAlias
-    );
+    let engineMatch =
+      await lazy.UrlbarSearchUtils.engineForAlias(possibleAlias);
     if (engineMatch) {
       return {
         engine: engineMatch,
@@ -614,7 +613,7 @@ class ProviderSearchSuggestions extends UrlbarProvider {
    * Send telemetry to indicating trending results have been hidden.
    */
   #recordTrendingBlockedTelemetry() {
-    Services.telemetry.scalarAdd("urlbar.trending.block", 1);
+    Glean.urlbarTrending.block.add(1);
   }
 
   /*

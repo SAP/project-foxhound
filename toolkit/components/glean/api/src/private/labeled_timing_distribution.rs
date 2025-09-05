@@ -12,9 +12,14 @@ use std::convert::TryInto;
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::private::{DistributionData, ErrorType, MetricId, TimerId, TimingDistributionMetric};
+use crate::private::{
+    DistributionData, ErrorType, MetricGetter, TimerId, TimingDistributionMetric,
+};
 
 use crate::ipc::with_ipc_payload;
+
+#[cfg(feature = "with_gecko")]
+use super::timing_distribution::{TDMPayload, TimingDistributionMetricMarker};
 
 /// A timing distribution metric that knows it's a labeled timing distribution's submetric.
 ///
@@ -22,7 +27,7 @@ use crate::ipc::with_ipc_payload;
 #[derive(Clone)]
 pub struct LabeledTimingDistributionMetric {
     pub(crate) inner: Arc<TimingDistributionMetric>,
-    pub(crate) id: MetricId,
+    pub(crate) id: MetricGetter,
     pub(crate) label: String,
     pub(crate) kind: LabeledTimingDistributionMetricKind,
 }
@@ -34,7 +39,7 @@ pub enum LabeledTimingDistributionMetricKind {
 
 impl LabeledTimingDistributionMetric {
     #[cfg(test)]
-    pub(crate) fn metric_id(&self) -> MetricId {
+    pub(crate) fn metric_id(&self) -> MetricGetter {
         self.id
     }
 }
@@ -52,12 +57,31 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     timer_id: u64,
                 );
             }
+            let id = &self
+                .id
+                .metric_id()
+                .expect("Cannot perform GIFFT calls without a MetricId");
             // SAFETY: We're only loaning to C++ data we don't later use.
             unsafe {
                 GIFFT_LabeledTimingDistributionStart(
-                    self.id.0,
+                    id.0,
                     &nsCString::from(&self.label),
                     timer_id.id,
+                );
+            }
+            // See note on TimingDistribution::start
+            if gecko_profiler::can_accept_markers() {
+                gecko_profiler::add_marker(
+                    "TimingDistribution::start",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    gecko_profiler::MarkerOptions::default()
+                        .with_timing(gecko_profiler::MarkerTiming::instant_now()),
+                    TimingDistributionMetricMarker::new(
+                        self.id,
+                        Some(self.label.clone()),
+                        Some(timer_id.id),
+                        None,
+                    ),
                 );
             }
         }
@@ -71,8 +95,12 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
             }
             LabeledTimingDistributionMetricKind::Child => {
                 if let Some(sample) = self.inner.child_stop(timer_id) {
+                    let id = &self
+                        .id
+                        .metric_id()
+                        .expect("Cannot perform IPC calls without a MetricId");
                     with_ipc_payload(move |payload| {
-                        if let Some(map) = payload.labeled_timing_samples.get_mut(&self.id) {
+                        if let Some(map) = payload.labeled_timing_samples.get_mut(id) {
                             if let Some(v) = map.get_mut(&self.label) {
                                 v.push(sample);
                             } else {
@@ -81,7 +109,7 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                         } else {
                             let mut map = HashMap::new();
                             map.insert(self.label.to_string(), vec![sample]);
-                            payload.labeled_timing_samples.insert(self.id, map);
+                            payload.labeled_timing_samples.insert(*id, map);
                         }
                     });
                 } else {
@@ -98,12 +126,31 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     timer_id: u64,
                 );
             }
+            let id = &self
+                .id
+                .metric_id()
+                .expect("Cannot perform GIFFT calls without a MetricId");
             // SAFETY: We're only loaning to C++ data we don't later use.
             unsafe {
                 GIFFT_LabeledTimingDistributionStopAndAccumulate(
-                    self.id.0,
+                    id.0,
                     &nsCString::from(&self.label),
                     timer_id.id,
+                );
+            }
+            // See note on TimingDistribution::start
+            if gecko_profiler::can_accept_markers() {
+                gecko_profiler::add_marker(
+                    "TimingDistribution::stop",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    gecko_profiler::MarkerOptions::default()
+                        .with_timing(gecko_profiler::MarkerTiming::instant_now()),
+                    TimingDistributionMetricMarker::new(
+                        self.id,
+                        Some(self.label.clone()),
+                        Some(timer_id.id),
+                        None,
+                    ),
                 );
             }
         }
@@ -120,27 +167,88 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     timer_id: u64,
                 );
             }
+            let metric_id = &self
+                .id
+                .metric_id()
+                .expect("Cannot perform GIFFT calls without a MetricId");
             // SAFETY: We're only loaning to C++ data we don't later use.
             unsafe {
                 GIFFT_LabeledTimingDistributionCancel(
-                    self.id.0,
+                    metric_id.0,
                     &nsCString::from(&self.label),
                     id.id,
+                );
+            }
+            // See note on TimingDistribution::start
+            if gecko_profiler::can_accept_markers() {
+                gecko_profiler::add_marker(
+                    "TimingDistribution::cancel",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    gecko_profiler::MarkerOptions::default()
+                        .with_timing(gecko_profiler::MarkerTiming::instant_now()),
+                    TimingDistributionMetricMarker::new(
+                        self.id,
+                        Some(self.label.clone()),
+                        Some(id.id),
+                        None,
+                    ),
                 );
             }
         }
     }
 
     pub fn accumulate_samples(&self, samples: Vec<i64>) {
-        self.inner.accumulate_samples(samples);
+        #[cfg(feature = "with_gecko")]
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker(
+                "TimingDistribution::accumulate",
+                super::profiler_utils::TelemetryProfilerCategory,
+                Default::default(),
+                TimingDistributionMetricMarker::new(
+                    self.id,
+                    Some(self.label.clone()),
+                    None,
+                    Some(TDMPayload::from_samples_signed(&samples)),
+                ),
+            );
+        }
+        self.inner.inner_accumulate_samples(samples);
     }
 
     pub fn accumulate_raw_samples_nanos(&self, samples: Vec<u64>) {
+        #[cfg(feature = "with_gecko")]
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker(
+                "TimingDistribution::accumulate",
+                super::profiler_utils::TelemetryProfilerCategory,
+                Default::default(),
+                TimingDistributionMetricMarker::new(
+                    self.id,
+                    Some(self.label.clone()),
+                    None,
+                    Some(TDMPayload::from_samples_unsigned(&samples)),
+                ),
+            );
+        }
         self.inner.accumulate_raw_samples_nanos(samples);
     }
 
     pub fn accumulate_single_sample(&self, sample: i64) {
-        self.inner.accumulate_single_sample(sample);
+        #[cfg(feature = "with_gecko")]
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker(
+                "TimingDistribution::accumulate",
+                super::profiler_utils::TelemetryProfilerCategory,
+                Default::default(),
+                TimingDistributionMetricMarker::new(
+                    self.id,
+                    Some(self.label.clone()),
+                    None,
+                    Some(TDMPayload::Sample(sample.clone())),
+                ),
+            );
+        }
+        self.inner.inner_accumulate_single_sample(sample);
     }
 
     pub fn accumulate_raw_duration(&self, duration: Duration) {
@@ -157,7 +265,11 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     u64::MAX
                 });
                 with_ipc_payload(move |payload| {
-                    if let Some(map) = payload.labeled_timing_samples.get_mut(&self.id) {
+                    let id = &self
+                        .id
+                        .metric_id()
+                        .expect("Cannot perform IPC calls without a MetricId");
+                    if let Some(map) = payload.labeled_timing_samples.get_mut(id) {
                         if let Some(v) = map.get_mut(&self.label) {
                             v.push(sample);
                         } else {
@@ -166,7 +278,7 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     } else {
                         let mut map = HashMap::new();
                         map.insert(self.label.to_string(), vec![sample]);
-                        payload.labeled_timing_samples.insert(self.id, map);
+                        payload.labeled_timing_samples.insert(*id, map);
                     }
                 });
             }
@@ -187,12 +299,30 @@ impl TimingDistribution for LabeledTimingDistributionMetric {
                     sample_ms: u32,
                 );
             }
+            let id = &self
+                .id
+                .metric_id()
+                .expect("Cannot perform GIFFT calls without a MetricId");
             // SAFETY: We're only loaning to C++ data we don't later use.
             unsafe {
                 GIFFT_LabeledTimingDistributionAccumulateRawMillis(
-                    self.id.0,
+                    id.0,
                     &nsCString::from(&self.label),
                     sample_ms,
+                );
+            }
+
+            if gecko_profiler::can_accept_markers() {
+                gecko_profiler::add_marker(
+                    "TimingDistribution::accumulate",
+                    super::profiler_utils::TelemetryProfilerCategory,
+                    Default::default(),
+                    TimingDistributionMetricMarker::new(
+                        self.id,
+                        Some(self.label.clone()),
+                        None,
+                        Some(TDMPayload::Duration(duration.clone())),
+                    ),
                 );
             }
         }
@@ -245,6 +375,17 @@ mod test {
         {
             // scope for need_ipc RAII
             let _raii = ipc::test_set_need_ipc(true);
+
+            // clear the per-process submetric cache,
+            // or else we'll be given the parent-process child metric.
+            {
+                let mut map =
+                    crate::metrics::__glean_metric_maps::submetric_maps::TIMING_DISTRIBUTION_MAP
+                        .write()
+                        .expect("Write lock for TIMING_DISTRIBUTION_MAP was poisoned");
+                map.clear();
+            }
+
             let child_metric = parent_metric.get(label);
 
             let id = child_metric.start();
@@ -260,7 +401,12 @@ mod test {
                     1,
                     payload
                         .labeled_timing_samples
-                        .get(&child_metric.metric_id())
+                        .get(
+                            &child_metric
+                                .metric_id()
+                                .metric_id()
+                                .expect("Cannot perform IPC calls without a MetricId")
+                        )
                         .unwrap()
                         .get(label)
                         .unwrap()
@@ -268,6 +414,16 @@ mod test {
                     "Stored the correct number of samples in the ipc payload"
                 );
             });
+
+            // clear the per-process submetric cache again,
+            // or else we'll be given the child -process child metric below.
+            {
+                let mut map =
+                    crate::metrics::__glean_metric_maps::submetric_maps::TIMING_DISTRIBUTION_MAP
+                        .write()
+                        .expect("Write lock for TIMING_DISTRIBUTION_MAP was poisoned");
+                map.clear();
+            }
         }
 
         let parent_only_data = parent_metric.get(label).test_get_value(None).unwrap();

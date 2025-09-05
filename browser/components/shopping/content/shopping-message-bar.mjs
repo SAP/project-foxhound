@@ -113,7 +113,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   genericErrorTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="warning"
       data-l10n-id="shopping-message-bar-generic-error"
     >
@@ -122,7 +121,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   notEnoughReviewsTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="warning"
       data-l10n-id="shopping-message-bar-warning-not-enough-reviews"
     >
@@ -131,7 +129,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   productNotAvailableTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="warning"
       data-l10n-id="shopping-message-bar-warning-product-not-available"
     >
@@ -147,7 +144,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   thanksForReportingTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="info"
       data-l10n-id="shopping-message-bar-thanks-for-reporting"
     >
@@ -156,7 +152,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   productNotAvailableReportedTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="warning"
       data-l10n-id="shopping-message-bar-warning-product-not-available-reported"
     >
@@ -179,9 +174,9 @@ class ShoppingMessageBar extends MozLitElement {
         <strong
           id="header"
           data-l10n-id="shopping-message-bar-analysis-in-progress-with-amount"
-          data-l10n-args="${JSON.stringify({
+          data-l10n-args=${JSON.stringify({
             percentage: Math.round(this.progress),
-          })}"
+          })}
         ></strong>
         <span
           data-l10n-id="shopping-message-bar-analysis-in-progress-message2"
@@ -207,9 +202,9 @@ class ShoppingMessageBar extends MozLitElement {
         <span
           id="header"
           data-l10n-id="shopping-message-bar-analysis-in-progress-with-amount"
-          data-l10n-args="${JSON.stringify({
+          data-l10n-args=${JSON.stringify({
             percentage: Math.round(this.progress),
-          })}"
+          })}
         ></span>
       </article>
     </div>`;
@@ -217,7 +212,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   pageNotSupportedTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="warning"
       data-l10n-id="shopping-message-bar-page-not-supported"
     >
@@ -226,7 +220,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   thankYouForFeedbackTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading"
       type="success"
       dismissable
       data-l10n-id="shopping-survey-thanks"
@@ -236,7 +229,6 @@ class ShoppingMessageBar extends MozLitElement {
 
   keepClosedTemplate() {
     return html`<moz-message-bar
-      data-l10n-attrs="heading, message"
       type="info"
       data-l10n-id="shopping-message-bar-keep-closed-header"
     >

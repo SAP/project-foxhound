@@ -1,9 +1,7 @@
 #!/usr/bin/env python
-# ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-# ***** END LICENSE BLOCK *****
 
 import copy
 import json
@@ -35,6 +33,7 @@ from mozharness.mozilla.tooltool import TooltoolMixin
 INSTALLER_SUFFIXES = (
     ".apk",  # Android
     ".tar.bz2",
+    ".tar.xz",
     ".tar.gz",  # Linux
     ".dmg",  # Mac
     ".installer-stub.exe",
@@ -298,7 +297,7 @@ class TestingMixin(
             )
 
         for key, value in self.config.items():
-            if type(value) == str and value.startswith("http"):
+            if type(value) is str and value.startswith("http"):
                 self.config[key] = _replace_url(value, c["replace_urls"])
 
         # Any changes to c means that we need credentials

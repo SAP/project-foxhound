@@ -325,7 +325,7 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
   uint32_t _encoderFrameRate;
   uint32_t _maxAllowedFrameRate;
   RTCH264PacketizationMode _packetizationMode;
-  absl::optional<webrtc::H264ProfileLevelId> _profile_level_id;
+  std::optional<webrtc::H264ProfileLevelId> _profile_level_id;
   RTCVideoEncoderCallback _callback;
   int32_t _width;
   int32_t _height;
@@ -344,7 +344,8 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
 // conditions, 0.95 seems to give us better overall bitrate over long periods
 // of time.
 - (instancetype)initWithCodecInfo:(RTC_OBJC_TYPE(RTCVideoCodecInfo) *)codecInfo {
-  if (self = [super init]) {
+  self = [super init];
+  if (self) {
     _codecInfo = codecInfo;
     _bitrateAdjuster.reset(new webrtc::BitrateAdjuster(.5, .95));
     _packetizationMode = RTCH264PacketizationModeNonInterleaved;
@@ -585,24 +586,26 @@ NSUInteger GetMaxSampleRate(const webrtc::H264ProfileLevelId &profile_level_id) 
     CVPixelBufferPoolRef pixelBufferPool =
         VTCompressionSessionGetPixelBufferPool(_compressionSession);
     if (!pixelBufferPool) {
-      return NO;
-    }
-
-    NSDictionary *poolAttributes =
-        (__bridge NSDictionary *)CVPixelBufferPoolGetPixelBufferAttributes(pixelBufferPool);
-    id pixelFormats =
-        [poolAttributes objectForKey:(__bridge NSString *)kCVPixelBufferPixelFormatTypeKey];
-    NSArray<NSNumber *> *compressionSessionPixelFormats = nil;
-    if ([pixelFormats isKindOfClass:[NSArray class]]) {
-      compressionSessionPixelFormats = (NSArray *)pixelFormats;
-    } else if ([pixelFormats isKindOfClass:[NSNumber class]]) {
-      compressionSessionPixelFormats = @[ (NSNumber *)pixelFormats ];
-    }
-
-    if (![compressionSessionPixelFormats
-            containsObject:[NSNumber numberWithLong:framePixelFormat]]) {
+      // If we have a compression session but can't acquire the pixel buffer pool, we're in an
+      // invalid state and should reset.
       resetCompressionSession = YES;
-      RTC_LOG(LS_INFO) << "Resetting compression session due to non-matching pixel format.";
+    } else {
+      NSDictionary *poolAttributes =
+          (__bridge NSDictionary *)CVPixelBufferPoolGetPixelBufferAttributes(pixelBufferPool);
+      id pixelFormats =
+          [poolAttributes objectForKey:(__bridge NSString *)kCVPixelBufferPixelFormatTypeKey];
+      NSArray<NSNumber *> *compressionSessionPixelFormats = nil;
+      if ([pixelFormats isKindOfClass:[NSArray class]]) {
+        compressionSessionPixelFormats = (NSArray *)pixelFormats;
+      } else if ([pixelFormats isKindOfClass:[NSNumber class]]) {
+        compressionSessionPixelFormats = @[ (NSNumber *)pixelFormats ];
+      }
+
+      if (![compressionSessionPixelFormats
+              containsObject:[NSNumber numberWithLong:framePixelFormat]]) {
+        resetCompressionSession = YES;
+        RTC_LOG(LS_INFO) << "Resetting compression session due to non-matching pixel format.";
+      }
     }
   } else {
     resetCompressionSession = YES;

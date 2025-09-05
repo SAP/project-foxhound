@@ -43,7 +43,6 @@ using namespace mozilla::a11y;
 @interface mozAccessible ()
 - (BOOL)providesLabelNotTitle;
 
-- (void)maybePostLiveRegionChanged;
 - (void)maybePostA11yUtilNotification;
 @end
 
@@ -122,6 +121,10 @@ using namespace mozilla::a11y;
 - (void)stateChanged:(uint64_t)state isEnabled:(BOOL)enabled {
   if (state == states::BUSY) {
     [self moxPostNotification:@"AXElementBusyChanged"];
+  }
+
+  if (state == states::EXPANDED) {
+    [self moxPostNotification:@"AXExpandedChanged"];
   }
 }
 
@@ -408,7 +411,7 @@ struct RoleDescrMap {
   const nsString description;
 };
 
-static const RoleDescrMap sRoleDescrMap[] = {
+MOZ_RUNINIT static const RoleDescrMap sRoleDescrMap[] = {
     {@"AXApplicationAlert", u"alert"_ns},
     {@"AXApplicationAlertDialog", u"alertDialog"_ns},
     {@"AXApplicationDialog", u"dialog"_ns},
@@ -465,7 +468,7 @@ struct RoleDescrComparator {
 
   if (subrole) {
     size_t idx = 0;
-    if (BinarySearchIf(sRoleDescrMap, 0, ArrayLength(sRoleDescrMap),
+    if (BinarySearchIf(sRoleDescrMap, 0, std::size(sRoleDescrMap),
                        RoleDescrComparator(subrole), &idx)) {
       return utils::LocalizedString(sRoleDescrMap[idx].description);
     }
@@ -865,17 +868,6 @@ struct RoleDescrComparator {
   return NO;
 }
 
-- (void)maybePostLiveRegionChanged {
-  id<MOXAccessible> liveRegion =
-      [self moxFindAncestor:^BOOL(id<MOXAccessible> moxAcc, BOOL* stop) {
-        return [moxAcc moxIsLiveRegion];
-      }];
-
-  if (liveRegion) {
-    [liveRegion moxPostNotification:@"AXLiveRegionChanged"];
-  }
-}
-
 - (void)maybePostA11yUtilNotification {
   MOZ_ASSERT(mGeckoAccessible);
   // Sometimes we use a special live region to make announcements to the user.
@@ -1000,16 +992,15 @@ struct RoleDescrComparator {
     case nsIAccessibleEvent::EVENT_LIVE_REGION_REMOVED:
       mIsLiveRegion = false;
       break;
-    case nsIAccessibleEvent::EVENT_REORDER:
-      [self maybePostLiveRegionChanged];
-      break;
-    case nsIAccessibleEvent::EVENT_NAME_CHANGE: {
+    case nsIAccessibleEvent::EVENT_NAME_CHANGE:
       if (![self providesLabelNotTitle]) {
         [self moxPostNotification:NSAccessibilityTitleChangedNotification];
       }
-      [self maybePostLiveRegionChanged];
       break;
-    }
+    case nsIAccessibleEvent::EVENT_LIVE_REGION_CHANGED:
+      MOZ_ASSERT(mIsLiveRegion);
+      [self moxPostNotification:@"AXLiveRegionChanged"];
+      break;
   }
 }
 

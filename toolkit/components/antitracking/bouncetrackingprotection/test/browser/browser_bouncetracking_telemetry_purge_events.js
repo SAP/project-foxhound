@@ -8,6 +8,10 @@ let bounceTrackingProtection;
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      [
+        "privacy.bounceTrackingProtection.mode",
+        Ci.nsIBounceTrackingProtection.MODE_ENABLED,
+      ],
       ["privacy.bounceTrackingProtection.requireStatefulBounces", true],
       ["privacy.bounceTrackingProtection.bounceTrackingGracePeriodSec", 0],
     ],
@@ -22,7 +26,14 @@ add_setup(async function () {
 
 async function runTest(useDryRunMode) {
   await SpecialPowers.pushPrefEnv({
-    set: [["privacy.bounceTrackingProtection.enableDryRunMode", useDryRunMode]],
+    set: [
+      [
+        "privacy.bounceTrackingProtection.mode",
+        useDryRunMode
+          ? Ci.nsIBounceTrackingProtection.MODE_ENABLED_DRY_RUN
+          : Ci.nsIBounceTrackingProtection.MODE_ENABLED,
+      ],
+    ],
   });
 
   is(

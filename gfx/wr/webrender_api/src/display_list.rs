@@ -83,7 +83,7 @@ impl<'a, T> ItemRange<'a, T> {
     }
 
     pub fn bytes(&self) -> &[u8] {
-        &self.bytes
+        self.bytes
     }
 }
 
@@ -140,13 +140,13 @@ impl DisplayListPayload {
         // We can safely ignore the preallocations failing, since we aren't
         // certain about how much memory we need, and this gives a chance for
         // the memory pressure events to run.
-        if let Err(_) = payload.items_data.try_reserve(capacity.items_size) {
+        if payload.items_data.try_reserve(capacity.items_size).is_err() {
             return Self::default();
         }
-        if let Err(_) = payload.cache_data.try_reserve(capacity.cache_size) {
+        if payload.cache_data.try_reserve(capacity.cache_size).is_err() {
             return Self::default();
         }
-        if let Err(_) = payload.spatial_tree.try_reserve(capacity.spatial_tree_size) {
+        if payload.spatial_tree.try_reserve(capacity.spatial_tree_size).is_err() {
             return Self::default();
         }
         payload
@@ -192,15 +192,12 @@ pub struct BuiltDisplayList {
 }
 
 #[repr(C)]
-#[derive(Copy, Clone, Deserialize, Serialize)]
+#[derive(Copy, Clone, Default, Deserialize, Serialize)]
 pub enum GeckoDisplayListType {
-  None,
-  Partial(f64),
-  Full(f64),
-}
-
-impl Default for GeckoDisplayListType {
-  fn default() -> Self { GeckoDisplayListType::None }
+    #[default]
+    None,
+    Partial(f64),
+    Full(f64),
 }
 
 /// Describes the memory layout of a display list.
@@ -1202,7 +1199,7 @@ impl DisplayListBuilder {
     fn add_to_display_list_dump<T: std::fmt::Debug>(&mut self, item: T) {
         if let Some(ref mut content) = self.serialized_content_buffer {
             use std::fmt::Write;
-            write!(content, "{:?}\n", item).expect("DL dump write failed.");
+            writeln!(content, "{:?}", item).expect("DL dump write failed.");
         }
     }
 
@@ -1299,8 +1296,8 @@ impl DisplayListBuilder {
     {
         assert_eq!(self.state, BuildState::Build);
 
-        let mut buffer = self.buffer_from_section(self.default_section());
-        Self::push_iter_impl(&mut buffer, iter);
+        let buffer = self.buffer_from_section(self.default_section());
+        Self::push_iter_impl(buffer, iter);
     }
 
     // Remap a clip/bounds from stacking context coords to reference frame relative
@@ -1795,6 +1792,7 @@ impl DisplayListBuilder {
         filter_primitives: &[di::FilterPrimitive],
         raster_space: di::RasterSpace,
         flags: di::StackingContextFlags,
+        snapshot: Option<di::SnapshotInfo>
     ) {
         let ref_frame_offset = self.rf_mapper.current_offset();
         self.push_filters(filters, filter_datas, filter_primitives);
@@ -1802,6 +1800,7 @@ impl DisplayListBuilder {
         let item = di::DisplayItem::PushStackingContext(di::PushStackingContextDisplayItem {
             origin,
             spatial_id,
+            snapshot,
             prim_flags,
             ref_frame_offset,
             stacking_context: di::StackingContext {
@@ -1856,6 +1855,7 @@ impl DisplayListBuilder {
             filter_primitives,
             di::RasterSpace::Screen,
             di::StackingContextFlags::empty(),
+            None,
         );
     }
 
@@ -1908,7 +1908,7 @@ impl DisplayListBuilder {
                 filter_data.func_r_type, filter_data.func_g_type,
                 filter_data.func_b_type, filter_data.func_a_type];
             self.push_item(&di::DisplayItem::SetFilterData);
-            self.push_iter(&func_types);
+            self.push_iter(func_types);
             self.push_iter(&filter_data.r_values);
             self.push_iter(&filter_data.g_values);
             self.push_iter(&filter_data.b_values);

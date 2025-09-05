@@ -4,10 +4,14 @@
 
 package org.mozilla.fenix.library.bookmarks.ui
 
+import mozilla.components.concept.storage.BookmarkNode
+
 /**
  * Items that can be represented in the Bookmarks list.
  */
-sealed class BookmarkItem {
+internal sealed class BookmarkItem {
+
+    abstract val guid: String
 
     /**
      * An item representing a site that is bookmarked.
@@ -15,13 +19,23 @@ sealed class BookmarkItem {
      * @property url The bookmarked url.
      * @property title The title of the bookmark.
      * @property previewImageUrl The url to lookup the favicon for the bookmark.
+     * @property guid The guid of the [BookmarkNode] representing this bookmark.
      */
-    data class Bookmark(val url: String, val title: String, val previewImageUrl: String) : BookmarkItem()
+    data class Bookmark(
+        val url: String,
+        val title: String,
+        val previewImageUrl: String,
+        override val guid: String,
+    ) : BookmarkItem()
 
     /**
      * An item representing a bookmark folder.
      *
-     * @property name The name of the folder.
+     * @property title The name of the folder.
+     * @property guid The guid of the [BookmarkNode] representing this folder.
      */
-    data class Folder(val name: String) : BookmarkItem()
+    data class Folder(
+        val title: String,
+        override val guid: String,
+    ) : BookmarkItem()
 }

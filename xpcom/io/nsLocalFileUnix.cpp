@@ -279,10 +279,6 @@ nsDirEnumeratorUnix::Close() {
 
 nsLocalFile::nsLocalFile() : mCachedStat() {}
 
-nsLocalFile::nsLocalFile(const nsACString& aFilePath) : mCachedStat() {
-  InitWithNativePath(aFilePath);
-}
-
 nsLocalFile::nsLocalFile(const nsLocalFile& aOther) : mPath(aOther.mPath) {}
 
 #ifdef MOZ_WIDGET_COCOA
@@ -742,7 +738,7 @@ nsLocalFile::HostPath(JSContext* aCx, dom::Promise** aPromise) {
             if (!version ||
                 !g_variant_is_of_type(version, G_VARIANT_TYPE_UINT32)) {
               g_printerr(
-                  "nsIFile: failed to get host path for %s\n: Invalid value.",
+                  "nsIFile: failed to get host path for %s: Invalid value.\n",
                   mPath.get());
               retPromise->MaybeReject(NS_ERROR_FAILURE);
               return;
@@ -750,8 +746,8 @@ nsLocalFile::HostPath(JSContext* aCx, dom::Promise** aPromise) {
 
             if (g_variant_get_uint32(version) < 5) {
               g_printerr(
-                  "nsIFile: failed to get host path for %s\n: Document "
-                  "portal in version 5 is required.",
+                  "nsIFile: failed to get host path for %s: Document "
+                  "portal in version 5 is required.\n",
                   mPath.get());
               retPromise->MaybeReject(NS_ERROR_NOT_AVAILABLE);
               return;
@@ -768,8 +764,8 @@ nsLocalFile::HostPath(JSContext* aCx, dom::Promise** aPromise) {
 
             if (!args) {
               g_printerr(
-                  "nsIFile: failed to get host path for %s\n: "
-                  "Invalid value.",
+                  "nsIFile: failed to get host path for %s: "
+                  "Invalid value.\n",
                   mPath.get());
               retPromise->MaybeReject(NS_ERROR_FAILURE);
               return;
@@ -787,8 +783,8 @@ nsLocalFile::HostPath(JSContext* aCx, dom::Promise** aPromise) {
                       if (!g_variant_is_of_type(result,
                                                 G_VARIANT_TYPE("a{say}"))) {
                         g_printerr(
-                            "nsIFile: failed to get host path for %s\n: "
-                            "Invalid value.",
+                            "nsIFile: failed to get host path for %s: "
+                            "Invalid value.\n",
                             mPath.get());
                         retPromise->MaybeReject(NS_ERROR_FAILURE);
                         return;
@@ -809,21 +805,21 @@ nsLocalFile::HostPath(JSContext* aCx, dom::Promise** aPromise) {
 
                       g_variant_iter_free(iter);
                       g_printerr(
-                          "nsIFile: failed to get host path for %s\n: "
-                          "Invalid value.",
+                          "nsIFile: failed to get host path for %s: "
+                          "Invalid value.\n",
                           mPath.get());
                       retPromise->MaybeReject(NS_ERROR_FAILURE);
                     },
                     [this, self = RefPtr(this),
                      retPromise](GUniquePtr<GError>&& aError) {
                       g_printerr(
-                          "nsIFile: failed to get host path for %s\n: %s.",
+                          "nsIFile: failed to get host path for %s: %s.\n",
                           mPath.get(), aError->message);
                       retPromise->MaybeReject(NS_ERROR_FAILURE);
                     });
           },
           [this, self = RefPtr(this), retPromise](GUniquePtr<GError>&& aError) {
-            g_printerr("nsIFile: failed to get host path for %s\n: %s.",
+            g_printerr("nsIFile: failed to get host path for %s: %s.\n",
                        mPath.get(), aError->message);
             retPromise->MaybeReject(NS_ERROR_NOT_AVAILABLE);
           });
@@ -1868,7 +1864,7 @@ nsLocalFile::GetParent(nsIFile** aParent) {
   *slashp = '\0';
 
   nsCOMPtr<nsIFile> localFile;
-  nsresult rv = NS_NewNativeLocalFile(nsDependentCString(buffer), true,
+  nsresult rv = NS_NewNativeLocalFile(nsDependentCString(buffer),
                                       getter_AddRefs(localFile));
 
   // make buffer whole again
@@ -2418,8 +2414,7 @@ nsLocalFile::Launch() {
 #endif
 }
 
-nsresult NS_NewNativeLocalFile(const nsACString& aPath, bool aFollowSymlinks,
-                               nsIFile** aResult) {
+nsresult NS_NewNativeLocalFile(const nsACString& aPath, nsIFile** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
 
   if (!aPath.IsEmpty()) {
@@ -2430,6 +2425,16 @@ nsresult NS_NewNativeLocalFile(const nsACString& aPath, bool aFollowSymlinks,
   }
   file.forget(aResult);
   return NS_OK;
+}
+
+nsresult NS_NewUTF8LocalFile(const nsACString& aPath, nsIFile** aResult) {
+  static_assert(NS_IsNativeUTF8());
+  return NS_NewNativeLocalFile(aPath, aResult);
+}
+
+nsresult NS_NewPathStringLocalFile(const PathSubstring& aPath,
+                                   nsIFile** aResult) {
+  return NS_NewNativeLocalFile(aPath, aResult);
 }
 
 //-----------------------------------------------------------------------------
@@ -2537,14 +2542,13 @@ nsresult nsLocalFile::GetTarget(nsAString& aResult) {
   GET_UCS(GetNativeTarget, aResult);
 }
 
-nsresult NS_NewLocalFile(const nsAString& aPath, bool aFollowLinks,
-                         nsIFile** aResult) {
+nsresult NS_NewLocalFile(const nsAString& aPath, nsIFile** aResult) {
   nsAutoCString buf;
   nsresult rv = NS_CopyUnicodeToNative(aPath, buf);
   if (NS_FAILED(rv)) {
     return rv;
   }
-  return NS_NewNativeLocalFile(buf, aFollowLinks, aResult);
+  return NS_NewNativeLocalFile(buf, aResult);
 }
 
 // nsILocalFileMac
@@ -3066,7 +3070,7 @@ NS_IMETHODIMP nsLocalFile::InitWithFile(nsIFile* aFile) {
   return InitWithNativePath(nativePath);
 }
 
-nsresult NS_NewLocalFileWithFSRef(const FSRef* aFSRef, bool aFollowLinks,
+nsresult NS_NewLocalFileWithFSRef(const FSRef* aFSRef,
                                   nsILocalFileMac** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
 
@@ -3078,7 +3082,7 @@ nsresult NS_NewLocalFileWithFSRef(const FSRef* aFSRef, bool aFollowLinks,
   return NS_OK;
 }
 
-nsresult NS_NewLocalFileWithCFURL(const CFURLRef aURL, bool aFollowLinks,
+nsresult NS_NewLocalFileWithCFURL(const CFURLRef aURL,
                                   nsILocalFileMac** aResult) {
   RefPtr<nsLocalFile> file = new nsLocalFile();
 

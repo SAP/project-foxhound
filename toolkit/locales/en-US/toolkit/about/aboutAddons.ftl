@@ -314,13 +314,12 @@ header-back-button =
 
 # Explanatory introduction to the list of recommended add-ons. The action word
 # ("recommends") in the final sentence is a link to external documentation.
-discopane-intro =
-    Extensions and themes are like apps for your browser, and they let you
-    protect passwords, download videos, find deals, block annoying ads, change
-    how your browser looks, and much more. These small software programs are
-    often developed by a third party. Here’s a selection { -brand-product-name }
-    <a data-l10n-name="learn-more-trigger">recommends</a> for exceptional
-    security, performance, and functionality.
+discopane-intro2 =
+    Extensions and themes let you customize { -brand-product-name }. They can boost privacy,
+    enhance productivity, improve media, change the way { -brand-product-name } looks, and
+    so much more. These small software programs are often developed by a third party. Here’s
+    a selection { -brand-product-name } <a data-l10n-name="learn-more-trigger">recommends</a>
+    for exceptional security, performance, and functionality.
 
 # Notice to make user aware that the recommendations are personalized.
 discopane-notice-recommendations2 =
@@ -440,9 +439,8 @@ addon-detail-group-label-updates =
 
 # This is the tooltip text for the private browsing badge in about:addons. The
 # badge is the private browsing icon included next to the extension's name.
-addon-badge-private-browsing-allowed2 =
+addon-badge-private-browsing-allowed3 =
     .title = Allowed in private windows
-    .aria-label = { addon-badge-private-browsing-allowed2.title }
 addon-detail-private-browsing-help = When allowed, the extension will have access to your online activities while private browsing. <a data-l10n-name="learn-more">Learn more</a>
 addon-detail-private-browsing-allow = Allow
 addon-detail-private-browsing-disallow = Don’t Allow
@@ -468,17 +466,14 @@ addon-detail-group-label-quarantined-domains =
 ## This is the tooltip text for the recommended badges for an extension in about:addons. The
 ## badge is a small icon displayed next to an extension when it is recommended on AMO.
 
-addon-badge-recommended2 =
+addon-badge-recommended3 =
   .title = { -brand-product-name } only recommends extensions that meet our standards for security and performance
-  .aria-label = { addon-badge-recommended2.title }
 # We hard code "Mozilla" in the string below because the extensions are built
 # by Mozilla and we don't want forks to display "by Fork".
-addon-badge-line3 =
+addon-badge-line4 =
   .title = Official extension built by Mozilla. Meets security and performance standards
-  .aria-label = { addon-badge-line3.title }
-addon-badge-verified2 =
+addon-badge-verified3 =
   .title = This extension has been reviewed to meet our standards for security and performance
-  .aria-label = { addon-badge-verified2.title }
 
 ##
 
@@ -488,7 +483,7 @@ recent-updates-heading = Recent Updates
 release-notes-loading = Loading…
 release-notes-error = Sorry, but there was an error loading the release notes.
 
-addon-permissions-empty = This extension doesn’t require any permissions
+addon-permissions-empty2 = This extension doesn’t require any permissions.
 addon-permissions-required = Required permissions for core functionality:
 addon-permissions-optional = Optional permissions for added functionality:
 addon-permissions-learnmore = Learn more about permissions
@@ -531,23 +526,28 @@ addon-page-options-button =
 #   $version (string) - Application version.
 details-notification-incompatible2 =
     .message = { $name } is incompatible with { -brand-short-name } { $version }.
-details-notification-incompatible-link = More Information
 
 details-notification-unsigned-and-disabled2 =
     .message = { $name } could not be verified for use in { -brand-short-name } and has been disabled.
-details-notification-unsigned-and-disabled-link = More Information
 
 details-notification-unsigned2 =
     .message = { $name } could not be verified for use in { -brand-short-name }. Proceed with caution.
-details-notification-unsigned-link = More Information
 
-details-notification-blocked2 =
-    .message = { $name } has been disabled due to security or stability issues.
-details-notification-blocked-link = More Information
+details-notification-hard-blocked-extension =
+    .message = This extension is blocked for violating Mozilla’s policies and has been disabled.
+details-notification-hard-blocked-other =
+    .message = This add-on is blocked for violating Mozilla’s policies and has been disabled.
+details-notification-blocked-link2 = See Details
 
-details-notification-softblocked2 =
-    .message = { $name } is known to cause security or stability issues.
-details-notification-softblocked-link = More Information
+details-notification-soft-blocked-extension-disabled =
+    .message = This extension is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-extension-enabled =
+    .message = This extension violates Mozilla’s policies. Using it may be risky.
+details-notification-soft-blocked-other-disabled =
+    .message = This add-on is restricted for violating Mozilla’s policies and has been disabled. You can enable it, but this may be risky.
+details-notification-soft-blocked-other-enabled =
+    .message = This add-on violates Mozilla’s policies. Using it may be risky.
+details-notification-softblocked-link2 = See Details
 
 details-notification-gmp-pending2 =
     .message = { $name } will be installed shortly.

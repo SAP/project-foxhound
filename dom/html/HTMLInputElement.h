@@ -209,6 +209,8 @@ class HTMLInputElement final : public TextControlElement,
   void FinishRangeThumbDrag(WidgetGUIEvent* aEvent = nullptr);
   MOZ_CAN_RUN_SCRIPT
   void CancelRangeThumbDrag(bool aIsForUserEvent = true);
+  MOZ_CAN_RUN_SCRIPT
+  void MaybeDispatchWillBlur(EventChainVisitor&);
 
   enum class SnapToTickMarks : bool { No, Yes };
   MOZ_CAN_RUN_SCRIPT
@@ -240,7 +242,7 @@ class HTMLInputElement final : public TextControlElement,
   bool ValueChanged() const override;
   void GetTextEditorValue(nsAString& aValue) const override;
   MOZ_CAN_RUN_SCRIPT TextEditor* GetTextEditor() override;
-  TextEditor* GetTextEditorWithoutCreation() const override;
+  TextEditor* GetExtantTextEditor() const override;
   nsISelectionController* GetSelectionController() override;
   nsFrameSelection* GetConstFrameSelection() override;
   TextControlState* GetTextControlState() const override {
@@ -482,6 +484,8 @@ class HTMLInputElement final : public TextControlElement,
     return mType == FormControlType::InputCheckbox ||
            mType == FormControlType::InputRadio;
   }
+
+  bool IsInputColor() const { return mType == FormControlType::InputColor; }
 
   bool Disabled() const { return GetBoolAttr(nsGkAtoms::disabled); }
 
@@ -751,6 +755,7 @@ class HTMLInputElement final : public TextControlElement,
   }
 
   nsIControllers* GetControllers(ErrorResult& aRv);
+  nsIControllers* GetExtantControllers() const { return mControllers; }
   // XPCOM adapter function widely used throughout code, leaving it as is.
   nsresult GetControllers(nsIControllers** aResult);
 
@@ -782,6 +787,7 @@ class HTMLInputElement final : public TextControlElement,
   void OpenDateTimePicker(const DateTimeValue& aInitialValue);
   void UpdateDateTimePicker(const DateTimeValue& aValue);
   void CloseDateTimePicker();
+  void SetDateTimePickerState(bool aIsOpen);
 
   /*
    * Called from datetime input box binding when inner text fields are focused
@@ -1001,10 +1007,17 @@ class HTMLInputElement final : public TextControlElement,
   nsresult VisitGroup(nsIRadioVisitor* aVisitor);
 
   /**
+   * Visit the group of radio buttons this radio belongs to
+   * @param aCallback the callback function to visit the node
+   */
+  void VisitGroup(const RadioGroupContainer::VisitCallback& aCallback);
+
+  /**
    * Do all the work that |SetChecked| does (radio button handling, etc.), but
    * take an |aNotify| parameter.
    */
-  void DoSetChecked(bool aValue, bool aNotify, bool aSetValueChanged);
+  void DoSetChecked(bool aValue, bool aNotify, bool aSetValueChanged,
+                    bool aUpdateOtherElement = true);
 
   /**
    * Do all the work that |SetCheckedChanged| does (radio button handling,
@@ -1019,7 +1032,7 @@ class HTMLInputElement final : public TextControlElement,
    */
   void SetCheckedInternal(bool aValue, bool aNotify);
 
-  void RadioSetChecked(bool aNotify);
+  void RadioSetChecked(bool aNotify, bool aUpdateOtherElement);
   void SetCheckedChanged(bool aCheckedChanged);
 
   /**

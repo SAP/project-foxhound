@@ -12,6 +12,7 @@
 
 #include "mozilla/Assertions.h"  // MOZ_ASSERT
 #include "mozilla/Attributes.h"  // MOZ_STACK_CLASS
+#include "mozilla/Maybe.h"       // mozilla::{Maybe,Some}
 #include "mozilla/Range.h"       // mozilla::Range
 #include "mozilla/RangedPtr.h"   // mozilla::RangedPtr
 
@@ -24,10 +25,10 @@
 #include "gc/GC.h"                      // AutoSelectGCHeap
 #include "js/GCVector.h"                // JS::GCVector
 #include "js/RootingAPI.h"  // JS::Handle, JS::MutableHandle, MutableWrappedPtrOperations
-#include "js/Value.h"           // JS::Value, JS::BooleanValue, JS::NullValue
-#include "js/Vector.h"          // Vector
-#include "util/StringBuffer.h"  // JSStringBuilder
-#include "vm/StringType.h"      // JSString, JSAtom
+#include "js/Value.h"            // JS::Value, JS::BooleanValue, JS::NullValue
+#include "js/Vector.h"           // Vector
+#include "util/StringBuilder.h"  // JSStringBuilder
+#include "vm/StringType.h"       // JSString, JSAtom
 
 struct JSContext;
 class JSTracer;
@@ -54,10 +55,12 @@ enum class JSONToken {
 
 enum class JSONStringType { PropertyName, LiteralValue };
 
-template <typename CharT, typename ParserT, typename StringBuilderT>
+template <typename CharT, typename ParserT>
 class MOZ_STACK_CLASS JSONTokenizer {
  public:
   using CharPtr = mozilla::RangedPtr<const CharT>;
+
+  using JSONStringBuilder = typename ParserT::JSONStringBuilder;
 
  protected:
   CharPtr sourceStart;
@@ -91,14 +94,12 @@ class MOZ_STACK_CLASS JSONTokenizer {
   explicit JSONTokenizer(mozilla::Range<const CharT> data, const StringTaint& taint, ParserT* parser)
       : JSONTokenizer(data.begin(), data.begin(), data.end(), taint, parser) {}
 
-  JSONTokenizer(JSONTokenizer<CharT, ParserT, StringBuilderT>&& other) noexcept
+  JSONTokenizer(JSONTokenizer<CharT, ParserT>&& other) noexcept
       : JSONTokenizer(other.sourceStart, other.current, other.begin, other.end,
                       other.mTaint, other.parser) {}
 
-  JSONTokenizer(const JSONTokenizer<CharT, ParserT, StringBuilderT>& other) =
-      delete;
-  void operator=(const JSONTokenizer<CharT, ParserT, StringBuilderT>& other) =
-      delete;
+  JSONTokenizer(const JSONTokenizer<CharT, ParserT>& other) = delete;
+  void operator=(const JSONTokenizer<CharT, ParserT>& other) = delete;
 
   void fixupParser(ParserT* newParser) { parser = newParser; }
 
@@ -128,7 +129,7 @@ class MOZ_STACK_CLASS JSONTokenizer {
   template <JSONStringType ST>
   JSONToken stringToken(const CharPtr start, size_t length, const StringTaint& taint);
   template <JSONStringType ST>
-  JSONToken stringToken(StringBuilderT& builder);
+  JSONToken stringToken(JSONStringBuilder& builder);
 
   JSONToken numberToken(double d);
 
@@ -226,6 +227,10 @@ class MOZ_STACK_CLASS JSONFullParseHandlerAnyChar {
 
   JSContext* cx;
 
+  bool reportLineNumbersFromParsedData = false;
+
+  mozilla::Maybe<JS::ConstUTF8CharsZ> filename;
+
   JS::Value v;
 
   ParseType parseType = ParseType::JSONParse;
@@ -314,11 +319,11 @@ class MOZ_STACK_CLASS JSONFullParseHandler
  public:
   using ContextT = JSContext;
 
-  class StringBuilder {
+  class JSONStringBuilder {
    public:
     JSStringBuilder buffer;
 
-    explicit StringBuilder(JSContext* cx) : buffer(cx) {}
+    explicit JSONStringBuilder(JSContext* cx) : buffer(cx) {}
 
     bool append(char16_t c, const TaintFlow& taintFlow);
     bool append(const CharT* begin, const CharT* end, const StringTaint& taint);
@@ -333,10 +338,13 @@ class MOZ_STACK_CLASS JSONFullParseHandler
   void operator=(const JSONFullParseHandler& other) = delete;
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(CharPtr start, size_t length, mozilla::Span<const CharT>&& source,
+  inline bool setStringValue(CharPtr start, size_t length,
+                             mozilla::Span<const CharT>&& source,
                              const StringTaint& taint, const ParserT* parser);
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser);
+  inline bool setStringValue(JSONStringBuilder& builder,
+                             mozilla::Span<const CharT>&& source, const ParserT* parser);
+
   inline bool setNumberValue(double d, mozilla::Span<const CharT>&& source);
   inline bool setBooleanValue(bool value, mozilla::Span<const CharT>&& source);
   inline bool setNullValue(mozilla::Span<const CharT>&& source);
@@ -344,7 +352,6 @@ class MOZ_STACK_CLASS JSONFullParseHandler
   void reportError(const char* msg, uint32_t line, uint32_t column);
 };
 
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
 template <typename CharT>
 class MOZ_STACK_CLASS JSONReviveHandler : public JSONFullParseHandler<CharT> {
   using CharPtr = mozilla::RangedPtr<const CharT>;
@@ -352,9 +359,8 @@ class MOZ_STACK_CLASS JSONReviveHandler : public JSONFullParseHandler<CharT> {
 
  public:
   using SourceT = mozilla::Span<const CharT>;
-  using ParseRecordEntry = ParseRecordObject::EntryMap;
 
-  using StringBuilder = typename Base::StringBuilder;
+  using JSONStringBuilder = typename Base::JSONStringBuilder;
   using StackEntry = typename Base::StackEntry;
   using PropertyVector = typename Base::PropertyVector;
   using ElementVector = typename Base::ElementVector;
@@ -372,19 +378,19 @@ class MOZ_STACK_CLASS JSONReviveHandler : public JSONFullParseHandler<CharT> {
 
   JSContext* context() { return this->cx; }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(CharPtr start, size_t length, SourceT&& source) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(CharPtr start, size_t length, SourceT&& source, const StringTaint& taint, const ParserT* parser) {
     if (!Base::template setStringValue<ST>(start, length,
-                                           std::forward<SourceT&&>(source))) {
+                                           std::forward<SourceT&&>(source), taint, parser)) {
       return false;
     }
     return finishPrimitiveParseRecord(this->v, source);
   }
 
-  template <JSONStringType ST>
-  inline bool setStringValue(StringBuilder& builder, SourceT&& source) {
+  template <JSONStringType ST, typename ParserT>
+  inline bool setStringValue(JSONStringBuilder& builder, SourceT&& source, const ParserT* parser) {
     if (!Base::template setStringValue<ST>(builder,
-                                           std::forward<SourceT&&>(source))) {
+                                           std::forward<SourceT&&>(source), parser)) {
       return false;
     }
     return finishPrimitiveParseRecord(this->v, source);
@@ -425,18 +431,18 @@ class MOZ_STACK_CLASS JSONReviveHandler : public JSONFullParseHandler<CharT> {
   void trace(JSTracer* trc);
 
  private:
-  inline bool finishMemberParseRecord(JS::PropertyKey& key,
-                                      ParseRecordEntry& objectEntry);
-  inline bool finishCompoundParseRecord(const Value& value,
-                                        ParseRecordEntry& objectEntry);
+  inline bool finishMemberParseRecord(
+      Handle<JS::PropertyKey> key,
+      Handle<ParseRecordObject::EntryMap*> parseEntry);
+  inline bool finishCompoundParseRecord(
+      const Value& value, Handle<ParseRecordObject::EntryMap*> parseEntry);
   inline bool finishPrimitiveParseRecord(const Value& value, SourceT source);
 
-  Vector<ParseRecordEntry, 10> parseRecordStack;
+  GCVector<ParseRecordObject::EntryMap*, 10> parseRecordStack;
 
  public:
-  ParseRecordObject parseRecord;
+  ParseRecordObject* parseRecord = nullptr;
 };
-#endif  // ENABLE_JSON_PARSE_WITH_SOURCE
 
 template <typename CharT>
 class MOZ_STACK_CLASS JSONSyntaxParseHandler {
@@ -453,9 +459,9 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
   struct ElementVector {};
   struct PropertyVector {};
 
-  class StringBuilder {
+  class JSONStringBuilder {
    public:
-    explicit StringBuilder(FrontendContext* fc) {}
+    explicit JSONStringBuilder(FrontendContext* fc) {}
 
     bool append(char16_t c, const TaintFlow& taintFlow) { return true; }
     bool append(const CharT* begin, const CharT* end, const StringTaint& taint) { return true; }
@@ -487,7 +493,9 @@ class MOZ_STACK_CLASS JSONSyntaxParseHandler {
   }
 
   template <JSONStringType ST, typename ParserT>
-  inline bool setStringValue(StringBuilder& builder, mozilla::Span<const CharT>&& source, const ParserT* parser) {
+  inline bool setStringValue(JSONStringBuilder& builder,
+                             mozilla::Span<const CharT>&& source,
+                             const ParserT* parser) {
     return true;
   }
 
@@ -546,11 +554,10 @@ template <typename CharT, typename HandlerT>
 class MOZ_STACK_CLASS JSONPerHandlerParser {
   using ContextT = typename HandlerT::ContextT;
 
-  using Tokenizer = JSONTokenizer<CharT, JSONPerHandlerParser<CharT, HandlerT>,
-                                  typename HandlerT::StringBuilder>;
+  using Tokenizer = JSONTokenizer<CharT, JSONPerHandlerParser<CharT, HandlerT>>;
 
  public:
-  using StringBuilder = typename HandlerT::StringBuilder;
+  using JSONStringBuilder = typename HandlerT::JSONStringBuilder;
 
  public:
   HandlerT handler;
@@ -622,10 +629,21 @@ class MOZ_STACK_CLASS JSONParser
    */
   bool parse(JS::MutableHandle<JS::Value> vp);
 
+  void reportLineNumbersFromParsedData(bool b) {
+    this->handler.reportLineNumbersFromParsedData = b;
+  }
+
+  /**
+   * Set a filename to be used in error messages.
+   * This is optional and only used for error reporting.
+   */
+  void setFilename(JS::ConstUTF8CharsZ filename) {
+    this->handler.filename = mozilla::Some(filename);
+  }
+
   void trace(JSTracer* trc);
 };
 
-#ifdef ENABLE_JSON_PARSE_WITH_SOURCE
 template <typename CharT>
 class MOZ_STACK_CLASS JSONReviveParser
     : JSONPerHandlerParser<CharT, JSONReviveHandler<CharT>> {
@@ -638,7 +656,11 @@ class MOZ_STACK_CLASS JSONReviveParser
 
   /* Create a parser for the provided JSON data. */
   JSONReviveParser(JSContext* cx, mozilla::Range<const CharT> data)
-      : Base(cx, data) {}
+      : Base(cx, data, EmptyTaint) {}
+
+  /* Create a parser for the provided JSON data. */
+  JSONReviveParser(JSContext* cx, mozilla::Range<const CharT> data, const StringTaint& taint)
+      : Base(cx, data, taint) {}
 
   /* Allow move construction for use with Rooted. */
   JSONReviveParser(JSONReviveParser&& other) noexcept
@@ -662,11 +684,10 @@ class MOZ_STACK_CLASS JSONReviveParser
    * set to |undefined|.
    */
   bool parse(JS::MutableHandle<JS::Value> vp,
-             JS::MutableHandle<ParseRecordObject> pro);
+             JS::MutableHandle<ParseRecordObject*> pro);
 
   void trace(JSTracer* trc);
 };
-#endif  // ENABLE_JSON_PARSE_WITH_SOURCE
 
 template <typename CharT, typename Wrapper>
 class MutableWrappedPtrOperations<JSONParser<CharT>, Wrapper>
@@ -674,6 +695,12 @@ class MutableWrappedPtrOperations<JSONParser<CharT>, Wrapper>
  public:
   bool parse(JS::MutableHandle<JS::Value> vp) {
     return static_cast<Wrapper*>(this)->get().parse(vp);
+  }
+  void setFilename(JS::ConstUTF8CharsZ filename) {
+    static_cast<Wrapper*>(this)->get().setFilename(filename);
+  }
+  void reportLineNumbersFromParsedData(bool b) {
+    static_cast<Wrapper*>(this)->get().reportLineNumbersFromParsedData(b);
   }
 };
 

@@ -30,11 +30,11 @@ void InitServiceWorkerContainerParent(PServiceWorkerContainerParent* aActor) {
 
 void InitServiceWorkerRegistrationParent(
     PServiceWorkerRegistrationParent* aActor,
-    const IPCServiceWorkerRegistrationDescriptor& aDescriptor) {
-  AUTO_PROFILER_MARKER_TEXT("InitServiceWorkerRegistrationParent", DOM, {},
-                            ""_ns);
+    const IPCServiceWorkerRegistrationDescriptor& aDescriptor,
+    const IPCClientInfo& aForClient) {
+  AUTO_PROFILER_MARKER_UNTYPED("InitServiceWorkerRegistrationParent", DOM, {});
   auto actor = static_cast<ServiceWorkerRegistrationParent*>(aActor);
-  actor->Init(aDescriptor);
+  actor->Init(aDescriptor, aForClient);
 }
 
 }  // namespace mozilla::dom

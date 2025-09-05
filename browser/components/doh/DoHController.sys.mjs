@@ -106,13 +106,6 @@ const ROLLOUT_URI_PREF = "doh-rollout.uri";
 const TRR_SELECT_DRY_RUN_RESULT_PREF =
   "doh-rollout.trr-selection.dry-run-result";
 
-const NATIVE_FALLBACK_WARNING_PREF = "network.trr.display_fallback_warning";
-const NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF =
-  "network.trr.fallback_warning_heuristic_list";
-
-const HEURISTICS_TELEMETRY_CATEGORY = "doh";
-const TRRSELECT_TELEMETRY_CATEGORY = "security.doh.trrPerformance";
-
 const kLinkStatusChangedTopic = "network:link-status-changed";
 const kConnectivityTopic = "network:captive-portal-connectivity-changed";
 const kPrefChangedTopic = "nsPref:changed";
@@ -143,31 +136,16 @@ export const DoHController = {
   _heuristicsAreEnabled: false,
 
   async init() {
-    Services.telemetry.setEventRecordingEnabled(
-      HEURISTICS_TELEMETRY_CATEGORY,
-      true
-    );
-    Services.telemetry.setEventRecordingEnabled(
-      TRRSELECT_TELEMETRY_CATEGORY,
-      true
-    );
-
     await lazy.DoHConfigController.initComplete;
 
     Services.obs.addObserver(this, lazy.DoHConfigController.kConfigUpdateTopic);
     lazy.Preferences.observe(NETWORK_TRR_MODE_PREF, this);
     lazy.Preferences.observe(NETWORK_TRR_URI_PREF, this);
-    lazy.Preferences.observe(NATIVE_FALLBACK_WARNING_PREF, this);
-    lazy.Preferences.observe(NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF, this);
 
     if (lazy.DoHConfigController.currentConfig.enabled) {
       // At init time set these heuristics to false if we may run heuristics
       for (let key of lazy.Heuristics.Telemetry.heuristicNames()) {
-        Services.telemetry.keyedScalarSet(
-          "networking.doh_heuristic_ever_tripped",
-          key,
-          false
-        );
+        Glean.networking.dohHeuristicEverTripped[key].set(false);
       }
 
       await this.maybeEnableHeuristics();
@@ -228,15 +206,13 @@ export const DoHController = {
     if (policyResult != "no_policy_set") {
       switch (policyResult) {
         case "policy_without_doh":
-          Services.telemetry.scalarSet(
-            "networking.doh_heuristics_result",
+          Glean.networking.dohHeuristicsResult.set(
             lazy.Heuristics.Telemetry.enterprisePresent
           );
           await this.setState("policyDisabled");
           break;
         case "disable_doh":
-          Services.telemetry.scalarSet(
-            "networking.doh_heuristics_result",
+          Glean.networking.dohHeuristicsResult.set(
             lazy.Heuristics.Telemetry.enterpriseDisabled
           );
           await this.setState("policyDisabled");
@@ -245,8 +221,7 @@ export const DoHController = {
           // The TRR mode has already been set, so theoretically we should not get here.
           // XXX: should we skip heuristics or continue?
           // TODO: Make sure we use the correct URL if the policy defines one.
-          Services.telemetry.scalarSet(
-            "networking.doh_heuristics_result",
+          Glean.networking.dohHeuristicsResult.set(
             lazy.Heuristics.Telemetry.enterpriseEnabled
           );
           break;
@@ -359,9 +334,8 @@ export const DoHController = {
   async runHeuristics(evaluateReason) {
     let start = Date.now();
 
-    Services.telemetry.scalarAdd("networking.doh_heuristics_attempts", 1);
-    Services.telemetry.scalarSet(
-      "networking.doh_heuristics_result",
+    Glean.networking.dohHeuristicsAttempts.add(1);
+    Glean.networking.dohHeuristicsResult.set(
       lazy.Heuristics.Telemetry.incomplete
     );
     let results = await lazy.Heuristics.run();
@@ -377,8 +351,7 @@ export const DoHController = {
       // during this heuristics run. We simply discard the results in this case.
       // Same thing if there was another heuristics run triggered or if we have
       // detected a locked captive portal while this one was ongoing.
-      Services.telemetry.scalarSet(
-        "networking.doh_heuristics_result",
+      Glean.networking.dohHeuristicsResult.set(
         lazy.Heuristics.Telemetry.ignored
       );
       return;
@@ -424,45 +397,13 @@ export const DoHController = {
 
     this.setHeuristicResult(Ci.nsITRRSkipReason.TRR_UNSET);
     if (decision === lazy.Heuristics.DISABLE_DOH) {
-      Services.telemetry.scalarSet(
-        "networking.doh_heuristics_result",
+      Glean.networking.dohHeuristicsResult.set(
         lazy.Heuristics.Telemetry.fromResults(results)
       );
-
-      let fallbackHeuristicTripped = undefined;
-      if (lazy.Preferences.get(NATIVE_FALLBACK_WARNING_PREF, false)) {
-        let heuristics = lazy.Preferences.get(
-          NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF,
-          ""
-        ).split(",");
-        for (let [heuristicName, result] of Object.entries(results)) {
-          if (result !== lazy.Heuristics.DISABLE_DOH) {
-            continue;
-          }
-          if (heuristics.includes(heuristicName)) {
-            fallbackHeuristicTripped = heuristicName;
-            break;
-          }
-        }
-      }
-
-      // If none of the fallback heuristics failed, the detection result will be TRR_OK
-      // Otherwise it will be the skip reason for the failed heuristic.
-      let heuristicSkipReason = Ci.nsITRRSkipReason.TRR_OK;
-      if (fallbackHeuristicTripped != undefined) {
-        heuristicSkipReason = lazy.Heuristics.heuristicNameToSkipReason(
-          fallbackHeuristicTripped
-        );
-      }
-      this.setHeuristicResult(heuristicSkipReason);
-
       await this.setState("disabled");
     } else {
-      Services.telemetry.scalarSet(
-        "networking.doh_heuristics_result",
-        lazy.Heuristics.Telemetry.pass
-      );
-      Services.telemetry.scalarAdd("networking.doh_heuristics_pass_count", 1);
+      Glean.networking.dohHeuristicsResult.set(lazy.Heuristics.Telemetry.pass);
+      Glean.networking.dohHeuristicsPassCount.add(1);
       await this.setState("enabled");
     }
 
@@ -494,11 +435,7 @@ export const DoHController = {
       }
 
       if (lazy.Heuristics.Telemetry.heuristicNames().includes(heuristicName)) {
-        Services.telemetry.keyedScalarSet(
-          "networking.doh_heuristic_ever_tripped",
-          heuristicName,
-          true
-        );
+        Glean.networking.dohHeuristicEverTripped[heuristicName].set(true);
       }
     }
 
@@ -506,14 +443,9 @@ export const DoHController = {
     resultsForTelemetry.filtering = filtering.join(",");
     resultsForTelemetry.enterprise = enterprise.join(",");
     resultsForTelemetry.platform = platform.join(",");
+    resultsForTelemetry.value = decision;
 
-    Services.telemetry.recordEvent(
-      HEURISTICS_TELEMETRY_CATEGORY,
-      "evaluate_v2",
-      "heuristics",
-      decision,
-      resultsForTelemetry
-    );
+    Glean.doh.evaluateV2Heuristics.record(resultsForTelemetry);
   },
 
   async setState(state) {
@@ -542,12 +474,9 @@ export const DoHController = {
         break;
     }
 
-    Services.telemetry.recordEvent(
-      HEURISTICS_TELEMETRY_CATEGORY,
-      "state",
-      state,
-      "null"
-    );
+    Glean.doh["state" + state[0].toUpperCase() + state.slice(1)].record({
+      value: "null",
+    });
 
     let modePref = lazy.Preferences.get(NETWORK_TRR_MODE_PREF);
     if (state == "manuallyDisabled") {
@@ -555,21 +484,18 @@ export const DoHController = {
         modePref == Ci.nsIDNSService.MODE_TRRFIRST ||
         modePref == Ci.nsIDNSService.MODE_TRRONLY
       ) {
-        Services.telemetry.scalarSet(
-          "networking.doh_heuristics_result",
+        Glean.networking.dohHeuristicsResult.set(
           lazy.Heuristics.Telemetry.manuallyEnabled
         );
       } else if (
         lazy.Preferences.get("doh-rollout.doorhanger-decision", "") ==
         "UIDisabled"
       ) {
-        Services.telemetry.scalarSet(
-          "networking.doh_heuristics_result",
+        Glean.networking.dohHeuristicsResult.set(
           lazy.Heuristics.Telemetry.optOut
         );
       } else {
-        Services.telemetry.scalarSet(
-          "networking.doh_heuristics_result",
+        Glean.networking.dohHeuristicsResult.set(
           lazy.Heuristics.Telemetry.manuallyDisabled
         );
       }
@@ -648,12 +574,9 @@ export const DoHController = {
 
     let setDryRunResultAndRecordTelemetry = trrUri => {
       lazy.Preferences.set(TRR_SELECT_DRY_RUN_RESULT_PREF, trrUri);
-      Services.telemetry.recordEvent(
-        TRRSELECT_TELEMETRY_CATEGORY,
-        "trrselect",
-        "dryrunresult",
-        trrUri.substring(0, 40) // Telemetry payload max length
-      );
+      Glean.securityDohTrrPerformance.trrselectDryrunresult.record({
+        value: trrUri.substring(0, 40), // Telemetry payload max length
+      });
     };
 
     if (lazy.kIsInAutomation) {
@@ -710,14 +633,6 @@ export const DoHController = {
       case NETWORK_TRR_MODE_PREF:
         lazy.Preferences.set(DISABLED_PREF, true);
         await this.disableHeuristics("manuallyDisabled");
-        break;
-      case NATIVE_FALLBACK_WARNING_PREF:
-      case NATIVE_FALLBACK_WARNING_HEURISTIC_LIST_PREF:
-        if (this._heuristicsAreEnabled) {
-          await this.runHeuristics("native-fallback-warning-pref-changed");
-        } else {
-          this.setHeuristicResult(Ci.nsITRRSkipReason.TRR_UNSET);
-        }
         break;
     }
   },

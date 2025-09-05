@@ -14,6 +14,25 @@ function imageBufferFromDataURI(encodedImageData) {
   return Uint8Array.from(decodedImageData, byte => byte.charCodeAt(0)).buffer;
 }
 
+const kPrefCustomizationState = "browser.uiCustomization.state";
+const kPrefCustomizationHorizontalTabstrip =
+  "browser.uiCustomization.horizontalTabstrip";
+const kPrefCustomizationNavBarWhenVerticalTabs =
+  "browser.uiCustomization.navBarWhenVerticalTabs";
+const kPrefSidebarTools = "sidebar.main.tools";
+
+const MODIFIED_PREFS = Object.freeze([
+  kPrefCustomizationState,
+  kPrefCustomizationHorizontalTabstrip,
+  kPrefCustomizationNavBarWhenVerticalTabs,
+  kPrefSidebarTools,
+]);
+
+// Ensure we clear any previous pref values
+for (const pref of MODIFIED_PREFS) {
+  Services.prefs.clearUserPref(pref);
+}
+
 /* global browser */
 const extData = {
   manifest: {
@@ -113,10 +132,8 @@ function openAndWaitForContextMenu(popup, button, onShown, onHidden) {
 
     button.scrollIntoView();
     const eventDetails = { type: "contextmenu", button: 2 };
-    EventUtils.synthesizeMouse(
+    EventUtils.synthesizeMouseAtCenter(
       button,
-      5,
-      2,
       eventDetails,
       // eslint-disable-next-line mozilla/use-ownerGlobal
       button.ownerDocument.defaultView
@@ -132,4 +149,44 @@ async function toggleSidebarPanel(win, commandID) {
   const promiseFocused = BrowserTestUtils.waitForEvent(win, "SidebarFocused");
   win.SidebarController.toggle(commandID);
   await promiseFocused;
+}
+
+async function waitForTabstripOrientation(
+  toOrientation = "vertical",
+  win = window
+) {
+  await win.SidebarController.promiseInitialized;
+  // We use the orient attribute on the tabstrip element as a reliable signal that
+  // tabstrip orientation has changed/is settled into the given orientation
+  info(
+    `waitForTabstripOrientation: waiting for orient attribute to be "${toOrientation}"`
+  );
+  await BrowserTestUtils.waitForMutationCondition(
+    win.gBrowser.tabContainer,
+    { attributes: true, attributeFilter: ["orient"] },
+    () => win.gBrowser.tabContainer.getAttribute("orient") == toOrientation
+  );
+  // This change is followed by a update/render step for the lit elements.
+  // We need to wait for that too
+  await win.SidebarController.sidebarMain?.updateComplete;
+}
+
+// Reset the Glean events after each test.
+registerCleanupFunction(() => {
+  Services.fog.testResetFOG();
+});
+
+/**
+ * Wait until Style and Layout information have been calculated and the paint
+ * has occurred.
+ *
+ * @see https://firefox-source-docs.mozilla.org/performance/bestpractices.html
+ */
+async function waitForRepaint() {
+  await SidebarController.waitUntilStable();
+  return new Promise(resolve =>
+    requestAnimationFrame(() => {
+      Services.tm.dispatchToMainThread(resolve);
+    })
+  );
 }

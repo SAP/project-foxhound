@@ -75,6 +75,11 @@ loader.lazyGetter(this, "RequestListColumnMethod", function () {
     require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnMethod.js")
   );
 });
+loader.lazyGetter(this, "RequestListColumnOverride", function () {
+  return createFactory(
+    require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnOverride.js")
+  );
+});
 loader.lazyGetter(this, "RequestListColumnProtocol", function () {
   return createFactory(
     require("resource://devtools/client/netmonitor/src/components/request-list/RequestListColumnProtocol.js")
@@ -140,6 +145,7 @@ loader.lazyGetter(this, "RequestListColumnPriority", function () {
 const UPDATED_REQ_ITEM_PROPS = [
   "mimeType",
   "eventTimings",
+  "earlyHintsStatus",
   "securityState",
   "status",
   "statusText",
@@ -170,6 +176,7 @@ const UPDATED_REQ_PROPS = [
   "isSelected",
   "isVisible",
   "requestFilterTypes",
+  "waterfallScale",
 ];
 
 /**
@@ -179,6 +186,7 @@ const UPDATED_REQ_PROPS = [
  * in that list are passed as props verbatim.
  */
 const COLUMN_COMPONENTS = [
+  { column: "override", ColumnComponent: RequestListColumnOverride },
   { column: "status", ColumnComponent: RequestListColumnStatus },
   { column: "method", ColumnComponent: RequestListColumnMethod },
   {
@@ -189,7 +197,7 @@ const COLUMN_COMPONENTS = [
   {
     column: "file",
     ColumnComponent: RequestListColumnFile,
-    props: ["onWaterfallMouseDown"],
+    props: ["onWaterfallMouseDown", "slowLimit"],
   },
   {
     column: "url",
@@ -252,27 +260,29 @@ class RequestListItem extends Component {
   static get propTypes() {
     return {
       blocked: PropTypes.bool,
-      connector: PropTypes.object.isRequired,
       columns: PropTypes.object.isRequired,
-      item: PropTypes.object.isRequired,
-      index: PropTypes.number.isRequired,
-      isSelected: PropTypes.bool.isRequired,
-      isVisible: PropTypes.bool.isRequired,
+      connector: PropTypes.object.isRequired,
       firstRequestStartedMs: PropTypes.number.isRequired,
       fromCache: PropTypes.bool,
+      item: PropTypes.object.isRequired,
+      index: PropTypes.number.isRequired,
+      intersectionObserver: PropTypes.object,
+      isSelected: PropTypes.bool.isRequired,
+      isVisible: PropTypes.bool.isRequired,
       networkActionOpen: PropTypes.bool,
       networkDetailsOpen: PropTypes.bool,
-      onInitiatorBadgeMouseDown: PropTypes.func.isRequired,
+      onContextMenu: PropTypes.func.isRequired,
       onDoubleClick: PropTypes.func.isRequired,
       onDragStart: PropTypes.func.isRequired,
-      onContextMenu: PropTypes.func.isRequired,
       onFocusedNodeChange: PropTypes.func,
+      onInitiatorBadgeMouseDown: PropTypes.func.isRequired,
       onMouseDown: PropTypes.func.isRequired,
       onSecurityIconMouseDown: PropTypes.func.isRequired,
       onWaterfallMouseDown: PropTypes.func.isRequired,
+      overriddenUrl: PropTypes.string,
       requestFilterTypes: PropTypes.object.isRequired,
       selectedActionBarTabId: PropTypes.string,
-      intersectionObserver: PropTypes.object,
+      waterfallScale: PropTypes.number,
     };
   }
 
@@ -314,7 +324,8 @@ class RequestListItem extends Component {
         nextProps.item
       ) ||
       !propertiesEqual(UPDATED_REQ_PROPS, this.props, nextProps) ||
-      this.props.columns !== nextProps.columns
+      this.props.columns !== nextProps.columns ||
+      nextProps.overriddenUrl !== this.props.overriddenUrl
     );
   }
 
@@ -351,6 +362,7 @@ class RequestListItem extends Component {
       onMouseDown,
       onWaterfallMouseDown,
       selectedActionBarTabId,
+      waterfallScale,
     } = this.props;
 
     const classList = ["request-list-item", index % 2 ? "odd" : "even"];
@@ -404,6 +416,7 @@ class RequestListItem extends Component {
           item,
           onWaterfallMouseDown,
           isVisible,
+          waterfallScale,
         })
     );
   }

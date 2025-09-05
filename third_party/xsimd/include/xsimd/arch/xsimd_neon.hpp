@@ -1748,6 +1748,69 @@ namespace xsimd
             return select(batch_bool<T, A> { b... }, true_br, false_br, neon {});
         }
 
+        /*************
+         * transpose *
+         *************/
+        template <class A>
+        XSIMD_INLINE void transpose(batch<float, A>* matrix_begin, batch<float, A>* matrix_end, requires_arch<neon>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<float, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1], r2 = matrix_begin[2], r3 = matrix_begin[3];
+            auto t01 = vtrnq_f32(r0, r1);
+            auto t23 = vtrnq_f32(r2, r3);
+            matrix_begin[0] = vcombine_f32(vget_low_f32(t01.val[0]), vget_low_f32(t23.val[0]));
+            matrix_begin[1] = vcombine_f32(vget_low_f32(t01.val[1]), vget_low_f32(t23.val[1]));
+            matrix_begin[2] = vcombine_f32(vget_high_f32(t01.val[0]), vget_high_f32(t23.val[0]));
+            matrix_begin[3] = vcombine_f32(vget_high_f32(t01.val[1]), vget_high_f32(t23.val[1]));
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<uint32_t, A>* matrix_begin, batch<uint32_t, A>* matrix_end, requires_arch<neon>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<uint32_t, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1], r2 = matrix_begin[2], r3 = matrix_begin[3];
+            auto t01 = vtrnq_u32(r0, r1);
+            auto t23 = vtrnq_u32(r2, r3);
+            matrix_begin[0] = vcombine_u32(vget_low_u32(t01.val[0]), vget_low_u32(t23.val[0]));
+            matrix_begin[1] = vcombine_u32(vget_low_u32(t01.val[1]), vget_low_u32(t23.val[1]));
+            matrix_begin[2] = vcombine_u32(vget_high_u32(t01.val[0]), vget_high_u32(t23.val[0]));
+            matrix_begin[3] = vcombine_u32(vget_high_u32(t01.val[1]), vget_high_u32(t23.val[1]));
+        }
+        template <class A>
+        XSIMD_INLINE void transpose(batch<int32_t, A>* matrix_begin, batch<int32_t, A>* matrix_end, requires_arch<neon>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<int32_t, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1], r2 = matrix_begin[2], r3 = matrix_begin[3];
+            auto t01 = vtrnq_s32(r0, r1);
+            auto t23 = vtrnq_s32(r2, r3);
+            matrix_begin[0] = vcombine_s32(vget_low_s32(t01.val[0]), vget_low_s32(t23.val[0]));
+            matrix_begin[1] = vcombine_s32(vget_low_s32(t01.val[1]), vget_low_s32(t23.val[1]));
+            matrix_begin[2] = vcombine_s32(vget_high_s32(t01.val[0]), vget_high_s32(t23.val[0]));
+            matrix_begin[3] = vcombine_s32(vget_high_s32(t01.val[1]), vget_high_s32(t23.val[1]));
+        }
+
+        template <class A, class T, detail::enable_sized_unsigned_t<T, 8> = 0>
+        XSIMD_INLINE void transpose(batch<T, A>* matrix_begin, batch<T, A>* matrix_end, requires_arch<neon>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<T, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1];
+            matrix_begin[0] = vcombine_u64(vget_low_u64(r0), vget_low_u64(r1));
+            matrix_begin[1] = vcombine_u64(vget_high_u64(r0), vget_high_u64(r1));
+        }
+
+        template <class A, class T, detail::enable_sized_signed_t<T, 8> = 0>
+        XSIMD_INLINE void transpose(batch<T, A>* matrix_begin, batch<T, A>* matrix_end, requires_arch<neon>) noexcept
+        {
+            assert((matrix_end - matrix_begin == batch<T, A>::size) && "correctly sized matrix");
+            (void)matrix_end;
+            auto r0 = matrix_begin[0], r1 = matrix_begin[1];
+            matrix_begin[0] = vcombine_s64(vget_low_s64(r0), vget_low_s64(r1));
+            matrix_begin[1] = vcombine_s64(vget_high_s64(r0), vget_high_s64(r1));
+        }
+
         /**********
          * zip_lo *
          **********/
@@ -2680,38 +2743,38 @@ namespace xsimd
         }
 
         /****************
-         * rotate_right *
+         * rotate_left *
          ****************/
         namespace wrap
         {
             template <size_t N>
-            XSIMD_INLINE uint8x16_t rotate_right_u8(uint8x16_t a, uint8x16_t b) noexcept { return vextq_u8(a, b, N); }
+            XSIMD_INLINE uint8x16_t rotate_left_u8(uint8x16_t a, uint8x16_t b) noexcept { return vextq_u8(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE int8x16_t rotate_right_s8(int8x16_t a, int8x16_t b) noexcept { return vextq_s8(a, b, N); }
+            XSIMD_INLINE int8x16_t rotate_left_s8(int8x16_t a, int8x16_t b) noexcept { return vextq_s8(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE uint16x8_t rotate_right_u16(uint16x8_t a, uint16x8_t b) noexcept { return vextq_u16(a, b, N); }
+            XSIMD_INLINE uint16x8_t rotate_left_u16(uint16x8_t a, uint16x8_t b) noexcept { return vextq_u16(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE int16x8_t rotate_right_s16(int16x8_t a, int16x8_t b) noexcept { return vextq_s16(a, b, N); }
+            XSIMD_INLINE int16x8_t rotate_left_s16(int16x8_t a, int16x8_t b) noexcept { return vextq_s16(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE uint32x4_t rotate_right_u32(uint32x4_t a, uint32x4_t b) noexcept { return vextq_u32(a, b, N); }
+            XSIMD_INLINE uint32x4_t rotate_left_u32(uint32x4_t a, uint32x4_t b) noexcept { return vextq_u32(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE int32x4_t rotate_right_s32(int32x4_t a, int32x4_t b) noexcept { return vextq_s32(a, b, N); }
+            XSIMD_INLINE int32x4_t rotate_left_s32(int32x4_t a, int32x4_t b) noexcept { return vextq_s32(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE uint64x2_t rotate_right_u64(uint64x2_t a, uint64x2_t b) noexcept { return vextq_u64(a, b, N); }
+            XSIMD_INLINE uint64x2_t rotate_left_u64(uint64x2_t a, uint64x2_t b) noexcept { return vextq_u64(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE int64x2_t rotate_right_s64(int64x2_t a, int64x2_t b) noexcept { return vextq_s64(a, b, N); }
+            XSIMD_INLINE int64x2_t rotate_left_s64(int64x2_t a, int64x2_t b) noexcept { return vextq_s64(a, b, N); }
             template <size_t N>
-            XSIMD_INLINE float32x4_t rotate_right_f32(float32x4_t a, float32x4_t b) noexcept { return vextq_f32(a, b, N); }
+            XSIMD_INLINE float32x4_t rotate_left_f32(float32x4_t a, float32x4_t b) noexcept { return vextq_f32(a, b, N); }
         }
 
         template <size_t N, class A, class T, detail::enable_neon_type_t<T> = 0>
-        XSIMD_INLINE batch<T, A> rotate_right(batch<T, A> const& a, requires_arch<neon>) noexcept
+        XSIMD_INLINE batch<T, A> rotate_left(batch<T, A> const& a, requires_arch<neon>) noexcept
         {
             using register_type = typename batch<T, A>::register_type;
             const detail::neon_dispatcher::binary dispatcher = {
-                std::make_tuple(wrap::rotate_right_u8<N>, wrap::rotate_right_s8<N>, wrap::rotate_right_u16<N>, wrap::rotate_right_s16<N>,
-                                wrap::rotate_right_u32<N>, wrap::rotate_right_s32<N>, wrap::rotate_right_u64<N>, wrap::rotate_right_s64<N>,
-                                wrap::rotate_right_f32<N>)
+                std::make_tuple(wrap::rotate_left_u8<N>, wrap::rotate_left_s8<N>, wrap::rotate_left_u16<N>, wrap::rotate_left_s16<N>,
+                                wrap::rotate_left_u32<N>, wrap::rotate_left_s32<N>, wrap::rotate_left_u64<N>, wrap::rotate_left_s64<N>,
+                                wrap::rotate_left_f32<N>)
             };
             return dispatcher.apply(register_type(a), register_type(a));
         }
@@ -2737,6 +2800,7 @@ namespace xsimd
             return set(batch<T, A>(), A(), data[idx]...);
         }
     }
+
 }
 
 #undef WRAP_BINARY_INT_EXCLUDING_64

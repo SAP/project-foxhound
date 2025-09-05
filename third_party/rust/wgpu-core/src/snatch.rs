@@ -1,14 +1,13 @@
 #![allow(unused)]
 
-use crate::lock::{RwLock, RwLockReadGuard, RwLockWriteGuard};
-use std::{
-    backtrace::Backtrace,
+use core::{
     cell::{Cell, RefCell, UnsafeCell},
+    fmt,
     panic::{self, Location},
-    thread,
 };
+use std::{backtrace::Backtrace, thread};
 
-use crate::lock::rank;
+use crate::lock::{rank, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 /// A guard that provides read access to snatchable data.
 pub struct SnatchGuard<'a>(RwLockReadGuard<'a, ()>);
@@ -32,18 +31,19 @@ impl<T> Snatchable<T> {
         }
     }
 
+    pub fn empty() -> Self {
+        Snatchable {
+            value: UnsafeCell::new(None),
+        }
+    }
+
     /// Get read access to the value. Requires a the snatchable lock's read guard.
     pub fn get<'a>(&'a self, _guard: &'a SnatchGuard) -> Option<&'a T> {
         unsafe { (*self.value.get()).as_ref() }
     }
 
-    /// Get write access to the value. Requires a the snatchable lock's write guard.
-    pub fn get_mut<'a>(&'a self, _guard: &'a mut ExclusiveSnatchGuard) -> Option<&'a mut T> {
-        unsafe { (*self.value.get()).as_mut() }
-    }
-
     /// Take the value. Requires a the snatchable lock's write guard.
-    pub fn snatch(&self, _guard: ExclusiveSnatchGuard) -> Option<T> {
+    pub fn snatch(&self, _guard: &mut ExclusiveSnatchGuard) -> Option<T> {
         unsafe { (*self.value.get()).take() }
     }
 
@@ -58,8 +58,8 @@ impl<T> Snatchable<T> {
 
 // Can't safely print the contents of a snatchable object without holding
 // the lock.
-impl<T> std::fmt::Debug for Snatchable<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+impl<T> fmt::Debug for Snatchable<T> {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "<snatchable>")
     }
 }
@@ -72,8 +72,8 @@ struct LockTrace {
     backtrace: Backtrace,
 }
 
-impl std::fmt::Display for LockTrace {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for LockTrace {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "a {} lock at {}\n{}",
@@ -116,7 +116,7 @@ impl LockTrace {
     fn exit() {}
 }
 
-thread_local! {
+std::thread_local! {
     static SNATCH_LOCK_TRACE: Cell<Option<LockTrace>> = const { Cell::new(None) };
 }
 

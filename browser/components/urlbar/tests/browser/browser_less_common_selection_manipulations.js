@@ -64,6 +64,36 @@ const tests = [
     },
   },
   {
+    description: "Test CTRL/ALT SHIFT LEFT starting from full selection",
+    openPanel() {
+      EventUtils.synthesizeKey("l", { accelKey: true });
+    },
+    get selection() {
+      return [0, gURLBar.value.length];
+    },
+    manipulate() {
+      if (AppConstants.platform == "macosx") {
+        // Synthesized key events work differently from native ones, here
+        // we simulate the native behavior.
+        EventUtils.synthesizeKey("KEY_ArrowLeft", {
+          type: "keydown",
+          altKey: true,
+          shiftKey: true,
+        });
+        EventUtils.synthesizeKey("KEY_ArrowLeft", { type: "keyup" });
+        EventUtils.synthesizeKey("KEY_Meta", { type: "keyup" });
+      } else {
+        EventUtils.synthesizeKey("KEY_ArrowLeft", {
+          ctrlKey: true,
+          shiftKey: true,
+        });
+      }
+    },
+    get modifiedSelection() {
+      return [0, gURLBar.value.lastIndexOf(".") + 1];
+    },
+  },
+  {
     description: "Test CTRL A starting from full selection",
     skipIf() {
       return AppConstants.platform != "macosx";
@@ -297,13 +327,14 @@ async function doTest(url) {
 }
 
 function getTextWidth(inputText) {
-  const canvas =
-    getTextWidth.canvas ||
-    (getTextWidth.canvas = document.createElement("canvas"));
-  let context = canvas.getContext("2d");
-  context.font = window
+  let span = document.createElement("span");
+  document.documentElement.appendChild(span);
+  span.style.all = "initial";
+  span.style.font = window
     .getComputedStyle(gURLBar.inputField)
     .getPropertyValue("font");
-  let measure = context.measureText(inputText);
-  return measure.actualBoundingBoxLeft + measure.actualBoundingBoxRight;
+  span.textContent = inputText;
+  let result = span.offsetWidth;
+  span.remove();
+  return result;
 }

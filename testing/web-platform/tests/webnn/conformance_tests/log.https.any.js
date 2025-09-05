@@ -1,5 +1,5 @@
 // META: title=test WebNN API element-wise log operation
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -28,7 +28,7 @@ const logTests = [
       'inputs': {
         'logInput': {
           'data': [63.82542037963867],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -39,7 +39,7 @@ const logTests = [
       'expectedOutputs': {
         'logOutput': {
           'data': [4.15615177154541],
-          'descriptor': {'dimensions': [], 'dataType': 'float32'}
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       }
     }
@@ -59,7 +59,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'},
+          'descriptor': {shape: [24], dataType: 'float32'},
           'constant': true
         }
       },
@@ -80,7 +80,7 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -100,7 +100,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -120,7 +120,7 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -140,7 +140,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -160,7 +160,7 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       }
     }
@@ -180,7 +180,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -200,7 +200,7 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -220,7 +220,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -240,7 +240,7 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [2, 2, 2, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float32'}
         }
       }
     }
@@ -260,7 +260,7 @@ const logTests = [
             30.385812759399414, 13.709558486938477, 10.396759986877441,
             50.840946197509766, 5.682034492492676,  94.02275848388672
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -280,7 +280,232 @@ const logTests = [
             3.413975715637207,  2.618093252182007,  2.34149432182312,
             3.9287021160125732, 1.7373093366622925, 4.54353666305542
           ],
-          'descriptor': {'dimensions': [2, 1, 4, 1, 3], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float32'}
+        }
+      }
+    }
+  },
+
+  // float16 tests
+  {
+    'name': 'log float16 positive 0D scalar',
+    'graph': {
+      'inputs': {
+        'logInput':
+            {'data': [63.8125], 'descriptor': {shape: [], dataType: 'float16'}}
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput':
+            {'data': [4.15625], 'descriptor': {shape: [], dataType: 'float16'}}
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 1D constant tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'},
+          'constant': true
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 1D tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [24], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 2D tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [4, 6], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [4, 6], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 3D tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [2, 3, 4], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [2, 3, 4], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 4D tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [2, 2, 2, 3], dataType: 'float16'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'log float16 positive 5D tensor',
+    'graph': {
+      'inputs': {
+        'logInput': {
+          'data': [
+            63.8125,    25.3125,    96.4375,    40.90625,  36.59375,
+            57.8125,    10.0546875, 17.84375,   50.78125,  83.875,
+            12.0625,    22.703125,  47.5625,    17.546875, 32.65625,
+            20.359375,  52.53125,   45.59375,   30.390625, 13.7109375,
+            10.3984375, 50.84375,   5.68359375, 94
+          ],
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float16'}
+        }
+      },
+      'operators': [{
+        'name': 'log',
+        'arguments': [{'input': 'logInput'}],
+        'outputs': 'logOutput'
+      }],
+      'expectedOutputs': {
+        'logOutput': {
+          'data': [
+            4.15625,     3.23046875,  4.5703125,    3.7109375,   3.599609375,
+            4.05859375,  2.30859375,  2.880859375,  3.927734375, 4.4296875,
+            2.490234375, 3.123046875, 3.861328125,  2.865234375, 3.486328125,
+            3.013671875, 3.9609375,   3.8203125,    3.4140625,   2.619140625,
+            2.341796875, 3.9296875,   1.7373046875, 4.54296875
+          ],
+          'descriptor': {shape: [2, 1, 4, 1, 3], dataType: 'float16'}
         }
       }
     }
@@ -290,7 +515,7 @@ const logTests = [
 if (navigator.ml) {
   logTests.forEach((test) => {
     webnn_conformance_test(
-        buildGraphAndCompute, getLogPrecisionTolerance, test);
+        buildAndExecuteGraph, getLogPrecisionTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

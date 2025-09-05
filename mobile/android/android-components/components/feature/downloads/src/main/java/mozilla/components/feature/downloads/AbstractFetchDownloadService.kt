@@ -5,7 +5,6 @@
 package mozilla.components.feature.downloads
 
 import android.annotation.SuppressLint
-import android.annotation.TargetApi
 import android.app.DownloadManager.ACTION_DOWNLOAD_COMPLETE
 import android.app.DownloadManager.EXTRA_DOWNLOAD_ID
 import android.app.Notification
@@ -32,6 +31,7 @@ import android.webkit.MimeTypeMap
 import android.widget.Toast
 import androidx.annotation.ColorRes
 import androidx.annotation.GuardedBy
+import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -429,6 +429,12 @@ abstract class AbstractFetchDownloadService : Service() {
         stopSelf()
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        logger.error("Unable to finish download due to timeout")
+        // calling stopSelf() will prevent the system throwing a RemoteServiceException
+        stopSelf()
+    }
+
     override fun onDestroy() {
         super.onDestroy()
 
@@ -713,6 +719,11 @@ abstract class AbstractFetchDownloadService : Service() {
 
     @Suppress("ComplexCondition", "ComplexMethod")
     internal fun performDownload(currentDownloadJobState: DownloadJobState, useHttpClient: Boolean = false) {
+        if (currentDownloadJobState.currentBytesCopied == currentDownloadJobState.state.contentLength) {
+            verifyDownload(currentDownloadJobState)
+            return
+        }
+
         val download = currentDownloadJobState.state
         val isResumingDownload = currentDownloadJobState.currentBytesCopied > 0L
         val headers = MutableHeaders()
@@ -924,22 +935,32 @@ abstract class AbstractFetchDownloadService : Service() {
             return download
         }
 
+        val file = File(fileName)
         val path = Environment.getExternalStoragePublicDirectory(download.destinationDirectory)
-        var potentialFile = File(path, fileName)
-        val fileBaseName = potentialFile.nameWithoutExtension
-        val fileExtension = potentialFile.extension.let { extension ->
-            if (extension.isNotEmpty()) ".$extension" else ""
-        }
-
-        var copyVersionNumber = 1
-
-        while (potentialFile.exists() || fileNameExistsInCurrentDownloads(potentialFile.name, download, downloadJobs)) {
-            potentialFile = File(path, "$fileBaseName(${copyVersionNumber++})$fileExtension")
-        }
-
-        return download.copy(
-            fileName = potentialFile.name,
+        val (baseFileName, fileExtension) = DownloadUtils.truncateFileName(
+            baseFileName = file.nameWithoutExtension,
+            fileExtension = file.extension,
+            path = path.absolutePath,
         )
+
+        var potentialFile = File(
+            path,
+            DownloadUtils.createFileName(
+                fileName = baseFileName,
+                fileExtension = fileExtension,
+            ),
+        )
+        var copyVersionNumber = 1
+        while (potentialFile.exists() || fileNameExistsInCurrentDownloads(
+                potentialFile.name,
+                download,
+                downloadJobs,
+            )
+        ) {
+            potentialFile = File(path, DownloadUtils.createFileName(baseFileName, copyVersionNumber++, fileExtension))
+        }
+
+        return download.copy(fileName = potentialFile.name)
     }
 
     private fun fileNameExistsInCurrentDownloads(
@@ -953,7 +974,7 @@ abstract class AbstractFetchDownloadService : Service() {
                 )
         }
 
-    @TargetApi(Build.VERSION_CODES.Q)
+    @RequiresApi(Build.VERSION_CODES.Q)
     @VisibleForTesting
     internal fun useFileStreamScopedStorage(download: DownloadState, append: Boolean, block: (OutputStream) -> Unit) {
         val values = ContentValues().apply {
@@ -968,11 +989,11 @@ abstract class AbstractFetchDownloadService : Service() {
 
         val collection = MediaStore.Downloads.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY)
         val resolver = applicationContext.contentResolver
-        var downloadUri = queryDownloadMediaStore(applicationContext, download)
-
-        if (downloadUri == null) {
-            downloadUri = resolver.insert(collection, values)
-        }
+        val downloadUri =
+            queryDownloadMediaStore(applicationContext, download, true) ?: resolver.insert(
+                collection,
+                values,
+            )
 
         downloadUri?.let {
             val writingMode = if (append) "wa" else "w"
@@ -985,7 +1006,7 @@ abstract class AbstractFetchDownloadService : Service() {
         } ?: throw IOException("Failed to register download with content resolver")
     }
 
-    @TargetApi(Build.VERSION_CODES.P)
+    @RequiresApi(Build.VERSION_CODES.P)
     @Suppress("Deprecation")
     @VisibleForTesting
     internal fun useFileStreamLegacy(download: DownloadState, append: Boolean, block: (OutputStream) -> Unit) {
@@ -1003,7 +1024,7 @@ abstract class AbstractFetchDownloadService : Service() {
 
     companion object {
         /**
-         * Launches an intent to open the given file, returns whether or not the file could be opened
+         * Launches an intent to open the given file, returns whether or not the file could be opened.
          */
         fun openFile(
             applicationContext: Context,
@@ -1021,6 +1042,7 @@ abstract class AbstractFetchDownloadService : Service() {
 
         /**
          * Creates an Intent which can then be used to open the file specified.
+         *
          * @param context the current Android *Context*
          * @param download contains the details of the downloaded file to be opened.
          */
@@ -1031,7 +1053,7 @@ abstract class AbstractFetchDownloadService : Service() {
             val filePath = download.filePath
             val contentType = download.contentType
 
-            // For devices that support the scoped storage we can query the directly the download
+            // For devices that support the scoped storage we can query directly the download
             // media store otherwise we have to construct the uri based on the file path.
             val fileUri: Uri =
                 if (SDK_INT >= Build.VERSION_CODES.Q) {
@@ -1052,11 +1074,15 @@ abstract class AbstractFetchDownloadService : Service() {
             return newIntent
         }
 
-        @TargetApi(Build.VERSION_CODES.Q)
+        @RequiresApi(Build.VERSION_CODES.Q)
         @VisibleForTesting
-        internal fun queryDownloadMediaStore(applicationContext: Context, download: DownloadState): Uri? {
+        internal fun queryDownloadMediaStore(
+            applicationContext: Context,
+            download: DownloadState,
+            limitToDownloadsFolder: Boolean = false,
+        ): Uri? {
             val resolver = applicationContext.contentResolver
-            val queryProjection = arrayOf(MediaStore.Downloads._ID)
+            val queryProjection = arrayOf(MediaStore.Downloads._ID, MediaStore.MediaColumns.RELATIVE_PATH)
             val querySelection = "${MediaStore.Downloads.DISPLAY_NAME} = ?"
             val querySelectionArgs = arrayOf("${download.fileName}")
 
@@ -1081,21 +1107,23 @@ abstract class AbstractFetchDownloadService : Service() {
                     setIncludePending(collection)
                 }
 
-            var downloadUri: Uri? = null
             resolver.query(
                 queryCollection,
                 queryProjection,
                 queryBundle,
                 null,
-            )?.use {
-                if (it.count > 0) {
-                    val idColumnIndex = it.getColumnIndex(MediaStore.Downloads._ID)
-                    it.moveToFirst()
-                    downloadUri = ContentUris.withAppendedId(collection, it.getLong(idColumnIndex))
+            )?.use { cursor ->
+                while (cursor.moveToNext()) {
+                    val relativePath =
+                        cursor.getString(cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.RELATIVE_PATH))
+                    if (!limitToDownloadsFolder || relativePath == "Downloads/") {
+                        val idColumnIndex = cursor.getColumnIndex(MediaStore.Downloads._ID)
+                        return ContentUris.withAppendedId(collection, cursor.getLong(idColumnIndex))
+                    }
                 }
             }
 
-            return downloadUri
+            return null
         }
 
         @VisibleForTesting

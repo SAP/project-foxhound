@@ -124,13 +124,24 @@ void ChildSHistory::Reload(uint32_t aReloadFlags, ErrorResult& aRv) {
   aRv = shistory->Reload(aReloadFlags);
 }
 
-bool ChildSHistory::CanGo(int32_t aOffset) {
+bool ChildSHistory::CanGo(int32_t aOffset, bool aRequireUserInteraction) {
   CheckedInt<int32_t> index = Index();
   index += aOffset;
   if (!index.isValid()) {
     return false;
   }
-  return index.value() < Count() && index.value() >= 0;
+
+  if (!mHistory || aOffset >= 0) {
+    return index.value() < Count() && index.value() >= 0;
+  }
+
+  if (!aRequireUserInteraction) {
+    return index.value() >= 0;
+  }
+
+  bool canGoBack;
+  mHistory->CanGoBackFromEntryAtIndex(Index(), &canGoBack);
+  return canGoBack;
 }
 
 void ChildSHistory::Go(int32_t aOffset, bool aRequireUserInteraction,
@@ -177,7 +188,7 @@ void ChildSHistory::AsyncGo(int32_t aOffset, bool aRequireUserInteraction,
   MOZ_LOG(gSHLog, LogLevel::Debug,
           ("ChildSHistory::AsyncGo(%d), current index = %d", aOffset,
            index.value()));
-  nsresult rv = mBrowsingContext->CheckLocationChangeRateLimit(aCallerType);
+  nsresult rv = mBrowsingContext->CheckNavigationRateLimit(aCallerType);
   if (NS_FAILED(rv)) {
     MOZ_LOG(gSHLog, LogLevel::Debug, ("Rejected"));
     aRv.Throw(rv);

@@ -7,22 +7,17 @@ package org.mozilla.fenix.downloads.listscreen
 import android.content.Context
 import android.os.Bundle
 import android.text.SpannableString
-import android.view.LayoutInflater
 import android.view.Menu
 import android.view.MenuInflater
 import android.view.MenuItem
 import android.view.View
-import android.view.ViewGroup
 import androidx.appcompat.widget.Toolbar
-import androidx.compose.ui.platform.ComposeView
-import androidx.compose.ui.platform.ViewCompositionStrategy
+import androidx.compose.runtime.Composable
 import androidx.core.content.ContextCompat
 import androidx.core.view.MenuProvider
-import androidx.fragment.app.Fragment
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
-import com.google.android.material.snackbar.Snackbar
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers.IO
 import kotlinx.coroutines.MainScope
@@ -37,8 +32,10 @@ import mozilla.components.support.ktx.android.content.getColorFromAttr
 import org.mozilla.fenix.HomeActivity
 import org.mozilla.fenix.R
 import org.mozilla.fenix.browser.browsingmode.BrowsingMode
-import org.mozilla.fenix.components.FenixSnackbar
 import org.mozilla.fenix.components.lazyStore
+import org.mozilla.fenix.compose.ComposeFragment
+import org.mozilla.fenix.compose.snackbar.Snackbar
+import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.downloads.dialog.DynamicDownloadDialog
 import org.mozilla.fenix.ext.components
 import org.mozilla.fenix.ext.getRootView
@@ -53,7 +50,7 @@ import org.mozilla.fenix.utils.allowUndo
  * Fragment for displaying and managing the downloads list.
  */
 @SuppressWarnings("TooManyFunctions", "LargeClass")
-class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
+class DownloadFragment : ComposeFragment(), UserInteractionHandler, MenuProvider {
 
     private val downloadStore by lazyStore { viewModelScope ->
         DownloadFragmentStore(
@@ -67,20 +64,14 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
         )
     }
 
-    override fun onCreateView(
-        inflater: LayoutInflater,
-        container: ViewGroup?,
-        savedInstanceState: Bundle?,
-    ): View = ComposeView(requireContext()).apply {
-        setViewCompositionStrategy(ViewCompositionStrategy.DisposeOnLifecycleDestroyed(viewLifecycleOwner))
-        setContent {
-            FirefoxTheme {
-                DownloadsScreen(
-                    downloadsStore = downloadStore,
-                    onItemClick = { openItem(it) },
-                    onItemDeleteClick = { deleteDownloadItems(setOf(it)) },
-                )
-            }
+    @Composable
+    override fun UI() {
+        FirefoxTheme {
+            DownloadsScreen(
+                downloadsStore = downloadStore,
+                onItemClick = { openItem(it) },
+                onItemDeleteClick = { deleteDownloadItems(setOf(it)) },
+            )
         }
     }
 
@@ -116,7 +107,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     private fun observeModeChanges() {
         viewLifecycleOwner.lifecycleScope.launch {
             downloadStore.flow()
-                .distinctUntilChangedBy { it.mode::class }
+                .distinctUntilChangedBy { it.mode }
                 .map { it.mode }
                 .collect { mode ->
                     invalidateOptionsMenu()
@@ -217,13 +208,13 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
 
             val rootView = view
             if (!canOpenFile && rootView != null) {
-                FenixSnackbar.make(
-                    view = rootView,
-                    duration = Snackbar.LENGTH_SHORT,
-                ).setText(
-                    DynamicDownloadDialog.getCannotOpenFileErrorMessage(
-                        it,
-                        downloadState,
+                Snackbar.make(
+                    snackBarParentView = rootView,
+                    snackbarState = SnackbarState(
+                        message = DynamicDownloadDialog.getCannotOpenFileErrorMessage(
+                            context = it,
+                            download = downloadState,
+                        ),
                     ),
                 ).show()
             }
@@ -290,6 +281,7 @@ class DownloadFragment : Fragment(), UserInteractionHandler, MenuProvider {
     override fun onDetach() {
         super.onDetach()
         context?.let {
+            activity?.title = getString(R.string.app_name)
             activity?.findViewById<Toolbar>(R.id.navigationToolbar)?.setToolbarColors(
                 it.getColorFromAttr(R.attr.textPrimary),
                 it.getColorFromAttr(R.attr.layer1),

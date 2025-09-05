@@ -16,8 +16,9 @@ JxlButteraugliComparator::JxlButteraugliComparator(
 
 Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
   const ImageBundle* ref_linear_srgb;
+  JxlMemoryManager* memory_manager = ref.memory_manager();
   ImageMetadata metadata = *ref.metadata();
-  ImageBundle store(&metadata);
+  ImageBundle store(memory_manager, &metadata);
   if (!TransformIfNeeded(ref, ColorEncoding::LinearSRGB(ref.IsGray()), cms_,
                          /*pool=*/nullptr, &store, &ref_linear_srgb)) {
     return false;
@@ -26,6 +27,7 @@ Status JxlButteraugliComparator::SetReferenceImage(const ImageBundle& ref) {
                                         ref_linear_srgb->color(), params_));
   xsize_ = ref.xsize();
   ysize_ = ref.ysize();
+  intensity_target_ = ref.metadata()->IntensityTarget();
   return true;
 }
 
@@ -46,19 +48,42 @@ Status JxlButteraugliComparator::CompareWith(const ImageBundle& actual,
   if (xsize_ != actual.xsize() || ysize_ != actual.ysize()) {
     return JXL_FAILURE("Images must have same size");
   }
+  JxlMemoryManager* memory_manager = actual.memory_manager();
 
   const ImageBundle* actual_linear_srgb;
   ImageMetadata metadata = *actual.metadata();
-  ImageBundle store(&metadata);
+  ImageBundle store(memory_manager, &metadata);
   if (!TransformIfNeeded(actual, ColorEncoding::LinearSRGB(actual.IsGray()),
                          cms_,
                          /*pool=*/nullptr, &store, &actual_linear_srgb)) {
     return false;
   }
 
-  JXL_ASSIGN_OR_RETURN(ImageF temp_diffmap, ImageF::Create(xsize_, ysize_));
+  JXL_ASSIGN_OR_RETURN(ImageF temp_diffmap,
+                       ImageF::Create(memory_manager, xsize_, ysize_));
+  const Image3F* scaled_actual_linear_srgb = &actual_linear_srgb->color();
+  Image3F scaled_actual_linear_srgb_store;
+  if (intensity_target_ != 0 &&
+      actual.metadata()->IntensityTarget() != intensity_target_) {
+    scaled_actual_linear_srgb = &scaled_actual_linear_srgb_store;
+    JXL_ASSIGN_OR_RETURN(scaled_actual_linear_srgb_store,
+                         Image3F::Create(memory_manager, xsize_, ysize_));
+    const float scale =
+        actual.metadata()->IntensityTarget() / intensity_target_;
+    for (size_t c = 0; c < 3; ++c) {
+      for (size_t y = 0; y < ysize_; ++y) {
+        const float* JXL_RESTRICT source_row =
+            actual_linear_srgb->color().ConstPlaneRow(c, y);
+        float* JXL_RESTRICT scaled_row =
+            scaled_actual_linear_srgb_store.PlaneRow(c, y);
+        for (size_t x = 0; x < xsize_; ++x) {
+          scaled_row[x] = scale * source_row[x];
+        }
+      }
+    }
+  }
   JXL_RETURN_IF_ERROR(
-      comparator_->Diffmap(actual_linear_srgb->color(), temp_diffmap));
+      comparator_->Diffmap(*scaled_actual_linear_srgb, temp_diffmap));
 
   if (score != nullptr) {
     *score = ButteraugliScoreFromDiffmap(temp_diffmap, &params_);

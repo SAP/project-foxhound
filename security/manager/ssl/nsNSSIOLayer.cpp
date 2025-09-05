@@ -25,8 +25,7 @@
 #include "mozilla/RandomNum.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/Telemetry.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/net/SSLTokensCache.h"
 #include "mozilla/net/SocketProcessChild.h"
 #include "mozilla/psm/IPCClientCertsChild.h"
@@ -440,14 +439,15 @@ bool retryDueToTLSIntolerance(PRErrorCode err, NSSSocketControl* socketInfo) {
   }
 
   if (!socketInfo->IsPreliminaryHandshakeDone() &&
-      !socketInfo->HasTls13HandshakeSecrets() && socketInfo->SentXyberShare()) {
+      !socketInfo->HasTls13HandshakeSecrets() && socketInfo->SentMlkemShare()) {
     nsAutoCString errorName;
     const char* prErrorName = PR_ErrorToName(err);
     if (prErrorName) {
       errorName.AppendASCII(prErrorName);
     }
     mozilla::glean::tls::xyber_intolerance_reason.Get(errorName).Add(1);
-    // Don't record version intolerance if we sent Xyber, just force a retry.
+    // Don't record version intolerance if we sent mlkem768x25519, just force a
+    // retry.
     return true;
   }
 
@@ -471,8 +471,8 @@ bool retryDueToTLSIntolerance(PRErrorCode err, NSSSocketControl* socketInfo) {
     // same buckets as the telemetry below, except that bucket 0 will include
     // all cases where there wasn't an original reason.
     PRErrorCode originalReason = socketInfo->GetTLSIntoleranceReason();
-    Telemetry::Accumulate(Telemetry::SSL_VERSION_FALLBACK_INAPPROPRIATE,
-                          tlsIntoleranceTelemetryBucket(originalReason));
+    glean::ssl::version_fallback_inappropriate.AccumulateSingleSample(
+        tlsIntoleranceTelemetryBucket(originalReason));
 
     socketInfo->ForgetTLSIntolerance();
 
@@ -494,39 +494,48 @@ bool retryDueToTLSIntolerance(PRErrorCode err, NSSSocketControl* socketInfo) {
     return false;
   }
 
-  Telemetry::HistogramID pre;
-  Telemetry::HistogramID post;
+  // The difference between _PRE and _POST represents how often we avoided
+  // TLS intolerance fallback due to remembered tolerance.
+
   switch (range.max) {
     case SSL_LIBRARY_VERSION_TLS_1_3:
-      pre = Telemetry::SSL_TLS13_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS13_INTOLERANCE_REASON_POST;
+      glean::ssl::tls13_intolerance_reason_pre.AccumulateSingleSample(reason);
       break;
     case SSL_LIBRARY_VERSION_TLS_1_2:
-      pre = Telemetry::SSL_TLS12_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS12_INTOLERANCE_REASON_POST;
+      glean::ssl::tls12_intolerance_reason_pre.AccumulateSingleSample(reason);
       break;
     case SSL_LIBRARY_VERSION_TLS_1_1:
-      pre = Telemetry::SSL_TLS11_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS11_INTOLERANCE_REASON_POST;
+      glean::ssl::tls11_intolerance_reason_pre.AccumulateSingleSample(reason);
       break;
     case SSL_LIBRARY_VERSION_TLS_1_0:
-      pre = Telemetry::SSL_TLS10_INTOLERANCE_REASON_PRE;
-      post = Telemetry::SSL_TLS10_INTOLERANCE_REASON_POST;
+      glean::ssl::tls10_intolerance_reason_pre.AccumulateSingleSample(reason);
       break;
     default:
       MOZ_CRASH("impossible TLS version");
       return false;
   }
 
-  // The difference between _PRE and _POST represents how often we avoided
-  // TLS intolerance fallback due to remembered tolerance.
-  Telemetry::Accumulate(pre, reason);
-
   if (!socketInfo->RememberTLSIntolerant(err)) {
     return false;
   }
 
-  Telemetry::Accumulate(post, reason);
+  switch (range.max) {
+    case SSL_LIBRARY_VERSION_TLS_1_3:
+      glean::ssl::tls13_intolerance_reason_post.AccumulateSingleSample(reason);
+      break;
+    case SSL_LIBRARY_VERSION_TLS_1_2:
+      glean::ssl::tls12_intolerance_reason_post.AccumulateSingleSample(reason);
+      break;
+    case SSL_LIBRARY_VERSION_TLS_1_1:
+      glean::ssl::tls11_intolerance_reason_post.AccumulateSingleSample(reason);
+      break;
+    case SSL_LIBRARY_VERSION_TLS_1_0:
+      glean::ssl::tls10_intolerance_reason_post.AccumulateSingleSample(reason);
+      break;
+    default:
+      MOZ_CRASH("impossible TLS version");
+      return false;
+  }
 
   return true;
 }
@@ -570,24 +579,24 @@ static void reportHandshakeResult(int32_t bytesTransferred, bool wasReading,
 
   uint32_t flags = socketInfo->GetProviderFlags();
   if (!(flags & nsISocketProvider::IS_RETRY)) {
-    Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT_FIRST_TRY, bucket);
+    glean::ssl_handshake::result_first_try.AccumulateSingleSample(bucket);
   }
 
   if (flags & nsISocketProvider::BE_CONSERVATIVE) {
-    Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT_CONSERVATIVE, bucket);
+    glean::ssl_handshake::result_conservative.AccumulateSingleSample(bucket);
   }
 
   switch (socketInfo->GetEchExtensionStatus()) {
     case EchExtensionStatus::kGREASE:
-      Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT_ECH_GREASE, bucket);
+      glean::ssl_handshake::result_ech_grease.AccumulateSingleSample(bucket);
       break;
     case EchExtensionStatus::kReal:
-      Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT_ECH, bucket);
+      glean::ssl_handshake::result_ech.AccumulateSingleSample(bucket);
       break;
     default:
       break;
   }
-  Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_RESULT, bucket);
+  glean::ssl_handshake::result.AccumulateSingleSample(bucket);
 
   if (bucket == 0) {
     nsCOMPtr<nsITransportSecurityInfo> securityInfo;
@@ -621,7 +630,7 @@ static void reportHandshakeResult(int32_t bytesTransferred, bool wasReading,
       TLSPrivacyResult |= usedPrivateDNS << 2;
       TLSPrivacyResult |= usedECH << 3;
 
-      Telemetry::Accumulate(Telemetry::SSL_HANDSHAKE_PRIVACY, TLSPrivacyResult);
+      glean::ssl_handshake::privacy.AccumulateSingleSample(TLSPrivacyResult);
     }
   }
 }
@@ -1326,33 +1335,12 @@ void GatherCertificateCompressionTelemetry(SECStatus rv,
       break;
   }
 
-  mozilla::glean::cert_compression::used.Get(decoder).Add(1);
-
   if (rv != SECSuccess) {
     mozilla::glean::cert_compression::failures.Get(decoder).Add(1);
     return;
   }
   // Glam requires us to send 0 in case of success.
   mozilla::glean::cert_compression::failures.Get(decoder).Add(0);
-
-  PRUint64 diffActualEncodedLen = actualCertLen - encodedCertLen;
-  if (actualCertLen >= encodedCertLen) {
-    switch (alg) {
-      case zlib:
-        mozilla::glean::cert_compression::zlib_saved_bytes
-            .AccumulateSingleSample(diffActualEncodedLen);
-        break;
-
-      case brotli:
-        mozilla::glean::cert_compression::brotli_saved_bytes
-            .AccumulateSingleSample(diffActualEncodedLen);
-        break;
-      case zstd:
-        mozilla::glean::cert_compression::zstd_saved_bytes
-            .AccumulateSingleSample(diffActualEncodedLen);
-        break;
-    }
-  }
 }
 
 SECStatus zlibCertificateDecode(const SECItem* input, unsigned char* output,
@@ -1569,29 +1557,29 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
       !(infoObject->GetProviderFlags() &
         (nsISocketProvider::BE_CONSERVATIVE | nsISocketProvider::IS_RETRY))) {
     const SSLNamedGroup namedGroups[] = {
-        ssl_grp_kem_xyber768d00, ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1,
-        ssl_grp_ec_secp384r1,    ssl_grp_ec_secp521r1,  ssl_grp_ffdhe_2048,
+        ssl_grp_kem_mlkem768x25519, ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1,
+        ssl_grp_ec_secp384r1,       ssl_grp_ec_secp521r1,  ssl_grp_ffdhe_2048,
         ssl_grp_ffdhe_3072};
-    if (SECSuccess != SSL_NamedGroupConfig(fd, namedGroups,
-                                           mozilla::ArrayLength(namedGroups))) {
+    if (SECSuccess !=
+        SSL_NamedGroupConfig(fd, namedGroups, std::size(namedGroups))) {
       return NS_ERROR_FAILURE;
     }
     additional_shares += 1;
-    infoObject->WillSendXyberShare();
+    infoObject->WillSendMlkemShare();
   } else {
     const SSLNamedGroup namedGroups[] = {
         ssl_grp_ec_curve25519, ssl_grp_ec_secp256r1, ssl_grp_ec_secp384r1,
         ssl_grp_ec_secp521r1,  ssl_grp_ffdhe_2048,   ssl_grp_ffdhe_3072};
-    // Skip the |ssl_grp_kem_xyber768d00| entry.
-    if (SECSuccess != SSL_NamedGroupConfig(fd, namedGroups,
-                                           mozilla::ArrayLength(namedGroups))) {
+    // Skip the |ssl_grp_kem_mlkem768x25519| entry.
+    if (SECSuccess !=
+        SSL_NamedGroupConfig(fd, namedGroups, std::size(namedGroups))) {
       return NS_ERROR_FAILURE;
     }
   }
 
-  // If additional_shares == 2, send Xyber768D00, X25519, and P-256.
-  // If additional_shares == 1, send {Xyber768D00, X25519} or {X25519, P-256}.
-  // If additional_shares == 0, send X25519.
+  // If additional_shares == 2, send mlkem768x25519, x25519, and p256.
+  // If additional_shares == 1, send {mlkem768x25519, x25519} or {x25519, p256}.
+  // If additional_shares == 0, send x25519.
   if (SECSuccess != SSL_SendAdditionalKeyShares(fd, additional_shares)) {
     return NS_ERROR_FAILURE;
   }
@@ -1631,9 +1619,9 @@ static nsresult nsSSLIOLayerSetOptions(PRFileDesc* fd, bool forSTARTTLS,
   // is properly rejected. NSS will not advertise PKCS1 or RSAE schemes (which
   // the |ssl_sig_rsa_pss_*| defines alias, meaning we will not currently accept
   // any RSA DC.
-  if (SECSuccess != SSL_SignatureSchemePrefSet(
-                        fd, sEnabledSignatureSchemes,
-                        mozilla::ArrayLength(sEnabledSignatureSchemes))) {
+  if (SECSuccess !=
+      SSL_SignatureSchemePrefSet(fd, sEnabledSignatureSchemes,
+                                 std::size(sEnabledSignatureSchemes))) {
     return NS_ERROR_FAILURE;
   }
 

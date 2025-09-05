@@ -64,7 +64,7 @@ int32_t RootCABinNumber(Span<const uint8_t> cert) {
            digestArray.ElementAt(0), digestArray.ElementAt(1),
            digestArray.ElementAt(2), digestArray.ElementAt(3)));
 
-  if (mozilla::BinarySearchIf(ROOT_TABLE, 0, ArrayLength(ROOT_TABLE),
+  if (mozilla::BinarySearchIf(ROOT_TABLE, 0, std::size(ROOT_TABLE),
                               BinaryHashSearchArrayComparator(
                                   digestArray.Elements(), digestArray.Length()),
                               &idx)) {
@@ -122,17 +122,6 @@ int32_t RootCABinNumber(Span<const uint8_t> cert) {
 
   // We have no idea what this is.
   return ROOT_CERTIFICATE_UNKNOWN;
-}
-
-// Attempt to increment the appropriate bin in the provided Telemetry probe ID.
-// If there was a hash failure, we do nothing.
-void AccumulateTelemetryForRootCA(mozilla::Telemetry::HistogramID probe,
-                                  const Span<const uint8_t> cert) {
-  int32_t binId = RootCABinNumber(cert);
-
-  if (binId != ROOT_CERTIFICATE_HASH_FAILURE) {
-    Accumulate(probe, binId);
-  }
 }
 
 }  // namespace psm

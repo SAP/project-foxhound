@@ -19,6 +19,7 @@
 #include "mozilla/Maybe.h"
 #include "mozilla/ResultVariant.h"
 #include "mozilla/ScopeExit.h"
+#include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/Try.h"
 #include "mozilla/UniquePtr.h"
 #include "mozilla/dom/CanvasUtils.h"
@@ -1375,7 +1376,7 @@ VideoFrame::VideoFrame(nsIGlobalObject* aParent,
       mTimestamp(aData.mTimestamp),
       mColorSpace(aData.mColorSpace) {
   MOZ_ASSERT(mParent);
-  LOG("VideoFrame %p ctor", this);
+  LOG("VideoFrame %p ctor (from serialized data)", this);
   mResource.emplace(Resource(
       aData.mImage, aData.mFormat.map([](const VideoPixelFormat& aPixelFormat) {
         return VideoFrame::Format(aPixelFormat);
@@ -1396,7 +1397,7 @@ VideoFrame::VideoFrame(const VideoFrame& aOther)
       mTimestamp(aOther.mTimestamp),
       mColorSpace(aOther.mColorSpace) {
   MOZ_ASSERT(mParent);
-  LOG("VideoFrame %p ctor", this);
+  LOG("VideoFrame %p copy ctor", this);
   StartAutoClose();
 }
 
@@ -1416,6 +1417,12 @@ JSObject* VideoFrame::WrapObject(JSContext* aCx,
   AssertIsOnOwningThread();
 
   return VideoFrame_Binding::Wrap(aCx, this, aGivenProto);
+}
+
+/* static */
+bool VideoFrame::PrefEnabled(JSContext* aCx, JSObject* aObj) {
+  return StaticPrefs::dom_media_webcodecs_enabled() ||
+         StaticPrefs::dom_media_webcodecs_image_decoder_enabled();
 }
 
 // The following constructors are defined in
@@ -2047,6 +2054,8 @@ void VideoFrame::Close() {
 
 bool VideoFrame::IsClosed() const { return !mResource; }
 
+void VideoFrame::OnShutdown() { CloseIfNeeded(); }
+
 already_AddRefed<layers::Image> VideoFrame::GetImage() const {
   if (!mResource) {
     return nullptr;
@@ -2062,13 +2071,15 @@ nsCString VideoFrame::ToString() const {
     return rv;
   }
 
-  rv.AppendPrintf("VideoFrame ts: %" PRId64
-                  ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
-                  mTimestamp,
-                  dom::GetEnumString(mResource->mFormat->PixelFormat()).get(),
-                  mCodedSize.width, mCodedSize.height, mVisibleRect.width,
-                  mVisibleRect.height, mDisplaySize.width, mDisplaySize.height,
-                  ColorSpaceInitToString(mColorSpace).get());
+  Maybe<VideoPixelFormat> format = mResource->TryPixelFormat();
+  rv.AppendPrintf(
+      "VideoFrame ts: %" PRId64
+      ", %s, coded[%dx%d] visible[%dx%d], display[%dx%d] color: %s",
+      mTimestamp,
+      format ? dom::GetEnumString(*format).get() : "unknown pixel format",
+      mCodedSize.width, mCodedSize.height, mVisibleRect.width,
+      mVisibleRect.height, mDisplaySize.width, mDisplaySize.height,
+      ColorSpaceInitToString(mColorSpace).get());
 
   if (mDuration) {
     rv.AppendPrintf(" dur: %" PRId64, mDuration.value());
@@ -2173,42 +2184,26 @@ already_AddRefed<VideoFrame> VideoFrame::ConvertToRGBFrame(
 void VideoFrame::StartAutoClose() {
   AssertIsOnOwningThread();
 
-  LOG("VideoFrame %p, start monitoring resource release", this);
-
-  if (NS_IsMainThread()) {
-    mShutdownBlocker = media::ShutdownBlockingTicket::Create(
-        u"VideoFrame::mShutdownBlocker"_ns,
-        NS_LITERAL_STRING_FROM_CSTRING(__FILE__), __LINE__);
-    if (mShutdownBlocker) {
-      mShutdownBlocker->ShutdownPromise()->Then(
-          GetCurrentSerialEventTarget(), __func__,
-          [self = RefPtr{this}](bool /* aUnUsed*/) {
-            LOG("VideoFrame %p gets shutdown notification", self.get());
-            self->CloseIfNeeded();
-          },
-          [self = RefPtr{this}](bool /* aUnUsed*/) {
-            LOG("VideoFrame %p removes shutdown-blocker before getting "
-                "shutdown "
-                "notification",
-                self.get());
-          });
-    }
-  } else if (WorkerPrivate* workerPrivate = GetCurrentThreadWorkerPrivate()) {
-    // Clean up all the resources when the worker is going away.
-    mWorkerRef = WeakWorkerRef::Create(workerPrivate, [self = RefPtr{this}]() {
-      LOG("VideoFrame %p, worker is going away", self.get());
-      self->CloseIfNeeded();
-    });
+  mShutdownWatcher = media::ShutdownWatcher::Create(this);
+  if (NS_WARN_IF(!mShutdownWatcher)) {
+    LOG("VideoFrame %p, cannot monitor resource release", this);
+    Close();
+    return;
   }
+
+  LOG("VideoFrame %p, start monitoring resource release, watcher %p", this,
+      mShutdownWatcher.get());
 }
 
 void VideoFrame::StopAutoClose() {
   AssertIsOnOwningThread();
 
-  LOG("VideoFrame %p, stop monitoring resource release", this);
-
-  mShutdownBlocker = nullptr;
-  mWorkerRef = nullptr;
+  if (mShutdownWatcher) {
+    LOG("VideoFrame %p, stop monitoring resource release, watcher %p", this,
+        mShutdownWatcher.get());
+    mShutdownWatcher->Destroy();
+    mShutdownWatcher = nullptr;
+  }
 }
 
 void VideoFrame::CloseIfNeeded() {

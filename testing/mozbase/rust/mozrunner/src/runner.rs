@@ -160,12 +160,9 @@ impl FirefoxRunner {
     /// i.e. _/Applications/Firefox.app_, as well as to an executable program
     /// such as _/Applications/Firefox.app/Content/MacOS/firefox_.
     pub fn new(path: &Path, profile: Option<Profile>) -> FirefoxRunner {
-        let mut envs: HashMap<OsString, OsString> = HashMap::new();
-        envs.insert("MOZ_NO_REMOTE".into(), "1".into());
-
         FirefoxRunner {
             path: path.to_path_buf(),
-            envs,
+            envs: HashMap::new(),
             profile,
             args: vec![],
             stdout: None,
@@ -408,6 +405,7 @@ pub mod platform {
     /// Searches the system path for `firefox`, then looks for
     /// `Applications/Firefox.app/Contents/MacOS/firefox` as well
     /// as `Applications/Firefox Nightly.app/Contents/MacOS/firefox`
+    /// and `Applications/Firefox Developer Edition.app/Contents/MacOS/firefox`
     /// under both `/` (system root) and the user home directory.
     pub fn firefox_default_path() -> Option<PathBuf> {
         if let Some(path) = find_binary("firefox") {
@@ -418,6 +416,8 @@ pub mod platform {
         for &(prefix_home, trial_path) in [
             (false, "/Applications/Firefox.app"),
             (true, "Applications/Firefox.app"),
+            (false, "/Applications/Firefox Developer Edition.app"),
+            (true, "Applications/Firefox Developer Edition.app"),
             (false, "/Applications/Firefox Nightly.app"),
             (true, "Applications/Firefox Nightly.app"),
         ]

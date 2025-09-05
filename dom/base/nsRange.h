@@ -33,6 +33,7 @@ class DOMRect;
 class DOMRectList;
 class InspectorFontFace;
 class Selection;
+class TrustedHTMLOrString;
 
 enum class RangeBehaviour : uint8_t {
   // Keep both ranges
@@ -213,6 +214,9 @@ class nsRange final : public mozilla::dom::AbstractRange,
 
   already_AddRefed<mozilla::dom::DocumentFragment> CreateContextualFragment(
       const nsAString& aString, ErrorResult& aError) const;
+  MOZ_CAN_RUN_SCRIPT already_AddRefed<mozilla::dom::DocumentFragment>
+  CreateContextualFragment(const mozilla::dom::TrustedHTMLOrString&,
+                           ErrorResult& aError) const;
   already_AddRefed<mozilla::dom::DocumentFragment> CloneContents(
       ErrorResult& aErr);
   int16_t CompareBoundaryPoints(uint16_t aHow, const nsRange& aOtherRange,
@@ -264,6 +268,10 @@ class nsRange final : public mozilla::dom::AbstractRange,
                                                   bool aFlushLayout = true);
   already_AddRefed<DOMRectList> GetClientRects(bool aClampToEdge = true,
                                                bool aFlushLayout = true);
+  // ChromeOnly
+  already_AddRefed<DOMRectList> GetAllowCrossShadowBoundaryClientRects(
+      bool aClampToEdge = true, bool aFlushLayout = true);
+
   void GetClientRectsAndTexts(mozilla::dom::ClientRectsAndTexts& aResult,
                               ErrorResult& aErr);
 
@@ -368,6 +376,10 @@ class nsRange final : public mozilla::dom::AbstractRange,
    */
   bool IsPartOfOneSelectionOnly() const { return mSelections.Length() == 1; };
 
+  already_AddRefed<DOMRectList> GetClientRectsInner(
+      AllowRangeCrossShadowBoundary = AllowRangeCrossShadowBoundary::No,
+      bool aClampToEdge = true, bool aFlushLayout = true);
+
  public:
   /**
    * This helper function gets rects and correlated text for the given range.
@@ -456,13 +468,13 @@ class nsRange final : public mozilla::dom::AbstractRange,
   nsINode* GetMayCrossShadowBoundaryStartContainer() const {
     return mCrossShadowBoundaryRange
                ? mCrossShadowBoundaryRange->GetStartContainer()
-               : mStart.Container();
+               : mStart.GetContainer();
   }
 
   nsINode* GetMayCrossShadowBoundaryEndContainer() const {
     return mCrossShadowBoundaryRange
                ? mCrossShadowBoundaryRange->GetEndContainer()
-               : mEnd.Container();
+               : mEnd.GetContainer();
   }
 
   uint32_t MayCrossShadowBoundaryStartOffset() const {

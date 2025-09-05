@@ -29,6 +29,7 @@
 #include "MozContainer.h"
 #include "WidgetUtilsGtk.h"
 
+#include "gfxPlatform.h"
 #include "nsFilePicker.h"
 
 #undef LOG
@@ -46,8 +47,8 @@ using namespace mozilla;
 using mozilla::dom::Promise;
 
 #define MAX_PREVIEW_SIZE 180
-// bug 1184009
-#define MAX_PREVIEW_SOURCE_SIZE 4096
+// bug 1935858
+#define MAX_PREVIEW_SOURCE_SIZE 8192
 
 nsIFile* nsFilePicker::mPrevDisplayDirectory = nullptr;
 
@@ -171,10 +172,8 @@ static nsAutoCString MakeCaseInsensitiveShellGlob(const char* aPattern) {
 NS_IMPL_ISUPPORTS(nsFilePicker, nsIFilePicker)
 
 nsFilePicker::nsFilePicker()
-    : mSelectedType(0), mAllowURLs(false), mFileChooserDelegate(nullptr) {
-  mUseNativeFileChooser =
-      widget::ShouldUsePortal(widget::PortalKind::FilePicker);
-}
+    : mUseNativeFileChooser(
+          widget::ShouldUsePortal(widget::PortalKind::FilePicker)) {}
 
 nsFilePicker::~nsFilePicker() = default;
 
@@ -182,7 +181,7 @@ void ReadMultipleFiles(gpointer filename, gpointer array) {
   nsCOMPtr<nsIFile> localfile;
   nsresult rv =
       NS_NewNativeLocalFile(nsDependentCString(static_cast<char*>(filename)),
-                            false, getter_AddRefs(localfile));
+                            getter_AddRefs(localfile));
   if (NS_SUCCEEDED(rv)) {
     nsCOMArray<nsIFile>& files = *static_cast<nsCOMArray<nsIFile>*>(array);
     files.AppendObject(localfile);
@@ -368,7 +367,9 @@ nsFilePicker::GetFile(nsIFile** aFile) {
   *aFile = nullptr;
   nsCOMPtr<nsIURI> uri;
   nsresult rv = GetFileURL(getter_AddRefs(uri));
-  if (!uri) return rv;
+  if (!uri) {
+    return rv;
+  }
 
   nsCOMPtr<nsIFileURL> fileURL(do_QueryInterface(uri, &rv));
   NS_ENSURE_SUCCESS(rv, rv);
@@ -398,27 +399,20 @@ nsFilePicker::GetFiles(nsISimpleEnumerator** aFiles) {
   return NS_ERROR_FAILURE;
 }
 
-nsresult nsFilePicker::Show(nsIFilePicker::ResultCode* aReturn) {
-  NS_ENSURE_ARG_POINTER(aReturn);
-
-  nsresult rv = Open(nullptr);
-  if (NS_FAILED(rv)) return rv;
-
-  while (mFileChooser) {
-    g_main_context_iteration(nullptr, TRUE);
-  }
-
-  *aReturn = mResult;
-  return NS_OK;
-}
-
 NS_IMETHODIMP
 nsFilePicker::Open(nsIFilePickerShownCallback* aCallback) {
   // Can't show two dialogs concurrently with the same filepicker
-  if (mFileChooser) return NS_ERROR_NOT_AVAILABLE;
+  if (mFileChooser) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
 
   if (MaybeBlockFilePicker(aCallback)) {
     return NS_OK;
+  }
+
+  // Don't attempt to open a real file-picker in headless mode.
+  if (gfxPlatform::IsHeadless()) {
+    return NS_ERROR_NOT_AVAILABLE;
   }
 
   NS_ConvertUTF16toUTF8 title(mTitle);
@@ -645,7 +639,9 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
         if (file) {
           bool exists = false;
           file->Exists(&exists);
-          if (exists) result = nsIFilePicker::returnReplace;
+          if (exists) {
+            result = nsIFilePicker::returnReplace;
+          }
         }
       } else if (mMode == nsIFilePicker::modeOpen) {
         if (WarnForNonReadableFile(file_chooser)) {
@@ -696,8 +692,6 @@ void nsFilePicker::Done(void* file_chooser, gint response) {
   if (mCallback) {
     mCallback->Done(result);
     mCallback = nullptr;
-  } else {
-    mResult = result;
   }
   NS_RELEASE_THIS();
 }

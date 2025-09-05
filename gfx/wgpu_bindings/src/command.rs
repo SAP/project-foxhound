@@ -9,7 +9,6 @@ use wgc::{
         ComputePassDescriptor, PassTimestampWrites, RenderPassColorAttachment,
         RenderPassDepthStencilAttachment, RenderPassDescriptor,
     },
-    hal_api::HalApi,
     id::CommandEncoderId,
 };
 use wgt::{BufferAddress, BufferSize, Color, DynamicOffset, IndexFormat};
@@ -90,7 +89,7 @@ impl RecordedComputePass {
                 dynamic_offsets: Vec::new(),
                 string_data: Vec::new(),
             },
-            timestamp_writes: desc.timestamp_writes.cloned(),
+            timestamp_writes: desc.timestamp_writes.clone(),
         }
     }
 }
@@ -101,7 +100,7 @@ pub enum RenderCommand {
     SetBindGroup {
         index: u32,
         num_dynamic_offsets: usize,
-        bind_group_id: id::BindGroupId,
+        bind_group_id: Option<id::BindGroupId>,
     },
     SetPipeline(id::RenderPipelineId),
     SetIndexBuffer {
@@ -191,7 +190,7 @@ pub enum ComputeCommand {
     SetBindGroup {
         index: u32,
         num_dynamic_offsets: usize,
-        bind_group_id: id::BindGroupId,
+        bind_group_id: Option<id::BindGroupId>,
     },
     SetPipeline(id::ComputePipelineId),
     Dispatch([u32; 3]),
@@ -227,7 +226,7 @@ pub enum ComputeCommand {
 pub unsafe extern "C" fn wgpu_recorded_render_pass_set_bind_group(
     pass: &mut RecordedRenderPass,
     index: u32,
-    bind_group_id: id::BindGroupId,
+    bind_group_id: Option<id::BindGroupId>,
     offsets: *const DynamicOffset,
     offset_length: usize,
 ) {
@@ -590,7 +589,7 @@ pub unsafe extern "C" fn wgpu_recorded_render_pass_execute_bundles(
 pub unsafe extern "C" fn wgpu_recorded_compute_pass_set_bind_group(
     pass: &mut RecordedComputePass,
     index: u32,
-    bind_group_id: id::BindGroupId,
+    bind_group_id: Option<id::BindGroupId>,
     offsets: *const DynamicOffset,
     offset_length: usize,
 ) {
@@ -716,13 +715,13 @@ pub extern "C" fn wgpu_recorded_compute_pass_end_pipeline_statistics_query(
         .push(ComputeCommand::EndPipelineStatisticsQuery);
 }
 
-pub fn replay_render_pass<A: HalApi>(
+pub fn replay_render_pass(
     global: &Global,
     id: CommandEncoderId,
     src_pass: &RecordedRenderPass,
     mut error_buf: crate::error::ErrorBuffer,
 ) {
-    let (mut dst_pass, err) = global.command_encoder_create_render_pass::<A>(
+    let (mut dst_pass, err) = global.command_encoder_begin_render_pass(
         id,
         &wgc::command::RenderPassDescriptor {
             label: src_pass.base.label.as_ref().map(|s| s.as_str().into()),
@@ -736,7 +735,7 @@ pub fn replay_render_pass<A: HalApi>(
         error_buf.init(err);
         return;
     }
-    match replay_render_pass_impl::<A>(global, src_pass, &mut dst_pass) {
+    match replay_render_pass_impl(global, src_pass, &mut dst_pass) {
         Ok(()) => (),
         Err(err) => {
             error_buf.init(err);
@@ -744,16 +743,16 @@ pub fn replay_render_pass<A: HalApi>(
         }
     };
 
-    match global.render_pass_end::<A>(&mut dst_pass) {
+    match global.render_pass_end(&mut dst_pass) {
         Ok(()) => (),
         Err(err) => error_buf.init(err),
     }
 }
 
-pub fn replay_render_pass_impl<A: HalApi>(
+pub fn replay_render_pass_impl(
     global: &Global,
     src_pass: &RecordedRenderPass,
-    dst_pass: &mut wgc::command::RenderPass<A>,
+    dst_pass: &mut wgc::command::RenderPass,
 ) -> Result<(), wgc::command::RenderPassError> {
     let mut dynamic_offsets = src_pass.base.dynamic_offsets.as_slice();
     let mut dynamic_offsets = |len| {
@@ -920,32 +919,32 @@ pub fn replay_render_pass_impl<A: HalApi>(
     Ok(())
 }
 
-pub fn replay_compute_pass<A: HalApi>(
+pub fn replay_compute_pass(
     global: &Global,
     id: CommandEncoderId,
     src_pass: &RecordedComputePass,
     mut error_buf: crate::error::ErrorBuffer,
 ) {
-    let (mut dst_pass, err) = global.command_encoder_create_compute_pass::<A>(
+    let (mut dst_pass, err) = global.command_encoder_begin_compute_pass(
         id,
         &wgc::command::ComputePassDescriptor {
             label: src_pass.base.label.as_ref().map(|s| s.as_str().into()),
-            timestamp_writes: src_pass.timestamp_writes.as_ref(),
+            timestamp_writes: src_pass.timestamp_writes.clone(),
         },
     );
     if let Some(err) = err {
         error_buf.init(err);
         return;
     }
-    if let Err(err) = replay_compute_pass_impl::<A>(global, src_pass, &mut dst_pass) {
+    if let Err(err) = replay_compute_pass_impl(global, src_pass, &mut dst_pass) {
         error_buf.init(err);
     }
 }
 
-fn replay_compute_pass_impl<A: HalApi>(
+fn replay_compute_pass_impl(
     global: &Global,
     src_pass: &RecordedComputePass,
-    dst_pass: &mut wgc::command::ComputePass<A>,
+    dst_pass: &mut wgc::command::ComputePass,
 ) -> Result<(), wgc::command::ComputePassError> {
     let mut dynamic_offsets = src_pass.base.dynamic_offsets.as_slice();
     let mut dynamic_offsets = |len| {

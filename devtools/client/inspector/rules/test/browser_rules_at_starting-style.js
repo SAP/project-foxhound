@@ -80,8 +80,10 @@ const TEST_URI = `
       --my-color: white;
       --my-overridden-color: white !important;
       --my-registered-color: white;
+      --empty-start: 1px;
       --check-my-overridden-color: var(--my-overridden-color);
       --check-my-registered-color: var(--my-registered-color);
+      --check-empty-start: var(--empty-start);
       color: var(--my-color);
       background-color: firebrick;
       padding-top: 2px !important;
@@ -93,6 +95,7 @@ const TEST_URI = `
       outline-offset: 10px;
 
       @starting-style {
+        --empty-start: ;
         background-color: goldenrod;
         padding-top: 3px;
         margin-top: 3px;
@@ -105,7 +108,6 @@ const TEST_URI = `
 
 add_task(async function () {
   await pushPref("layout.css.starting-style-at-rules.enabled", true);
-  await pushPref("devtools.inspector.rule-view.starting-style", true);
   await addTab(
     "https://example.com/document-builder.sjs?html=" +
       encodeURIComponent(TEST_URI)
@@ -126,15 +128,15 @@ add_task(async function () {
   await assertRules("h1", [
     { selector: `element`, ancestorRulesData: null },
     {
-      selector: `&`,
+      selector: `h1, [data-test="in-starting-style"]`,
+      ancestorRulesData: ["@starting-style {"],
+    },
+    {
+      selector: ``,
       ancestorRulesData: [
         `h1, [data-test="top-level"] {`,
         "  @starting-style {",
       ],
-    },
-    {
-      selector: `h1, [data-test="in-starting-style"]`,
-      ancestorRulesData: ["@starting-style {"],
     },
     {
       selector: `h1, [data-test="top-level"]`,
@@ -145,7 +147,7 @@ add_task(async function () {
   await assertRules("main", [
     { selector: `element`, ancestorRulesData: null },
     {
-      selector: `&`,
+      selector: ``,
       ancestorRulesData: [
         `main, [data-test="top-level"] {`,
         "  @starting-style {",
@@ -276,9 +278,23 @@ add_task(async function () {
     `main, [data-test="top-level"]`,
     "color",
     {
-      header: "--my-color = white",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
+          '</span>' +
+          '<span class="ruleview-color">white</span>' +
+        '</span>',
+      // Computed value isn't displayed when it's the same as we put in the header
+      computed: null,
       // The starting-style value is displayed in the tooltip
-      startingStyle: "--my-color = black",
+      startingStyle:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="black" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:black">' +
+          '</span>' +
+          '<span class="ruleview-color">black</span>' +
+        '</span>',
     }
   );
 
@@ -291,7 +307,15 @@ add_task(async function () {
     "--check-my-color",
     {
       // The displayed value is the one set in the starting-style rule
-      header: "--my-color = black",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="black" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:black">' +
+          '</span>' +
+          '<span class="ruleview-color">black</span>' +
+        '</span>',
+      // Computed value isn't displayed in starting-style rule
+      computed: null,
       // The starting-style section is not displayed when hovering starting-style rule
       startingStyle: null,
     }
@@ -309,7 +333,20 @@ add_task(async function () {
     `main, [data-test="top-level"]`,
     "--check-my-overridden-color",
     {
-      header: "--my-overridden-color = white",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
+          '</span>' +
+          '<span class="ruleview-color">white</span>' +
+        '</span>',
+      computed:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
+          '</span>' +
+          '<span class="ruleview-color">white</span>' +
+        '</span>',
       // The starting-style rule is overridden, so we don't show a starting-style section in the tooltip
       startingStyle: null,
     }
@@ -320,7 +357,15 @@ add_task(async function () {
     "--check-my-overridden-color",
     {
       // the value is the one from the regular rule, not the one from the starting-style rule
-      header: "--my-overridden-color = white",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
+          '</span>' +
+          '<span class="ruleview-color">white</span>' +
+        '</span>',
+      // Computed value isn't displayed in starting-style rule
+      computed: null,
       startingStyle: null,
     }
   );
@@ -333,15 +378,42 @@ add_task(async function () {
     `main, [data-test="top-level"]`,
     "--check-my-registered-color",
     {
-      header: "--my-registered-color = white",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="white" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:white">' +
+          '</span>' +
+          '<span class="ruleview-color">white</span>' +
+        '</span>',
+      computed:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="rgb(255, 255, 255)" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:rgb(255, 255, 255)">' +
+          '</span>' +
+          '<span class="ruleview-color">rgb(255, 255, 255)</span>' +
+        '</span>',
       // The starting-style value is displayed in the tooltip
-      startingStyle: "--my-registered-color = black",
+      startingStyle:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="black" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:black">' +
+          '</span>' +
+          '<span class="ruleview-color">black</span>' +
+        '</span>',
       // registered property data is displayed
-      registeredProperty: [
-        `syntax:"<color>"`,
-        `inherits:true`,
-        `initial-value:blue`,
-      ],
+      registeredProperty: {
+        syntax: `"&lt;color&gt;"`,
+        inherits: "true",
+        "initial-value":
+          // prettier-ignore
+          `<span xmlns="http://www.w3.org/1999/xhtml" data-color="blue" class="color-swatch-container">` +
+            `<span ` +
+              `class="inspector-swatch inspector-colorswatch" ` +
+              `style="background-color:blue">` +
+            `</span>` +
+            `<span class="ruleview-color">blue</span>` +
+          `</span>`,
+      },
     }
   );
 
@@ -351,15 +423,31 @@ add_task(async function () {
     "--check-my-registered-color",
     {
       // The displayed value is the one set in the starting-style rule
-      header: "--my-registered-color = black",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="black" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:black">' +
+          '</span>' +
+          '<span class="ruleview-color">black</span>' +
+        '</span>',
+      // Computed value isn't displayed in starting-style rule
+      computed: null,
       // The starting-style section is not displayed when hovering starting-style rule
       startingStyle: null,
       // registered property data is displayed
-      registeredProperty: [
-        `syntax:"<color>"`,
-        `inherits:true`,
-        `initial-value:blue`,
-      ],
+      registeredProperty: {
+        syntax: `"&lt;color&gt;"`,
+        inherits: "true",
+        "initial-value":
+          // prettier-ignore
+          `<span xmlns="http://www.w3.org/1999/xhtml" data-color="blue" class="color-swatch-container">` +
+            `<span ` +
+              `class="inspector-swatch inspector-colorswatch" ` +
+              `style="background-color:blue">` +
+            `</span>` +
+            `<span class="ruleview-color">blue</span>` +
+          `</span>`,
+      },
     }
   );
 
@@ -370,15 +458,40 @@ add_task(async function () {
     "--check-my-unset-registered-color",
     {
       // The displayed value is the registered property initial value
-      header: "--my-unset-registered-color = lavender",
+      header:
+        // prettier-ignore
+        '<span xmlns="http://www.w3.org/1999/xhtml" data-color="lavender" class="color-swatch-container">' +
+          '<span class="inspector-swatch inspector-colorswatch" style="background-color:lavender">' +
+          '</span>' +
+          '<span class="ruleview-color">lavender</span>' +
+        '</span>',
       // The starting-style section is not displayed when hovering starting-style rule
       startingStyle: null,
       // registered property data is displayed
-      registeredProperty: [
-        `syntax:"<color>"`,
-        `inherits:true`,
-        `initial-value:lavender`,
-      ],
+      registeredProperty: {
+        syntax: `"&lt;color&gt;"`,
+        inherits: "true",
+        "initial-value":
+          // prettier-ignore
+          '<span xmlns="http://www.w3.org/1999/xhtml" data-color="lavender" class="color-swatch-container">' +
+            '<span class="inspector-swatch inspector-colorswatch" style="background-color:lavender">' +
+            '</span>' +
+            '<span class="ruleview-color">lavender</span>' +
+          '</span>',
+      },
+    }
+  );
+
+  info("Check var() for a empty variable in regular rule");
+  await assertVariableTooltipForProperty(
+    view,
+    `main, [data-test="top-level"]`,
+    "--check-empty-start",
+    {
+      header: "1px",
+      // The starting-style value is displayed in the tooltip
+      startingStyle: "&lt;empty&gt;",
+      startingStyleClasses: ["empty-css-variable"],
     }
   );
 

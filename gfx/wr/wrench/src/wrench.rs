@@ -14,10 +14,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::sync::mpsc::Receiver;
-use webrender::api::*;
+use std::time::Instant;
+use webrender::{api::*, CompositorConfig};
 use webrender::render_api::*;
 use webrender::api::units::*;
-use webrender::{DebugFlags, RenderResults, ShaderPrecacheFlags};
+use webrender::{DebugFlags, RenderResults, ShaderPrecacheFlags, LayerCompositor};
 use crate::{WindowWrapper, NotifierEvent};
 
 // TODO(gw): This descriptor matches what we currently support for fonts
@@ -38,14 +39,14 @@ pub enum FontDescriptor {
 struct NotifierData {
     events_loop_proxy: Option<EventLoopProxy<()>>,
     frames_notified: u32,
-    timing_receiver: chase_lev::Stealer<time::SteadyTime>,
+    timing_receiver: chase_lev::Stealer<std::time::Instant>,
     verbose: bool,
 }
 
 impl NotifierData {
     fn new(
         events_loop_proxy: Option<EventLoopProxy<()>>,
-        timing_receiver: chase_lev::Stealer<time::SteadyTime>,
+        timing_receiver: chase_lev::Stealer<std::time::Instant>,
         verbose: bool,
     ) -> Self {
         NotifierData {
@@ -68,10 +69,10 @@ impl Notifier {
                 chase_lev::Steal::Data(last_timing) => {
                     data.frames_notified += 1;
                     if data.verbose && data.frames_notified == 600 {
-                        let elapsed = time::SteadyTime::now() - last_timing;
+                        let elapsed = Instant::now() - last_timing;
                         println!(
                             "frame latency (consider queue depth here): {:3.6} ms",
-                            elapsed.num_microseconds().unwrap() as f64 / 1000.
+                            elapsed.as_secs_f64() * 1000.
                         );
                         data.frames_notified = 0;
                     }
@@ -207,7 +208,7 @@ pub struct Wrench {
 
     pub rebuild_display_lists: bool,
 
-    pub frame_start_sender: chase_lev::Worker<time::SteadyTime>,
+    pub frame_start_sender: chase_lev::Worker<Instant>,
 
     pub callbacks: Arc<Mutex<blob::BlobCallbacks>>,
 }
@@ -228,6 +229,7 @@ impl Wrench {
         precache_shaders: bool,
         dump_shader_source: Option<String>,
         notifier: Option<Box<dyn RenderNotifier>>,
+        layer_compositor: Option<Box<dyn LayerCompositor>>,
     ) -> Self {
         println!("Shader override path: {:?}", shader_override_path);
 
@@ -239,6 +241,11 @@ impl Wrench {
             ShaderPrecacheFlags::FULL_COMPILE
         } else {
             ShaderPrecacheFlags::empty()
+        };
+
+        let compositor_config = match layer_compositor {
+            Some(compositor) => CompositorConfig::Layer { compositor },
+            None => CompositorConfig::default(),
         };
 
         let opts = webrender::WebRenderOptions {
@@ -257,6 +264,7 @@ impl Wrench {
             // SWGL doesn't support the GL_ALWAYS depth comparison function used by
             // `clear_caches_with_quads`, but scissored clears work well.
             clear_caches_with_quads: !window.is_software(),
+            compositor_config,
             ..Default::default()
         };
 
@@ -538,7 +546,7 @@ impl Wrench {
     }
 
     pub fn begin_frame(&mut self) {
-        self.frame_start_sender.push(time::SteadyTime::now());
+        self.frame_start_sender.push(Instant::now());
     }
 
     pub fn send_lists(

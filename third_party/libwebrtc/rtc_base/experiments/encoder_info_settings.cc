@@ -73,7 +73,7 @@ EncoderInfoSettings::GetDefaultSinglecastBitrateLimits(
           {1280 * 720, 900000, 30000, 2500000}};
 }
 
-absl::optional<VideoEncoder::ResolutionBitrateLimits>
+std::optional<VideoEncoder::ResolutionBitrateLimits>
 EncoderInfoSettings::GetDefaultSinglecastBitrateLimitsForResolution(
     VideoCodecType codec_type,
     int frame_size_pixels) {
@@ -101,13 +101,13 @@ EncoderInfoSettings::GetDefaultSinglecastBitrateLimitsWhenQpIsUntrusted() {
 
 // Through linear interpolation, return the bitrate limit corresponding to the
 // specified |frame_size_pixels|.
-absl::optional<VideoEncoder::ResolutionBitrateLimits>
+std::optional<VideoEncoder::ResolutionBitrateLimits>
 EncoderInfoSettings::GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
-    absl::optional<int> frame_size_pixels,
+    std::optional<int> frame_size_pixels,
     const std::vector<VideoEncoder::ResolutionBitrateLimits>&
         resolution_bitrate_limits) {
   if (!frame_size_pixels.has_value() || frame_size_pixels.value() <= 0) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   std::vector<VideoEncoder::ResolutionBitrateLimits> bitrate_limits =
@@ -121,7 +121,7 @@ EncoderInfoSettings::GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
        });
 
   if (bitrate_limits.empty()) {
-    return absl::nullopt;
+    return std::nullopt;
   }
 
   int interpolation_index = -1;
@@ -142,6 +142,12 @@ EncoderInfoSettings::GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
   if (bitrate_limits[interpolation_index].frame_size_pixels ==
       frame_size_pixels.value()) {
     return bitrate_limits[interpolation_index];
+  }
+
+  // 0 means our resolution is smaller than the smallest resolution in the list,
+  // we will select smallest data as the return result.
+  if (interpolation_index == 0) {
+    return *bitrate_limits.begin();
   }
 
   // No matching resolution, do a linear interpolate.
@@ -171,7 +177,7 @@ EncoderInfoSettings::GetSinglecastBitrateLimitForResolutionWhenQpIsUntrusted(
         << " min_start_bitrate_bps = " << min_start_bitrate_bps
         << " min_bitrate_bps = " << kDefaultMinBitratebps
         << " max_bitrate_bps = " << max_bitrate_bps;
-    return absl::nullopt;
+    return std::nullopt;
   }
 }
 
@@ -208,12 +214,12 @@ EncoderInfoSettings::EncoderInfoSettings(const FieldTrialsView& field_trials,
   resolution_bitrate_limits_ = ToResolutionBitrateLimits(bitrate_limits.Get());
 }
 
-absl::optional<uint32_t> EncoderInfoSettings::requested_resolution_alignment()
+std::optional<uint32_t> EncoderInfoSettings::requested_resolution_alignment()
     const {
   if (requested_resolution_alignment_ &&
       requested_resolution_alignment_.Value() < 1) {
     RTC_LOG(LS_WARNING) << "Unsupported alignment value, ignored.";
-    return absl::nullopt;
+    return std::nullopt;
   }
   return requested_resolution_alignment_.GetOptional();
 }

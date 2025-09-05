@@ -11,7 +11,7 @@
 namespace mozilla {
 namespace net {
 
-NS_IMPL_ISUPPORTS(NullHttpChannel, nsINullChannel, nsIHttpChannel,
+NS_IMPL_ISUPPORTS(NullHttpChannel, nsINullChannel, nsIChannel, nsIHttpChannel,
                   nsIIdentChannel, nsITimedChannel)
 
 NullHttpChannel::NullHttpChannel() {
@@ -495,18 +495,6 @@ NullHttpChannel::GetIsDocument(bool* aIsDocument) {
 //-----------------------------------------------------------------------------
 // NullHttpChannel::nsITimedChannel
 //-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-NullHttpChannel::GetTimingEnabled(bool* aTimingEnabled) {
-  // We don't want to report timing for null channels.
-  *aTimingEnabled = false;
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-NullHttpChannel::SetTimingEnabled(bool aTimingEnabled) {
-  return NS_ERROR_NOT_IMPLEMENTED;
-}
 
 NS_IMETHODIMP
 NullHttpChannel::GetRedirectCount(uint8_t* aRedirectCount) {

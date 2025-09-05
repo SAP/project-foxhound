@@ -15,6 +15,7 @@
 #include "nsIWidgetListener.h"
 #include "Units.h"
 #include "mozilla/Attributes.h"
+#include "mozilla/CallState.h"
 #include "mozilla/EventForwards.h"
 #include "mozilla/UniquePtr.h"
 
@@ -24,6 +25,9 @@ class nsIFrame;
 
 namespace mozilla {
 class PresShell;
+namespace dom {
+class BrowserParent;
+}  // namespace dom
 namespace widget {
 struct InitData;
 enum class TransparencyMode : uint8_t;
@@ -95,11 +99,6 @@ enum class WindowType : uint8_t;
 // show - the layer is shown irrespective of the visibility of
 //        the layer's parent.
 enum class ViewVisibility : uint8_t { Hide = 0, Show = 1 };
-
-// Public view flags
-
-// Indicates that the view is a floating view.
-#define NS_VIEW_FLAG_FLOATING 0x0008
 
 //----------------------------------------------------------------------
 
@@ -222,16 +221,6 @@ class nsView final : public nsIWidgetListener {
   ViewVisibility GetVisibility() const { return mVis; }
 
   /**
-   * Get whether the view "floats" above all other views,
-   * which tells the compositor not to consider higher views in
-   * the view hierarchy that would geometrically intersect with
-   * this view. This is a hack, but it fixes some problems with
-   * views that need to be drawn in front of all other views.
-   * @result true if the view floats, false otherwise.
-   */
-  bool GetFloating() const { return (mVFlags & NS_VIEW_FLAG_FLOATING) != 0; }
-
-  /**
    * Called to query the parent of the view.
    * @result view's parent
    */
@@ -276,23 +265,10 @@ class nsView final : public nsIWidgetListener {
    * CreateWidget*() will look around in the view hierarchy for an
    * appropriate parent widget for the view.
    *
-   * @param aWidgetInitData data used to initialize this view's widget before
-   *        its create is called.
    * @return error status
    */
-  nsresult CreateWidget(mozilla::widget::InitData* aWidgetInitData = nullptr,
-                        bool aEnableDragDrop = true,
+  nsresult CreateWidget(nsIWidget* aParent, bool aEnableDragDrop = true,
                         bool aResetVisibility = true);
-
-  /**
-   * Create a widget for this view with an explicit parent widget.
-   * |aParentWidget| must be nonnull.  The other params are the same
-   * as for |CreateWidget()|.
-   */
-  nsresult CreateWidgetForParent(nsIWidget* aParentWidget,
-                                 mozilla::widget::InitData* = nullptr,
-                                 bool aEnableDragDrop = true,
-                                 bool aResetVisibility = true);
 
   /**
    * Create a popup widget for this view.  Pass |aParentWidget| to
@@ -301,8 +277,7 @@ class nsView final : public nsIWidgetListener {
    * other params are the same as for |CreateWidget()|, except that
    * |aWidgetInitData| must be nonnull.
    */
-  nsresult CreateWidgetForPopup(mozilla::widget::InitData*,
-                                nsIWidget* aParentWidget = nullptr);
+  nsresult CreateWidgetForPopup(mozilla::widget::InitData*, nsIWidget* aParent);
 
   /**
    * Destroys the associated widget for this view.  If this method is
@@ -408,46 +383,34 @@ class nsView final : public nsIWidgetListener {
     mNextSibling = aSibling;
   }
 
-  nsRegion& GetDirtyRegion() {
-    if (!mDirtyRegion) {
-      NS_ASSERTION(!mParent || GetFloating(),
-                   "Only display roots should have dirty regions");
-      mDirtyRegion = mozilla::MakeUnique<nsRegion>();
-    }
-    return *mDirtyRegion;
-  }
-
   // nsIWidgetListener
-  virtual mozilla::PresShell* GetPresShell() override;
-  virtual nsView* GetView() override { return this; }
-  virtual bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y,
-                           ByMoveToRect) override;
-  virtual bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
-                             int32_t aHeight) override;
+  mozilla::PresShell* GetPresShell() override;
+  nsView* GetView() override { return this; }
+  bool WindowMoved(nsIWidget* aWidget, int32_t x, int32_t y,
+                   ByMoveToRect) override;
+  bool WindowResized(nsIWidget* aWidget, int32_t aWidth,
+                     int32_t aHeight) override;
 #if defined(MOZ_WIDGET_ANDROID)
-  virtual void DynamicToolbarMaxHeightChanged(
-      mozilla::ScreenIntCoord aHeight) override;
-  virtual void DynamicToolbarOffsetChanged(
-      mozilla::ScreenIntCoord aOffset) override;
+  void DynamicToolbarMaxHeightChanged(mozilla::ScreenIntCoord aHeight) override;
+  void DynamicToolbarOffsetChanged(mozilla::ScreenIntCoord aOffset) override;
+  void KeyboardHeightChanged(mozilla::ScreenIntCoord aHeight) override;
 #endif
-  virtual bool RequestWindowClose(nsIWidget* aWidget) override;
+  bool RequestWindowClose(nsIWidget* aWidget) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual void WillPaintWindow(nsIWidget* aWidget) override;
+  void WillPaintWindow(nsIWidget* aWidget) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual bool PaintWindow(nsIWidget* aWidget,
-                           LayoutDeviceIntRegion aRegion) override;
+  bool PaintWindow(nsIWidget* aWidget, LayoutDeviceIntRegion aRegion) override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual void DidPaintWindow() override;
-  virtual void DidCompositeWindow(
-      mozilla::layers::TransactionId aTransactionId,
-      const mozilla::TimeStamp& aCompositeStart,
-      const mozilla::TimeStamp& aCompositeEnd) override;
-  virtual void RequestRepaint() override;
-  virtual bool ShouldNotBeVisible() override;
+  void DidPaintWindow() override;
+  void DidCompositeWindow(mozilla::layers::TransactionId aTransactionId,
+                          const mozilla::TimeStamp& aCompositeStart,
+                          const mozilla::TimeStamp& aCompositeEnd) override;
+  void RequestRepaint() override;
+  bool ShouldNotBeVisible() override;
   MOZ_CAN_RUN_SCRIPT_BOUNDARY
-  virtual nsEventStatus HandleEvent(mozilla::WidgetGUIEvent* aEvent,
-                                    bool aUseAttachedEvents) override;
-  virtual void SafeAreaInsetsChanged(const mozilla::ScreenIntMargin&) override;
+  nsEventStatus HandleEvent(mozilla::WidgetGUIEvent* aEvent,
+                            bool aUseAttachedEvents) override;
+  void SafeAreaInsetsChanged(const mozilla::LayoutDeviceIntMargin&) override;
 
   virtual ~nsView();
 
@@ -485,23 +448,12 @@ class nsView final : public nsIWidgetListener {
    */
   void SetVisibility(ViewVisibility visibility);
 
-  /**
-   * Set/Get whether the view "floats" above all other views,
-   * which tells the compositor not to consider higher views in
-   * the view hierarchy that would geometrically intersect with
-   * this view. This is a hack, but it fixes some problems with
-   * views that need to be drawn in front of all other views.
-   * @result true if the view floats, false otherwise.
-   */
-  void SetFloating(bool aFloatingView);
-
   // Helper function to get mouse grabbing off this view (by moving it to the
   // parent, if we can)
   void DropMouseGrabbing();
 
-  bool HasNonEmptyDirtyRegion() {
-    return mDirtyRegion && !mDirtyRegion->IsEmpty();
-  }
+  bool IsDirty() const { return mIsDirty; }
+  void SetIsDirty(bool aDirty) { mIsDirty = aDirty; }
 
   void InsertChild(nsView* aChild, nsView* aSibling);
   void RemoveChild(nsView* aChild);
@@ -514,6 +466,10 @@ class nsView final : public nsIWidgetListener {
   // Update the cached RootViewManager for all view manager descendents.
   void InvalidateHierarchy();
 
+  void CallOnAllRemoteChildren(
+      const std::function<mozilla::CallState(mozilla::dom::BrowserParent*)>&
+          aCallback);
+
   nsViewManager* mViewManager;
   nsView* mParent;
   nsCOMPtr<nsIWidget> mWindow;
@@ -521,7 +477,6 @@ class nsView final : public nsIWidgetListener {
   nsView* mNextSibling;
   nsView* mFirstChild;
   nsIFrame* mFrame;
-  mozilla::UniquePtr<nsRegion> mDirtyRegion;
   ViewVisibility mVis;
   // position relative our parent view origin but in our appunits
   nscoord mPosX, mPosY;
@@ -529,10 +484,10 @@ class nsView final : public nsIWidgetListener {
   nsRect mDimBounds;
   // in our appunits
   nsPoint mViewToWidgetOffset;
-  uint32_t mVFlags;
   bool mWidgetIsTopLevel;
   bool mForcedRepaint;
   bool mNeedsWindowPropertiesSync;
+  bool mIsDirty = false;
 };
 
 #endif

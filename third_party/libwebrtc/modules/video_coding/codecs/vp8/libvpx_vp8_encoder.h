@@ -29,6 +29,7 @@
 #include "modules/video_coding/codecs/interface/libvpx_interface.h"
 #include "modules/video_coding/codecs/vp8/include/vp8.h"
 #include "modules/video_coding/include/video_codec_interface.h"
+#include "modules/video_coding/utility/corruption_detection_settings_generator.h"
 #include "modules/video_coding/utility/framerate_controller_deprecated.h"
 #include "modules/video_coding/utility/vp8_constants.h"
 #include "rtc_base/experiments/encoder_info_settings.h"
@@ -145,9 +146,12 @@ class LibvpxVp8Encoder : public VideoEncoder {
 
   const LibvpxVp8EncoderInfoSettings encoder_info_override_;
 
-  absl::optional<TimeDelta> max_frame_drop_interval_;
+  std::optional<TimeDelta> max_frame_drop_interval_;
 
   bool android_specific_threading_settings_;
+
+  std::unique_ptr<CorruptionDetectionSettingsGenerator>
+      corruption_detection_settings_generator_;
 };
 
 }  // namespace webrtc

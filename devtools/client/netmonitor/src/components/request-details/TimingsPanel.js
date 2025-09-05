@@ -6,7 +6,7 @@
 
 const {
   connect,
-} = require("resource://devtools/client/shared/redux/visibility-handler-connect.js");
+} = require("resource://devtools/client/shared/vendor/react-redux.js");
 const {
   Component,
 } = require("resource://devtools/client/shared/vendor/react.js");
@@ -42,7 +42,7 @@ class TimingsPanel extends Component {
     return {
       connector: PropTypes.object.isRequired,
       request: PropTypes.object.isRequired,
-      firstRequestStartedMs: PropTypes.number.isRequired,
+      firstRequestStartedMs: PropTypes.number,
     };
   }
 

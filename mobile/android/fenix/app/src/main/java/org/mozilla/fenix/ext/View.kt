@@ -16,6 +16,12 @@ import androidx.core.view.WindowInsetsCompat
 import mozilla.components.support.ktx.android.util.dpToPx
 import mozilla.components.support.utils.ext.bottom
 import org.mozilla.fenix.R
+import org.mozilla.fenix.components.Components
+
+/**
+ * [View] helper to retrieve the [Components.settings].
+ */
+fun View.settings() = context.components.settings
 
 fun View.increaseTapArea(@Dimension(unit = DP) extraDps: Int) {
     val dips = extraDps.dpToPx(resources.displayMetrics)
@@ -121,3 +127,19 @@ fun View.getKeyboardHeight(): Int {
 
     return keyboardHeight
 }
+
+/**
+ * Returns the system gesture insets informing about areas where system gestures have priority.
+ *
+ * Only available on Android Q and above (API 29+), otherwise, `null` is returned.
+ * Only available after this view has been attached a Window, otherwise, `null` is returned.
+ */
+@Suppress("DEPRECATION")
+val View.systemGesturesInsets
+    get() = if (Build.VERSION.SDK_INT == Build.VERSION_CODES.Q) {
+        rootWindowInsets?.systemGestureInsets
+    } else if (Build.VERSION.SDK_INT > Build.VERSION_CODES.Q) {
+        rootWindowInsets?.getInsets(WindowInsetsCompat.Type.systemGestures())
+    } else {
+        null
+    }

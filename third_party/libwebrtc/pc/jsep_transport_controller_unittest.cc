@@ -10,19 +10,42 @@
 
 #include "pc/jsep_transport_controller.h"
 
+#include <cstdint>
 #include <map>
+#include <memory>
+#include <optional>
 #include <string>
 #include <utility>
+#include <vector>
 
+#include "api/crypto/crypto_options.h"
 #include "api/dtls_transport_interface.h"
+#include "api/environment/environment.h"
 #include "api/environment/environment_factory.h"
+#include "api/ice_transport_interface.h"
+#include "api/jsep.h"
+#include "api/make_ref_counted.h"
+#include "api/peer_connection_interface.h"
+#include "api/scoped_refptr.h"
+#include "api/transport/data_channel_transport_interface.h"
 #include "api/transport/enums.h"
+#include "call/payload_type_picker.h"
 #include "p2p/base/candidate_pair_interface.h"
-#include "p2p/base/dtls_transport_factory.h"
-#include "p2p/base/fake_dtls_transport.h"
 #include "p2p/base/fake_ice_transport.h"
+#include "p2p/base/ice_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
+#include "p2p/base/port_allocator.h"
+#include "p2p/base/transport_description.h"
 #include "p2p/base/transport_info.h"
+#include "p2p/dtls/dtls_transport_factory.h"
+#include "p2p/dtls/dtls_transport_internal.h"
+#include "p2p/dtls/fake_dtls_transport.h"
+#include "pc/dtls_transport.h"
+#include "pc/rtp_transport_internal.h"
+#include "pc/session_description.h"
+#include "pc/transport_stats.h"
+#include "rtc_base/checks.h"
+#include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/fake_ssl_identity.h"
 #include "rtc_base/gunit.h"
 #include "rtc_base/logging.h"
@@ -30,7 +53,9 @@
 #include "rtc_base/socket_address.h"
 #include "rtc_base/ssl_fingerprint.h"
 #include "rtc_base/ssl_identity.h"
+#include "rtc_base/ssl_stream_adapter.h"
 #include "rtc_base/task_queue_for_test.h"
+#include "rtc_base/third_party/sigslot/sigslot.h"
 #include "rtc_base/thread.h"
 #include "test/gtest.h"
 #include "test/scoped_key_value_config.h"
@@ -105,7 +130,8 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
     config.on_dtls_handshake_error_ = [](rtc::SSLHandshakeError s) {};
     transport_controller_ = std::make_unique<JsepTransportController>(
         env_, network_thread, port_allocator,
-        nullptr /* async_resolver_factory */, std::move(config));
+        nullptr /* async_resolver_factory */, payload_type_picker_,
+        std::move(config));
     SendTask(network_thread, [&] { ConnectTransportControllerSignals(); });
   }
 
@@ -380,7 +406,7 @@ class JsepTransportControllerTest : public JsepTransportController::Observer,
   std::map<std::string, RtpTransportInternal*> changed_rtp_transport_by_mid_;
   std::map<std::string, cricket::DtlsTransportInternal*>
       changed_dtls_transport_by_mid_;
-
+  webrtc::PayloadTypePicker payload_type_picker_;
   // Transport controller needs to be destroyed first, because it may issue
   // callbacks that modify the changed_*_by_mid in the destructor.
   std::unique_ptr<JsepTransportController> transport_controller_;
@@ -643,7 +669,7 @@ TEST_F(JsepTransportControllerTest, GetDtlsRole) {
           ->SetLocalDescription(SdpType::kOffer, offer_desc.get(), nullptr)
           .ok());
 
-  absl::optional<rtc::SSLRole> role =
+  std::optional<rtc::SSLRole> role =
       transport_controller_->GetDtlsRole(kAudioMid1);
   // The DTLS role is not decided yet.
   EXPECT_FALSE(role);

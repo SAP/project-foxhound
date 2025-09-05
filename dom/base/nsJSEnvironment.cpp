@@ -58,6 +58,7 @@
 #include "mozilla/AutoRestore.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/CycleCollectorStats.h"
+#include "mozilla/MainThreadIdlePeriod.h"
 #include "mozilla/PresShell.h"
 #include "mozilla/SchedulerGroup.h"
 #include "mozilla/StaticPrefs_dom.h"
@@ -860,104 +861,11 @@ nsresult nsJSContext::AddSupportsPrimitiveTojsvals(JSContext* aCx,
   return NS_OK;
 }
 
-#ifdef MOZ_JPROF
-
-#  include <signal.h>
-
-inline bool IsJProfAction(struct sigaction* action) {
-  return (action->sa_sigaction &&
-          (action->sa_flags & (SA_RESTART | SA_SIGINFO)) ==
-              (SA_RESTART | SA_SIGINFO));
-}
-
-void NS_JProfStartProfiling();
-void NS_JProfStopProfiling();
-void NS_JProfClearCircular();
-
-static bool JProfStartProfilingJS(JSContext* cx, unsigned argc, JS::Value* vp) {
-  NS_JProfStartProfiling();
-  return true;
-}
-
-void NS_JProfStartProfiling() {
-  // Figure out whether we're dealing with SIGPROF, SIGALRM, or
-  // SIGPOLL profiling (SIGALRM for JP_REALTIME, SIGPOLL for
-  // JP_RTC_HZ)
-  struct sigaction action;
-
-  // Must check ALRM before PROF since both are enabled for real-time
-  sigaction(SIGALRM, nullptr, &action);
-  // printf("SIGALRM: %p, flags = %x\n",action.sa_sigaction,action.sa_flags);
-  if (IsJProfAction(&action)) {
-    // printf("Beginning real-time jprof profiling.\n");
-    raise(SIGALRM);
-    return;
-  }
-
-  sigaction(SIGPROF, nullptr, &action);
-  // printf("SIGPROF: %p, flags = %x\n",action.sa_sigaction,action.sa_flags);
-  if (IsJProfAction(&action)) {
-    // printf("Beginning process-time jprof profiling.\n");
-    raise(SIGPROF);
-    return;
-  }
-
-  sigaction(SIGPOLL, nullptr, &action);
-  // printf("SIGPOLL: %p, flags = %x\n",action.sa_sigaction,action.sa_flags);
-  if (IsJProfAction(&action)) {
-    // printf("Beginning rtc-based jprof profiling.\n");
-    raise(SIGPOLL);
-    return;
-  }
-
-  printf("Could not start jprof-profiling since JPROF_FLAGS was not set.\n");
-}
-
-static bool JProfStopProfilingJS(JSContext* cx, unsigned argc, JS::Value* vp) {
-  NS_JProfStopProfiling();
-  return true;
-}
-
-void NS_JProfStopProfiling() {
-  raise(SIGUSR1);
-  // printf("Stopped jprof profiling.\n");
-}
-
-static bool JProfClearCircularJS(JSContext* cx, unsigned argc, JS::Value* vp) {
-  NS_JProfClearCircular();
-  return true;
-}
-
-void NS_JProfClearCircular() {
-  raise(SIGUSR2);
-  // printf("cleared jprof buffer\n");
-}
-
-static bool JProfSaveCircularJS(JSContext* cx, unsigned argc, JS::Value* vp) {
-  // Not ideal...
-  NS_JProfStopProfiling();
-  NS_JProfStartProfiling();
-  return true;
-}
-
-static const JSFunctionSpec JProfFunctions[] = {
-    JS_FN("JProfStartProfiling", JProfStartProfilingJS, 0, 0),
-    JS_FN("JProfStopProfiling", JProfStopProfilingJS, 0, 0),
-    JS_FN("JProfClearCircular", JProfClearCircularJS, 0, 0),
-    JS_FN("JProfSaveCircular", JProfSaveCircularJS, 0, 0), JS_FS_END};
-
-#endif /* defined(MOZ_JPROF) */
-
 nsresult nsJSContext::InitClasses(JS::Handle<JSObject*> aGlobalObj) {
   AutoJSAPI jsapi;
   jsapi.Init();
   JSContext* cx = jsapi.cx();
   JSAutoRealm ar(cx, aGlobalObj);
-
-#ifdef MOZ_JPROF
-  // Attempt to initialize JProf functions
-  ::JS_DefineFunctions(cx, aGlobalObj, JProfFunctions);
-#endif
 
   return NS_OK;
 }
@@ -1342,7 +1250,7 @@ void nsJSContext::EndCycleCollectionCallback(
         "A max duration ICC shouldn't reduce GC delay to 0");
 
     TimeDuration delay;
-    if (aResults.mFreedGCed > 10000 && aResults.mFreedRefCounted > 10000) {
+    if (sScheduler->PreferFasterCollection()) {
       // If we collected lots of objects, trigger the next GC sooner so that
       // GC can cut JS-to-native edges and native objects can be then deleted.
       delay = TimeDuration::FromMilliseconds(
@@ -1364,9 +1272,16 @@ void nsJSContext::EndCycleCollectionCallback(
 #endif
 }
 
-/* static */
 bool CCGCScheduler::CCRunnerFired(TimeStamp aDeadline) {
   AUTO_PROFILER_LABEL_RELEVANT_FOR_JS("Incremental CC", GCCC);
+
+  if (!aDeadline) {
+    mCurrentCollectionHasSeenNonIdle = true;
+  } else if (mPreferFasterCollection) {
+    // We found some idle time, try to utilize that a bit more given that
+    // we're in a mode where idle time is rare.
+    aDeadline = aDeadline + TimeDuration::FromMilliseconds(5.0);
+  }
 
   bool didDoWork = false;
 
@@ -1999,11 +1914,6 @@ void nsJSContext::EnsureStatics() {
       SetMemoryPrefChangedCallbackInt,
       "javascript.options.mem.gc_min_empty_chunk_count",
       (void*)JSGC_MIN_EMPTY_CHUNK_COUNT);
-
-  Preferences::RegisterCallbackAndCall(
-      SetMemoryPrefChangedCallbackInt,
-      "javascript.options.mem.gc_max_empty_chunk_count",
-      (void*)JSGC_MAX_EMPTY_CHUNK_COUNT);
 
   Preferences::RegisterCallbackAndCall(
       SetMemoryPrefChangedCallbackInt,

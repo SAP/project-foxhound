@@ -42,7 +42,6 @@ DIRS += [
     "extensions",
     "firefoxview",
     "genai",
-    "ion",
     "messagepreview",
     "migration",
     "newtab",
@@ -93,11 +92,12 @@ XPCOM_MANIFESTS += [
     "components.conf",
 ]
 
-EXTRA_COMPONENTS += [
+EXTRA_PP_COMPONENTS += [
     "BrowserComponents.manifest",
 ]
 
 EXTRA_JS_MODULES += [
+    "AccountsGlue.sys.mjs",
     "BrowserContentHandler.sys.mjs",
     "BrowserGlue.sys.mjs",
     "distribution.sys.mjs",

@@ -52,8 +52,8 @@ void AddDefaultAudioVideoPeer(
     absl::string_view video_stream_label,
     const PeerNetworkDependencies& network_dependencies,
     PeerConnectionE2EQualityTestFixture& fixture) {
-  AudioConfig audio{std::string(audio_stream_label)};
-  audio.sync_group = std::string(peer_name);
+  AudioConfig audio{.stream_label = std::string(audio_stream_label),
+                    .sync_group = std::string(peer_name)};
   VideoConfig video(std::string(video_stream_label), 320, 180, 15);
   video.sync_group = std::string(peer_name);
   auto peer = std::make_unique<PeerConfigurer>(network_dependencies);
@@ -549,6 +549,18 @@ TEST(PeerConnectionE2EQualityTestMetricNamesTest,
                             "test_case"}}},
           MetricValidationInfo{
               .test_case = "test_case/alice_video",
+              .name = "rendered_frame_qp",
+              .unit = Unit::kUnitless,
+              .improvement_direction = ImprovementDirection::kSmallerIsBetter,
+              .metadata = {{MetricMetadataKey::kPeerMetadataKey, "alice"},
+                           {MetricMetadataKey::kVideoStreamMetadataKey,
+                            "alice_video"},
+                           {MetricMetadataKey::kSenderMetadataKey, "alice"},
+                           {MetricMetadataKey::kReceiverMetadataKey, "bob"},
+                           {MetricMetadataKey::kExperimentalTestNameMetadataKey,
+                            "test_case"}}},
+          MetricValidationInfo{
+              .test_case = "test_case/alice_video",
               .name = "actual_encode_bitrate",
               .unit = Unit::kKilobitsPerSecond,
               .improvement_direction = ImprovementDirection::kNeitherIsBetter,
@@ -810,6 +822,18 @@ TEST(PeerConnectionE2EQualityTestMetricNamesTest,
                            {MetricMetadataKey::kSenderMetadataKey, "bob"},
                            {MetricMetadataKey::kReceiverMetadataKey, "alice"},
                            {MetricMetadataKey::kSpatialLayerMetadataKey, "0"},
+                           {MetricMetadataKey::kExperimentalTestNameMetadataKey,
+                            "test_case"}}},
+          MetricValidationInfo{
+              .test_case = "test_case/bob_video",
+              .name = "rendered_frame_qp",
+              .unit = Unit::kUnitless,
+              .improvement_direction = ImprovementDirection::kSmallerIsBetter,
+              .metadata = {{MetricMetadataKey::kPeerMetadataKey, "bob"},
+                           {MetricMetadataKey::kVideoStreamMetadataKey,
+                            "bob_video"},
+                           {MetricMetadataKey::kSenderMetadataKey, "bob"},
+                           {MetricMetadataKey::kReceiverMetadataKey, "alice"},
                            {MetricMetadataKey::kExperimentalTestNameMetadataKey,
                             "test_case"}}},
           MetricValidationInfo{

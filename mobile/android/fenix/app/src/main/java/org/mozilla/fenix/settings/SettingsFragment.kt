@@ -34,6 +34,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import mozilla.components.browser.state.state.selectedOrDefaultSearchEngine
+import mozilla.components.concept.engine.Engine
 import mozilla.components.concept.sync.AccountObserver
 import mozilla.components.concept.sync.AuthType
 import mozilla.components.concept.sync.OAuthAccount
@@ -130,22 +131,27 @@ class SettingsFragment : PreferenceFragmentCompat() {
             requireComponents.backgroundServices.accountManager.accountProfile(),
         )
 
-        val booleanPreferenceTelemetryAllowList = listOf(
-            requireContext().getString(R.string.pref_key_show_search_suggestions),
-            requireContext().getString(R.string.pref_key_remote_debugging),
-            requireContext().getString(R.string.pref_key_telemetry),
-            requireContext().getString(R.string.pref_key_tracking_protection),
-            requireContext().getString(R.string.pref_key_search_bookmarks),
-            requireContext().getString(R.string.pref_key_search_browsing_history),
-            requireContext().getString(R.string.pref_key_show_clipboard_suggestions),
-            requireContext().getString(R.string.pref_key_show_search_engine_shortcuts),
-            requireContext().getString(R.string.pref_key_open_links_in_a_private_tab),
-            requireContext().getString(R.string.pref_key_sync_logins),
-            requireContext().getString(R.string.pref_key_sync_bookmarks),
-            requireContext().getString(R.string.pref_key_sync_history),
-            requireContext().getString(R.string.pref_key_show_voice_search),
-            requireContext().getString(R.string.pref_key_show_search_suggestions_in_private),
-        )
+        val booleanPreferenceTelemetryAllowList = with(requireContext()) {
+            listOf(
+                getString(R.string.pref_key_show_search_suggestions),
+                getString(R.string.pref_key_remote_debugging),
+                getString(R.string.pref_key_telemetry),
+                getString(R.string.pref_key_marketing_telemetry),
+                getString(R.string.pref_key_learn_about_marketing_telemetry),
+                getString(R.string.pref_key_tracking_protection),
+                getString(R.string.pref_key_search_bookmarks),
+                getString(R.string.pref_key_search_browsing_history),
+                getString(R.string.pref_key_show_clipboard_suggestions),
+                getString(R.string.pref_key_show_search_engine_shortcuts),
+                getString(R.string.pref_key_open_links_in_a_private_tab),
+                getString(R.string.pref_key_sync_logins),
+                getString(R.string.pref_key_sync_bookmarks),
+                getString(R.string.pref_key_sync_history),
+                getString(R.string.pref_key_show_voice_search),
+                getString(R.string.pref_key_show_search_suggestions_in_private),
+                getString(R.string.pref_key_show_trending_search_suggestions),
+            )
+        }
 
         preferenceManager?.sharedPreferences
             ?.registerOnSharedPreferenceChangeListener(this) { sharedPreferences, key ->
@@ -363,6 +369,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 SettingsFragmentDirections.actionSettingsFragmentToTrackingProtectionFragment()
             }
 
+            resources.getString(R.string.pref_key_doh_settings) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToDohSettingsFragment()
+            }
+
             resources.getString(R.string.pref_key_site_permissions) -> {
                 SettingsFragmentDirections.actionSettingsFragmentToSitePermissionsFragment()
             }
@@ -437,6 +447,10 @@ class SettingsFragment : PreferenceFragmentCompat() {
                 }.show()
 
                 null
+            }
+
+            resources.getString(R.string.pref_key_link_sharing) -> {
+                SettingsFragmentDirections.actionSettingsFragmentToLinkSharingFragment()
             }
 
             resources.getString(R.string.pref_key_open_links_in_apps) -> {
@@ -548,6 +562,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
         setupCookieBannerPreference()
         setupInstallAddonFromFilePreference(requireContext().settings())
+        setLinkSharingPreference()
         setupAmoCollectionOverridePreference(requireContext().settings())
         setupGeckoLogsPreference(requireContext().settings())
         setupAllowDomesticChinaFxaServerPreference()
@@ -556,6 +571,7 @@ class SettingsFragment : PreferenceFragmentCompat() {
         setupSearchPreference()
         setupHomepagePreference()
         setupTrackingProtectionPreference()
+        setupDnsOverHttpsPreference(requireContext().settings())
     }
 
     /**
@@ -728,6 +744,18 @@ class SettingsFragment : PreferenceFragmentCompat() {
         }
     }
 
+    private fun setupDnsOverHttpsPreference(settings: Settings) {
+        with(requirePreference<Preference>(R.string.pref_key_doh_settings)) {
+            isVisible = settings.showDohEntryPoint
+            summary = when (context.components.core.engine.settings.dohSettingsMode) {
+                Engine.DohSettingsMode.DEFAULT -> getString(R.string.preference_doh_default_protection)
+                Engine.DohSettingsMode.OFF -> getString(R.string.preference_doh_off)
+                Engine.DohSettingsMode.INCREASED -> getString(R.string.preference_doh_increased_protection)
+                Engine.DohSettingsMode.MAX -> getString(R.string.preference_doh_max_protection)
+            }
+        }
+    }
+
     @VisibleForTesting
     internal fun setupCookieBannerPreference() {
         FxNimbus.features.cookieBanners.recordExposure()
@@ -761,10 +789,14 @@ class SettingsFragment : PreferenceFragmentCompat() {
     @VisibleForTesting
     internal fun setupInstallAddonFromFilePreference(settings: Settings) {
         with(requirePreference<Preference>(R.string.pref_key_install_local_addon)) {
-            // Below Android 10, the OS doesn't seem to recognize
-            // the "application/x-xpinstall" mime type (for XPI files).
-            isVisible =
-                settings.showSecretDebugMenuThisSession && Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q
+            isVisible = settings.showSecretDebugMenuThisSession
+        }
+    }
+
+    @VisibleForTesting
+    internal fun setLinkSharingPreference() {
+        with(requirePreference<Preference>(R.string.pref_key_link_sharing)) {
+            isVisible = FxNimbus.features.sentFromFirefox.value().enabled
         }
     }
 

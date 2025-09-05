@@ -42,7 +42,6 @@
 #include "js/Conversions.h"  // JS::ToInt32
 // JSJitGetterOp, JSJitSetterOp, JSJitMethodOp
 #include "js/experimental/JitInfo.h"
-#include "js/Utility.h"  // js_free
 
 #include "proxy/Proxy.h"  // js::ProxyGetProperty
 
@@ -114,7 +113,6 @@ namespace jit {
   _(js::EmulatesUndefined)                                            \
   _(js::EmulatesUndefinedCheckFuse)                                   \
   _(js::ExecuteRegExpAtomRaw)                                         \
-  _(js_free)                                                          \
   _(js::hypot3)                                                       \
   _(js::hypot4)                                                       \
   _(js::Interpret)                                                    \
@@ -139,12 +137,14 @@ namespace jit {
   _(js::jit::AtomicsStore64)                                          \
   _(js::jit::AtomizeStringNoGC)                                       \
   _(js::jit::Bailout)                                                 \
+  _(js::jit::BaselineScript::OSREntryForFrame)                        \
   _(js::jit::BigIntNumberEqual<EqualityKind::Equal>)                  \
   _(js::jit::BigIntNumberEqual<EqualityKind::NotEqual>)               \
   _(js::jit::BigIntNumberCompare<ComparisonKind::LessThan>)           \
   _(js::jit::NumberBigIntCompare<ComparisonKind::LessThan>)           \
   _(js::jit::NumberBigIntCompare<ComparisonKind::GreaterThanOrEqual>) \
   _(js::jit::BigIntNumberCompare<ComparisonKind::GreaterThanOrEqual>) \
+  _(js::jit::DateFillLocalTimeSlots)                                  \
   _(js::jit::EqualStringsHelperPure)                                  \
   _(js::jit::FinishBailoutToBaseline)                                 \
   _(js::jit::Float16ToFloat32)                                        \

@@ -10,13 +10,18 @@ pub struct Settings {
     pub submit_report: bool,
     /// Whether the URL that was open should be included in a sent report.
     pub include_url: bool,
+    /// Whether hardware tests (such as memory tests) are enabled
+    // This is a new field, so might be missing in previously stored settings
+    #[serde(default = "missing_test_hardware")]
+    pub test_hardware: bool,
 }
 
 impl Default for Settings {
     fn default() -> Self {
         Settings {
             submit_report: true,
-            include_url: false,
+            include_url: true,
+            test_hardware: true,
         }
     }
 }
@@ -36,4 +41,8 @@ impl Settings {
     pub fn to_string(&self) -> String {
         serde_json::to_string_pretty(self).unwrap()
     }
+}
+
+fn missing_test_hardware() -> bool {
+    true
 }

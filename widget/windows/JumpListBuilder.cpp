@@ -18,17 +18,6 @@
 #include "nsServiceManagerUtils.h"
 #include "WinUtils.h"
 
-#ifdef __MINGW32__
-// The PKEY_Link_Arguments property key does not exist in the MINGW32
-// build configuration, so we define it ourselves here.
-#  define INITGUID  // This alters the behavior of DEFINE_PROPERTYKEY so that
-                    // we define PKEY_Link_Arguments rather than declare it.
-#  include <propkeydef.h>  // For DEFINE_PROPERTYKEY() definition
-DEFINE_PROPERTYKEY(PKEY_Link_Arguments, 0x436F2667, 0x14E2, 0x4FEB, 0xB3, 0x0A,
-                   0x14, 0x6C, 0x53, 0xB5, 0xB6, 0x74, 100);
-#  undef INITGUID
-#endif
-
 using mozilla::dom::Promise;
 using mozilla::dom::WindowsJumpListShortcutDescription;
 
@@ -261,10 +250,12 @@ JumpListBuilder::ObtainAndCacheFaviconAsync(nsIURI* aFaviconURI, JSContext* aCx,
       mozilla::widget::FaviconHelper::IconCacheDir::JumpListCacheDir)
       ->Then(
           GetCurrentSerialEventTarget(), __func__,
-          [promise](nsString aIcoFilePath) {
-            promise->MaybeResolve(aIcoFilePath);
+          [promiseHolder](nsString aIcoFilePath) {
+            promiseHolder.get()->MaybeResolve(aIcoFilePath);
           },
-          [promise](nsresult aResult) { promise->MaybeReject(aResult); });
+          [promiseHolder](nsresult aResult) {
+            promiseHolder.get()->MaybeReject(aResult);
+          });
 
   promise.forget(aPromise);
   return NS_OK;
@@ -788,7 +779,7 @@ void JumpListBuilder::DeleteIconFromDisk(const nsAString& aPath) {
   if (StringTail(aPath, 4).LowerCaseEqualsASCII(".ico")) {
     // Construct the parent path of the passed in path
     nsCOMPtr<nsIFile> icoFile;
-    nsresult rv = NS_NewLocalFile(aPath, true, getter_AddRefs(icoFile));
+    nsresult rv = NS_NewLocalFile(aPath, getter_AddRefs(icoFile));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return;
     }

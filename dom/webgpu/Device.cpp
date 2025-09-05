@@ -24,6 +24,7 @@
 #include "InternalError.h"
 #include "OutOfMemoryError.h"
 #include "PipelineLayout.h"
+#include "QuerySet.h"
 #include "Queue.h"
 #include "RenderBundleEncoder.h"
 #include "RenderPipeline.h"
@@ -56,15 +57,17 @@ GPU_IMPL_JS_WRAP(Device)
 
 RefPtr<WebGPUChild> Device::GetBridge() { return mBridge; }
 
-Device::Device(Adapter* const aParent, RawId aId,
+Device::Device(Adapter* const aParent, RawId aDeviceId, RawId aQueueId,
                const ffi::WGPULimits& aRawLimits)
     : DOMEventTargetHelper(aParent->GetParentObject()),
-      mId(aId),
+      mId(aDeviceId),
       // features are filled in Adapter::RequestDevice
       mFeatures(new SupportedFeatures(aParent)),
       mLimits(new SupportedLimits(aParent, aRawLimits)),
+      mSupportExternalTextureInSwapChain(
+          aParent->SupportExternalTextureInSwapChain()),
       mBridge(aParent->mBridge),
-      mQueue(new class Queue(this, aParent->mBridge, aId)) {
+      mQueue(new class Queue(this, aParent->mBridge, aQueueId)) {
   mBridge->RegisterDevice(this);
 }
 
@@ -223,7 +226,7 @@ already_AddRefed<Texture> Device::CreateTexture(
 
   ipc::ByteBuf bb;
   RawId id = ffi::wgpu_client_create_texture(
-      mBridge->GetClient(), mId, &desc, ownerId.ptrOr(nullptr), ToFFI(&bb));
+      mBridge->GetClient(), &desc, ownerId.ptrOr(nullptr), ToFFI(&bb));
 
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
@@ -256,8 +259,8 @@ already_AddRefed<Sampler> Device::CreateSampler(
   }
 
   ipc::ByteBuf bb;
-  RawId id = ffi::wgpu_client_create_sampler(mBridge->GetClient(), mId, &desc,
-                                             ToFFI(&bb));
+  RawId id =
+      ffi::wgpu_client_create_sampler(mBridge->GetClient(), &desc, ToFFI(&bb));
 
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
@@ -275,7 +278,7 @@ already_AddRefed<CommandEncoder> Device::CreateCommandEncoder(
   desc.label = label.Get();
 
   ipc::ByteBuf bb;
-  RawId id = ffi::wgpu_client_create_command_encoder(mBridge->GetClient(), mId,
+  RawId id = ffi::wgpu_client_create_command_encoder(mBridge->GetClient(),
                                                      &desc, ToFFI(&bb));
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
@@ -290,6 +293,41 @@ already_AddRefed<RenderBundleEncoder> Device::CreateRenderBundleEncoder(
   RefPtr<RenderBundleEncoder> encoder =
       new RenderBundleEncoder(this, mBridge, aDesc);
   return encoder.forget();
+}
+
+already_AddRefed<QuerySet> Device::CreateQuerySet(
+    const dom::GPUQuerySetDescriptor& aDesc, ErrorResult& aRv) {
+  ipc::ByteBuf bb;
+  ffi::WGPURawQuerySetDescriptor desc = {};
+
+  webgpu::StringHelper label(aDesc.mLabel);
+  desc.label = label.Get();
+  ffi::WGPURawQueryType type;
+  switch (aDesc.mType) {
+    case dom::GPUQueryType::Occlusion:
+      type = ffi::WGPURawQueryType_Occlusion;
+      break;
+    case dom::GPUQueryType::Timestamp:
+      type = ffi::WGPURawQueryType_Timestamp;
+      if (!mFeatures->Features().count(dom::GPUFeatureName::Timestamp_query)) {
+        aRv.ThrowTypeError(
+            "requested query set of type `timestamp`, but the "
+            "`timestamp-query` feature is not enabled on the device");
+        return nullptr;
+      }
+      break;
+  };
+  desc.ty = type;
+  desc.count = aDesc.mCount;
+
+  RawId id = ffi::wgpu_client_create_query_set(mBridge->GetClient(), &desc,
+                                               ToFFI(&bb));
+  if (mBridge->CanSend()) {
+    mBridge->SendDeviceAction(mId, std::move(bb));
+  }
+
+  RefPtr<QuerySet> querySet = new QuerySet(this, aDesc, id);
+  return querySet.forget();
 }
 
 already_AddRefed<BindGroupLayout> Device::CreateBindGroupLayout(
@@ -403,7 +441,7 @@ already_AddRefed<BindGroupLayout> Device::CreateBindGroupLayout(
 
   ipc::ByteBuf bb;
   RawId id = ffi::wgpu_client_create_bind_group_layout(mBridge->GetClient(),
-                                                       mId, &desc, ToFFI(&bb));
+                                                       &desc, ToFFI(&bb));
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
   }
@@ -429,7 +467,7 @@ already_AddRefed<PipelineLayout> Device::CreatePipelineLayout(
   desc.bind_group_layouts_length = bindGroupLayouts.Length();
 
   ipc::ByteBuf bb;
-  RawId id = ffi::wgpu_client_create_pipeline_layout(mBridge->GetClient(), mId,
+  RawId id = ffi::wgpu_client_create_pipeline_layout(mBridge->GetClient(),
                                                      &desc, ToFFI(&bb));
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
@@ -477,8 +515,8 @@ already_AddRefed<BindGroup> Device::CreateBindGroup(
   desc.entries_length = entries.Length();
 
   ipc::ByteBuf bb;
-  RawId id = ffi::wgpu_client_create_bind_group(mBridge->GetClient(), mId,
-                                                &desc, ToFFI(&bb));
+  RawId id = ffi::wgpu_client_create_bind_group(mBridge->GetClient(), &desc,
+                                                ToFFI(&bb));
   if (mBridge->CanSend()) {
     mBridge->SendDeviceAction(mId, std::move(bb));
   }
@@ -608,17 +646,13 @@ MOZ_CAN_RUN_SCRIPT void reportCompilationMessagesToConsole(
 }
 
 already_AddRefed<ShaderModule> Device::CreateShaderModule(
-    JSContext* aCx, const dom::GPUShaderModuleDescriptor& aDesc,
-    ErrorResult& aRv) {
-  Unused << aCx;
-
+    const dom::GPUShaderModuleDescriptor& aDesc, ErrorResult& aRv) {
   RefPtr<dom::Promise> promise = dom::Promise::Create(GetParentObject(), aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
 
-  RawId moduleId =
-      ffi::wgpu_client_make_shader_module_id(mBridge->GetClient(), mId);
+  RawId moduleId = ffi::wgpu_client_make_shader_module_id(mBridge->GetClient());
 
   RefPtr<ShaderModule> shaderModule = new ShaderModule(this, moduleId, promise);
 
@@ -697,7 +731,7 @@ RawId CreateComputePipelineImpl(PipelineCreationContext* const aContext,
 
   RawId implicit_bgl_ids[WGPUMAX_BIND_GROUPS] = {};
   RawId id = ffi::wgpu_client_create_compute_pipeline(
-      aBridge->GetClient(), aContext->mParentId, &desc, ToFFI(aByteBuf),
+      aBridge->GetClient(), &desc, ToFFI(aByteBuf),
       &aContext->mImplicitPipelineLayoutId, implicit_bgl_ids);
 
   for (const auto& cur : implicit_bgl_ids) {
@@ -773,7 +807,7 @@ RawId CreateRenderPipelineImpl(PipelineCreationContext* const aContext,
         for (const auto& vat : vd.mAttributes) {
           ffi::WGPUVertexAttribute ad = {};
           ad.offset = vat.mOffset;
-          ad.format = ffi::WGPUVertexFormat(vat.mFormat);
+          ad.format = ConvertVertexFormat(vat.mFormat);
           ad.shader_location = vat.mShaderLocation;
           vertexAttributes.AppendElement(ad);
         }
@@ -868,7 +902,7 @@ RawId CreateRenderPipelineImpl(PipelineCreationContext* const aContext,
 
   RawId implicit_bgl_ids[WGPUMAX_BIND_GROUPS] = {};
   RawId id = ffi::wgpu_client_create_render_pipeline(
-      aBridge->GetClient(), aContext->mParentId, &desc, ToFFI(aByteBuf),
+      aBridge->GetClient(), &desc, ToFFI(aByteBuf),
       &aContext->mImplicitPipelineLayoutId, implicit_bgl_ids);
 
   for (const auto& cur : implicit_bgl_ids) {
@@ -1019,10 +1053,6 @@ bool Device::CheckNewWarning(const nsACString& aMessage) {
 }
 
 void Device::Destroy() {
-  if (IsLost()) {
-    return;
-  }
-
   // Unmap all buffers from this device, as specified by
   // https://gpuweb.github.io/gpuweb/#dom-gpudevice-destroy.
   dom::AutoJSAPI jsapi;
@@ -1033,6 +1063,13 @@ void Device::Destroy() {
     }
 
     mTrackedBuffers.Clear();
+  }
+
+  if (!IsBridgeAlive()) {
+    // Resolve our lost promise in the same way as if we had a successful
+    // round-trip through the bridge.
+    ResolveLost(Some(dom::GPUDeviceLostReason::Destroyed), u""_ns);
+    return;
   }
 
   mBridge->SendDeviceDestroy(mId);

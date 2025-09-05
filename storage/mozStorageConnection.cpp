@@ -42,6 +42,7 @@
 #include "SQLCollations.h"
 #include "FileSystemModule.h"
 #include "mozStorageHelper.h"
+#include "sqlite3_static_ext.h"
 
 #include "mozilla/Assertions.h"
 #include "mozilla/Logging.h"
@@ -167,6 +168,12 @@ int sqlite3_T_null(sqlite3_context* aCtx) {
 int sqlite3_T_blob(sqlite3_context* aCtx, const void* aData, int aSize) {
   ::sqlite3_result_blob(aCtx, aData, aSize, free);
   return SQLITE_OK;
+}
+
+int sqlite3_T_array(sqlite3_context* aCtx, const void* aData, int aSize,
+                    int aType) {
+  // Not supported for now.
+  return SQLITE_MISUSE;
 }
 
 #include "variantToSQLiteT_impl.h"
@@ -635,6 +642,8 @@ class AsyncBackupDatabaseFile final : public Runnable, public nsITimerCallback {
 
     int srv = ::sqlite3_open(NS_ConvertUTF16toUTF8(path).get(), &mBackupFile);
     if (srv != SQLITE_OK) {
+      ::sqlite3_close(mBackupFile);
+      mBackupFile = nullptr;
       return Dispatch(NS_ERROR_FAILURE, nullptr);
     }
 
@@ -677,11 +686,8 @@ class AsyncBackupDatabaseFile final : public Runnable, public nsITimerCallback {
     nsAutoString tempPath = originalPath;
     tempPath.AppendLiteral(".tmp");
 
-    nsCOMPtr<nsIFile> file =
-        do_CreateInstance("@mozilla.org/file/local;1", &rv);
-    DISPATCH_AND_RETURN_IF_FAILED(rv);
-
-    rv = file->InitWithPath(tempPath);
+    nsCOMPtr<nsIFile> file;
+    rv = NS_NewLocalFile(tempPath, getter_AddRefs(file));
     DISPATCH_AND_RETURN_IF_FAILED(rv);
 
     int srv = ::sqlite3_backup_step(mBackupHandle, mPagesPerStep);
@@ -930,7 +936,6 @@ nsIEventTarget* Connection::getAsyncExecutionTarget() {
       NS_WARNING("Failed to create async thread.");
       return nullptr;
     }
-    mAsyncExecutionThread->SetNameForWakeupTelemetry("mozStorage (all)"_ns);
   }
 
   return mAsyncExecutionThread;
@@ -1050,6 +1055,7 @@ nsresult Connection::initialize(const nsACString& aStorageKey,
   int srv = ::sqlite3_open_v2(path.get(), &mDBConn, mFlags,
                               basevfs::GetVFSName(true));
   if (srv != SQLITE_OK) {
+    ::sqlite3_close(mDBConn);
     mDBConn = nullptr;
     nsresult rv = convertResultCode(srv);
     RecordOpenStatus(rv);
@@ -1098,6 +1104,7 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
     srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn, mFlags,
                             basevfs::GetVFSName(exclusive));
     if (exclusive && (srv == SQLITE_LOCKED || srv == SQLITE_BUSY)) {
+      ::sqlite3_close(mDBConn);
       // Retry without trying to get an exclusive lock.
       exclusive = false;
       srv = ::sqlite3_open_v2(NS_ConvertUTF16toUTF8(path).get(), &mDBConn,
@@ -1105,6 +1112,7 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
     }
   }
   if (srv != SQLITE_OK) {
+    ::sqlite3_close(mDBConn);
     mDBConn = nullptr;
     rv = convertResultCode(srv);
     RecordOpenStatus(rv);
@@ -1122,6 +1130,9 @@ nsresult Connection::initialize(nsIFile* aDatabaseFile) {
                             basevfs::GetVFSName(false));
     if (srv == SQLITE_OK) {
       rv = initializeInternal();
+    } else {
+      ::sqlite3_close(mDBConn);
+      mDBConn = nullptr;
     }
   }
 
@@ -1181,6 +1192,7 @@ nsresult Connection::initialize(nsIFileURL* aFileURL) {
 
   int srv = ::sqlite3_open_v2(spec.get(), &mDBConn, mFlags, vfs);
   if (srv != SQLITE_OK) {
+    ::sqlite3_close(mDBConn);
     mDBConn = nullptr;
     rv = convertResultCode(srv);
     RecordOpenStatus(rv);

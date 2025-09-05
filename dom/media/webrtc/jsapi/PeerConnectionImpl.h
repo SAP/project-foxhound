@@ -416,6 +416,8 @@ class PeerConnectionImpl final
 
   void RecordEndOfCallTelemetry();
 
+  void RecordSignalingTelemetry() const;
+
   nsresult MaybeInitializeDataChannel();
 
   NS_IMETHODIMP_TO_ERRORRESULT_RETREF(nsDOMDataChannel, CreateDataChannel,
@@ -533,11 +535,6 @@ class PeerConnectionImpl final
   const dom::RTCStatsTimestampMaker& GetTimestampMaker() const {
     return mTimestampMaker;
   }
-
-  // Utility function, given a string pref and an URI, returns whether or not
-  // the URI occurs in the pref. Wildcards are supported (e.g. *.example.com)
-  // and multiple hostnames can be present, separated by commas.
-  static bool HostnameInPref(const char* aPrefList, const nsCString& aHostName);
 
   void StampTimecard(const char* aEvent);
 

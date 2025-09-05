@@ -455,9 +455,7 @@ struct nsDefaultMimeTypeEntry {
 static const nsDefaultMimeTypeEntry defaultMimeEntries[] = {
     // The following are those extensions that we're asked about during startup,
     // sorted by order used
-    {IMAGE_GIF, "gif"},
     {TEXT_XML, "xml"},
-    {APPLICATION_RDF, "rdf"},
     {IMAGE_PNG, "png"},
     // -- end extensions used during startup
     {TEXT_CSS, "css"},
@@ -466,16 +464,18 @@ static const nsDefaultMimeTypeEntry defaultMimeEntries[] = {
     {IMAGE_SVG_XML, "svg"},
     {TEXT_HTML, "html"},
     {TEXT_HTML, "htm"},
+    {IMAGE_GIF, "gif"},
+    {IMAGE_WEBP, "webp"},
     {APPLICATION_XPINSTALL, "xpi"},
-    {"application/xhtml+xml", "xhtml"},
-    {"application/xhtml+xml", "xht"},
+    {APPLICATION_XHTML_XML, "xhtml"},
+    {APPLICATION_XHTML_XML, "xht"},
     {TEXT_PLAIN, "txt"},
     {APPLICATION_JSON, "json"},
+    {APPLICATION_RDF, "rdf"},
     {APPLICATION_XJAVASCRIPT, "mjs"},
     {APPLICATION_XJAVASCRIPT, "js"},
     {APPLICATION_XJAVASCRIPT, "jsm"},
     {VIDEO_OGG, "ogv"},
-    {VIDEO_OGG, "ogg"},
     {APPLICATION_OGG, "ogg"},
     {AUDIO_OGG, "oga"},
     {AUDIO_OGG, "opus"},
@@ -601,7 +601,8 @@ static const nsExtraMimeTypeEntry extraMimeEntries[] = {
     {AUDIO_AAC, "aac", "AAC Audio"},
     {AUDIO_FLAC, "flac", "FLAC Audio"},
     {AUDIO_MIDI, "mid", "Standard MIDI Audio"},
-    {APPLICATION_WASM, "wasm", "WebAssembly Module"}};
+    {APPLICATION_WASM, "wasm", "WebAssembly Module"},
+    {"application/epub+zip", "epub", "Electronic publication (EPUB)"}};
 
 static const nsDefaultMimeTypeEntry sForbiddenPrimaryExtensions[] = {
     {IMAGE_JPEG, "jfif"}};
@@ -719,14 +720,6 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   mozilla::net::LoadInfoArgs loadInfoArgs;
   MOZ_ALWAYS_SUCCEEDS(LoadInfoToLoadInfoArgs(loadInfo, &loadInfoArgs));
 
-  nsCOMPtr<nsIPropertyBag2> props(do_QueryInterface(aChannel));
-  // Determine whether a new window was opened specifically for this request
-  bool shouldCloseWindow = false;
-  if (props) {
-    props->GetPropertyAsBool(u"docshell.newWindowTarget"_ns,
-                             &shouldCloseWindow);
-  }
-
   // Now we build a protocol for forwarding our data to the parent.  The
   // protocol will act as a listener on the child-side and create a "real"
   // helperAppService listener on the parent-side, via another call to
@@ -735,7 +728,7 @@ nsresult nsExternalHelperAppService::DoContentContentProcessHelper(
   MOZ_ALWAYS_TRUE(child->SendPExternalHelperAppConstructor(
       childListener, uri, loadInfoArgs, nsCString(aMimeContentType), disp,
       contentDisposition, fileName, aForceSave, contentLength, wasFileChannel,
-      referrer, aContentContext, shouldCloseWindow));
+      referrer, aContentContext));
 
   NS_ADDREF(*aStreamListener = childListener);
 
@@ -860,7 +853,7 @@ NS_IMETHODIMP nsExternalHelperAppService::ApplyDecodingForExtension(
     bool* aApplyDecoding) {
   *aApplyDecoding = true;
   uint32_t i;
-  for (i = 0; i < ArrayLength(nonDecodableExtensions); ++i) {
+  for (i = 0; i < std::size(nonDecodableExtensions); ++i) {
     if (aExtension.LowerCaseEqualsASCII(
             nonDecodableExtensions[i].mFileExtension) &&
         aEncodingType.LowerCaseEqualsASCII(
@@ -877,7 +870,7 @@ nsresult nsExternalHelperAppService::GetFileTokenForPath(
   nsDependentString platformAppPath(aPlatformAppPath);
   // First, check if we have an absolute path
   nsIFile* localFile = nullptr;
-  nsresult rv = NS_NewLocalFile(platformAppPath, true, &localFile);
+  nsresult rv = NS_NewLocalFile(platformAppPath, &localFile);
   if (NS_SUCCEEDED(rv)) {
     *aFile = localFile;
     bool exists;
@@ -1328,7 +1321,6 @@ nsExternalAppHandler::nsExternalAppHandler(
       mCanceled(false),
       mStopRequestIssued(false),
       mIsFileChannel(false),
-      mShouldCloseWindow(false),
       mHandleInternally(false),
       mDialogShowing(false),
       mReason(aReason),
@@ -1492,7 +1484,7 @@ nsresult nsExternalAppHandler::SetUpTempFile(nsIChannel* aChannel) {
                  NS_ERROR_UNEXPECTED);
 
   // Strip off the ".part" from mTempLeafName
-  mTempLeafName.Truncate(mTempLeafName.Length() - ArrayLength(".part") + 1);
+  mTempLeafName.Truncate(mTempLeafName.Length() - std::size(".part") + 1);
 
   MOZ_ASSERT(!mSaver, "Output file initialization called more than once!");
   mSaver =
@@ -1645,15 +1637,12 @@ NS_IMETHODIMP nsExternalAppHandler::OnStartRequest(nsIRequest* request) {
 
   if (mBrowsingContext) {
     mMaybeCloseWindowHelper = new MaybeCloseWindowHelper(mBrowsingContext);
-    mMaybeCloseWindowHelper->SetShouldCloseWindow(mShouldCloseWindow);
-    nsCOMPtr<nsIPropertyBag2> props(do_QueryInterface(request, &rv));
+
     // Determine whether a new window was opened specifically for this request
-    if (props) {
-      bool tmp = false;
-      if (NS_SUCCEEDED(
-              props->GetPropertyAsBool(u"docshell.newWindowTarget"_ns, &tmp))) {
-        mMaybeCloseWindowHelper->SetShouldCloseWindow(tmp);
-      }
+    if (aChannel) {
+      nsCOMPtr<nsILoadInfo> loadInfo = aChannel->LoadInfo();
+      mMaybeCloseWindowHelper->SetShouldCloseWindow(
+          loadInfo->GetIsNewWindowTarget());
     }
   }
 
@@ -2593,7 +2582,7 @@ nsresult nsExternalAppHandler::ContinueSave(nsIFile* aNewFileLocation) {
         mFinalFileDestination->GetPath(path);
         CheckedInt<uint16_t> fullPathLength =
             CheckedInt<uint16_t>(path.Length()) + 1 + randomChars.Length() +
-            ArrayLength(".part");
+            std::size(".part");
         if (!fullPathLength.isValid()) {
           leafName.Truncate();
         } else if (fullPathLength.value() > MAX_PATH) {
@@ -3220,7 +3209,7 @@ bool nsExternalHelperAppService::GetTypeFromExtras(const nsACString& aExtension,
 
   // Look for default entry with matching extension.
   nsDependentCString::const_iterator start, end, iter;
-  int32_t numEntries = ArrayLength(extraMimeEntries);
+  int32_t numEntries = std::size(extraMimeEntries);
   for (int32_t index = 0; index < numEntries; index++) {
     nsDependentCString extList(extraMimeEntries[index].mFileExtensions);
     extList.BeginReading(start);

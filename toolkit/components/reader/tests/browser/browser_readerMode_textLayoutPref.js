@@ -10,7 +10,7 @@ const TEST_PATH = getRootDirectory(gTestPath).replace(
 );
 
 const defaultValues = {
-  "font-family": "Helvetica, Arial, sans-serif",
+  "font-family": "sans-serif",
   "font-weight": "normal",
   "content-width": "30em",
   "line-height": "1.6em",
@@ -24,9 +24,6 @@ const defaultValues = {
  * the document layout correctly.
  */
 async function testTextLayout(aPref, value, cssProp, cssValue) {
-  // Enable the improved text and layout menu.
-  Services.prefs.setBoolPref("reader.improved_text_menu.enabled", true);
-
   // Set the pref to the custom value.
   const valueType = typeof value;
   if (valueType == "number") {
@@ -75,9 +72,6 @@ async function testTextLayout(aPref, value, cssProp, cssValue) {
  * Test that the reset button restores all layout options to defaults.
  */
 async function testTextLayoutReset() {
-  // Enable the improved text and layout menu.
-  Services.prefs.setBoolPref("reader.improved_text_menu.enabled", true);
-
   // Set all prefs to non-default values.
   Services.prefs.setIntPref(`reader.font_size`, 15);
   Services.prefs.setCharPref(`reader.font_type`, "serif");
@@ -134,9 +128,6 @@ async function testTextLayoutReset() {
  * Test that the focus stays within the text and layout menu.
  */
 async function testTextLayoutFocus() {
-  // Enable the improved text and layout menu.
-  Services.prefs.setBoolPref("reader.improved_text_menu.enabled", true);
-
   // Open a browser tab, enter reader mode, and test if the focus stays
   // within the menu.
   await BrowserTestUtils.withNewTab(
@@ -153,7 +144,7 @@ async function testTextLayoutFocus() {
 
       await SpecialPowers.spawn(browser, [], () => {
         let doc = content.document;
-        doc.querySelector(".improved-style-button").click();
+        doc.querySelector(".text-layout-button").click();
 
         let firstFocusableElement = doc.querySelector(
           ".text-size-minus-button"
@@ -168,9 +159,16 @@ async function testTextLayoutFocus() {
           "Focus moves back to the first focusable button"
         );
 
+        firstFocusableElement.focus();
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, content);
+        is(
+          doc.activeElement,
+          advancedHeader,
+          "Focus moves to last focusable button"
+        );
+
         // Expand the advanced layout accordion.
         advancedHeader.click();
-
         let resetButton = doc.querySelector(".text-layout-reset-button");
         resetButton.focus();
 
@@ -180,6 +178,14 @@ async function testTextLayoutFocus() {
           firstFocusableElement,
           "Focus moves back to the first focusable button"
         );
+
+        firstFocusableElement.focus();
+        EventUtils.synthesizeKey("KEY_Tab", { shiftKey: true }, content);
+        is(
+          doc.activeElement,
+          resetButton,
+          "Focus moves from first focusable button to last focusable button"
+        );
       });
     }
   );
@@ -187,12 +193,7 @@ async function testTextLayoutFocus() {
 
 add_task(async function () {
   await testTextLayout("font_size", 7, "font-size", "24px");
-  await testTextLayout(
-    "font_type",
-    "monospace",
-    "font-family",
-    '"Courier New", Courier, monospace'
-  );
+  await testTextLayout("font_type", "monospace", "font-family", "monospace");
   await testTextLayout("font_weight", "bold", "font-weight", "bolder");
   await testTextLayout("content_width", 7, "content-width", "50em");
   await testTextLayout("line_height", 7, "line-height", "2.2em");

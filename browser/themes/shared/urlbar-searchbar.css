@@ -7,6 +7,7 @@
 :root {
   --urlbar-container-padding: 1px;
   --urlbar-margin-inline: 5px;
+  --urlbar-padding-block: 4px;
 }
 
 #urlbar[actiontype="switchtab"][action-override] > .urlbar-input-container > #urlbar-label-box,
@@ -20,14 +21,15 @@
 #identity-box.chromeUI ~ #page-action-buttons > .urlbar-page-action:not(#star-button-box),
 #urlbar[usertyping] > .urlbar-input-container > #page-action-buttons > #urlbar-zoom-button,
 #urlbar:not([usertyping]) > .urlbar-input-container > .urlbar-go-button,
-#urlbar:not([focused]) > .urlbar-input-container > .urlbar-go-button {
+#urlbar:not([focused]) > .urlbar-input-container > .urlbar-go-button,
+#urlbar-revert-button-container {
   display: none;
 }
 
 /* When rich suggestions are enabled the urlbar identity icon is given extra padding to
  * align the results and urlbar text */
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "browser.urlbar.richSuggestions.featureGate") {
+@media -moz-pref("browser.urlbar.richSuggestions.featureGate") {
   #identity-box[pageproxystate="invalid"] > .identity-box-button {
     padding-inline: calc(6px + var(--urlbar-icon-padding));
   }
@@ -35,7 +37,7 @@
 
 #urlbar-container,
 #search-container {
-  padding-block: 4px;
+  padding-block: var(--urlbar-padding-block);
   margin-inline: var(--urlbar-margin-inline);
 
   :root[uidensity=touch] & {
@@ -43,12 +45,29 @@
   }
 }
 
+#urlbar {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  box-sizing: border-box;
+  will-change: translate;
+
+  /* Reset UA popover rules */
+  width: initial;
+  height: initial;
+  inset: auto;
+  border: none;
+  padding: initial;
+  overflow: initial;
+  color: initial;
+  background-color: initial;
+}
+
 #urlbar,
 #searchbar {
   /* Setting a min-width to let the location & search bars maintain a constant
    * width in case they haven't been resized manually. (bug 965772) */
   min-width: 1px;
-
   min-height: var(--urlbar-min-height);
   text-shadow: none;
   color: var(--toolbar-field-color);
@@ -241,18 +260,20 @@
   /* Match urlbar-background's border. */
   border: 1px solid transparent;
   padding: var(--urlbar-container-padding);
+  min-width: 0;
 }
 
 #urlbar-container[breakout] {
-  position: relative;
   min-height: var(--urlbar-container-height);
 }
 
 #urlbar[breakout] {
   display: block;
+  /* This is technically not needed, because popover takes care of it, but
+   * helps for clarity. */
   position: absolute;
-  width: 100%;
   height: var(--urlbar-height);
+  width: var(--urlbar-width);
 
   > .urlbar-input-container {
     width: 100%;
@@ -267,16 +288,12 @@
 
 #urlbar[breakout][breakout-extend],
 #urlbar[breakout][breakout-extend-disabled][open] {
-  /* The z-index needs to be big enough to trump other positioned UI pieces
-     that we want to overlay. 3 is used in the tab bar. */
-  z-index: 3;
   height: auto;
 }
 
 #urlbar[breakout][breakout-extend] {
-  top: 0;
-  left: calc(-1 * var(--urlbar-margin-inline));
-  width: calc(100% + 2 * var(--urlbar-margin-inline));
+  margin-left: calc(-1 * var(--urlbar-margin-inline));
+  width: calc(var(--urlbar-width) + 2 * var(--urlbar-margin-inline));
 
   > .urlbar-input-container {
     height: var(--urlbar-container-height);
@@ -381,6 +398,13 @@
   #identity-icon-box {
     max-width: 80px;
   }
+  /* This label expresses the non secure status. However, as the padlock icon is
+     enough to tell the status to user, hide the label when window gets small.
+     Except this usage, #identity-icon-label is used to show additional
+     information that could not tell by only icons. */
+  #identity-box[pageproxystate="valid"].notSecureText #identity-icon-label {
+    display: none;
+  }
   /* Contenxtual identity labels are user-customizable and can be very long,
      so we only show the colored icon when the window gets small. */
   #userContext-label {
@@ -428,8 +452,10 @@
   }
 }
 
+/* Allow shrinking the urlbar on popup windows */
 :root[chromehidden~="toolbar"] :is(#urlbar-container, #wrapper-urlbar-container) {
   flex-shrink: 1;
+  min-width: 0;
 }
 
 #urlbar-search-splitter {
@@ -466,7 +492,8 @@
   display: none;
 }
 
-#urlbar-search-mode-indicator-close {
+#urlbar-search-mode-indicator-close,
+#searchmode-switcher-close {
   background: url(chrome://global/skin/icons/close.svg) no-repeat center;
   background-size: round(62.5%, 2px);
   width: round(max(16px, 1em), 2px);
@@ -554,6 +581,7 @@
 }
 
 .urlbar-page-action,
+.urlbar-revert-button,
 .urlbar-go-button,
 .search-go-button {
   width: calc(var(--urlbar-min-height) - 2px /* border */ - 2 * var(--urlbar-container-padding));
@@ -652,7 +680,7 @@
 :root {
   --cfr-animation-duration: 0.35s;
   --cfr-button-addons-icon: url(chrome://activity-stream/content/data/content/assets/glyph-webextension-16.svg);
-  --cfr-button-features-icon: url(chrome://activity-stream/content/data/content/assets/glyph-cfr-feature-16.svg);
+  --cfr-button-features-icon: url(chrome://browser/content/asrouter/assets/glyph-cfr-feature-16.svg);
   --cfr-button-highlights-icon: url(chrome://global/skin/icons/highlights.svg);
   --cfr-active-color: #0060df;
   --cfr-active-text-color: white;
@@ -796,6 +824,24 @@
   }
 }
 
+/* Persisted Search Terms rules specific when the Unified Search Button is present */
+/* stylelint-disable-next-line media-query-no-invalid */
+#urlbar[persistsearchterms] {
+  #urlbar-revert-button-container {
+    display: inherit;
+  }
+  .urlbar-revert-button {
+    list-style-image: url(chrome://global/skin/icons/defaultFavicon.svg);
+    fill: var(--color-accent-primary);
+  }
+  .urlbar-revert-button:focus-visible {
+    outline: var(--focus-outline);
+  }
+  .urlbar-go-button {
+    display: none;
+  }
+}
+
 /* Reader mode icon */
 
 #reader-mode-button > .urlbar-icon {
@@ -822,17 +868,6 @@
 
 /* Translations button */
 
-@keyframes translationsRotate {
-  from { transform: rotate(0); }
-  to { transform: rotate(360deg); }
-}
-
-@media not (prefers-reduced-motion) {
-  #translations-button-circle-arrows {
-    animation: translationsRotate 1.2s linear infinite;
-  }
-}
-
 #translations-button-icon {
   list-style-image: url(chrome://browser/skin/translations.svg);
   /* The translation icon's right letter is 1px too long, so account for that here.
@@ -848,7 +883,7 @@
 #translations-button-circle-arrows {
   height: 16px;
   width: 16px;
-  list-style-image: url("chrome://browser/skin/sync.svg");
+  list-style-image: url("chrome://global/skin/icons/loading.svg");
   fill: var(--toolbarbutton-icon-fill-attention);
   fill-opacity: 1;
   margin-inline: 1px;
@@ -1079,32 +1114,79 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left::after {
 }
 
 #urlbar-searchmode-switcher {
-  /* Hidden until urlbar opens */
-  display: none;
-  margin-inline-end: var(--urlbar-icon-padding);
-  background-color: var(--toolbar-field-background-color);
-  border-radius: var(--toolbarbutton-border-radius);
+  appearance: none;
+  border-radius: var(--urlbar-icon-border-radius);
+  margin: 0;
+  margin-inline-end: var(--urlbar-searchmodeswitcher-margin-inline-end);
+  padding-inline: var(--urlbar-searchmodeswitcher-inline-padding);
 
-  /* stylelint-disable-next-line media-query-no-invalid */
-  @media (-moz-bool-pref: "browser.urlbar.searchModeSwitcher.featureGate") or (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
-    /* Don't show on mousedown to avoid shifting input field text */
-    #urlbar[focused]:not([focusing-via-mousedown]) & {
-      display: flex;
-    }
+  &:focus-visible {
+    outline: var(--focus-outline);
+    outline-offset: var(--focus-outline-inset);
   }
+
+  &[open] {
+    background-color: var(--urlbar-box-focus-bgcolor);
+  }
+
+  /* No need space if page information icons such as lock and shield is shown */
+  #urlbar[pageproxystate=valid] & {
+    margin-inline-end: 0;
+  }
+
+  #urlbar[searchmode] & {
+    background-color: var(--urlbar-box-bgcolor);
+    margin-inline-end: 0;
+    border-start-end-radius: 0;
+    border-end-end-radius: 0;
+  }
+
+  /* The background rule should match to #searchmode-switcher-chicklet */
+  #urlbar[focused] & {
+    background-color: var(--urlbar-box-focus-bgcolor);
+  }
+
+  /* stylelint-disable media-query-no-invalid */
+  @media (not -moz-pref("browser.urlbar.searchModeSwitcher.featureGate")) and
+         (not -moz-pref("browser.urlbar.scotchBonnet.enableOverride")) {
+    display: none;
+  }
+  /* stylelint-enable media-query-no-invalid */
 }
 
 #searchmode-switcher-icon {
-  width: calc(var(--urlbar-min-height) - 2px - 2 * var(--urlbar-container-padding));
-  height: calc(var(--urlbar-min-height) - 2px - 2 * var(--urlbar-container-padding));
+  width: 16px;
+  height: 16px;
   border-radius: var(--urlbar-icon-border-radius);
-  padding: var(--urlbar-icon-padding);
   -moz-context-properties: fill;
-  fill: var(--text-color-deemphasized);
+  fill: currentColor;
+  list-style-image: url("chrome://global/skin/icons/search-glass.svg");
+}
+
+#searchmode-switcher-chicklet {
+  background-color: var(--urlbar-box-bgcolor);
+  border-start-end-radius: var(--toolbarbutton-border-radius);
+  border-end-end-radius: var(--urlbar-icon-border-radius);
+  align-items: center;
+  height: 100%;
+  margin-inline-end: var(--urlbar-searchmodeswitcher-margin-inline-end);
+  display: none;
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
+    #urlbar[searchmode] & {
+      display: inline-flex;
+    }
+  }
+
+  #urlbar[focused] & {
+    background-color: var(--urlbar-box-focus-bgcolor);
+  }
 }
 
 #searchmode-switcher-title {
-  margin-inline-start: 0px;
+  margin: 0;
+  align-items: center;
 
   &:empty {
     display: none;
@@ -1112,11 +1194,9 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left::after {
 }
 
 #searchmode-switcher-close {
-  list-style-image: url("chrome://global/skin/icons/close-12.svg");
+  appearance: none;
   pointer-events: all;
-  display: none;
-  -moz-context-properties: fill;
-  fill: var(--text-color-deemphasized);
+  margin-inline: var(--urlbar-searchmodeswitcher-inline-padding);
 
   #urlbar[searchmode] & {
     display: inline-flex;
@@ -1133,23 +1213,61 @@ moz-input-box > menupopup .context-menu-add-engine > .menu-iconic-left::after {
 }
 
 #searchmode-switcher-popup {
-  --panel-padding: var(--space-small);
-  --arrowpanel-menuitem-margin: 0;
+  --panel-padding: 4px 0;
+
+  > menuitem {
+    margin-inline: 4px;
+
+    &.searchmode-switcher-addEngine::before {
+      content: "";
+      position: relative;
+      display: flex;
+      background: url(chrome://browser/skin/search-indicator-badge-add.svg) no-repeat center;
+      height: 11px;
+      width: 11px;
+      margin-inline: 10px -21px;
+      margin-top: -13px;
+    }
+  }
 }
 
 #searchmode-switcher-popup-description {
-  margin: var(--space-small);
+  margin-inline: 4px;
+  padding: var(--arrowpanel-menuitem-padding);
 }
 
-#searchmode-switcher-popup-search-settings-icon {
-  list-style-image: url("chrome://global/skin/icons/settings.svg");
+#searchmode-switcher-popup-search-settings-button,
+.searchmode-switcher-local {
+  -moz-context-properties: fill;
+  fill: currentColor;
 }
 
 /* stylelint-disable-next-line media-query-no-invalid */
-@media (-moz-bool-pref: "browser.urlbar.searchModeSwitcher.featureGate") or (-moz-bool-pref: "browser.urlbar.scotchBonnet.enableOverride") {
-  /* Don't hide on mousedown to avoid shifting input field text */
-  #urlbar[focused]:not([focusing-via-mousedown]) #identity-box,
+@media -moz-pref("browser.urlbar.searchModeSwitcher.featureGate") or -moz-pref("browser.urlbar.scotchBonnet.enableOverride") {
   #urlbar[searchmode] > .urlbar-input-container > #urlbar-search-mode-indicator {
     display: none;
+  }
+
+  /* stylelint-disable-next-line media-query-no-invalid */
+  @media not -moz-pref("browser.urlbar.unifiedSearchButton.always") {
+    #urlbar-searchmode-switcher {
+      background-color: var(--urlbar-box-bgcolor);
+      #urlbar:not([unifiedsearchbutton-available]) > .urlbar-input-container > & {
+        /* Display as off-screen to get focus */
+        position: fixed;
+        top: -999px;
+      }
+    }
+
+    #searchmode-switcher-dropmarker {
+      margin-inline-start: var(--urlbar-searchmodeswitcher-inline-padding);
+    }
+
+    #urlbar[pageproxystate=invalid] {
+      #identity-box,
+      #tracking-protection-icon-container {
+        display: none;
+      }
+    }
   }
 }

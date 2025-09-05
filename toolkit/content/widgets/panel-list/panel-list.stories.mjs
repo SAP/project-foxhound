@@ -5,18 +5,26 @@
 import "./panel-list.js";
 import { html, ifDefined } from "../vendor/lit.all.mjs";
 
+let accesskeyOptions = ["n", "w", "e", "c", "b"];
+
 export default {
   title: "UI Widgets/Panel List",
   component: "panel-list",
+  argTypes: {
+    accesskeys: {
+      if: { arg: "showAccesskeys", truthy: true },
+    },
+  },
   parameters: {
-    status: "in-development",
+    status: "stable",
     actions: {
       handles: ["showing", "shown", "hidden", "click"],
     },
     fluent: `
 panel-list-item-one = Item One
-panel-list-item-two = Item Two (accesskey w)
+panel-list-item-two = Item Two
 panel-list-item-three = Item Three
+panel-list-disabled = Disabled
 panel-list-checked = Checked
 panel-list-badged = Badged, look at me
 panel-list-passwords = Passwords
@@ -38,84 +46,97 @@ function openMenu(event) {
   }
 }
 
-const Template = ({ isOpen, items, wideAnchor, hasSubMenu }) =>
-  html`
-    <style>
-      panel-item[icon="passwords"]::part(button) {
-        background-image: url("chrome://browser/skin/login.svg");
-      }
-      panel-item[icon="settings"]::part(button) {
-        background-image: url("chrome://global/skin/icons/settings.svg");
-      }
-      button {
-        position: absolute;
-        background-image: url("chrome://global/skin/icons/more.svg");
-      }
-      button[wide] {
-        width: 400px !important;
-      }
-      .end {
-        inset-inline-end: 30px;
-      }
+const Template = ({
+  isOpen,
+  items,
+  wideAnchor,
+  hasSubMenu,
+  showAccesskeys,
+  accesskeys,
+}) => html`
+  <style>
+    panel-item[icon="passwords"]::part(button) {
+      background-image: url("chrome://browser/skin/login.svg");
+    }
+    panel-item[icon="settings"]::part(button) {
+      background-image: url("chrome://global/skin/icons/settings.svg");
+    }
+    moz-button {
+      position: absolute;
+    }
+    moz-button::part(button) {
+      background-image: url("chrome://global/skin/icons/more.svg");
+    }
+    moz-button[wide] {
+      width: 400px !important;
+    }
+    .end {
+      inset-inline-end: 30px;
+    }
 
-      .bottom {
-        inset-block-end: 30px;
-      }
-    </style>
-    ${isOpen
-      ? ""
-      : html`
-          <button
-            class="ghost-button icon-button"
-            @click=${openMenu}
-            @mousedown=${openMenu}
-            ?wide="${wideAnchor}"
-          ></button>
-          <button
-            class="ghost-button icon-button end"
-            @click=${openMenu}
-            @mousedown=${openMenu}
-            ?wide="${wideAnchor}"
-          ></button>
-          <button
-            class="ghost-button icon-button bottom"
-            @click=${openMenu}
-            @mousedown=${openMenu}
-            ?wide="${wideAnchor}"
-          ></button>
-          <button
-            class="ghost-button icon-button bottom end"
-            @click=${openMenu}
-            @mousedown=${openMenu}
-            ?wide="${wideAnchor}"
-          ></button>
-        `}
-    <panel-list
-      ?stay-open=${isOpen}
-      ?open=${isOpen}
-      ?min-width-from-anchor=${wideAnchor}
-    >
-      ${items.map((item, index) => {
-        // Always showing submenu on the first item for simplicity.
-        let showSubMenu = hasSubMenu && index == 0;
-        let subMenuId = showSubMenu ? "example-sub-menu" : undefined;
-        return item == "<hr>"
-          ? html` <hr /> `
-          : html`
-              <panel-item
-                icon=${item.icon ?? ""}
-                ?checked=${item.checked}
-                ?badged=${item.badged}
-                accesskey=${ifDefined(item.accesskey)}
-                data-l10n-id=${item.l10nId ?? item}
-                submenu=${ifDefined(subMenuId)}
-              >
-                ${showSubMenu ? subMenuTemplate() : ""}
-              </panel-item>
-            `;
-      })}
-    </panel-list>
-  `;
+    .bottom {
+      inset-block-end: 30px;
+    }
+  </style>
+  ${isOpen
+    ? ""
+    : html`
+        <moz-button
+          type="icon ghost"
+          @click=${openMenu}
+          @mousedown=${openMenu}
+          ?wide=${wideAnchor}
+        ></moz-button>
+        <moz-button
+          type="icon ghost"
+          class="end"
+          @click=${openMenu}
+          @mousedown=${openMenu}
+          ?wide=${wideAnchor}
+        ></moz-button>
+        <moz-button
+          type="icon ghost"
+          class="bottom"
+          @click=${openMenu}
+          @mousedown=${openMenu}
+          ?wide=${wideAnchor}
+        ></moz-button>
+        <moz-button
+          type="icon ghost"
+          class="bottom end"
+          @click=${openMenu}
+          @mousedown=${openMenu}
+          ?wide=${wideAnchor}
+        ></moz-button>
+      `}
+  <panel-list
+    ?stay-open=${isOpen}
+    ?open=${isOpen}
+    ?min-width-from-anchor=${wideAnchor}
+  >
+    ${items.map((item, index) => {
+      // Always showing submenu on the first item for simplicity.
+      let showSubMenu = hasSubMenu && index == 0;
+      let subMenuId = showSubMenu ? "example-sub-menu" : undefined;
+      return item == "<hr>"
+        ? html` <hr /> `
+        : html`
+            <panel-item
+              icon=${item.icon ?? ""}
+              ?checked=${item.checked}
+              ?disabled=${item.disabled}
+              type=${ifDefined(item.checked ? "checkbox" : undefined)}
+              ?badged=${item.badged}
+              data-l10n-id=${item.l10nId ?? item}
+              submenu=${ifDefined(subMenuId)}
+              accesskey=${ifDefined(showAccesskeys ? accesskeys[index] : "")}
+            >
+              ${showSubMenu ? subMenuTemplate() : ""}
+            </panel-item>
+          `;
+    })}
+  </panel-list>
+`;
 
 const subMenuTemplate = () => html`
   <panel-list slot="submenu" id="example-sub-menu">
@@ -131,12 +152,14 @@ Simple.args = {
   wideAnchor: false,
   items: [
     "panel-list-item-one",
-    { l10nId: "panel-list-item-two", accesskey: "w" },
+    { l10nId: "panel-list-item-two" },
     "panel-list-item-three",
     "<hr>",
+    { l10nId: "panel-list-disabled", disabled: true },
     { l10nId: "panel-list-checked", checked: true },
     { l10nId: "panel-list-badged", badged: true, icon: "settings" },
   ],
+  showAccesskeys: false,
 };
 
 export const Icons = Template.bind({});
@@ -166,4 +189,11 @@ export const SubMenu = Template.bind({});
 SubMenu.args = {
   ...Simple.args,
   hasSubMenu: true,
+};
+
+export const WithAccesskeys = Template.bind({});
+WithAccesskeys.args = {
+  ...Simple.args,
+  showAccesskeys: true,
+  accesskeys: accesskeyOptions,
 };

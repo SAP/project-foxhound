@@ -22,6 +22,7 @@ apt-get install -y --no-install-recommends \
     golang-go \
     gcc \
     libc6-dev \
+    meson \
     python3-minimal \
     python3-wheel \
     python3-pip \
@@ -38,8 +39,7 @@ mkdir -p /builds/worker/.mozbuild
 chown -R worker:worker /builds/worker/
 export GOPATH=/builds/worker/go
 
-# nodejs 16 for pdfjs
-. install-node.sh
+. install-node-for-pdfjs.sh
 
 # pdf.js setup
 # We want to aviod downloading a ton of packages all the time, so

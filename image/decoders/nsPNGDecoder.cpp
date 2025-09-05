@@ -431,7 +431,30 @@ static void PNGDoGammaCorrection(png_structp png_ptr, png_infop info_ptr) {
 // Adapted from http://www.littlecms.com/pngchrm.c example code
 uint32_t nsPNGDecoder::ReadColorProfile(png_structp png_ptr, png_infop info_ptr,
                                         int color_type, bool* sRGBTag) {
-  // First try to see if iCCP chunk is present
+  // Check if cICP chunk is present
+  if (png_get_valid(png_ptr, info_ptr, PNG_INFO_cICP)) {
+    png_byte primaries;
+    png_byte tc;
+    png_byte matrix_coefficients;
+    png_byte range;
+    if (png_get_cICP(png_ptr, info_ptr, &primaries, &tc, &matrix_coefficients,
+                     &range)) {
+      if (matrix_coefficients == 0 && range <= 1) {
+        if (range == 0) {
+          MOZ_LOG(sPNGLog, LogLevel::Warning,
+                  ("limited range specified in cicp chunk not properly "
+                   "supported\n"));
+        }
+
+        mInProfile = qcms_profile_create_cicp(primaries, tc);
+        if (mInProfile) {
+          return qcms_profile_get_rendering_intent(mInProfile);
+        }
+      }
+    }
+  }
+
+  // Check if iCCP chunk is present
   if (png_get_valid(png_ptr, info_ptr, PNG_INFO_iCCP)) {
     png_uint_32 profileLen;
     png_bytep profileData;
@@ -595,7 +618,8 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
         intent = pIntent;
       }
     }
-    if (!decoder->mInProfile || !decoder->GetCMSOutputProfile()) {
+    const bool hasColorInfo = decoder->mInProfile || sRGBTag;
+    if (!hasColorInfo || !decoder->GetCMSOutputProfile()) {
       png_set_gray_to_rgb(png_ptr);
 
       // only do gamma correction if CMS isn't entirely disabled
@@ -663,10 +687,13 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
     uint32_t profileSpace = qcms_profile_get_color_space(decoder->mInProfile);
     decoder->mUsePipeTransform = profileSpace != icSigGrayData;
     if (decoder->mUsePipeTransform) {
-      // If the transform happens with SurfacePipe, it will be in RGBA if we
-      // have an alpha channel, because the swizzle and premultiplication
-      // happens after color management. Otherwise it will be in BGRA because
-      // the swizzle happens at the start.
+      // libpng outputs data in RGBA order and we want our final output to be
+      // BGRA order. SurfacePipe takes care of this for us but unfortunately the
+      // swizzle to change the order can happen before or after color management
+      // depending on if we have alpha. If we have alpha then the order will be
+      // color management then swizzle. If we do not have alpha then the order
+      // will be swizzle then color management. See CreateSurfacePipe
+      // https://searchfox.org/mozilla-central/rev/7d6651d29c5c1620bc059f879a3e9bbfb53f271f/image/SurfacePipeFactory.h#133-145
       if (transparency == TransparencyType::eAlpha) {
         inType = QCMS_DATA_RGBA_8;
         outType = QCMS_DATA_RGBA_8;
@@ -675,6 +702,7 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
         outType = inType;
       }
     } else {
+      // qcms operates on the data before we hand it to SurfacePipe.
       if (color_type & PNG_COLOR_MASK_ALPHA) {
         inType = QCMS_DATA_GRAYA_8;
         outType = gfxPlatform::GetCMSOSRGBAType();
@@ -689,10 +717,8 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
                                                 outType, (qcms_intent)intent);
   } else if ((sRGBTag && decoder->mCMSMode == CMSMode::TaggedOnly) ||
              decoder->mCMSMode == CMSMode::All) {
-    // If the transform happens with SurfacePipe, it will be in RGBA if we
-    // have an alpha channel, because the swizzle and premultiplication
-    // happens after color management. Otherwise it will be in OS_RGBA because
-    // the swizzle happens at the start.
+    // See comment above about SurfacePipe, color management and ordering.
+    decoder->mUsePipeTransform = true;
     if (transparency == TransparencyType::eAlpha) {
       decoder->mTransform =
           decoder->GetCMSsRGBTransform(SurfaceFormat::R8G8B8A8);
@@ -700,7 +726,6 @@ void nsPNGDecoder::info_callback(png_structp png_ptr, png_infop info_ptr) {
       decoder->mTransform =
           decoder->GetCMSsRGBTransform(SurfaceFormat::OS_RGBA);
     }
-    decoder->mUsePipeTransform = true;
   }
 
 #ifdef PNG_APNG_SUPPORTED
@@ -1007,7 +1032,8 @@ void nsPNGDecoder::error_callback(png_structp png_ptr,
   nsPNGDecoder* decoder =
       static_cast<nsPNGDecoder*>(png_get_progressive_ptr(png_ptr));
 
-  if (strstr(error_msg, "invalid chunk type")) {
+  if (strstr(error_msg, "invalid chunk type") ||
+      strstr(error_msg, "bad header (invalid type)")) {
     decoder->mErrorIsRecoverable = true;
   } else {
     decoder->mErrorIsRecoverable = false;
@@ -1021,8 +1047,8 @@ void nsPNGDecoder::warning_callback(png_structp png_ptr,
   MOZ_LOG(sPNGLog, LogLevel::Warning, ("libpng warning: %s\n", warning_msg));
 }
 
-Maybe<Telemetry::HistogramID> nsPNGDecoder::SpeedHistogram() const {
-  return Some(Telemetry::IMAGE_DECODE_SPEED_PNG);
+Maybe<glean::impl::MemoryDistributionMetric> nsPNGDecoder::SpeedMetric() const {
+  return Some(glean::image_decode::speed_png);
 }
 
 bool nsPNGDecoder::IsValidICOResource() const {

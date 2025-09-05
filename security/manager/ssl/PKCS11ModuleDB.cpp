@@ -6,8 +6,9 @@
 
 #include "PKCS11ModuleDB.h"
 
+#include "CertVerifier.h"
 #include "ScopedNSSTypes.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIMutableArray.h"
 #include "nsNSSCertHelper.h"
@@ -60,6 +61,12 @@ PKCS11ModuleDB::DeleteModule(const nsAString& aModuleName) {
     return NS_ERROR_FAILURE;
   }
 
+  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+  if (!certVerifier) {
+    return NS_ERROR_FAILURE;
+  }
+  certVerifier->ClearTrustCache();
+
   CollectThirdPartyPKCS11ModuleTelemetry();
 
   return NS_OK;
@@ -106,6 +113,12 @@ PKCS11ModuleDB::AddModule(const nsAString& aModuleName,
   if (srv != SECSuccess) {
     return NS_ERROR_FAILURE;
   }
+
+  RefPtr<SharedCertVerifier> certVerifier(GetDefaultCertVerifier());
+  if (!certVerifier) {
+    return NS_ERROR_FAILURE;
+  }
+  certVerifier->ClearTrustCache();
 
   CollectThirdPartyPKCS11ModuleTelemetry();
 

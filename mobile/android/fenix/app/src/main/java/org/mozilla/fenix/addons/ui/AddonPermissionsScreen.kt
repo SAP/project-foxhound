@@ -20,16 +20,18 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.Addon.Companion.isAllURLsPermission
 import mozilla.components.feature.addons.Addon.Permission
 import org.mozilla.fenix.R
 import org.mozilla.fenix.addons.AddonPermissionsUpdateRequest
-import org.mozilla.fenix.compose.Divider
+import org.mozilla.fenix.compose.InfoCard
+import org.mozilla.fenix.compose.InfoType
 import org.mozilla.fenix.compose.LinkText
 import org.mozilla.fenix.compose.LinkTextState
 import org.mozilla.fenix.compose.SwitchWithLabel
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.compose.list.TextListItem
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
@@ -261,6 +263,14 @@ private fun OptionalPermissionSwitch(
             )
         }
     }
+    if (localizedPermission.permission.name == "userScripts") {
+        InfoCard(
+            type = InfoType.Warning,
+            modifier = Modifier
+                .fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
+            description = stringResource(R.string.mozac_feature_addons_permissions_user_scripts_extra_warning),
+        )
+    }
 }
 
 @Composable
@@ -314,6 +324,34 @@ private fun AddonPermissionsScreenWithPermissionsPreview() {
             AddonPermissionsScreen(
                 permissions = emptyList(),
                 optionalPermissions = emptyList(),
+                originPermissions = emptyList(),
+                isAllSitesSwitchVisible = true,
+                isAllSitesEnabled = false,
+                onAddOptionalPermissions = { _ -> },
+                onRemoveOptionalPermissions = { _ -> },
+                onAddAllSitesPermissions = {},
+                onRemoveAllSitesPermissions = {},
+                onLearnMoreClick = { _ -> },
+            )
+        }
+    }
+}
+
+@Composable
+@LightDarkPreview
+private fun AddonPermissionsScreenWithUserScriptsPermissionsPreview() {
+    val optionalPermissions: List<Addon.LocalizedPermission> = listOf(
+        Addon.LocalizedPermission(
+            "Allow unverified third-party scripts to access your data",
+            Permission("userScripts", false),
+        ),
+    )
+
+    FirefoxTheme {
+        Column(modifier = Modifier.background(FirefoxTheme.colors.layer1)) {
+            AddonPermissionsScreen(
+                permissions = emptyList(),
+                optionalPermissions = optionalPermissions,
                 originPermissions = emptyList(),
                 isAllSitesSwitchVisible = true,
                 isAllSitesEnabled = false,

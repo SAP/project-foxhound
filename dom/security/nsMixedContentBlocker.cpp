@@ -41,7 +41,7 @@
 #include "mozilla/StaticPrefs_dom.h"
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_security.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/DomSecurityMetrics.h"
 #include "mozilla/dom/ContentChild.h"
 #include "mozilla/ipc/URIUtils.h"
 #include "mozilla/net/DNS.h"
@@ -378,6 +378,7 @@ bool nsMixedContentBlocker::IsUpgradableContentType(nsContentPolicyType aType,
   switch (aType) {
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
+    case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
       return !aConsiderPrefs ||
              StaticPrefs::
                  security_mixed_content_upgrade_display_content_image();
@@ -610,6 +611,7 @@ nsresult nsMixedContentBlocker::ShouldLoad(bool aHadInsecureImageRedirect,
     case ExtContentPolicy::TYPE_SPECULATIVE:
     case ExtContentPolicy::TYPE_WEB_TRANSPORT:
     case ExtContentPolicy::TYPE_WEB_IDENTITY:
+    case ExtContentPolicy::TYPE_JSON:
       break;
 
     case ExtContentPolicy::TYPE_INVALID:
@@ -1047,19 +1049,19 @@ void nsMixedContentBlocker::AccumulateMixedContentHSTS(
   //
   if (!aActive) {
     if (!hsts) {
-      Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS,
-                            MCB_HSTS_PASSIVE_NO_HSTS);
+      glean::mixed_content::hsts.AccumulateSingleSample(
+          MCB_HSTS_PASSIVE_NO_HSTS);
     } else {
-      Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS,
-                            MCB_HSTS_PASSIVE_WITH_HSTS);
+      glean::mixed_content::hsts.AccumulateSingleSample(
+          MCB_HSTS_PASSIVE_WITH_HSTS);
     }
   } else {
     if (!hsts) {
-      Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS,
-                            MCB_HSTS_ACTIVE_NO_HSTS);
+      glean::mixed_content::hsts.AccumulateSingleSample(
+          MCB_HSTS_ACTIVE_NO_HSTS);
     } else {
-      Telemetry::Accumulate(Telemetry::MIXED_CONTENT_HSTS,
-                            MCB_HSTS_ACTIVE_WITH_HSTS);
+      glean::mixed_content::hsts.AccumulateSingleSample(
+          MCB_HSTS_ACTIVE_WITH_HSTS);
     }
   }
 }

@@ -1,6 +1,11 @@
 use super::{conv, AsNative, TimestampQuerySupport};
 use crate::CommandEncoder as _;
-use std::{borrow::Cow, mem, ops::Range};
+use std::{
+    borrow::{Cow, ToOwned as _},
+    mem::size_of,
+    ops::Range,
+    vec::Vec,
+};
 
 // has to match `Temp::binding_sizes`
 const WORD_SIZE: usize = 4;
@@ -241,13 +246,13 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn transition_buffers<'a, T>(&mut self, _barriers: T)
     where
-        T: Iterator<Item = crate::BufferBarrier<'a, super::Api>>,
+        T: Iterator<Item = crate::BufferBarrier<'a, super::Buffer>>,
     {
     }
 
     unsafe fn transition_textures<'a, T>(&mut self, _barriers: T)
     where
-        T: Iterator<Item = crate::TextureBarrier<'a, super::Api>>,
+        T: Iterator<Item = crate::TextureBarrier<'a, super::Texture>>,
     {
     }
 
@@ -279,7 +284,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_texture<T>(
         &mut self,
         src: &super::Texture,
-        _src_usage: crate::TextureUses,
+        _src_usage: wgt::TextureUses,
         dst: &super::Texture,
         regions: T,
     ) where
@@ -358,7 +363,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn copy_texture_to_buffer<T>(
         &mut self,
         src: &super::Texture,
-        _src_usage: crate::TextureUses,
+        _src_usage: wgt::TextureUses,
         dst: &super::Buffer,
         regions: T,
     ) where
@@ -390,6 +395,15 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 conv::get_blit_option(src.format, copy.texture_base.aspect),
             );
         }
+    }
+
+    unsafe fn copy_acceleration_structure_to_acceleration_structure(
+        &mut self,
+        _src: &super::AccelerationStructure,
+        _dst: &super::AccelerationStructure,
+        _copy: wgt::AccelerationStructureCopy,
+    ) {
+        unimplemented!()
     }
 
     unsafe fn begin_query(&mut self, set: &super::QuerySet, index: u32) {
@@ -490,7 +504,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             wgt::QueryType::Timestamp => {
                 encoder.resolve_counters(
                     set.counter_sample_buffer.as_ref().unwrap(),
-                    metal::NSRange::new(range.start as u64, range.end as u64),
+                    metal::NSRange::new(range.start as u64, (range.end - range.start) as u64),
                     &buffer.raw,
                     offset,
                 );
@@ -501,7 +515,10 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     // render
 
-    unsafe fn begin_render_pass(&mut self, desc: &crate::RenderPassDescriptor<super::Api>) {
+    unsafe fn begin_render_pass(
+        &mut self,
+        desc: &crate::RenderPassDescriptor<super::QuerySet, super::TextureView>,
+    ) {
         self.begin_pass();
         self.state.index = None;
 
@@ -679,7 +696,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     encoder.set_vertex_bytes(
                         index as _,
                         (sizes.len() * WORD_SIZE) as u64,
-                        sizes.as_ptr() as _,
+                        sizes.as_ptr().cast(),
                     );
                 }
             }
@@ -713,7 +730,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     encoder.set_fragment_bytes(
                         index as _,
                         (sizes.len() * WORD_SIZE) as u64,
-                        sizes.as_ptr() as _,
+                        sizes.as_ptr().cast(),
                     );
                 }
             }
@@ -746,6 +763,11 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     (bg_info.base_resource_indices.fs.textures + index) as u64,
                     Some(res.as_native()),
                 );
+            }
+
+            // Call useResource on all textures and buffers used indirectly so they are alive
+            for (resource, use_info) in group.resources_to_use.iter() {
+                encoder.use_resource_at(resource.as_native(), use_info.uses, use_info.stages);
             }
         }
 
@@ -785,7 +807,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     encoder.set_bytes(
                         index as _,
                         (sizes.len() * WORD_SIZE) as u64,
-                        sizes.as_ptr() as _,
+                        sizes.as_ptr().cast(),
                     );
                 }
             }
@@ -803,6 +825,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
                     (bg_info.base_resource_indices.cs.textures + index) as u64,
                     Some(res.as_native()),
                 );
+            }
+
+            // Call useResource on all textures and buffers used indirectly so they are alive
+            for (resource, use_info) in group.resources_to_use.iter() {
+                if !use_info.visible_in_compute {
+                    continue;
+                }
+                encoder.use_resource(resource.as_native(), use_info.uses);
             }
         }
     }
@@ -827,21 +857,21 @@ impl crate::CommandEncoder for super::CommandEncoder {
             self.state.compute.as_ref().unwrap().set_bytes(
                 layout.push_constants_infos.cs.unwrap().buffer_index as _,
                 (layout.total_push_constants as usize * WORD_SIZE) as _,
-                state_pc.as_ptr() as _,
+                state_pc.as_ptr().cast(),
             )
         }
         if stages.contains(wgt::ShaderStages::VERTEX) {
             self.state.render.as_ref().unwrap().set_vertex_bytes(
                 layout.push_constants_infos.vs.unwrap().buffer_index as _,
                 (layout.total_push_constants as usize * WORD_SIZE) as _,
-                state_pc.as_ptr() as _,
+                state_pc.as_ptr().cast(),
             )
         }
         if stages.contains(wgt::ShaderStages::FRAGMENT) {
             self.state.render.as_ref().unwrap().set_fragment_bytes(
                 layout.push_constants_infos.fs.unwrap().buffer_index as _,
                 (layout.total_push_constants as usize * WORD_SIZE) as _,
-                state_pc.as_ptr() as _,
+                state_pc.as_ptr().cast(),
             )
         }
     }
@@ -895,7 +925,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 encoder.set_vertex_bytes(
                     index as _,
                     (sizes.len() * WORD_SIZE) as u64,
-                    sizes.as_ptr() as _,
+                    sizes.as_ptr().cast(),
                 );
             }
         }
@@ -907,7 +937,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 encoder.set_fragment_bytes(
                     index as _,
                     (sizes.len() * WORD_SIZE) as u64,
-                    sizes.as_ptr() as _,
+                    sizes.as_ptr().cast(),
                 );
             }
         }
@@ -915,7 +945,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     unsafe fn set_index_buffer<'a>(
         &mut self,
-        binding: crate::BufferBinding<'a, super::Api>,
+        binding: crate::BufferBinding<'a, super::Buffer>,
         format: wgt::IndexFormat,
     ) {
         let (stride, raw_type) = match format {
@@ -933,7 +963,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn set_vertex_buffer<'a>(
         &mut self,
         index: u32,
-        binding: crate::BufferBinding<'a, super::Api>,
+        binding: crate::BufferBinding<'a, super::Buffer>,
     ) {
         let buffer_index = self.shared.private_caps.max_vertex_buffers as u64 - 1 - index as u64;
         let encoder = self.state.render.as_ref().unwrap();
@@ -956,7 +986,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             encoder.set_vertex_bytes(
                 index as _,
                 (sizes.len() * WORD_SIZE) as u64,
-                sizes.as_ptr() as _,
+                sizes.as_ptr().cast(),
             );
         }
     }
@@ -1080,7 +1110,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
         let encoder = self.state.render.as_ref().unwrap();
         for _ in 0..draw_count {
             encoder.draw_primitives_indirect(self.state.raw_primitive_type, &buffer.raw, offset);
-            offset += mem::size_of::<wgt::DrawIndirectArgs>() as wgt::BufferAddress;
+            offset += size_of::<wgt::DrawIndirectArgs>() as wgt::BufferAddress;
         }
     }
 
@@ -1101,7 +1131,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
                 &buffer.raw,
                 offset,
             );
-            offset += mem::size_of::<wgt::DrawIndexedIndirectArgs>() as wgt::BufferAddress;
+            offset += size_of::<wgt::DrawIndexedIndirectArgs>() as wgt::BufferAddress;
         }
     }
 
@@ -1128,7 +1158,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
 
     // compute
 
-    unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor<super::Api>) {
+    unsafe fn begin_compute_pass(&mut self, desc: &crate::ComputePassDescriptor<super::QuerySet>) {
         self.begin_pass();
 
         debug_assert!(self.state.blit.is_none());
@@ -1212,7 +1242,7 @@ impl crate::CommandEncoder for super::CommandEncoder {
             encoder.set_bytes(
                 index as _,
                 (sizes.len() * WORD_SIZE) as u64,
-                sizes.as_ptr() as _,
+                sizes.as_ptr().cast(),
             );
         }
 
@@ -1237,13 +1267,15 @@ impl crate::CommandEncoder for super::CommandEncoder {
     }
 
     unsafe fn dispatch(&mut self, count: [u32; 3]) {
-        let encoder = self.state.compute.as_ref().unwrap();
-        let raw_count = metal::MTLSize {
-            width: count[0] as u64,
-            height: count[1] as u64,
-            depth: count[2] as u64,
-        };
-        encoder.dispatch_thread_groups(raw_count, self.state.raw_wg_size);
+        if count[0] > 0 && count[1] > 0 && count[2] > 0 {
+            let encoder = self.state.compute.as_ref().unwrap();
+            let raw_count = metal::MTLSize {
+                width: count[0] as u64,
+                height: count[1] as u64,
+                depth: count[2] as u64,
+            };
+            encoder.dispatch_thread_groups(raw_count, self.state.raw_wg_size);
+        }
     }
 
     unsafe fn dispatch_indirect(&mut self, buffer: &super::Buffer, offset: wgt::BufferAddress) {
@@ -1257,7 +1289,13 @@ impl crate::CommandEncoder for super::CommandEncoder {
         _descriptors: T,
     ) where
         super::Api: 'a,
-        T: IntoIterator<Item = crate::BuildAccelerationStructureDescriptor<'a, super::Api>>,
+        T: IntoIterator<
+            Item = crate::BuildAccelerationStructureDescriptor<
+                'a,
+                super::Buffer,
+                super::AccelerationStructure,
+            >,
+        >,
     {
         unimplemented!()
     }
@@ -1265,6 +1303,14 @@ impl crate::CommandEncoder for super::CommandEncoder {
     unsafe fn place_acceleration_structure_barrier(
         &mut self,
         _barriers: crate::AccelerationStructureBarrier,
+    ) {
+        unimplemented!()
+    }
+
+    unsafe fn read_acceleration_structure_compact_size(
+        &mut self,
+        _acceleration_structure: &super::AccelerationStructure,
+        _buf: &super::Buffer,
     ) {
         unimplemented!()
     }
@@ -1284,5 +1330,6 @@ impl Drop for super::CommandEncoder {
         unsafe {
             self.discard_encoding();
         }
+        self.counters.command_encoders.sub(1);
     }
 }

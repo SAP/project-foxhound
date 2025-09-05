@@ -42,7 +42,7 @@ namespace mozilla {
 
 FilterDescription FilterInstance::GetFilterDescription(
     nsIContent* aFilteredElement, Span<const StyleFilter> aFilterChain,
-    nsISupports* aFiltersObserverList, bool aFilterInputIsTainted,
+    ISVGFilterObserverList* aFiltersObserverList, bool aFilterInputIsTainted,
     const UserSpaceMetrics& aMetrics, const gfxRect& aBBox,
     nsTArray<RefPtr<SourceSurface>>& aOutAdditionalImages) {
   gfxMatrix identity;
@@ -687,7 +687,6 @@ static WrFiltersStatus WrFilterOpSVGFEComponentTransfer(
   // This builds a single interleaved RGBA table as it is well suited to GPU
   // texture fetches without any dynamic component indexing in the shader which
   // can confuse buggy shader compilers.
-  float invScale = 1.0f / (float)(stops - 1);
   for (size_t c = 0; c < 4; c++) {
     auto f = aAttributes.mTypes[c];
     // Check if there's no data (we have crashtests for this).
@@ -701,65 +700,65 @@ static WrFiltersStatus WrFilterOpSVGFEComponentTransfer(
     }
     switch (f) {
       case SVG_FECOMPONENTTRANSFER_TYPE_DISCRETE: {
-        size_t length1 = (size_t)aAttributes.mValues[c].Length() - 1;
+        size_t length = (size_t)aAttributes.mValues[c].Length();
+        size_t length1 = length - 1;
+        float step = (float)length / (float)stops;
         for (size_t i = 0; i < stops; i++) {
           // find the corresponding color in the table
           // this can not overflow due to the length check
-          float kf = (float)i * invScale * (float)length1;
+          float kf = (float)i * step;
           float floorkf = floor(kf);
           size_t k = (size_t)floorkf;
           k = std::min(k, length1);
           float v = aAttributes.mValues[c][k];
-          v = mozilla::clamped(v, 0.0f, 1.0f);
+          v = std::clamp(v, 0.0f, 1.0f);
           values[i * 4 + c] = v;
         }
         break;
       }
       case SVG_FECOMPONENTTRANSFER_TYPE_GAMMA: {
-        float slope = invScale;
-        float intercept = 0.0f;
+        float step = 1.0f / (float)(stops - 1);
         float amplitude = aAttributes.mValues[c][0];
         float exponent = aAttributes.mValues[c][1];
         float offset = aAttributes.mValues[c][2];
         for (size_t i = 0; i < stops; i++) {
-          float v =
-              amplitude * pow((float)i * slope + intercept, exponent) + offset;
-          v = mozilla::clamped(v, 0.0f, 1.0f);
+          float v = amplitude * pow((float)i * step, exponent) + offset;
+          v = std::clamp(v, 0.0f, 1.0f);
           values[i * 4 + c] = v;
         }
         break;
       }
       case SVG_FECOMPONENTTRANSFER_TYPE_IDENTITY: {
-        float slope = invScale;
-        float intercept = 0.0f;
+        float step = 1.0f / (float)(stops - 1);
         for (size_t i = 0; i < stops; i++) {
-          float v = (float)i * slope + intercept;
-          v = mozilla::clamped(v, 0.0f, 1.0f);
+          float v = (float)i * step;
+          v = std::clamp(v, 0.0f, 1.0f);
           values[i * 4 + c] = v;
         }
         break;
       }
       case SVG_FECOMPONENTTRANSFER_TYPE_LINEAR: {
-        float slope = aAttributes.mValues[c][0] * invScale;
+        float step = aAttributes.mValues[c][0] / (float)(stops - 1);
         float intercept = aAttributes.mValues[c][1];
         for (size_t i = 0; i < stops; i++) {
-          float v = (float)i * slope + intercept;
-          v = mozilla::clamped(v, 0.0f, 1.0f);
+          float v = (float)i * step + intercept;
+          v = std::clamp(v, 0.0f, 1.0f);
           values[i * 4 + c] = v;
         }
         break;
       }
       case SVG_FECOMPONENTTRANSFER_TYPE_TABLE: {
         size_t length1 = (size_t)aAttributes.mValues[c].Length() - 1;
+        float step = (float)length1 / (float)(stops - 1);
         for (size_t i = 0; i < stops; i++) {
           // Find the corresponding color in the table and interpolate
-          float kf = (float)i * invScale * (float)length1;
+          float kf = (float)i * step;
           float floorkf = floor(kf);
           size_t k = (size_t)floorkf;
           float v1 = aAttributes.mValues[c][k];
           float v2 = aAttributes.mValues[c][(k + 1 <= length1) ? k + 1 : k];
           float v = v1 + (v2 - v1) * (kf - floorkf);
-          v = mozilla::clamped(v, 0.0f, 1.0f);
+          v = std::clamp(v, 0.0f, 1.0f);
           values[i * 4 + c] = v;
         }
         break;
@@ -1171,8 +1170,12 @@ static WrFiltersStatus WrFilterOpSVGFETurbulence(
   // for setting up the seed.
   int32_t m1 = 2147483647 - 1;
   int32_t seed = (int32_t)((uint32_t)aAttributes.mSeed);
-  if (seed <= 0) seed = -(seed % m1) + 1;
-  if (seed > m1) seed = m1;
+  if (seed <= 0) {
+    seed = -(seed % m1) + 1;
+  }
+  if (seed > m1) {
+    seed = m1;
+  }
   switch (aAttributes.mType) {
     case SVG_TURBULENCE_TYPE_FRACTALNOISE:
       if (aAttributes.mStitchable) {
@@ -1261,7 +1264,7 @@ WrFiltersStatus FilterInstance::BuildWebRenderSVGFiltersImpl(
 
   // We have to remap the input nodes to a possibly larger number of output
   // nodes due to expanding feMerge.
-  static constexpr size_t maxFilters = 256;
+  static constexpr size_t maxFilters = wr::SVGFE_GRAPH_MAX;
   int16_t bufferIdMapping[maxFilters];
   // Just drop the graph if there are too many filters to process.
   if (instance.mFilterDescription.mPrimitives.Length() > maxFilters) {

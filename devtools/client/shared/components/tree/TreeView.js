@@ -10,23 +10,27 @@ define(function (require, exports, module) {
     Component,
     createFactory,
     createRef,
-  } = require("devtools/client/shared/vendor/react");
-  const { findDOMNode } = require("devtools/client/shared/vendor/react-dom");
-  const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
-  const dom = require("devtools/client/shared/vendor/react-dom-factories");
+  } = require("resource://devtools/client/shared/vendor/react.js");
+  const {
+    findDOMNode,
+  } = require("resource://devtools/client/shared/vendor/react-dom.js");
+  const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
+  const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
 
   // Reps
   const {
     ObjectProvider,
-  } = require("devtools/client/shared/components/tree/ObjectProvider");
+  } = require("resource://devtools/client/shared/components/tree/ObjectProvider.js");
   const TreeRow = createFactory(
-    require("devtools/client/shared/components/tree/TreeRow")
+    require("resource://devtools/client/shared/components/tree/TreeRow.js")
   );
   const TreeHeader = createFactory(
-    require("devtools/client/shared/components/tree/TreeHeader")
+    require("resource://devtools/client/shared/components/tree/TreeHeader.js")
   );
 
-  const { scrollIntoView } = require("devtools/client/shared/scroll");
+  const {
+    scrollIntoView,
+  } = require("resource://devtools/client/shared/scroll.js");
 
   const SUPPORTED_KEYS = [
     "ArrowUp",
@@ -49,6 +53,7 @@ define(function (require, exports, module) {
     defaultSelectFirstNode: true,
     active: null,
     expandableStrings: true,
+    maxStringLength: 50,
     columns: [],
   };
 
@@ -146,6 +151,8 @@ define(function (require, exports, module) {
         header: PropTypes.bool,
         // Long string is expandable by a toggle button
         expandableStrings: PropTypes.bool,
+        // Length at which a string is considered long
+        maxStringLength: PropTypes.number,
         // Array of columns
         columns: PropTypes.arrayOf(
           PropTypes.shape({
@@ -589,7 +596,7 @@ define(function (require, exports, module) {
         return [];
       }
 
-      const { expandableStrings, provider } = this.props;
+      const { expandableStrings, provider, maxStringLength } = this.props;
       let children = provider.getChildren(parent) || [];
 
       // If the return value is non-array, the children
@@ -611,7 +618,7 @@ define(function (require, exports, module) {
         // Value for actual column is get when a cell is rendered.
         const value = provider.getValue(child);
 
-        if (expandableStrings && isLongString(value)) {
+        if (expandableStrings && isLongString(value, maxStringLength)) {
           hasChildren = true;
         }
 
@@ -790,8 +797,8 @@ define(function (require, exports, module) {
     return [{ id: "default" }, ...columns];
   }
 
-  function isLongString(value) {
-    return typeof value == "string" && value.length > 50;
+  function isLongString(value, maxStringLength) {
+    return typeof value == "string" && value.length > maxStringLength;
   }
 
   // Exports from this module

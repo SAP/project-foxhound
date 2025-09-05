@@ -118,8 +118,9 @@ WheelHandlingUtils::GetDisregardedWheelScrollDirection(const nsIFrame* aFrame) {
 /* mozilla::WheelTransaction                                      */
 /******************************************************************/
 
-AutoWeakFrame WheelTransaction::sScrollTargetFrame(nullptr);
-AutoWeakFrame WheelTransaction::sEventTargetFrame(nullptr);
+MOZ_CONSTINIT AutoWeakFrame WheelTransaction::sScrollTargetFrame;
+MOZ_CONSTINIT AutoWeakFrame WheelTransaction::sEventTargetFrame;
+
 bool WheelTransaction::sHandledByApz(false);
 uint32_t WheelTransaction::sTime = 0;
 uint32_t WheelTransaction::sMouseMoved = 0;
@@ -416,7 +417,7 @@ void WheelTransaction::SetTimeout() {
       OnTimeout, nullptr, StaticPrefs::mousewheel_transaction_timeout(),
       nsITimer::TYPE_ONE_SHOT, "WheelTransaction::SetTimeout");
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
-                       "nsITimer::InitWithFuncCallback failed");
+                       "nsITimer::InitWithNamedFuncCallback failed");
 }
 
 /* static */
@@ -473,13 +474,9 @@ DeltaValues WheelTransaction::OverrideSystemScrollSpeed(
 /* mozilla::ScrollbarsForWheel                                    */
 /******************************************************************/
 
-const DeltaValues ScrollbarsForWheel::directions[kNumberOfTargets] = {
-    DeltaValues(-1, 0), DeltaValues(+1, 0), DeltaValues(0, -1),
-    DeltaValues(0, +1)};
-
-AutoWeakFrame ScrollbarsForWheel::sActiveOwner = nullptr;
-AutoWeakFrame ScrollbarsForWheel::sActivatedScrollTargets[kNumberOfTargets] = {
-    nullptr, nullptr, nullptr, nullptr};
+MOZ_CONSTINIT AutoWeakFrame ScrollbarsForWheel::sActiveOwner;
+MOZ_CONSTINIT AutoWeakFrame
+    ScrollbarsForWheel::sActivatedScrollTargets[kNumberOfTargets];
 
 bool ScrollbarsForWheel::sHadWheelStart = false;
 bool ScrollbarsForWheel::sOwnWheelTransaction = false;

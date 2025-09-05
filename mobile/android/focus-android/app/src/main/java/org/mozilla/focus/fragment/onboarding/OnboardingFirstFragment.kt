@@ -42,21 +42,21 @@ class OnboardingFirstFragment : Fragment() {
             ),
         )
         return ComposeView(requireContext()).apply {
-            setContent {
-                FocusTheme {
-                    OnBoardingFirstScreenCompose(
-                        onGetStartedButtonClicked = {
-                            Onboarding.getStartedButton.record(NoExtras())
-                            onboardingInteractor.onGetStartedButtonClicked()
-                        },
-                        onCloseButtonClick = {
-                            Onboarding.firstScreenCloseButton.record(NoExtras())
-                            onboardingInteractor.onFinishOnBoarding()
-                        },
-                    )
-                }
-            }
             isTransitionGroup = true
+        }
+    }
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        (view as ComposeView).setContent {
+            FocusTheme {
+                OnBoardingFirstScreenCompose(
+                    onGetStartedButtonClicked = {
+                        Onboarding.getStartedButton.record(NoExtras())
+                        onboardingInteractor.onGetStartedButtonClicked()
+                    },
+                )
+            }
         }
     }
 }

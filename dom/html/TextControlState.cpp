@@ -339,7 +339,8 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
   NS_DECL_CYCLE_COLLECTION_CLASS_AMBIGUOUS(TextInputSelectionController,
                                            nsISelectionController)
 
-  TextInputSelectionController(PresShell* aPresShell, nsIContent* aLimiter);
+  TextInputSelectionController(PresShell* aPresShell,
+                               Element& aEditorRootAnonymousDiv);
 
   void SetScrollContainerFrame(ScrollContainerFrame* aScrollContainerFrame);
   nsFrameSelection* GetConstFrameSelection() { return mFrameSelection; }
@@ -355,7 +356,8 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
                                     Selection** aSelection) override;
   Selection* GetSelection(RawSelectionType aRawSelectionType) override;
   NS_IMETHOD ScrollSelectionIntoView(RawSelectionType aRawSelectionType,
-                                     int16_t aRegion, int16_t aFlags) override;
+                                     SelectionRegion aRegion,
+                                     ControllerScrollFlags aFlags) override;
   NS_IMETHOD RepaintSelection(RawSelectionType aRawSelectionType) override;
   nsresult RepaintSelection(nsPresContext* aPresContext,
                             SelectionType aSelectionType);
@@ -381,6 +383,7 @@ class TextInputSelectionController final : public nsSupportsWeakReference,
   NS_IMETHOD ScrollCharacter(bool aRight) override;
   void SelectionWillTakeFocus() override;
   void SelectionWillLoseFocus() override;
+  using nsISelectionController::ScrollSelectionIntoView;
 
  private:
   RefPtr<nsFrameSelection> mFrameSelection;
@@ -399,12 +402,12 @@ NS_INTERFACE_MAP_END
 NS_IMPL_CYCLE_COLLECTION_WEAK(TextInputSelectionController, mFrameSelection)
 
 TextInputSelectionController::TextInputSelectionController(
-    PresShell* aPresShell, nsIContent* aLimiter) {
+    PresShell* aPresShell, Element& aEditorRootAnonymousDiv) {
   if (aPresShell) {
-    bool accessibleCaretEnabled =
-        PresShell::AccessibleCaretEnabled(aLimiter->OwnerDoc()->GetDocShell());
-    mFrameSelection =
-        new nsFrameSelection(aPresShell, aLimiter, accessibleCaretEnabled);
+    const bool accessibleCaretEnabled = PresShell::AccessibleCaretEnabled(
+        aEditorRootAnonymousDiv.OwnerDoc()->GetDocShell());
+    mFrameSelection = new nsFrameSelection(aPresShell, accessibleCaretEnabled,
+                                           &aEditorRootAnonymousDiv);
     mPresShellWeak = do_GetWeakReference(aPresShell);
   }
 }
@@ -482,7 +485,8 @@ Selection* TextInputSelectionController::GetSelection(
 
 NS_IMETHODIMP
 TextInputSelectionController::ScrollSelectionIntoView(
-    RawSelectionType aRawSelectionType, int16_t aRegion, int16_t aFlags) {
+    RawSelectionType aRawSelectionType, SelectionRegion aRegion,
+    ControllerScrollFlags aFlags) {
   if (!mFrameSelection) {
     return NS_ERROR_NULL_POINTER;
   }
@@ -547,10 +551,7 @@ TextInputSelectionController::SetCaretReadOnly(bool aReadOnly) {
     return NS_ERROR_FAILURE;
   }
 
-  Selection* selection = mFrameSelection->GetSelection(SelectionType::eNormal);
-  if (selection) {
-    caret->SetCaretReadOnly(aReadOnly);
-  }
+  caret->SetCaretReadOnly(aReadOnly);
   return NS_OK;
 }
 
@@ -592,10 +593,8 @@ TextInputSelectionController::SetCaretVisibilityDuringSelection(
   if (!caret) {
     return NS_ERROR_FAILURE;
   }
-  Selection* selection = mFrameSelection->GetSelection(SelectionType::eNormal);
-  if (selection) {
-    caret->SetVisibilityDuringSelection(aVisibility);
-  }
+
+  caret->SetVisibilityDuringSelection(aVisibility);
   return NS_OK;
 }
 
@@ -667,11 +666,9 @@ TextInputSelectionController::PageMove(bool aForward, bool aExtend) {
   // Similarly, if there is no scrollable frame, we should move the editor
   // frame into the view for making it clearer which element handles
   // PageDown/PageUp.
-  return ScrollSelectionIntoView(
-      nsISelectionController::SELECTION_NORMAL,
-      nsISelectionController::SELECTION_FOCUS_REGION,
-      nsISelectionController::SCROLL_SYNCHRONOUS |
-          nsISelectionController::SCROLL_FOR_CARET_MOVE);
+  return ScrollSelectionIntoView(SelectionType::eNormal,
+                                 nsISelectionController::SELECTION_FOCUS_REGION,
+                                 SelectionScrollMode::SyncFlush);
 }
 
 NS_IMETHODIMP
@@ -1545,7 +1542,7 @@ TextEditor* TextControlState::GetTextEditor() {
   return mTextEditor;
 }
 
-TextEditor* TextControlState::GetTextEditorWithoutCreation() const {
+TextEditor* TextControlState::GetExtantTextEditor() const {
   return mTextEditor;
 }
 
@@ -1614,14 +1611,14 @@ nsresult TextControlState::BindToFrame(nsTextControlFrame* aFrame) {
 
   mBoundFrame = aFrame;
 
-  Element* rootNode = aFrame->GetRootNode();
-  MOZ_ASSERT(rootNode);
+  MOZ_ASSERT(aFrame->GetRootNode());
+  Element& editorRootAnonymousDiv = *aFrame->GetRootNode();
 
   PresShell* presShell = aFrame->PresContext()->GetPresShell();
   MOZ_ASSERT(presShell);
 
   // Create a SelectionController
-  mSelCon = new TextInputSelectionController(presShell, rootNode);
+  mSelCon = new TextInputSelectionController(presShell, editorRootAnonymousDiv);
   MOZ_ASSERT(!mTextListener, "Should not overwrite the object");
   mTextListener = new TextInputListener(mTextCtrlElement);
 
@@ -1651,9 +1648,11 @@ nsresult TextControlState::BindToFrame(nsTextControlFrame* aFrame) {
 
     // Set the correct direction on the newly created root node
     if (mTextEditor->IsRightToLeft()) {
-      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, u"rtl"_ns, false);
+      editorRootAnonymousDiv.SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
+                                     u"rtl"_ns, false);
     } else if (mTextEditor->IsLeftToRight()) {
-      rootNode->SetAttr(kNameSpaceID_None, nsGkAtoms::dir, u"ltr"_ns, false);
+      editorRootAnonymousDiv.SetAttr(kNameSpaceID_None, nsGkAtoms::dir,
+                                     u"ltr"_ns, false);
     } else {
       // otherwise, inherit the content node's direction
     }
@@ -1793,7 +1792,7 @@ nsresult TextControlState::PrepareEditor(const nsAString* aValue) {
 
     // What follows is a bit of a hack.  The editor uses the public DOM APIs
     // for its content manipulations, and it causes it to fail some security
-    // checks deep inside when initializing. So we explictly make it clear that
+    // checks deep inside when initializing. So we explicitly make it clear that
     // we're native code.
     // Note that any script that's directly trying to access our value
     // has to be going through some scriptable object to do that and that
@@ -2412,17 +2411,19 @@ void TextControlState::UnbindFromFrame(nsTextControlFrame* aFrame) {
   // Destroy our editor
   DestroyEditor();
 
-  // Clean up the controller
+  // Clean up the controllers if they exist.
   if (!SuppressEventHandlers(mBoundFrame->PresContext())) {
-    nsCOMPtr<nsIControllers> controllers;
-    if (auto* inputElement = HTMLInputElement::FromNode(mTextCtrlElement)) {
-      inputElement->GetControllers(getter_AddRefs(controllers));
-    } else {
-      auto* textAreaElement = HTMLTextAreaElement::FromNode(mTextCtrlElement);
-      if (textAreaElement) {
-        textAreaElement->GetControllers(getter_AddRefs(controllers));
+    const nsCOMPtr<nsIControllers> controllers = [&]() -> nsIControllers* {
+      if (const auto* const inputElement =
+              HTMLInputElement::FromNode(mTextCtrlElement)) {
+        return inputElement->GetExtantControllers();
       }
-    }
+      if (const auto* const textAreaElement =
+              HTMLTextAreaElement::FromNode(mTextCtrlElement)) {
+        return textAreaElement->GetExtantControllers();
+      }
+      return nullptr;
+    }();
 
     if (controllers) {
       uint32_t numControllers;

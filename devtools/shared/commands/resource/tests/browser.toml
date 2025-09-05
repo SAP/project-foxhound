@@ -53,13 +53,13 @@ support-files = [
 ["browser_resources_css_changes.js"]
 
 ["browser_resources_css_messages.js"]
+skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug"] # Bug 1889134
 
 ["browser_resources_css_registered_properties.js"]
-skip-if = ["!fission"]
 
 ["browser_resources_document_events.js"]
 skip-if = [
-  "os == 'linux' && bits == 64", # Bug 1715878
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1715878
 ]
 
 ["browser_resources_error_messages.js"]
@@ -83,6 +83,11 @@ skip-if = [
 ["browser_resources_platform_messages.js"]
 
 ["browser_resources_reflows.js"]
+skip-if = [
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug",# Bug 1932913 (secondary)
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64' && debug && http3", # Bug 1767771
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && debug", # Bug 1767771
+]
 
 ["browser_resources_root_node.js"]
 
@@ -94,9 +99,11 @@ skip-if = [
 
 ["browser_resources_sources.js"]
 skip-if = [
-  "os == 'linux' && bits == 64", # Bug 1744565
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1744565
   "win11_2009", # Bug 1767772
-  "apple_catalina", # Bug 1767772
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64'", # Bug 1767772
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", # Bug 1767772
+  "os == 'mac' && os_version == '14.70' && processor == 'x86_64'", # Bug 1932913 (secondary)
 ]
 
 ["browser_resources_stylesheets.js"]
@@ -116,6 +123,7 @@ skip-if = [
 ["browser_resources_target_switching.js"]
 
 ["browser_resources_thread_states.js"]
+skip-if = ["os == 'mac' && os_version == '14.70' && processor == 'x86_64' && debug"] # Bug 1932913 (secondary)
 
 ["browser_resources_unwatch_early.js"]
 

@@ -85,8 +85,9 @@ static inline auto FindPtrOrNull(C& container, const K2& key) {
 
 //////////////////////////////////////////////////////////////////////////////////////////
 
-std::map<EffectiveFormat, const CompressedFormatInfo> gCompressedFormatInfoMap;
-std::map<EffectiveFormat, FormatInfo> gFormatInfoMap;
+MOZ_RUNINIT std::map<EffectiveFormat, const CompressedFormatInfo>
+    gCompressedFormatInfoMap;
+MOZ_RUNINIT std::map<EffectiveFormat, FormatInfo> gFormatInfoMap;
 
 static inline const CompressedFormatInfo* GetCompressedFormatInfo(
     EffectiveFormat format) {
@@ -800,9 +801,9 @@ void FormatUsageInfo::SetRenderable(const FormatRenderableState& state) {
 #endif
 }
 
-UniquePtr<FormatUsageAuthority> FormatUsageAuthority::CreateForWebGL1(
+std::unique_ptr<FormatUsageAuthority> FormatUsageAuthority::CreateForWebGL1(
     gl::GLContext* gl) {
-  UniquePtr<FormatUsageAuthority> ret(new FormatUsageAuthority);
+  std::unique_ptr<FormatUsageAuthority> ret(new FormatUsageAuthority);
   const auto ptr = ret.get();
 
   ////////////////////////////////////////////////////////////////////////////
@@ -871,9 +872,9 @@ UniquePtr<FormatUsageAuthority> FormatUsageAuthority::CreateForWebGL1(
   return ret;
 }
 
-UniquePtr<FormatUsageAuthority> FormatUsageAuthority::CreateForWebGL2(
+std::unique_ptr<FormatUsageAuthority> FormatUsageAuthority::CreateForWebGL2(
     gl::GLContext* gl) {
-  UniquePtr<FormatUsageAuthority> ret(new FormatUsageAuthority);
+  std::unique_ptr<FormatUsageAuthority> ret(new FormatUsageAuthority);
   const auto ptr = ret.get();
 
   ////////////////////////////////////////////////////////////////////////////

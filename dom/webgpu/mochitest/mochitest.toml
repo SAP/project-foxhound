@@ -5,7 +5,6 @@ skip-if = ["verify"] # `test-verify` jobs don't guarantee a GPU, so skip them.
 prefs = [
   "dom.webgpu.enabled=true",
   "dom.webgpu.workers.enabled=true",
-  "gfx.offscreencanvas.enabled=true",
 ]
 support-files = [
   "worker_wrapper.js",
@@ -40,6 +39,8 @@ scheme = "https"
 
 ["test_enabled.html"]
 
+["test_encoder_cycle_collection.html"]
+
 ["test_error_scope.html"]
 
 ["test_insecure_context.html"]
@@ -53,6 +54,10 @@ scheme = "http"
 ["test_queue_write.html"]
 
 ["test_queue_write_invalid_device.html"]
+
+["test_rfp_clamp_limits_off.html"]
+
+["test_set_bind_group_null.html"]
 
 ["test_submit_compute_empty.html"]
 

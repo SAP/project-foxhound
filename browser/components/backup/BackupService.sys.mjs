@@ -13,7 +13,10 @@ import {
   BYTES_IN_MEBIBYTE,
 } from "resource:///modules/backup/MeasurementUtils.sys.mjs";
 
-import { ERRORS } from "chrome://browser/content/backup/backup-constants.mjs";
+import {
+  ERRORS,
+  STEPS,
+} from "chrome://browser/content/backup/backup-constants.mjs";
 import { BackupError } from "resource:///modules/backup/BackupError.mjs";
 
 const BACKUP_DIR_PREF_NAME = "browser.backup.location";
@@ -50,12 +53,14 @@ ChromeUtils.defineLazyGetter(lazy, "fxAccounts", () => {
 });
 
 ChromeUtils.defineESModuleGetters(lazy, {
+  AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   ArchiveDecryptor: "resource:///modules/backup/ArchiveEncryption.sys.mjs",
   ArchiveEncryptionState:
     "resource:///modules/backup/ArchiveEncryptionState.sys.mjs",
   ArchiveUtils: "resource:///modules/backup/ArchiveUtils.sys.mjs",
   BasePromiseWorker: "resource://gre/modules/PromiseWorker.sys.mjs",
   ClientID: "resource://gre/modules/ClientID.sys.mjs",
+  DeferredTask: "resource://gre/modules/DeferredTask.sys.mjs",
   DownloadPaths: "resource://gre/modules/DownloadPaths.sys.mjs",
   FileUtils: "resource://gre/modules/FileUtils.sys.mjs",
   JsonSchema: "resource://gre/modules/JsonSchema.sys.mjs",
@@ -131,7 +136,13 @@ XPCOMUtils.defineLazyPreferenceGetter(
    */
   null,
   async function onUpdateLocationDirPath(_pref, _prevVal, newVal) {
-    let bs = BackupService.get();
+    let bs;
+    try {
+      bs = BackupService.get();
+    } catch (e) {
+      // This can throw if the BackupService hasn't initialized yet, which
+      // is a case we're okay to ignore.
+    }
     if (bs) {
       await bs.onUpdateLocationDirPath(newVal);
     }
@@ -649,6 +660,41 @@ export class BackupService extends EventTarget {
   #encState = undefined;
 
   /**
+   * The PlacesObserver instance used to monitor the Places database for
+   * history and bookmark removals to determine if backups should be
+   * regenerated.
+   *
+   * @type {PlacesObserver|null}
+   */
+  #placesObserver = null;
+
+  /**
+   * The AbortController used to abort any queued requests to create or delete
+   * backups that might be waiting on the WRITE_BACKUP_LOCK_NAME lock.
+   *
+   * @type {AbortController}
+   */
+  #backupWriteAbortController = null;
+
+  /**
+   * A DeferredTask that will cause the last known backup to be deleted, and
+   * a new backup to be created.
+   *
+   * See BackupService.#debounceRegeneration()
+   *
+   * @type {DeferredTask}
+   */
+  #regenerationDebouncer = null;
+
+  /**
+   * True if takeMeasurements has been called and various measurements related
+   * to the BackupService have been taken.
+   *
+   * @type {boolean}
+   */
+  #takenMeasurements = false;
+
+  /**
    * The path of the default parent directory for saving backups.
    * The current default is the Documents directory.
    *
@@ -841,6 +887,26 @@ export class BackupService extends EventTarget {
   }
 
   /**
+   * The name of the exclusive Web Lock that will be requested and held when
+   * creating or deleting a backup.
+   *
+   * @type {string}
+   */
+  static get WRITE_BACKUP_LOCK_NAME() {
+    return "write-backup";
+  }
+
+  /**
+   * The amount of time (in milliseconds) to wait for our backup regeneration
+   * debouncer to kick off a regeneration.
+   *
+   * @type {number}
+   */
+  static get REGENERATION_DEBOUNCE_RATE_MS() {
+    return 10000;
+  }
+
+  /**
    * Returns a reference to a BackupService singleton. If this is the first time
    * that this getter is accessed, this causes the BackupService singleton to be
    * be instantiated.
@@ -854,10 +920,7 @@ export class BackupService extends EventTarget {
     }
     this.#instance = new BackupService(DefaultBackupResources);
 
-    this.#instance.checkForPostRecovery().then(() => {
-      this.#instance.takeMeasurements();
-    });
-
+    this.#instance.checkForPostRecovery();
     this.#instance.initBackupScheduler();
     return this.#instance;
   }
@@ -897,6 +960,15 @@ export class BackupService extends EventTarget {
     let { promise, resolve } = Promise.withResolvers();
     this.#postRecoveryPromise = promise;
     this.#postRecoveryResolver = resolve;
+    this.#backupWriteAbortController = new AbortController();
+    this.#regenerationDebouncer = new lazy.DeferredTask(async () => {
+      if (!this.#backupWriteAbortController.signal.aborted) {
+        await this.deleteLastBackup();
+        if (lazy.scheduledBackupsPref) {
+          await this.createBackupOnIdleDispatch();
+        }
+      }
+    }, BackupService.REGENERATION_DEBOUNCE_RATE_MS);
   }
 
   /**
@@ -1069,205 +1141,237 @@ export class BackupService extends EventTarget {
       return null;
     }
 
-    this.#backupInProgress = true;
-    const backupTimer = Glean.browserBackup.totalBackupTime.start();
+    return locks.request(
+      BackupService.WRITE_BACKUP_LOCK_NAME,
+      { signal: this.#backupWriteAbortController.signal },
+      async () => {
+        let currentStep = STEPS.CREATE_BACKUP_ENTRYPOINT;
+        this.#backupInProgress = true;
+        const backupTimer = Glean.browserBackup.totalBackupTime.start();
 
-    try {
-      lazy.logConsole.debug(`Creating backup for profile at ${profilePath}`);
-
-      let archiveDestFolderPath = await this.resolveArchiveDestFolderPath(
-        lazy.backupDirPref
-      );
-      lazy.logConsole.debug(
-        `Destination for archive: ${archiveDestFolderPath}`
-      );
-
-      let manifest = await this.#createBackupManifest();
-
-      // First, check to see if a `backups` directory already exists in the
-      // profile.
-      let backupDirPath = PathUtils.join(
-        profilePath,
-        BackupService.PROFILE_FOLDER_NAME,
-        BackupService.SNAPSHOTS_FOLDER_NAME
-      );
-      lazy.logConsole.debug("Creating backups folder");
-
-      // ignoreExisting: true is the default, but we're being explicit that it's
-      // okay if this folder already exists.
-      await IOUtils.makeDirectory(backupDirPath, {
-        ignoreExisting: true,
-        createAncestors: true,
-      });
-
-      let stagingPath = await this.#prepareStagingFolder(backupDirPath);
-
-      // Sort resources be priority.
-      let sortedResources = Array.from(this.#resources.values()).sort(
-        (a, b) => {
-          return b.priority - a.priority;
-        }
-      );
-
-      let encState = await this.loadEncryptionState(profilePath);
-      let encryptionEnabled = !!encState;
-      lazy.logConsole.debug("Encryption enabled: ", encryptionEnabled);
-
-      // Perform the backup for each resource.
-      for (let resourceClass of sortedResources) {
         try {
           lazy.logConsole.debug(
-            `Backing up resource with key ${resourceClass.key}. ` +
-              `Requires encryption: ${resourceClass.requiresEncryption}`
+            `Creating backup for profile at ${profilePath}`
           );
 
-          if (resourceClass.requiresEncryption && !encryptionEnabled) {
-            lazy.logConsole.debug(
-              "Encryption is not currently enabled. Skipping."
-            );
-            continue;
-          }
+          currentStep = STEPS.CREATE_BACKUP_RESOLVE_DESTINATION;
+          let archiveDestFolderPath = await this.resolveArchiveDestFolderPath(
+            lazy.backupDirPref
+          );
+          lazy.logConsole.debug(
+            `Destination for archive: ${archiveDestFolderPath}`
+          );
 
-          let resourcePath = PathUtils.join(stagingPath, resourceClass.key);
-          await IOUtils.makeDirectory(resourcePath);
+          currentStep = STEPS.CREATE_BACKUP_CREATE_MANIFEST;
+          let manifest = await this.#createBackupManifest();
 
-          // `backup` on each BackupResource should return us a ManifestEntry
-          // that we eventually write to a JSON manifest file, but for now,
-          // we're just going to log it.
-          let manifestEntry = await new resourceClass().backup(
-            resourcePath,
+          currentStep = STEPS.CREATE_BACKUP_CREATE_BACKUPS_FOLDER;
+          // First, check to see if a `backups` directory already exists in the
+          // profile.
+          let backupDirPath = PathUtils.join(
             profilePath,
-            encryptionEnabled
+            BackupService.PROFILE_FOLDER_NAME,
+            BackupService.SNAPSHOTS_FOLDER_NAME
+          );
+          lazy.logConsole.debug("Creating backups folder");
+
+          // ignoreExisting: true is the default, but we're being explicit that it's
+          // okay if this folder already exists.
+          await IOUtils.makeDirectory(backupDirPath, {
+            ignoreExisting: true,
+            createAncestors: true,
+          });
+
+          currentStep = STEPS.CREATE_BACKUP_CREATE_STAGING_FOLDER;
+          let stagingPath = await this.#prepareStagingFolder(backupDirPath);
+
+          // Sort resources be priority.
+          let sortedResources = Array.from(this.#resources.values()).sort(
+            (a, b) => {
+              return b.priority - a.priority;
+            }
           );
 
-          if (manifestEntry === undefined) {
-            lazy.logConsole.error(
-              `Backup of resource with key ${resourceClass.key} returned undefined
-              as its ManifestEntry instead of null or an object`
-            );
-          } else {
-            lazy.logConsole.debug(
-              `Backup of resource with key ${resourceClass.key} completed`,
-              manifestEntry
-            );
-            manifest.resources[resourceClass.key] = manifestEntry;
+          currentStep = STEPS.CREATE_BACKUP_LOAD_ENCSTATE;
+          let encState = await this.loadEncryptionState(profilePath);
+          let encryptionEnabled = !!encState;
+          lazy.logConsole.debug("Encryption enabled: ", encryptionEnabled);
+
+          currentStep = STEPS.CREATE_BACKUP_RUN_BACKUP;
+          // Perform the backup for each resource.
+          for (let resourceClass of sortedResources) {
+            try {
+              lazy.logConsole.debug(
+                `Backing up resource with key ${resourceClass.key}. ` +
+                  `Requires encryption: ${resourceClass.requiresEncryption}`
+              );
+
+              if (resourceClass.requiresEncryption && !encryptionEnabled) {
+                lazy.logConsole.debug(
+                  "Encryption is not currently enabled. Skipping."
+                );
+                continue;
+              }
+
+              let resourcePath = PathUtils.join(stagingPath, resourceClass.key);
+              await IOUtils.makeDirectory(resourcePath);
+
+              // `backup` on each BackupResource should return us a ManifestEntry
+              // that we eventually write to a JSON manifest file, but for now,
+              // we're just going to log it.
+              let manifestEntry = await new resourceClass().backup(
+                resourcePath,
+                profilePath,
+                encryptionEnabled
+              );
+
+              if (manifestEntry === undefined) {
+                lazy.logConsole.error(
+                  `Backup of resource with key ${resourceClass.key} returned undefined
+                as its ManifestEntry instead of null or an object`
+                );
+              } else {
+                lazy.logConsole.debug(
+                  `Backup of resource with key ${resourceClass.key} completed`,
+                  manifestEntry
+                );
+                manifest.resources[resourceClass.key] = manifestEntry;
+              }
+            } catch (e) {
+              lazy.logConsole.error(
+                `Failed to backup resource: ${resourceClass.key}`,
+                e
+              );
+            }
           }
-        } catch (e) {
-          lazy.logConsole.error(
-            `Failed to backup resource: ${resourceClass.key}`,
-            e
+
+          currentStep = STEPS.CREATE_BACKUP_VERIFY_MANIFEST;
+          // Ensure that the manifest abides by the current schema, and log
+          // an error if somehow it doesn't. We'll want to collect telemetry for
+          // this case to make sure it's not happening in the wild. We debated
+          // throwing an exception here too, but that's not meaningfully better
+          // than creating a backup that's not schema-compliant. At least in this
+          // case, a user so-inclined could theoretically repair the manifest
+          // to make it valid.
+          let manifestSchema = await BackupService.MANIFEST_SCHEMA;
+          let schemaValidationResult = lazy.JsonSchema.validate(
+            manifest,
+            manifestSchema
           );
+          if (!schemaValidationResult.valid) {
+            lazy.logConsole.error(
+              "Backup manifest does not conform to schema:",
+              manifest,
+              manifestSchema,
+              schemaValidationResult
+            );
+            // TODO: Collect telemetry for this case. (bug 1891817)
+          }
+
+          currentStep = STEPS.CREATE_BACKUP_WRITE_MANIFEST;
+          // Write the manifest to the staging folder.
+          let manifestPath = PathUtils.join(
+            stagingPath,
+            BackupService.MANIFEST_FILE_NAME
+          );
+          await IOUtils.writeJSON(manifestPath, manifest);
+
+          currentStep = STEPS.CREATE_BACKUP_FINALIZE_STAGING;
+          let renamedStagingPath =
+            await this.#finalizeStagingFolder(stagingPath);
+          lazy.logConsole.log(
+            "Wrote backup to staging directory at ",
+            renamedStagingPath
+          );
+
+          // Record the total size of the backup staging directory
+          let totalSizeKilobytes =
+            await BackupResource.getDirectorySize(renamedStagingPath);
+          let totalSizeBytesNearestMebibyte = MeasurementUtils.fuzzByteSize(
+            totalSizeKilobytes * BYTES_IN_KILOBYTE,
+            1 * BYTES_IN_MEBIBYTE
+          );
+          lazy.logConsole.debug(
+            "total staging directory size in bytes: " +
+              totalSizeBytesNearestMebibyte
+          );
+
+          Glean.browserBackup.totalBackupSize.accumulate(
+            totalSizeBytesNearestMebibyte / BYTES_IN_MEBIBYTE
+          );
+
+          currentStep = STEPS.CREATE_BACKUP_COMPRESS_STAGING;
+          let compressedStagingPath = await this.#compressStagingFolder(
+            renamedStagingPath,
+            backupDirPath
+          ).finally(async () => {
+            await IOUtils.remove(renamedStagingPath, { recursive: true });
+          });
+
+          currentStep = STEPS.CREATE_BACKUP_CREATE_ARCHIVE;
+          // Now create the single-file archive. For now, we'll stash this in the
+          // backups folder while it gets written. Once that's done, we'll attempt
+          // to move it to the user's configured backup path.
+          let archiveTmpPath = PathUtils.join(backupDirPath, "archive.html");
+          lazy.logConsole.log(
+            "Exporting single-file archive to ",
+            archiveTmpPath
+          );
+          await this.createArchive(
+            archiveTmpPath,
+            BackupService.ARCHIVE_TEMPLATE,
+            compressedStagingPath,
+            this.#encState,
+            manifest.meta
+          ).finally(async () => {
+            await IOUtils.remove(compressedStagingPath);
+          });
+
+          // Record the size of the complete single-file archive
+          let archiveSizeKilobytes =
+            await BackupResource.getFileSize(archiveTmpPath);
+          let archiveSizeBytesNearestMebibyte = MeasurementUtils.fuzzByteSize(
+            archiveSizeKilobytes * BYTES_IN_KILOBYTE,
+            1 * BYTES_IN_MEBIBYTE
+          );
+          lazy.logConsole.debug(
+            "backup archive size in bytes: " + archiveSizeBytesNearestMebibyte
+          );
+
+          Glean.browserBackup.compressedArchiveSize.accumulate(
+            archiveSizeBytesNearestMebibyte / BYTES_IN_MEBIBYTE
+          );
+
+          currentStep = STEPS.CREATE_BACKUP_FINALIZE_ARCHIVE;
+          let archivePath = await this.finalizeSingleFileArchive(
+            archiveTmpPath,
+            archiveDestFolderPath,
+            manifest.meta
+          );
+
+          let nowSeconds = Math.floor(Date.now() / 1000);
+          Services.prefs.setIntPref(
+            LAST_BACKUP_TIMESTAMP_PREF_NAME,
+            nowSeconds
+          );
+          this.#_state.lastBackupDate = nowSeconds;
+          Glean.browserBackup.totalBackupTime.stopAndAccumulate(backupTimer);
+
+          Glean.browserBackup.created.record();
+
+          return { manifest, archivePath };
+        } catch (e) {
+          Glean.browserBackup.totalBackupTime.cancel(backupTimer);
+          Glean.browserBackup.error.record({
+            error_code: String(e.cause || ERRORS.UNKNOWN),
+            backup_step: String(currentStep),
+          });
+          return null;
+        } finally {
+          this.#backupInProgress = false;
         }
       }
-
-      // Ensure that the manifest abides by the current schema, and log
-      // an error if somehow it doesn't. We'll want to collect telemetry for
-      // this case to make sure it's not happening in the wild. We debated
-      // throwing an exception here too, but that's not meaningfully better
-      // than creating a backup that's not schema-compliant. At least in this
-      // case, a user so-inclined could theoretically repair the manifest
-      // to make it valid.
-      let manifestSchema = await BackupService.MANIFEST_SCHEMA;
-      let schemaValidationResult = lazy.JsonSchema.validate(
-        manifest,
-        manifestSchema
-      );
-      if (!schemaValidationResult.valid) {
-        lazy.logConsole.error(
-          "Backup manifest does not conform to schema:",
-          manifest,
-          manifestSchema,
-          schemaValidationResult
-        );
-        // TODO: Collect telemetry for this case. (bug 1891817)
-      }
-
-      // Write the manifest to the staging folder.
-      let manifestPath = PathUtils.join(
-        stagingPath,
-        BackupService.MANIFEST_FILE_NAME
-      );
-      await IOUtils.writeJSON(manifestPath, manifest);
-
-      let renamedStagingPath = await this.#finalizeStagingFolder(stagingPath);
-      lazy.logConsole.log(
-        "Wrote backup to staging directory at ",
-        renamedStagingPath
-      );
-
-      // Record the total size of the backup staging directory
-      let totalSizeKilobytes = await BackupResource.getDirectorySize(
-        renamedStagingPath
-      );
-      let totalSizeBytesNearestMebibyte = MeasurementUtils.fuzzByteSize(
-        totalSizeKilobytes * BYTES_IN_KILOBYTE,
-        1 * BYTES_IN_MEBIBYTE
-      );
-      lazy.logConsole.debug(
-        "total staging directory size in bytes: " +
-          totalSizeBytesNearestMebibyte
-      );
-
-      Glean.browserBackup.totalBackupSize.accumulate(
-        totalSizeBytesNearestMebibyte / BYTES_IN_MEBIBYTE
-      );
-
-      let compressedStagingPath = await this.#compressStagingFolder(
-        renamedStagingPath,
-        backupDirPath
-      ).finally(async () => {
-        await IOUtils.remove(renamedStagingPath, { recursive: true });
-      });
-
-      // Now create the single-file archive. For now, we'll stash this in the
-      // backups folder while it gets written. Once that's done, we'll attempt
-      // to move it to the user's configured backup path.
-      let archiveTmpPath = PathUtils.join(backupDirPath, "archive.html");
-      lazy.logConsole.log("Exporting single-file archive to ", archiveTmpPath);
-      await this.createArchive(
-        archiveTmpPath,
-        BackupService.ARCHIVE_TEMPLATE,
-        compressedStagingPath,
-        this.#encState,
-        manifest.meta
-      ).finally(async () => {
-        await IOUtils.remove(compressedStagingPath);
-      });
-
-      // Record the size of the complete single-file archive
-      let archiveSizeKilobytes = await BackupResource.getFileSize(
-        archiveTmpPath
-      );
-      let archiveSizeBytesNearestMebibyte = MeasurementUtils.fuzzByteSize(
-        archiveSizeKilobytes * BYTES_IN_KILOBYTE,
-        1 * BYTES_IN_MEBIBYTE
-      );
-      lazy.logConsole.debug(
-        "backup archive size in bytes: " + archiveSizeBytesNearestMebibyte
-      );
-
-      Glean.browserBackup.compressedArchiveSize.accumulate(
-        archiveSizeBytesNearestMebibyte / BYTES_IN_MEBIBYTE
-      );
-
-      let archivePath = await this.finalizeSingleFileArchive(
-        archiveTmpPath,
-        archiveDestFolderPath,
-        manifest.meta
-      );
-
-      let nowSeconds = Math.floor(Date.now() / 1000);
-      Services.prefs.setIntPref(LAST_BACKUP_TIMESTAMP_PREF_NAME, nowSeconds);
-      this.#_state.lastBackupDate = nowSeconds;
-      Glean.browserBackup.totalBackupTime.stopAndAccumulate(backupTimer);
-
-      return { manifest, archivePath };
-    } catch {
-      Glean.browserBackup.totalBackupTime.cancel(backupTimer);
-      return null;
-    } finally {
-      this.#backupInProgress = false;
-    }
+    );
   }
 
   /**
@@ -2272,6 +2376,7 @@ export class BackupService extends EventTarget {
       osName: Services.sysinfo.getProperty("name"),
       osVersion: Services.sysinfo.getProperty("version"),
       legacyClientID: await lazy.ClientID.getClientID(),
+      profileGroupID: await lazy.ClientID.getProfileGroupID(),
     };
 
     let fxaState = lazy.UIState.get();
@@ -2358,9 +2463,8 @@ export class BackupService extends EventTarget {
         // that the backup was encrypted, and the recovery code was the correct
         // one to decrypt it. We now generate a new ArchiveEncryptionState with
         // that recovery code to write into the recovered profile.
-        ({ instance: encState } = await lazy.ArchiveEncryptionState.initialize(
-          recoveryCode
-        ));
+        ({ instance: encState } =
+          await lazy.ArchiveEncryptionState.initialize(recoveryCode));
       }
 
       const RECOVERY_FOLDER_DEST_PATH = PathUtils.join(
@@ -2623,7 +2727,7 @@ export class BackupService extends EventTarget {
       );
       await IOUtils.writeJSON(postRecoveryPath, postRecovery);
 
-      profileSvc.flush();
+      await profileSvc.asyncFlush();
 
       if (shouldLaunch) {
         Services.startup.createInstanceWithProfile(profile);
@@ -2718,6 +2822,7 @@ export class BackupService extends EventTarget {
       lazy.logConsole.error(
         `Failed to set parent directory ${parentDirPath}. ${e}`
       );
+      throw e;
     }
   }
 
@@ -2729,6 +2834,8 @@ export class BackupService extends EventTarget {
    */
   async onUpdateLocationDirPath(newDirPath) {
     lazy.logConsole.debug(`Updating backup location to ${newDirPath}`);
+
+    Glean.browserBackup.changeLocation.record();
 
     this.#_state.backupDirPath = newDirPath;
     this.stateUpdate();
@@ -2776,6 +2883,12 @@ export class BackupService extends EventTarget {
    */
   onUpdateScheduledBackups(isScheduledBackupsEnabled) {
     if (this.#_state.scheduledBackupsEnabled != isScheduledBackupsEnabled) {
+      if (isScheduledBackupsEnabled) {
+        Glean.browserBackup.toggleOn.record();
+      } else {
+        Glean.browserBackup.toggleOff.record();
+      }
+
       lazy.logConsole.debug(
         "Updating scheduled backups",
         isScheduledBackupsEnabled
@@ -2793,7 +2906,19 @@ export class BackupService extends EventTarget {
   async takeMeasurements() {
     lazy.logConsole.debug("Taking Telemetry measurements");
 
-    // We'll start by measuring the available disk space on the storage
+    // We'll start by taking some basic BackupService state measurements.
+    Glean.browserBackup.enabled.set(true);
+    Glean.browserBackup.schedulerEnabled.set(lazy.scheduledBackupsPref);
+
+    await this.loadEncryptionState();
+    Glean.browserBackup.pswdEncrypted.set(this.#_state.encryptionEnabled);
+
+    const USING_DEFAULT_DIR_PATH =
+      lazy.backupDirPref ==
+      PathUtils.join(lazy.defaultParentDirPath, BackupService.BACKUP_DIR_NAME);
+    Glean.browserBackup.locationOnDevice.set(USING_DEFAULT_DIR_PATH ? 1 : 2);
+
+    // Next, we'll measure the available disk space on the storage
     // device that the profile directory is on.
     let profileDir = await IOUtils.getFile(PathUtils.profileDir);
 
@@ -2929,9 +3054,8 @@ export class BackupService extends EventTarget {
 
     // TODO: Enforce other password rules here, such as ensuring that the
     // password is not considered common.
-    ({ instance: encState } = await lazy.ArchiveEncryptionState.initialize(
-      password
-    ));
+    ({ instance: encState } =
+      await lazy.ArchiveEncryptionState.initialize(password));
     if (!encState) {
       throw new BackupError(
         "Failed to construct ArchiveEncryptionState",
@@ -3078,6 +3202,25 @@ export class BackupService extends EventTarget {
     );
     lazy.logConsole.debug("Idle observer registered.");
 
+    lazy.logConsole.debug(`Registering Places observer`);
+
+    this.#placesObserver = new PlacesWeakCallbackWrapper(
+      this.onPlacesEvents.bind(this)
+    );
+    PlacesObservers.addListener(
+      ["history-cleared", "page-removed", "bookmark-removed"],
+      this.#placesObserver
+    );
+
+    lazy.AddonManager.addAddonListener(this);
+
+    Services.obs.addObserver(this.#observer, "passwordmgr-storage-changed");
+    Services.obs.addObserver(this.#observer, "formautofill-storage-changed");
+    Services.obs.addObserver(this.#observer, "sanitizer-sanitization-complete");
+    Services.obs.addObserver(this.#observer, "perm-changed");
+    Services.obs.addObserver(this.#observer, "cookie-changed");
+    Services.obs.addObserver(this.#observer, "session-cookie-changed");
+    Services.obs.addObserver(this.#observer, "newtab-linkBlocked");
     Services.obs.addObserver(this.#observer, "quit-application-granted");
   }
 
@@ -3098,8 +3241,29 @@ export class BackupService extends EventTarget {
       this.#observer,
       this.#idleThresholdSeconds
     );
+
+    PlacesObservers.removeListener(
+      ["history-cleared", "page-removed", "bookmark-removed"],
+      this.#placesObserver
+    );
+
+    lazy.AddonManager.removeAddonListener(this);
+
+    Services.obs.removeObserver(this.#observer, "passwordmgr-storage-changed");
+    Services.obs.removeObserver(this.#observer, "formautofill-storage-changed");
+    Services.obs.removeObserver(
+      this.#observer,
+      "sanitizer-sanitization-complete"
+    );
+    Services.obs.removeObserver(this.#observer, "perm-changed");
+    Services.obs.removeObserver(this.#observer, "cookie-changed");
+    Services.obs.removeObserver(this.#observer, "session-cookie-changed");
+    Services.obs.removeObserver(this.#observer, "newtab-linkBlocked");
     Services.obs.removeObserver(this.#observer, "quit-application-granted");
     this.#observer = null;
+
+    this.#regenerationDebouncer.disarm();
+    this.#backupWriteAbortController.abort();
   }
 
   /**
@@ -3107,13 +3271,15 @@ export class BackupService extends EventTarget {
    * quit-application-granted from the nsIObserverService. Exposed as a public
    * method mainly for ease in testing.
    *
-   * @param {nsISupports|null} _subject
+   * @param {nsISupports|null} subject
    *   The nsIUserIdleService for the idle notification, and null for the
    *   quit-application-granted topic.
    * @param {string} topic
    *   The topic that the notification belongs to.
+   * @param {string} data
+   *   Optional data that was included with the notification.
    */
-  onObserve(_subject, topic) {
+  onObserve(subject, topic, data) {
     switch (topic) {
       case "idle": {
         this.onIdle();
@@ -3123,7 +3289,62 @@ export class BackupService extends EventTarget {
         this.uninitBackupScheduler();
         break;
       }
+      case "passwordmgr-storage-changed": {
+        if (data == "removeLogin" || data == "removeAllLogins") {
+          this.#debounceRegeneration();
+        }
+        break;
+      }
+      case "formautofill-storage-changed": {
+        if (
+          data == "remove" &&
+          (subject.wrappedJSObject.collectionName == "creditCards" ||
+            subject.wrappedJSObject.collectionName == "addresses")
+        ) {
+          this.#debounceRegeneration();
+        }
+        break;
+      }
+      case "newtab-linkBlocked":
+      // Intentional fall-through
+      case "sanitizer-sanitization-complete": {
+        this.#debounceRegeneration();
+        break;
+      }
+      case "perm-changed": {
+        if (data == "deleted") {
+          this.#debounceRegeneration();
+        }
+        break;
+      }
+      case "cookie-changed":
+      // Intentional fall-through
+      case "session-cookie-changed": {
+        let notification = subject.QueryInterface(Ci.nsICookieNotification);
+        // A browsingContextId value of 0 means that this deletion was caused by
+        // chrome UI cookie deletion, which is what we care about. If it's not
+        // 0, then a site deleted its own cookie, which we ignore.
+        if (
+          (notification.action == Ci.nsICookieNotification.COOKIE_DELETED ||
+            notification.action ==
+              Ci.nsICookieNotification.ALL_COOKIES_CLEARED) &&
+          !notification.browsingContextId
+        ) {
+          this.#debounceRegeneration();
+        }
+        break;
+      }
     }
+  }
+
+  /**
+   * Called when the last known backup should be deleted and a new one
+   * created. This uses the #regenerationDebouncer to debounce clusters of
+   * events that might cause such a regeneration to occur.
+   */
+  #debounceRegeneration() {
+    this.#regenerationDebouncer.disarm();
+    this.#regenerationDebouncer.arm();
   }
 
   /**
@@ -3133,6 +3354,11 @@ export class BackupService extends EventTarget {
    */
   onIdle() {
     lazy.logConsole.debug("Saw idle callback");
+    if (!this.#takenMeasurements) {
+      this.takeMeasurements();
+      this.#takenMeasurements = true;
+    }
+
     if (lazy.scheduledBackupsPref) {
       lazy.logConsole.debug("Scheduled backups enabled.");
       let now = Math.floor(Date.now() / 1000);
@@ -3190,6 +3416,51 @@ export class BackupService extends EventTarget {
       );
       this.createBackup();
     });
+  }
+
+  /**
+   * Handler for events coming in through our PlacesObserver.
+   *
+   * @param {PlacesEvent[]} placesEvents
+   *   One or more batched events that are of a type that we subscribed to.
+   */
+  onPlacesEvents(placesEvents) {
+    // Note that if any of the events that we iterate result in a regeneration
+    // being queued, we simply return without the processing the rest, as there
+    // is not really a point.
+    for (let event of placesEvents) {
+      switch (event.type) {
+        case "page-removed": {
+          // We will get a page-removed event if a page has been deleted both
+          // manually by a user, but also automatically if the page has "aged
+          // out" of the Places database. We only want to regenerate backups
+          // in the manual case (REASON_DELETED).
+          if (event.reason == PlacesVisitRemoved.REASON_DELETED) {
+            this.#debounceRegeneration();
+            return;
+          }
+          break;
+        }
+        case "bookmark-removed":
+        // Intentional fall-through
+        case "history-cleared": {
+          this.#debounceRegeneration();
+          return;
+        }
+      }
+    }
+  }
+
+  /**
+   * This method is the only method of the AddonListener interface that
+   * BackupService implements and is called by AddonManager when an addon
+   * is uninstalled.
+   *
+   * @param {AddonInternal} _addon
+   *   The addon being uninstalled.
+   */
+  onUninstalled(_addon) {
+    this.#debounceRegeneration();
   }
 
   /**
@@ -3279,38 +3550,73 @@ export class BackupService extends EventTarget {
    * @returns {Promise<undefined>}
    */
   async deleteLastBackup() {
-    if (this.#_state.lastBackupFileName) {
-      let backupFilePath = PathUtils.join(
-        lazy.backupDirPref,
-        this.#_state.lastBackupFileName
+    if (!lazy.scheduledBackupsPref) {
+      lazy.logConsole.debug(
+        "Not deleting last backup, as scheduled backups are disabled."
       );
-
-      lazy.logConsole.log(
-        "Attempting to delete last backup file at ",
-        backupFilePath
-      );
-      await IOUtils.remove(backupFilePath, { ignoreAbsent: true });
-
-      this.#_state.lastBackupDate = null;
-      Services.prefs.clearUserPref(LAST_BACKUP_TIMESTAMP_PREF_NAME);
-
-      this.#_state.lastBackupFileName = "";
-      Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
-
-      this.stateUpdate();
-    } else {
-      lazy.logConsole.log(
-        "Not deleting last backup file, since none is known about."
-      );
+      return undefined;
     }
 
-    if (await IOUtils.exists(lazy.backupDirPref)) {
-      // See if there are any other files lingering around in the destination
-      // folder. If not, delete that folder too.
-      let children = await IOUtils.getChildren(lazy.backupDirPref);
-      if (!children.length) {
-        await IOUtils.remove(lazy.backupDirPref);
+    return locks.request(
+      BackupService.WRITE_BACKUP_LOCK_NAME,
+      { signal: this.#backupWriteAbortController.signal },
+      async () => {
+        if (this.#_state.lastBackupFileName) {
+          if (await this.#infalliblePathExists(lazy.backupDirPref)) {
+            let backupFilePath = PathUtils.join(
+              lazy.backupDirPref,
+              this.#_state.lastBackupFileName
+            );
+
+            lazy.logConsole.log(
+              "Attempting to delete last backup file at ",
+              backupFilePath
+            );
+            await IOUtils.remove(backupFilePath, { ignoreAbsent: true });
+          }
+
+          this.#_state.lastBackupDate = null;
+          Services.prefs.clearUserPref(LAST_BACKUP_TIMESTAMP_PREF_NAME);
+
+          this.#_state.lastBackupFileName = "";
+          Services.prefs.clearUserPref(LAST_BACKUP_FILE_NAME_PREF_NAME);
+
+          this.stateUpdate();
+        } else {
+          lazy.logConsole.log(
+            "Not deleting last backup file, since none is known about."
+          );
+        }
+
+        if (await this.#infalliblePathExists(lazy.backupDirPref)) {
+          // See if there are any other files lingering around in the destination
+          // folder. If not, delete that folder too.
+          let children = await IOUtils.getChildren(lazy.backupDirPref);
+          if (!children.length) {
+            await IOUtils.remove(lazy.backupDirPref);
+          }
+        }
       }
+    );
+  }
+
+  /**
+   * Wraps an IOUtils.exists in a try/catch and returns true iff the passed
+   * path actually exists on the file system. Returns false if the path doesn't
+   * exist or is an invalid path.
+   *
+   * @param {string} path
+   *   The path to check for existence.
+   * @returns {Promise<boolean>}
+   */
+  async #infalliblePathExists(path) {
+    let exists = false;
+    try {
+      exists = await IOUtils.exists(path);
+    } catch (e) {
+      lazy.logConsole.warn("Path failed existence check :", path);
+      return false;
     }
+    return exists;
   }
 }

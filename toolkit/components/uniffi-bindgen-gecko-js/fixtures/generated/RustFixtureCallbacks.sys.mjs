@@ -153,6 +153,20 @@ class ArrayBufferDataStream {
       this.pos += size;
       return value;
     }
+
+    readBytes() {
+      const size = this.readInt32();
+      const bytes = new Uint8Array(this.dataView.buffer, this.pos, size);
+      this.pos += size;
+      return bytes
+    }
+
+    writeBytes(value) {
+      this.writeUint32(value.length);
+      value.forEach((elt) => {
+        this.writeUint8(elt);
+      })
+    }
 }
 
 function handleRustResult(result, liftCallback, liftErrCallback) {
@@ -164,9 +178,8 @@ function handleRustResult(result, liftCallback, liftErrCallback) {
             throw liftErrCallback(result.data);
 
         case "internal-error":
-            let message = result.internalErrorMessage;
-            if (message) {
-                throw new UniFFIInternalError(message);
+            if (result.data) {
+                throw new UniFFIInternalError(FfiConverterString.lift(result.data));
             } else {
                 throw new UniFFIInternalError("Unknown error");
             }
@@ -213,6 +226,37 @@ class FfiConverterArrayBuffer extends FfiConverter {
         this.write(dataStream, value);
         return buf;
     }
+
+    /**
+     * Computes the size of the value.
+     *
+     * @param {*} _value
+     * @return {number}
+     */
+    static computeSize(_value) {
+        throw new UniFFIInternalError("computeSize() should be declared in the derived class");
+    }
+
+    /**
+     * Reads the type from a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @returns {any}
+     */
+    static read(_dataStream) {
+        throw new UniFFIInternalError("read() should be declared in the derived class");
+    }
+
+    /**
+     * Writes the type to a data stream.
+     *
+     * @param {ArrayBufferDataStream} _dataStream
+     * @param {any} _value
+     */
+    static write(_dataStream, _value) {
+        throw new UniFFIInternalError("write() should be declared in the derived class");
+    }
+
 }
 
 // Symbols that are used to ensure that Object constructors
@@ -258,7 +302,7 @@ class UniFFICallbackHandler {
         this.#methodHandlers = methodHandlers;
         this.#allowNewCallbacks = true;
 
-        UniFFIScaffolding.registerCallbackHandler(this.#interfaceId, this.invokeCallback.bind(this));
+        UniFFIScaffolding.registerCallbackHandler(this.#interfaceId, this);
         Services.obs.addObserver(this, "xpcom-shutdown");
      }
 
@@ -315,39 +359,38 @@ class UniFFICallbackHandler {
     /**
      * Invoke a method on a stored callback object
      * @param {int} handle - Object handle
-     * @param {int} methodId - Method identifier.  This the 1-based index of
-     *   the method from the UDL file.  0 is the special drop method, which
-     *   removes the callback object from the handle map.
-     * @param {ArrayBuffer} argsArrayBuffer - Arguments to pass to the method, packed in an ArrayBuffer
+     * @param {int} methodId - Method index (0-based)
+     * @param {UniFFIScaffoldingValue[]} args - Arguments to pass to the method
      */
-    invokeCallback(handle, methodId, argsArrayBuffer) {
+    call(handle, methodId, ...args) {
         try {
-            this.#invokeCallbackInner(handle, methodId, argsArrayBuffer);
+            this.#invokeCallbackInner(handle, methodId, args);
         } catch (e) {
             console.error(`internal error invoking callback: ${e}`)
         }
     }
 
-    #invokeCallbackInner(handle, methodId, argsArrayBuffer) {
+    /**
+     * Destroy a stored callback object
+     * @param {int} handle - Object handle
+     */
+    destroy(handle) {
+        this.#handleMap.delete(handle);
+    }
+
+    #invokeCallbackInner(handle, methodId, args) {
         const callbackObj = this.getCallbackObj(handle);
         if (callbackObj === undefined) {
             throw new UniFFIError(`${this.#name}: invalid callback handle id: ${handle}`);
         }
 
-        // Special-cased drop method, remove the object from the handle map and
-        // return an empty array buffer
-        if (methodId == 0) {
-            this.#handleMap.delete(handle);
-            return;
-        }
-
         // Get the method data, converting from 1-based indexing
-        const methodHandler = this.#methodHandlers[methodId - 1];
+        const methodHandler = this.#methodHandlers[methodId];
         if (methodHandler === undefined) {
             throw new UniFFIError(`${this.#name}: invalid method id: ${methodId}`)
         }
 
-        methodHandler.call(callbackObj, argsArrayBuffer);
+        methodHandler.call(callbackObj, args);
     }
 
     /**
@@ -397,10 +440,9 @@ class UniFFICallbackMethodHandler {
      * @param {obj} callbackObj -- Object implementing the callback interface for this method
      * @param {ArrayBuffer} argsArrayBuffer -- Arguments for the method, packed in an ArrayBuffer
      */
-     call(callbackObj, argsArrayBuffer) {
-        const argsStream = new ArrayBufferDataStream(argsArrayBuffer);
-        const args = this.#argsConverters.map(converter => converter.read(argsStream));
-        callbackObj[this.#name](...args);
+     call(callbackObj, args) {
+        const convertedArgs = this.#argsConverters.map((converter, i) => converter.lift(args[i]));
+        return callbackObj[this.#name](...convertedArgs);
     }
 }
 
@@ -418,6 +460,34 @@ class UniFFICallbackHandleMapEntry {
 }
 
 // Export the FFIConverter object to make external types work.
+export class FfiConverterU32 extends FfiConverter {
+    static checkType(value) {
+        super.checkType(value);
+        if (!Number.isInteger(value)) {
+            throw new UniFFITypeError(`${value} is not an integer`);
+        }
+        if (value < 0 || value > 4294967295) {
+            throw new UniFFITypeError(`${value} exceeds the U32 bounds`);
+        }
+    }
+    static computeSize(_value) {
+        return 4;
+    }
+    static lift(value) {
+        return value;
+    }
+    static lower(value) {
+        return value;
+    }
+    static write(dataStream, value) {
+        dataStream.writeUint32(value)
+    }
+    static read(dataStream) {
+        return dataStream.readUint32()
+    }
+}
+
+// Export the FFIConverter object to make external types work.
 export class FfiConverterI32 extends FfiConverter {
     static checkType(value) {
         super.checkType(value);
@@ -428,7 +498,7 @@ export class FfiConverterI32 extends FfiConverter {
             throw new UniFFITypeError(`${value} exceeds the I32 bounds`);
         }
     }
-    static computeSize() {
+    static computeSize(_value) {
         return 4;
     }
     static lift(value) {
@@ -503,6 +573,50 @@ export class FfiConverterTypeLogger extends FfiConverter {
 }
 
 // Export the FFIConverter object to make external types work.
+export class FfiConverterSequenceu32 extends FfiConverterArrayBuffer {
+    static read(dataStream) {
+        const len = dataStream.readInt32();
+        const arr = [];
+        for (let i = 0; i < len; i++) {
+            arr.push(FfiConverterU32.read(dataStream));
+        }
+        return arr;
+    }
+
+    static write(dataStream, value) {
+        dataStream.writeInt32(value.length);
+        value.forEach((innerValue) => {
+            FfiConverterU32.write(dataStream, innerValue);
+        })
+    }
+
+    static computeSize(value) {
+        // The size of the length
+        let size = 4;
+        for (const innerValue of value) {
+            size += FfiConverterU32.computeSize(innerValue);
+        }
+        return size;
+    }
+
+    static checkType(value) {
+        if (!Array.isArray(value)) {
+            throw new UniFFITypeError(`${value} is not an array`);
+        }
+        value.forEach((innerValue, idx) => {
+            try {
+                FfiConverterU32.checkType(innerValue);
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart(`[${idx}]`);
+                }
+                throw e;
+            }
+        })
+    }
+}
+
+// Export the FFIConverter object to make external types work.
 export class FfiConverterSequencei32 extends FfiConverterArrayBuffer {
     static read(dataStream) {
         const len = dataStream.readInt32();
@@ -551,12 +665,20 @@ export class FfiConverterSequencei32 extends FfiConverterArrayBuffer {
 
 const callbackHandlerLogger = new UniFFICallbackHandler(
     "fixture_callbacks:Logger",
-    0,
+    1,
     [
         new UniFFICallbackMethodHandler(
             "log",
             [
                 FfiConverterString,
+            ],
+        ),
+        new UniFFICallbackMethodHandler(
+            "logRepeat",
+            [
+                FfiConverterString,
+                FfiConverterU32,
+                FfiConverterSequenceu32,
             ],
         ),
         new UniFFICallbackMethodHandler(
@@ -574,6 +696,64 @@ UnitTestObjs.callbackHandlerLogger = callbackHandlerLogger;
 
 
 
+/**
+ * callLogRepeat
+ */
+export function callLogRepeat(logger,message,count,exclude) {
+
+        const liftResult = (result) => undefined;
+        const liftError = null;
+        const functionCall = () => {
+            try {
+                FfiConverterTypeLogger.checkType(logger)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("logger");
+                }
+                throw e;
+            }
+            try {
+                FfiConverterString.checkType(message)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("message");
+                }
+                throw e;
+            }
+            try {
+                FfiConverterU32.checkType(count)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("count");
+                }
+                throw e;
+            }
+            try {
+                FfiConverterSequenceu32.checkType(exclude)
+            } catch (e) {
+                if (e instanceof UniFFITypeError) {
+                    e.addItemDescriptionPart("exclude");
+                }
+                throw e;
+            }
+            return UniFFIScaffolding.callAsyncWrapper(
+                103, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_call_log_repeat
+                FfiConverterTypeLogger.lower(logger),
+                FfiConverterString.lower(message),
+                FfiConverterU32.lower(count),
+                FfiConverterSequenceu32.lower(exclude),
+            )
+        }
+        try {
+            return functionCall().then((result) => handleRustResult(result, liftResult, liftError));
+        }  catch (error) {
+            return Promise.reject(error)
+        }
+}
+
+/**
+ * logEvenNumbers
+ */
 export function logEvenNumbers(logger,items) {
 
         const liftResult = (result) => undefined;
@@ -595,8 +775,8 @@ export function logEvenNumbers(logger,items) {
                 }
                 throw e;
             }
-            return UniFFIScaffolding.callAsync(
-                46, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers
+            return UniFFIScaffolding.callAsyncWrapper(
+                104, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers
                 FfiConverterTypeLogger.lower(logger),
                 FfiConverterSequencei32.lower(items),
             )
@@ -608,6 +788,9 @@ export function logEvenNumbers(logger,items) {
         }
 }
 
+/**
+ * logEvenNumbersMainThread
+ */
 export function logEvenNumbersMainThread(logger,items) {
 
         const liftResult = (result) => undefined;
@@ -630,7 +813,7 @@ export function logEvenNumbersMainThread(logger,items) {
                 throw e;
             }
             return UniFFIScaffolding.callSync(
-                47, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers_main_thread
+                105, // fixture_callbacks:uniffi_uniffi_fixture_callbacks_fn_func_log_even_numbers_main_thread
                 FfiConverterTypeLogger.lower(logger),
                 FfiConverterSequencei32.lower(items),
             )

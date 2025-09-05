@@ -1,5 +1,5 @@
 # Definitions for jobs that run periodically.  For details on the format, see
-# `https://hg.mozilla.org/ci/ci-admin/file/default/build-decision/src/build_decision/cron/schema.yml`.
+# ``https://github.com/mozilla-releng/fxci-config/blob/main/build-decision/src/build_decision/cron/schema.yml``.
 # For documentation, see `taskcluster/docs/cron.rst`.
 ---
 
@@ -33,6 +33,34 @@ jobs:
               mozilla-central:
                   - {hour: 10, minute: 0}
                   - {hour: 22, minute: 0}
+
+    - name: merge-beta-to-release-dry-run
+      job:
+          type: trigger-action
+          action-name: merge-automation
+          include-cron-input: false
+          extra-input:
+              force-dry-run: true
+              behavior: beta-to-release
+              push: true
+      run-on-projects:
+          - mozilla-beta
+      when:
+          - {weekday: "Friday", hour: 7, minute: 0}
+
+    - name: merge-central-to-beta-dry-run
+      job:
+          type: trigger-action
+          action-name: merge-automation
+          include-cron-input: false
+          extra-input:
+              force-dry-run: true
+              behavior: central-to-beta
+              push: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: "Friday", hour: 7, minute: 0}
 
     - name: nightly-desktop
       job:
@@ -117,6 +145,18 @@ jobs:
           - {weekday: 'Monday', hour: 10, minute: 30}
           - {weekday: 'Wednesday', hour: 10, minute: 30}
           - {weekday: 'Friday', hour: 10, minute: 30}
+
+    - name: geckoview-perftest
+      job:
+          type: decision-task
+          treeherder-symbol: gve-perftests
+          target-tasks-method: geckoview-perftest
+          include-push-tasks: true
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Monday', hour: 10, minute: 30}
+          - {weekday: 'Thursday', hour: 10, minute: 30}
 
     - name: custom-car-perf-testing
       job:
@@ -339,18 +379,6 @@ jobs:
           include-cron-input: true
       when: []  # never (hook only)
 
-    - name: l10n-cross-channel
-      job:
-          type: decision-task
-          treeherder-symbol: l10n-cross-channel
-          target-tasks-method: l10n-cross-channel
-      run-on-projects:
-          - mozilla-central
-      when:
-          by-project:
-              mozilla-central: [{hour: 11, minute: 0}, {hour: 23, minute: 0}]
-              default: []
-
     - name: eslint-build
       job:
           type: decision-task
@@ -399,3 +427,13 @@ jobs:
       run-on-projects: [mozilla-beta]
       when:
           - {hour: 2, minute: 0}
+
+    - name: os-integration
+      job:
+          type: decision-task
+          treeherder-symbol: osint
+          target-tasks-method: os-integration
+      run-on-projects:
+          - mozilla-central
+      when:
+          - {weekday: 'Monday', hour: 6, minute: 0}

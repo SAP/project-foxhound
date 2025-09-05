@@ -11,6 +11,7 @@ JAR_MANIFESTS += ["jar.mn"]
 
 DIRS += [
     "bouncetrackingprotection",
+    "imageinputmetadatastripper",
 ]
 
 XPIDL_SOURCES += [
@@ -51,6 +52,7 @@ EXPORTS.mozilla = [
     "ContentBlockingNotifier.h",
     "ContentBlockingTelemetryService.h",
     "ContentBlockingUserInteraction.h",
+    "DynamicFpiNavigationHeuristic.h",
     "DynamicFpiRedirectHeuristic.h",
     "PartitioningExceptionList.h",
     "StorageAccess.h",
@@ -68,6 +70,7 @@ UNIFIED_SOURCES += [
     "ContentBlockingNotifier.cpp",
     "ContentBlockingTelemetryService.cpp",
     "ContentBlockingUserInteraction.cpp",
+    "DynamicFpiNavigationHeuristic.cpp",
     "DynamicFpiRedirectHeuristic.cpp",
     "PartitioningExceptionList.cpp",
     "SettingsChangeObserver.cpp",

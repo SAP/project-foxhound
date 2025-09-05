@@ -100,6 +100,7 @@ import org.mozilla.geckoview.WebNotificationDelegate;
 import org.mozilla.geckoview.WebRequest;
 import org.mozilla.geckoview.WebRequestError;
 import org.mozilla.geckoview.WebResponse;
+import org.mozilla.geckoview_example.utils.WindowUtils;
 
 interface WebExtensionDelegate {
   default GeckoSession toggleBrowserActionPopup(boolean force) {
@@ -143,11 +144,13 @@ class WebExtensionManager
 
   @Nullable
   @Override
-  public GeckoResult<AllowOrDeny> onInstallPrompt(
-      final @NonNull WebExtension extension,
-      @NonNull String[] permissions,
-      @NonNull String[] origins) {
-    return GeckoResult.allow();
+  public GeckoResult<WebExtension.PermissionPromptResponse> onInstallPromptRequest(
+      @NonNull WebExtension extension, @NonNull String[] permissions, @NonNull String[] origins) {
+    return GeckoResult.fromValue(
+        new org.mozilla.geckoview.WebExtension.PermissionPromptResponse(
+            true, // isPermissionsGranted
+            true // isPrivateModeGranted
+            ));
   }
 
   @Nullable
@@ -780,11 +783,13 @@ public class GeckoViewActivity extends AppCompatActivity
       new BooleanSetting(R.string.key_dfpi, R.bool.dfpi_default) {
         @Override
         public void setValue(final GeckoRuntimeSettings settings, final Boolean value) {
-          int cookieBehavior =
-              value
-                  ? ContentBlocking.CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS
-                  : ContentBlocking.CookieBehavior.ACCEPT_NON_TRACKERS;
-          settings.getContentBlocking().setCookieBehavior(cookieBehavior);
+          // If dFPI is enabled set appropriate cookieBehavior, else do not overwrite.
+          if (value) {
+            settings
+                .getContentBlocking()
+                .setCookieBehavior(
+                    ContentBlocking.CookieBehavior.ACCEPT_FIRST_PARTY_AND_ISOLATE_OTHERS);
+          }
         }
       };
 
@@ -826,6 +831,8 @@ public class GeckoViewActivity extends AppCompatActivity
     mGeckoView.setActivityContextDelegate(new ExampleActivityDelegate());
     mTabSessionManager = new TabSessionManager();
 
+    WindowUtils.setupPersistentInsets(getWindow());
+    WindowUtils.setupImeBehavior(getWindow());
     setSupportActionBar(findViewById(R.id.toolbar));
 
     SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
@@ -1338,6 +1345,9 @@ public class GeckoViewActivity extends AppCompatActivity
         break;
       case R.id.translate_manage:
         translateManage();
+        break;
+      case R.id.webcompat_info:
+        webCompatInfo(session);
         break;
       default:
         return super.onOptionsItemSelected(item);
@@ -2029,15 +2039,15 @@ public class GeckoViewActivity extends AppCompatActivity
 
     @Override
     public void onFullScreen(final GeckoSession session, final boolean fullScreen) {
-      getWindow()
-          .setFlags(
-              fullScreen ? WindowManager.LayoutParams.FLAG_FULLSCREEN : 0,
-              WindowManager.LayoutParams.FLAG_FULLSCREEN);
       mFullScreen = fullScreen;
       if (fullScreen) {
         getSupportActionBar().hide();
+        mGeckoView.setDynamicToolbarMaxHeight(0);
+        WindowUtils.enterImmersiveMode(getWindow());
       } else {
         getSupportActionBar().show();
+        mGeckoView.setDynamicToolbarMaxHeight(getSupportActionBar().getHeight());
+        WindowUtils.exitImmersiveMode(getWindow());
       }
     }
 
@@ -2157,11 +2167,6 @@ public class GeckoViewActivity extends AppCompatActivity
             WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_DEFAULT;
       }
       getWindow().setAttributes(layoutParams);
-    }
-
-    @Override
-    public void onProductUrl(@NonNull final GeckoSession session) {
-      Log.d("Gecko", "onProductUrl");
     }
 
     @Override
@@ -2430,6 +2435,15 @@ public class GeckoViewActivity extends AppCompatActivity
       }
     }
     return null;
+  }
+
+  public void webCompatInfo(@NonNull final GeckoSession session) {
+    GeckoResult<JSONObject> result = session.getWebCompatInfo();
+    result.map(
+        info -> {
+          Log.d(LOGTAG, "Received web compat info.");
+          return info;
+        });
   }
 
   public void shoppingActions(@NonNull final GeckoSession session, @NonNull final String url) {

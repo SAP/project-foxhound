@@ -8,6 +8,8 @@ tags = "os_integration"
 
 ["test_alwaysontop_focus.xhtml"]
 
+["test_autocorrect_in_parent.html"]
+
 # Privacy relevant
 
 ["test_bug343416.xhtml"]
@@ -153,6 +155,9 @@ skip-if = [
 ["test_native_menus.xhtml"]
 run-if = ["os == 'mac'"] # Cocoa widget test
 support-files = ["native_menus_window.xhtml"]
+
+["test_native_context_menus.xhtml"]
+run-if = ["os == 'mac'"] # Cocoa widget test
 
 ["test_panel_mouse_coords.xhtml"]
 skip-if = ["os == 'win'"] # bug 1009955

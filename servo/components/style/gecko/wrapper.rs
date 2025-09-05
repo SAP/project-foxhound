@@ -1015,9 +1015,32 @@ impl<'le> TElement for GeckoElement<'le> {
     type ConcreteNode = GeckoNode<'le>;
     type TraversalChildrenIterator = GeckoChildrenIterator<'le>;
 
+    fn implicit_scope_for_sheet_in_shadow_root(
+        opaque_host: OpaqueElement,
+        sheet_index: usize,
+    ) -> Option<ImplicitScopeRoot> {
+        // As long as this "unopaqued" element does not escape this function, we're not leaking
+        // potentially-mutable elements from opaque elements.
+        let e = unsafe {
+            Self(
+                opaque_host
+                    .as_const_ptr::<RawGeckoElement>()
+                    .as_ref()
+                    .unwrap(),
+            )
+        };
+        let shadow_root = match e.shadow_root() {
+            None => return None,
+            Some(r) => r,
+        };
+        shadow_root.implicit_scope_for_sheet(sheet_index)
+    }
+
     fn inheritance_parent(&self) -> Option<Self> {
-        if self.is_pseudo_element() {
-            return self.pseudo_element_originating_element();
+        if let Some(pseudo) = self.implemented_pseudo_element() {
+            if !pseudo.is_part_like() {
+                return self.pseudo_element_originating_element();
+            }
         }
 
         self.as_node()
@@ -1415,9 +1438,14 @@ impl<'le> TElement for GeckoElement<'le> {
             return None;
         }
 
+        let name = unsafe { bindings::Gecko_GetImplementedPseudoIdentifier(self.0) };
         PseudoElement::from_pseudo_type(
-            unsafe { bindings::Gecko_GetImplementedPseudo(self.0) },
-            None,
+            unsafe { bindings::Gecko_GetImplementedPseudoType(self.0) },
+            if name.is_null() {
+                None
+            } else {
+                Some(AtomIdent::new(unsafe { Atom::from_raw(name) }))
+            },
         )
     }
 
@@ -1655,6 +1683,22 @@ impl<'le> TElement for GeckoElement<'le> {
         }
 
         unsafe { bindings::Gecko_IsDocumentBody(self.0) }
+    }
+
+    fn synthesize_view_transition_dynamic_rules<V>(&self, rules: &mut V)
+    where
+        V: Push<ApplicableDeclarationBlock>,
+    {
+        use crate::stylesheets::layer_rule::LayerOrder;
+        let declarations =
+            unsafe { bindings::Gecko_GetViewTransitionDynamicRule(self.0).as_ref() };
+        if let Some(decl) = declarations {
+            rules.push(ApplicableDeclarationBlock::from_declarations(
+                unsafe { Arc::from_raw_addrefed(decl) },
+                ServoCascadeLevel::UANormal,
+                LayerOrder::root(),
+            ));
+        }
     }
 
     fn synthesize_presentational_hints_for_legacy_attributes<V>(
@@ -2062,8 +2106,10 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
             NonTSPseudoClass::MozDirAttrLikeAuto |
             NonTSPseudoClass::Modal |
             NonTSPseudoClass::MozTopmostModal |
+            NonTSPseudoClass::Open |
             NonTSPseudoClass::Active |
             NonTSPseudoClass::Hover |
+            NonTSPseudoClass::HasSlotted |
             NonTSPseudoClass::MozAutofillPreview |
             NonTSPseudoClass::MozRevealed |
             NonTSPseudoClass::MozValueEmpty => self.state().intersects(pseudo_class.state_flag()),
@@ -2149,16 +2195,18 @@ impl<'le> ::selectors::Element for GeckoElement<'le> {
 
     fn match_pseudo_element(
         &self,
-        pseudo_element: &PseudoElement,
+        pseudo_selector: &PseudoElement,
         _context: &mut MatchingContext<Self::Impl>,
     ) -> bool {
         // TODO(emilio): I believe we could assert we are a pseudo-element and
         // match the proper pseudo-element, given how we rulehash the stuff
         // based on the pseudo.
-        match self.implemented_pseudo_element() {
-            Some(ref pseudo) => *pseudo == *pseudo_element,
-            None => false,
-        }
+        let pseudo = match self.implemented_pseudo_element() {
+            Some(pseudo) => pseudo,
+            None => return false,
+        };
+
+        pseudo.matches(pseudo_selector)
     }
 
     #[inline]

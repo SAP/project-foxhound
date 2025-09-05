@@ -35,12 +35,14 @@
 #include "mozilla/StaticPrefs_fission.h"
 #include "mozilla/StaticPrefs_network.h"
 #include "mozilla/StaticPrefs_security.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "mozilla/Telemetry.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/browser/NimbusFeatures.h"
 #include "mozilla/dom/BrowsingContext.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/Document.h"
+#include "mozilla/dom/FetchPriority.h"
 #include "mozilla/dom/nsHTTPSOnlyUtils.h"
 #include "mozilla/dom/nsMixedContentBlocker.h"
 #include "mozilla/dom/Performance.h"
@@ -168,7 +170,7 @@ static bool IsHeaderBlacklistedForRedirectCopy(nsHttpAtom const& aHeader) {
   };
 
   size_t unused;
-  return BinarySearchIf(blackList, 0, ArrayLength(blackList),
+  return BinarySearchIf(blackList, 0, std::size(blackList),
                         HttpAtomComparator(aHeader), &unused);
 }
 
@@ -248,7 +250,7 @@ HttpBaseChannel::HttpBaseChannel()
       mCachedOpaqueResponseBlockingPref(
           StaticPrefs::browser_opaqueResponseBlocking()),
       mChannelBlockedByOpaqueResponse(false),
-      mDummyChannelForImageCache(false),
+      mDummyChannelForCachedResource(false),
       mHasContentDecompressed(false),
       mRenderBlocking(false) {
   StoreApplyConversion(true);
@@ -659,7 +661,7 @@ HttpBaseChannel::GetContentType(nsACString& aContentType) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetContentType(const nsACString& aContentType) {
-  if (mListener || LoadWasOpened() || mDummyChannelForImageCache) {
+  if (mListener || LoadWasOpened() || mDummyChannelForCachedResource) {
     if (!mResponseHead) return NS_ERROR_NOT_AVAILABLE;
 
     nsAutoCString contentTypeBuf, charsetBuf;
@@ -811,7 +813,7 @@ HttpBaseChannel::GetContentLength(int64_t* aContentLength) {
 
 NS_IMETHODIMP
 HttpBaseChannel::SetContentLength(int64_t value) {
-  if (!mDummyChannelForImageCache) {
+  if (!mDummyChannelForCachedResource) {
     MOZ_ASSERT_UNREACHABLE("HttpBaseChannel::SetContentLength");
     return NS_ERROR_NOT_IMPLEMENTED;
   }
@@ -907,7 +909,7 @@ HttpBaseChannel::SetUploadStream(nsIInputStream* stream,
   // if stream is null, ExplicitSetUploadStream returns error.
   // So we need special case for GET method.
   StoreUploadStreamHasHeaders(false);
-  mRequestHead.SetMethod("GET"_ns);  // revert to GET request
+  SetRequestMethod("GET"_ns);  // revert to GET request
   mUploadStream = nullptr;
   return NS_OK;
 }
@@ -1548,7 +1550,7 @@ HttpBaseChannel::DoApplyContentConversions(nsIStreamListener* aNextListener,
         } else if (from.EqualsLiteral("zstd")) {
           mode = 4;
         }
-        Telemetry::Accumulate(Telemetry::HTTP_CONTENT_ENCODING, mode);
+        glean::http::content_encoding.AccumulateSingleSample(mode);
       }
       nextListener = converter;
     } else {
@@ -1861,6 +1863,8 @@ HttpBaseChannel::GetRequestMethod(nsACString& aMethod) {
 NS_IMETHODIMP
 HttpBaseChannel::SetRequestMethod(const nsACString& aMethod) {
   ENSURE_CALLED_BEFORE_CONNECT();
+
+  mLoadInfo->SetIsGETRequest(aMethod.Equals("GET"));
 
   const nsCString& flatMethod = PromiseFlatCString(aMethod);
 
@@ -2283,7 +2287,11 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   // This would break the nsIStreamListener contract.
   NS_ENSURE_FALSE(LoadOnStartRequestCalled(), NS_ERROR_NOT_AVAILABLE);
 
-  mAPIRedirectToURI = targetURI;
+  // The first parameter is the URI we would like to redirect to
+  // The second parameter should default to false if normal redirect
+  mAPIRedirectTo =
+      Some(mozilla::MakeCompactPair(nsCOMPtr<nsIURI>(targetURI), false));
+
   // Only Web Extensions are allowed to redirect a channel to a data:
   // URI. To avoid any bypasses after the channel was flagged by
   // the WebRequst API, we are dropping the flag here.
@@ -2294,6 +2302,15 @@ HttpBaseChannel::RedirectTo(nsIURI* targetURI) {
   if (!mResponseHead) {
     mResponseHead.reset(new nsHttpResponseHead());
   }
+  return NS_OK;
+}
+
+NS_IMETHODIMP
+HttpBaseChannel::TransparentRedirectTo(nsIURI* targetURI) {
+  LOG(("HttpBaseChannel::TransparentRedirectTo [this=%p]", this));
+  RedirectTo(targetURI);
+  MOZ_ASSERT(mAPIRedirectTo, "How did this happen?");
+  mAPIRedirectTo->second() = true;
   return NS_OK;
 }
 
@@ -2499,15 +2516,6 @@ HttpBaseChannel::GetResponseVersion(uint32_t* major, uint32_t* minor) {
   }
 
   return NS_OK;
-}
-
-void HttpBaseChannel::NotifySetCookie(const nsACString& aCookie) {
-  nsCOMPtr<nsIObserverService> obs = services::GetObserverService();
-  if (obs) {
-    obs->NotifyObservers(static_cast<nsIChannel*>(this),
-                         "http-on-response-set-cookie",
-                         NS_ConvertASCIItoUTF16(aCookie).get());
-  }
 }
 
 bool HttpBaseChannel::IsBrowsingContextDiscarded() const {
@@ -2948,6 +2956,17 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
     return NS_OK;
   }
 
+  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
+  bool isModule =
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD;
+
+  if (isModule && nsContentUtils::IsJsonMimeType(typeString)) {
+    AccumulateCategorical(
+        Telemetry::LABELS_SCRIPT_BLOCK_INCORRECT_MIME_3::javaScript);
+    return NS_OK;
+  }
+
   switch (aLoadInfo->InternalContentPolicyType()) {
     case nsIContentPolicy::TYPE_SCRIPT:
     case nsIContentPolicy::TYPE_INTERNAL_SCRIPT:
@@ -3084,7 +3103,6 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   }
 
   // We restrict importScripts() in worker code to JavaScript MIME types.
-  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
   if (internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_IMPORT_SCRIPTS ||
       internalType == nsIContentPolicy::TYPE_INTERNAL_WORKER_STATIC_MODULE) {
     ReportMimeTypeMismatch(aChannel, "BlockImportScriptsWithWrongMimeType",
@@ -3105,8 +3123,7 @@ nsresult EnsureMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   }
 
   // ES6 modules require a strict MIME type check.
-  if (internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
-      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD) {
+  if (isModule) {
     ReportMimeTypeMismatch(aChannel, "BlockModuleWithWrongMimeType", aURI,
                            contentType, Report::Error);
     return NS_ERROR_CORRUPTED_CONTENT;
@@ -3142,10 +3159,21 @@ void WarnWrongMIMEOfScript(HttpBaseChannel* aChannel, nsIURI* aURI,
   nsAutoCString contentType;
   aResponseHead->ContentType(contentType);
   NS_ConvertUTF8toUTF16 typeString(contentType);
-  if (!nsContentUtils::IsJavascriptMIMEType(typeString)) {
-    ReportMimeTypeMismatch(aChannel, "WarnScriptWithWrongMimeType", aURI,
-                           contentType, Report::Warning);
+
+  if (nsContentUtils::IsJavascriptMIMEType(typeString)) {
+    return;
   }
+
+  nsContentPolicyType internalType = aLoadInfo->InternalContentPolicyType();
+  bool isModule =
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE ||
+      internalType == nsIContentPolicy::TYPE_INTERNAL_MODULE_PRELOAD;
+  if (isModule && nsContentUtils::IsJsonMimeType(typeString)) {
+    return;
+  }
+
+  ReportMimeTypeMismatch(aChannel, "WarnScriptWithWrongMimeType", aURI,
+                         contentType, Report::Warning);
 }
 
 nsresult HttpBaseChannel::ValidateMIMEType() {
@@ -3165,7 +3193,7 @@ nsresult HttpBaseChannel::ValidateMIMEType() {
 
 bool HttpBaseChannel::ShouldFilterOpaqueResponse(
     OpaqueResponseFilterFetch aFilterType) const {
-  MOZ_DIAGNOSTIC_ASSERT(ShouldBlockOpaqueResponse());
+  MOZ_ASSERT(ShouldBlockOpaqueResponse());
 
   if (!mLoadInfo || ConfiguredFilterFetchResponseBehaviour() != aFilterType) {
     return false;
@@ -3281,8 +3309,9 @@ OpaqueResponse HttpBaseChannel::BlockOrFilterOpaqueResponse(
   }
 
   if (shouldFilter) {
-    Telemetry::AccumulateCategorical(
-        Telemetry::LABELS_ORB_BLOCK_INITIATOR::FILTERED_FETCH);
+    glean::orb::block_initiator
+        .EnumGet(glean::orb::BlockInitiatorLabel::eFilteredFetch)
+        .Add();
     // The existence of `mORB` depends on `BlockOrFilterOpaqueResponse` being
     // called before or after sniffing has completed.
     // Another requirement is that `OpaqueResponseFilter` must come after
@@ -3349,10 +3378,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
     mListener = new OpaqueResponseFilter(mListener);
   }
 
-  Telemetry::ScalarAdd(
-      Telemetry::ScalarID::
-          OPAQUE_RESPONSE_BLOCKING_CROSS_ORIGIN_OPAQUE_RESPONSE_COUNT,
-      1);
+  glean::opaque_response_blocking::cross_origin_opaque_response_count.Add(1);
 
   PROFILER_MARKER_TEXT("ORB safelist check", NETWORK, {}, "Before sniff"_ns);
 
@@ -3379,14 +3405,14 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
     case OpaqueResponseBlockedReason::BLOCKED_BLOCKLISTED_NEVER_SNIFFED:
       return BlockOrFilterOpaqueResponse(
           mORB, u"mimeType is an opaque-blocklisted-never-sniffed MIME type"_ns,
-          OpaqueResponseBlockedTelemetryReason::MIME_NEVER_SNIFFED,
+          OpaqueResponseBlockedTelemetryReason::eMimeNeverSniffed,
           "BLOCKED_BLOCKLISTED_NEVER_SNIFFED");
     case OpaqueResponseBlockedReason::BLOCKED_206_AND_BLOCKLISTED:
       // Step 3.3
       return BlockOrFilterOpaqueResponse(
           mORB,
           u"response's status is 206 and mimeType is an opaque-blocklisted MIME type"_ns,
-          OpaqueResponseBlockedTelemetryReason::RESP_206_BLCLISTED,
+          OpaqueResponseBlockedTelemetryReason::eResp206Blclisted,
           "BLOCKED_206_AND_BLOCKEDLISTED");
     case OpaqueResponseBlockedReason::
         BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN:
@@ -3394,7 +3420,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
       return BlockOrFilterOpaqueResponse(
           mORB,
           u"nosniff is true and mimeType is an opaque-blocklisted MIME type or its essence is 'text/plain'"_ns,
-          OpaqueResponseBlockedTelemetryReason::NOSNIFF_BLC_OR_TEXTP,
+          OpaqueResponseBlockedTelemetryReason::eNosniffBlcOrTextp,
           "BLOCKED_NOSNIFF_AND_EITHER_BLOCKLISTED_OR_TEXTPLAIN");
     default:
       break;
@@ -3418,7 +3444,7 @@ HttpBaseChannel::PerformOpaqueResponseSafelistCheckBeforeSniff() {
       !IsFirstPartialResponse(*mResponseHead)) {
     return BlockOrFilterOpaqueResponse(
         mORB, u"response status is 206 and not first partial response"_ns,
-        OpaqueResponseBlockedTelemetryReason::RESP_206_BLCLISTED,
+        OpaqueResponseBlockedTelemetryReason::eResp206Blclisted,
         "Is not a valid partial response given 0");
   }
 
@@ -3476,7 +3502,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
   if (isMediaRequest) {
     return BlockOrFilterOpaqueResponse(
         mORB, u"after sniff: media request"_ns,
-        OpaqueResponseBlockedTelemetryReason::AFTER_SNIFF_MEDIA,
+        OpaqueResponseBlockedTelemetryReason::eAfterSniffMedia,
         "media request");
   }
 
@@ -3484,7 +3510,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
   if (aNoSniff) {
     return BlockOrFilterOpaqueResponse(
         mORB, u"after sniff: nosniff is true"_ns,
-        OpaqueResponseBlockedTelemetryReason::AFTER_SNIFF_NOSNIFF, "nosniff");
+        OpaqueResponseBlockedTelemetryReason::eAfterSniffNosniff, "nosniff");
   }
 
   // Step 12
@@ -3492,7 +3518,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
       (mResponseHead->Status() < 200 || mResponseHead->Status() > 299)) {
     return BlockOrFilterOpaqueResponse(
         mORB, u"after sniff: status code is not in allowed range"_ns,
-        OpaqueResponseBlockedTelemetryReason::AFTER_SNIFF_STA_CODE,
+        OpaqueResponseBlockedTelemetryReason::eAfterSniffStaCode,
         "status code (%d) is not allowed", mResponseHead->Status());
   }
 
@@ -3509,7 +3535,7 @@ OpaqueResponse HttpBaseChannel::PerformOpaqueResponseSafelistCheckAfterSniff(
     return BlockOrFilterOpaqueResponse(
         mORB,
         u"after sniff: content-type declares image/video/audio, but sniffing fails"_ns,
-        OpaqueResponseBlockedTelemetryReason::AFTER_SNIFF_CT_FAIL,
+        OpaqueResponseBlockedTelemetryReason::eAfterSniffCtFail,
         "ContentType is image/video/audio");
   }
 
@@ -3550,7 +3576,7 @@ void HttpBaseChannel::SetChannelBlockedByOpaqueResponse() {
 }
 
 NS_IMETHODIMP
-HttpBaseChannel::SetCookie(const nsACString& aCookieHeader) {
+HttpBaseChannel::SetCookieHeaders(const nsTArray<nsCString>& aCookieHeaders) {
   if (mLoadFlags & LOAD_ANONYMOUS) return NS_OK;
 
   if (IsBrowsingContextDiscarded()) {
@@ -3558,18 +3584,19 @@ HttpBaseChannel::SetCookie(const nsACString& aCookieHeader) {
   }
 
   // empty header isn't an error
-  if (aCookieHeader.IsEmpty()) {
+  if (aCookieHeaders.IsEmpty()) {
     return NS_OK;
   }
 
   nsICookieService* cs = gHttpHandler->GetCookieService();
   NS_ENSURE_TRUE(cs, NS_ERROR_FAILURE);
 
-  nsresult rv = cs->SetCookieStringFromHttp(mURI, aCookieHeader, this);
-  if (NS_SUCCEEDED(rv)) {
-    NotifySetCookie(aCookieHeader);
+  for (const nsCString& cookieHeader : aCookieHeaders) {
+    nsresult rv = cs->SetCookieStringFromHttp(mURI, cookieHeader, this);
+    NS_ENSURE_SUCCESS(rv, rv);
   }
-  return rv;
+
+  return NS_OK;
 }
 
 NS_IMETHODIMP
@@ -3929,8 +3956,11 @@ HttpBaseChannel::SetTlsFlags(uint32_t aTlsFlags) {
 
 NS_IMETHODIMP
 HttpBaseChannel::GetApiRedirectToURI(nsIURI** aResult) {
+  if (!mAPIRedirectTo) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
   NS_ENSURE_ARG_POINTER(aResult);
-  *aResult = do_AddRef(mAPIRedirectToURI).take();
+  *aResult = do_AddRef(mAPIRedirectTo->first()).take();
   return NS_OK;
 }
 
@@ -4440,6 +4470,20 @@ already_AddRefed<nsILoadInfo> HttpBaseChannel::CloneLoadInfoForRedirect(
       newLoadInfo->SetLoadTriggeredFromExternal(false);
     }
     newLoadInfo->ResetSandboxedNullPrincipalID();
+
+    if (isTopLevelDoc) {
+      // Reset HTTPS-first and -only status on http redirect. To not
+      // unexpectedly downgrade requests that weren't upgraded via HTTPS-First
+      // (Bug 1904238).
+      Unused << newLoadInfo->SetHttpsOnlyStatus(
+          nsILoadInfo::HTTPS_ONLY_UNINITIALIZED);
+
+      // Reset schemeless status flag to prevent schemeless HTTPS-First from
+      // repeatedly trying to upgrade loads that get downgraded again from the
+      // server by a redirect (Bug 1937386).
+      Unused << newLoadInfo->SetSchemelessInput(
+          nsILoadInfo::SchemelessInputTypeUnset);
+    }
   }
 
   newLoadInfo->AppendRedirectHistoryEntry(this, isInternalRedirect);
@@ -4690,7 +4734,6 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
       do_QueryInterface(static_cast<nsIHttpChannel*>(this)));
   if (oldTimedChannel) {
     config.timedChannelInfo = Some(dom::TimedChannelInfo());
-    config.timedChannelInfo->timingEnabled() = LoadTimingEnabled();
     config.timedChannelInfo->redirectCount() = mRedirectCount;
     config.timedChannelInfo->internalRedirectCount() = mInternalRedirectCount;
     config.timedChannelInfo->asyncOpen() = mAsyncOpenTime;
@@ -4786,8 +4829,6 @@ HttpBaseChannel::CloneReplacementChannelConfig(bool aPreserveMethod,
   // Transfer the timing data (if we are dealing with an nsITimedChannel).
   nsCOMPtr<nsITimedChannel> newTimedChannel(do_QueryInterface(newChannel));
   if (config.timedChannelInfo && newTimedChannel) {
-    newTimedChannel->SetTimingEnabled(config.timedChannelInfo->timingEnabled());
-
     // If we're an internal redirect, or a document channel replacement,
     // then we shouldn't record any new timing for this and just copy
     // over the existing values.
@@ -5013,7 +5054,8 @@ nsresult HttpBaseChannel::SetupReplacementChannel(nsIURI* newURI,
   nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(newChannel);
 
   ReplacementReason redirectType =
-      (redirectFlags & nsIChannelEventSink::REDIRECT_INTERNAL)
+      redirectFlags & (nsIChannelEventSink::REDIRECT_INTERNAL |
+                       nsIChannelEventSink::REDIRECT_TRANSPARENT)
           ? ReplacementReason::InternalRedirect
           : ReplacementReason::Redirect;
   ReplacementChannelConfig config = CloneReplacementChannelConfig(
@@ -5353,18 +5395,6 @@ HttpBaseChannel::SetMatchedTrackingInfo(
 //-----------------------------------------------------------------------------
 // HttpBaseChannel::nsITimedChannel
 //-----------------------------------------------------------------------------
-
-NS_IMETHODIMP
-HttpBaseChannel::SetTimingEnabled(bool enabled) {
-  StoreTimingEnabled(enabled);
-  return NS_OK;
-}
-
-NS_IMETHODIMP
-HttpBaseChannel::GetTimingEnabled(bool* _retval) {
-  *_retval = LoadTimingEnabled();
-  return NS_OK;
-}
 
 NS_IMETHODIMP
 HttpBaseChannel::GetChannelCreation(TimeStamp* _retval) {
@@ -5838,12 +5868,6 @@ IMPL_TIMING_ATTR(TransactionPending)
 #undef IMPL_TIMING_ATTR
 
 void HttpBaseChannel::MaybeReportTimingData() {
-  // If performance timing is disabled, there is no need for the Performance
-  // object anymore.
-  if (!LoadTimingEnabled()) {
-    return;
-  }
-
   // There is no point in continuing, since the performance object in the parent
   // isn't the same as the one in the child which will be reporting resource
   // performance.
@@ -6158,12 +6182,12 @@ nsresult HttpBaseChannel::CheckRedirectLimit(nsIURI* aNewURI,
   // upgrade behavior if we have upgrade-downgrade loop to break the loop and
   // load the http request next
   if (mozilla::StaticPrefs::
-          dom_security_https_first_add_exception_on_failiure() &&
+          dom_security_https_first_add_exception_on_failure() &&
       nsHTTPSOnlyUtils::IsUpgradeDowngradeEndlessLoop(
           mURI, aNewURI, mLoadInfo,
           {nsHTTPSOnlyUtils::UpgradeDowngradeEndlessLoopOptions::
                EnforceForHTTPSFirstMode})) {
-    nsHTTPSOnlyUtils::AddHTTPSFirstExceptionForSession(mURI, mLoadInfo);
+    nsHTTPSOnlyUtils::AddHTTPSFirstException(mURI, mLoadInfo);
   }
 
   return NS_OK;
@@ -6438,11 +6462,25 @@ bool HttpBaseChannel::Http3Allowed() const {
          LoadAllowHttp3();
 }
 
-void HttpBaseChannel::SetDummyChannelForImageCache() {
-  mDummyChannelForImageCache = true;
+UniquePtr<nsHttpResponseHead>
+HttpBaseChannel::MaybeCloneResponseHeadForCachedResource() {
+  if (!mResponseHead) {
+    return nullptr;
+  }
+
+  return MakeUnique<nsHttpResponseHead>(*mResponseHead);
+}
+
+void HttpBaseChannel::SetDummyChannelForCachedResource(
+    const nsHttpResponseHead* aMaybeResponseHead /* = nullptr */) {
+  mDummyChannelForCachedResource = true;
   MOZ_ASSERT(!mResponseHead,
-             "SetDummyChannelForImageCache should only be called once");
-  mResponseHead = MakeUnique<nsHttpResponseHead>();
+             "SetDummyChannelForCachedResource should only be called once");
+  if (aMaybeResponseHead) {
+    mResponseHead = MakeUnique<nsHttpResponseHead>(*aMaybeResponseHead);
+  } else {
+    mResponseHead = MakeUnique<nsHttpResponseHead>();
+  }
 }
 
 void HttpBaseChannel::SetEarlyHints(
@@ -6510,95 +6548,118 @@ HttpBaseChannel::GetIsProxyUsed(bool* aIsProxyUsed) {
 static void CollectORBBlockTelemetry(
     const OpaqueResponseBlockedTelemetryReason aTelemetryReason,
     ExtContentPolicy aPolicy) {
-  Telemetry::LABELS_ORB_BLOCK_REASON label{
-      static_cast<uint32_t>(aTelemetryReason)};
-  Telemetry::AccumulateCategorical(label);
+  glean::orb::block_reason.EnumGet(aTelemetryReason).Add();
 
   switch (aPolicy) {
     case ExtContentPolicy::TYPE_INVALID:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::INVALID);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eInvalid)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_OTHER:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::OTHER);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eOther)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_FETCH:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::BLOCKED_FETCH);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eBlockedFetch)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_SCRIPT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::SCRIPT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eScript)
+          .Add();
+      break;
+    case ExtContentPolicy::TYPE_JSON:
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eJson)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_IMAGE:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::IMAGE);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eImage)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_STYLESHEET:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::STYLESHEET);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eStylesheet)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_XMLHTTPREQUEST:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::XMLHTTPREQUEST);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eXmlhttprequest)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_DTD:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::DTD);
+      glean::orb::block_initiator.EnumGet(glean::orb::BlockInitiatorLabel::eDtd)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_FONT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::FONT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eFont)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_MEDIA:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::MEDIA);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eMedia)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_CSP_REPORT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::CSP_REPORT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eCspReport)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_XSLT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::XSLT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eXslt)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_IMAGESET:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::IMAGESET);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eImageset)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_WEB_MANIFEST:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::WEB_MANIFEST);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eWebManifest)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_SPECULATIVE:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::SPECULATIVE);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eSpeculative)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_UA_FONT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::UA_FONT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eUaFont)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_PROXIED_WEBRTC_MEDIA:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::PROXIED_WEBRTC_MEDIA);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eProxiedWebrtcMedia)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_PING:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::PING);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::ePing)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_BEACON:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::BEACON);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eBeacon)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_WEB_TRANSPORT:
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::WEB_TRANSPORT);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eWebTransport)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_WEB_IDENTITY:
       // Don't bother extending the telemetry for this.
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::OTHER);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eOther)
+          .Add();
       break;
     case ExtContentPolicy::TYPE_DOCUMENT:
     case ExtContentPolicy::TYPE_SUBDOCUMENT:
@@ -6609,8 +6670,9 @@ static void CollectORBBlockTelemetry(
       MOZ_ASSERT_UNREACHABLE("Shouldn't block this type");
       // DOCUMENT, SUBDOCUMENT, OBJECT, OBJECT_SUBREQUEST,
       // WEBSOCKET and SAVEAS_DOWNLOAD are excluded from ORB
-      Telemetry::AccumulateCategorical(
-          Telemetry::LABELS_ORB_BLOCK_INITIATOR::EXCLUDED);
+      glean::orb::block_initiator
+          .EnumGet(glean::orb::BlockInitiatorLabel::eExcluded)
+          .Add();
       break;
       // Do not add default: so that compilers can catch the missing case.
   }
@@ -6689,6 +6751,28 @@ NS_IMETHODIMP
 HttpBaseChannel::GetRenderBlocking(bool* aRenderBlocking) {
   *aRenderBlocking = mRenderBlocking;
   return NS_OK;
+}
+
+NS_IMETHODIMP HttpBaseChannel::GetLastTransportStatus(
+    nsresult* aLastTransportStatus) {
+  return NS_ERROR_NOT_IMPLEMENTED;
+}
+
+void HttpBaseChannel::SetFetchPriorityDOM(
+    mozilla::dom::FetchPriority aPriority) {
+  switch (aPriority) {
+    case mozilla::dom::FetchPriority::Auto:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_AUTO);
+      return;
+    case mozilla::dom::FetchPriority::High:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_HIGH);
+      return;
+    case mozilla::dom::FetchPriority::Low:
+      SetFetchPriority(nsIClassOfService::FETCHPRIORITY_LOW);
+      return;
+    default:
+      MOZ_ASSERT_UNREACHABLE();
+  }
 }
 
 }  // namespace net

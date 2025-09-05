@@ -25,6 +25,7 @@ gcloud:
    - class org.mozilla.fenix.ui.CollectionTest#deleteCollectionTest
    - class org.mozilla.fenix.ui.HistoryTest#noHistoryInPrivateBrowsingTest
    - class org.mozilla.fenix.ui.NoNetworkAccessStartupTests#noNetworkConnectionStartupTest
+   - class org.mozilla.fenix.ui.SettingsGeneralTest#verifyGeneralSettingsItemsTest
 
   device:
    - model: Pixel2

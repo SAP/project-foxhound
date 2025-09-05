@@ -13,10 +13,10 @@
 #include "pc/rtp_transceiver.h"
 
 #include <memory>
+#include <optional>
 #include <utility>
 
 #include "absl/strings/string_view.h"
-#include "absl/types/optional.h"
 #include "api/environment/environment_factory.h"
 #include "api/peer_connection_interface.h"
 #include "api/rtp_parameters.h"
@@ -99,6 +99,7 @@ TEST_F(RtpTransceiverTest, CannotSetChannelOnStoppedTransceiver) {
   // Clear the current channel - required to allow SetChannel()
   EXPECT_CALL(*channel1_ptr, SetFirstPacketReceivedCallback(_));
   transceiver->ClearChannel();
+  ASSERT_EQ(nullptr, transceiver->channel());
   // Channel can no longer be set, so this call should be a no-op.
   transceiver->SetChannel(std::move(channel2),
                           [](const std::string&) { return nullptr; });

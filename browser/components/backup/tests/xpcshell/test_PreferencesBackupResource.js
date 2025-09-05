@@ -111,10 +111,11 @@ add_task(async function test_backup() {
     stagingPath,
     sourcePath
   );
-  Assert.equal(
+  Assert.deepEqual(
     manifestEntry,
-    null,
-    "PreferencesBackupResource.backup should return null as its ManifestEntry"
+    { profilePath: sourcePath },
+    "PreferencesBackupResource.backup should return the original profile path " +
+      "in its ManifestEntry"
   );
 
   await assertFilesExist(stagingPath, simpleCopyFiles);
@@ -142,6 +143,125 @@ add_task(async function test_backup() {
   Assert.ok(
     await IOUtils.exists(PathUtils.join(stagingPath, "prefs.js")),
     "prefs.js should exist in the staging folder"
+  );
+
+  await maybeRemovePath(stagingPath);
+  await maybeRemovePath(sourcePath);
+
+  sandbox.restore();
+});
+
+/**
+ * Tests that the backup method does not copy the permissions or content prefs
+ * databases if the browser is configured to not save history - either while
+ * running, or to clear it at shutdown.
+ */
+add_task(async function test_backup_no_saved_history() {
+  let preferencesBackupResource = new PreferencesBackupResource();
+  let sourcePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-source-test"
+  );
+  let stagingPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-staging-test"
+  );
+
+  let sandbox = sinon.createSandbox();
+  let fakeConnection = {
+    backup: sandbox.stub().resolves(true),
+    close: sandbox.stub().resolves(true),
+  };
+  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
+
+  // First, we'll try with browsing history in general being disabled.
+  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, false);
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, false);
+
+  let manifestEntry = await preferencesBackupResource.backup(
+    stagingPath,
+    sourcePath
+  );
+  Assert.deepEqual(
+    manifestEntry,
+    { profilePath: sourcePath },
+    "PreferencesBackupResource.backup should return the original profile path " +
+      "in its ManifestEntry"
+  );
+
+  Assert.ok(
+    fakeConnection.backup.notCalled,
+    "No sqlite connections should have been made with remember history disabled"
+  );
+
+  // Now verify that the sanitize shutdown pref also prevents us from backing
+  // up site permissions and preferences
+  Services.prefs.setBoolPref(HISTORY_ENABLED_PREF, true);
+  Services.prefs.setBoolPref(SANITIZE_ON_SHUTDOWN_PREF, true);
+
+  fakeConnection.backup.resetHistory();
+  manifestEntry = await preferencesBackupResource.backup(
+    stagingPath,
+    sourcePath
+  );
+  Assert.deepEqual(
+    manifestEntry,
+    { profilePath: sourcePath },
+    "PreferencesBackupResource.backup should return the original profile path " +
+      "in its ManifestEntry"
+  );
+
+  Assert.ok(
+    fakeConnection.backup.notCalled,
+    "No sqlite connections should have been made with sanitize shutdown enabled"
+  );
+
+  await maybeRemovePath(stagingPath);
+  await maybeRemovePath(sourcePath);
+
+  sandbox.restore();
+  Services.prefs.clearUserPref(HISTORY_ENABLED_PREF);
+  Services.prefs.clearUserPref(SANITIZE_ON_SHUTDOWN_PREF);
+});
+
+/**
+ * Tests that the backup method correctly skips backing up the permissions and
+ * content prefs databases if permanent private browsing mode is enabled.
+ */
+add_task(async function test_backup_private_browsing() {
+  let sandbox = sinon.createSandbox();
+
+  let preferencesBackupResource = new PreferencesBackupResource();
+  let sourcePath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-source-test"
+  );
+  let stagingPath = await IOUtils.createUniqueDirectory(
+    PathUtils.tempDir,
+    "PreferencesBackupResource-staging-test"
+  );
+
+  let fakeConnection = {
+    backup: sandbox.stub().resolves(true),
+    close: sandbox.stub().resolves(true),
+  };
+  sandbox.stub(Sqlite, "openConnection").returns(fakeConnection);
+  sandbox.stub(PrivateBrowsingUtils, "permanentPrivateBrowsing").value(true);
+
+  let manifestEntry = await preferencesBackupResource.backup(
+    stagingPath,
+    sourcePath
+  );
+  Assert.deepEqual(
+    manifestEntry,
+    { profilePath: sourcePath },
+    "PreferencesBackupResource.backup should return the original profile path " +
+      "in its ManifestEntry"
+  );
+
+  Assert.ok(
+    fakeConnection.backup.notCalled,
+    "No sqlite connections should have been made with permanent private browsing enabled"
   );
 
   await maybeRemovePath(stagingPath);
@@ -184,21 +304,25 @@ add_task(async function test_recover() {
   // ensure that PreferencesBackupResource knows how to update the
   // verification hashes for non-default engines.
   const TEST_SEARCH_ENGINE_LOAD_PATH = "some/path/on/disk";
+  const TEST_SEARCH_ENGINE_LOAD_PATH_HASH = "some pre-existing hash";
   const TEST_DEFAULT_ENGINE_ID = "bugle";
+  const TEST_DEFAULT_ENGINE_ID_HASH = "default engine original hash";
   const TEST_PRIVATE_DEFAULT_ENGINE_ID = "goose";
+  const TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH =
+    "private default engine original hash";
 
   let fakeSearchPrefs = {
     metaData: {
       defaultEngineId: TEST_DEFAULT_ENGINE_ID,
-      defaultEngineIdHash: "default engine original hash",
+      defaultEngineIdHash: TEST_DEFAULT_ENGINE_ID_HASH,
       privateDefaultEngineId: TEST_PRIVATE_DEFAULT_ENGINE_ID,
-      privateDefaultEngineIdHash: "private default engine original hash",
+      privateDefaultEngineIdHash: TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH,
     },
     engines: [
       {
         _loadPath: TEST_SEARCH_ENGINE_LOAD_PATH,
         _metaData: {
-          loadPathHash: "some pre-existing hash",
+          loadPathHash: TEST_SEARCH_ENGINE_LOAD_PATH_HASH,
         },
       },
     ],
@@ -214,11 +338,26 @@ add_task(async function test_recover() {
   );
 
   const EXPECTED_HASH = "this is some newly generated hash";
-  sandbox.stub(SearchUtils, "getVerificationHash").returns(EXPECTED_HASH);
+  sandbox
+    .stub(SearchUtils, "getVerificationHash")
+    .onCall(0)
+    .returns(TEST_SEARCH_ENGINE_LOAD_PATH_HASH)
+    .onCall(1)
+    .returns(EXPECTED_HASH)
+    .onCall(2)
+    .returns(TEST_DEFAULT_ENGINE_ID_HASH)
+    .onCall(3)
+    .returns(EXPECTED_HASH)
+    .onCall(4)
+    .returns(TEST_PRIVATE_DEFAULT_ENGINE_ID_HASH)
+    .onCall(5)
+    .returns(EXPECTED_HASH);
+
+  const PRETEND_ORIGINAL_PATH = "some/original/path";
 
   // The backup method is expected to have returned a null ManifestEntry
   let postRecoveryEntry = await preferencesBackupResource.recover(
-    null /* manifestEntry */,
+    { profilePath: PRETEND_ORIGINAL_PATH },
     recoveryPath,
     destProfilePath
   );
@@ -231,33 +370,54 @@ add_task(async function test_recover() {
   await assertFilesExist(destProfilePath, simpleCopyFiles);
 
   // Now ensure that the verification was properly recomputed. We should
-  // Have called getVerificationHash 3 times - once each for:
+  // Have called getVerificationHash 6 times - twice each for:
   //
   // - The single engine in the engines list
   // - The defaultEngineId
   // - The privateDefaultEngineId
+  //
+  // The first call is to verify the hash against the original profile path,
+  // and the second call is to generate the hash for the new profile path.
   Assert.equal(
     SearchUtils.getVerificationHash.callCount,
-    3,
+    6,
     "SearchUtils.getVerificationHash was called the right number of times."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(0)
-      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, destProfilePath),
+      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, PRETEND_ORIGINAL_PATH),
     "SearchUtils.getVerificationHash first call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(1)
-      .calledWith(TEST_DEFAULT_ENGINE_ID, destProfilePath),
+      .calledWith(TEST_SEARCH_ENGINE_LOAD_PATH, destProfilePath),
     "SearchUtils.getVerificationHash second call called with the right arguments."
   );
   Assert.ok(
     SearchUtils.getVerificationHash
       .getCall(2)
-      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, destProfilePath),
+      .calledWith(TEST_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_PATH),
     "SearchUtils.getVerificationHash third call called with the right arguments."
+  );
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(3)
+      .calledWith(TEST_DEFAULT_ENGINE_ID, destProfilePath),
+    "SearchUtils.getVerificationHash fourth call called with the right arguments."
+  );
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(4)
+      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, PRETEND_ORIGINAL_PATH),
+    "SearchUtils.getVerificationHash fifth call called with the right arguments."
+  );
+  Assert.ok(
+    SearchUtils.getVerificationHash
+      .getCall(5)
+      .calledWith(TEST_PRIVATE_DEFAULT_ENGINE_ID, destProfilePath),
+    "SearchUtils.getVerificationHash sixth call called with the right arguments."
   );
 
   let recoveredSearchPrefs = await IOUtils.readJSON(

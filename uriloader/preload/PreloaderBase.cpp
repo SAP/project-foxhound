@@ -249,7 +249,8 @@ void PreloaderBase::NotifyStop(nsIRequest* aRequest, nsresult aStatus) {
 }
 
 void PreloaderBase::NotifyStop(nsresult aStatus) {
-  mOnStopStatus.emplace(aStatus);
+  MOZ_DIAGNOSTIC_ASSERT(mOnStopStatus.isNothing());
+  mOnStopStatus = Some(aStatus);
 
   nsTArray<nsWeakPtr> nodes = std::move(mNodes);
 
@@ -305,7 +306,7 @@ void PreloaderBase::CancelUsageTimer() {
 }
 
 void PreloaderBase::ReportUsageTelemetry() {
-  if (mUsageTelementryReported) {
+  if (mUsageTelementryReported || !XRE_IsContentProcess()) {
     return;
   }
   mUsageTelementryReported = true;

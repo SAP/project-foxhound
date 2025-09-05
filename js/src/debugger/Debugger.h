@@ -744,6 +744,10 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
    * soon as they leave the stack (see slowPathOnLeaveFrame) and in
    * removeDebuggee.
    *
+   * Wasm JS PI allows suspending/resuming a portion of the stack, only
+   * frame pointers and activations are changed. The stack frames are still
+   * live, and shall be present in the frames map if DebuggerFrame is created.
+   *
    * We don't trace the keys of this map (the frames are on the stack and
    * thus necessarily live), but we do trace the values. It's like a WeakMap
    * that way, but since stack frames are not gc-things, the implementation
@@ -921,6 +925,7 @@ class Debugger : private mozilla::LinkedListElement<Debugger> {
 
   static const JSPropertySpec properties[];
   static const JSFunctionSpec methods[];
+  static const JSPropertySpec static_properties[];
   static const JSFunctionSpec static_methods[];
 
   /**

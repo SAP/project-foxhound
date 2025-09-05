@@ -78,6 +78,13 @@ html {
   .onboardingContainer {
     min-height: $break-point-medium;
     min-width: fit-content;
+
+    // Change the height at which the scrollbar appears
+    // for the addons picker since its content is
+    // much taller than other onboarding content
+    &:has(.addons-picker-container) {
+      min-height: 1080px;
+    }
   }
 }
 
@@ -87,12 +94,15 @@ html {
   --mr-screen-heading-color: var(--in-content-text-color);
   --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 20%) 0%, rgba(2, 144, 238, 20%) 100%);
   --mr-screen-background-color: #F8F6F4;
+  --single-select-border-color: #8F8F9D;
+  --single-select-hover-color: #DEDEDF;
 
   @media (prefers-color-scheme: dark) {
     --grey-subtitle-1: #FFF;
     --mr-welcome-background-color: #333336;
     --mr-welcome-background-gradient: linear-gradient(0deg, rgba(144, 89, 255, 30%) 0%, rgba(2, 144, 238, 30%) 100%);
     --mr-screen-background-color: #62697A;
+    --single-select-hover-color: #52525E;
   }
 
   font-family: system-ui;
@@ -555,6 +565,22 @@ html {
         }
       }
 
+      #content-tiles-container {
+        margin: 0;
+
+        .content-tile:not(:only-child) {
+          margin-block: 0 24px;
+        }
+
+        .content-tile:last-child {
+          margin-block: 0 40px;
+        }
+
+        .multi-select-container {
+          padding: 0;
+        }
+      }
+
       .section-secondary,
       .section-main {
         width: $split-section-width;
@@ -608,8 +634,16 @@ html {
             line-height: 16.5px;
             color: #5B5B66;
 
-            @media only screen and (width <= 800px) {
+            @mixin narrow-legal-paragraph {
               padding-inline: 30px;
+            }
+
+            @media only screen and (width <= 800px) {
+              @include narrow-legal-paragraph;
+            }
+
+            [narrow] & {
+              @include narrow-legal-paragraph;
             }
 
             @media (prefers-color-scheme: dark) {
@@ -720,6 +754,7 @@ html {
             margin-block: 10px 35px;
             text-align: initial;
             align-items: initial;
+            max-width: 400px;
 
             &:empty {
               margin: 0;
@@ -764,7 +799,7 @@ html {
               background-color: var(--in-content-page-background);
 
               .indicator {
-                background-color: var(--in-content-accent-color);
+                background-color: var(--color-accent-primary);
               }
             }
           }
@@ -817,8 +852,16 @@ html {
             margin: 25px 0;
             padding-bottom: 30px;
 
-            @media only screen and (width <= 800px) {
+            @mixin narrow-hero-img {
               padding-bottom: unset;
+            }
+
+            @media only screen and (width <= 800px) {
+              @include narrow-hero-img;
+            }
+
+            [narrow] & {
+              @include narrow-hero-img;
             }
           }
         }
@@ -827,17 +870,19 @@ html {
       .multi-select-container {
         margin-inline: 0 10px;
 
-        .multi-select-item {
-          display: block;
+        .checkbox-container {
+          display: grid;
+
+          label, p {
+            grid-column: 2;
+          }
 
           p {
             margin-block: 0.5em 0;
-            margin-inline-start: calc(16px + var(--checkbox-margin-inline)); // width of checkbox and its inline margin
-            font-size: 12px;
           }
         }
 
-        @media only screen and (width <= 800px) {
+        @mixin narrow-multi-select-container {
           flex-direction: column;
           align-self: center;
           align-items: start;
@@ -846,18 +891,22 @@ html {
           padding: 0 30px;
           margin-inline: 0;
           box-sizing: content-box;
+        }
 
-          .multi-select-item p {
-            margin-inline-start: 0;
-          }
+        @media only screen and (width <= 800px) {
+          @include narrow-multi-select-container;
+        }
+
+        [narrow] & {
+          @include narrow-multi-select-container;
         }
       }
 
-      .tiles-theme-container {
+      .tiles-single-select-container {
         margin-block: -20px auto;
         align-items: initial;
 
-        .theme {
+        .select-item {
           min-width: 38px;
         }
       }
@@ -875,7 +924,7 @@ html {
       }
 
       @media only screen and (width >= 800px) {
-        .tiles-theme-section {
+        .tiles-single-select-section {
           margin-inline-start: -10px;
         }
 
@@ -915,7 +964,7 @@ html {
       // duplicate the above styles for no-rdm. unfortunately SASS won't allow
       // us to combine these selectors.
       &:where([no-rdm='true']) {
-        .tiles-theme-section {
+        .tiles-single-select-section {
           margin-inline-start: -10px;
         }
 
@@ -975,7 +1024,10 @@ html {
             flex-grow: 0;
             padding-inline: 110px;
             margin-block: auto;
-            max-width: 400px;
+
+            @media only screen and (width <= 800px) {
+              padding-block: 20px;
+            }
           }
 
           .action-buttons {
@@ -1007,7 +1059,128 @@ html {
           }
         }
 
-        @media only screen and (width <= 800px) {
+        .addons-picker-container {
+          background: none;
+
+          .addon-container {
+            display: flex;
+            flex-flow: row wrap;
+            border: 1px solid var(--in-content-border-color);
+            box-shadow: 0 1px 2px 0 var(--in-content-border-color);
+            border-radius: 4px;
+            margin-block: 0 16px;
+            text-align: start;
+            padding: 16px;
+            max-width: 800px;
+
+            .rtamo-icon {
+              img {
+                margin-inline: 0 16px;
+              }
+            }
+
+            .addon-rows-container {
+              flex-grow: 1;
+              display: flex;
+              flex-direction: column;
+
+              .addon-row {
+                display: flex;
+                flex-grow: 1;
+                justify-content: space-between;
+
+                .install-button-wrapper {
+                  display: block;
+
+                  button {
+                    padding-inline: 16px;
+                    font-size: 12px;
+                    padding-block: 0;
+                    background-color: var(--in-content-button-background);
+                    color: var(--in-content-button-text-color);
+                    min-width: 0;
+
+                    &:hover {
+                      background-color: var(--in-content-button-background-hover);
+                    }
+
+                    &:active {
+                      background-color: var(--in-content-button-background-active);
+                    }
+                  }
+                }
+
+
+                &:not(:last-child) {
+                  margin-block: 0 12px;
+                }
+
+                .addon-author-details {
+                  margin-block: 0 4px;
+
+                  .addon-title {
+                    font-size: 16px;
+                    font-weight: 600;
+                  }
+
+                  .addon-author {
+                    font-size: 12px;
+                    margin-block: 2px 0;
+
+                    .author-link {
+                      background: none;
+                      padding: 0;
+                      font-weight: normal;
+                      min-width: auto;
+                      min-height: auto;
+                      margin: 0;
+                      text-align: start;
+
+                      @include text-link-styles;
+                    }
+
+                    .addon-by-line {
+                      margin-inline: 0 4px;
+                    }
+                  }
+                }
+
+                .addon-description {
+                  font-size: 14px;
+                }
+              }
+            }
+          }
+
+          .loader {
+            width: 1em;
+            height: 1em;
+            border: 3px solid var(--in-content-primary-button-text-color);
+            border-bottom-color: transparent;
+            border-radius: 50%;
+            box-sizing: border-box;
+            animation: rotation 1s linear infinite;
+            justify-self: center;
+          }
+
+          @keyframes rotation {
+            0% {
+              transform: rotate(0deg);
+            }
+
+            100% {
+              transform: rotate(360deg);
+            }
+          }
+
+          .loaderContainer {
+            display: flex;
+            padding: 1.5px 37.5px;
+            margin: auto;
+          }
+        }
+
+        @mixin narrow-split-fullscreen {
           .section-main,
           .section-secondary {
             width: 100%;
@@ -1049,9 +1222,17 @@ html {
             }
           }
         }
+
+        @media only screen and (width <= 800px) {
+          @include narrow-split-fullscreen;
+        }
+
+        [narrow] & {
+          @include narrow-split-fullscreen;
+        }
       }
 
-      @media only screen and (width <= 800px) {
+      @mixin narrow-split {
         &:where(:not([no-rdm])) {
           flex-direction: column;
           min-height: $small-main-section-height + $small-secondary-section-height;
@@ -1076,6 +1257,7 @@ html {
             }
 
             .section-main {
+              height: auto;
               margin: auto;
               margin-top: 0;
               border-radius: 0 0 8px 8px;
@@ -1290,6 +1472,14 @@ html {
         }
       }
 
+      @media only screen and (width <= 800px) {
+        @include narrow-split;
+      }
+
+      [narrow] & {
+        @include narrow-split;
+      }
+
       @media only screen and (height <= 650px) {
         // Hide the "Sign in" button on the welcome screen when it would
         // otherwise overlap the screen. We'd reposition it, but then it would
@@ -1303,12 +1493,22 @@ html {
 
         // Reposition the "Sign in" button on the welcome screen to move inside
         // the screen when it would otherwise overlap the screen.
-        @media (width <= 620px) {
+        @mixin extra-narrow-secondary-cta {
           .section-main .secondary-cta.top {
             position: absolute;
             padding: 0;
             top: 0;
             inset-inline-end: 0;
+          }
+        }
+
+        @media (width <= 620px) {
+          @include extra-narrow-secondary-cta;
+        }
+
+        [narrow] & {
+          @media (width <= 620px) {
+            @include extra-narrow-secondary-cta;
           }
         }
       }
@@ -1346,8 +1546,16 @@ html {
   .rtamo-icon {
     text-align: start;
 
-    @media only screen and (width <= 800px) {
+    @mixin narrow-rtamo-icon {
       text-align: center;
+    }
+
+    @media only screen and (width <= 800px) {
+      @include narrow-rtamo-icon;
+    }
+
+    [narrow] & {
+      @include narrow-rtamo-icon;
     }
   }
 
@@ -1470,7 +1678,8 @@ html {
   }
 
   .language-loader {
-    filter: invert(1);
+    -moz-context-properties: fill;
+    fill: currentColor;
     margin-inline-end: 10px;
     position: relative;
     top: 3px;
@@ -1479,13 +1688,7 @@ html {
     margin-top: -6px;
   }
 
-  @media (prefers-color-scheme: dark) {
-    .language-loader {
-      filter: invert(0);
-    }
-  }
-
-  .tiles-theme-container {
+  .tiles-single-select-container {
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -1503,7 +1706,7 @@ html {
     }
   }
 
-  .tiles-theme-section {
+  .tiles-single-select-section {
     border: 0;
     display: flex;
     flex-wrap: wrap;
@@ -1520,115 +1723,98 @@ html {
       outline: 2px solid var(--in-content-primary-button-background);
     }
 
-    // newtab wallpaper specific styles
-    &.wallpaper {
-      justify-content: center;
+    // single select only specific styles
+    &.single-select:not(.theme) {
+      flex-direction: row;
+      padding-top: 5px;
       gap: 10px;
+      justify-content: center;
 
+      .select-item {
+        position: relative;
+        padding-top: 5px;
+        border: 2px solid var(--single-select-border-color);
+        border-radius: 12px;
+
+        &:has(.input:focus),
+        &:has(.selected) {
+          outline: none;
+        }
+
+        &:has(.input:focus) {
+          outline: 2px solid var(--in-content-primary-button-background);
+          outline-offset: 5px;
+        }
+
+        &:has(.selected) {
+          border: 3px solid var(--in-content-primary-button-background);
+          border-radius: 12px;
+        }
+
+        &:hover {
+          background-color: var(--single-select-hover-color);
+        }
+
+        &:focus-visible {
+          outline: none;
+          // Only highlight the image, not the frame around the image and the label
+          .icon {
+            outline: initial;
+          }
+        }
+
+        .flair {
+          height: 18px;
+          border-radius: 4px;
+          background-color: #9059FF;
+          color: #FFF;
+          padding: 2px 8px;
+          position: absolute;
+          right: 1px;
+          top: -10px;
+          line-height: 1;
+        }
+
+        .icon {
+          outline: none;
+        }
+
+        .text {
+          margin-block: 8px;
+        }
+      }
+
+    }
+    // theme specific styles
+    &.theme {
+      .select-item {
+        width: 180px;
+      }
+    }
+
+    // single select specific styles
+    &.single-select {
       &:hover, &:focus-within {
         outline: none;
       }
 
-      .theme {
-        flex: unset;
-        width: unset;
+      .select-item {
         transition: var(--transition);
 
         &:has(.input:focus) {
           outline: 2px solid var(--in-content-primary-button-background);
           outline-offset: 2px;
         }
-
-        .icon {
-          width: 116px;
-          height: 86px;
-          border-radius: 8px;
-          box-shadow: 0 1px 2px 0 #3A394433;
-
-          &:hover {
-            filter: brightness(45%);
-          }
-
-          // dark theme wallpapers
-          &.dark-landscape {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-landscape.avif');
-          }
-
-          &.dark-beach {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-beach.avif');
-          }
-
-          &.dark-color {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-color.avif');
-          }
-
-          &.dark-mountain {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-mountain.avif');
-          }
-
-          &.dark-panda {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-panda.avif');
-          }
-
-          &.dark-sky {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/dark-sky.avif');
-          }
-
-          // light theme wallpapers
-          &.light-beach {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-beach.avif');
-          }
-
-          &.light-color {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-color.avif');
-          }
-
-          &.light-landscape {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-landscape.avif');
-          }
-
-          &.light-mountain {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-mountain.avif');
-          }
-
-          &.light-panda {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-panda.avif');
-          }
-
-          &.light-sky {
-            background-image: url('chrome://activity-stream/content/data/content/assets/wallpapers/light-sky.avif');
-          }
-        }
       }
-
-      .dark {
-        display: none;
-      }
-
-      .text {
-        display: none;
-      }
-
-      @media (prefers-color-scheme: dark) {
-        .light {
-          display: none;
-        }
-
-        .dark {
-          display: block;
-        }
-      }
-
     }
 
-    .theme {
+    .select-item {
       align-items: center;
       display: flex;
       flex-direction: column;
       flex: 1;
       padding: 0;
       min-width: 50px;
-      width: 180px;
       color: #000;
       box-shadow: none;
       border-radius: 4px;
@@ -1765,10 +1951,19 @@ html {
 
     .checkbox-container {
       display: flex;
+
+      > input {
+        flex-grow: 0;
+        flex-shrink: 0;
+      }
     }
 
-    @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+    @media (prefers-color-scheme: dark) {
       color: #CFCFD8;
+    }
+
+    @media (prefers-contrast) {
+      color: var(--in-content-page-color);
     }
   }
 
@@ -1824,6 +2019,180 @@ html {
     }
   }
 
+  .onboardingContainer .main-content.no-steps:has(button.content-tiles-header[aria-expanded='false']) {
+    padding-bottom: 0;
+  }
+
+  #content-tiles-container button.tile-header,
+  button.content-tiles-header {
+    width: 100%;
+    margin: 0;
+    padding: 12px 16px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    border-width: 1px;
+    border-radius: 0;
+
+    @media (prefers-contrast: no-preference) {
+      background-color: var(--in-content-page-background);
+      border-color: var(--in-content-border-color);
+    }
+
+    cursor: pointer;
+    // ensures focus ring is fully visible
+    outline-offset: -12px;
+
+    .arrow-icon {
+      width: 1em;
+      height: 1.5em;
+      -moz-context-properties: fill;
+      fill: currentColor;
+      background: url('chrome://global/skin/icons/arrow-down.svg') center center / 100% no-repeat;
+    }
+
+    &[aria-expanded='true'] {
+      border-end-start-radius: 0;
+      border-end-end-radius: 0;
+
+      .arrow-icon {
+        background: url('chrome://global/skin/icons/arrow-up.svg') center center / 100% no-repeat;
+      }
+    }
+  }
+
+  button.content-tiles-header {
+    margin: 0.5em 0 0;
+    font-size: 11px;
+    font-weight: 400;
+    justify-content: center;
+    border-width: 1px 0;
+
+    @media (prefers-contrast: no-preference) {
+      color: #5B5B66;
+    }
+
+    @media (prefers-contrast: no-preference) and (prefers-color-scheme: dark) {
+      color: #CFCFD8;
+    }
+
+    @media (prefers-contrast) {
+      color: var(--in-content-page-color);
+    }
+
+    .arrow-icon {
+      margin-inline: 1em
+    }
+  }
+
+  #content-tiles-container {
+    --tiles-container-border-radius: 8px;
+
+    margin: 24px 48px;
+
+    .content-tile {
+      display: flex;
+      flex-direction: column;
+
+      &.has-header:first-of-type button.tile-header,
+      &:not(.has-header) + .content-tile.has-header button.tile-header {
+        border-start-start-radius: var(--tiles-container-border-radius);
+        border-start-end-radius: var(--tiles-container-border-radius);
+      }
+
+      &.has-header {
+        &:not(:has(+ .content-tile.has-header)) {
+          button.tile-header {
+            border-end-start-radius: var(--tiles-container-border-radius);
+            border-end-end-radius: var(--tiles-container-border-radius);
+
+            &[aria-expanded='true'] {
+              border-end-start-radius: 0;
+              border-end-end-radius: 0;
+
+              & + .tile-content {
+                border: 1px solid var(--in-content-border-color);
+                border-top: none;
+                border-radius: 0 0 var(--tiles-container-border-radius) var(--tiles-container-border-radius);
+              }
+            }
+          }
+        }
+
+        &:has(+ .content-tile.has-header) {
+          button.tile-header[aria-expanded='false'] {
+            border-bottom: none;
+          }
+        }
+      }
+
+      button.tile-header {
+        font-size: 13px;
+        justify-content: space-between;
+
+        & + .tile-content {
+          border-inline-start: 1px solid var(--in-content-border-color);
+          border-inline-end: 1px solid var(--in-content-border-color);
+        }
+
+        .header-text-container {
+          display: flex;
+          flex-direction: column;
+
+          .header-title {
+            font-weight: 590;
+            line-height: 1.5;
+          }
+
+          .header-subtitle {
+            font-weight: 400;
+            line-height: 1.5;
+          }
+        }
+      }
+
+      .multi-select-container {
+        padding: 24px;
+        margin: 0;
+
+        .checkbox-container {
+          display: grid;
+
+          label,
+          p {
+            grid-column: 2;
+          }
+
+          p {
+            margin-block: 0.5em 0;
+          }
+        }
+      }
+    }
+  }
+
+  .tile-title-container {
+    margin-inline: 0;
+    margin-block: 10px 24px;
+    text-align: start;
+    transition: var(--transition);
+  }
+
+  .tile-title {
+    font-size: 24px;
+    font-weight: 600;
+    margin-block: 0;
+
+    &:not(:last-child) {
+      margin-block-end: 16px;
+    }
+  }
+
+  .tile-subtitle {
+    font-size: 16px;
+    margin-block: 0;
+  }
+
   .dismiss-button {
     position: absolute;
     z-index: 2;
@@ -1849,6 +2218,18 @@ html {
     &:dir(rtl) {
       left: 0;
       right: auto;
+    }
+
+    &.with-background {
+      background-color: var(--in-content-page-background);
+
+      &:hover {
+        background-color: var(--button-background-color-hover);
+      }
+
+      &:active {
+        background-color: var(--button-background-color-active);
+      }
     }
   }
 
@@ -2102,6 +2483,10 @@ html {
       margin: auto;
     }
 
+    .section-main.system-prompt-spotlight {
+      margin-top: 100px;
+      margin-inline: auto;
+    }
     // Position of noodles on second screen
     .outline-L {
       width: 87px;
@@ -2145,7 +2530,9 @@ html {
       transition-delay: 0.8s;
     }
 
-    .tiles-theme-section,
+    .tiles-single-select-section,
+    .inline-image,
+    .link-paragraph,
     .multi-select-container,
     migration-wizard {
       transition-delay: 0.9s;
@@ -2164,7 +2551,9 @@ html {
 
   // Delays for transitioning-in of intermediate screens
   .screen:not(.dialog-initial) {
-    .tiles-theme-section,
+    .tiles-single-select-section,
+    .inline-image,
+    .link-paragraph,
     .multi-select-container
      {
       transition-delay: 0.2s;
@@ -2184,6 +2573,11 @@ html {
     .section-main {
       z-index: 1;
       margin: auto;
+    }
+
+    .section-main.system-prompt-spotlight {
+      margin-top: 100px;
+      margin-inline: auto;
     }
 
     // Position of noodles on third screen
@@ -2242,7 +2636,9 @@ html {
     .screen {
       .welcome-text,
       .multi-select-container,
-      .tiles-theme-section,
+      .tiles-single-select-section,
+      .link-paragraph,
+      .inline-image,
       .primary,
       .checkbox-container:not(.multi-select-item),
       .secondary,
@@ -2250,6 +2646,7 @@ html {
       .cta-link,
       .legal-paragraph,
       migration-wizard,
+      .tile-title-container,
       .steps[above-button]:not(.progress-bar) {
         opacity: 0;
         translate: 0 calc(-1 * var(--translate));
@@ -2260,6 +2657,43 @@ html {
           opacity: 0.2;
         }
       }
+    }
+  }
+
+  .system-prompt-spotlight {
+    .inline-icon-container {
+      display: flex;
+    }
+
+    .welcome-text {
+      align-items: flex-start;
+      padding: 5px;
+
+      h2 {
+        text-align: start;
+        margin: 0;
+        margin-block: 10px 15px;
+      }
+    }
+
+    .brand-logo {
+      margin-block: 2px;
+    }
+
+    .multi-select-container {
+      margin-inline-start: 23px;
+      margin-block-end: 17px;
+    }
+
+    .additional-cta-container {
+      display: flex;
+      flex-direction: row-reverse;
+      padding-inline-end: 15px;
+    }
+
+    .main-content.no-steps {
+      padding-bottom: 12px;
+      margin-inline: auto;
     }
   }
 
@@ -2285,7 +2719,9 @@ html {
 
       // content that is nested between inner main content and navigation CTAs
       // requires an additional 0.1s transition to avoid overlap
-      .tiles-theme-section,
+      .tiles-single-select-section,
+      .inline-image,
+      .link-paragraph,
       migration-wizard {
         opacity: 0;
         translate: 0 var(--translate);
@@ -2322,6 +2758,11 @@ html {
         transition-delay: 0.4s;
       }
     }
+  }
+
+  .inline-image,
+  .link-paragraph {
+    transition: var(--transition);
   }
 
   migration-wizard {

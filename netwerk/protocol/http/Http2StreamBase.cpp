@@ -22,8 +22,7 @@
 
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/StaticPrefs_network.h"
-#include "mozilla/Telemetry.h"
-#include "nsAlgorithm.h"
+#include "mozilla/glean/NetwerkProtocolHttpMetrics.h"
 #include "nsHttp.h"
 #include "nsHttpHandler.h"
 #include "nsHttpRequestHead.h"
@@ -487,7 +486,7 @@ nsresult Http2StreamBase::GenerateOpen() {
     outputOffset += frameLen;
   }
 
-  Telemetry::Accumulate(Telemetry::SPDY_SYN_SIZE, compressedData.Length());
+  glean::spdy::syn_size.Accumulate(compressedData.Length());
 
   mFlatHttpRequestHeaders.Truncate();
 
@@ -797,9 +796,9 @@ nsresult Http2StreamBase::ConvertResponseHeaders(
   }
 
   if (aHeadersIn.Length() && aHeadersOut.Length()) {
-    Telemetry::Accumulate(Telemetry::SPDY_SYN_REPLY_SIZE, aHeadersIn.Length());
+    glean::spdy::syn_reply_size.Accumulate(aHeadersIn.Length());
     uint32_t ratio = aHeadersIn.Length() * 100 / aHeadersOut.Length();
-    Telemetry::Accumulate(Telemetry::SPDY_SYN_REPLY_RATIO, ratio);
+    glean::spdy::syn_reply_ratio.AccumulateSingleSample(ratio);
   }
 
   // The decoding went ok. Now we can customize and clean up.
@@ -1025,13 +1024,17 @@ void Http2StreamBase::UpdatePriority(Http2Session* session) {
     nsHttp::NotifyActiveTabLoadOptimization();
   }
 
+  if (!StaticPrefs::network_http_http2_priority_updates()) {
+    return;
+  }
+
   nsHttpTransaction* trans = HttpTransaction();
   if (!trans) {
     return;
   }
 
-  uint8_t urgency =
-      nsHttpHandler::UrgencyFromCoSFlags(trans->GetClassOfService().Flags());
+  uint8_t urgency = nsHttpHandler::UrgencyFromCoSFlags(
+      trans->GetClassOfService().Flags(), trans->Priority());
   bool incremental = trans->GetClassOfService().Incremental();
   uint32_t streamID = GetWireStreamId();
 

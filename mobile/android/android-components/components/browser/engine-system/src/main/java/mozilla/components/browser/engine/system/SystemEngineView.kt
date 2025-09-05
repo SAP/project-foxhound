@@ -4,7 +4,6 @@
 
 package mozilla.components.browser.engine.system
 
-import android.annotation.TargetApi
 import android.app.Activity
 import android.content.Context
 import android.content.res.Resources
@@ -41,9 +40,11 @@ import android.webkit.WebView.HitTestResult.SRC_ANCHOR_TYPE
 import android.webkit.WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE
 import android.webkit.WebViewClient
 import android.widget.FrameLayout
+import androidx.annotation.RequiresApi
 import androidx.annotation.VisibleForTesting
 import androidx.annotation.VisibleForTesting.Companion.PRIVATE
 import androidx.core.net.toUri
+import androidx.core.view.ViewCompat
 import kotlinx.coroutines.runBlocking
 import mozilla.components.browser.engine.system.matcher.UrlMatcher
 import mozilla.components.browser.engine.system.permission.SystemPermissionRequest
@@ -315,7 +316,7 @@ class SystemEngineView @JvmOverloads constructor(
             }
         }
 
-        @TargetApi(Build.VERSION_CODES.M)
+        @RequiresApi(Build.VERSION_CODES.M)
         override fun onReceivedError(view: WebView, request: WebResourceRequest, error: WebResourceError) {
             session?.let { session ->
                 if (!request.isForMainFrame) {
@@ -709,6 +710,18 @@ class SystemEngineView @JvmOverloads constructor(
         // no-op
     }
 
+    override fun addWindowInsetsListener(
+        key: String,
+        listener: androidx.core.view.OnApplyWindowInsetsListener?,
+    ) {
+        val rootView = (context as Activity).window.decorView.rootView
+        ViewCompat.setOnApplyWindowInsetsListener(rootView, listener)
+    }
+
+    override fun removeWindowInsetsListener(key: String) {
+        ViewCompat.setOnApplyWindowInsetsListener(rootView, null)
+    }
+
     override fun canScrollVerticallyUp() = session?.webView?.canScrollVertically(-1) ?: false
 
     override fun canScrollVerticallyDown() = session?.webView?.canScrollVertically(1) ?: false
@@ -743,7 +756,7 @@ class SystemEngineView @JvmOverloads constructor(
         onFinish(outBitmap)
     }
 
-    @TargetApi(Build.VERSION_CODES.O)
+    @RequiresApi(Build.VERSION_CODES.O)
     private fun createThumbnailUsingPixelCopy(view: View, onFinish: (Bitmap?) -> Unit) {
         val out = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
         val viewRect = view.getRectWithViewLocation()

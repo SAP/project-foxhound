@@ -37,14 +37,6 @@
 
 // -
 
-#if defined(__MINGW32__)  // 64 defines both 32 and 64
-// We need to fake some things, while we wait on updates to mingw's dcomp.h
-// header. Just enough that we can successfully fail to work there.
-#  define MOZ_MINGW_DCOMP_H_INCOMPLETE
-struct IDCompositionColorMatrixEffect : public IDCompositionFilterEffect {};
-struct IDCompositionTableTransferEffect : public IDCompositionFilterEffect {};
-#endif  // defined(__MINGW32__)
-
 namespace mozilla {
 namespace wr {
 
@@ -531,6 +523,20 @@ void DCLayerTree::MaybeCommit() {
 }
 
 void DCLayerTree::WaitForCommitCompletion() {
+  // To ensure that swapchain layers have presented to the screen
+  // for capture, call present twice. This is less than ideal, but
+  // I'm not sure if there is a better way to ensure this syncs
+  // correctly that works on both Win10/11. Even though this can
+  // be slower than necessary, it's only used by the reftest
+  // screenshotting code, so isn't particularly perf sensitive.
+  for (auto it = mDCSurfaces.begin(); it != mDCSurfaces.end(); it++) {
+    auto* surface = it->second->AsDCSwapChain();
+    if (surface) {
+      surface->Present();
+      surface->Present();
+    }
+  }
+
   mCompositionDevice->WaitForCommitCompletion();
 }
 
@@ -654,8 +660,6 @@ void DCLayerTree::CompositorEndFrame() {
   // Disable video overlay if mCompositionDevice->Commit() with video overlay is
   // too slow. It drops fps.
 
-  const auto maxCommitWaitDurationMs = 20;
-  const auto maxSlowCommitCount = 5;
   const auto commitDurationMs =
       static_cast<uint32_t>((end - start).ToMilliseconds());
 
@@ -663,36 +667,22 @@ void DCLayerTree::CompositorEndFrame() {
                          (uint8_t)mUsedOverlayTypesInFrame, commitDurationMs);
   PROFILER_MARKER_TEXT("CommitWait", GRAPHICS, {}, marker);
 
-  if (mUsedOverlayTypesInFrame != DCompOverlayTypes::NO_OVERLAY &&
-      commitDurationMs > maxCommitWaitDurationMs) {
-    mSlowCommitCount++;
-  } else {
-    mSlowCommitCount = 0;
-  }
-
-  if (mSlowCommitCount <= maxSlowCommitCount) {
-    return;
-  }
-
   for (auto it = mDCSurfaces.begin(); it != mDCSurfaces.end(); it++) {
     auto* surfaceVideo = it->second->AsDCSurfaceVideo();
     if (surfaceVideo) {
-      surfaceVideo->DisableVideoOverlay();
+      surfaceVideo->OnCompositorEndFrame(mCurrentFrame, commitDurationMs);
     }
   }
+}
 
-  if (mUsedOverlayTypesInFrame & DCompOverlayTypes::SOFTWARE_DECODED_VIDEO) {
-    gfxCriticalNoteOnce << "Sw video swapchain present is slow";
+void DCLayerTree::BindSwapChain(wr::NativeSurfaceId aId) {
+  auto surface = GetSurface(aId);
+  surface->AsDCSwapChain()->Bind();
+}
 
-    nsPrintfCString marker("Sw video swapchain present is slow");
-    PROFILER_MARKER_TEXT("DisableOverlay", GRAPHICS, {}, marker);
-  }
-  if (mUsedOverlayTypesInFrame & DCompOverlayTypes::HARDWARE_DECODED_VIDEO) {
-    gfxCriticalNoteOnce << "Hw video swapchain present is slow";
-
-    nsPrintfCString marker("Hw video swapchain present is slow");
-    PROFILER_MARKER_TEXT("DisableOverlay", GRAPHICS, {}, marker);
-  }
+void DCLayerTree::PresentSwapChain(wr::NativeSurfaceId aId) {
+  auto surface = GetSurface(aId);
+  surface->AsDCSwapChain()->Present();
 }
 
 void DCLayerTree::Bind(wr::NativeTileId aId, wr::DeviceIntPoint* aOffset,
@@ -776,6 +766,31 @@ void DCLayerTree::CreateSurface(wr::NativeSurfaceId aId,
   }
 
   mDCSurfaces[aId] = std::move(surface);
+}
+
+void DCLayerTree::CreateSwapChainSurface(wr::NativeSurfaceId aId,
+                                         wr::DeviceIntSize aSize,
+                                         bool aIsOpaque) {
+  auto it = mDCSurfaces.find(aId);
+  MOZ_RELEASE_ASSERT(it == mDCSurfaces.end());
+
+  auto surface = MakeUnique<DCSwapChain>(aSize, aIsOpaque, this);
+  if (!surface->Initialize()) {
+    gfxCriticalNote << "Failed to initialize DCSwapChain: "
+                    << wr::AsUint64(aId);
+    return;
+  }
+
+  mDCSurfaces[aId] = std::move(surface);
+}
+
+void DCLayerTree::ResizeSwapChainSurface(wr::NativeSurfaceId aId,
+                                         wr::DeviceIntSize aSize) {
+  auto it = mDCSurfaces.find(aId);
+  MOZ_RELEASE_ASSERT(it != mDCSurfaces.end());
+  auto surface = it->second.get();
+
+  surface->AsDCSwapChain()->Resize(aSize);
 }
 
 void DCLayerTree::CreateExternalSurface(wr::NativeSurfaceId aId,
@@ -874,6 +889,8 @@ DCSurface* DCExternalSurfaceWrapper::EnsureSurfaceForExternalImage(
   // Apply color management.
 
   [&]() {
+    if (!StaticPrefs::gfx_webrender_dcomp_color_manage_with_filters()) return;
+
     const auto cmsMode = GfxColorManagementMode();
     if (cmsMode == CMSMode::Off) return;
 
@@ -1341,6 +1358,134 @@ DCTile* DCSurface::GetTile(int32_t aX, int32_t aY) const {
   return tile_it->second.get();
 }
 
+DCSwapChain::~DCSwapChain() {
+  if (mEGLSurface) {
+    const auto gl = mDCLayerTree->GetGLContext();
+
+    const auto& gle = gl::GLContextEGL::Cast(gl);
+    const auto& egl = gle->mEgl;
+    egl->fDestroySurface(mEGLSurface);
+    mEGLSurface = EGL_NO_SURFACE;
+  }
+}
+
+bool DCSwapChain::Initialize() {
+  DCSurface::Initialize();
+
+  const auto gl = mDCLayerTree->GetGLContext();
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+  const auto& egl = gle->mEgl;
+
+  HRESULT hr;
+  auto device = mDCLayerTree->GetDevice();
+
+  RefPtr<IDXGIDevice> dxgiDevice;
+  device->QueryInterface((IDXGIDevice**)getter_AddRefs(dxgiDevice));
+
+  RefPtr<IDXGIFactory2> dxgiFactory;
+  {
+    RefPtr<IDXGIAdapter> adapter;
+    dxgiDevice->GetAdapter(getter_AddRefs(adapter));
+    adapter->GetParent(
+        IID_PPV_ARGS((IDXGIFactory2**)getter_AddRefs(dxgiFactory)));
+  }
+
+  DXGI_SWAP_CHAIN_DESC1 desc{};
+  desc.Width = mSize.width;
+  desc.Height = mSize.height;
+  desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+  desc.SampleDesc.Count = 1;
+  desc.SampleDesc.Quality = 0;
+  desc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+  desc.BufferCount = 2;
+  // DXGI_SCALING_NONE caused swap chain creation failure.
+  desc.Scaling = DXGI_SCALING_STRETCH;
+  desc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
+  desc.AlphaMode =
+      mIsOpaque ? DXGI_ALPHA_MODE_IGNORE : DXGI_ALPHA_MODE_PREMULTIPLIED;
+  desc.Flags = 0;
+
+  hr = dxgiFactory->CreateSwapChainForComposition(device, &desc, nullptr,
+                                                  getter_AddRefs(mSwapChain));
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+  mVisual->SetContent(mSwapChain);
+
+  ID3D11Texture2D* backBuffer;
+  hr = mSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+  const EGLint pbuffer_attribs[]{LOCAL_EGL_WIDTH, mSize.width, LOCAL_EGL_HEIGHT,
+                                 mSize.height, LOCAL_EGL_NONE};
+  const auto buffer = reinterpret_cast<EGLClientBuffer>(backBuffer);
+  EGLConfig eglConfig = mDCLayerTree->GetEGLConfig();
+
+  mEGLSurface = egl->fCreatePbufferFromClientBuffer(
+      LOCAL_EGL_D3D_TEXTURE_ANGLE, buffer, eglConfig, pbuffer_attribs);
+  MOZ_RELEASE_ASSERT(mEGLSurface);
+  backBuffer->Release();
+
+  return true;
+}
+
+void DCSwapChain::Bind() {
+  const auto gl = mDCLayerTree->GetGLContext();
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+
+  gle->SetEGLSurfaceOverride(mEGLSurface);
+  bool ok = gl->MakeCurrent();
+
+  MOZ_RELEASE_ASSERT(ok);
+}
+
+void DCSwapChain::Resize(wr::DeviceIntSize aSize) {
+  const auto gl = mDCLayerTree->GetGLContext();
+
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+  const auto& egl = gle->mEgl;
+
+  if (mEGLSurface) {
+    egl->fDestroySurface(mEGLSurface);
+    mEGLSurface = EGL_NO_SURFACE;
+  }
+
+  ID3D11Texture2D* backBuffer;
+  DXGI_SWAP_CHAIN_DESC desc;
+  HRESULT hr;
+
+  hr = mSwapChain->GetDesc(&desc);
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+  hr = mSwapChain->ResizeBuffers(desc.BufferCount, aSize.width, aSize.height,
+                                 DXGI_FORMAT_B8G8R8A8_UNORM, 0);
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+  hr = mSwapChain->GetBuffer(0, __uuidof(ID3D11Texture2D), (void**)&backBuffer);
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+  const EGLint pbuffer_attribs[]{LOCAL_EGL_WIDTH, aSize.width, LOCAL_EGL_HEIGHT,
+                                 aSize.height, LOCAL_EGL_NONE};
+  const auto buffer = reinterpret_cast<EGLClientBuffer>(backBuffer);
+  EGLConfig eglConfig = mDCLayerTree->GetEGLConfig();
+
+  mEGLSurface = egl->fCreatePbufferFromClientBuffer(
+      LOCAL_EGL_D3D_TEXTURE_ANGLE, buffer, eglConfig, pbuffer_attribs);
+  MOZ_RELEASE_ASSERT(mEGLSurface);
+
+  backBuffer->Release();
+
+  mSize = aSize;
+}
+
+void DCSwapChain::Present() {
+  const auto gl = mDCLayerTree->GetGLContext();
+  const auto& gle = gl::GLContextEGL::Cast(gl);
+
+  HRESULT hr = mSwapChain->Present(0, 0);
+  MOZ_RELEASE_ASSERT(SUCCEEDED(hr));
+
+  gle->SetEGLSurfaceOverride(EGL_NO_SURFACE);
+}
+
 DCSurfaceVideo::DCSurfaceVideo(bool aIsOpaque, DCLayerTree* aDCLayerTree)
     : DCSurface(wr::DeviceIntSize{}, wr::DeviceIntPoint{}, false, aIsOpaque,
                 aDCLayerTree),
@@ -1532,6 +1677,8 @@ void DCSurfaceVideo::PresentVideo() {
 
   const auto device = mDCLayerTree->GetDevice();
   HRESULT hr;
+
+  auto start = TimeStamp::Now();
   if (mFirstPresent) {
     mFirstPresent = false;
     UINT flags = DXGI_PRESENT_USE_DURATION;
@@ -1590,7 +1737,6 @@ void DCSurfaceVideo::PresentVideo() {
     interval = 0;
   }
 
-  auto start = TimeStamp::Now();
   hr = mVideoSwapChain->Present(interval, flags);
   auto end = TimeStamp::Now();
 
@@ -1607,8 +1753,6 @@ void DCSurfaceVideo::PresentVideo() {
     return;
   }
 
-  const auto maxPresentWaitDurationMs = 2;
-  const auto maxSlowPresentCount = 5;
   const auto presentDurationMs =
       static_cast<uint32_t>((end - start).ToMilliseconds());
   const auto overlayType = mRenderTextureHost->IsSoftwareDecodedVideo()
@@ -1619,36 +1763,17 @@ void DCSurfaceVideo::PresentVideo() {
                          presentDurationMs);
   PROFILER_MARKER_TEXT("PresentWait", GRAPHICS, {}, marker);
 
-  if (presentDurationMs > maxPresentWaitDurationMs) {
-    mSlowPresentCount++;
-  } else {
-    mSlowPresentCount = 0;
-  }
-
-  if (mSlowPresentCount <= maxSlowPresentCount) {
-    return;
-  }
-
-  DisableVideoOverlay();
-
-  if (overlayType == DCompOverlayTypes::SOFTWARE_DECODED_VIDEO) {
-    gfxCriticalNoteOnce << "Sw video swapchain present is slow";
-
-    nsPrintfCString marker("Sw video swapchain present is slow");
-    PROFILER_MARKER_TEXT("DisableOverlay", GRAPHICS, {}, marker);
-  } else {
-    gfxCriticalNoteOnce << "Hw video swapchain present is slow";
-
-    nsPrintfCString marker("Hw video swapchain present is slow");
-    PROFILER_MARKER_TEXT("DisableOverlay", GRAPHICS, {}, marker);
+  if (mRenderTextureHostUsageInfo) {
+    mRenderTextureHostUsageInfo->OnVideoPresent(mDCLayerTree->GetFrameId(),
+                                                presentDurationMs);
   }
 }
 
-void DCSurfaceVideo::DisableVideoOverlay() {
+void DCSurfaceVideo::OnCompositorEndFrame(int aFrameId, uint32_t aDurationMs) {
   if (!mRenderTextureHostUsageInfo) {
     return;
   }
-  mRenderTextureHostUsageInfo->DisableVideoOverlay();
+  mRenderTextureHostUsageInfo->OnCompositorEndFrame(aFrameId, aDurationMs);
 }
 
 DXGI_FORMAT DCSurfaceVideo::GetSwapChainFormat(bool aUseVpAutoHDR) {
@@ -1921,6 +2046,9 @@ bool DCSurfaceVideo::CallVideoProcessorBlt() {
       }
       mVpSuperResolutionFailed = true;
     }
+  } else if (gfx::gfxVars::WebRenderOverlayVpSuperResolution() &&
+             !useSuperResolution) {
+    SetVpSuperResolution(vendorId, videoContext, videoProcessor, false);
   }
 
   if (profiler_thread_is_being_profiled_for_markers() && vendorId == 0x10DE) {
@@ -2290,8 +2418,6 @@ ColorManagementChain ColorManagementChain::From(
     const color::ColorProfileConversionDesc& conv) {
   auto ret = ColorManagementChain{};
 
-#if !defined(MOZ_MINGW_DCOMP_H_INCOMPLETE)
-
   const auto Append = [&](const RefPtr<IDCompositionFilterEffect>& afterLast) {
     if (ret.last) {
       afterLast->SetInput(0, ret.last, 0);
@@ -2327,8 +2453,6 @@ ColorManagementChain ColorManagementChain::From(
   ret.dstLinearFromSrcLinear =
       MaybeAppendColorMatrix(color::mat4(conv.dstLinearFromSrcLinear));
   ret.dstTfFromDstLinear = MaybeAppendTableTransfer(conv.dstTfFromDstLinear);
-
-#endif  // !defined(MOZ_MINGW_DCOMP_H_INCOMPLETE)
 
   return ret;
 }

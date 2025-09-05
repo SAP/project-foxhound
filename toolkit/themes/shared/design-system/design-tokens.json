@@ -73,6 +73,21 @@
           "prefersContrast": "{text.color.@base}"
         }
       },
+      "deemphasized": {
+        "@base": {
+          "value": {
+            "brand": {
+              "light": "{color.gray.30}",
+              "dark": "{color.gray.70}"
+            },
+            "platform": {
+              "default": "color-mix(in srgb, currentColor 24%, transparent)"
+            },
+            "prefersContrast": "currentColor",
+            "forcedColors": "ButtonText"
+          }
+        }
+      },
       "interactive": {
         "@base": {
           "value": {
@@ -140,7 +155,7 @@
               "default": "color-mix(in srgb, currentColor 7%, transparent)"
             },
             "platform": {
-              "default": "var(--button-bgcolor)"
+              "default": "color-mix(in srgb, currentColor 13%, transparent)"
             }
           }
         },
@@ -151,7 +166,7 @@
               "default": "color-mix(in srgb, currentColor 14%, transparent)"
             },
             "platform": {
-              "default": "var(--button-hover-bgcolor)"
+              "default": "color-mix(in srgb, currentColor 17%, transparent)"
             }
           }
         },
@@ -162,7 +177,7 @@
               "default": "color-mix(in srgb, currentColor 21%, transparent)"
             },
             "platform": {
-              "default": "var(--button-active-bgcolor)"
+              "default": "color-mix(in srgb, currentColor 30%, transparent)"
             }
           }
         },
@@ -222,8 +237,10 @@
           "@base": {
             "value": {
               "default": "transparent",
-              "prefersContrast": "{button.background.color.@base}",
-              "forcedColors": "{button.background.color.@base}"
+              "brand": {
+                "prefersContrast": "{button.background.color.@base}",
+                "forcedColors": "{button.background.color.@base}"
+              }
             }
           },
           "active": {
@@ -232,7 +249,9 @@
           "disabled": {
             "value": {
               "default": "{button.background.color.ghost.@base}",
-              "forcedColors": "{button.background.color.disabled}"
+              "brand": {
+                "forcedColors": "{button.background.color.disabled}"
+              }
             }
           },
           "hover": {
@@ -360,6 +379,14 @@
         "value": "{font.weight.bold}"
       }
     },
+    "icon": {
+      "fill": {
+        "value": "currentColor"
+      },
+      "stroke": {
+        "value": "{button.icon.fill}"
+      }
+    },
     "min": {
       "height": {
         "@base": {
@@ -406,7 +433,7 @@
               "dark": "{color.gray.05}"
             },
             "platform": {
-              "default": "var(--button-color)"
+              "default": "currentColor"
             }
           }
         },
@@ -452,7 +479,11 @@
         "ghost": {
           "@base": {
             "value": {
-              "default": "{button.text.color.@base}"
+              "default": "inherit",
+              "brand": {
+                "prefersContrast": "{button.text.color.@base}",
+                "forcedColors": "{button.text.color.@base}"
+              }
             }
           },
           "active": {
@@ -462,7 +493,11 @@
           },
           "disabled": {
             "value": {
-              "default": "{button.text.color.disabled}"
+              "default": "inherit",
+              "brand": {
+                "prefersContrast": "{button.text.color.disabled}",
+                "forcedColors": "{button.text.color.disabled}"
+              }
             }
           },
           "hover": {
@@ -486,7 +521,7 @@
                 "dark": "{color.gray.100}"
               },
               "platform": {
-                "default": "var(--button-primary-color)"
+                "default": "AccentColorText"
               }
             }
           },
@@ -557,6 +592,9 @@
     "gray": {
       "05": {
         "value": "#fbfbfe"
+      },
+      "30": {
+        "value": "#bac2ca"
       },
       "50": {
         "value": "#bfbfc9"
@@ -644,7 +682,7 @@
               "dark": "{color.cyan.50}"
             },
             "platform": {
-              "default": "var(--button-primary-bgcolor, AccentColor)"
+              "default": "AccentColor"
             }
           }
         },
@@ -656,7 +694,7 @@
               "dark": "{color.cyan.30}"
             },
             "platform": {
-              "default": "var(--button-primary-hover-bgcolor)"
+              "default": "color-mix(in srgb, black 10%, var(--color-accent-primary))"
             }
           }
         },
@@ -668,7 +706,7 @@
               "dark": "{color.cyan.20}"
             },
             "platform": {
-              "default": "var(--button-primary-active-bgcolor)"
+              "default": "color-mix(in srgb, black 20%, var(--color-accent-primary))"
             }
           }
         }
@@ -884,6 +922,19 @@
       }
     }
   },
+  "page": {
+    "main": {
+      "content": {
+        "width": {
+          "value": {
+            "brand": {
+              "default": "664px"
+            }
+          }
+        }
+      }
+    }
+  },
   "size": {
     "item": {
       "small": {
@@ -920,6 +971,33 @@
       "value": "calc(8 * {space.xsmall})"
     }
   },
+  "table": {
+    "row": {
+      "background": {
+        "color": {
+          "@base": {
+            "value": {
+              "default": "{background.color.canvas}"
+            }
+          },
+          "alternate": {
+            "comment": "TODO Bug 1821203 - Gray use needs to be consolidated",
+            "value": {
+              "forcedColors": "{background.color.canvas}",
+              "brand": {
+                "light": "#f0f0f4",
+                "dark": "{color.gray.80}"
+              },
+              "platform": {
+                "light": "rgba(0,0,0,5%)",
+                "dark": "rgba(255,255,255,5%)"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
   "text": {
     "color": {
       "@base": {
@@ -938,6 +1016,12 @@
         "value": {
           "default": "color-mix(in srgb, currentColor 69%, transparent)",
           "prefersContrast": "inherit"
+        }
+      },
+      "disabled": {
+        "value": {
+          "default": "color-mix(in srgb, currentColor 40%, transparent)",
+          "forcedColors": "GrayText"
         }
       },
       "error": {

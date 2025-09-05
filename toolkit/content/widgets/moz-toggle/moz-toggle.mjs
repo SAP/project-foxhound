@@ -3,7 +3,7 @@
  * file, You can obtain one at htp://mozilla.org/MPL/2.0/. */
 
 import { html, ifDefined } from "../vendor/lit.all.mjs";
-import { MozLitElement } from "../lit-utils.mjs";
+import { MozBaseInputElement } from "../lit-utils.mjs";
 // eslint-disable-next-line import/no-unassigned-import
 import "chrome://global/content/elements/moz-label.mjs";
 
@@ -21,29 +21,21 @@ import "chrome://global/content/elements/moz-label.mjs";
  * @fires toggle
  *  Custom event indicating that the toggle's pressed state has changed.
  */
-export default class MozToggle extends MozLitElement {
+export default class MozToggle extends MozBaseInputElement {
   static properties = {
+    ariaLabel: { type: String, mapped: true },
     pressed: { type: Boolean, reflect: true },
-    disabled: { type: Boolean, reflect: true },
-    label: { type: String },
-    description: { type: String },
-    ariaLabel: { type: String, attribute: "aria-label" },
-    accessKeyAttribute: { type: String, attribute: "accesskey", reflect: true },
-    accessKey: { type: String, state: true },
   };
 
-  static get queries() {
-    return {
-      buttonEl: "#moz-toggle-button",
-      labelEl: "#moz-toggle-label",
-      descriptionEl: "#moz-toggle-description",
-    };
+  static activatedProperty = "pressed";
+
+  get buttonEl() {
+    return this.inputEl;
   }
 
   constructor() {
     super();
     this.pressed = false;
-    this.disabled = false;
   }
 
   handleClick() {
@@ -56,87 +48,29 @@ export default class MozToggle extends MozLitElement {
     );
   }
 
-  // Delegate clicks on the host to the input element
-  click() {
-    this.buttonEl.click();
+  inputTemplate() {
+    const { pressed, disabled, ariaLabel, handleClick } = this;
+    return html`<button
+      id="input"
+      part="button"
+      type="button"
+      class="toggle-button"
+      name=${this.name}
+      value=${this.value}
+      ?disabled=${disabled}
+      aria-pressed=${pressed}
+      aria-label=${ifDefined(ariaLabel ?? undefined)}
+      aria-describedby="description"
+      accesskey=${ifDefined(this.accessKey)}
+      @click=${handleClick}
+    ></button>`;
   }
 
-  // Delegate focus to the input element
-  focus() {
-    this.buttonEl.focus();
-  }
-
-  willUpdate(changes) {
-    if (changes.has("accessKeyAttribute")) {
-      this.accessKey = this.accessKeyAttribute;
-      this.accessKeyAttribute = null;
-    }
-  }
-
-  descriptionTemplate() {
-    if (this.description) {
-      return html`
-        <p
-          id="moz-toggle-description"
-          class="description-wrapper text-deemphasized"
-          part="description"
-        >
-          ${this.description} ${this.supportLinkTemplate()}
-        </p>
-      `;
-    }
-    return "";
-  }
-
-  supportLinkTemplate() {
-    return html` <slot name="support-link"></slot> `;
-  }
-
-  buttonTemplate() {
-    const { pressed, disabled, description, ariaLabel, handleClick } = this;
-    return html`
-      <button
-        id="moz-toggle-button"
-        part="button"
-        type="button"
-        class="toggle-button"
-        ?disabled=${disabled}
-        aria-pressed=${pressed}
-        aria-label=${ifDefined(ariaLabel ?? undefined)}
-        aria-describedby=${ifDefined(
-          description ? "moz-toggle-description" : undefined
-        )}
-        accesskey=${ifDefined(this.accessKey)}
-        @click=${handleClick}
-      ></button>
-    `;
-  }
-
-  render() {
-    return html`
-      <link
-        rel="stylesheet"
-        href="chrome://global/content/elements/moz-toggle.css"
-      />
-      ${this.label
-        ? html`
-            <label
-              is="moz-label"
-              id="moz-toggle-label"
-              part="label"
-              for="moz-toggle-button"
-              shownaccesskey=${ifDefined(this.accessKey)}
-            >
-              <span>
-                ${this.label}
-                ${!this.description ? this.supportLinkTemplate() : ""}
-              </span>
-              ${this.buttonTemplate()}
-            </label>
-          `
-        : this.buttonTemplate()}
-      ${this.descriptionTemplate()}
-    `;
+  inputStylesTemplate() {
+    return html`<link
+      rel="stylesheet"
+      href="chrome://global/content/elements/moz-toggle.css"
+    />`;
   }
 }
 customElements.define("moz-toggle", MozToggle);

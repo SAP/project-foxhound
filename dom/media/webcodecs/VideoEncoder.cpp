@@ -228,7 +228,8 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
     } else {
       format = H264BitStreamFormat::AVC;
     }
-    if (ExtractH264CodecDetails(mCodec, profile, constraints, level)) {
+    if (ExtractH264CodecDetails(mCodec, profile, constraints, level,
+                                H264CodecStringStrictness::Strict)) {
       if (profile == H264_PROFILE_BASE || profile == H264_PROFILE_MAIN ||
           profile == H264_PROFILE_EXTENDED || profile == H264_PROFILE_HIGH) {
         specific.emplace(
@@ -275,8 +276,9 @@ EncoderConfig VideoEncoderConfigInternal::ToEncoderConfig() const {
         ));
   }
   return EncoderConfig(codecType, {mWidth, mHeight}, usage,
-                       ImageBitmapFormat::RGBA32, ImageBitmapFormat::RGBA32,
-                       AssertedCast<uint8_t>(mFramerate.refOr(0.f)), 0,
+                       // Gecko favors BGRA
+                       ImageBitmapFormat::BGRA32, ImageBitmapFormat::BGRA32,
+                       SaturatingCast<uint32_t>(mFramerate.refOr(0.f)), 0,
                        mBitrate.refOr(0), 0, 0,
                        mBitrateMode == VideoEncoderBitrateMode::Constant
                            ? mozilla::BitrateMode::Constant
@@ -335,13 +337,11 @@ VideoEncoderConfigInternal::Diff(
 
 // https://w3c.github.io/webcodecs/#check-configuration-support
 static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
-  auto parsedCodecString =
-      ParseCodecString(aConfig->mCodec).valueOr(EmptyString());
   // TODO: Enable WebCodecs on Android (Bug 1840508)
   if (IsOnAndroid()) {
     return false;
   }
-  if (!IsSupportedVideoCodec(parsedCodecString)) {
+  if (!IsSupportedVideoCodec(aConfig->mCodec)) {
     return false;
   }
   if (aConfig->mScalabilityMode.isSome()) {
@@ -350,7 +350,7 @@ static bool CanEncode(const RefPtr<VideoEncoderConfigInternal>& aConfig) {
         !aConfig->mScalabilityMode->EqualsLiteral("L1T3")) {
       LOGE("Scalability mode %s not supported for codec: %s",
            NS_ConvertUTF16toUTF8(aConfig->mScalabilityMode.value()).get(),
-           NS_ConvertUTF16toUTF8(parsedCodecString).get());
+           NS_ConvertUTF16toUTF8(aConfig->mCodec).get());
       return false;
     }
   }

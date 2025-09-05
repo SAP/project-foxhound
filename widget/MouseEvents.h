@@ -7,6 +7,7 @@
 #define mozilla_MouseEvents_h__
 
 #include <stdint.h>
+#include <math.h>
 
 #include "mozilla/BasicEvents.h"
 #include "mozilla/EventForwards.h"
@@ -69,6 +70,36 @@ class WidgetPointerHelper {
 
   explicit WidgetPointerHelper(const WidgetPointerHelper& aHelper) = default;
 
+  constexpr static double kPi =
+#ifdef M_PI
+      M_PI;
+#else
+      3.14159265358979323846;
+#endif
+  constexpr static double kHalfPi =
+#ifdef M_PI_2
+      M_PI_2;
+#else
+      1.57079632679489661923;
+#endif
+  constexpr static double kDoublePi = kPi * 2;
+
+  constexpr static double GetDefaultAltitudeAngle() { return kHalfPi; }
+  constexpr static double GetDefaultAzimuthAngle() { return 0.0; }
+
+  double ComputeAltitudeAngle() const {
+    return ComputeAltitudeAngle(tiltX, tiltY);
+  }
+  double ComputeAzimuthAngle() const {
+    return ComputeAzimuthAngle(tiltX, tiltY);
+  }
+
+  static double ComputeAltitudeAngle(int32_t aTiltX, int32_t aTiltY);
+  static double ComputeAzimuthAngle(int32_t aTiltX, int32_t aTiltY);
+
+  static double ComputeTiltX(double aAltitudeAngle, double aAzimuthAngle);
+  static double ComputeTiltY(double aAltitudeAngle, double aAzimuthAngle);
+
   void AssignPointerHelperData(const WidgetPointerHelper& aEvent,
                                bool aCopyCoalescedEvents = false) {
     pointerId = aEvent.pointerId;
@@ -81,6 +112,11 @@ class WidgetPointerHelper {
       mCoalescedWidgetEvents = aEvent.mCoalescedWidgetEvents;
     }
   }
+
+ private:
+  static int32_t GetValidTiltValue(int32_t aTilt);
+  static double GetValidAltitudeAngle(double aAltitudeAngle);
+  static double GetValidAzimuthAngle(double aAzimuthAngle);
 };
 
 /******************************************************************************
@@ -220,6 +256,11 @@ class WidgetMouseEventBase : public WidgetInputEvent {
    * Returns true if the input source supports hover state like a mouse.
    */
   [[nodiscard]] bool InputSourceSupportsHover() const;
+
+  /**
+   * Returns true if corresponding DOM event should use fractional coordinates.
+   */
+  [[nodiscard]] bool DOMEventShouldUseFractionalCoords() const;
 };
 
 /******************************************************************************
@@ -330,8 +371,17 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
   // Whether the event should ignore scroll frame bounds during dispatch.
   bool mIgnoreRootScrollFrame = false;
 
+  // Whether the event should be dispatched on a target limited in capturing
+  // content.
+  bool mIgnoreCapturingContent = false;
+
   // Whether the event shouldn't cause click event.
   bool mClickEventPrevented = false;
+
+  // If this is set to true while the event is being dispatched,
+  // PresShell::EventHandler::FinalizeHandlingEvent will dispatch a synthesized
+  // eMouseMove or ePointerMove.
+  bool mSynthesizeMoveAfterDispatch = false;
 
   void AssignMouseEventData(const WidgetMouseEvent& aEvent, bool aCopyTargets) {
     AssignMouseEventBaseData(aEvent, aCopyTargets);
@@ -342,6 +392,7 @@ class WidgetMouseEvent : public WidgetMouseEventBase,
     mExitFrom = aEvent.mExitFrom;
     mClickCount = aEvent.mClickCount;
     mIgnoreRootScrollFrame = aEvent.mIgnoreRootScrollFrame;
+    mIgnoreCapturingContent = aEvent.mIgnoreCapturingContent;
     mClickEventPrevented = aEvent.mClickEventPrevented;
   }
 
@@ -425,7 +476,9 @@ class WidgetDragEvent : public WidgetMouseEvent {
   }
 
   bool CanConvertToInputData() const {
-    return mMessage == eDragStart || mMessage == eDragEnd;
+    return mMessage == eDragStart || mMessage == eDragEnd ||
+           mMessage == eDragEnter || mMessage == eDragOver ||
+           mMessage == eDragExit || mMessage == eDrop;
   }
 
   /**
@@ -794,8 +847,8 @@ class WidgetPointerEvent : public WidgetMouseEvent {
     return result;
   }
 
-  int32_t mWidth = 1;
-  int32_t mHeight = 1;
+  double mWidth = 1.0;
+  double mHeight = 1.0;
   bool mIsPrimary = true;
   bool mFromTouchEvent = false;
 

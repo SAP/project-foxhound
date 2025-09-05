@@ -12,6 +12,11 @@ def jemalloc_default(target, js_package):
     return target.kernel in ("Darwin", "Linux", "WINNT")
 
 
+# mozjemalloc doesn't work with these sanitisers, it mostly-works with ubsan
+# (so we leave that enabled) except for loading the configuration from the
+# environment, it will fall-back to default settings.
+imply_option("--enable-jemalloc", False, when=asan | msan | tsan)
+
 option(
     "--enable-jemalloc",
     env="MOZ_MEMORY",
@@ -22,7 +27,6 @@ option(
 
 set_config("MOZ_MEMORY", True, when="--enable-jemalloc")
 set_define("MOZ_MEMORY", True, when="--enable-jemalloc")
-add_old_configure_assignment("MOZ_MEMORY", True, when="--enable-jemalloc")
 
 
 @depends("--enable-jemalloc", moz_debug, win32_redist_dir)
@@ -71,10 +75,11 @@ set_config("MOZ_REPLACE_MALLOC_STATIC", replace_malloc_static)
 # crash reporter.
 @depends(
     build_project,
+    milestone,
     target,
     when="--enable-jemalloc",
 )
-def phc_default(build_project, target):
+def phc_default(build_project, milestone, target):
     if build_project == "js":
         return False
 
@@ -86,6 +91,7 @@ def phc_default(build_project, target):
         (target.os == "GNU" and target.kernel == "Linux")
         or (target.kernel == "WINNT")
         or (target.os == "OSX")
+        or (target.os == "Android" and milestone.is_early_beta_or_earlier)
     )
 
 

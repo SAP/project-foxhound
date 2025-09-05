@@ -255,7 +255,8 @@ class RequestingAccessKeyEventData {
   static int32_t sBrowserParentCount;
 };
 int32_t RequestingAccessKeyEventData::sBrowserParentCount = 0;
-Maybe<RequestingAccessKeyEventData::Data> RequestingAccessKeyEventData::sData;
+MOZ_RUNINIT Maybe<RequestingAccessKeyEventData::Data>
+    RequestingAccessKeyEventData::sData;
 
 namespace dom {
 
@@ -338,10 +339,6 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
 
   RequestingAccessKeyEventData::OnBrowserParentCreated();
 
-  // When the input event queue is disabled, we don't need to handle the case
-  // that some input events are dispatched before PBrowserConstructor.
-  mIsReadyToHandleInputEvents = !ContentParent::IsInputEventQueueSupported();
-
   // Make sure to compute our process priority if needed before the block of
   // code below. This makes sure the block below prioritizes our process if
   // needed.
@@ -349,14 +346,14 @@ BrowserParent::BrowserParent(ContentParent* aManager, const TabId& aTabId,
     RecomputeProcessPriority();
   }
 
-  // If we're in a BC tree that is active with respect to the priority manager,
-  // ensure that this new BrowserParent is marked as active. This ensures that
-  // the process will be prioritized in a cross-site iframe navigation in an
-  // active tab, and also that the process is correctly prioritized if we got
-  // created for a browsing context which was already active.
-  if (aBrowsingContext->Top()->IsPriorityActive()) {
-    ProcessPriorityManager::BrowserPriorityChanged(this, true);
-  }
+  // Reflect the BC tree's activeness state on this new BrowserParent. This
+  // ensures that the process will be correctly prioritized based on the
+  // BrowsingContext's current priority after a navigation.
+  // If the BC is not active, we still call `BrowserPriorityChanged` to ensure
+  // the priority is lowered if the BrowsingContext is inactive, but the process
+  // still has FOREGROUND priority from when it was launched.
+  ProcessPriorityManager::BrowserPriorityChanged(
+      this, aBrowsingContext->Top()->IsPriorityActive());
 }
 
 BrowserParent::~BrowserParent() {
@@ -1030,8 +1027,7 @@ void BrowserParent::InitRendering() {
 
   RefPtr<nsIWidget> widget = GetTopLevelWidget();
   if (widget) {
-    ScreenIntMargin safeAreaInsets = widget->GetSafeAreaInsets();
-    Unused << SendSafeAreaInsetsChanged(safeAreaInsets);
+    Unused << SendSafeAreaInsetsChanged(widget->GetSafeAreaInsets());
   }
 
 #if defined(MOZ_WIDGET_ANDROID)
@@ -1119,7 +1115,7 @@ nsresult BrowserParent::UpdatePosition() {
   if (!frameLoader) {
     return NS_OK;
   }
-  nsIntRect windowDims;
+  LayoutDeviceIntRect windowDims;
   NS_ENSURE_SUCCESS(frameLoader->GetWindowDimensions(windowDims),
                     NS_ERROR_FAILURE);
   // Avoid updating sizes here.
@@ -1142,8 +1138,8 @@ void BrowserParent::NotifyPositionUpdatedForContentsInPopup() {
   }
 }
 
-void BrowserParent::UpdateDimensions(const nsIntRect& rect,
-                                     const ScreenIntSize& size) {
+void BrowserParent::UpdateDimensions(const LayoutDeviceIntRect& rect,
+                                     const LayoutDeviceIntSize& size) {
   if (mIsDestroyed) {
     return;
   }
@@ -1172,26 +1168,18 @@ void BrowserParent::UpdateDimensions(const nsIntRect& rect,
 }
 
 DimensionInfo BrowserParent::GetDimensionInfo() {
-  LayoutDeviceIntRect devicePixelRect = ViewAs<LayoutDevicePixel>(
-      mRect, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-  LayoutDeviceIntSize devicePixelSize = ViewAs<LayoutDevicePixel>(
-      mDimensions, PixelCastJustification::LayoutDeviceIsScreenForTabDims);
-
-  CSSRect unscaledRect = devicePixelRect / mDefaultScale;
-  CSSSize unscaledSize = devicePixelSize / mDefaultScale;
-  DimensionInfo di(unscaledRect, unscaledSize, mClientOffset, mChromeOffset);
-  return di;
+  CSSRect unscaledRect = mRect / mDefaultScale;
+  CSSSize unscaledSize = mDimensions / mDefaultScale;
+  return DimensionInfo(unscaledRect, unscaledSize, mClientOffset,
+                       mChromeOffset);
 }
 
 void BrowserParent::UpdateNativePointerLockCenter(nsIWidget* aWidget) {
   if (!mLockedNativePointer) {
     return;
   }
-  LayoutDeviceIntRect dims(
-      {0, 0},
-      ViewAs<LayoutDevicePixel>(
-          mDimensions, PixelCastJustification::LayoutDeviceIsScreenForTabDims));
-  aWidget->SetNativePointerLockCenter((dims + mChromeOffset).Center());
+  aWidget->SetNativePointerLockCenter(
+      LayoutDeviceIntRect(mChromeOffset, mDimensions).Center());
 }
 
 void BrowserParent::SizeModeChanged(const nsSizeMode& aSizeMode) {
@@ -1211,6 +1199,12 @@ void BrowserParent::DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight) {
 void BrowserParent::DynamicToolbarOffsetChanged(ScreenIntCoord aOffset) {
   if (!mIsDestroyed) {
     Unused << SendDynamicToolbarOffsetChanged(aOffset);
+  }
+}
+
+void BrowserParent::KeyboardHeightChanged(ScreenIntCoord aHeight) {
+  if (!mIsDestroyed) {
+    Unused << SendKeyboardHeightChanged(aHeight);
   }
 }
 #endif
@@ -2956,6 +2950,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnStateChange(
     request = MakeAndAddRef<RemoteWebProgressRequest>(
         aRequestData.requestURI(), aRequestData.originalRequestURI(),
         aRequestData.matchedList());
+    request->SetCanceledReason(aRequestData.canceledReason());
   }
 
   if (aStateChangeData.isSome()) {
@@ -3002,7 +2997,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnProgressChange(
 mozilla::ipc::IPCResult BrowserParent::RecvOnLocationChange(
     const WebProgressData& aWebProgressData, const RequestData& aRequestData,
     nsIURI* aLocation, const uint32_t aFlags, const bool aCanGoBack,
-    const bool aCanGoForward,
+    const bool aCanGoBackIgnoringUserInteraction, const bool aCanGoForward,
     const Maybe<WebProgressLocationChangeData>& aLocationChangeData) {
   RefPtr<CanonicalBrowsingContext> browsingContext =
       BrowsingContextForWebProgress(aWebProgressData);
@@ -3015,14 +3010,15 @@ mozilla::ipc::IPCResult BrowserParent::RecvOnLocationChange(
     request = MakeAndAddRef<RemoteWebProgressRequest>(
         aRequestData.requestURI(), aRequestData.originalRequestURI(),
         aRequestData.matchedList());
+    request->SetCanceledReason(aRequestData.canceledReason());
   }
 
   browsingContext->SetCurrentRemoteURI(aLocation);
 
   nsCOMPtr<nsIBrowser> browser = GetBrowser();
   if (!mozilla::SessionHistoryInParent() && browser) {
-    Unused << browser->UpdateWebNavigationForLocationChange(aCanGoBack,
-                                                            aCanGoForward);
+    Unused << browser->UpdateWebNavigationForLocationChange(
+        aCanGoBack, aCanGoBackIgnoringUserInteraction, aCanGoForward);
   }
 
   if (aLocationChangeData.isSome()) {
@@ -3122,6 +3118,7 @@ mozilla::ipc::IPCResult BrowserParent::RecvNotifyContentBlockingEvent(
   nsCOMPtr<nsIRequest> request = MakeAndAddRef<RemoteWebProgressRequest>(
       aRequestData.requestURI(), aRequestData.originalRequestURI(),
       aRequestData.matchedList());
+  request->SetCanceledReason(aRequestData.canceledReason());
 
   wgp->NotifyContentBlockingEvent(
       aEvent, request, aBlocked, aTrackingOrigin, aTrackingFullHashes, aReason,
@@ -3292,13 +3289,49 @@ bool BrowserParent::SendSelectionEvent(WidgetSelectionEvent& aEvent) {
   return true;
 }
 
-bool BrowserParent::SendInsertText(const nsString& aStringToInsert) {
+bool BrowserParent::SendSimpleContentCommandEvent(
+    const mozilla::WidgetContentCommandEvent& aEvent) {
+  MOZ_ASSERT(aEvent.mMessage != eContentCommandInsertText);
+  MOZ_ASSERT(aEvent.mMessage != eContentCommandReplaceText);
+  MOZ_ASSERT(aEvent.mMessage != eContentCommandPasteTransferable);
+  MOZ_ASSERT(aEvent.mMessage != eContentCommandLookUpDictionary);
+  MOZ_ASSERT(aEvent.mMessage != eContentCommandScroll);
+
   if (mIsDestroyed) {
     return false;
   }
+  mContentCache.OnContentCommandEvent(aEvent);
   return Manager()->IsInputPriorityEventEnabled()
-             ? PBrowserParent::SendInsertText(aStringToInsert)
-             : PBrowserParent::SendNormalPriorityInsertText(aStringToInsert);
+             ? PBrowserParent::SendSimpleContentCommandEvent(aEvent.mMessage)
+             : PBrowserParent::SendNormalPrioritySimpleContentCommandEvent(
+                   aEvent.mMessage);
+}
+
+bool BrowserParent::SendInsertText(const WidgetContentCommandEvent& aEvent) {
+  if (mIsDestroyed) {
+    return false;
+  }
+  mContentCache.OnContentCommandEvent(aEvent);
+  return Manager()->IsInputPriorityEventEnabled()
+             ? PBrowserParent::SendInsertText(aEvent.mString.ref())
+             : PBrowserParent::SendNormalPriorityInsertText(
+                   aEvent.mString.ref());
+}
+
+bool BrowserParent::SendReplaceText(const WidgetContentCommandEvent& aEvent) {
+  if (mIsDestroyed) {
+    return false;
+  }
+  mContentCache.OnContentCommandEvent(aEvent);
+  return Manager()->IsInputPriorityEventEnabled()
+             ? PBrowserParent::SendReplaceText(
+                   aEvent.mSelection.mReplaceSrcString, aEvent.mString.ref(),
+                   aEvent.mSelection.mOffset,
+                   aEvent.mSelection.mPreventSetSelection)
+             : PBrowserParent::SendNormalPriorityReplaceText(
+                   aEvent.mSelection.mReplaceSrcString, aEvent.mString.ref(),
+                   aEvent.mSelection.mOffset,
+                   aEvent.mSelection.mPreventSetSelection);
 }
 
 bool BrowserParent::SendPasteTransferable(IPCTransferable&& aTransferable) {
@@ -3489,10 +3522,22 @@ BrowserParent::GetAuthPrompt(uint32_t aPromptReason, const nsIID& iid,
 }
 
 already_AddRefed<PColorPickerParent> BrowserParent::AllocPColorPickerParent(
+    const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
     const nsString& aTitle, const nsString& aInitialColor,
     const nsTArray<nsString>& aDefaultColors) {
-  return MakeAndAddRef<ColorPickerParent>(aTitle, aInitialColor,
-                                          aDefaultColors);
+  RefPtr<CanonicalBrowsingContext> browsingContext =
+      [&]() -> CanonicalBrowsingContext* {
+    if (aBrowsingContext.IsNullOrDiscarded()) {
+      return nullptr;
+    }
+    if (!aBrowsingContext.get_canonical()->IsOwnedByProcess(
+            Manager()->ChildID())) {
+      return nullptr;
+    }
+    return aBrowsingContext.get_canonical();
+  }();
+  return MakeAndAddRef<ColorPickerParent>(browsingContext, aTitle,
+                                          aInitialColor, aDefaultColors);
 }
 
 already_AddRefed<nsFrameLoader> BrowserParent::GetFrameLoader(

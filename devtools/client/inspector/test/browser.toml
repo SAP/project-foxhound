@@ -73,7 +73,7 @@ support-files = [
 ["browser_inspector_breadcrumbs_keybinding.js"]
 
 ["browser_inspector_breadcrumbs_keyboard_trap.js"]
-skip-if = ["os == 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
+run-if = ["os != 'mac'"] # Full keyboard navigation on OSX only works if Full Keyboard Access setting is set to All Control in System Keyboard Preferences
 
 ["browser_inspector_breadcrumbs_mutations.js"]
 
@@ -149,8 +149,9 @@ skip-if = ["os == 'mac'"] # Full keyboard navigation on OSX only works if Full K
 skip-if = [
   "os == 'win' && asan", # Bug 1453214
   "os == 'win' && debug", # Bug 1453214
-  "os == 'linux'", # Bug 1453214
-  "os == 'mac' && debug", # high frequency intermittent, bug 1453214
+  "os == 'win' && os_version == '11.26100' && processor == 'x86_64' && ccov", # Bug 1453214
+  "os == 'linux' && os_version == '18.04' && processor == 'x86_64'", # Bug 1453214
+  "os == 'mac' && os_version == '10.15' && processor == 'x86_64' && debug", # high frequency intermittent, bug 1453214
 ]
 
 ["browser_inspector_highlighter-cssshape_05.js"]
@@ -260,7 +261,7 @@ skip-if = ["os == 'win'"] # bug 1413442
 ["browser_inspector_highlighter-rulers_02.js"]
 
 ["browser_inspector_highlighter-rulers_03.js"]
-skip-if = ["os == 'win' && !debug"] # Bug 1449754
+skip-if = ["os == 'win' && opt"] # Bug 1449754
 
 ["browser_inspector_highlighter-selector_01.js"]
 
@@ -359,6 +360,8 @@ skip-if = [
 
 ["browser_inspector_picker-useragent-widget.js"]
 
+["browser_inspector_picker_video_widget.js"]
+
 ["browser_inspector_portrait_mode.js"]
 
 ["browser_inspector_pseudoclass-lock.js"]
@@ -408,7 +411,6 @@ skip-if = [
 ["browser_inspector_search-filter_context-menu.js"]
 
 ["browser_inspector_search-label.js"]
-fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and/or labeled
 
 ["browser_inspector_search-navigation.js"]
 
@@ -432,7 +434,7 @@ fail-if = ["a11y_checks"] # Bug 1849028 clicked element may not be focusable and
 ["browser_inspector_startup.js"]
 
 ["browser_inspector_switch-to-inspector-on-pick.js"]
-skip-if = ["apple_catalina && !debug"] # Bug 1713158
+skip-if = ["os == 'mac' && os_version == '10.15' && processor == 'x86_64' && opt"] # Bug 1713158
 
 ["browser_inspector_textbox-menu.js"]
 

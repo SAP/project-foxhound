@@ -36,7 +36,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.layout.ContentScale
@@ -49,19 +48,19 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import mozilla.components.feature.top.sites.TopSite
-import org.mozilla.fenix.GleanMetrics.Pings
 import org.mozilla.fenix.R
 import org.mozilla.fenix.compose.ContextualMenu
 import org.mozilla.fenix.compose.Favicon
 import org.mozilla.fenix.compose.MenuItem
 import org.mozilla.fenix.compose.PagerIndicator
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
+import org.mozilla.fenix.home.fake.FakeHomepagePreview
+import org.mozilla.fenix.home.sessioncontrol.TopSiteInteractor
 import org.mozilla.fenix.settings.SupportUtils
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.wallpapers.WallpaperState
 import kotlin.math.ceil
-import org.mozilla.fenix.GleanMetrics.TopSites as TopSitesMetrics
 
 private const val TOP_SITES_PER_PAGE = 8
 private const val TOP_SITES_PER_ROW = 4
@@ -75,8 +74,44 @@ private const val TOP_SITES_FAVICON_SIZE = 36
  *
  * @param topSites List of [TopSite] to display.
  * @param topSiteColors The color set defined by [TopSiteColors] used to style a top site.
+ * @param interactor The interactor which handles user actions with the widget.
+ * @param onTopSitesItemBound Invoked during the composition of a top site item.
+ */
+@Composable
+fun TopSites(
+    topSites: List<TopSite>,
+    topSiteColors: TopSiteColors = TopSiteColors.colors(),
+    interactor: TopSiteInteractor,
+    onTopSitesItemBound: () -> Unit,
+) {
+    TopSites(
+        topSites = topSites,
+        topSiteColors = topSiteColors,
+        onTopSiteClick = { topSite ->
+            interactor.onSelectTopSite(
+                topSite = topSite,
+                position = topSites.indexOf(topSite),
+            )
+        },
+        onTopSiteLongClick = interactor::onTopSiteLongClicked,
+        onTopSiteImpression = interactor::onTopSiteImpression,
+        onOpenInPrivateTabClicked = interactor::onOpenInPrivateTabClicked,
+        onEditTopSiteClicked = interactor::onEditTopSiteClicked,
+        onRemoveTopSiteClicked = interactor::onRemoveTopSiteClicked,
+        onSettingsClicked = interactor::onSettingsClicked,
+        onSponsorPrivacyClicked = interactor::onSponsorPrivacyClicked,
+        onTopSitesItemBound = onTopSitesItemBound,
+    )
+}
+
+/**
+ * A list of top sites.
+ *
+ * @param topSites List of [TopSite] to display.
+ * @param topSiteColors The color set defined by [TopSiteColors] used to style a top site.
  * @param onTopSiteClick Invoked when the user clicks on a top site.
  * @param onTopSiteLongClick Invoked when the user long clicks on a top site.
+ * @param onTopSiteImpression Invoked when the user sees a provided top site.
  * @param onOpenInPrivateTabClicked Invoked when the user clicks on the "Open in private tab"
  * menu item.
  * @param onEditTopSiteClicked Invoked when the user clicks on the "Edit" menu item.
@@ -86,7 +121,7 @@ private const val TOP_SITES_FAVICON_SIZE = 36
  * menu item.
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
  */
-@OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 @Suppress("LongParameterList", "LongMethod")
 fun TopSites(
@@ -94,6 +129,7 @@ fun TopSites(
     topSiteColors: TopSiteColors = TopSiteColors.colors(),
     onTopSiteClick: (TopSite) -> Unit,
     onTopSiteLongClick: (TopSite) -> Unit,
+    onTopSiteImpression: (TopSite.Provided, Int) -> Unit,
     onOpenInPrivateTabClicked: (topSite: TopSite) -> Unit,
     onEditTopSiteClicked: (topSite: TopSite) -> Unit,
     onRemoveTopSiteClicked: (topSite: TopSite) -> Unit,
@@ -101,7 +137,11 @@ fun TopSites(
     onSponsorPrivacyClicked: () -> Unit,
     onTopSitesItemBound: () -> Unit,
 ) {
-    val pageCount = ceil((topSites.size.toDouble() / TOP_SITES_PER_PAGE)).toInt()
+    val numberOfTopSites = topSites.size.toDouble()
+    val pageCount = ceil((numberOfTopSites / TOP_SITES_PER_PAGE)).toInt()
+
+    val needsInvisibleRow =
+        numberOfTopSites > TOP_SITES_PER_PAGE && numberOfTopSites <= (TOP_SITES_PER_PAGE + TOP_SITES_PER_ROW)
 
     Column(
         modifier = Modifier
@@ -150,12 +190,17 @@ fun TopSites(
                                     topSiteColors = topSiteColors,
                                     onTopSiteClick = { item -> onTopSiteClick(item) },
                                     onTopSiteLongClick = onTopSiteLongClick,
+                                    onTopSiteImpression = onTopSiteImpression,
                                     onTopSitesItemBound = onTopSitesItemBound,
                                 )
                             }
                         }
 
                         Spacer(modifier = Modifier.height(12.dp))
+                    }
+
+                    if (needsInvisibleRow && page > 0) {
+                        InvisibleRow()
                     }
                 }
             }
@@ -171,6 +216,27 @@ fun TopSites(
             )
         }
     }
+}
+
+/**
+ * Workaround for when the second pager page only has one row, and the pager shrinks to fit. This
+ * invisible row mimics top sites items to match the correct height.
+ */
+@Composable
+private fun InvisibleRow() {
+    Spacer(modifier = Modifier.height(4.dp + TOP_SITES_FAVICON_CARD_SIZE.dp + 6.dp))
+
+    Text(
+        text = "",
+        style = FirefoxTheme.typography.caption,
+    )
+
+    Text(
+        text = "",
+        fontSize = 10.sp,
+    )
+
+    Spacer(modifier = Modifier.height(12.dp))
 }
 
 /**
@@ -237,9 +303,10 @@ data class TopSiteColors(
  * @param topSiteColors The color set defined by [TopSiteColors] used to style a top site.
  * @param onTopSiteClick Invoked when the user clicks on a top site.
  * @param onTopSiteLongClick Invoked when the user long clicks on a top site.
+ * @param onTopSiteImpression Invoked when the user sees a provided top site.
  * @param onTopSitesItemBound Invoked during the composition of a top site item.
  */
-@Suppress("LongMethod")
+@Suppress("LongMethod", "LongParameterList", "Deprecation") // https://bugzilla.mozilla.org/show_bug.cgi?id=1927713
 @OptIn(ExperimentalFoundationApi::class, ExperimentalComposeUiApi::class)
 @Composable
 private fun TopSiteItem(
@@ -249,6 +316,7 @@ private fun TopSiteItem(
     topSiteColors: TopSiteColors,
     onTopSiteClick: (TopSite) -> Unit,
     onTopSiteLongClick: (TopSite) -> Unit,
+    onTopSiteImpression: (TopSite.Provided, Int) -> Unit,
     onTopSitesItemBound: () -> Unit,
 ) {
     var menuExpanded by remember { mutableStateOf(false) }
@@ -285,7 +353,7 @@ private fun TopSiteItem(
 
             Row(
                 modifier = Modifier.width(TOP_SITES_ITEM_SIZE.dp),
-                horizontalArrangement = Arrangement.Center,
+                horizontalArrangement = Arrangement.Absolute.Center,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (topSite is TopSite.Pinned || topSite is TopSite.Default) {
@@ -312,10 +380,9 @@ private fun TopSiteItem(
             }
 
             Text(
-                text = stringResource(id = R.string.top_sites_sponsored_label),
+                text = if (topSite is TopSite.Provided) stringResource(id = R.string.top_sites_sponsored_label) else "",
                 modifier = Modifier
-                    .width(TOP_SITES_ITEM_SIZE.dp)
-                    .alpha(alpha = if (topSite is TopSite.Provided) 1f else 0f),
+                    .width(TOP_SITES_ITEM_SIZE.dp),
                 color = topSiteColors.sponsoredTextColor,
                 fontSize = 10.sp,
                 textAlign = TextAlign.Center,
@@ -334,7 +401,7 @@ private fun TopSiteItem(
 
         if (topSite is TopSite.Provided) {
             LaunchedEffect(topSite) {
-                submitTopSitesImpressionPing(topSite = topSite, position = position)
+                onTopSiteImpression(topSite, position)
             }
         }
     }
@@ -411,6 +478,7 @@ private fun getMenuItems(
 ): List<MenuItem> {
     val isPinnedSite = topSite is TopSite.Pinned || topSite is TopSite.Default
     val isProvidedSite = topSite is TopSite.Provided
+    val isFrecentSite = topSite is TopSite.Frecent
     val result = mutableListOf<MenuItem>()
 
     result.add(
@@ -421,7 +489,7 @@ private fun getMenuItems(
         ),
     )
 
-    if (isPinnedSite) {
+    if (isPinnedSite || isFrecentSite) {
         result.add(
             MenuItem(
                 title = stringResource(id = R.string.top_sites_edit_top_site),
@@ -448,48 +516,26 @@ private fun getMenuItems(
     }
 
     if (isProvidedSite) {
-        result.add(
-            MenuItem(
-                title = stringResource(id = R.string.delete_from_history),
-                testTag = TopSitesTestTag.remove,
-                onClick = { onRemoveTopSiteClicked(topSite) },
-            ),
-        )
-    }
-
-    if (isProvidedSite) {
-        result.add(
-            MenuItem(
-                title = stringResource(id = R.string.top_sites_menu_settings),
-                onClick = onSettingsClicked,
-            ),
-        )
-    }
-
-    if (isProvidedSite) {
-        result.add(
-            MenuItem(
-                title = stringResource(id = R.string.top_sites_menu_sponsor_privacy),
-                onClick = onSponsorPrivacyClicked,
+        result.addAll(
+            listOf(
+                MenuItem(
+                    title = stringResource(id = R.string.delete_from_history),
+                    testTag = TopSitesTestTag.remove,
+                    onClick = { onRemoveTopSiteClicked(topSite) },
+                ),
+                MenuItem(
+                    title = stringResource(id = R.string.top_sites_menu_settings),
+                    onClick = onSettingsClicked,
+                ),
+                MenuItem(
+                    title = stringResource(id = R.string.top_sites_menu_sponsor_privacy),
+                    onClick = onSponsorPrivacyClicked,
+                ),
             ),
         )
     }
 
     return result
-}
-
-private fun submitTopSitesImpressionPing(topSite: TopSite.Provided, position: Int) {
-    TopSitesMetrics.contileImpression.record(
-        TopSitesMetrics.ContileImpressionExtra(
-            position = position + 1,
-            source = "newtab",
-        ),
-    )
-
-    topSite.id?.let { TopSitesMetrics.contileTileId.set(it) }
-    topSite.title?.let { TopSitesMetrics.contileAdvertiser.set(it.lowercase()) }
-    TopSitesMetrics.contileReportingUrl.set(topSite.impressionUrl)
-    Pings.topsitesImpression.submit()
 }
 
 @Composable
@@ -498,54 +544,10 @@ private fun TopSitesPreview() {
     FirefoxTheme {
         Box(modifier = Modifier.background(color = FirefoxTheme.colors.layer1)) {
             TopSites(
-                topSites = mutableListOf<TopSite>().apply {
-                    for (index in 0 until 2) {
-                        add(
-                            TopSite.Pinned(
-                                id = index.toLong(),
-                                title = "Mozilla$index",
-                                url = "mozilla.com",
-                                createdAt = 0L,
-                            ),
-                        )
-                    }
-
-                    for (index in 0 until 2) {
-                        add(
-                            TopSite.Provided(
-                                id = index.toLong(),
-                                title = "Mozilla$index",
-                                url = "mozilla.com",
-                                clickUrl = "https://mozilla.com/click",
-                                imageUrl = "https://test.com/image2.jpg",
-                                impressionUrl = "https://example.com",
-                                createdAt = 0L,
-                            ),
-                        )
-                    }
-
-                    for (index in 0 until 2) {
-                        add(
-                            TopSite.Default(
-                                id = index.toLong(),
-                                title = "Mozilla$index",
-                                url = "mozilla.com",
-                                createdAt = 0L,
-                            ),
-                        )
-                    }
-
-                    add(
-                        TopSite.Default(
-                            id = null,
-                            title = "Top Articles",
-                            url = "https://getpocket.com/fenix-top-articles",
-                            createdAt = 0L,
-                        ),
-                    )
-                },
+                topSites = FakeHomepagePreview.topSites(),
                 onTopSiteClick = {},
                 onTopSiteLongClick = {},
+                onTopSiteImpression = { _, _ -> },
                 onOpenInPrivateTabClicked = {},
                 onEditTopSiteClicked = {},
                 onRemoveTopSiteClicked = {},

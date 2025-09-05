@@ -79,7 +79,7 @@ reftest.Runner = class {
    * This will open a non-browser window in which the tests will
    * be loaded, and set up various caches for the reftest run.
    *
-   * @param {Object<number>} urlCount
+   * @param {Record<string, number>} urlCount
    *     Object holding a map of URL: number of times the URL
    *     will be opened during the reftest run, where that's
    *     greater than 1.
@@ -367,7 +367,8 @@ reftest.Runner = class {
     let done = false;
 
     while (stack.length && !done) {
-      let [lhsUrl, rhsUrl, references, relation, extras = {}] = stack.pop();
+      let [lhsUrl, rhsUrl, stackframeReferences, relation, extras = {}] =
+        stack.pop();
       result.message += `Testing ${lhsUrl} ${relation} ${rhsUrl}\n`;
 
       let comparison;
@@ -414,9 +415,9 @@ reftest.Runner = class {
       }
 
       if (comparison.passed) {
-        if (references.length) {
-          for (let i = references.length - 1; i >= 0; i--) {
-            let item = references[i];
+        if (stackframeReferences.length) {
+          for (let i = stackframeReferences.length - 1; i >= 0; i--) {
+            let item = stackframeReferences[i];
             stack.push([rhsUrl, ...item]);
           }
         } else {

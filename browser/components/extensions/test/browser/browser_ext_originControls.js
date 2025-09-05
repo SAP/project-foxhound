@@ -172,7 +172,9 @@ async function testOriginControls(
   switch (contextMenuId) {
     case "toolbar-context-menu": {
       let target = `#${CSS.escape(makeWidgetId(extension.id))}-BAP`;
-      buttonOrWidget = document.querySelector(target).parentElement;
+      buttonOrWidget = document
+        .querySelector(target)
+        .closest("toolbaritem.unified-extensions-item");
       menu = await openChromeContextMenu(contextMenuId, target);
       nextMenuItemClassName = "customize-context-manageExtension";
       break;
@@ -287,7 +289,20 @@ async function testOriginControls(
     await testQuarantinePopup(popup, extension.id);
 
     if (allowQuarantine) {
+      // Wait for the AOM onPropertyChanged event emitted when the quarantineIgnoredByUser
+      // AddonWrapper property has been changed as expected by clicking the primary button
+      // on the popup (Needed to prevent intermittent failures due to a race between the
+      // internals reacting to the quarantine popup button and the assertions checking that
+      // the context menu items has been refreshed to reflect the updated access to the
+      // quarantined websites granted to the specific extension being tested).
+      const promiseQuarantineAllowed = AddonTestUtils.promiseAddonEvent(
+        "onPropertyChanged",
+        (addon, changedProps) =>
+          addon.id === extension.id &&
+          changedProps.includes("quarantineIgnoredByUser")
+      );
       popup.button.click();
+      await promiseQuarantineAllowed;
     } else {
       popup.secondaryButton.click();
     }

@@ -8,10 +8,16 @@
 #  include "commonupdatedir.h"
 #  include "updatehelper.h"
 #  include "certificatecheck.h"
+
+#  include <windows.h>
+
 #  define NS_main wmain
 #  define NS_tgetcwd _wgetcwd
 #  define NS_ttoi _wtoi
 #else
+#  include <sys/types.h>
+#  include <sys/wait.h>
+#  include <time.h>
 #  define NS_main main
 #  define NS_tgetcwd getcwd
 #  define NS_ttoi atoi
@@ -79,6 +85,37 @@ static bool CheckMsg(const NS_tchar* path, const char* expected) {
   fclose(inFP);
   inFP = nullptr;
   return isMatch;
+}
+
+static bool BuildLogFilePath(NS_tchar* aLogFilePath, size_t aBufferSize,
+                             NS_tchar** aArgv) {
+#ifdef XP_MACOSX
+  // Our tests on macOS require absolute paths to log files, as relative paths
+  // will be interpreted as relative to the root of the file system, i.e. '/',
+  // which is a read-only location where our tests can't write to.
+  //
+  // This finds the absolute path to `callback_app.app`, which will usually be:
+  //    <abs-path>/dir.app/Contents/MacOS/
+  //
+  NS_tchar* callbackAppBundle = NS_tstrstr(aArgv[0], "callback_app.app");
+  if (!callbackAppBundle) {
+    return false;
+  }
+
+  // This appends the log file name to the same absolute path as
+  // `callback_app.app`, which is what our tests expect.
+  if (!NS_tvsnprintf(aLogFilePath, aBufferSize / sizeof(aLogFilePath[0]),
+                     NS_T("%.*s%s"), callbackAppBundle - aArgv[0], aArgv[0],
+                     aArgv[2])) {
+    return false;
+  }
+#else
+  if (!NS_tvsnprintf(aLogFilePath, aBufferSize / sizeof(aLogFilePath[0]),
+                     NS_T("%s"), aArgv[2])) {
+    return false;
+  }
+#endif
+  return true;
 }
 
 int NS_main(int argc, NS_tchar** argv) {
@@ -178,6 +215,7 @@ int NS_main(int argc, NS_tchar** argv) {
         "   or: post-update-async\n"
         "   or: post-update-environment\n"
         "   or: create-update-dir\n"
+        "   or: wait-for-pid-exit pid timeout\n"
         "\n"
         "  WORKINGDIR  \tThe relative path to the working directory to use.\n"
         "  INFILE      \tThe relative path from the working directory for the "
@@ -329,9 +367,7 @@ int NS_main(int argc, NS_tchar** argv) {
     ::umask(umask);
 
     NS_tchar logFilePath[MAXPATHLEN];
-    if (!NS_tvsnprintf(logFilePath,
-                       sizeof(logFilePath) / sizeof(logFilePath[0]), NS_T("%s"),
-                       argv[2])) {
+    if (!BuildLogFilePath(logFilePath, sizeof(logFilePath), argv)) {
       return 1;
     }
 
@@ -382,6 +418,37 @@ int NS_main(int argc, NS_tchar** argv) {
 #else
     // Not implemented on non-Windows platforms
     return 1;
+#endif
+  }
+
+  if (!NS_tstrcmp(argv[1], NS_T("wait-for-pid-exit"))) {
+    const int pid = NS_ttoi(argv[2]);
+    const int maxWaitSeconds = NS_ttoi(argv[3]);
+
+#ifdef XP_WIN
+    HANDLE process = OpenProcess(SYNCHRONIZE, FALSE, pid);
+    if (process == nullptr) {
+      // Windows reacts to "that process already died" here by calling the pid
+      // an invalid parameter.
+      return GetLastError() == ERROR_INVALID_PARAMETER ? 0 : 2;
+    }
+    DWORD result = WaitForSingleObject(process, maxWaitSeconds * 1000);
+    CloseHandle(process);
+    if (result == WAIT_OBJECT_0) {
+      return 0;
+    } else if (result != WAIT_TIMEOUT) {
+      return 2;
+    }
+    return 1;
+#else
+    time_t endTime = time(nullptr) + maxWaitSeconds;
+    while (waitpid(pid, nullptr, WNOHANG) == 0) {
+      if (time(nullptr) > endTime) {
+        return 1;
+      }
+      sleep(1);
+    }
+    return 0;
 #endif
   }
 
@@ -474,9 +541,7 @@ int NS_main(int argc, NS_tchar** argv) {
   {
     // Command line argument test helper section
     NS_tchar logFilePath[MAXPATHLEN];
-    if (!NS_tvsnprintf(logFilePath,
-                       sizeof(logFilePath) / sizeof(logFilePath[0]), NS_T("%s"),
-                       argv[2])) {
+    if (!BuildLogFilePath(logFilePath, sizeof(logFilePath), argv)) {
       return 1;
     }
 

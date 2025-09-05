@@ -22,6 +22,8 @@ add_task(async function test_translations_telemetry_open_panel() {
   );
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
 
@@ -52,6 +54,8 @@ add_task(async function test_translations_telemetry_open_panel() {
   });
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
 
@@ -79,6 +83,10 @@ add_task(async function test_translations_telemetry_open_panel() {
   await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.close, {
     expectedEventCount: 2,
     expectNewFlowId: false,
+  });
+
+  await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+    expectedEventCount: 0,
   });
 
   await cleanup();

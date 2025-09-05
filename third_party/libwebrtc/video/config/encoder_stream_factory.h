@@ -24,13 +24,9 @@ namespace cricket {
 class EncoderStreamFactory
     : public webrtc::VideoEncoderConfig::VideoStreamFactoryInterface {
  public:
-  EncoderStreamFactory(std::string codec_name,
-                       int max_qp,
-                       bool is_screenshare,
-                       bool conference_mode,
-                       const webrtc::VideoEncoder::EncoderInfo& encoder_info,
-                       absl::optional<webrtc::VideoSourceRestrictions>
-                           restrictions = absl::nullopt);
+  EncoderStreamFactory(const webrtc::VideoEncoder::EncoderInfo& encoder_info,
+                       std::optional<webrtc::VideoSourceRestrictions>
+                           restrictions = std::nullopt);
 
   std::vector<webrtc::VideoStream> CreateEncoderStreams(
       const webrtc::FieldTrialsView& trials,
@@ -43,7 +39,7 @@ class EncoderStreamFactory
       int width,
       int height,
       const webrtc::VideoEncoderConfig& encoder_config,
-      const absl::optional<webrtc::DataRate>& experimental_min_bitrate) const;
+      const std::optional<webrtc::DataRate>& experimental_min_bitrate) const;
 
   std::vector<webrtc::VideoStream>
   CreateSimulcastOrConferenceModeScreenshareStreams(
@@ -51,21 +47,21 @@ class EncoderStreamFactory
       int width,
       int height,
       const webrtc::VideoEncoderConfig& encoder_config,
-      const absl::optional<webrtc::DataRate>& experimental_min_bitrate) const;
+      const std::optional<webrtc::DataRate>& experimental_min_bitrate) const;
 
-  webrtc::Resolution GetLayerResolutionFromRequestedResolution(
+  webrtc::Resolution GetLayerResolutionFromScaleResolutionDownTo(
       int in_frame_width,
       int in_frame_height,
-      webrtc::Resolution requested_resolution) const;
+      webrtc::Resolution scale_resolution_down_to) const;
 
-  const std::string codec_name_;
-  const int max_qp_;
-  const bool is_screenshare_;
-  // Allows a screenshare specific configuration, which enables temporal
-  // layering and various settings.
-  const bool conference_mode_;
+  std::vector<webrtc::Resolution> GetStreamResolutions(
+      const webrtc::FieldTrialsView& trials,
+      int width,
+      int height,
+      const webrtc::VideoEncoderConfig& encoder_config) const;
+
   const int encoder_info_requested_resolution_alignment_;
-  const absl::optional<webrtc::VideoSourceRestrictions> restrictions_;
+  const std::optional<webrtc::VideoSourceRestrictions> restrictions_;
 };
 
 }  // namespace cricket

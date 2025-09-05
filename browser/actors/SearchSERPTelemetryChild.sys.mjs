@@ -8,6 +8,7 @@ const lazy = {};
 
 ChromeUtils.defineESModuleGetters(lazy, {
   clearTimeout: "resource://gre/modules/Timer.sys.mjs",
+  SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
   setTimeout: "resource://gre/modules/Timer.sys.mjs",
 });
 
@@ -18,8 +19,23 @@ XPCOMUtils.defineLazyPreferenceGetter(
   false
 );
 
+XPCOMUtils.defineLazyPreferenceGetter(
+  lazy,
+  "serpEventTelemetryCategorizationRegionEnabled",
+  "browser.search.serpEventTelemetryCategorization.regionEnabled",
+  false
+);
+
+ChromeUtils.defineLazyGetter(lazy, "logConsole", () => {
+  return console.createInstance({
+    prefix: "SearchTelemetry",
+    maxLogLevel: lazy.SearchUtils.loggingEnabled ? "Debug" : "Warn",
+  });
+});
+
 export const CATEGORIZATION_SETTINGS = {
   MAX_DOMAINS_TO_CATEGORIZE: 10,
+  HAS_MATCHING_REGION: "SearchTelemetry:HasMatchingRegion",
 };
 
 // Duplicated from SearchSERPTelemetry to avoid loading the module on content
@@ -91,12 +107,19 @@ class SearchProviders {
         if (p.shoppingTab?.inspectRegexpInSERP) {
           p.shoppingTab.regexp = new RegExp(p.shoppingTab.regexp);
         }
+        let subframes =
+          p.subframes
+            ?.filter(obj => obj.inspectRegexpInSERP)
+            .map(obj => {
+              return { ...obj, regexp: new RegExp(obj.regexp) };
+            }) ?? [];
         return {
           ...p,
           searchPageRegexp: new RegExp(p.searchPageRegexp),
           extraAdServersRegexps: p.extraAdServersRegexps.map(
             r => new RegExp(r)
           ),
+          subframes,
         };
       });
 
@@ -546,7 +569,16 @@ class SearchAdImpression {
   #categorizeAnchors(anchors, origin) {
     for (let anchor of anchors) {
       if (this.#shouldInspectAnchor(anchor, origin)) {
-        let result = this.#findDataForAnchor(anchor);
+        let result;
+        try {
+          // We use a schema to ensure the values for each search provider
+          // aligns to what is expected, but tests don't enforce the schema
+          // and thus, can technically input faulty values.
+          result = this.#findDataForAnchor(anchor);
+        } catch (ex) {
+          lazy.logConsole.error("Could not find data for anchor:", ex);
+          continue;
+        }
         if (result) {
           this.#recordElementData(result.element, {
             type: result.type,
@@ -555,7 +587,7 @@ class SearchAdImpression {
             childElements: result.childElements,
           });
         }
-        if (result.relatedElements?.length) {
+        if (result?.relatedElements?.length) {
           // Bug 1880413: Deprecate related elements.
           // Bottom-up approach with related elements are only used for
           // non-link elements related to ads, like carousel arrows.
@@ -735,10 +767,13 @@ class SearchAdImpression {
    *
    * @param {HTMLAnchorElement} anchor
    *  The anchor to be inspected.
-   * @returns {object}
+   * @returns {object | null}
    *  An object containing the element representing the root DOM element for
    *  the component, the type of component, how many ads were counted,
    *  and whether or not the count was of all the children.
+   * @throws {Error}
+   *  Will throw an error if certain properties of a component are missing.
+   *  Required properties are listed in search-telemetry-v2-schema.json.
    */
   #findDataForAnchor(anchor) {
     for (let component of this.#providerInfo.components) {
@@ -781,6 +816,12 @@ class SearchAdImpression {
         continue;
       }
 
+      // If a parent was found, we may want to ignore reporting the element
+      // to telemetry.
+      if (component.included.parent.skipCount) {
+        return null;
+      }
+
       // If we've already inspected the parent, add the child element to the
       // list of anchors. Don't increment the ads loaded count, as we only care
       // about grouping the anchor with the correct parent.
@@ -805,6 +846,9 @@ class SearchAdImpression {
           // If counting by child, get all of them at once.
           if (child.countChildren) {
             let proxyChildElements = parent.querySelectorAll(child.selector);
+            if (child.skipCount) {
+              return null;
+            }
             if (proxyChildElements.length) {
               return {
                 element: parent,
@@ -816,6 +860,9 @@ class SearchAdImpression {
               };
             }
           } else if (parent.querySelector(child.selector)) {
+            if (child.skipCount) {
+              return null;
+            }
             return {
               element: parent,
               type: child.type ?? component.type,
@@ -1111,7 +1158,7 @@ class DomainExtractor {
       }
 
       let elements = document.querySelectorAll(extractorInfo.selectors);
-      if (!elements) {
+      if (!elements.length) {
         continue;
       }
 
@@ -1187,10 +1234,8 @@ class DomainExtractor {
 
       let href = element.getAttribute("href");
 
-      let url;
-      try {
-        url = new URL(href, origin);
-      } catch (ex) {
+      let url = URL.parse(href, origin);
+      if (!url) {
         continue;
       }
 
@@ -1202,9 +1247,8 @@ class DomainExtractor {
       if (queryParam) {
         let paramValue = url.searchParams.get(queryParam);
         if (queryParamValueIsHref) {
-          try {
-            paramValue = new URL(paramValue).hostname;
-          } catch (e) {
+          paramValue = URL.parse(paramValue)?.hostname;
+          if (!paramValue) {
             continue;
           }
           paramValue = this.#processDomain(paramValue, providerName);
@@ -1299,9 +1343,8 @@ class DomainExtractor {
           textContent = "https://" + textContent;
         }
 
-        try {
-          domain = new URL(textContent).hostname;
-        } catch (e) {
+        domain = URL.parse(textContent)?.hostname;
+        if (!domain) {
           domain = fixup(textContent);
         }
       } else {
@@ -1396,6 +1439,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
    * @type {number | null}
    */
   #adTimeout;
+
   /**
    * Determines if there is a provider that matches the supplied URL and returns
    * the information associated with that provider.
@@ -1448,6 +1492,11 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
       if (hasAds) {
         break;
       }
+    }
+
+    // If there are no ads in hrefs, they could be present in a subframe.
+    if (!hasAds) {
+      hasAds = this.#checkForSponsoredSubframes(this.document, providerInfo);
     }
 
     if (hasAds) {
@@ -1505,6 +1554,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
 
     if (
       lazy.serpEventTelemetryCategorization &&
+      lazy.serpEventTelemetryCategorizationRegionEnabled &&
       providerInfo.domainExtraction &&
       (eventType == "load" || eventType == "pageshow")
     ) {
@@ -1514,6 +1564,7 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         providerInfo.domainExtraction.nonAds,
         providerInfo.telemetryId
       );
+
       let adDomains = domainExtractor.extractDomainsFromDocument(
         doc,
         providerInfo.domainExtraction.ads,
@@ -1557,6 +1608,30 @@ export class SearchSERPTelemetryChild extends JSWindowActorChild {
         shoppingTabDisplayed,
       });
     }
+  }
+
+  #checkForSponsoredSubframes(document, providerInfo) {
+    if (!providerInfo.subframes?.length) {
+      return false;
+    }
+
+    let subframes = document.querySelectorAll("iframe");
+    for (let subframe of subframes) {
+      let foundMatch = providerInfo.subframes.some(obj =>
+        obj.regexp?.test(subframe.src)
+      );
+      if (
+        foundMatch &&
+        subframe.checkVisibility({
+          visibilityProperty: true,
+          contentVisibilityAuto: true,
+        })
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   #removeEventListeners() {

@@ -22,7 +22,6 @@
 #include "nsIReflowCallback.h"
 #include "nsIScrollbarMediator.h"
 #include "nsIStatefulFrame.h"
-#include "nsLayoutUtils.h"
 #include "nsQueryFrame.h"
 #include "nsThreadUtils.h"
 #include "ScrollVelocityQueue.h"
@@ -114,7 +113,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                       nsIFrame::Sides aSkipSides,
                       nscoord aRadii[8]) const final;
 
-  nscoord IntrinsicISize(gfxContext* aContext,
+  nscoord IntrinsicISize(const IntrinsicSizeInput& aInput,
                          IntrinsicISizeType aType) override;
 
   void Reflow(nsPresContext* aPresContext, ReflowOutput& aDesiredSize,
@@ -194,6 +193,14 @@ class ScrollContainerFrame : public nsContainerFrame,
   bool HasAllNeededScrollbars() const {
     return GetCurrentAnonymousContent().contains(GetNeededAnonymousContent());
   }
+
+  struct PerAxisScrollDirections {
+    bool mToRight = false;
+    bool mToBottom = false;
+  };
+
+  static PerAxisScrollDirections ComputePerAxisScrollDirections(
+      const nsIFrame* aScrolledFrame);
 
   /**
    * Get the overscroll-behavior styles.
@@ -294,13 +301,14 @@ class ScrollContainerFrame : public nsContainerFrame,
     }
     return rect;
   }
-  nsRect GetScrollPortRectAccountingForMaxDynamicToolbar() const {
-    auto rect = mScrollPort;
-    if (mIsRoot && PresContext()->HasDynamicToolbar()) {
-      rect.SizeTo(nsLayoutUtils::ExpandHeightForDynamicToolbar(PresContext(),
-                                                               rect.Size()));
+  nsRect GetScrollPortRectAccountingForMaxDynamicToolbar() const;
+
+  nsSize GetScrolledFrameSizeAccountingForDynamicToolbar() const {
+    auto size = mScrolledFrame->GetContentRectRelativeToSelf().Size();
+    if (mIsRoot) {
+      size.height += PresContext()->GetBimodalDynamicToolbarHeightInAppUnits();
     }
-    return rect;
+    return size;
   }
 
   /**
@@ -494,6 +502,10 @@ class ScrollContainerFrame : public nsContainerFrame,
    * XXX should we take an aMode parameter here? Currently it's instant.
    */
   void ScrollToRestoredPosition();
+
+  bool NeedRestorePosition() const {
+    return mRestorePos.y != -1 && mLastPos.x != -1 && mLastPos.y != -1;
+  }
 
   /**
    * Add a scroll position listener. This listener must be removed
@@ -851,7 +863,7 @@ class ScrollContainerFrame : public nsContainerFrame,
                                    ScrollSnapFlags::IntendedEndPosition);
 
   // nsIReflowCallback
-  bool ReflowFinished() final;
+  bool ReflowFinished() override;
   void ReflowCallbackCanceled() final;
 
   // nsIStatefulFrame
@@ -1240,6 +1252,7 @@ class ScrollContainerFrame : public nsContainerFrame,
   bool HasPerspective() const { return ChildrenHavePerspective(); }
   bool HasBgAttachmentLocal() const;
   StyleDirection GetScrolledFrameDir() const;
+  static StyleDirection GetScrolledFrameDir(const nsIFrame*);
 
   // Ask APZ to smooth scroll to |aDestination|.
   // This method does not clamp the destination; callers should clamp it to

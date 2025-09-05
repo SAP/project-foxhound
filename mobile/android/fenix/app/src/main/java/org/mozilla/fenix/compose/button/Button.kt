@@ -23,8 +23,8 @@ import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 
 const val DEFAULT_MAX_LINES = 2
@@ -102,6 +102,7 @@ private fun Button(
  * @param backgroundColor The background [Color] of the button.
  * @param icon Optional [Painter] used to display an [Icon] before the button text.
  * @param iconModifier [Modifier] to be applied to the icon.
+ * @param iconTint [Color] to be applied to the icon tint.
  * @param onClick Invoked when the user clicks on the button.
  */
 @Composable
@@ -113,6 +114,7 @@ fun PrimaryButton(
     backgroundColor: Color = FirefoxTheme.colors.actionPrimary,
     icon: Painter? = null,
     iconModifier: Modifier = Modifier,
+    iconTint: Color = FirefoxTheme.colors.iconActionPrimary,
     onClick: () -> Unit,
 ) {
     var buttonTextColor = textColor
@@ -135,7 +137,7 @@ fun PrimaryButton(
         enabled = enabled,
         icon = icon,
         iconModifier = iconModifier,
-        tint = FirefoxTheme.colors.iconActionPrimary,
+        tint = iconTint,
         onClick = onClick,
     )
 }

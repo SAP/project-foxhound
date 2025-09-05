@@ -1,23 +1,23 @@
-From: Andreas Pehrson <apehrson@mozilla.com>
-Date: Fri, 19 Apr 2024 06:09:00 +0000
-Subject: Bug 1892221 - Initialize VideoCaptureModuleV4L2::_streaming in ctor.
- r=webrtc-reviewers,dbaker
+From: Michael Froman <mfroman@mozilla.com>
+Date: Fri, 17 May 2024 22:30:00 -0500
+Subject: Bug 1897501 - (fix-09bb4f09e1) keep default python intepreter as
+ python3
 
-Differential Revision: https://phabricator.services.mozilla.com/D207926
-Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/00c4bd7039dc8992dd93d4a5948a9260b72ec2a8
+Mercurial Revision: https://hg.mozilla.org/mozilla-central/rev/b21ca84c8b2620a98515624de0e43a237698726c
 ---
- modules/video_capture/linux/video_capture_v4l2.cc | 1 +
- 1 file changed, 1 insertion(+)
+ .gn | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
 
-diff --git a/modules/video_capture/linux/video_capture_v4l2.cc b/modules/video_capture/linux/video_capture_v4l2.cc
-index db2450a2c7..74af348a6c 100644
---- a/modules/video_capture/linux/video_capture_v4l2.cc
-+++ b/modules/video_capture/linux/video_capture_v4l2.cc
-@@ -62,6 +62,7 @@ VideoCaptureModuleV4L2::VideoCaptureModuleV4L2()
-       _deviceId(-1),
-       _deviceFd(-1),
-       _buffersAllocatedByDevice(-1),
-+      _streaming(false),
-       _captureStarted(false),
-       _pool(NULL) {}
+diff --git a/.gn b/.gn
+index 6c011fd453..01bb0e7b02 100644
+--- a/.gn
++++ b/.gn
+@@ -13,7 +13,7 @@ buildconfig = "//build/config/BUILDCONFIG.gn"
  
+ # The python interpreter to use by default. On Windows, this will look
+ # for vpython3.exe and vpython3.bat.
+-script_executable = "vpython3"
++script_executable = "python3"
+ 
+ # The secondary source root is a parallel directory tree where
+ # GN build files are placed when they can not be placed directly

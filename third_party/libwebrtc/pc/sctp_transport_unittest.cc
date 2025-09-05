@@ -10,20 +10,30 @@
 
 #include "pc/sctp_transport.h"
 
+#include <cstddef>
+#include <functional>
+#include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/memory/memory.h"
-#include "absl/types/optional.h"
 #include "api/dtls_transport_interface.h"
+#include "api/make_ref_counted.h"
+#include "api/priority.h"
+#include "api/rtc_error.h"
+#include "api/scoped_refptr.h"
+#include "api/sctp_transport_interface.h"
 #include "api/transport/data_channel_transport_interface.h"
-#include "media/base/media_channel.h"
-#include "p2p/base/fake_dtls_transport.h"
+#include "media/sctp/sctp_transport_internal.h"
 #include "p2p/base/p2p_constants.h"
 #include "p2p/base/packet_transport_internal.h"
+#include "p2p/dtls/dtls_transport_internal.h"
+#include "p2p/dtls/fake_dtls_transport.h"
 #include "pc/dtls_transport.h"
 #include "rtc_base/copy_on_write_buffer.h"
 #include "rtc_base/gunit.h"
+#include "rtc_base/thread.h"
 #include "test/gmock.h"
 #include "test/gtest.h"
 
@@ -43,11 +53,11 @@ class FakeCricketSctpTransport : public cricket::SctpTransportInternal {
     on_connected_callback_ = std::move(callback);
   }
   void SetDataChannelSink(DataChannelSink* sink) override {}
-  void SetDtlsTransport(rtc::PacketTransportInternal* transport) override {}
+  void SetDtlsTransport(cricket::DtlsTransportInternal* transport) override {}
   bool Start(int local_port, int remote_port, int max_message_size) override {
     return true;
   }
-  bool OpenStream(int sid) override { return true; }
+  bool OpenStream(int sid, PriorityValue priority) override { return true; }
   bool ResetStream(int sid) override { return true; }
   RTCError SendData(int sid,
                     const SendDataParams& params,
@@ -57,10 +67,10 @@ class FakeCricketSctpTransport : public cricket::SctpTransportInternal {
   bool ReadyToSendData() override { return true; }
   void set_debug_name_for_testing(const char* debug_name) override {}
   int max_message_size() const override { return 0; }
-  absl::optional<int> max_outbound_streams() const override {
+  std::optional<int> max_outbound_streams() const override {
     return max_outbound_streams_;
   }
-  absl::optional<int> max_inbound_streams() const override {
+  std::optional<int> max_inbound_streams() const override {
     return max_inbound_streams_;
   }
   size_t buffered_amount(int sid) const override { return 0; }
@@ -78,8 +88,8 @@ class FakeCricketSctpTransport : public cricket::SctpTransportInternal {
   void set_max_inbound_streams(int streams) { max_inbound_streams_ = streams; }
 
  private:
-  absl::optional<int> max_outbound_streams_;
-  absl::optional<int> max_inbound_streams_;
+  std::optional<int> max_outbound_streams_;
+  std::optional<int> max_inbound_streams_;
   std::function<void()> on_connected_callback_;
 };
 
@@ -104,7 +114,7 @@ class TestSctpTransportObserver : public SctpTransportObserverInterface {
 
   const std::vector<SctpTransportState>& States() { return states_; }
 
-  const SctpTransportInformation LastReceivedInformation() { return info_; }
+  SctpTransportInformation LastReceivedInformation() { return info_; }
 
  private:
   std::vector<SctpTransportState> states_;

@@ -11,20 +11,19 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.tooling.preview.Preview
+import mozilla.components.compose.base.Divider
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.R
 import org.mozilla.fenix.components.menu.compose.header.SubmenuHeader
-import org.mozilla.fenix.compose.Divider
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 import org.mozilla.fenix.theme.Theme
-
-internal const val SAVE_MENU_ROUTE = "save_menu"
 
 @Suppress("LongParameterList")
 @Composable
 internal fun SaveSubmenu(
     isBookmarked: Boolean,
     isPinned: Boolean,
+    isInstallable: Boolean,
     onBackButtonClick: () -> Unit,
     onBookmarkPageMenuClick: () -> Unit,
     onEditBookmarkButtonClick: () -> Unit,
@@ -37,6 +36,9 @@ internal fun SaveSubmenu(
         header = {
             SubmenuHeader(
                 header = stringResource(id = R.string.browser_menu_save),
+                backButtonContentDescription = stringResource(
+                    id = R.string.browser_menu_back_button_content_description,
+                ),
                 onClick = onBackButtonClick,
             )
         },
@@ -58,7 +60,11 @@ internal fun SaveSubmenu(
             Divider(color = FirefoxTheme.colors.borderSecondary)
 
             MenuItem(
-                label = stringResource(id = R.string.browser_menu_add_to_homescreen_2),
+                label = if (isInstallable) {
+                    stringResource(id = R.string.browser_menu_add_app_to_homescreen_2)
+                } else {
+                    stringResource(id = R.string.browser_menu_add_to_homescreen_2)
+                },
                 beforeIconPainter = painterResource(id = R.drawable.mozac_ic_add_to_homescreen_24),
                 onClick = onAddToHomeScreenMenuClick,
             )
@@ -139,6 +145,7 @@ private fun SaveSubmenuPreview() {
             SaveSubmenu(
                 isBookmarked = false,
                 isPinned = false,
+                isInstallable = false,
                 onBackButtonClick = {},
                 onBookmarkPageMenuClick = {},
                 onEditBookmarkButtonClick = {},
@@ -161,6 +168,7 @@ private fun SaveSubmenuPrivatePreview() {
             SaveSubmenu(
                 isBookmarked = false,
                 isPinned = false,
+                isInstallable = true,
                 onBackButtonClick = {},
                 onBookmarkPageMenuClick = {},
                 onEditBookmarkButtonClick = {},

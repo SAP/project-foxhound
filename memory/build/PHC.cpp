@@ -364,8 +364,7 @@ static Delay CheckProbability(int64_t aProb) {
   // Limit delays calculated from prefs to 0x80000000, this is the largest
   // power-of-two that fits in a Delay since it is a uint32_t.
   // The minimum is 2 that way not every allocation goes straight to PHC.
-  return RoundUpPow2(
-      std::min(std::max(aProb, int64_t(2)), int64_t(0x80000000)));
+  return RoundUpPow2(std::clamp(aProb, int64_t(2), int64_t(0x80000000)));
 }
 
 // Maps a pointer to a PHC-specific structure:
@@ -1904,6 +1903,10 @@ inline void MozJemallocPHC::jemalloc_stats_internal(
   size_t bookkeeping = metadata_size();
   aStats->allocated -= bookkeeping;
   aStats->bookkeeping += bookkeeping;
+}
+
+inline void MozJemallocPHC::jemalloc_stats_lite(jemalloc_stats_lite_t* aStats) {
+  MozJemalloc::jemalloc_stats_lite(aStats);
 }
 
 inline void MozJemallocPHC::jemalloc_ptr_info(const void* aPtr,

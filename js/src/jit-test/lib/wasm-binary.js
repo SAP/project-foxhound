@@ -147,8 +147,8 @@ const F32x4RelaxedMaxCode = 0x10e;
 const F64x2RelaxedMinCode = 0x10f;
 const F64x2RelaxedMaxCode = 0x110;
 const I16x8RelaxedQ15MulrSCode = 0x111;
-const I16x8DotI8x16I7x16SCode = 0x112;
-const I32x4DotI8x16I7x16AddSCode = 0x113;
+const I16x8RelaxedDotI8x16I7x16SCode = 0x112;
+const I32x4RelaxedDotI8x16I7x16AddSCode = 0x113;
 
 const FirstInvalidOpcode = 0xc5;
 const LastInvalidOpcode = 0xfa;
@@ -167,10 +167,9 @@ const definedOpcodes =
      ...(wasmExnRefEnabled() ? [0x0a] : []),
      0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
      0x10, 0x11,
-     ...(wasmTailCallsEnabled() ? [0x12, 0x13] : []),
-     ...(wasmGcEnabled() ? [0x14] : []),
-     ...(wasmTailCallsEnabled() &&
-         wasmGcEnabled() ? [0x15] : []),
+     0x12, 0x13,
+     0x14,
+     0x15,
      0x18, 0x19,
      0x1a, 0x1b, 0x1c,
      ...(wasmExnRefEnabled() ? [0x1f] : []),

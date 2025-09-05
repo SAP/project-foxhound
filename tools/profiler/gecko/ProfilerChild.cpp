@@ -20,8 +20,8 @@
 
 namespace mozilla {
 
-/* static */ DataMutexBase<ProfilerChild::ProfilerChildAndUpdate,
-                           baseprofiler::detail::BaseProfilerMutex>
+MOZ_RUNINIT /* static */ DataMutexBase<ProfilerChild::ProfilerChildAndUpdate,
+                                       baseprofiler::detail::BaseProfilerMutex>
     ProfilerChild::sPendingChunkManagerUpdate{
         "ProfilerChild::sPendingChunkManagerUpdate"};
 
@@ -139,6 +139,12 @@ void ProfilerChild::SetupChunkManager() {
       });
 }
 
+/* static */ void ProfilerChild::ClearPendingUpdate() {
+  auto lockedUpdate = sPendingChunkManagerUpdate.Lock();
+  lockedUpdate->mProfilerChild = nullptr;
+  lockedUpdate->mUpdate.Clear();
+}
+
 void ProfilerChild::ResetChunkManager() {
   if (!mChunkManager) {
     return;
@@ -149,9 +155,7 @@ void ProfilerChild::ResetChunkManager() {
   mChunkManager->SetUpdateCallback({});
 
   // Clear the pending update.
-  auto lockedUpdate = sPendingChunkManagerUpdate.Lock();
-  lockedUpdate->mProfilerChild = nullptr;
-  lockedUpdate->mUpdate.Clear();
+  ClearPendingUpdate();
   // And process a final update right now.
   ProcessChunkManagerUpdate(
       ProfileBufferControlledChunkManager::Update(nullptr));
@@ -425,11 +429,18 @@ void ProfilerChild::GatherProfileThreadFunction(
                 parameters->resolver(IPCProfileAndAdditionalInformation{
                     shmem, Some(ProfileGenerationAdditionalInformation{
                                std::move(sharedLibraryInfo)})});
+                // Let's join the gather profile thread now since it's done.
+                // Note that this gets called inside the ProfilerChild thread
+                // and not inside the gather profile thread itself.
+                parameters->profilerChild->JoinGatherProfileThread();
               }))))) {
     // Failed to dispatch the task to the ProfilerChild thread. The IPC cannot
     // be resolved on this thread, so it will never be resolved!
     // And it would be unsafe to modify mGatherProfileProgress; But the parent
     // should notice that's it's not advancing anymore.
+    // If this fails, it usually means that the process is shutting down. This
+    // thread is not joined yet and we can't join it here since we are still in
+    // the thread, but it will happen inside ProfilerChild::ActorDestroy.
   }
 }
 
@@ -445,11 +456,11 @@ mozilla::ipc::IPCResult ProfilerChild::RecvGatherProfile(
   // The GatherProfileThreadFunction thread function will cast its void*
   // argument to already_AddRefed<GatherProfileThreadParameters>.
   parameters.get()->AddRef();
-  PRThread* gatherProfileThread = PR_CreateThread(
+  mGatherProfileThread = PR_CreateThread(
       PR_SYSTEM_THREAD, GatherProfileThreadFunction, parameters.get(),
-      PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_UNJOINABLE_THREAD, 0);
+      PR_PRIORITY_NORMAL, PR_GLOBAL_THREAD, PR_JOINABLE_THREAD, 0);
 
-  if (!gatherProfileThread) {
+  if (!mGatherProfileThread) {
     // Failed to create and start worker thread, resolve with an empty profile.
     mozilla::ipc::Shmem shmem;
     if (AllocShmem(1, &shmem)) {
@@ -478,12 +489,25 @@ mozilla::ipc::IPCResult ProfilerChild::RecvGetGatherProfileProgress(
   return IPC_OK();
 }
 
+void ProfilerChild::JoinGatherProfileThread() {
+  if (!mGatherProfileThread) {
+    // There is no thread running to join.
+    return;
+  }
+
+  PR_JoinThread(mGatherProfileThread);
+  mGatherProfileThread = nullptr;
+}
+
 void ProfilerChild::ActorDestroy(ActorDestroyReason aActorDestroyReason) {
   mDestroyed = true;
+  // Join the profile gathering thread in case it's not exited yet to prevent
+  // any leaks during shutdown.
+  JoinGatherProfileThread();
 }
 
 void ProfilerChild::Destroy() {
-  ResetChunkManager();
+  ClearPendingUpdate();
   if (!mDestroyed) {
     Close();
   }

@@ -230,6 +230,9 @@ MOZ_EXPORT struct wl_display* gdk_wayland_display_get_wl_display(
   return NULL;
 }
 
+MOZ_EXPORT void wl_display_set_max_buffer_size(struct wl_display* display,
+                                               size_t max_buffer_size) {}
+
 MOZ_EXPORT struct xkb_context* xkb_context_new(enum xkb_context_flags flags) {
   return NULL;
 }
@@ -248,6 +251,10 @@ MOZ_EXPORT struct xkb_keymap* xkb_keymap_new_from_string(
   return NULL;
 }
 
+MOZ_EXPORT struct xkb_keymap* xkb_keymap_ref(struct xkb_keymap* keymap) {
+  return NULL;
+}
+
 MOZ_EXPORT void xkb_keymap_unref(struct xkb_keymap* keymap) {}
 
 MOZ_EXPORT const char* xkb_keymap_layout_get_name(struct xkb_keymap* keymap,
@@ -258,4 +265,9 @@ MOZ_EXPORT const char* xkb_keymap_layout_get_name(struct xkb_keymap* keymap,
 MOZ_EXPORT xkb_mod_index_t xkb_keymap_mod_get_index(struct xkb_keymap* keymap,
                                                     const char* name) {
   return XKB_MOD_INVALID;
+}
+
+MOZ_EXPORT int xkb_keymap_key_repeats(struct xkb_keymap* keymap,
+                                      xkb_keycode_t kc) {
+  return 0;
 }

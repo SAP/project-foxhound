@@ -49,7 +49,13 @@ known_extra_args = [
     "ordered_labels",
 ]
 
-# List of all ping-specific args that JOG undertsands.
+# List of all metric-type-specific metadata that JOG understands.
+# We map them to extra_args.
+known_metadata = [
+    "permit_non_commutative_operations_over_ipc",
+]
+
+# List of all ping-specific args that JOG understands.
 known_ping_args = [
     "name",
     "include_client_id",
@@ -59,6 +65,7 @@ known_ping_args = [
     "enabled",
     "schedules_pings",
     "reason_codes",
+    "follows_collection_enabled",
 ]
 
 
@@ -102,6 +109,10 @@ def load_monkeypatches():
     util.get_jinja2_template = get_local_template
 
 
+def sometimes_supports_noncommutative_operations(metric_type_name):
+    return metric_type_name in ("boolean", "labeled_boolean")
+
+
 def output_factory(objs, output_fd, options={}):
     """
     Given a tree of objects, output Rust code to the file-like object `output_fd`.
@@ -126,12 +137,12 @@ def output_factory(objs, output_fd, options={}):
 
     output_fd.write(
         template.render(
-            all_objs=objs,
             common_metric_data_args=common_metric_data_args,
             extra_args=util.extra_args,
             metric_types=metric_types,
             runtime_metric_bit=RUNTIME_METRIC_BIT,
             runtime_ping_bit=RUNTIME_PING_BIT,
+            sometimes_supports_noncommutative_operations=sometimes_supports_noncommutative_operations,
             ID_BITS=ID_BITS,
         )
     )
@@ -202,6 +213,9 @@ def output_file(objs, output_fd, options={}):
             for arg in known_extra_args:
                 if hasattr(metric, arg):
                     extra[arg] = getattr(metric, arg)
+            for meta in known_metadata:
+                if meta in metric.metadata:
+                    extra[meta] = metric.metadata.get(meta)
             if len(extra):
                 metric_arg_list.append(extra)
             dict_cat.append(metric_arg_list)

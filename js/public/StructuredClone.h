@@ -156,6 +156,13 @@ enum class StructuredCloneScope : uint32_t {
   DifferentProcess,
 
   /**
+   * Values greater than this are temporary markers used when the actual scope
+   * is not yet known. The allowed scope will be resolved by the time
+   * readHeader() is complete.
+   */
+  LastResolvedScope = DifferentProcess,
+
+  /**
    * Handle a backwards-compatibility case with IndexedDB (bug 1434308): when
    * reading, this means to treat legacy SameProcess data as if it were
    * DifferentProcess.
@@ -312,6 +319,11 @@ typedef void (*StructuredCloneErrorOp)(JSContext* cx, uint32_t errorid,
  * If this readTransfer() hook is called and produces an object, then the
  * read() hook will *not* be called for the same object, since the main data
  * will only contain a backreference to the already-read object.
+ *
+ * The clone buffer will relinquish ownership of this Transferable if and only
+ * if this hook returns true -- as in, the freeTransfer hook will not be called
+ * on this entry if this hook returns true, but it will still be called if it
+ * returns false.
  */
 typedef bool (*ReadTransferStructuredCloneOp)(
     JSContext* cx, JSStructuredCloneReader* r,
@@ -352,11 +364,13 @@ typedef bool (*TransferStructuredCloneOp)(JSContext* cx,
  *    encountered later and the incomplete serialization is discarded.
  *
  * 2. During deserialization: before an object is Transferred to, an error
- *    is encountered and the incompletely deserialized clone is discarded.
+ *    is encountered and the incompletely deserialized clone is discarded. This
+ *    will happen with internally-implemented Transferables as well as those
+ *    where the readTransfer hook returns false.
  *
  * 3. Serialized data that includes Transferring is never deserialized (eg when
  *    the receiver disappears before reading in the message), and the clone data
- * is destroyed.
+ *    is destroyed.
  *
  */
 typedef void (*FreeTransferStructuredCloneOp)(
@@ -750,6 +764,7 @@ class JS_PUBLIC_API JSAutoStructuredCloneBuffer {
 #define JS_SCERR_WASM_NO_TRANSFER 6
 #define JS_SCERR_NOT_CLONABLE 7
 #define JS_SCERR_NOT_CLONABLE_WITH_COOP_COEP 8
+#define JS_SCERR_TRANSFERABLE_TWICE 9
 
 JS_PUBLIC_API bool JS_ReadUint32Pair(JSStructuredCloneReader* r, uint32_t* p1,
                                      uint32_t* p2);

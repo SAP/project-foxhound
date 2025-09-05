@@ -1,7 +1,9 @@
+use core::mem::size_of;
+
 use thiserror::Error;
 use wgt::AdapterInfo;
 
-pub const HEADER_LENGTH: usize = std::mem::size_of::<PipelineCacheHeader>();
+pub const HEADER_LENGTH: usize = size_of::<PipelineCacheHeader>();
 
 #[derive(Debug, PartialEq, Eq, Clone, Error)]
 #[non_exhaustive]
@@ -112,7 +114,7 @@ pub fn add_cache_header(
 
 const MAGIC: [u8; 8] = *b"WGPUPLCH";
 const HEADER_VERSION: u32 = 1;
-const ABI: u32 = std::mem::size_of::<*const ()>() as u32;
+const ABI: u32 = size_of::<*const ()>() as u32;
 
 /// The value used to fill [`PipelineCacheHeader::hash_space`]
 ///
@@ -179,10 +181,7 @@ impl PipelineCacheHeader {
         let data_size = reader.read_u64()?;
         let data_hash = reader.read_u64()?;
 
-        assert_eq!(
-            reader.total_read,
-            std::mem::size_of::<PipelineCacheHeader>()
-        );
+        assert_eq!(reader.total_read, size_of::<PipelineCacheHeader>());
 
         Some((
             PipelineCacheHeader {
@@ -278,7 +277,7 @@ impl<'a> Writer<'a> {
         if N > self.data.len() {
             return None;
         }
-        let data = std::mem::take(&mut self.data);
+        let data = core::mem::take(&mut self.data);
         let (start, data) = data.split_at_mut(N);
         self.data = data;
         start.copy_from_slice(array);
@@ -298,6 +297,7 @@ impl<'a> Writer<'a> {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{string::String, vec::Vec};
     use wgt::AdapterInfo;
 
     use crate::pipeline_cache::{PipelineCacheValidationError as E, HEADER_LENGTH};
@@ -485,7 +485,7 @@ mod tests {
         let cache = cache
             .into_iter()
             .flatten()
-            .chain(std::iter::repeat(0u8).take(100))
+            .chain(core::iter::repeat(0u8).take(100))
             .collect::<Vec<u8>>();
         let validation_result = super::validate_pipeline_cache(&cache, &ADAPTER, VALIDATION_KEY);
         let expected: &[u8] = &[0; 100];
@@ -506,7 +506,7 @@ mod tests {
         let cache = cache
             .into_iter()
             .flatten()
-            .chain(std::iter::repeat(0u8).take(200))
+            .chain(core::iter::repeat(0u8).take(200))
             .collect::<Vec<u8>>();
         let validation_result = super::validate_pipeline_cache(&cache, &ADAPTER, VALIDATION_KEY);
         assert_eq!(validation_result, Err(E::Extended));

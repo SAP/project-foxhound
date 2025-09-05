@@ -117,7 +117,32 @@ __declspec(dllexport) MOZ_NAKED void MovImm64() {
       "nop;nop;nop");
 }
 
-#    if !defined(MOZ_CODE_COVERAGE)
+static unsigned char __attribute__((used)) gGlobalValue = 0;
+
+__declspec(dllexport) MOZ_NAKED void RexCmpRipRelativeBytePtr() {
+  asm volatile(
+      "cmpb %sil, gGlobalValue(%rip);"
+      "nop;nop;nop;nop;nop;nop;nop;nop;");
+}
+
+// A valid function that uses "cmp byte ptr [rip + offset], sil". It returns
+// true if and only if gGlobalValue is equal to aValue.
+__declspec(dllexport) MOZ_NAKED bool IsEqualToGlobalValue(
+    unsigned char aValue) {
+  asm volatile(
+      "xorl %eax, %eax;"
+      "pushq %rsi;"
+      "pushq %rcx;"
+      "popq %rsi;"
+      "cmpb %sil, gGlobalValue(%rip);"
+      "nop;"
+      // end of 13 first bytes
+      "movq $1, %rsi;"
+      "cmoveq %rsi, %rax;"
+      "popq %rsi;"
+      "retq;");
+}
+
 // This code reproduces bug 1798787: it uses the same prologue, the same unwind
 // info, and it has a call instruction that starts within the 13 first bytes.
 MOZ_NAKED void DetouredCallCode(uintptr_t aCallee) {
@@ -157,7 +182,6 @@ MOZ_NAKED __declspec(dllexport noinline) void DetouredCallJumper(
   // use a zero offset and patch it before the test.
   asm volatile("jmpq *0(%rip)");
 }
-#    endif  // !defined(MOZ_CODE_COVERAGE)
 
 #  elif defined(_M_IX86)
 constexpr uintptr_t JumpDestination = 0x7fff0000;

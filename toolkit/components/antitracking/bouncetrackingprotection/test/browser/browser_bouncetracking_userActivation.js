@@ -7,6 +7,10 @@
  * Tests that user activation is correctly recorded for BTP.
  */
 
+let bounceTrackingProtection = Cc[
+  "@mozilla.org/bounce-tracking-protection;1"
+].getService(Ci.nsIBounceTrackingProtection);
+
 function assertNoUserActivationHosts() {
   is(
     bounceTrackingProtection.testGetUserActivationHosts({}).length,
@@ -79,7 +83,15 @@ async function runIframeTest(useIframeSameSite) {
   bounceTrackingProtection.clearAll();
 }
 
-add_setup(function () {
+add_setup(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [
+      [
+        "privacy.bounceTrackingProtection.mode",
+        Ci.nsIBounceTrackingProtection.MODE_ENABLED,
+      ],
+    ],
+  });
   bounceTrackingProtection.clearAll();
 });
 

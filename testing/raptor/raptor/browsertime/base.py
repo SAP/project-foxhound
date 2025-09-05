@@ -186,16 +186,16 @@ class Browsertime(Perftest):
                 # setup once all chrome versions use the new artifact setup.
                 cd_extracted_names_115 = {
                     "windows": str(
-                        pathlib.Path("{}chromedriver-win64", "chromedriver.exe")
+                        pathlib.Path("{}cft-chromedriver-win64", "chromedriver.exe")
                     ),
                     "mac-x86_64": str(
-                        pathlib.Path("{}chromedriver-mac-x64", "chromedriver")
+                        pathlib.Path("{}cft-chromedriver-mac", "chromedriver")
                     ),
                     "mac-aarch64": str(
-                        pathlib.Path("{}chromedriver-mac-arm64", "chromedriver")
+                        pathlib.Path("{}cft-chromedriver-mac", "chromedriver")
                     ),
                     "default": str(
-                        pathlib.Path("{}chromedriver-linux64", "chromedriver")
+                        pathlib.Path("{}cft-chromedriver-linux", "chromedriver")
                     ),
                 }
 
@@ -255,6 +255,10 @@ class Browsertime(Perftest):
         # Stop the benchmark server if we're running a benchmark test
         if self.benchmark:
             self.benchmark.stop_http_server()
+
+        if test.get("support_class", None):
+            LOG.info("Test support class is cleaning up...")
+            test.get("support_class").clean_up()
 
     def check_for_crashes(self):
         super(Browsertime, self).check_for_crashes()
@@ -390,9 +394,11 @@ class Browsertime(Perftest):
             # Raptor's `post startup delay` is settle time after the browser has started
             "--browsertime.post_startup_delay",
             # If we are on the extra profiler run, limit the startup delay to 1 second.
-            str(min(self.post_startup_delay, 1000))
-            if extra_profiler_run
-            else str(self.post_startup_delay),
+            (
+                str(min(self.post_startup_delay, 1000))
+                if extra_profiler_run
+                else str(self.post_startup_delay)
+            ),
             "--iterations",
             str(browser_cycles),
             # running browsertime test in chimera mode
@@ -405,15 +411,23 @@ class Browsertime(Perftest):
             "--browsertime.moz_fetch_dir",
             os.environ.get("MOZ_FETCHES_DIR", "None"),
             "--browsertime.expose_profiler",
-            "true"
-            if self._expose_browser_profiler(extra_profiler_run, test)
-            else "false",
+            (
+                "true"
+                if self._expose_browser_profiler(extra_profiler_run, test)
+                else "false"
+            ),
         ]
 
         if test.get("perfstats") == "true":
             # Take a non-standard approach for perfstats as we
             # want to enable them everywhere shortly (bug 1770152)
             self.results_handler.perfstats = True
+
+        if test.get("support_class", None):
+            # Add a flag to denote when a test uses a support class.
+            # Used to prevent running cpuTime/wallClock measurements
+            # on tests that don't support it yet
+            browsertime_options.extend(["--browsertime.support_class", "true"])
 
         if self.config["app"] in ("fenix",):
             # Fenix can take a lot of time to startup
@@ -552,15 +566,15 @@ class Browsertime(Perftest):
         if self.config["app"] in GECKO_PROFILER_APPS and (
             self.config["gecko_profile"] or extra_profiler_run
         ):
-            self.config[
-                "browsertime_result_dir"
-            ] = self.results_handler.result_dir_for_test(test)
+            self.config["browsertime_result_dir"] = (
+                self.results_handler.result_dir_for_test(test)
+            )
             self._compose_gecko_profiler_cmds(test, priority1_options)
 
         elif self.config["app"] in TRACE_APPS and extra_profiler_run:
-            self.config[
-                "browsertime_result_dir"
-            ] = self.results_handler.result_dir_for_test(test)
+            self.config["browsertime_result_dir"] = (
+                self.results_handler.result_dir_for_test(test)
+            )
             self._compose_chrome_trace_cmds(
                 test, priority1_options, browsertime_options
             )
@@ -958,6 +972,18 @@ class Browsertime(Perftest):
             new_path = os.pathsep.join([ffmpeg_dir, old_path])
             env["PATH"] = new_path
 
+        # Used to enable usage of browsertime packages within user scripts
+        if self.config["run_local"]:
+            env["BROWSERTIME_ROOT"] = str(
+                pathlib.Path(
+                    os.environ["MOZ_DEVELOPER_REPO_DIR"], "tools", "browsertime"
+                )
+            )
+        else:
+            env["BROWSERTIME_ROOT"] = str(
+                pathlib.Path(os.environ["MOZ_FETCHES_DIR"], "browsertime")
+            )
+
         LOG.info("PATH: {}".format(env["PATH"]))
 
         try:
@@ -1040,7 +1066,10 @@ class Browsertime(Perftest):
                         "USB_POWER_METER_SERIAL_NUMBER", ""
                     )
 
-                cmd.extend(["--android.usbPowerTesting", "true"])
+                if test.get("type") == "benchmark":
+                    cmd.extend(["--browsertime.power_test", "true"])
+                else:
+                    cmd.extend(["--android.usbPowerTesting", "true"])
 
             mozprocess.run_and_wait(
                 cmd,

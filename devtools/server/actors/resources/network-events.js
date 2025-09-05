@@ -241,10 +241,6 @@ class NetworkEventWatcher {
    * Called by NetworkObserver in order to know if the channel should be ignored
    */
   shouldIgnoreChannel(channel) {
-    // Bug 972821. Ignore data channels, until support in DevTools is implemented.
-    if (channel instanceof Ci.nsIDataChannel) {
-      return true;
-    }
     // First of all, check if the channel matches the watcherActor's session.
     const filters = { sessionContext: this.watcherActor.sessionContext };
     if (!lazy.NetworkUtils.matchRequest(channel, filters)) {
@@ -307,7 +303,6 @@ class NetworkEventWatcher {
       innerWindowId: resource.innerWindowId,
       resourceId: resource.resourceId,
       isBlocked,
-      isFileRequest: resource.isFileRequest,
       receivedUpdates: [],
       resourceUpdates: {
         // Requests already come with request cookies and headers, so those
@@ -352,6 +347,7 @@ class NetworkEventWatcher {
         resourceUpdates.httpVersion = updateResource.httpVersion;
         resourceUpdates.status = updateResource.status;
         resourceUpdates.statusText = updateResource.statusText;
+        resourceUpdates.earlyHintsStatus = updateResource.earlyHintsStatus;
         resourceUpdates.remoteAddress = updateResource.remoteAddress;
         resourceUpdates.remotePort = updateResource.remotePort;
         // The mimetype is only set when then the contentType is available
@@ -366,6 +362,9 @@ class NetworkEventWatcher {
 
         resourceUpdates.responseHeadersAvailable = true;
         resourceUpdates.responseCookiesAvailable = true;
+        if (resourceUpdates.earlyHintsStatus.length) {
+          resourceUpdates.earlyHintsResponseHeadersAvailable = true;
+        }
         break;
       case "responseContent":
         resourceUpdates.contentSize = updateResource.contentSize;
@@ -386,11 +385,10 @@ class NetworkEventWatcher {
     resourceUpdates[`${updateResource.updateType}Available`] = true;
     receivedUpdates.push(updateResource.updateType);
 
-    const isComplete = networkEvent.isFileRequest
-      ? receivedUpdates.includes("responseStart")
-      : receivedUpdates.includes("eventTimings") &&
-        receivedUpdates.includes("responseContent") &&
-        receivedUpdates.includes("securityInfo");
+    const isComplete =
+      receivedUpdates.includes("eventTimings") &&
+      receivedUpdates.includes("responseContent") &&
+      receivedUpdates.includes("securityInfo");
 
     if (isComplete) {
       this._emitUpdate(networkEvent);

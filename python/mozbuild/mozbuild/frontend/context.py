@@ -514,6 +514,13 @@ class TargetCompileFlags(BaseCompileFlags):
     def _optimize_flags(self):
         if not self._context.config.substs.get("MOZ_OPTIMIZE"):
             return []
+        # js/src/* have their own optimization flag when not in js standalone
+        # mode.
+        if not self._context.config.substs.get("JS_STANDALONE"):
+            relsrcdir = self._context.relsrcdir
+            if relsrcdir == "js/src" or relsrcdir.startswith("js/src/"):
+                return self._context.config.substs.get("MOZ_JS_OPTIMIZE_FLAGS")
+
         return self._context.config.substs.get("MOZ_OPTIMIZE_FLAGS")
 
     def __setitem__(self, key, value):
@@ -1731,7 +1738,7 @@ VARIABLES = {
         """Whether the library in this directory is a static library.
         """,
     ),
-    "USE_STATIC_LIBS": (
+    "USE_STATIC_MSVCRT": (
         bool,
         bool,
         """Whether the code in this directory is a built against the static
@@ -2240,12 +2247,6 @@ VARIABLES = {
         """List of manifest files defining MozPerftest performance tests.
         """,
     ),
-    "CRAMTEST_MANIFESTS": (
-        ManifestparserManifestList,
-        list,
-        """List of manifest files defining cram unit tests.
-        """,
-    ),
     "TELEMETRY_TESTS_CLIENT_MANIFESTS": (
         ManifestparserManifestList,
         list,
@@ -2597,7 +2598,7 @@ VARIABLES = {
 
 # Sanity check: we don't want any variable above to have a list as storage type.
 for name, (storage_type, input_types, docs) in VARIABLES.items():
-    if storage_type == list:
+    if storage_type is list:
         raise RuntimeError('%s has a "list" storage type. Use "List" instead.' % name)
 
 # Set of variables that are only allowed in templates:
@@ -2927,9 +2928,11 @@ SPECIAL_VARIABLES = {
         """,
     ),
     "TEST_DIRS": (
-        lambda context: context["DIRS"]
-        if context.config.substs.get("ENABLE_TESTS")
-        else TestDirsPlaceHolder,
+        lambda context: (
+            context["DIRS"]
+            if context.config.substs.get("ENABLE_TESTS")
+            else TestDirsPlaceHolder
+        ),
         list,
         """Like DIRS but only for directories that contain test-only code.
 
@@ -3109,6 +3112,7 @@ DEPRECATION_HINTS = {
 
             DIST_FILES += [ 'foo' ]
     """,
+    "USE_STATIC_LIBS": "Please use the USE_STATIC_MSVCRT variable instead.",
 }
 
 # Make sure that all template variables have a deprecation hint.

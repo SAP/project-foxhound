@@ -6,7 +6,7 @@
 
 "use strict";
 
-add_task(async function () {
+add_task(async function testInlinePreviews() {
   await pushPref("devtools.debugger.features.inline-preview", true);
 
   const dbg = await initDebugger(
@@ -66,6 +66,43 @@ add_task(async function () {
   // Check preview of event ( event.target should be clickable )
   // onBtnClick function in inline-preview.js
   await checkInspectorIcon(dbg);
+
+  await dbg.toolbox.closeToolbox();
+});
+
+add_task(async function testInlinePreviewsWithExplicitResourceManagement() {
+  await pushPref("devtools.debugger.features.inline-preview", true);
+  // javascript.options.experimental.explicit_resource_management is set to true, but it's
+  // only supported on Nightly at the moment, so only check for SuppressedError if
+  // they're supported.
+  if (!AppConstants.ENABLE_EXPLICIT_RESOURCE_MANAGEMENT) {
+    return;
+  }
+  const dbg = await initDebugger("doc-inline-preview.html");
+
+  const onPaused = waitForPaused(dbg);
+  dbg.commands.scriptCommand.execute(
+    `
+    function explicitResourceManagement() {
+      using erm = {
+        [Symbol.dispose]() {},
+        foo: 42
+      };
+      console.log(erm.foo);
+      debugger;
+    }; explicitResourceManagement();`,
+    {}
+  );
+  await onPaused;
+
+  await checkInlinePreview(dbg, "explicitResourceManagement", [
+    {
+      identifier: "erm:",
+      value: `Object { foo: 42, Symbol("Symbol.dispose"): Symbol.dispose() }`,
+    },
+  ]);
+
+  await dbg.toolbox.closeToolbox();
 });
 
 async function checkInlinePreview(dbg, fnName, inlinePreviews) {

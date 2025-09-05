@@ -13,6 +13,7 @@
 # before you make any changes to this file.
 
 import codecs
+import io
 import json
 import os
 import sys
@@ -45,6 +46,8 @@ class GeckoInstance(object):
         # and causing false-positive test failures. See bug 1176798, bug 1177018,
         # bug 1210465.
         "apz.content_response_timeout": 60000,
+        # Make sure error page is not shown for blank pages with 4xx or 5xx response code
+        "browser.http.blank_page_with_error_response.enabled": True,
         # Don't pull weather data from the network
         "browser.newtabpage.activity-stream.discoverystream.region-weather-config": "",
         # Don't pull wallpaper content from the network
@@ -82,8 +85,8 @@ class GeckoInstance(object):
         # No slow script dialogs
         "dom.max_chrome_script_run_time": 0,
         "dom.max_script_run_time": 0,
-        # Disable location change rate limitation
-        "dom.navigation.locationChangeRateLimit.count": 0,
+        # Disable navigation change rate limitation
+        "dom.navigation.navigationRateLimit.count": 0,
         # DOM Push
         "dom.push.connection.enabled": False,
         # Screen Orientation API
@@ -161,6 +164,8 @@ class GeckoInstance(object):
         "security.notification_enable_delay": 0,
         # Do not download intermediate certificates
         "security.remote_settings.intermediates.enabled": False,
+        # Disable logging for remote settings
+        "services.settings.loglevel": "off",
         # Ensure blocklist updates don't hit the network
         "services.settings.server": "data:,#remote-settings-dummy/v1",
         # Disable password capture, so that tests that include forms aren"t
@@ -370,8 +375,15 @@ class GeckoInstance(object):
         }
 
         if self.gecko_log == "-":
-            if hasattr(sys.stdout, "buffer"):
+            if getattr(sys.stdout, "encoding") == "utf-8":
+                process_args["stream"] = sys.stdout
+            elif hasattr(sys.stdout, "buffer"):
                 process_args["stream"] = codecs.getwriter("utf-8")(sys.stdout.buffer)
+            elif isinstance(sys.stdout, io.TextIOBase):
+                # If sys.stdout expects unicode strings, we can't wrap it because the
+                # wrapper will write byte strings. This can happen when e.g. tests
+                # replace sys.stdout with a io.StringIO().
+                process_args["stream"] = sys.stdout
             else:
                 process_args["stream"] = codecs.getwriter("utf-8")(sys.stdout)
         else:
@@ -400,7 +412,7 @@ class GeckoInstance(object):
         args = {
             "binary": self.binary,
             "profile": self.profile,
-            "cmdargs": ["-no-remote", "-marionette"] + self.app_args,
+            "cmdargs": ["-marionette"] + self.app_args,
             "env": env,
             "symbols_path": self.symbols_path,
             "process_args": process_args,

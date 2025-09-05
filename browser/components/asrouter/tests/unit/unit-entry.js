@@ -1,13 +1,11 @@
 import {
-  EventEmitter,
   FakePrefs,
   FakensIPrefService,
   GlobalOverrider,
   FakeConsoleAPI,
   FakeLogger,
-} from "newtab/test/unit/utils";
+} from "tests/unit/utils";
 import Adapter from "enzyme-adapter-react-16";
-import { chaiAssertions } from "newtab/test/schemas/pings";
 import chaiJsonSchema from "chai-json-schema";
 import enzyme from "enzyme";
 import FxMSCommonSchema from "../../content-src/schemas/FxMSCommon.schema.json";
@@ -38,7 +36,6 @@ const files = req.keys();
 // This exposes sinon assertions to chai.assert
 sinon.assert.expose(assert, { prefix: "" });
 
-chai.use(chaiAssertions);
 chai.use(chaiJsonSchema);
 chai.tv4.addSchema("file:///FxMSCommon.schema.json", FxMSCommonSchema);
 
@@ -119,9 +116,6 @@ const TEST_GLOBAL = {
   AppConstants: {
     MOZILLA_OFFICIAL: true,
     MOZ_APP_VERSION: "69.0a1",
-    isChinaRepack() {
-      return false;
-    },
     isPlatformAndVersionAtMost() {
       return false;
     },
@@ -162,13 +156,9 @@ const TEST_GLOBAL = {
     defineLazyGetter(object, name, f) {
       updateGlobalOrObject(object)[name] = f();
     },
-    defineModuleGetter: updateGlobalOrObject,
     defineESModuleGetters: updateGlobalOrObject,
     generateQI() {
       return {};
-    },
-    import() {
-      return global;
     },
     importESModule() {
       return global;
@@ -224,17 +214,6 @@ const TEST_GLOBAL = {
     "@mozilla.org/io/string-input-stream;1": {
       createInstance() {
         return {};
-      },
-    },
-    "@mozilla.org/security/hash;1": {
-      createInstance() {
-        return {
-          init() {},
-          updateFromStream() {},
-          finish() {
-            return "0";
-          },
-        };
       },
     },
     "@mozilla.org/updates/update-checker;1": { createInstance() {} },
@@ -423,12 +402,6 @@ const TEST_GLOBAL = {
       removeObserver() {},
       notifyObservers() {},
     },
-    telemetry: {
-      setEventRecordingEnabled: () => {},
-      recordEvent: _eventDetails => {},
-      scalarSet: () => {},
-      keyedScalarAdd: () => {},
-    },
     uuid: {
       generateUUID() {
         return "{foo-123-foo}";
@@ -504,7 +477,6 @@ const TEST_GLOBAL = {
   },
   XPCOMUtils: {
     defineLazyGlobalGetters: updateGlobalOrObject,
-    defineLazyModuleGetters: updateGlobalOrObject,
     defineLazyServiceGetter: updateGlobalOrObject,
     defineLazyServiceGetters: updateGlobalOrObject,
     defineLazyPreferenceGetter(object, name) {
@@ -514,7 +486,6 @@ const TEST_GLOBAL = {
       return {};
     },
   },
-  EventEmitter,
   ShellService: {
     doesAppNeedPin: () => false,
     isDefaultBrowser: () => true,
@@ -605,6 +576,11 @@ const TEST_GLOBAL = {
   getFxAccountsSingleton() {},
   AboutNewTab: {},
   Glean: {
+    messagingExperiments: {
+      reachCfr: {
+        record() {},
+      },
+    },
     newtab: {
       opened: {
         record() {},

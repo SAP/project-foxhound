@@ -78,7 +78,7 @@ namespace xsimd
         XSIMD_INLINE batch<T, A> extract_pair(batch<T, A> const& self, batch<T, A> const& other, std::size_t i, requires_arch<ssse3>) noexcept
         {
             constexpr std::size_t size = batch<T, A>::size;
-            assert(0 <= i && i < size && "index in bounds");
+            assert(i < size && "index in bounds");
             return detail::extract_pair(self, other, i, ::xsimd::detail::make_index_sequence<size>());
         }
 
@@ -105,16 +105,16 @@ namespace xsimd
             }
         }
 
-        // rotate_right
+        // rotate_left
         template <size_t N, class A>
-        XSIMD_INLINE batch<uint16_t, A> rotate_right(batch<uint16_t, A> const& self, requires_arch<ssse3>) noexcept
+        XSIMD_INLINE batch<uint16_t, A> rotate_left(batch<uint16_t, A> const& self, requires_arch<ssse3>) noexcept
         {
             return _mm_alignr_epi8(self, self, N);
         }
         template <size_t N, class A>
-        XSIMD_INLINE batch<int16_t, A> rotate_right(batch<int16_t, A> const& self, requires_arch<ssse3>) noexcept
+        XSIMD_INLINE batch<int16_t, A> rotate_left(batch<int16_t, A> const& self, requires_arch<ssse3>) noexcept
         {
-            return bitwise_cast<int16_t>(rotate_right<N, A>(bitwise_cast<uint16_t>(self), ssse3 {}));
+            return bitwise_cast<int16_t>(rotate_left<N, A>(bitwise_cast<uint16_t>(self), ssse3 {}));
         }
 
         // swizzle (dynamic mask)

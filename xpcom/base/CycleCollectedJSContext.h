@@ -108,11 +108,11 @@ class FinalizationRegistryCleanup {
   explicit FinalizationRegistryCleanup(CycleCollectedJSContext* aContext);
   void Init();
   void Destroy();
-  void QueueCallback(JSFunction* aDoCleanup, JSObject* aIncumbentGlobal);
+  void QueueCallback(JSFunction* aDoCleanup, JSObject* aHostDefinedData);
   MOZ_CAN_RUN_SCRIPT void DoCleanup();
 
  private:
-  static void QueueCallback(JSFunction* aDoCleanup, JSObject* aIncumbentGlobal,
+  static void QueueCallback(JSFunction* aDoCleanup, JSObject* aHostDefinedData,
                             void* aData);
 
   class CleanupRunnable;
@@ -279,17 +279,32 @@ class CycleCollectedJSContext : dom::PerThreadAtomCache, private JS::JobQueue {
     MOZ_ASSERT_UNREACHABLE("Not supported");
   }
 
+  // These two functions control a special flag variable which lets us turn
+  // tracing on and off from a thread other than this JSContext's main thread.
+  // This is useful because we want to be able to start tracing many threads
+  // all at once from the Gecko Profiler in Firefox.
+  //
+  // NOTE: the caller must ensure that this CycleCollectedJSContext is not
+  // being destroyed when this is called. At the time of this API being added,
+  // the only consumer is the Gecko Profiler, which guarantees this via a mutex
+  // around unregistering the context, which always occurs before the context
+  // is destroyed.
+  void BeginExecutionTracingAsync();
+  void EndExecutionTracingAsync();
+
  private:
   // JS::JobQueue implementation: see js/public/Promise.h.
   // SpiderMonkey uses some of these methods to enqueue promise resolution jobs.
   // Others protect the debuggee microtask queue from the debugger's
   // interruptions; see the comments on JS::AutoDebuggerJobQueueInterruption for
   // details.
-  JSObject* getIncumbentGlobal(JSContext* cx) override;
+  bool getHostDefinedData(JSContext* cx,
+                          JS::MutableHandle<JSObject*> aData) const override;
+
   bool enqueuePromiseJob(JSContext* cx, JS::Handle<JSObject*> promise,
                          JS::Handle<JSObject*> job,
                          JS::Handle<JSObject*> allocationSite,
-                         JS::Handle<JSObject*> incumbentGlobal) override;
+                         JS::Handle<JSObject*> hostDefinedData) override;
   // MOZ_CAN_RUN_SCRIPT_BOUNDARY for now so we don't have to change SpiderMonkey
   // headers.  The caller presumably knows this can run script (like everything
   // in SpiderMonkey!) and will deal.

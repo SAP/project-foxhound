@@ -71,6 +71,12 @@ support-files = [
   "file_with[funny_name.webm^headers^",
 ]
 
+["browser_errorpage_attachment.js"]
+support-files = [
+  "blank.html",
+  "emptyErrorPage.sjs",
+]
+
 ["browser_extension_correction.js"]
 support-files = [
   "file_as.exe",
@@ -103,7 +109,10 @@ support-files = ["file_pdf_binary_octet_stream.pdf"]
 support-files = ["file_pdf_binary_octet_stream.pdf"]
 
 ["browser_open_internal_choice_persistence.js"]
-skip-if = ["apple_silicon"] # bug 1752482
+skip-if = [
+   "os == 'mac' && os_version == '11.20' && arch == 'aarch64'", #bug 1752482
+   "os == 'mac' && os_version == '10.15' && processor == 'x86_64'", #Bug 1776017
+]
 support-files = [
   "file_pdf_application_pdf.pdf",
   "file_pdf_application_pdf.pdf^headers^",

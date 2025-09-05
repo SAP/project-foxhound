@@ -29,14 +29,14 @@ Requirements
 1.1 Install Python
 ~~~~~~~~~~~~~~~~~~
 
-To build Firefox, it's necessary to have a Python of version 3.6 or later
+To build Firefox, it's necessary to have a Python of version 3.8 or later
 installed. Python 2 is no longer required to build Firefox, although it is still
 required for running some kinds of tests. Additionally, you will probably need
 Python development files as well to install some pip packages.
 
 You should be able to install Python using your system package manager:
 
--  For Debian-based Linux (such as Ubuntu): ``sudo apt-get install curl python3 python3-pip``
+-  For Debian-based Linux (such as Ubuntu): ``sudo apt update && sudo apt install curl python3 python3-pip``
 -  For Fedora Linux: ``sudo dnf install python3 python3-pip``
 
 If you need a version of Python that your package manager doesn't have (e.g.:
@@ -94,6 +94,11 @@ the interactive setup process.
 .. code-block:: shell
 
     curl https://hg.mozilla.org/mozilla-central/raw-file/default/python/mozboot/bin/bootstrap.py -O
+
+    # To use Git as your VCS
+    python3 bootstrap.py --vcs=git
+
+    # To use Mercurial as your VCS
     python3 bootstrap.py
 
 .. note::

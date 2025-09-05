@@ -13,6 +13,7 @@
 #include "mozilla/Atomics.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/layers/LayersSurfaces.h"
+#include "mozilla/layers/OverlayInfo.h"
 #include "mozilla/RefPtr.h"
 #include "mozilla/webrender/webrender_ffi.h"
 #include "mozilla/webrender/WebRenderTypes.h"
@@ -40,6 +41,7 @@ class RenderMacIOSurfaceTextureHost;
 class RenderBufferTextureHost;
 class RenderTextureHostSWGL;
 class RenderTextureHostWrapper;
+class RenderDMABUFTextureHost;
 
 void ActivateBindAndTexParameteri(gl::GLContext* aGL, GLenum aActiveTexture,
                                   GLenum aBindTarget, GLuint aBindTexture);
@@ -56,6 +58,9 @@ class RenderTextureHostUsageInfo final {
   bool VideoOverlayDisabled() { return mVideoOverlayDisabled; }
   void DisableVideoOverlay() { mVideoOverlayDisabled = true; }
 
+  void OnVideoPresent(int aFrameId, uint32_t aDurationMs);
+  void OnCompositorEndFrame(int aFrameId, uint32_t aDurationMs);
+
   const TimeStamp mCreationTimeStamp;
 
  protected:
@@ -63,6 +68,10 @@ class RenderTextureHostUsageInfo final {
 
   // RenderTextureHost prefers to disable video overlay.
   Atomic<bool> mVideoOverlayDisabled{false};
+
+  int mVideoPresentFrameId = 0;
+  int mSlowPresentCount = 0;
+  int mSlowCommitCount = 0;
 };
 
 class RenderTextureHost {
@@ -89,9 +98,7 @@ class RenderTextureHost {
   virtual void UnlockSWGL() {}
 
   virtual RefPtr<layers::TextureSource> CreateTextureSource(
-      layers::TextureSourceProvider* aProvider) {
-    return nullptr;
-  }
+      layers::TextureSourceProvider* aProvider);
 
   virtual void ClearCachedResources() {}
 
@@ -146,6 +153,10 @@ class RenderTextureHost {
     return nullptr;
   }
 
+  virtual RenderDMABUFTextureHost* AsRenderDMABUFTextureHost() {
+    return nullptr;
+  }
+
   virtual void Destroy();
 
   virtual void SetIsSoftwareDecodedVideo() {
@@ -168,13 +179,6 @@ class RenderTextureHost {
 
  protected:
   virtual ~RenderTextureHost();
-
-  // Returns the UV coordinates to be used when sampling the texture, in pixels.
-  // For most implementations these will be (0, 0) and (size.x, size.y), but
-  // some texture types (such as RenderAndroidSurfaceTextureHost) require an
-  // additional transform to be applied to the coordinates.
-  virtual std::pair<gfx::Point, gfx::Point> GetUvCoords(
-      gfx::IntSize aTextureSize) const;
 
   bool mIsFromDRMSource;
 

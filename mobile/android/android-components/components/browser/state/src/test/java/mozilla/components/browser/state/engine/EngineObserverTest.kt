@@ -38,9 +38,6 @@ import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.concept.engine.mediasession.MediaSession
 import mozilla.components.concept.engine.permission.PermissionRequest
 import mozilla.components.concept.engine.prompt.PromptRequest
-import mozilla.components.concept.engine.shopping.ProductAnalysis
-import mozilla.components.concept.engine.shopping.ProductAnalysisStatus
-import mozilla.components.concept.engine.shopping.ProductRecommendation
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.translate.TranslationOptions
@@ -50,6 +47,7 @@ import mozilla.components.support.test.libstate.ext.waitUntilIdle
 import mozilla.components.support.test.middleware.CaptureActionsMiddleware
 import mozilla.components.support.test.mock
 import mozilla.components.support.test.whenever
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -85,45 +83,8 @@ class EngineObserverTest {
                 onResult: (Boolean) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
-            override fun requestProductAnalysis(
-                url: String,
-                onResult: (ProductAnalysis) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-
-            override fun requestProductRecommendations(
-                url: String,
-                onResult: (List<ProductRecommendation>) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reanalyzeProduct(
-                url: String,
-                onResult: (String) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun requestAnalysisStatus(
-                url: String,
-                onResult: (ProductAnalysisStatus) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendClickAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendImpressionAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendPlacementAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reportBackInStock(
-                url: String,
-                onResult: (String) -> Unit,
+            override fun getWebCompatInfo(
+                onResult: (JSONObject) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
             override fun requestTranslate(
@@ -159,6 +120,7 @@ class EngineObserverTest {
                 parent: EngineSession?,
                 flags: LoadUrlFlags,
                 additionalHeaders: Map<String, String>?,
+                originalInput: String?,
             ) {
                 notifyObservers { onLocationChange(url, false) }
                 notifyObservers { onProgress(100) }
@@ -206,45 +168,8 @@ class EngineObserverTest {
                 onResult: (Boolean) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
-            override fun requestProductAnalysis(
-                url: String,
-                onResult: (ProductAnalysis) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-
-            override fun requestProductRecommendations(
-                url: String,
-                onResult: (List<ProductRecommendation>) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reanalyzeProduct(
-                url: String,
-                onResult: (String) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun requestAnalysisStatus(
-                url: String,
-                onResult: (ProductAnalysisStatus) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendClickAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendImpressionAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendPlacementAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reportBackInStock(
-                url: String,
-                onResult: (String) -> Unit,
+            override fun getWebCompatInfo(
+                onResult: (JSONObject) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
             override fun requestTranslate(
@@ -275,6 +200,7 @@ class EngineObserverTest {
                 parent: EngineSession?,
                 flags: LoadUrlFlags,
                 additionalHeaders: Map<String, String>?,
+                originalInput: String?,
             ) {
                 if (url.startsWith("https://")) {
                     notifyObservers { onSecurityChange(true, "host", "issuer") }
@@ -323,46 +249,8 @@ class EngineObserverTest {
                 onResult: (Boolean) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
-
-            override fun requestProductRecommendations(
-                url: String,
-                onResult: (List<ProductRecommendation>) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-
-            override fun requestProductAnalysis(
-                url: String,
-                onResult: (ProductAnalysis) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reanalyzeProduct(
-                url: String,
-                onResult: (String) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun requestAnalysisStatus(
-                url: String,
-                onResult: (ProductAnalysisStatus) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendClickAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendImpressionAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun sendPlacementAttributionEvent(
-                aid: String,
-                onResult: (Boolean) -> Unit,
-                onException: (Throwable) -> Unit,
-            ) {}
-            override fun reportBackInStock(
-                url: String,
-                onResult: (String) -> Unit,
+            override fun getWebCompatInfo(
+                onResult: (JSONObject) -> Unit,
                 onException: (Throwable) -> Unit,
             ) {}
             override fun requestTranslate(
@@ -385,6 +273,7 @@ class EngineObserverTest {
                 parent: EngineSession?,
                 flags: LoadUrlFlags,
                 additionalHeaders: Map<String, String>?,
+                originalInput: String?,
             ) {}
             override fun loadData(data: String, mimeType: String, encoding: String) {}
             override fun requestPdfToDownload() = Unit
@@ -985,14 +874,14 @@ class EngineObserverTest {
 
         observer.onDesktopModeChange(true)
         store.waitUntilIdle()
-        middleware.assertFirstAction(ContentAction.UpdateDesktopModeAction::class) { action ->
+        middleware.assertFirstAction(ContentAction.UpdateTabDesktopMode::class) { action ->
             assertEquals("tab-id", action.sessionId)
             assertTrue(action.enabled)
         }
 
         observer.onDesktopModeChange(false)
         store.waitUntilIdle()
-        middleware.assertLastAction(ContentAction.UpdateDesktopModeAction::class) { action ->
+        middleware.assertLastAction(ContentAction.UpdateTabDesktopMode::class) { action ->
             assertEquals("tab-id", action.sessionId)
             assertFalse(action.enabled)
         }

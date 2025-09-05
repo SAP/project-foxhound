@@ -7,11 +7,10 @@
 #include "nsCertOverrideService.h"
 
 #include "NSSCertDBTrustDomain.h"
-#include "ScopedNSSTypes.h"
 #include "mozilla/Assertions.h"
 #include "mozilla/ScopeExit.h"
 #include "mozilla/TaskQueue.h"
-#include "mozilla/Telemetry.h"
+#include "mozilla/glean/SecurityManagerSslMetrics.h"
 #include "mozilla/TextUtils.h"
 #include "mozilla/Tokenizer.h"
 #include "mozilla/Unused.h"
@@ -395,11 +394,6 @@ nsCertOverrideService::RememberValidityOverride(
     return NS_ERROR_NOT_SAME_THREAD;
   }
 
-  UniqueCERTCertificate nsscert(aCert->GetCert());
-  if (!nsscert) {
-    return NS_ERROR_FAILURE;
-  }
-
   nsAutoCString fpStr;
   nsresult rv = GetCertSha256Fingerprint(aCert, fpStr);
   if (NS_FAILED(rv)) {
@@ -621,8 +615,8 @@ void nsCertOverrideService::CountPermanentOverrideTelemetry(
       overrideCount++;
     }
   }
-  Telemetry::Accumulate(Telemetry::SSL_PERMANENT_CERT_ERROR_OVERRIDES,
-                        overrideCount);
+  glean::ssl::permanent_cert_error_overrides.AccumulateSingleSample(
+      overrideCount);
 }
 
 static bool IsDebugger() {

@@ -92,9 +92,12 @@ def ctor(obj):
     Necessary because LabeledMetric<T> is constructed using LabeledMetric::new
     not LabeledMetric<T>::new
     """
+    suffix = "::new"
+    if obj.metadata.get("permit_non_commutative_operations_over_ipc", False):
+        suffix = "::with_unordered_ipc"
     if getattr(obj, "labeled", False):
-        return "LabeledMetric::new"
-    return class_name(obj.type) + "::new"
+        return f"LabeledMetric{suffix}"
+    return f"{class_name(obj.type)}{suffix}"
 
 
 def type_name(obj):
@@ -219,7 +222,7 @@ def output_rust(objs, output_fd, ping_names_by_app_id, options={}):
         return env.get_template(template_name)
 
     util.get_jinja2_template = get_local_template
-    get_metric_id = generate_metric_ids(objs)
+    get_metric_id = generate_metric_ids(objs, options)
     get_ping_id = generate_ping_ids(objs)
     ping_schedule_reverse_map = get_schedule_reverse_map(objs)
 

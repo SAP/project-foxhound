@@ -1,4 +1,5 @@
 // META: script=/resources/testdriver.js
+// META: script=/resources/testdriver-vendor.js
 // META: script=/common/utils.js
 // META: script=resources/fledge-util.sub.js
 // META: script=/common/subset-tests.js
@@ -27,16 +28,18 @@ subsetTest(promise_test, async test => {
   const uuid = generateUuid(test);
 
   let expectedBrowserSignals = {
-    "topWindowHostname": window.location.hostname,
-    "seller": window.location.origin,
-    "adComponentsLimit": 40,
-    "joinCount": 1,
-    "bidCount": 0,
-    "prevWinsMs": []
-  }
-  let biddingLogicURL = createBiddingScriptURL(
-      { generateBid:
-          `let expectedBrowserSignals = ${JSON.stringify(expectedBrowserSignals)};
+    'topWindowHostname': window.location.hostname,
+    'seller': window.location.origin,
+    'adComponentsLimit': 40,
+    'joinCount': 1,
+    'bidCount': 0,
+    'multiBidLimit': 1,
+    'prevWinsMs': [],
+    'forDebuggingOnlySampling': false
+  };
+  let biddingLogicURL = createBiddingScriptURL({
+    generateBid:
+        `let expectedBrowserSignals = ${JSON.stringify(expectedBrowserSignals)};
 
           // Can't check this value exactly.
           expectedBrowserSignals.recency = browserSignals.recency;
@@ -50,7 +53,7 @@ subsetTest(promise_test, async test => {
 
           if (!deepEquals(browserSignals, expectedBrowserSignals))
              throw "Unexpected browserSignals: " + JSON.stringify(browserSignals);`
-      });
+  });
 
   await joinGroupAndRunBasicFledgeTestExpectingWinner(
       test,

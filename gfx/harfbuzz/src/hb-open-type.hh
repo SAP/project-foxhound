@@ -87,20 +87,11 @@ struct IntType
     return pb->cmp (*pa);
   }
   template <typename Type2,
-	    hb_enable_if (std::is_integral<Type2>::value &&
-			  sizeof (Type2) < sizeof (int) &&
-			  sizeof (Type) < sizeof (int))>
-  int cmp (Type2 a) const
-  {
-    Type b = v;
-    return (int) a - (int) b;
-  }
-  template <typename Type2,
 	    hb_enable_if (hb_is_convertible (Type2, Type))>
   int cmp (Type2 a) const
   {
     Type b = v;
-    return a < b ? -1 : a == b ? 0 : +1;
+    return (a > b) - (a < b);
   }
   bool sanitize (hb_sanitize_context_t *c) const
   {
@@ -209,7 +200,7 @@ struct HBUINT32VAR
   }
 
   protected:
-  unsigned char v[1];
+  unsigned char v[5];
 
   public:
   DEFINE_SIZE_MIN (1);
@@ -299,11 +290,6 @@ typedef Index NameID;
 struct VarIdx : HBUINT32 {
   static constexpr unsigned NO_VARIATION = 0xFFFFFFFFu;
   static_assert (NO_VARIATION == HB_OT_LAYOUT_NO_VARIATIONS_INDEX, "");
-  static uint32_t add (uint32_t i, unsigned short v)
-  {
-    if (i == NO_VARIATION) return i;
-    return i + v;
-  }
   VarIdx& operator = (uint32_t i) { HBUINT32::operator= (i); return *this; }
 };
 DECLARE_NULL_NAMESPACE_BYTES (OT, VarIdx);
@@ -654,7 +640,7 @@ struct UnsizedListOfOffset16To : UnsizedArray16OfOffsetTo<Type, OffsetType, Base
     unsigned int i = (unsigned int) i_;
     const OffsetTo<Type, OffsetType, BaseType, has_null> *p = &this->arrayZ[i];
     if (unlikely ((const void *) p < (const void *) this->arrayZ)) return Null (Type); /* Overflowed. */
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return this+*p;
   }
   Type& operator [] (int i_)
@@ -662,7 +648,7 @@ struct UnsizedListOfOffset16To : UnsizedArray16OfOffsetTo<Type, OffsetType, Base
     unsigned int i = (unsigned int) i_;
     const OffsetTo<Type, OffsetType, BaseType, has_null> *p = &this->arrayZ[i];
     if (unlikely ((const void *) p < (const void *) this->arrayZ)) return Crap (Type); /* Overflowed. */
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return this+*p;
   }
 
@@ -713,14 +699,14 @@ struct ArrayOf
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= len)) return Null (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i];
   }
   Type& operator [] (int i_)
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= len)) return Crap (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i];
   }
 
@@ -853,14 +839,14 @@ struct List16OfOffsetTo : ArrayOf<OffsetTo<Type, OffsetType>, HBUINT16>
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= this->len)) return Null (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return this+this->arrayZ[i];
   }
   const Type& operator [] (int i_)
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= this->len)) return Crap (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return this+this->arrayZ[i];
   }
 
@@ -898,14 +884,14 @@ struct HeadlessArrayOf
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= lenP1 || !i)) return Null (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i-1];
   }
   Type& operator [] (int i_)
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= lenP1 || !i)) return Crap (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i-1];
   }
   unsigned int get_size () const
@@ -992,14 +978,14 @@ struct ArrayOfM1
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i > lenM1)) return Null (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i];
   }
   Type& operator [] (int i_)
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i > lenM1)) return Crap (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return arrayZ[i];
   }
   unsigned int get_size () const
@@ -1184,14 +1170,14 @@ struct VarSizedBinSearchArrayOf
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= get_length ())) return Null (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return StructAtOffset<Type> (&bytesZ, i * header.unitSize);
   }
   Type& operator [] (int i_)
   {
     unsigned int i = (unsigned int) i_;
     if (unlikely (i >= get_length ())) return Crap (Type);
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     return StructAtOffset<Type> (&bytesZ, i * header.unitSize);
   }
   unsigned int get_length () const
@@ -1441,7 +1427,7 @@ struct CFFIndex
   hb_ubytes_t operator [] (unsigned int index) const
   {
     if (unlikely (index >= count)) return hb_ubytes_t ();
-    _hb_compiler_memory_r_barrier ();
+    hb_barrier ();
     unsigned offset0 = offset_at (index);
     unsigned offset1 = offset_at (index + 1);
     if (unlikely (offset1 < offset0 || offset1 > offset_at (count)))
@@ -1496,7 +1482,7 @@ struct TupleValues
   };
 
   static unsigned compile (hb_array_t<const int> values, /* IN */
-			   hb_array_t<char> encoded_bytes /* OUT */)
+			   hb_array_t<unsigned char> encoded_bytes /* OUT */)
   {
     unsigned num_values = values.length;
     unsigned encoded_len = 0;
@@ -1517,7 +1503,7 @@ struct TupleValues
   }
 
   static unsigned encode_value_run_as_zeroes (unsigned& i,
-					      hb_array_t<char> encoded_bytes,
+					      hb_array_t<unsigned char> encoded_bytes,
 					      hb_array_t<const int> values)
   {
     unsigned num_values = values.length;
@@ -1546,7 +1532,7 @@ struct TupleValues
   }
 
   static unsigned encode_value_run_as_bytes (unsigned &i,
-					     hb_array_t<char> encoded_bytes,
+					     hb_array_t<unsigned char> encoded_bytes,
 					     hb_array_t<const int> values)
   {
     unsigned start = i;
@@ -1600,7 +1586,7 @@ struct TupleValues
   }
 
   static unsigned encode_value_run_as_words (unsigned &i,
-					     hb_array_t<char> encoded_bytes,
+					     hb_array_t<unsigned char> encoded_bytes,
 					     hb_array_t<const int> values)
   {
     unsigned start = i;
@@ -1661,7 +1647,7 @@ struct TupleValues
   }
 
   static unsigned encode_value_run_as_longs (unsigned &i,
-					     hb_array_t<char> encoded_bytes,
+					     hb_array_t<unsigned char> encoded_bytes,
 					     hb_array_t<const int> values)
   {
     unsigned start = i;

@@ -474,6 +474,12 @@ nsMultiMixedConv::OnStartRequest(nsIRequest* request) {
     if (NS_SUCCEEDED(rv)) {
       mRootContentSecurityPolicy = csp;
     }
+    nsCString contentDisposition;
+    rv = httpChannel->GetResponseHeader("content-disposition"_ns,
+                                        contentDisposition);
+    if (NS_SUCCEEDED(rv)) {
+      mRootContentDisposition = contentDisposition;
+    }
   } else {
     // try asking the channel directly
     rv = mChannel->GetContentType(contentType);
@@ -850,7 +856,11 @@ nsresult nsMultiMixedConv::SendStart() {
   rv = mPartChannel->SetContentLength(mContentLength);
   if (NS_FAILED(rv)) return rv;
 
-  mPartChannel->SetContentDisposition(mContentDisposition);
+  if (!mRootContentDisposition.IsEmpty()) {
+    mPartChannel->SetContentDisposition(mRootContentDisposition);
+  } else {
+    mPartChannel->SetContentDisposition(mContentDisposition);
+  }
 
   // Each part of a multipart/replace response can be used
   // for the top level document.  We must inform upper layers
@@ -993,7 +1003,10 @@ nsresult nsMultiMixedConv::ProcessHeader() {
       mResponseHeaderValue.CompressWhitespace();
       if (!StaticPrefs::network_cookie_prevent_set_cookie_from_multipart() &&
           httpInternal) {
-        DebugOnly<nsresult> rv = httpInternal->SetCookie(mResponseHeaderValue);
+        AutoTArray<nsCString, 1> cookieHeaderArray;
+        cookieHeaderArray.AppendElement(mResponseHeaderValue);
+        DebugOnly<nsresult> rv =
+            httpInternal->SetCookieHeaders(cookieHeaderArray);
         MOZ_ASSERT(NS_SUCCEEDED(rv));
       }
       break;

@@ -177,7 +177,12 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * This is a singleton; it contains mostly convenience
    * functions to obtain platform-specific objects.
    */
-  static gfxPlatform* GetPlatform();
+  static gfxPlatform* GetPlatform() {
+    if (MOZ_UNLIKELY(!gPlatform)) {
+      Init();
+    }
+    return gPlatform;
+  }
 
   /**
    * Returns whether or not graphics has been initialized yet. This is
@@ -209,6 +214,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static int32_t MaxTextureSize();
   static int32_t MaxAllocSize();
   static void InitMoz2DLogging();
+
+  static void InitMemoryReportersForGPUProcess();
 
   static bool IsHeadless();
 
@@ -265,7 +272,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
       bool aFallback = false);
 
   already_AddRefed<DrawTarget> CreateOffscreenCanvasDrawTarget(
-      const mozilla::gfx::IntSize& aSize, mozilla::gfx::SurfaceFormat aFormat);
+      const mozilla::gfx::IntSize& aSize, mozilla::gfx::SurfaceFormat aFormat,
+      bool aRequireSoftwareRender = false);
 
   already_AddRefed<DrawTarget> CreateSimilarSoftwareDrawTarget(
       DrawTarget* aDT, const IntSize& aSize,
@@ -343,7 +351,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * available fonts on the platform; used to pass the list from chrome to
    * content process. Currently implemented only on MacOSX and Linux.
    */
-  virtual void ReadSystemFontList(mozilla::dom::SystemFontList*){};
+  virtual void ReadSystemFontList(mozilla::dom::SystemFontList*) {};
 
   /**
    * Rebuilds the system font lists (if aFullRebuild is true), or just notifies
@@ -492,6 +500,13 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   void UpdateCanUseHardwareVideoDecoding();
 
+  inline static void EnsureCMSInitialized() {
+    if (MOZ_UNLIKELY(!gCMSInitialized)) {
+      MaybeInitializeCMS();
+      MOZ_ASSERT(gCMSInitialized);
+    }
+  }
+
   /**
    * Are we going to try color management?
    */
@@ -527,48 +542,42 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * Return the output device ICC profile.
    */
   static qcms_profile* GetCMSOutputProfile() {
-    EnsureCMSInitialized();
-    return gCMSOutputProfile;
+    return GetPlatform()->mCMSOutputProfile;
   }
 
   /**
    * Return the sRGB ICC profile.
    */
   static qcms_profile* GetCMSsRGBProfile() {
-    EnsureCMSInitialized();
-    return gCMSsRGBProfile;
+    return GetPlatform()->mCMSsRGBProfile;
   }
 
   /**
    * Return sRGB -> output device transform.
    */
   static qcms_transform* GetCMSRGBTransform() {
-    EnsureCMSInitialized();
-    return gCMSRGBTransform;
+    return GetPlatform()->mCMSRGBTransform;
   }
 
   /**
    * Return output -> sRGB device transform.
    */
   static qcms_transform* GetCMSInverseRGBTransform() {
-    MOZ_ASSERT(gCMSInitialized);
-    return gCMSInverseRGBTransform;
+    return GetPlatform()->mCMSInverseRGBTransform;
   }
 
   /**
    * Return sRGBA -> output device transform.
    */
   static qcms_transform* GetCMSRGBATransform() {
-    MOZ_ASSERT(gCMSInitialized);
-    return gCMSRGBATransform;
+    return GetPlatform()->mCMSRGBATransform;
   }
 
   /**
    * Return sBGRA -> output device transform.
    */
   static qcms_transform* GetCMSBGRATransform() {
-    MOZ_ASSERT(gCMSInitialized);
-    return gCMSBGRATransform;
+    return GetPlatform()->mCMSBGRATransform;
   }
 
   /**
@@ -592,13 +601,28 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
    * an effect on layout, such as font rendering settings that influence
    * metrics, or installed fonts.
    *
-   * By default it also broadcast it to child processes, but some callers might
-   * not need it if they implement their own notification.
+   * Normally this is initiated in the parent process, and also broadcast to
+   * child processes, but some callers might not need this if they implement
+   * their own notification.
    */
-  enum class NeedsReframe : bool { No, Yes };
-  enum class BroadcastToChildren : bool { No, Yes };
-  static void ForceGlobalReflow(NeedsReframe,
-                                BroadcastToChildren = BroadcastToChildren::Yes);
+  enum class GlobalReflowFlags : uint8_t {
+    None = 0,
+    // Font data has been updated such that new fonts and/or character coverage
+    // may be available; existing font-lookup caches should be invalidated and
+    // font selection re-done.
+    FontsChanged = (1 << 0),
+    // Content should be fully reframed; this is used when font entry records
+    // may have been invalidated such that existing textruns in the frame tree
+    // are no longer safe to work with. Rather than reflow the existing frame
+    // tree we will discard and re-create it.
+    NeedsReframe = (1 << 1),
+    // (If this is the parent process), broadcast this reflow request to all
+    // child processes.
+    BroadcastToChildren = (1 << 2),
+    // For serialization.
+    ALL_BITS = FontsChanged | NeedsReframe | BroadcastToChildren,
+  };
+  static void ForceGlobalReflow(GlobalReflowFlags aFlags);
 
   static void FlushFontAndWordCaches();
 
@@ -779,7 +803,7 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   virtual void OnMemoryPressure(
       mozilla::layers::MemoryPressureReason aWhy) override;
 
-  virtual void EnsureDevicesInitialized(){};
+  virtual void EnsureDevicesInitialized() {};
   virtual bool DevicesInitialized() { return true; };
 
   virtual bool IsWaylandDisplay() { return false; }
@@ -854,16 +878,6 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
  protected:
   /**
-   * If inside a child process and currently being initialized by the
-   * SetXPCOMProcessAttributes message, this can be used by subclasses to
-   * retrieve the ContentDeviceData passed by the message
-   *
-   * If not currently being initialized, will return nullptr. In this case,
-   * child should send a sync message to ask parent for color profile
-   */
-  const mozilla::gfx::ContentDeviceData* GetInitContentDeviceData();
-
-  /**
    * If inside a child process and have ever received a
    * SetXPCOMProcessAttributes message, this contains the cmsOutputProfileData
    * from that message.
@@ -934,27 +948,10 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
 
   static void InitOpenGLConfig();
 
-  static mozilla::Atomic<bool, mozilla::MemoryOrdering::ReleaseAcquire>
-      gCMSInitialized;
-  static CMSMode gCMSMode;
+  static gfxPlatform* gPlatform;
 
-  // These two may point to the same profile
-  static qcms_profile* gCMSOutputProfile;
-  static qcms_profile* gCMSsRGBProfile;
-
-  static qcms_transform* gCMSRGBTransform;
-  static qcms_transform* gCMSInverseRGBTransform;
-  static qcms_transform* gCMSRGBATransform;
-  static qcms_transform* gCMSBGRATransform;
-
-  inline static void EnsureCMSInitialized() {
-    if (MOZ_UNLIKELY(!gCMSInitialized)) {
-      InitializeCMS();
-    }
-  }
-
-  static void InitializeCMS();
-  static void ShutdownCMS();
+  void InitializeCMS();
+  void ShutdownCMS();
 
   /**
    * This uses nsIScreenManager to determine the primary screen color depth
@@ -972,6 +969,23 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   static bool IsDXNV12Blocked();
   static bool IsDXP010Blocked();
   static bool IsDXP016Blocked();
+
+  static void MaybeInitializeCMS();
+
+  // We need these to be static because we might call them in the GPU process,
+  // even if we don't do color management there.
+  static mozilla::Atomic<bool, mozilla::ReleaseAcquire> gCMSInitialized;
+  static CMSMode gCMSMode;
+
+  // These two may point to the same profile
+  qcms_profile* mCMSOutputProfile = nullptr;
+  qcms_profile* mCMSsRGBProfile = nullptr;
+
+  qcms_transform* mCMSRGBTransform = nullptr;
+  qcms_transform* mCMSInverseRGBTransform = nullptr;
+  qcms_transform* mCMSRGBATransform = nullptr;
+  qcms_transform* mCMSBGRATransform = nullptr;
+  mozilla::Maybe<nsTArray<uint8_t>> mCMSOutputProfileData;
 
   RefPtr<gfxASurface> mScreenReferenceSurface;
   RefPtr<mozilla::layers::MemoryPressureObserver> mMemoryPressureObserver;
@@ -1009,6 +1023,8 @@ class gfxPlatform : public mozilla::layers::MemoryPressureListener {
   // basis for error-case iterators.
   const gfxSkipChars kEmptySkipChars;
 };
+
+MOZ_MAKE_ENUM_CLASS_BITWISE_OPERATORS(gfxPlatform::GlobalReflowFlags)
 
 CMSMode GfxColorManagementMode();
 

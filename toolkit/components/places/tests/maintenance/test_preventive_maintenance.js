@@ -2610,13 +2610,10 @@ tests.push({
     });
 
     PlacesUtils.tagging.tagURI(this._uri1, ["testtag"]);
-    PlacesUtils.favicons.setAndFetchFaviconForPage(
+    await PlacesUtils.favicons.setFaviconForPage(
       this._uri2,
       SMALLPNG_DATA_URI,
-      false,
-      PlacesUtils.favicons.FAVICON_LOAD_NON_PRIVATE,
-      null,
-      Services.scriptSecurityManager.getSystemPrincipal()
+      SMALLPNG_DATA_URI
     );
     await PlacesUtils.keywords.insert({
       url: this._uri1.spec,

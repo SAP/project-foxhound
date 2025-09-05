@@ -28,3 +28,444 @@ timer_thread:
     notification_emails:
       - jlink@mozilla.com
     expires: never
+
+memory_watcher:
+  on_high_memory_stats:
+    type: event
+    description: >
+      This event is recorded when the memory situation is no longer low.
+      The "stats" object consists of three numbers comma-delimited: 1) how
+      many times a tab was unloaded 2) how many memory-pressure events
+      were dispatched 3) how long we were in the low-memory situation in
+      seconds
+      This event was generated to correspond to the Legacy Telemetry event
+      memory_watcher.on_high_memory#stats.
+    bugs:
+      - https://bugzil.la/1715858
+    data_reviews:
+      - https://bugzil.la/1715858
+    notification_emails:
+      - tkikuchi@mozilla.com
+    expires: never
+    extra_keys:
+      value:
+        description: >
+          The `value` of the event. Mirrors to the Legacy Telemetry
+          event's `value` parameter.
+          The stringified, comma-separated stats.
+        type: string
+    telemetry_mirror: Memory_watcher_OnHighMemory_Stats
+
+memory_phc:
+  slop:
+    type: memory_distribution
+    description: >
+      Over-allocation due to PHC's rounding (aka internal
+      fragmentation).  Measured in bytes.
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram MEMORY_PHC_SLOP.
+    memory_unit: byte
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    notification_emails:
+      - memshrink-telemetry-alerts@mozilla.com
+      - pbone@mozilla.com
+    expires: 142
+    telemetry_mirror: MEMORY_PHC_SLOP
+
+  slots_allocated:
+    type: custom_distribution
+    description: >
+      Number of PHC slots currently allocated
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram MEMORY_PHC_SLOTS_ALLOCATED.
+    range_min: 1
+    range_max: 16384
+    bucket_count: 64
+    histogram_type: exponential
+    unit: PHC slots
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    notification_emails:
+      - memshrink-telemetry-alerts@mozilla.com
+      - pbone@mozilla.com
+    expires: 142
+    telemetry_mirror: MEMORY_PHC_SLOTS_ALLOCATED
+
+  slots_freed:
+    type: custom_distribution
+    description: >
+      Number of PHC slots allocated-then-freed
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram MEMORY_PHC_SLOTS_FREED.
+    range_min: 1
+    range_max: 16384
+    bucket_count: 64
+    histogram_type: exponential
+    unit: PHC slots
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1829127
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1892149
+    notification_emails:
+      - memshrink-telemetry-alerts@mozilla.com
+      - pbone@mozilla.com
+    expires: 142
+    telemetry_mirror: MEMORY_PHC_SLOTS_FREED
+
+cycle_collector:
+  time:
+    type: timing_distribution
+    description: >
+      Time spent on one cycle collection (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR
+
+  worker_time:
+    type: timing_distribution
+    description: >
+      Time spent on one cycle collection in a worker (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_WORKER.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_WORKER
+
+  visited_ref_counted:
+    type: custom_distribution
+    description: >
+      Number of ref counted objects visited by the cycle collector
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_VISITED_REF_COUNTED.
+    range_min: 1
+    range_max: 300000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: ref counted objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_VISITED_REF_COUNTED
+
+  worker_visited_ref_counted:
+    type: custom_distribution
+    description: >
+      Number of ref counted objects visited by the cycle collector in a worker
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_WORKER_VISITED_REF_COUNTED.
+    range_min: 1
+    range_max: 300000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: ref counted objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_WORKER_VISITED_REF_COUNTED
+
+  visited_gced:
+    type: custom_distribution
+    description: >
+      Number of JS objects visited by the cycle collector
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_VISITED_GCED.
+    range_min: 1
+    range_max: 300000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: JS objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_VISITED_GCED
+
+  worker_visited_gced:
+    type: custom_distribution
+    description: >
+      Number of JS objects visited by the cycle collector in a worker
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_WORKER_VISITED_GCED.
+    range_min: 1
+    range_max: 300000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: JS objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_WORKER_VISITED_GCED
+
+  collected:
+    type: custom_distribution
+    description: >
+      Number of objects collected by the cycle collector
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_COLLECTED.
+    range_min: 1
+    range_max: 100000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: JS objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_COLLECTED
+
+  worker_collected:
+    type: custom_distribution
+    description: >
+      Number of objects collected by the cycle collector in a worker
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_WORKER_COLLECTED.
+    range_min: 1
+    range_max: 100000
+    bucket_count: 50
+    histogram_type: exponential
+    unit: JS objects
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_WORKER_COLLECTED
+
+  need_gc:
+    type: labeled_counter
+    description: >
+      Needed garbage collection before cycle collection.
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram CYCLE_COLLECTOR_NEED_GC.
+    labels:
+      - "false"
+      - "true"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: h#CYCLE_COLLECTOR_NEED_GC
+
+  worker_need_gc:
+    type: labeled_counter
+    description: >
+      Needed garbage collection before cycle collection in a worker.
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram CYCLE_COLLECTOR_WORKER_NEED_GC.
+    labels:
+      - "false"
+      - "true"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: h#CYCLE_COLLECTOR_WORKER_NEED_GC
+
+  full:
+    type: timing_distribution
+    description: >
+      Full pause time for one cycle collection, including preparation (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_FULL.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_FULL
+
+  max_pause:
+    type: timing_distribution
+    description: >
+      Longest pause for an individual slice of one cycle collection, including
+      preparation (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_MAX_PAUSE.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1364503
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1364503
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_MAX_PAUSE
+
+  finish_igc:
+    type: labeled_counter
+    description: >
+      Cycle collection finished an incremental GC
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram CYCLE_COLLECTOR_FINISH_IGC.
+    labels:
+      - "false"
+      - "true"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: h#CYCLE_COLLECTOR_FINISH_IGC
+
+  sync_skippable:
+    type: labeled_counter
+    description: >
+      Cycle collection synchronously ran forget skippable
+
+      This metric was generated to correspond to the Legacy Telemetry boolean
+      histogram CYCLE_COLLECTOR_SYNC_SKIPPABLE.
+    labels:
+      - "false"
+      - "true"
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: h#CYCLE_COLLECTOR_SYNC_SKIPPABLE
+
+  time_between:
+    type: timing_distribution
+    description: >
+      Time spent in between cycle collections (seconds)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_TIME_BETWEEN.
+    time_unit: second
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_TIME_BETWEEN
+
+  slice_during_idle:
+    type: custom_distribution
+    description: >
+      Percent of cycle collector slice done during idle time
+
+      This metric was generated to correspond to the Legacy Telemetry linear
+      histogram CYCLE_COLLECTOR_SLICE_DURING_IDLE.
+    range_min: 1
+    range_max: 100
+    bucket_count: 50
+    histogram_type: linear
+    unit: percent
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1372042
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1372042
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_SLICE_DURING_IDLE
+
+  async_snow_white_freeing:
+    type: timing_distribution
+    description: >
+      Time spent on one asynchronous SnowWhite freeing (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram CYCLE_COLLECTOR_ASYNC_SNOW_WHITE_FREEING.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: CYCLE_COLLECTOR_ASYNC_SNOW_WHITE_FREEING
+
+  deferred_finalize_async:
+    type: timing_distribution
+    description: >
+      Pause time for asynchronous deferred finalization (ms)
+
+      This metric was generated to correspond to the Legacy Telemetry
+      exponential histogram DEFERRED_FINALIZE_ASYNC.
+    time_unit: millisecond
+    bugs:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    data_reviews:
+      - https://bugzilla.mozilla.org/show_bug.cgi?id=1935420
+    notification_emails:
+      - dev-telemetry-gc-alerts@mozilla.org
+    expires: never
+    telemetry_mirror: DEFERRED_FINALIZE_ASYNC

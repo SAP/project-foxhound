@@ -5,12 +5,22 @@
 "use strict";
 
 define(function (require) {
-  const { render } = require("devtools/client/shared/vendor/react-dom");
-  const { createFactories } = require("devtools/client/shared/react-utils");
+  const {
+    render,
+  } = require("resource://devtools/client/shared/vendor/react-dom.js");
+  const {
+    createFactories,
+  } = require("resource://devtools/client/shared/react-utils.js");
   const { MainTabbedArea } = createFactories(
-    require("devtools/client/jsonview/components/MainTabbedArea")
+    require("resource://devtools/client/jsonview/components/MainTabbedArea.js")
   );
-  const TreeViewClass = require("devtools/client/shared/components/tree/TreeView");
+  const TreeViewClass = require("resource://devtools/client/shared/components/tree/TreeView.js");
+  const {
+    JSON_NUMBER,
+  } = require("resource://devtools/client/shared/components/reps/reps/constants.js");
+  const {
+    parseJsonLossless,
+  } = require("resource://devtools/client/shared/components/reps/reps/rep-utils.js");
 
   const AUTO_EXPAND_MAX_SIZE = 100 * 1024;
   const AUTO_EXPAND_MAX_LEVEL = 7;
@@ -88,7 +98,24 @@ define(function (require) {
         theApp.setState({ jsonText: input.jsonText });
       } else {
         if (!input.jsonPretty) {
-          input.jsonPretty = new Text(JSON.stringify(input.json, null, "  "));
+          input.jsonPretty = new Text(
+            JSON.stringify(
+              input.json,
+              (key, value) => {
+                if (value?.type === JSON_NUMBER) {
+                  return JSON.rawJSON(value.source);
+                }
+
+                // By default, -0 will be stringified as `0`, so we need to handle it
+                if (Object.is(value, -0)) {
+                  return JSON.rawJSON("-0");
+                }
+
+                return value;
+              },
+              "  "
+            )
+          );
         }
         theApp.setState({ jsonText: input.jsonPretty });
       }
@@ -171,7 +198,7 @@ define(function (require) {
     // If the JSON has been loaded, parse it immediately before loading the app.
     const jsonString = input.jsonText.textContent;
     try {
-      input.json = JSON.parse(jsonString);
+      input.json = parseJsonLossless(jsonString);
     } catch (err) {
       input.json = err;
       // Display the raw data tab for invalid json

@@ -179,11 +179,11 @@ class LookupCache {
   // take a lookup string (www.hostname.com/path/to/resource.html) and
   // expand it into the set of fragments that should be searched for in an
   // entry
-  static nsresult GetLookupFragments(const nsACString& aSpec,
-                                     nsTArray<nsCString>* aFragments);
+  static void GetLookupFragments(const nsACString& aSpec,
+                                 nsTArray<nsCString>* aFragments);
 
-  static nsresult GetLookupEntitylistFragments(const nsACString& aSpec,
-                                               nsTArray<nsCString>* aFragments);
+  static void GetLookupEntitylistFragments(const nsACString& aSpec,
+                                           nsTArray<nsCString>* aFragments);
 
   LookupCache(const nsACString& aTableName, const nsACString& aProvider,
               nsCOMPtr<nsIFile>& aStoreFile);

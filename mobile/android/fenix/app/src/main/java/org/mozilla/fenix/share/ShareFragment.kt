@@ -89,6 +89,7 @@ class ShareFragment : AppCompatDialogFragment() {
                 sendTabUseCases = SendTabUseCases(accountManager),
                 saveToPdfUseCase = requireComponents.useCases.sessionUseCases.saveToPdf,
                 printUseCase = requireComponents.useCases.sessionUseCases.printContent,
+                sentFromFirefoxManager = requireComponents.core.sentFromFirefoxManager,
                 recentAppsStorage = RecentAppsStorage(requireContext()),
                 viewLifecycleScope = viewLifecycleOwner.lifecycleScope,
             ) { result ->

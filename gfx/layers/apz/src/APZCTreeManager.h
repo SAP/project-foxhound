@@ -34,10 +34,13 @@
 #include "mozilla/UniquePtr.h"       // for UniquePtr
 #include "nsCOMPtr.h"                // for already_AddRefed
 #include "nsTArray.h"
-#include "OvershootDetector.h"
 
 namespace mozilla {
 class MultiTouchInput;
+
+namespace dom {
+enum class InteractiveWidget : uint8_t;
+}  // namespace dom
 
 namespace wr {
 class TransactionWrapper;
@@ -652,6 +655,10 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   TargetApzcForNodeResult GetTargetApzcForNode(const HitTestingTreeNode* aNode);
   TargetApzcForNodeResult FindHandoffParent(
       const AsyncPanZoomController* aApzc);
+
+  // An optimized version of GetTargetAPZC for mouse input.
+  HitTestResult GetTargetAPZCForMouseInput(const MouseInput& aMouseInput);
+
   /**
    * Find the root __content__ APZC for |aLayersId|.
    * If |aLayersId| is NOT for the LayersId for the root content, this function
@@ -806,6 +813,16 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
 
   ScreenMargin GetCompositorFixedLayerMargins(
       const MutexAutoLock& aProofOfMapLock) const;
+
+  /**
+   * Compute the translation that should be applied to a layer that's fixed
+   * at |eFixedSides|, to respect the fixed layer margins
+   * |aCompositorFixedLayerMargins|, given that the most recent main thread
+   * paint has taken into account |aGeckoFixedLayerMargins|.
+   */
+  ScreenPoint ComputeFixedMarginsOffset(
+      const ScreenMargin& aCompositorFixedLayerMargins, SideBits aFixedSides,
+      const ScreenMargin& aGeckoFixedLayerMargins) const;
 
  protected:
   /* The input queue where input events are held until we know enough to
@@ -1038,6 +1055,12 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
    * result of hit testing for that tap gesture event.
    */
   HitTestResult mTapGestureHitResult;
+  /* This tracks the hit test result info for the current drag input block of a
+   * scrollbar initiated by a mousedown.
+   * This result is used for an optimization to skip hit testing on subsequent
+   * mousemove events.
+   */
+  HitTestResult mDragBlockHitResult;
   /* Stores the current mouse position in screen coordinates.
    */
   mutable DataMutex<ScreenPoint> mCurrentMousePosition;
@@ -1067,10 +1090,6 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
       mTestData;
   mutable mozilla::Mutex mTestDataLock;
 
-  // A state machine that tries to record how much users are overshooting
-  // their desired scroll destination while using the scrollwheel.
-  OvershootDetector mOvershootDetector;
-
   // This must only be touched on the controller thread.
   float mDPI;
 
@@ -1082,6 +1101,17 @@ class APZCTreeManager : public IAPZCTreeManager, public APZInputBridge {
   // APZCTreeManager.
   ScrollGenerationCounter mScrollGenerationCounter;
   mozilla::Mutex mScrollGenerationLock;
+
+  // The interactive-widget of the top level content document.
+  // https://drafts.csswg.org/css-viewport/#interactive-widget-section
+  dom::InteractiveWidget mInteractiveWidget;
+
+  // Whether the software keyboard is visible or not.
+  bool mIsSoftwareKeyboardVisible;
+
+  // Whether there's any OOP iframe in this tree.
+  // NOTE: This variable needs to be guarded by mTreeLock.
+  bool mHaveOOPIframes;
 
 #if defined(MOZ_WIDGET_ANDROID)
  private:

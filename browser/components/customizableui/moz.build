@@ -8,6 +8,7 @@ DIRS += [
     "content",
 ]
 
+MARIONETTE_MANIFESTS += ["test/marionette/manifest.toml"]
 BROWSER_CHROME_MANIFESTS += ["test/browser.toml", "test/browserSidebarRevamp.toml"]
 XPCSHELL_TESTS_MANIFESTS += ["test/unit/xpcshell.toml"]
 
@@ -22,7 +23,10 @@ EXTRA_JS_MODULES += [
     "DragPositionManager.sys.mjs",
     "PanelMultiView.sys.mjs",
     "SearchWidgetTracker.sys.mjs",
+    "ToolbarContextMenu.sys.mjs",
 ]
+
+SPHINX_TREES["docs"] = "docs"
 
 with Files("**"):
     BUG_COMPONENT = ("Firefox", "Toolbars and Customization")

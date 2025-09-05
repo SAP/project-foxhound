@@ -7,13 +7,16 @@ package org.mozilla.fenix.ui
 import androidx.compose.ui.test.junit4.AndroidComposeTestRule
 import androidx.test.espresso.Espresso.openActionBarOverflowOrOptionsMenu
 import androidx.test.espresso.Espresso.pressBack
-import androidx.test.platform.app.InstrumentationRegistry.getInstrumentation
+import androidx.test.filters.SdkSuppress
 import org.junit.Rule
 import org.junit.Test
 import org.mozilla.fenix.R
+import org.mozilla.fenix.customannotations.DetectLeaks
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingResources
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
+import org.mozilla.fenix.helpers.MockBrowserDataHelper.createBookmarkItem
+import org.mozilla.fenix.helpers.MockBrowserDataHelper.generateBookmarkFolder
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.RetryTestRule
 import org.mozilla.fenix.helpers.TestAssetHelper
@@ -23,6 +26,7 @@ import org.mozilla.fenix.helpers.TestHelper.longTapSelectItem
 import org.mozilla.fenix.helpers.TestHelper.mDevice
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestSetup
+import org.mozilla.fenix.helpers.perf.DetectMemoryLeaksRule
 import org.mozilla.fenix.ui.robots.bookmarksMenu
 import org.mozilla.fenix.ui.robots.browserScreen
 import org.mozilla.fenix.ui.robots.homeScreen
@@ -45,7 +49,10 @@ class BookmarksTest : TestSetup() {
             HomeActivityIntentTestRule.withDefaultSettingsOverrides(),
         ) { it.activity }
 
-    @Rule(order = 1)
+    @get:Rule(order = 1)
+    val memoryLeaksRule = DetectMemoryLeaksRule()
+
+    @Rule(order = 2)
     @JvmField
     val retryTestRule = RetryTestRule(3)
 
@@ -96,7 +103,7 @@ class BookmarksTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openThreeDotMenu {
         }.bookmarkPage {
-            clickSnackbarButton("EDIT")
+            clickSnackbarButton(activityTestRule, "EDIT")
         }
         bookmarksMenu {
             verifyEditBookmarksView()
@@ -145,8 +152,9 @@ class BookmarksTest : TestSetup() {
     fun copyBookmarkURLTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -160,7 +168,6 @@ class BookmarksTest : TestSetup() {
 
         navigationToolbar {
         }.clickUrlbar {
-            clickClearButton()
             longClickToolbar()
             clickPasteText()
             verifyTypedToolbarText(defaultWebPage.url.toString(), exists = true)
@@ -172,8 +179,9 @@ class BookmarksTest : TestSetup() {
     fun shareBookmarkTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -193,8 +201,9 @@ class BookmarksTest : TestSetup() {
     fun openBookmarkInNewTabTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -217,20 +226,16 @@ class BookmarksTest : TestSetup() {
             TestAssetHelper.getGenericAsset(mockWebServer, 4),
         )
 
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openBookmarks {
-            createFolder("root")
-            createFolder("sub", "root")
-            createFolder("empty", "root")
-        }.closeMenu {
-        }
+        val rootFolderGuid = generateBookmarkFolder(title = "root", position = null)
+        val subFolderGuid = generateBookmarkFolder(rootFolderGuid, "sub", null)
 
-        browserScreen {
-            createBookmark(webPages[0].url)
-            createBookmark(webPages[1].url, "root")
-            createBookmark(webPages[2].url, "root")
-            createBookmark(webPages[3].url, "sub")
+        generateBookmarkFolder(rootFolderGuid, "empty", null)
+        createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
+        createBookmarkItem(webPages[1].url.toString(), webPages[1].title, null, rootFolderGuid)
+        createBookmarkItem(webPages[2].url.toString(), webPages[2].title, null, subFolderGuid)
+        createBookmarkItem(webPages[3].url.toString(), webPages[2].title, null, rootFolderGuid)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.openThreeDotMenu("root") {
@@ -253,18 +258,14 @@ class BookmarksTest : TestSetup() {
             TestAssetHelper.getGenericAsset(mockWebServer, 2),
         )
 
-        homeScreen {
-        }.openThreeDotMenu {
-        }.openBookmarks {
-            createFolder("root")
-            createFolder("sub", "root")
-            createFolder("empty", "root")
-        }.closeMenu {
-        }
+        val rootFolderGuid = generateBookmarkFolder(title = "root", position = null)
+        val subFolderGuid = generateBookmarkFolder(rootFolderGuid, "sub", null)
 
-        browserScreen {
-            createBookmark(webPages[0].url, "root")
-            createBookmark(webPages[1].url, "sub")
+        generateBookmarkFolder(rootFolderGuid, "empty", null)
+        createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null, rootFolderGuid)
+        createBookmarkItem(webPages[1].url.toString(), webPages[1].title, null, subFolderGuid)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.openThreeDotMenu("root") {
@@ -281,8 +282,9 @@ class BookmarksTest : TestSetup() {
     fun openBookmarkInPrivateTabTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -300,8 +302,9 @@ class BookmarksTest : TestSetup() {
     fun deleteBookmarkTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -310,7 +313,7 @@ class BookmarksTest : TestSetup() {
         }.openThreeDotMenu(defaultWebPage.title) {
         }.clickDelete {
             verifyUndoDeleteSnackBarButton()
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(activityTestRule, "UNDO")
             verifySnackBarHidden()
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
@@ -326,22 +329,27 @@ class BookmarksTest : TestSetup() {
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2300275
     @Test
     fun bookmarksMultiSelectionToolbarItemsTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(firstWebPage.url.toString(), firstWebPage.title, null)
+        createBookmarkItem(secondWebPage.url.toString(), secondWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
             ) {
-                longTapSelectItem(defaultWebPage.url)
+                longTapSelectItem(firstWebPage.url)
+                selectItem(secondWebPage.url.toString())
             }
         }
 
         multipleSelectionToolbar {
-            verifyMultiSelectionCheckmark(defaultWebPage.url)
-            verifyMultiSelectionCounter()
+            verifyMultiSelectionCheckmark(firstWebPage.url)
+            verifyMultiSelectionCheckmark(secondWebPage.url)
+            verifyMultiSelectionCounter(2)
             verifyShareBookmarksButton()
             verifyCloseToolbarButton()
         }.closeToolbarReturnToBookmarks {
@@ -353,13 +361,13 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun openMultipleSelectedBookmarksInANewTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val webPages = listOf(
+            TestAssetHelper.getGenericAsset(mockWebServer, 1),
+            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+        )
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
-        }.openTabDrawer(activityTestRule) {
-            closeTab()
-        }
+        createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
+        createBookmarkItem(webPages[1].url.toString(), webPages[1].title, null)
 
         homeScreen {
         }.openThreeDotMenu {
@@ -367,7 +375,8 @@ class BookmarksTest : TestSetup() {
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
             ) {
-                longTapSelectItem(defaultWebPage.url)
+                longTapSelectItem(webPages[0].url)
+                longTapSelectItem(webPages[1].url)
                 openActionBarOverflowOrOptionsMenu(activityTestRule.activity)
             }
         }
@@ -377,22 +386,29 @@ class BookmarksTest : TestSetup() {
             verifyTabTrayIsOpen()
             verifyNormalBrowsingButtonIsSelected()
             verifyNormalTabsList()
+            verifyExistingOpenTabs("Test_Page_1", "Test_Page_2")
         }
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/2300277
     @Test
     fun openMultipleSelectedBookmarksInPrivateTabTest() {
-        val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
+        val webPages = listOf(
+            TestAssetHelper.getGenericAsset(mockWebServer, 1),
+            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+        )
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
+        createBookmarkItem(webPages[1].url.toString(), webPages[1].title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 2),
             ) {
-                longTapSelectItem(defaultWebPage.url)
+                longTapSelectItem(webPages[0].url)
+                longTapSelectItem(webPages[1].url)
                 openActionBarOverflowOrOptionsMenu(activityTestRule.activity)
             }
         }
@@ -401,6 +417,7 @@ class BookmarksTest : TestSetup() {
         }.clickOpenPrivateTab(activityTestRule) {
             verifyPrivateBrowsingButtonIsSelected()
             verifyPrivateTabsList()
+            verifyExistingOpenTabs("Test_Page_1", "Test_Page_2")
         }
     }
 
@@ -408,19 +425,22 @@ class BookmarksTest : TestSetup() {
     @SmokeTest
     @Test
     fun deleteMultipleSelectedBookmarksTest() {
-        val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
-        val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
+        val webPages = listOf(
+            TestAssetHelper.getGenericAsset(mockWebServer, 1),
+            TestAssetHelper.getGenericAsset(mockWebServer, 2),
+        )
 
-        browserScreen {
-            createBookmark(firstWebPage.url)
-            createBookmark(secondWebPage.url)
+        createBookmarkItem(webPages[0].url.toString(), webPages[0].title, null)
+        createBookmarkItem(webPages[1].url.toString(), webPages[1].title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 3),
             ) {
-                longTapSelectItem(firstWebPage.url)
-                longTapSelectItem(secondWebPage.url)
+                longTapSelectItem(webPages[0].url)
+                longTapSelectItem(webPages[1].url)
             }
             openActionBarOverflowOrOptionsMenu(activityTestRule.activity)
         }
@@ -431,14 +451,14 @@ class BookmarksTest : TestSetup() {
 
         bookmarksMenu {
             verifySnackBarText(expectedText = "Bookmarks deleted")
-            clickSnackbarButton("UNDO")
-            verifyBookmarkedURL(firstWebPage.url.toString())
-            verifyBookmarkedURL(secondWebPage.url.toString())
+            clickSnackbarButton(activityTestRule, "UNDO")
+            verifyBookmarkedURL(webPages[0].url.toString())
+            verifyBookmarkedURL(webPages[1].url.toString())
             registerAndCleanupIdlingResources(
                 RecyclerViewIdlingResource(activityTestRule.activity.findViewById(R.id.bookmark_list), 3),
             ) {
-                longTapSelectItem(firstWebPage.url)
-                longTapSelectItem(secondWebPage.url)
+                longTapSelectItem(webPages[0].url)
+                longTapSelectItem(webPages[1].url)
             }
             openActionBarOverflowOrOptionsMenu(activityTestRule.activity)
         }
@@ -457,8 +477,9 @@ class BookmarksTest : TestSetup() {
     fun shareMultipleSelectedBookmarksTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -482,8 +503,9 @@ class BookmarksTest : TestSetup() {
     fun createBookmarkFolderTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -509,12 +531,10 @@ class BookmarksTest : TestSetup() {
         }.openThreeDotMenu {
         }.openBookmarks {
             createFolder("1")
-            getInstrumentation().waitForIdleSync()
             waitForBookmarksFolderContentToExist("Bookmarks", "1")
             selectFolder("1")
             verifyCurrentFolderTitle("1")
             createFolder("2")
-            getInstrumentation().waitForIdleSync()
             waitForBookmarksFolderContentToExist("1", "2")
             selectFolder("2")
             verifyCurrentFolderTitle("2")
@@ -546,8 +566,9 @@ class BookmarksTest : TestSetup() {
     fun deleteBookmarkInEditModeTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
             registerAndCleanupIdlingResources(
@@ -569,8 +590,9 @@ class BookmarksTest : TestSetup() {
     fun verifySearchBookmarksViewTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
@@ -611,23 +633,17 @@ class BookmarksTest : TestSetup() {
         val firstWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
         val secondWebPage = TestAssetHelper.getHTMLControlsFormAsset(mockWebServer)
 
+        val newFolder = generateBookmarkFolder(title = bookmarksFolderName, position = null)
+        createBookmarkItem(firstWebPage.url.toString(), firstWebPage.title, null, newFolder)
+        createBookmarkItem(secondWebPage.url.toString(), secondWebPage.title, null)
+
         homeScreen {
-        }.openThreeDotMenu {
-        }.openBookmarks {
-            createFolder(bookmarksFolderName)
-        }
-
-        exitMenu()
-
-        browserScreen {
-            createBookmark(firstWebPage.url, bookmarksFolderName)
-            createBookmark(secondWebPage.url)
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
             // Search for a valid term
             typeSearch(firstWebPage.title)
-            verifySearchEngineSuggestionResults(activityTestRule, firstWebPage.url.toString(), searchTerm = firstWebPage.title)
+            verifySearchSuggestionsAreDisplayed(activityTestRule, firstWebPage.url.toString())
             verifySuggestionsAreNotDisplayed(activityTestRule, secondWebPage.url.toString())
             // Search for invalid term
             typeSearch("Android")
@@ -637,12 +653,14 @@ class BookmarksTest : TestSetup() {
     }
 
     // TestRail link: https://mozilla.testrail.io/index.php?/cases/view/1715711
+    @SdkSuppress(minSdkVersion = 34)
     @Test
     fun verifyVoiceSearchInBookmarksTest() {
         val defaultWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(defaultWebPage.url)
+        createBookmarkItem(defaultWebPage.url.toString(), defaultWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.clickSearchButton {
@@ -659,10 +677,11 @@ class BookmarksTest : TestSetup() {
         val secondWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 2)
         val thirdWebPage = TestAssetHelper.getGenericAsset(mockWebServer, 3)
 
-        browserScreen {
-            createBookmark(firstWebPage.url)
-            createBookmark(secondWebPage.url)
-            createBookmark(thirdWebPage.url)
+        createBookmarkItem(firstWebPage.url.toString(), firstWebPage.title, null)
+        createBookmarkItem(secondWebPage.url.toString(), secondWebPage.title, null)
+        createBookmarkItem(thirdWebPage.url.toString(), thirdWebPage.title, null)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
         }.openThreeDotMenu(firstWebPage.title) {
@@ -676,7 +695,7 @@ class BookmarksTest : TestSetup() {
             typeSearch("generic")
             verifySuggestionsAreNotDisplayed(activityTestRule, firstWebPage.url.toString())
             verifySuggestionsAreNotDisplayed(activityTestRule, secondWebPage.url.toString())
-            verifySearchEngineSuggestionResults(activityTestRule, thirdWebPage.url.toString(), searchTerm = "generic")
+            verifySponsoredSuggestionsResults(activityTestRule, thirdWebPage.url.toString(), searchTerm = "generic")
             pressBack()
         }
         bookmarksMenu {
@@ -694,30 +713,17 @@ class BookmarksTest : TestSetup() {
     // Verifies that deleting a Bookmarks folder also removes the item from inside it.
     @SmokeTest
     @Test
+    @DetectLeaks
     fun deleteBookmarkFoldersTest() {
         val website = TestAssetHelper.getGenericAsset(mockWebServer, 1)
 
-        browserScreen {
-            createBookmark(website.url)
+        val myFolder = generateBookmarkFolder(title = "My Folder", position = null)
+        generateBookmarkFolder(myFolder, title = "My Folder 2", position = null)
+        createBookmarkItem(website.url.toString(), website.title, null, myFolder)
+
+        homeScreen {
         }.openThreeDotMenu {
         }.openBookmarks {
-            verifyBookmarkTitle("Test_Page_1")
-            createFolder("My Folder")
-            verifyFolderTitle("My Folder")
-        }.openThreeDotMenu("Test_Page_1") {
-        }.clickEdit {
-            clickParentFolderSelector()
-            selectFolder("My Folder")
-            navigateUp()
-            saveEditBookmark()
-            createFolder("My Folder 2")
-            verifyFolderTitle("My Folder 2")
-        }.openThreeDotMenu("My Folder 2") {
-        }.clickEdit {
-            clickParentFolderSelector()
-            selectFolder("My Folder")
-            navigateUp()
-            saveEditBookmark()
         }.openThreeDotMenu("My Folder") {
         }.clickDelete {
             cancelFolderDeletion()
@@ -726,7 +732,7 @@ class BookmarksTest : TestSetup() {
         }.clickDelete {
             confirmDeletion()
             verifySnackBarText(expectedText = "Deleted")
-            clickSnackbarButton("UNDO")
+            clickSnackbarButton(activityTestRule, "UNDO")
             verifyFolderTitle("My Folder")
         }.openThreeDotMenu("My Folder") {
         }.clickDelete {
@@ -748,7 +754,7 @@ class BookmarksTest : TestSetup() {
         }.enterURLAndEnterToBrowser(defaultWebPage.url) {
         }.openThreeDotMenu {
         }.bookmarkPage {
-            verifySnackBarText("Bookmark saved!")
+            verifySnackBarText("Saved in “Bookmarks”")
         }.openThreeDotMenu {
             verifyEditBookmarkButton()
         }.openBookmarks {

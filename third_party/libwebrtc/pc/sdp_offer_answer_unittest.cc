@@ -8,19 +8,27 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <cstddef>
+#include <cstdint>
 #include <memory>
+#include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/strings/match.h"
 #include "absl/strings/str_replace.h"
-#include "api/audio/audio_device.h"
-#include "api/audio/audio_mixer.h"
-#include "api/audio/audio_processing.h"
 #include "api/audio_codecs/builtin_audio_decoder_factory.h"
 #include "api/audio_codecs/builtin_audio_encoder_factory.h"
 #include "api/create_peerconnection_factory.h"
+#include "api/field_trials.h"
+#include "api/field_trials_view.h"
+#include "api/jsep.h"
 #include "api/media_types.h"
 #include "api/peer_connection_interface.h"
+#include "api/rtc_error.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_transceiver_direction.h"
 #include "api/rtp_transceiver_interface.h"
 #include "api/scoped_refptr.h"
 #include "api/video_codecs/video_decoder_factory_template.h"
@@ -33,14 +41,17 @@
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp8_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_libvpx_vp9_adapter.h"
 #include "api/video_codecs/video_encoder_factory_template_open_h264_adapter.h"
-#include "p2p/base/port_allocator.h"
+#include "media/base/codec.h"
+#include "media/base/media_constants.h"
+#include "media/base/stream_params.h"
 #include "pc/peer_connection_wrapper.h"
 #include "pc/session_description.h"
 #include "pc/test/fake_audio_capture_module.h"
 #include "pc/test/mock_peer_connection_observers.h"
-#include "rtc_base/rtc_certificate_generator.h"
+#include "rtc_base/string_encode.h"
 #include "rtc_base/thread.h"
 #include "system_wrappers/include/metrics.h"
+#include "test/gmock.h"
 #include "test/gtest.h"
 
 // This file contains unit tests that relate to the behavior of the
@@ -87,25 +98,43 @@ class SdpOfferAnswerTest : public ::testing::Test {
                                             OpenH264DecoderTemplateAdapter,
                                             Dav1dDecoderTemplateAdapter>>(),
             nullptr /* audio_mixer */,
-            nullptr /* audio_processing */)) {
+            nullptr /* audio_processing */,
+            nullptr /* audio_frame_processor */)) {
     metrics::Reset();
   }
 
-  std::unique_ptr<PeerConnectionWrapper> CreatePeerConnection() {
+  std::unique_ptr<PeerConnectionWrapper> CreatePeerConnection(
+      std::unique_ptr<FieldTrialsView> field_trials = nullptr) {
     RTCConfiguration config;
     config.sdp_semantics = SdpSemantics::kUnifiedPlan;
-    return CreatePeerConnection(config);
+    return CreatePeerConnection(config, std::move(field_trials));
   }
 
   std::unique_ptr<PeerConnectionWrapper> CreatePeerConnection(
-      const RTCConfiguration& config) {
+      const RTCConfiguration& config,
+      std::unique_ptr<FieldTrialsView> field_trials) {
     auto observer = std::make_unique<MockPeerConnectionObserver>();
-    auto result = pc_factory_->CreatePeerConnectionOrError(
-        config, PeerConnectionDependencies(observer.get()));
+    PeerConnectionDependencies pc_deps(observer.get());
+    pc_deps.trials = std::move(field_trials);
+    auto result =
+        pc_factory_->CreatePeerConnectionOrError(config, std::move(pc_deps));
     EXPECT_TRUE(result.ok());
     observer->SetPeerConnectionInterface(result.value().get());
     return std::make_unique<PeerConnectionWrapper>(
         pc_factory_, result.MoveValue(), std::move(observer));
+  }
+
+  std::optional<RtpCodecCapability> FindFirstSendCodecWithName(
+      cricket::MediaType media_type,
+      const std::string& name) const {
+    std::vector<RtpCodecCapability> codecs =
+        pc_factory_->GetRtpSenderCapabilities(media_type).codecs;
+    for (const auto& codec : codecs) {
+      if (absl::EqualsIgnoreCase(codec.name, name)) {
+        return codec;
+      }
+    }
+    return std::nullopt;
   }
 
  protected:
@@ -608,6 +637,107 @@ TEST_F(SdpOfferAnswerTest, SimulcastAnswerWithNoRidsIsRejected) {
       SdpType::kAnswer,
       absl::StrReplaceAll(sdp, {{"m=video 9 ", "m=video 0 "}}));
   EXPECT_TRUE(pc->SetRemoteDescription(std::move(rejected_answer)));
+}
+
+// TODO: bugs.webrtc.org/362277533 - reenable before launch.
+TEST_F(SdpOfferAnswerTest, DISABLED_SimulcastOfferWithMixedCodec) {
+  auto pc = CreatePeerConnection(
+      FieldTrials::CreateNoGlobal("WebRTC-MixedCodecSimulcast/Enabled/"));
+
+  std::optional<RtpCodecCapability> vp8_codec = FindFirstSendCodecWithName(
+      cricket::MEDIA_TYPE_VIDEO, cricket::kVp8CodecName);
+  ASSERT_TRUE(vp8_codec);
+  std::optional<RtpCodecCapability> vp9_codec = FindFirstSendCodecWithName(
+      cricket::MEDIA_TYPE_VIDEO, cricket::kVp9CodecName);
+  ASSERT_TRUE(vp9_codec);
+
+  RtpTransceiverInit init;
+  RtpEncodingParameters rid1;
+  rid1.rid = "1";
+  rid1.codec = *vp8_codec;
+  init.send_encodings.push_back(rid1);
+  RtpEncodingParameters rid2;
+  rid2.rid = "2";
+  rid2.codec = *vp9_codec;
+  init.send_encodings.push_back(rid2);
+
+  auto transceiver = pc->AddTransceiver(cricket::MEDIA_TYPE_VIDEO, init);
+  auto offer = pc->CreateOffer();
+  auto& offer_contents = offer->description()->contents();
+  auto send_codecs = offer_contents[0].media_description()->codecs();
+  // Verify that the serialized SDP includes pt=.
+  std::string sdp;
+  offer->ToString(&sdp);
+  int vp8_pt = cricket::Codec::kIdNotSet;
+  int vp9_pt = cricket::Codec::kIdNotSet;
+  for (auto& codec : send_codecs) {
+    if (codec.name == vp8_codec->name && vp8_pt == cricket::Codec::kIdNotSet) {
+      vp8_pt = codec.id;
+    }
+    if (codec.name == vp9_codec->name && vp9_pt == cricket::Codec::kIdNotSet) {
+      vp9_pt = codec.id;
+    }
+  }
+  EXPECT_THAT(sdp,
+              testing::HasSubstr("a=rid:1 send pt=" + std::to_string(vp8_pt)));
+  EXPECT_THAT(sdp,
+              testing::HasSubstr("a=rid:2 send pt=" + std::to_string(vp9_pt)));
+  // Verify that SDP containing pt= can be parsed correctly.
+  auto offer2 = CreateSessionDescription(SdpType::kOffer, sdp);
+  auto& offer_contents2 = offer2->description()->contents();
+  auto send_rids2 = offer_contents2[0].media_description()->streams()[0].rids();
+  EXPECT_EQ(send_rids2[0].payload_types.size(), 1u);
+  EXPECT_EQ(send_rids2[0].payload_types[0], vp8_pt);
+  EXPECT_EQ(send_rids2[1].payload_types.size(), 1u);
+  EXPECT_EQ(send_rids2[1].payload_types[0], vp9_pt);
+}
+
+TEST_F(SdpOfferAnswerTest, SimulcastAnswerWithPayloadType) {
+  auto pc = CreatePeerConnection(
+      FieldTrials::CreateNoGlobal("WebRTC-MixedCodecSimulcast/Enabled/"));
+
+  // A SDP offer with recv simulcast with payload type
+  std::string sdp =
+      "v=0\r\n"
+      "o=- 4131505339648218884 3 IN IP4 127.0.0.1\r\n"
+      "s=-\r\n"
+      "t=0 0\r\n"
+      "a=ice-ufrag:zGWFZ+fVXDeN6UoI/136\r\n"
+      "a=ice-pwd:9AUNgUqRNI5LSIrC1qFD2iTR\r\n"
+      "a=fingerprint:sha-256 "
+      "AD:52:52:E0:B1:37:34:21:0E:15:8E:B7:56:56:7B:B4:39:0E:6D:1C:F5:84:A7:EE:"
+      "B5:27:3E:30:B1:7D:69:42\r\n"
+      "a=setup:passive\r\n"
+      "m=video 9 UDP/TLS/RTP/SAVPF 96 97\r\n"
+      "c=IN IP4 0.0.0.0\r\n"
+      "a=rtcp:9 IN IP4 0.0.0.0\r\n"
+      "a=mid:0\r\n"
+      "a=extmap:9 urn:ietf:params:rtp-hdrext:sdes:mid\r\n"
+      "a=extmap:10 urn:ietf:params:rtp-hdrext:sdes:rtp-stream-id\r\n"
+      "a=recvonly\r\n"
+      "a=rtcp-mux\r\n"
+      "a=rtcp-rsize\r\n"
+      "a=rtpmap:96 VP8/90000\r\n"
+      "a=rtpmap:97 VP9/90000\r\n"
+      "a=rid:1 recv pt=96\r\n"
+      "a=rid:2 recv pt=97\r\n"
+      "a=simulcast:recv 1;2\r\n";
+
+  auto offer = CreateSessionDescription(SdpType::kOffer, sdp);
+  EXPECT_TRUE(pc->SetRemoteDescription(std::move(offer)));
+
+  auto transceiver = pc->pc()->GetTransceivers()[0];
+  EXPECT_TRUE(
+      transceiver->SetDirectionWithError(RtpTransceiverDirection::kSendOnly)
+          .ok());
+
+  // Check the generated SDP.
+  auto answer = pc->CreateAnswer();
+  answer->ToString(&sdp);
+  EXPECT_THAT(sdp, testing::HasSubstr("a=rid:1 send pt=96\r\n"));
+  EXPECT_THAT(sdp, testing::HasSubstr("a=rid:2 send pt=97\r\n"));
+
+  EXPECT_TRUE(pc->SetLocalDescription(std::move(answer)));
 }
 
 TEST_F(SdpOfferAnswerTest, ExpectAllSsrcsSpecifiedInSsrcGroupFid) {
@@ -1336,6 +1466,62 @@ TEST_F(SdpOfferAnswerTest, MidBackfillDoesNotCheckAgainstBundleGroup) {
   pc->SetRemoteDescription(std::move(desc), &error);
   EXPECT_TRUE(error.ok());
   EXPECT_TRUE(pc->CreateAnswerAndSetAsLocal());
+}
+
+TEST_F(SdpOfferAnswerTest, ReducedSizeNegotiated) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  auto audio_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  auto video_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO);
+
+  ASSERT_TRUE(caller->ExchangeOfferAnswerWith(callee.get()));
+  auto receivers = callee->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 2u);
+  auto audio_recv_param = receivers[0]->GetParameters();
+  EXPECT_TRUE(audio_recv_param.rtcp.reduced_size);
+  auto video_recv_param = receivers[1]->GetParameters();
+  EXPECT_TRUE(video_recv_param.rtcp.reduced_size);
+
+  auto senders = caller->pc()->GetSenders();
+  ASSERT_EQ(senders.size(), 2u);
+  auto audio_send_param = senders[0]->GetParameters();
+  EXPECT_TRUE(audio_send_param.rtcp.reduced_size);
+  auto video_send_param = senders[1]->GetParameters();
+  EXPECT_TRUE(video_send_param.rtcp.reduced_size);
+}
+
+TEST_F(SdpOfferAnswerTest, ReducedSizeNotNegotiated) {
+  auto caller = CreatePeerConnection();
+  auto callee = CreatePeerConnection();
+
+  auto audio_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_AUDIO);
+  auto video_transceiver = caller->AddTransceiver(cricket::MEDIA_TYPE_VIDEO);
+
+  auto offer = caller->CreateOfferAndSetAsLocal();
+  ASSERT_NE(offer, nullptr);
+  std::string sdp;
+  offer->ToString(&sdp);
+  // Remove rtcp-rsize attribute.
+  auto modified_offer = CreateSessionDescription(
+      SdpType::kOffer, absl::StrReplaceAll(sdp, {{"a=rtcp-rsize\r\n", ""}}));
+  EXPECT_TRUE(callee->SetRemoteDescription(std::move(modified_offer)));
+  auto answer = callee->CreateAnswerAndSetAsLocal();
+  EXPECT_TRUE(caller->SetRemoteDescription(std::move(answer)));
+
+  auto receivers = callee->pc()->GetReceivers();
+  ASSERT_EQ(receivers.size(), 2u);
+  auto audio_recv_param = receivers[0]->GetParameters();
+  EXPECT_FALSE(audio_recv_param.rtcp.reduced_size);
+  auto video_recv_param = receivers[1]->GetParameters();
+  EXPECT_FALSE(video_recv_param.rtcp.reduced_size);
+
+  auto senders = caller->pc()->GetSenders();
+  ASSERT_EQ(senders.size(), 2u);
+  auto audio_send_param = senders[0]->GetParameters();
+  EXPECT_FALSE(audio_send_param.rtcp.reduced_size);
+  auto video_send_param = senders[1]->GetParameters();
+  EXPECT_FALSE(video_send_param.rtcp.reduced_size);
 }
 
 }  // namespace webrtc

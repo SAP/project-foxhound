@@ -103,7 +103,7 @@ fn run(args: CliArgs) -> miette::Result<()> {
 
         ensure!(
             root.try_child(&orig_working_dir)
-                .map_or(false, |c| c.relative_path() == cts_vendor_dir),
+                .is_ok_and(|c| c.relative_path() == cts_vendor_dir),
             concat!(
                 "It is expected to run this tool from the root of its Cargo project, ",
                 "but this does not appear to have been done. Bailing."
@@ -186,7 +186,7 @@ fn run(args: CliArgs) -> miette::Result<()> {
                 git_status_porcelain_output,
             );
 
-            gecko_ckt.regen_dir(&cts_vendor_dir.join("checkout"), |vendored_ckt_dir| {
+            gecko_ckt.regen_dir(cts_vendor_dir.join("checkout"), |vendored_ckt_dir| {
                 log::info!("  …copying files tracked by Git to {vendored_ckt_dir}…");
                 let files_to_vendor = {
                     let mut git_ls_files_cmd = EasyCommand::new(&git_bin, |cmd| {
@@ -281,12 +281,14 @@ fn run(args: CliArgs) -> miette::Result<()> {
         npm_run_wpt_cmd.spawn()
     })?;
 
-    let cts_https_html_path = out_wpt_dir.child("cts.https.html");
+    let cts_https_html_path = out_wpt_dir.child("cts-withsomeworkers.https.html");
 
     {
-        let extra_cts_https_html_path = out_wpt_dir.child("cts-chunked2sec.https.html");
-        log::info!("removing extraneous {extra_cts_https_html_path}…");
-        remove_file(&*extra_cts_https_html_path)?;
+        for file_name in ["cts-chunked2sec.https.html", "cts.https.html"] {
+            let file_name = out_wpt_dir.child(file_name);
+            log::info!("removing extraneous {file_name}…");
+            remove_file(&*file_name)?;
+        }
     }
 
     log::info!("analyzing {cts_https_html_path}…");
@@ -294,6 +296,35 @@ fn run(args: CliArgs) -> miette::Result<()> {
     let cts_boilerplate_short_timeout;
     let cts_boilerplate_long_timeout;
     let cts_cases;
+    #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd)]
+    enum WorkerType {
+        Dedicated,
+        Service,
+        Shared,
+    }
+
+    impl WorkerType {
+        const DEDICATED: &str = "dedicated";
+        const SERVICE: &str = "service";
+        const SHARED: &str = "shared";
+
+        pub(crate) fn new(s: &str) -> Option<Self> {
+            match s {
+                Self::DEDICATED => Some(WorkerType::Dedicated),
+                Self::SERVICE => Some(WorkerType::Service),
+                Self::SHARED => Some(WorkerType::Shared),
+                _ => None,
+            }
+        }
+
+        pub(crate) fn as_str(&self) -> &'static str {
+            match self {
+                Self::Dedicated => Self::DEDICATED,
+                Self::Service => Self::SERVICE,
+                Self::Shared => Self::SHARED,
+            }
+        }
+    }
     {
         {
             let (boilerplate, cases_start) = {
@@ -379,21 +410,44 @@ fn run(args: CliArgs) -> miette::Result<()> {
             let mut parsing_failed = false;
             let meta_variant_regex = Regex::new(concat!(
                 "^",
-                "<meta name=variant content='\\?q=([^']*?):\\*'>",
+                "<meta name=variant content='",
+                r"\?",
+                r"(:?worker=(?P<worker_type>\w+)&)?",
+                r"q=(?P<test_path>[^']*?):\*",
+                "'>",
                 "$"
             ))
             .unwrap();
             cts_cases = cases_start
                 .split_terminator('\n')
                 .filter_map(|line| {
-                    let path_and_meta = meta_variant_regex
-                        .captures(line)
-                        .map(|caps| (caps[1].to_owned(), line));
-                    if path_and_meta.is_none() {
+                    if line.is_empty() {
+                        // Empty separator lines exist between groups of different `worker_type`s.
+                        return None;
+                    }
+                    let captures = meta_variant_regex.captures(line);
+                    if captures.is_none() {
                         parsing_failed = true;
                         log::error!("line is not a test case: {line:?}");
                     }
-                    path_and_meta
+                    let captures = captures?;
+
+                    let test_path = captures["test_path"].to_owned();
+
+                    let worker_type =
+                        captures
+                            .name("worker_type")
+                            .map(|wt| wt.as_str())
+                            .and_then(|wt| match WorkerType::new(wt) {
+                                Some(wt) => Some(wt),
+                                None => {
+                                    parsing_failed = true;
+                                    log::error!("unrecognized `worker` type {wt:?}");
+                                    None
+                                }
+                            });
+
+                    Some((test_path, worker_type, line))
                 })
                 .collect::<Vec<_>>();
             ensure!(
@@ -413,8 +467,8 @@ fn run(args: CliArgs) -> miette::Result<()> {
     cts_ckt.regen_dir(out_wpt_dir.join("cts"), |cts_tests_dir| {
         log::info!("re-distributing tests into single file per test path…");
         let mut failed_writing = false;
-        let mut cts_cases_by_spec_file_dir = BTreeMap::<_, BTreeSet<_>>::new();
-        for (path, meta) in cts_cases {
+        let mut cts_cases_by_spec_file_dir = BTreeMap::<_, BTreeMap<_, BTreeSet<_>>>::new();
+        for (path, worker_type, meta) in cts_cases {
             let case_dir = {
                 // Context: We want to mirror CTS upstream's `src/webgpu/**/*.spec.ts` paths as
                 // entire WPT tests, with each subtest being a WPT variant. Here's a diagram of
@@ -445,12 +499,13 @@ fn run(args: CliArgs) -> miette::Result<()> {
                             continue;
                         }
                     };
-                let slashed =
-                    path[..subtest_and_later_start_idx].replace(|c| matches!(c, ':' | ','), "/");
+                let slashed = path[..subtest_and_later_start_idx].replace([':', ','], "/");
                 cts_tests_dir.child(slashed)
             };
             if !cts_cases_by_spec_file_dir
                 .entry(case_dir)
+                .or_default()
+                .entry(worker_type)
                 .or_default()
                 .insert(meta)
             {
@@ -462,6 +517,7 @@ fn run(args: CliArgs) -> miette::Result<()> {
             cases: BTreeSet<&'a str>,
             timeout_length: TimeoutLength,
         }
+        #[derive(Clone, Copy, Debug)]
         enum TimeoutLength {
             Short,
             Long,
@@ -471,10 +527,26 @@ fn run(args: CliArgs) -> miette::Result<()> {
             fn insert_with_default_name<'a>(
                 split_cases: &mut BTreeMap<fs::Child<'a>, WptEntry<'a>>,
                 spec_file_dir: fs::Child<'a>,
-                cases: WptEntry<'a>,
+                cases: BTreeMap<Option<WorkerType>, BTreeSet<&'a str>>,
+                timeout_length: TimeoutLength,
             ) {
-                let path = spec_file_dir.child("cts.https.html");
-                assert!(split_cases.insert(path, cases).is_none());
+                for (worker_type, cases) in cases {
+                    // TODO: https://bugzilla.mozilla.org/show_bug.cgi?id=1938663
+                    if worker_type == Some(WorkerType::Service) {
+                        continue;
+                    }
+                    let file_stem = worker_type.map(|wt| wt.as_str()).unwrap_or("cts");
+                    let path = spec_file_dir.child(format!("{file_stem}.https.html"));
+                    assert!(split_cases
+                        .insert(
+                            path,
+                            WptEntry {
+                                cases,
+                                timeout_length
+                            }
+                        )
+                        .is_none());
+                }
             }
             {
                 let dld_path =
@@ -485,20 +557,16 @@ fn run(args: CliArgs) -> miette::Result<()> {
                 insert_with_default_name(
                     &mut split_cases,
                     spec_file_dir,
-                    WptEntry {
-                        cases,
-                        timeout_length: TimeoutLength::Short,
-                    },
+                    cases,
+                    TimeoutLength::Short,
                 );
             }
             for (spec_file_dir, cases) in cts_cases_by_spec_file_dir {
                 insert_with_default_name(
                     &mut split_cases,
                     spec_file_dir,
-                    WptEntry {
-                        cases,
-                        timeout_length: TimeoutLength::Long,
-                    },
+                    cases,
+                    TimeoutLength::Long,
                 );
             }
             split_cases
@@ -506,7 +574,7 @@ fn run(args: CliArgs) -> miette::Result<()> {
 
         for (path, entry) in split_cases {
             let dir = path.parent().expect("no parent found for ");
-            match create_dir_all(&dir) {
+            match create_dir_all(dir) {
                 Ok(()) => log::trace!("made directory {}", dir.display()),
                 Err(e) => {
                     failed_writing = true;

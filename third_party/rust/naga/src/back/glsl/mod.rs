@@ -47,10 +47,11 @@ pub use features::Features;
 
 use crate::{
     back::{self, Baked},
-    proc::{self, NameKey},
+    proc::{self, ExpressionKindTracker, NameKey},
     valid, Handle, ShaderStage, TypeInner,
 };
 use features::FeaturesManager;
+use hashbrown::hash_map;
 use std::{
     cmp::Ordering,
     fmt::{self, Error as FmtError, Write},
@@ -77,6 +78,28 @@ pub(crate) const FREXP_FUNCTION: &str = "naga_frexp";
 
 // Must match code in glsl_built_in
 pub const FIRST_INSTANCE_BINDING: &str = "naga_vs_first_instance";
+
+#[cfg_attr(feature = "serialize", derive(serde::Serialize))]
+#[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+struct BindingMapSerialization {
+    resource_binding: crate::ResourceBinding,
+    bind_target: u8,
+}
+
+#[cfg(feature = "deserialize")]
+fn deserialize_binding_map<'de, D>(deserializer: D) -> Result<BindingMap, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    let vec = Vec::<BindingMapSerialization>::deserialize(deserializer)?;
+    let mut map = BindingMap::default();
+    for item in vec {
+        map.insert(item.resource_binding, item.bind_target);
+    }
+    Ok(map)
+}
 
 /// Mapping between resources and bindings.
 pub type BindingMap = std::collections::BTreeMap<crate::ResourceBinding, u8>;
@@ -238,7 +261,7 @@ bitflags::bitflags! {
         /// additional functions on shadows and arrays of shadows.
         const TEXTURE_SHADOW_LOD = 0x2;
         /// Supports ARB_shader_draw_parameters on the host, which provides
-        /// support for `gl_BaseInstanceARB`, `gl_BaseVertexARB`, and `gl_DrawIDARB`.
+        /// support for `gl_BaseInstanceARB`, `gl_BaseVertexARB`, `gl_DrawIDARB`, and `gl_DrawID`.
         const DRAW_PARAMETERS = 0x4;
         /// Include unused global variables, constants and functions. By default the output will exclude
         /// global variables that are not used in the specified entrypoint (including indirect use),
@@ -258,12 +281,17 @@ bitflags::bitflags! {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serialize", derive(serde::Serialize))]
 #[cfg_attr(feature = "deserialize", derive(serde::Deserialize))]
+#[cfg_attr(feature = "deserialize", serde(default))]
 pub struct Options {
     /// The GLSL version to be used.
     pub version: Version,
     /// Configuration flags for the [`Writer`].
     pub writer_flags: WriterFlags,
     /// Map of resources association to binding locations.
+    #[cfg_attr(
+        feature = "deserialize",
+        serde(deserialize_with = "deserialize_binding_map")
+    )]
     pub binding_map: BindingMap,
     /// Should workgroup variables be zero initialized (by polyfilling)?
     pub zero_initialize_workgroup_memory: bool,
@@ -498,6 +526,9 @@ pub enum Error {
     Custom(String),
     #[error("overrides should not be present at this stage")]
     Override,
+    /// [`crate::Sampling::First`] is unsupported.
+    #[error("`{:?}` sampling is unsupported", crate::Sampling::First)]
+    FirstSamplingNotSupported,
 }
 
 /// Binary operation with a different logic on the GLSL side.
@@ -545,6 +576,11 @@ pub struct Writer<'a, W> {
     named_expressions: crate::NamedExpressions,
     /// Set of expressions that need to be baked to avoid unnecessary repetition in output
     need_bake_expressions: back::NeedBakeExpressions,
+    /// Information about nesting of loops and switches.
+    ///
+    /// Used for forwarding continue statements in switches that have been
+    /// transformed to `do {} while(false);` loops.
+    continue_ctx: back::continue_forward::ContinueCtx,
     /// How many views to render to, if doing multiview rendering.
     multiview: Option<std::num::NonZeroU32>,
     /// Mapping of varying variables to their location. Needed for reflections.
@@ -619,6 +655,7 @@ impl<'a, W: Write> Writer<'a, W> {
             block_id: IdGenerator::default(),
             named_expressions: Default::default(),
             need_bake_expressions: Default::default(),
+            continue_ctx: back::continue_forward::ContinueCtx::default(),
             varying: Default::default(),
         };
 
@@ -737,14 +774,17 @@ impl<'a, W: Write> Writer<'a, W> {
         // Write functions to create special types.
         for (type_key, struct_ty) in self.module.special_types.predeclared_types.iter() {
             match type_key {
-                &crate::PredeclaredType::ModfResult { size, width }
-                | &crate::PredeclaredType::FrexpResult { size, width } => {
+                &crate::PredeclaredType::ModfResult { size, scalar }
+                | &crate::PredeclaredType::FrexpResult { size, scalar } => {
                     let arg_type_name_owner;
                     let arg_type_name = if let Some(size) = size {
-                        arg_type_name_owner =
-                            format!("{}vec{}", if width == 8 { "d" } else { "" }, size as u8);
+                        arg_type_name_owner = format!(
+                            "{}vec{}",
+                            if scalar.width == 8 { "d" } else { "" },
+                            size as u8
+                        );
                         &arg_type_name_owner
-                    } else if width == 8 {
+                    } else if scalar.width == 8 {
                         "double"
                     } else {
                         "float"
@@ -968,6 +1008,7 @@ impl<'a, W: Write> Writer<'a, W> {
             crate::ArraySize::Constant(size) => {
                 write!(self.out, "{size}")?;
             }
+            crate::ArraySize::Pending(_) => unreachable!(),
             crate::ArraySize::Dynamic => (),
         }
 
@@ -1086,12 +1127,16 @@ impl<'a, W: Write> Writer<'a, W> {
         // - Array - used if it's an image array
         // - Shadow - used if it's a depth image
         use crate::ImageClass as Ic;
-
-        let (base, kind, ms, comparison) = match class {
-            Ic::Sampled { kind, multi: true } => ("sampler", kind, "MS", ""),
-            Ic::Sampled { kind, multi: false } => ("sampler", kind, "", ""),
-            Ic::Depth { multi: true } => ("sampler", crate::ScalarKind::Float, "MS", ""),
-            Ic::Depth { multi: false } => ("sampler", crate::ScalarKind::Float, "", "Shadow"),
+        use crate::Scalar as S;
+        let float = S {
+            kind: crate::ScalarKind::Float,
+            width: 4,
+        };
+        let (base, scalar, ms, comparison) = match class {
+            Ic::Sampled { kind, multi: true } => ("sampler", S { kind, width: 4 }, "MS", ""),
+            Ic::Sampled { kind, multi: false } => ("sampler", S { kind, width: 4 }, "", ""),
+            Ic::Depth { multi: true } => ("sampler", float, "MS", ""),
+            Ic::Depth { multi: false } => ("sampler", float, "", "Shadow"),
             Ic::Storage { format, .. } => ("image", format.into(), "", ""),
         };
 
@@ -1105,7 +1150,7 @@ impl<'a, W: Write> Writer<'a, W> {
             self.out,
             "{}{}{}{}{}{}{}",
             precision,
-            glsl_scalar(crate::Scalar { kind, width: 4 })?.prefix,
+            glsl_scalar(scalar)?.prefix,
             base,
             glsl_dimension(dim),
             ms,
@@ -1307,20 +1352,20 @@ impl<'a, W: Write> Writer<'a, W> {
                     crate::MathFunction::Dot => {
                         // if the expression is a Dot product with integer arguments,
                         // then the args needs baking as well
-                        if let TypeInner::Scalar(crate::Scalar { kind, .. }) = *inner {
-                            match kind {
-                                crate::ScalarKind::Sint | crate::ScalarKind::Uint => {
-                                    self.need_bake_expressions.insert(arg);
-                                    self.need_bake_expressions.insert(arg1.unwrap());
-                                }
-                                _ => {}
-                            }
+                        if let TypeInner::Scalar(crate::Scalar {
+                            kind: crate::ScalarKind::Sint | crate::ScalarKind::Uint,
+                            ..
+                        }) = *inner
+                        {
+                            self.need_bake_expressions.insert(arg);
+                            self.need_bake_expressions.insert(arg1.unwrap());
                         }
                     }
                     crate::MathFunction::Pack4xI8
                     | crate::MathFunction::Pack4xU8
                     | crate::MathFunction::Unpack4xI8
-                    | crate::MathFunction::Unpack4xU8 => {
+                    | crate::MathFunction::Unpack4xU8
+                    | crate::MathFunction::QuantizeToF16 => {
                         self.need_bake_expressions.insert(arg);
                     }
                     crate::MathFunction::ExtractBits => {
@@ -1529,7 +1574,7 @@ impl<'a, W: Write> Writer<'a, W> {
         // here, regardless of the version.
         if let Some(sampling) = sampling {
             if emit_interpolation_and_auxiliary {
-                if let Some(qualifier) = glsl_sampling(sampling) {
+                if let Some(qualifier) = glsl_sampling(sampling)? {
                     write!(self.out, "{qualifier} ")?;
                 }
             }
@@ -1579,6 +1624,7 @@ impl<'a, W: Write> Writer<'a, W> {
             info,
             expressions: &func.expressions,
             named_expressions: &func.named_expressions,
+            expr_kind_tracker: ExpressionKindTracker::from_arena(&func.expressions),
         };
 
         self.named_expressions.clear();
@@ -1869,7 +1915,7 @@ impl<'a, W: Write> Writer<'a, W> {
         // with different precedences from applying earlier.
         write!(self.out, "(")?;
 
-        // Cycle trough all the components of the vector
+        // Cycle through all the components of the vector
         for index in 0..size {
             let component = back::COMPONENTS[index];
             // Write the addition to the previous product
@@ -2082,42 +2128,94 @@ impl<'a, W: Write> Writer<'a, W> {
                 selector,
                 ref cases,
             } => {
-                // Start the switch
-                write!(self.out, "{level}")?;
-                write!(self.out, "switch(")?;
-                self.write_expr(selector, ctx)?;
-                writeln!(self.out, ") {{")?;
-
-                // Write all cases
                 let l2 = level.next();
-                for case in cases {
-                    match case.value {
-                        crate::SwitchValue::I32(value) => write!(self.out, "{l2}case {value}:")?,
-                        crate::SwitchValue::U32(value) => write!(self.out, "{l2}case {value}u:")?,
-                        crate::SwitchValue::Default => write!(self.out, "{l2}default:")?,
+                // Some GLSL consumers may not handle switches with a single
+                // body correctly: See wgpu#4514. Write such switch statements
+                // as a `do {} while(false);` loop instead.
+                //
+                // Since doing so may inadvertently capture `continue`
+                // statements in the switch body, we must apply continue
+                // forwarding. See the `naga::back::continue_forward` module
+                // docs for details.
+                let one_body = cases
+                    .iter()
+                    .rev()
+                    .skip(1)
+                    .all(|case| case.fall_through && case.body.is_empty());
+                if one_body {
+                    // Unlike HLSL, in GLSL `continue_ctx` only needs to know
+                    // about [`Switch`] statements that are being rendered as
+                    // `do-while` loops.
+                    if let Some(variable) = self.continue_ctx.enter_switch(&mut self.namer) {
+                        writeln!(self.out, "{level}bool {variable} = false;",)?;
+                    };
+                    writeln!(self.out, "{level}do {{")?;
+                    // Note: Expressions have no side-effects so we don't need to emit selector expression.
+
+                    // Body
+                    if let Some(case) = cases.last() {
+                        for sta in case.body.iter() {
+                            self.write_stmt(sta, ctx, l2)?;
+                        }
+                    }
+                    // End do-while
+                    writeln!(self.out, "{level}}} while(false);")?;
+
+                    // Handle any forwarded continue statements.
+                    use back::continue_forward::ExitControlFlow;
+                    let op = match self.continue_ctx.exit_switch() {
+                        ExitControlFlow::None => None,
+                        ExitControlFlow::Continue { variable } => Some(("continue", variable)),
+                        ExitControlFlow::Break { variable } => Some(("break", variable)),
+                    };
+                    if let Some((control_flow, variable)) = op {
+                        writeln!(self.out, "{level}if ({variable}) {{")?;
+                        writeln!(self.out, "{l2}{control_flow};")?;
+                        writeln!(self.out, "{level}}}")?;
+                    }
+                } else {
+                    // Start the switch
+                    write!(self.out, "{level}")?;
+                    write!(self.out, "switch(")?;
+                    self.write_expr(selector, ctx)?;
+                    writeln!(self.out, ") {{")?;
+
+                    // Write all cases
+                    for case in cases {
+                        match case.value {
+                            crate::SwitchValue::I32(value) => {
+                                write!(self.out, "{l2}case {value}:")?
+                            }
+                            crate::SwitchValue::U32(value) => {
+                                write!(self.out, "{l2}case {value}u:")?
+                            }
+                            crate::SwitchValue::Default => write!(self.out, "{l2}default:")?,
+                        }
+
+                        let write_block_braces = !(case.fall_through && case.body.is_empty());
+                        if write_block_braces {
+                            writeln!(self.out, " {{")?;
+                        } else {
+                            writeln!(self.out)?;
+                        }
+
+                        for sta in case.body.iter() {
+                            self.write_stmt(sta, ctx, l2.next())?;
+                        }
+
+                        if !case.fall_through
+                            && case.body.last().map_or(true, |s| !s.is_terminator())
+                        {
+                            writeln!(self.out, "{}break;", l2.next())?;
+                        }
+
+                        if write_block_braces {
+                            writeln!(self.out, "{l2}}}")?;
+                        }
                     }
 
-                    let write_block_braces = !(case.fall_through && case.body.is_empty());
-                    if write_block_braces {
-                        writeln!(self.out, " {{")?;
-                    } else {
-                        writeln!(self.out)?;
-                    }
-
-                    for sta in case.body.iter() {
-                        self.write_stmt(sta, ctx, l2.next())?;
-                    }
-
-                    if !case.fall_through && case.body.last().map_or(true, |s| !s.is_terminator()) {
-                        writeln!(self.out, "{}break;", l2.next())?;
-                    }
-
-                    if write_block_braces {
-                        writeln!(self.out, "{l2}}}")?;
-                    }
+                    writeln!(self.out, "{level}}}")?
                 }
-
-                writeln!(self.out, "{level}}}")?
             }
             // Loops in naga IR are based on wgsl loops, glsl can emulate the behaviour by using a
             // while true loop and appending the continuing block to the body resulting on:
@@ -2134,6 +2232,7 @@ impl<'a, W: Write> Writer<'a, W> {
                 ref continuing,
                 break_if,
             } => {
+                self.continue_ctx.enter_loop();
                 if !continuing.is_empty() || break_if.is_some() {
                     let gate_name = self.namer.call("loop_init");
                     writeln!(self.out, "{level}bool {gate_name} = true;")?;
@@ -2159,7 +2258,8 @@ impl<'a, W: Write> Writer<'a, W> {
                 for sta in body {
                     self.write_stmt(sta, ctx, level.next())?;
                 }
-                writeln!(self.out, "{level}}}")?
+                writeln!(self.out, "{level}}}")?;
+                self.continue_ctx.exit_loop();
             }
             // Break, continue and return as written as in C
             // `break;`
@@ -2169,8 +2269,14 @@ impl<'a, W: Write> Writer<'a, W> {
             }
             // `continue;`
             Statement::Continue => {
-                write!(self.out, "{level}")?;
-                writeln!(self.out, "continue;")?
+                // Sometimes we must render a `Continue` statement as a `break`.
+                // See the docs for the `back::continue_forward` module.
+                if let Some(variable) = self.continue_ctx.continue_encountered() {
+                    writeln!(self.out, "{level}{variable} = true;",)?;
+                    writeln!(self.out, "{level}break;")?
+                } else {
+                    writeln!(self.out, "{level}continue;")?
+                }
             }
             // `return expr;`, `expr` is optional
             Statement::Return { value } => {
@@ -2396,6 +2502,17 @@ impl<'a, W: Write> Writer<'a, W> {
                 self.write_expr(value, ctx)?;
                 writeln!(self.out, ");")?;
             }
+            // Stores a value into an image.
+            Statement::ImageAtomic {
+                image,
+                coordinate,
+                array_index,
+                fun,
+                value,
+            } => {
+                write!(self.out, "{level}")?;
+                self.write_image_atomic(ctx, image, coordinate, array_index, fun, value)?
+            }
             Statement::RayQuery { .. } => unreachable!(),
             Statement::SubgroupBallot { result, predicate } => {
                 write!(self.out, "{level}")?;
@@ -2576,15 +2693,15 @@ impl<'a, W: Write> Writer<'a, W> {
                 match literal {
                     // Floats are written using `Debug` instead of `Display` because it always appends the
                     // decimal part even it's zero which is needed for a valid glsl float constant
-                    crate::Literal::F64(value) => write!(self.out, "{:?}LF", value)?,
-                    crate::Literal::F32(value) => write!(self.out, "{:?}", value)?,
+                    crate::Literal::F64(value) => write!(self.out, "{value:?}LF")?,
+                    crate::Literal::F32(value) => write!(self.out, "{value:?}")?,
                     // Unsigned integers need a `u` at the end
                     //
                     // While `core` doesn't necessarily need it, it's allowed and since `es` needs it we
                     // always write it as the extra branch wouldn't have any benefit in readability
-                    crate::Literal::U32(value) => write!(self.out, "{}u", value)?,
-                    crate::Literal::I32(value) => write!(self.out, "{}", value)?,
-                    crate::Literal::Bool(value) => write!(self.out, "{}", value)?,
+                    crate::Literal::U32(value) => write!(self.out, "{value}u")?,
+                    crate::Literal::I32(value) => write!(self.out, "{value}")?,
+                    crate::Literal::Bool(value) => write!(self.out, "{value}")?,
                     crate::Literal::I64(_) => {
                         return Err(Error::Custom("GLSL has no 64-bit integer type".into()));
                     }
@@ -3022,7 +3139,7 @@ impl<'a, W: Write> Writer<'a, W> {
                         self.write_expr(image, ctx)?;
                         // All textureSize calls requires an lod argument
                         // except for multisampled samplers
-                        if class.is_multisampled() {
+                        if !class.is_multisampled() {
                             write!(self.out, ", 0")?;
                         }
                         write!(self.out, ")")?;
@@ -3422,6 +3539,48 @@ impl<'a, W: Write> Writer<'a, W> {
                     Mf::Inverse => "inverse",
                     Mf::Transpose => "transpose",
                     Mf::Determinant => "determinant",
+                    Mf::QuantizeToF16 => match *ctx.resolve_type(arg, &self.module.types) {
+                        TypeInner::Scalar { .. } => {
+                            write!(self.out, "unpackHalf2x16(packHalf2x16(vec2(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, "))).x")?;
+                            return Ok(());
+                        }
+                        TypeInner::Vector {
+                            size: crate::VectorSize::Bi,
+                            ..
+                        } => {
+                            write!(self.out, "unpackHalf2x16(packHalf2x16(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, "))")?;
+                            return Ok(());
+                        }
+                        TypeInner::Vector {
+                            size: crate::VectorSize::Tri,
+                            ..
+                        } => {
+                            write!(self.out, "vec3(unpackHalf2x16(packHalf2x16(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, ".xy)), unpackHalf2x16(packHalf2x16(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, ".zz)).x)")?;
+                            return Ok(());
+                        }
+                        TypeInner::Vector {
+                            size: crate::VectorSize::Quad,
+                            ..
+                        } => {
+                            write!(self.out, "vec4(unpackHalf2x16(packHalf2x16(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, ".xy)), unpackHalf2x16(packHalf2x16(")?;
+                            self.write_expr(arg, ctx)?;
+                            write!(self.out, ".zw)))")?;
+                            return Ok(());
+                        }
+                        _ => unreachable!(
+                            "Correct TypeInner for QuantizeToF16 should be already validated"
+                        ),
+                    },
                     // bits
                     Mf::CountTrailingZeros => {
                         match *ctx.resolve_type(arg, &self.module.types) {
@@ -3581,8 +3740,8 @@ impl<'a, W: Write> Writer<'a, W> {
 
                         return Ok(());
                     }
-                    Mf::FindLsb => "findLSB",
-                    Mf::FindMsb => "findMSB",
+                    Mf::FirstTrailingBit => "findLSB",
+                    Mf::FirstLeadingBit => "findMSB",
                     // data packing
                     Mf::Pack4x8snorm => "packSnorm4x8",
                     Mf::Pack4x8unorm => "packUnorm4x8",
@@ -3656,8 +3815,10 @@ impl<'a, W: Write> Writer<'a, W> {
 
                 // Some GLSL functions always return signed integers (like findMSB),
                 // so they need to be cast to uint if the argument is also an uint.
-                let ret_might_need_int_to_uint =
-                    matches!(fun, Mf::FindLsb | Mf::FindMsb | Mf::CountOneBits | Mf::Abs);
+                let ret_might_need_int_to_uint = matches!(
+                    fun,
+                    Mf::FirstTrailingBit | Mf::FirstLeadingBit | Mf::CountOneBits | Mf::Abs
+                );
 
                 // Some GLSL functions only accept signed integers (like abs),
                 // so they need their argument cast from uint to int.
@@ -3977,7 +4138,7 @@ impl<'a, W: Write> Writer<'a, W> {
     ) -> Result<(), Error> {
         use crate::ImageDimension as IDim;
 
-        // NOTE: openGL requires that `imageStore`s have no effets when the texel is invalid
+        // NOTE: openGL requires that `imageStore`s have no effects when the texel is invalid
         // so we don't need to generate bounds checks (OpenGL 4.2 Core §3.9.20)
 
         // This will only panic if the module is invalid
@@ -4009,6 +4170,56 @@ impl<'a, W: Write> Writer<'a, W> {
         write!(self.out, ", ")?;
         self.write_expr(value, ctx)?;
         // End the call to `imageStore` and the statement.
+        writeln!(self.out, ");")?;
+
+        Ok(())
+    }
+
+    /// Helper method to write the `ImageAtomic` statement
+    fn write_image_atomic(
+        &mut self,
+        ctx: &back::FunctionCtx,
+        image: Handle<crate::Expression>,
+        coordinate: Handle<crate::Expression>,
+        array_index: Option<Handle<crate::Expression>>,
+        fun: crate::AtomicFunction,
+        value: Handle<crate::Expression>,
+    ) -> Result<(), Error> {
+        use crate::ImageDimension as IDim;
+
+        // NOTE: openGL requires that `imageAtomic`s have no effects when the texel is invalid
+        // so we don't need to generate bounds checks (OpenGL 4.2 Core §3.9.20)
+
+        // This will only panic if the module is invalid
+        let dim = match *ctx.resolve_type(image, &self.module.types) {
+            TypeInner::Image { dim, .. } => dim,
+            _ => unreachable!(),
+        };
+
+        // Begin our call to `imageAtomic`
+        let fun_str = fun.to_glsl();
+        write!(self.out, "imageAtomic{fun_str}(")?;
+        self.write_expr(image, ctx)?;
+        // Separate the image argument from the coordinates
+        write!(self.out, ", ")?;
+
+        // openGL es doesn't have 1D images so we need workaround it
+        let tex_1d_hack = dim == IDim::D1 && self.options.version.is_es();
+        // Write the coordinate vector
+        self.write_texture_coord(
+            ctx,
+            // Get the size of the coordinate vector
+            self.get_coordinate_vector_size(dim, false),
+            coordinate,
+            array_index,
+            tex_1d_hack,
+        )?;
+
+        // Separate the coordinate from the value to write and write the expression
+        // of the value to write.
+        write!(self.out, ", ")?;
+        self.write_expr(value, ctx)?;
+        // End the call to `imageAtomic` and the statement.
         writeln!(self.out, ");")?;
 
         Ok(())
@@ -4238,10 +4449,28 @@ impl<'a, W: Write> Writer<'a, W> {
                 writeln!(self.out, ") - 1)")?;
             }
         } else if let Some(sample_or_level) = sample.or(level) {
+            // GLSL only support SInt on this field while WGSL support also UInt
+            let cast_to_int = matches!(
+                *ctx.resolve_type(sample_or_level, &self.module.types),
+                TypeInner::Scalar(crate::Scalar {
+                    kind: crate::ScalarKind::Uint,
+                    ..
+                })
+            );
+
             // If no bounds checking is need just add the sample or level argument
             // after the coordinates
             write!(self.out, ", ")?;
+
+            if cast_to_int {
+                write!(self.out, "int(")?;
+            }
+
             self.write_expr(sample_or_level, ctx)?;
+
+            if cast_to_int {
+                write!(self.out, ")")?;
+            }
         }
 
         // Close the image load function.
@@ -4340,6 +4569,7 @@ impl<'a, W: Write> Writer<'a, W> {
                     .expect("Bad array size")
                 {
                     proc::IndexableLength::Known(count) => count,
+                    proc::IndexableLength::Pending => unreachable!(),
                     proc::IndexableLength::Dynamic => return Ok(()),
                 };
                 self.write_type(base)?;
@@ -4409,6 +4639,9 @@ impl<'a, W: Write> Writer<'a, W> {
     /// they can only be used to query information about the resource which isn't what
     /// we want here so when storage access is both `LOAD` and `STORE` add no modifiers
     fn write_storage_access(&mut self, storage_access: crate::StorageAccess) -> BackendResult {
+        if storage_access.contains(crate::StorageAccess::ATOMIC) {
+            return Ok(());
+        }
         if !storage_access.contains(crate::StorageAccess::STORE) {
             write!(self.out, "readonly ")?;
         }
@@ -4420,7 +4653,6 @@ impl<'a, W: Write> Writer<'a, W> {
 
     /// Helper method used to produce the reflection info that's returned to the user
     fn collect_reflection_info(&mut self) -> Result<ReflectionInfo, Error> {
-        use std::collections::hash_map::Entry;
         let info = self.info.get_entry_point(self.entry_point_idx as usize);
         let mut texture_mapping = crate::FastHashMap::default();
         let mut uniforms = crate::FastHashMap::default();
@@ -4429,13 +4661,13 @@ impl<'a, W: Write> Writer<'a, W> {
             let tex_name = self.reflection_names_globals[&sampling.image].clone();
 
             match texture_mapping.entry(tex_name) {
-                Entry::Vacant(v) => {
+                hash_map::Entry::Vacant(v) => {
                     v.insert(TextureMapping {
                         texture: sampling.image,
                         sampler: Some(sampling.sampler),
                     });
                 }
-                Entry::Occupied(e) => {
+                hash_map::Entry::Occupied(e) => {
                     if e.get().sampler != Some(sampling.sampler) {
                         log::error!("Conflicting samplers for {}", e.key());
                         return Err(Error::ImageMultipleSamplers);
@@ -4453,13 +4685,13 @@ impl<'a, W: Write> Writer<'a, W> {
                 TypeInner::Image { .. } => {
                     let tex_name = self.reflection_names_globals[&handle].clone();
                     match texture_mapping.entry(tex_name) {
-                        Entry::Vacant(v) => {
+                        hash_map::Entry::Vacant(v) => {
                             v.insert(TextureMapping {
                                 texture: handle,
                                 sampler: None,
                             });
                         }
-                        Entry::Occupied(_) => {
+                        hash_map::Entry::Occupied(_) => {
                             // already used with a sampler, do nothing
                         }
                     }
@@ -4543,7 +4775,7 @@ impl<'a, W: Write> Writer<'a, W> {
 
                 for i in 0..count.get() {
                     // Add the array accessor and recurse.
-                    segments.push(format!("[{}]", i));
+                    segments.push(format!("[{i}]"));
                     self.collect_push_constant_items(base, segments, layouter, offset, items);
                     segments.pop();
                 }
@@ -4648,6 +4880,7 @@ const fn glsl_built_in(built_in: crate::BuiltIn, options: VaryingOptions) -> &'s
         }
         Bi::PointSize => "gl_PointSize",
         Bi::VertexIndex => "uint(gl_VertexID)",
+        Bi::DrawID => "gl_DrawID",
         // fragment
         Bi::FragDepth => "gl_FragDepth",
         Bi::PointCoord => "gl_PointCoord",
@@ -4703,14 +4936,15 @@ const fn glsl_interpolation(interpolation: crate::Interpolation) -> &'static str
 }
 
 /// Return the GLSL auxiliary qualifier for the given sampling value.
-const fn glsl_sampling(sampling: crate::Sampling) -> Option<&'static str> {
+const fn glsl_sampling(sampling: crate::Sampling) -> BackendResult<Option<&'static str>> {
     use crate::Sampling as S;
 
-    match sampling {
-        S::Center => None,
+    Ok(match sampling {
+        S::First => return Err(Error::FirstSamplingNotSupported),
+        S::Center | S::Either => None,
         S::Centroid => Some("centroid"),
         S::Sample => Some("sample"),
-    }
+    })
 }
 
 /// Helper function that returns the glsl dimension string of [`ImageDimension`](crate::ImageDimension)
@@ -4753,7 +4987,8 @@ fn glsl_storage_format(format: crate::StorageFormat) -> Result<&'static str, Err
         Sf::Rgba8Sint => "rgba8i",
         Sf::Rgb10a2Uint => "rgb10_a2ui",
         Sf::Rgb10a2Unorm => "rgb10_a2",
-        Sf::Rg11b10Float => "r11f_g11f_b10f",
+        Sf::Rg11b10Ufloat => "r11f_g11f_b10f",
+        Sf::R64Uint => "r64ui",
         Sf::Rg32Uint => "rg32ui",
         Sf::Rg32Sint => "rg32i",
         Sf::Rg32Float => "rg32f",

@@ -41,7 +41,7 @@ import Threads from "./Threads";
 import Accordion from "../shared/Accordion";
 import CommandBar from "./CommandBar";
 import XHRBreakpoints from "./XHRBreakpoints";
-import EventListeners from "./EventListeners";
+import EventListeners from "../shared/EventListeners";
 import DOMMutationBreakpoints from "./DOMMutationBreakpoints";
 import WhyPaused from "./WhyPaused";
 
@@ -75,6 +75,7 @@ class SecondaryPanes extends Component {
     this.state = {
       showExpressionsInput: false,
       showXHRInput: false,
+      expandedFrameGroups: {},
     };
   }
 
@@ -88,7 +89,7 @@ class SecondaryPanes extends Component {
       mapScopesEnabled: PropTypes.bool.isRequired,
       pauseReason: PropTypes.string.isRequired,
       shouldBreakpointsPaneOpenOnPause: PropTypes.bool.isRequired,
-      thread: PropTypes.string.isRequired,
+      thread: PropTypes.string,
       renderWhyPauseDelay: PropTypes.number.isRequired,
       selectedFrame: PropTypes.object,
       skipPausing: PropTypes.bool.isRequired,
@@ -108,6 +109,12 @@ class SecondaryPanes extends Component {
 
   onXHRAdded = () => {
     this.setState({ showXHRInput: false });
+  };
+
+  onExpandFrameGroup = expandedFrameGroups => {
+    this.setState({
+      expandedFrameGroups: { ...expandedFrameGroups },
+    });
   };
 
   watchExpressionHeaderButtons() {
@@ -184,6 +191,7 @@ class SecondaryPanes extends Component {
     return {
       header: L10N.getStr("scopes.header"),
       className: "scopes-pane",
+      id: "scopes-pane",
       component: React.createElement(Scopes, null),
       opened: prefs.scopesVisible,
       buttons: this.getScopesButtons(),
@@ -304,6 +312,11 @@ class SecondaryPanes extends Component {
       className: "call-stack-pane",
       component: React.createElement(Frames, {
         panel: "debugger",
+        // These props enable storing and using the current expanded state
+        // of the frame groups. This is we always handle displaying selected frames
+        // in groups correctly.
+        onExpandFrameGroup: this.onExpandFrameGroup,
+        expandedFrameGroups: this.state.expandedFrameGroups,
       }),
       opened: prefs.callStackVisible,
       onToggle: opened => {
@@ -357,7 +370,9 @@ class SecondaryPanes extends Component {
       id: "event-listeners-pane",
       className: "event-listeners-pane",
       buttons: this.getEventButtons(),
-      component: React.createElement(EventListeners, null),
+      component: React.createElement(EventListeners, {
+        panelKey: "breakpoint",
+      }),
       opened: prefs.eventListenersVisible || pauseReason === "eventBreakpoint",
       onToggle: opened => {
         prefs.eventListenersVisible = opened;
@@ -513,7 +528,7 @@ function getRenderWhyPauseDelay(state, thread) {
 
 const mapStateToProps = state => {
   const thread = getCurrentThread(state);
-  const selectedFrame = getSelectedFrame(state, thread);
+  const selectedFrame = getSelectedFrame(state);
   const pauseReason = getPauseReason(state, thread);
   const shouldBreakpointsPaneOpenOnPause = getShouldBreakpointsPaneOpenOnPause(
     state,

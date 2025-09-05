@@ -11,7 +11,7 @@ import org.junit.Test
 import org.mozilla.fenix.customannotations.SmokeTest
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.MatcherHelper.itemContainingText
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
+import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeShort
 import org.mozilla.fenix.helpers.TestHelper.exitMenu
 import org.mozilla.fenix.helpers.TestSetup
 import org.mozilla.fenix.ui.robots.clickPageObject
@@ -20,7 +20,9 @@ import org.mozilla.fenix.ui.robots.navigationToolbar
 
 class SettingsHTTPSOnlyModeTest : TestSetup() {
     private val httpPageUrl = "http://example.com/"
+    private val secondHttpPageUrl = "http://permission.site/"
     private val httpsPageUrl = "https://example.com/"
+    private val secondHttpsPageUrl = "https://permission.site/"
     private val insecureHttpPage = "http.badssl.com"
 
     // "HTTPs not supported" error page contents:
@@ -82,7 +84,7 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(httpPageUrl.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Example Domain")
         }.openNavigationToolbar {
             verifyUrl(httpsPageUrl)
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
@@ -91,6 +93,11 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
             clickPageObject(itemContainingText(httpsOnlyBackButton))
+            // Workaround required with Fission ON:
+            // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
+            if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
+                clickPageObject(itemContainingText(httpsOnlyBackButton))
+            }
             verifyPageContent("Example Domain")
         }.openNavigationToolbar {
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
@@ -149,17 +156,22 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
         }.goToHomescreen {
         }.togglePrivateBrowsingMode()
         navigationToolbar {
-        }.enterURLAndEnterToBrowser(httpPageUrl.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+        }.enterURLAndEnterToBrowser(secondHttpPageUrl.toUri()) {
+            verifyPageContent("Notifications")
         }.openNavigationToolbar {
-            verifyUrl(httpsPageUrl)
+            verifyUrl(secondHttpsPageUrl)
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
             verifyPageContent(httpsOnlyErrorTitle)
             verifyPageContent(httpsOnlyErrorMessage)
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
             clickPageObject(itemContainingText(httpsOnlyBackButton))
-            verifyPageContent("Example Domain")
+            // Workaround required with Fission ON:
+            // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
+            if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
+                clickPageObject(itemContainingText(httpsOnlyBackButton))
+            }
+            verifyPageContent("Notifications")
         }
     }
 
@@ -179,7 +191,7 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
         }
         navigationToolbar {
         }.enterURLAndEnterToBrowser(httpPageUrl.toUri()) {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPageContent("Example Domain")
         }.openNavigationToolbar {
             verifyUrl(httpsPageUrl)
         }.enterURLAndEnterToBrowser(insecureHttpPage.toUri()) {
@@ -188,6 +200,11 @@ class SettingsHTTPSOnlyModeTest : TestSetup() {
             verifyPageContent(httpsOnlyErrorMessage2)
             verifyPageContent(httpsOnlyBackButton)
             clickPageObject(itemContainingText(httpsOnlyBackButton))
+            // Workaround required with Fission ON:
+            // Click back twice to avoid https://bugzilla.mozilla.org/show_bug.cgi?id=1932498
+            if (itemContainingText(httpsOnlyBackButton).waitForExists(waitingTimeShort)) {
+                clickPageObject(itemContainingText(httpsOnlyBackButton))
+            }
             verifyPageContent("Example Domain")
         }.openNavigationToolbar {
         }.goBackToBrowserScreen {

@@ -10,11 +10,16 @@
 #  include "builtin/intl/Collator.h"
 #  include "builtin/intl/DateTimeFormat.h"
 #  include "builtin/intl/DisplayNames.h"
+#  include "builtin/intl/DurationFormat.h"
 #  include "builtin/intl/ListFormat.h"
 #  include "builtin/intl/NumberFormat.h"
 #  include "builtin/intl/PluralRules.h"
 #  include "builtin/intl/RelativeTimeFormat.h"
 #  include "builtin/intl/Segmenter.h"
+#endif
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+#  include "builtin/AsyncDisposableStackObject.h"
+#  include "builtin/DisposableStackObject.h"
 #endif
 #include "builtin/MapObject.h"
 #include "js/experimental/JitInfo.h"
@@ -45,6 +50,8 @@ const JSClass* js::jit::InlinableNativeGuardToClass(InlinableNative native) {
       return &DateTimeFormatObject::class_;
     case InlinableNative::IntlGuardToDisplayNames:
       return &DisplayNamesObject::class_;
+    case InlinableNative::IntlGuardToDurationFormat:
+      return &DurationFormatObject::class_;
     case InlinableNative::IntlGuardToListFormat:
       return &ListFormatObject::class_;
     case InlinableNative::IntlGuardToNumberFormat:
@@ -88,8 +95,18 @@ const JSClass* js::jit::InlinableNativeGuardToClass(InlinableNative native) {
       return &WrapForValidIteratorObject::class_;
     case InlinableNative::IntrinsicGuardToIteratorHelper:
       return &IteratorHelperObject::class_;
+#ifdef NIGHTLY_BUILD
+    case InlinableNative::IntrinsicGuardToIteratorRange:
+      return &IteratorRangeObject::class_;
+#endif
     case InlinableNative::IntrinsicGuardToAsyncIteratorHelper:
       return &AsyncIteratorHelperObject::class_;
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case InlinableNative::IntrinsicGuardToAsyncDisposableStack:
+      return &AsyncDisposableStackObject::class_;
+    case InlinableNative::IntrinsicGuardToDisposableStack:
+      return &DisposableStackObject::class_;
+#endif
 
     case InlinableNative::IntrinsicGuardToMapObject:
       return &MapObject::class_;
@@ -165,6 +182,7 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntlGuardToCollator:
     case InlinableNative::IntlGuardToDateTimeFormat:
     case InlinableNative::IntlGuardToDisplayNames:
+    case InlinableNative::IntlGuardToDurationFormat:
     case InlinableNative::IntlGuardToListFormat:
     case InlinableNative::IntlGuardToNumberFormat:
     case InlinableNative::IntlGuardToPluralRules:
@@ -209,6 +227,9 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicGuardToWrapForValidIterator:
     case InlinableNative::IntrinsicGuardToIteratorHelper:
     case InlinableNative::IntrinsicGuardToAsyncIteratorHelper:
+#ifdef NIGHTLY_BUILD
+    case InlinableNative::IntrinsicGuardToIteratorRange:
+#endif
     case InlinableNative::IntrinsicObjectHasPrototype:
     case InlinableNative::IntrinsicIsPackedArray:
     case InlinableNative::IntrinsicGuardToMapObject:
@@ -232,6 +253,11 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::IntrinsicTypedArrayByteOffset:
     case InlinableNative::IntrinsicTypedArrayElementSize:
     case InlinableNative::IntrinsicArrayIteratorPrototypeOptimizable:
+    case InlinableNative::IntrinsicThisTimeValue:
+#ifdef ENABLE_EXPLICIT_RESOURCE_MANAGEMENT
+    case InlinableNative::IntrinsicGuardToAsyncDisposableStack:
+    case InlinableNative::IntrinsicGuardToDisposableStack:
+#endif
       MOZ_CRASH("Unexpected cross-realm intrinsic call");
 
     case InlinableNative::TestBailout:
@@ -256,6 +282,8 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::AtomicsOr:
     case InlinableNative::AtomicsXor:
     case InlinableNative::AtomicsIsLockFree:
+    case InlinableNative::AtomicsPause:
+    case InlinableNative::BigInt:
     case InlinableNative::BigIntAsIntN:
     case InlinableNative::BigIntAsUintN:
     case InlinableNative::DataViewGetInt8:
@@ -280,14 +308,28 @@ bool js::jit::CanInlineNativeCrossRealm(InlinableNative native) {
     case InlinableNative::DataViewSetFloat64:
     case InlinableNative::DataViewSetBigInt64:
     case InlinableNative::DataViewSetBigUint64:
+    case InlinableNative::DateGetTime:
+    case InlinableNative::DateGetFullYear:
+    case InlinableNative::DateGetMonth:
+    case InlinableNative::DateGetDate:
+    case InlinableNative::DateGetDay:
+    case InlinableNative::DateGetHours:
+    case InlinableNative::DateGetMinutes:
+    case InlinableNative::DateGetSeconds:
     case InlinableNative::FunctionBind:
+    case InlinableNative::MapConstructor:
     case InlinableNative::MapGet:
     case InlinableNative::MapHas:
+    case InlinableNative::MapDelete:
+    case InlinableNative::MapSet:
     case InlinableNative::Number:
     case InlinableNative::NumberParseInt:
     case InlinableNative::NumberToString:
     case InlinableNative::ReflectGetPrototypeOf:
+    case InlinableNative::SetConstructor:
     case InlinableNative::SetHas:
+    case InlinableNative::SetDelete:
+    case InlinableNative::SetAdd:
     case InlinableNative::SetSize:
     case InlinableNative::String:
     case InlinableNative::StringToString:

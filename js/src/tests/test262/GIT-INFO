@@ -1,5 +1,5 @@
-commit 616dcadff406451eb249c6170253c5ff7486a3ea
-Author: Sosuke Suzuki <aosukeke@gmail.com>
-Date:   Tue Jul 30 14:24:39 2024 +0900
+commit ada06362dc400f272f1726988738cab2b6593baf
+Author: André Bargull <andre.bargull@gmail.com>
+Date:   Tue Dec 17 17:09:14 2024 +0100
 
-    Fix escaped `a`
+    Add linter for parseTestRecord

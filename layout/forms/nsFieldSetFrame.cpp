@@ -107,7 +107,8 @@ class nsDisplayFieldSetBorder final : public nsPaintedDisplayItem {
       : nsPaintedDisplayItem(aBuilder, aFrame) {
     MOZ_COUNT_CTOR(nsDisplayFieldSetBorder);
   }
-  MOZ_COUNTED_DTOR_OVERRIDE(nsDisplayFieldSetBorder)
+
+  MOZ_COUNTED_DTOR_FINAL(nsDisplayFieldSetBorder)
 
   void Paint(nsDisplayListBuilder* aBuilder, gfxContext* aCtx) override;
   bool CreateWebRenderCommands(
@@ -321,7 +322,7 @@ ImgDrawResult nsFieldSetFrame::PaintBorder(nsDisplayListBuilder* aBuilder,
   return result;
 }
 
-nscoord nsFieldSetFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsFieldSetFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                         IntrinsicISizeType aType) {
   // Both inner and legend are children, and if the fieldset is
   // size-contained they should not contribute to the intrinsic size.
@@ -331,7 +332,8 @@ nscoord nsFieldSetFrame::IntrinsicISize(gfxContext* aContext,
 
   nscoord legendWidth = 0;
   if (nsIFrame* legend = GetLegend()) {
-    legendWidth = nsLayoutUtils::IntrinsicForContainer(aContext, legend, aType);
+    legendWidth =
+        nsLayoutUtils::IntrinsicForContainer(aInput.mContext, legend, aType);
   }
 
   nscoord contentWidth = 0;
@@ -340,7 +342,8 @@ nscoord nsFieldSetFrame::IntrinsicISize(gfxContext* aContext,
     // outer instead, and the padding computed for the inner is wrong
     // for percentage padding.
     contentWidth = nsLayoutUtils::IntrinsicForContainer(
-        aContext, inner, aType, Nothing(), nsLayoutUtils::IGNORE_PADDING);
+        aInput.mContext, inner, aType, aInput.mPercentageBasisForChildren,
+        nsLayoutUtils::IGNORE_PADDING);
   }
 
   return std::max(legendWidth, contentWidth);

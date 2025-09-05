@@ -204,7 +204,7 @@ class MigrationUtils {
 
   /**
    * Helper for implementing simple asynchronous cases of migration resources'
-   * |migrate(aCallback)| (see MigratorBase).  If your |migrate| method
+   * ``migrate(aCallback)`` (see MigratorBase).  If your ``migrate`` method
    * just waits for some file to be read, for example, and then migrates
    * everything right away, you can wrap the async-function with this helper
    * and not worry about notifying the callback.
@@ -235,7 +235,7 @@ class MigrationUtils {
    *   throws when it's called, aCallback(false) is called, otherwise
    *   aCallback(true) is called.
    * @param {Function} aCallback
-   *   the callback function passed to |migrate|.
+   *   the callback function passed to ``migrate``.
    * @returns {Function}
    *   the wrapped function.
    */
@@ -608,9 +608,7 @@ class MigrationUtils {
     );
 
     let entrypoint = aOptions.entrypoint || this.MIGRATION_ENTRYPOINTS.UNKNOWN;
-    Services.telemetry
-      .getHistogramById("FX_MIGRATION_ENTRY_POINT_CATEGORICAL")
-      .add(entrypoint);
+    Glean.browserMigration.entryPointCategorical[entrypoint].add(1);
 
     let openStandaloneWindow = blocking => {
       let features = "dialog,centerscreen,resizable=no";
@@ -635,10 +633,7 @@ class MigrationUtils {
       // Record that the uninstaller requested a profile refresh
       if (Services.env.get("MOZ_UNINSTALLER_PROFILE_REFRESH")) {
         Services.env.set("MOZ_UNINSTALLER_PROFILE_REFRESH", "");
-        Services.telemetry.scalarSet(
-          "migration.uninstaller_profile_refresh",
-          true
-        );
+        Glean.migration.uninstallerProfileRefresh.set(true);
       }
 
       openStandaloneWindow(true /* blocking */);
@@ -886,8 +881,6 @@ class MigrationUtils {
     );
 
     for (let faviconDataItem of favicons) {
-      let dataURL;
-
       try {
         // getMIMETypeFromContent throws error if could not get the mime type
         // from the data.
@@ -897,7 +890,7 @@ class MigrationUtils {
           faviconDataItem.faviconData.length
         );
 
-        dataURL = await new Promise((resolve, reject) => {
+        let dataURL = await new Promise((resolve, reject) => {
           let buffer = new Uint8ClampedArray(faviconDataItem.faviconData);
           let blob = new Blob([buffer], { type: mimeType });
           let reader = new FileReader();
@@ -909,15 +902,16 @@ class MigrationUtils {
         let fakeFaviconURI = Services.io.newURI(
           "fake-favicon-uri:" + faviconDataItem.uri.spec
         );
-        lazy.PlacesUtils.favicons.setFaviconForPage(
-          faviconDataItem.uri,
-          fakeFaviconURI,
-          Services.io.newURI(dataURL)
-        );
+        lazy.PlacesUtils.favicons
+          .setFaviconForPage(
+            faviconDataItem.uri,
+            fakeFaviconURI,
+            Services.io.newURI(dataURL)
+          )
+          .catch(console.warn);
       } catch (e) {
         // Even if error happens for favicon, continue the process.
         console.warn(e);
-        continue;
       }
     }
   }
@@ -946,6 +940,9 @@ class MigrationUtils {
    *                             `AMBrowserExtensionsImport` as the "browser
    *                             identifier" used to match add-ons
    * @param {string[]} extensionIDs a list of extension IDs from another browser
+   * @returns {(lazy.MigrationWizardConstants.PROGRESS_VALUE|string[])[]}
+   *   An array whose first element is a `MigrationWizardConstants.PROGRESS_VALUE`
+   *   and second element is an array of imported add-on ids.
    */
   async installExtensionsWrapper(migratorKey, extensionIDs) {
     const totalExtensions = extensionIDs.length;
@@ -1045,13 +1042,9 @@ class MigrationUtils {
       let url = pageInfo.url;
       if (url instanceof Ci.nsIURI) {
         url = pageInfo.url.spec;
-      } else if (typeof url != "string") {
-        pageInfo.url.href;
       }
 
-      try {
-        new URL(url);
-      } catch (ex) {
+      if (!URL.canParse(url)) {
         // This won't save and we won't need to 'undo' it, so ignore this URL.
         continue;
       }

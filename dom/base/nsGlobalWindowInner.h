@@ -56,6 +56,7 @@
 class nsIArray;
 class nsIBaseWindow;
 class nsIContent;
+class nsICookieJarSettings;
 class nsICSSDeclaration;
 class nsIDocShellTreeOwner;
 class nsIDOMWindowUtils;
@@ -76,7 +77,7 @@ class nsGlobalWindowOuter;
 class nsDOMWindowUtils;
 class nsIUserIdleService;
 struct nsRect;
-
+class nsWindowRoot;
 class nsWindowSizes;
 
 class IdleRequestExecutor;
@@ -104,12 +105,13 @@ struct ChannelPixelLayout;
 class Credential;
 class ClientSource;
 class Console;
+class CookieStore;
 class Crypto;
 class CustomElementRegistry;
 class DataTransfer;
 class DocGroup;
 class External;
-class Function;
+class FunctionOrTrustedScriptOrString;
 class Gamepad;
 class ContentMediaController;
 enum class ImageBitmapFormat : uint8_t;
@@ -118,7 +120,6 @@ class IdleRequestCallback;
 class InstallTriggerImpl;
 class IntlUtils;
 class MediaQueryList;
-class Navigation;
 class OwningExternalOrWindowProxy;
 class Promise;
 class PostMessageEvent;
@@ -256,6 +257,12 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
 
   bool IsEligibleForMessaging() override;
 
+  void ReportToConsole(uint32_t aErrorFlags, const nsCString& aCategory,
+                       nsContentUtils::PropertiesFile aFile,
+                       const nsCString& aMessageName,
+                       const nsTArray<nsString>& aParams,
+                       const mozilla::SourceLocation& aLocation) override;
+
   void TraceGlobalJSObject(JSTracer* aTrc);
 
   virtual nsresult EnsureScriptEnvironment() override;
@@ -327,6 +334,9 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void Freeze(bool aIncludeSubWindows = true);
   void Thaw(bool aIncludeSubWindows = true);
   virtual bool IsFrozen() const override;
+  virtual bool HasActiveIndexedDBDatabases() override;
+  virtual bool HasActivePeerConnections() override;
+  virtual bool HasOpenWebSockets() const override;
   void SyncStateFromParentWindow();
 
   // Called on the current inner window of a browsing context when its
@@ -341,14 +351,19 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   mozilla::dom::DebuggerNotificationManager*
   GetExistingDebuggerNotificationManager() override;
 
+  nsIURI* GetBaseURI() const final;
+
   mozilla::Maybe<mozilla::dom::ClientInfo> GetClientInfo() const override;
-  mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const;
+  mozilla::Maybe<mozilla::dom::ClientState> GetClientState() const final;
   mozilla::Maybe<mozilla::dom::ServiceWorkerDescriptor> GetController()
       const override;
 
   void SetCsp(nsIContentSecurityPolicy* aCsp);
   void SetPreloadCsp(nsIContentSecurityPolicy* aPreloadCsp);
   nsIContentSecurityPolicy* GetCsp();
+
+  virtual already_AddRefed<mozilla::dom::ServiceWorkerContainer>
+  GetServiceWorkerContainer() override;
 
   virtual RefPtr<mozilla::dom::ServiceWorker> GetOrCreateServiceWorker(
       const mozilla::dom::ServiceWorkerDescriptor& aDescriptor) override;
@@ -363,6 +378,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
       override;
 
   mozilla::StorageAccess GetStorageAccess() final;
+
+  nsICookieJarSettings* GetCookieJarSettings() final;
 
   void NoteCalledRegisterForServiceWorkerScope(const nsACString& aScope);
 
@@ -406,8 +423,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   static bool DeviceSensorsEnabled(JSContext*, JSObject*);
 
   static bool CachesEnabled(JSContext* aCx, JSObject*);
-
-  static bool IsSizeToContentEnabled(JSContext*, JSObject*);
 
   // WebIDL permission Func for whether Glean APIs are permitted.
   static bool IsGleanNeeded(JSContext*, JSObject*);
@@ -522,10 +537,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // Enable/disable updates for VR
   void EnableVRUpdates();
   void DisableVRUpdates();
-  // Reset telemetry data when switching windows.
-  // aUpdate, true for accumulating the result to the histogram.
-  // false for only resetting the timestamp.
-  void ResetVRTelemetry(bool aUpdate);
 
   void StartVRActivity();
   void StopVRActivity();
@@ -602,7 +613,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   void SetName(const nsAString& aName, mozilla::ErrorResult& aError);
   mozilla::dom::Location* Location() override;
   nsHistory* GetHistory(mozilla::ErrorResult& aError);
-  mozilla::dom::Navigation* Navigation();
   mozilla::dom::CustomElementRegistry* CustomElements() override;
   mozilla::dom::CustomElementRegistry* GetExistingCustomElements();
   mozilla::dom::BarProp* GetLocationbar(mozilla::ErrorResult& aError);
@@ -654,6 +664,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<mozilla::dom::Console> GetConsole(JSContext* aCx,
                                                      mozilla::ErrorResult& aRv);
 
+  already_AddRefed<mozilla::dom::CookieStore> CookieStore();
+
   // https://w3c.github.io/webappsec-secure-contexts/#dom-window-issecurecontext
   bool IsSecureContext() const;
 
@@ -701,31 +713,22 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
                       mozilla::ErrorResult& aError);
 
   MOZ_CAN_RUN_SCRIPT
-  int32_t SetTimeout(JSContext* aCx, mozilla::dom::Function& aFunction,
-                     int32_t aTimeout,
-                     const mozilla::dom::Sequence<JS::Value>& aArguments,
-                     mozilla::ErrorResult& aError);
-
-  MOZ_CAN_RUN_SCRIPT
-  int32_t SetTimeout(JSContext* aCx, const nsAString& aHandler,
-                     int32_t aTimeout,
-                     const mozilla::dom::Sequence<JS::Value>& /* unused */,
-                     mozilla::ErrorResult& aError);
+  int32_t SetTimeout(
+      JSContext* aCx,
+      const mozilla::dom::FunctionOrTrustedScriptOrString& aHandler,
+      int32_t aTimeout, const mozilla::dom::Sequence<JS::Value>& /* unused */,
+      mozilla::ErrorResult& aError);
 
   MOZ_CAN_RUN_SCRIPT
   void ClearTimeout(int32_t aHandle);
 
   MOZ_CAN_RUN_SCRIPT
-  int32_t SetInterval(JSContext* aCx, mozilla::dom::Function& aFunction,
-                      const int32_t aTimeout,
-                      const mozilla::dom::Sequence<JS::Value>& aArguments,
-                      mozilla::ErrorResult& aError);
-
-  MOZ_CAN_RUN_SCRIPT
-  int32_t SetInterval(JSContext* aCx, const nsAString& aHandler,
-                      const int32_t aTimeout,
-                      const mozilla::dom::Sequence<JS::Value>& /* unused */,
-                      mozilla::ErrorResult& aError);
+  int32_t SetInterval(
+      JSContext* aCx,
+      const mozilla::dom::FunctionOrTrustedScriptOrString& aHandler,
+      const int32_t aTimeout,
+      const mozilla::dom::Sequence<JS::Value>& /* unused */,
+      mozilla::ErrorResult& aError);
 
   MOZ_CAN_RUN_SCRIPT
   void ClearInterval(int32_t aHandle);
@@ -843,10 +846,8 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   already_AddRefed<nsICSSDeclaration> GetDefaultComputedStyle(
       mozilla::dom::Element& aElt, const nsAString& aPseudoElt,
       mozilla::ErrorResult& aError);
-  void SizeToContent(mozilla::dom::CallerType aCallerType,
-                     mozilla::ErrorResult& aError);
-  void SizeToContentConstrained(const mozilla::dom::SizeToContentConstraints&,
-                                mozilla::ErrorResult&);
+  void SizeToContent(const mozilla::dom::SizeToContentConstraints&,
+                     mozilla::ErrorResult&);
   mozilla::dom::Crypto* GetCrypto(mozilla::ErrorResult& aError);
   nsIControllers* GetControllers(mozilla::ErrorResult& aError);
   nsresult GetControllers(nsIControllers** aControllers) override;
@@ -1065,19 +1066,14 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   // |interval| is in milliseconds.
   MOZ_CAN_RUN_SCRIPT
   int32_t SetTimeoutOrInterval(
-      JSContext* aCx, mozilla::dom::Function& aFunction, int32_t aTimeout,
-      const mozilla::dom::Sequence<JS::Value>& aArguments, bool aIsInterval,
-      mozilla::ErrorResult& aError);
-
-  MOZ_CAN_RUN_SCRIPT
-  int32_t SetTimeoutOrInterval(JSContext* aCx, const nsAString& aHandler,
-                               int32_t aTimeout, bool aIsInterval,
-                               mozilla::ErrorResult& aError);
+      JSContext* aCx,
+      const mozilla::dom::FunctionOrTrustedScriptOrString& aHandler,
+      int32_t aTimeout, const mozilla::dom::Sequence<JS::Value>& aArguments,
+      bool aIsInterval, mozilla::ErrorResult& aError);
 
   // Return true if |aTimeout| was cleared while its handler ran.
   MOZ_CAN_RUN_SCRIPT
-  bool RunTimeoutHandler(mozilla::dom::Timeout* aTimeout,
-                         nsIScriptContext* aScx);
+  bool RunTimeoutHandler(mozilla::dom::Timeout* aTimeout) override;
 
   // Helper Functions
   already_AddRefed<nsIDocShellTreeOwner> GetTreeOwner();
@@ -1171,6 +1167,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   friend class nsPIDOMWindowOuter;
 
   bool IsBackgroundInternal() const override;
+  bool IsPlayingAudio() override;
 
   // NOTE: Chrome Only
   void DisconnectAndClearGroupMessageManagers() {
@@ -1374,6 +1371,7 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::dom::Crypto> mCrypto;
   RefPtr<mozilla::dom::cache::CacheStorage> mCacheStorage;
   RefPtr<mozilla::dom::Console> mConsole;
+  RefPtr<mozilla::dom::CookieStore> mCookieStore;
   RefPtr<mozilla::dom::Worklet> mPaintWorklet;
   RefPtr<mozilla::dom::External> mExternal;
   RefPtr<mozilla::dom::InstallTriggerImpl> mInstallTrigger;
@@ -1384,7 +1382,6 @@ class nsGlobalWindowInner final : public mozilla::dom::EventTarget,
   RefPtr<mozilla::EventListenerManager> mListenerManager;
   RefPtr<mozilla::dom::Location> mLocation;
   RefPtr<nsHistory> mHistory;
-  RefPtr<mozilla::dom::Navigation> mNavigation;
   RefPtr<mozilla::dom::CustomElementRegistry> mCustomElements;
 
   nsTObserverArray<RefPtr<mozilla::dom::SharedWorker>> mSharedWorkers;

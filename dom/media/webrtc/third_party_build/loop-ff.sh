@@ -61,10 +61,10 @@ set -eEuo pipefail
 
 # start a new log with every run of this script
 rm -f $LOOP_OUTPUT_LOG
-# make sure third_party/libwebrtc/README.moz-ff-commit is the committed version
+# make sure third_party/libwebrtc/README.mozilla.last-vendor is the committed version
 # so we properly determine MOZ_LIBWEBRTC_BASE and MOZ_LIBWEBRTC_NEXT_BASE
 # in the loop below
-hg revert -C third_party/libwebrtc/README.moz-ff-commit &> /dev/null
+hg revert -C third_party/libwebrtc/README.mozilla.last-vendor &> /dev/null
 
 # check for a resume situation from fast-forward-libwebrtc.sh
 RESUME_FILE=$STATE_DIR/fast_forward.resume
@@ -162,7 +162,7 @@ echo_log "Moving from moz-libwebrtc commit $MOZ_LIBWEBRTC_BASE to $MOZ_LIBWEBRTC
 bash $SCRIPT_DIR/fast-forward-libwebrtc.sh 2>&1| tee -a $LOOP_OUTPUT_LOG
 
 MOZ_CHANGED=`hg diff -c tip --stat \
-   | egrep -ve "README.moz-ff-commit|README.mozilla|files changed," \
+   | egrep -ve "README.mozilla.last-vendor|README.mozilla|files changed," \
    | wc -l | tr -d " " || true`
 GIT_CHANGED=`./mach python $SCRIPT_DIR/filter_git_changes.py \
    --repo-path $MOZ_LIBWEBRTC_SRC --commit-sha $MOZ_LIBWEBRTC_NEXT_BASE \
@@ -183,7 +183,7 @@ remain for this commit:
     --state-path $STATE_DIR \\
     --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD
   # generate moz.build files (may not be necessary)
-  ./mach python python/mozbuild/mozbuild/gn_processor.py \\
+  ./mach python build/gn_processor.py \\
       $SCRIPT_DIR/gn-configs/webrtc.json
   # commit the updated moz.build files with the appropriate commit msg
   bash $SCRIPT_DIR/commit-build-file-changes.sh
@@ -214,18 +214,15 @@ echo_log "Save patch-stack"
     --target-branch-head $MOZ_TARGET_UPSTREAM_BRANCH_HEAD \
     2>&1| tee -a $LOOP_OUTPUT_LOG
 
-MODIFIED_BUILD_RELATED_FILE_CNT=`hg diff -c tip --stat \
-    --include 'third_party/libwebrtc/**BUILD.gn' \
-    --include 'third_party/libwebrtc/webrtc.gni' \
-    | grep -v "files changed" \
-    | wc -l | tr -d " " || true`
+MODIFIED_BUILD_RELATED_FILE_CNT=`bash $SCRIPT_DIR/get_build_file_changes.sh \
+    | wc -l | tr -d " "`
 ERROR_HELP=$"
 Generating build files has failed.  This likely means changes to one or more
 BUILD.gn files are required.  Commit those changes following the instructions
 in https://wiki.mozilla.org/Media/WebRTC/libwebrtc_Update_Process#Operational_notes
 Then complete these steps:
   # generate moz.build files (may not be necessary)
-  ./mach python python/mozbuild/mozbuild/gn_processor.py \\
+  ./mach python build/gn_processor.py \\
       $SCRIPT_DIR/gn-configs/webrtc.json
   # commit the updated moz.build files with the appropriate commit msg
   bash $SCRIPT_DIR/commit-build-file-changes.sh
@@ -235,11 +232,11 @@ Then complete these steps:
 After a successful build, you may resume this script:
     bash $SCRIPT_DIR/loop-ff.sh
 "
-echo_log "Modified BUILD.gn (or webrtc.gni) files: $MODIFIED_BUILD_RELATED_FILE_CNT"
+echo_log "Modified .gn, **/BUILD.gn, or **/*.gni files: $MODIFIED_BUILD_RELATED_FILE_CNT"
 MOZ_BUILD_CHANGE_CNT=0
 if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
   echo_log "Regenerate build files"
-  ./mach python python/mozbuild/mozbuild/gn_processor.py \
+  ./mach python build/gn_processor.py \
       $SCRIPT_DIR/gn-configs/webrtc.json 2>&1| tee -a $LOOP_OUTPUT_LOG
 
   MOZ_BUILD_CHANGE_CNT=`hg status third_party/libwebrtc \
@@ -278,7 +275,7 @@ if [ "x$MOZ_BUILD_CHANGE_CNT" != "x0" ]; then
   # Show the time used for this command, and don't let it fail if the
   # command times out so the script continues running.  This command
   # can take quite long, occasionally 10min.
-  (time ./mach try fuzzy --full -q $TRY_FUZZY_QUERY_STRING) 2>&1| tee -a $LOOP_OUTPUT_LOG || true
+  (time ./mach try fuzzy --push-to-vcs --full -q $TRY_FUZZY_QUERY_STRING) 2>&1| tee -a $LOOP_OUTPUT_LOG || true
 fi
 
 if [ ! "x$MOZ_STOP_AFTER_COMMIT" = "x" ]; then

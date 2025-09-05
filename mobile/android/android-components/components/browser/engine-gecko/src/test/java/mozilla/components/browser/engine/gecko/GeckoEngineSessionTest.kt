@@ -637,6 +637,11 @@ class GeckoEngineSessionTest {
         engineSession.loadUrl("RESOURCE://package/test.text")
         verify(geckoSession, never()).load(GeckoSession.Loader().uri("resource://package/test.text"))
         verify(geckoSession, never()).load(GeckoSession.Loader().uri("RESOURCE://package/test.text"))
+
+        engineSession.loadUrl("fido:/12345678")
+        engineSession.loadUrl("FIDO:/12345678")
+        verify(geckoSession, never()).load(GeckoSession.Loader().uri("fido:/12345678"))
+        verify(geckoSession, never()).load(GeckoSession.Loader().uri("FIDO:/12345678"))
     }
 
     @Test
@@ -1055,6 +1060,7 @@ class GeckoEngineSessionTest {
         )
         engineSession.settings.historyTrackingDelegate = historyTrackingDelegate
         engineSession.appRedirectUrl = emptyPageUrl
+        engineSession.initialLoad = false
 
         class MockHistoryList(
             items: List<GeckoSession.HistoryDelegate.HistoryItem>,
@@ -1096,6 +1102,33 @@ class GeckoEngineSessionTest {
         verify(historyTrackingDelegate, never()).onVisited(eq(emptyPageUrl), any())
         assertEquals("https://www.google.com", observedUrl)
         assertEquals("Google Search", observedTitle)
+    }
+
+    @Test
+    fun `GIVEN an app initiated request AND initial load WHEN user swipe back THEN the tab should display the loaded page`() = runTestOnMain {
+        val engineSession = GeckoEngineSession(
+            mock(),
+            geckoSessionProvider = geckoSessionProvider,
+            context = coroutineContext,
+        )
+
+        captureDelegates()
+
+        var observedUrl = "https://www.google.com"
+        val emptyPageUrl = "https://example.com"
+
+        engineSession.register(
+            object : EngineSession.Observer {
+                override fun onLocationChange(url: String, hasUserGesture: Boolean) { observedUrl = url }
+            },
+        )
+        engineSession.appRedirectUrl = emptyPageUrl
+        engineSession.initialLoad = true
+
+        navigationDelegate.value.onLocationChange(geckoSession, emptyPageUrl, emptyList(), false)
+        contentDelegate.value.onTitleChange(geckoSession, emptyPageUrl)
+
+        assertEquals("https://example.com", observedUrl)
     }
 
     @Test
@@ -2559,339 +2592,36 @@ class GeckoEngineSessionTest {
     }
 
     @Test
-    fun `WHEN session requestProductAnalysis is successful with analysis object THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
+    fun `getWebCompatInfo should correctly process a GV response`() {
+        val engineSession = GeckoEngineSession(
+            mock(),
+            geckoSessionProvider = geckoSessionProvider,
+        )
         var onResultCalled = false
         var onExceptionCalled = false
 
-        val ruleResult = GeckoResult<GeckoSession.ReviewAnalysis>()
-        whenever(geckoSession.requestAnalysis("mozilla.com")).thenReturn(ruleResult)
+        val ruleResult = GeckoResult<JSONObject>()
+        whenever(geckoSession.webCompatInfo).thenReturn(ruleResult)
 
-        engineSession.requestProductAnalysis(
-            "mozilla.com",
+        engineSession.getWebCompatInfo(
             onResult = { onResultCalled = true },
             onException = { onExceptionCalled = true },
         )
 
-        val productId = "banana"
-        val grade = "A"
-        val adjustedRating = 4.5
-        val lastAnalysisTime = 12345.toLong()
-        val analysisURL = "https://analysis.com"
-        val analysisObject = GeckoSession.ReviewAnalysis.Builder(productId)
-            .grade(grade)
-            .adjustedRating(adjustedRating)
-            .analysisUrl(analysisURL)
-            .needsAnalysis(true)
-            .pageNotSupported(false)
-            .notEnoughReviews(false)
-            .highlights(null)
-            .lastAnalysisTime(lastAnalysisTime)
-            .deletedProductReported(true)
-            .deletedProduct(true)
-            .build()
-
-        ruleResult.complete(analysisObject)
+        val json = JSONObject().apply {
+            put("devicePixelRatio", 2.5)
+            put(
+                "antitracking",
+                JSONObject().apply {
+                    put("hasTrackingContentBlocked", false)
+                },
+            )
+        }
+        ruleResult.complete(json)
         shadowOf(getMainLooper()).idle()
 
         assertTrue(onResultCalled)
         assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN requestProductAnalysis is not successful THEN onException callback for error is called`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val ruleResult = GeckoResult<GeckoSession.ReviewAnalysis>()
-        whenever(geckoSession.requestAnalysis("mozilla.com")).thenReturn(ruleResult)
-
-        engineSession.requestProductAnalysis(
-            "mozilla.com",
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        ruleResult.completeExceptionally(IOException())
-        shadowOf(getMainLooper()).idle()
-
-        assertFalse(onResultCalled)
-        assertTrue(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session requestProductRecommendations is successful with empty list THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val ruleResult = GeckoResult<List<GeckoSession.Recommendation>>()
-        whenever(geckoSession.requestRecommendations("mozilla.com")).thenReturn(ruleResult)
-
-        engineSession.requestProductRecommendations(
-            "mozilla.com",
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        ruleResult.complete(emptyList())
-        shadowOf(getMainLooper()).idle()
-
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session requestProductRecommendations is successful with Recommendation THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val ruleResult = GeckoResult<List<GeckoSession.Recommendation>>()
-        whenever(geckoSession.requestRecommendations("mozilla.com")).thenReturn(ruleResult)
-
-        engineSession.requestProductRecommendations(
-            "mozilla.com",
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        val recommendationUrl = "https://recommendation.com"
-        val adjustedRating = 3.5
-        val imageUrl = "http://image.com"
-        val aid = "banana"
-        val name = "apple"
-        val grade = "C"
-        val price = "450"
-        val currency = "USD"
-
-        val recommendationObject = GeckoSession.Recommendation.Builder(recommendationUrl)
-            .adjustedRating(adjustedRating)
-            .sponsored(true)
-            .imageUrl(imageUrl)
-            .aid(aid)
-            .name(name)
-            .grade(grade)
-            .price(price)
-            .currency(currency)
-            .build()
-
-        ruleResult.complete(listOf(recommendationObject))
-        shadowOf(getMainLooper()).idle()
-
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN requestProductRecommendations is not successful THEN onException callback for error is called`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val ruleResult = GeckoResult<List<GeckoSession.Recommendation>>()
-        whenever(geckoSession.requestRecommendations("mozilla.com")).thenReturn(ruleResult)
-
-        engineSession.requestProductRecommendations(
-            "mozilla.com",
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        ruleResult.completeExceptionally(IOException())
-        shadowOf(getMainLooper()).idle()
-
-        assertFalse(onResultCalled)
-        assertTrue(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session reanalyzeProduct is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val mUrl = "https://m.example.com"
-        val geckoResult = GeckoResult<String?>()
-        geckoResult.complete("COMPLETED")
-        whenever(geckoSession.requestCreateAnalysis(mUrl))
-            .thenReturn(geckoResult)
-
-        engineSession.reanalyzeProduct(
-            mUrl,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        shadowOf(getMainLooper()).idle()
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session requestAnalysisStatus is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val mUrl = "https://m.example.com"
-        val geckoResult = GeckoResult<GeckoSession.AnalysisStatusResponse>()
-
-        val status = "in_progress"
-        val progress = 90.9
-        val analysisObject = GeckoSession.AnalysisStatusResponse.Builder(status)
-            .progress(progress)
-            .build()
-
-        geckoResult.complete(analysisObject)
-        whenever(geckoSession.requestAnalysisStatus(mUrl))
-            .thenReturn(geckoResult)
-
-        engineSession.requestAnalysisStatus(
-            mUrl,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        shadowOf(getMainLooper()).idle()
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendClickAttributionEvent is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        geckoResult.complete(true)
-        whenever(geckoSession.sendClickAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendClickAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        shadowOf(getMainLooper()).idle()
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendClickAttributionEvent is not successful THEN onException callback for error is called`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        whenever(geckoSession.sendClickAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendClickAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        geckoResult.completeExceptionally(IOException())
-        shadowOf(getMainLooper()).idle()
-
-        assertFalse(onResultCalled)
-        assertTrue(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendImpressionAttributionEvent is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        geckoResult.complete(true)
-        whenever(geckoSession.sendImpressionAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendImpressionAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        shadowOf(getMainLooper()).idle()
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendImpressionAttributionEvent is not successful THEN onException callback for error is called`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        whenever(geckoSession.sendImpressionAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendImpressionAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        geckoResult.completeExceptionally(IOException())
-        shadowOf(getMainLooper()).idle()
-
-        assertFalse(onResultCalled)
-        assertTrue(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendPlacementAttributionEvent is successful THEN notify of completion`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        geckoResult.complete(true)
-        whenever(geckoSession.sendPlacementAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendPlacementAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        shadowOf(getMainLooper()).idle()
-        assertTrue(onResultCalled)
-        assertFalse(onExceptionCalled)
-    }
-
-    @Test
-    fun `WHEN session sendPlacementAttributionEvent is not successful THEN onException callback for error is called`() {
-        val engineSession = GeckoEngineSession(mock(), geckoSessionProvider = geckoSessionProvider)
-        var onResultCalled = false
-        var onExceptionCalled = false
-
-        val geckoResult = GeckoResult<Boolean?>()
-        whenever(geckoSession.sendPlacementAttributionEvent(AID))
-            .thenReturn(geckoResult)
-
-        engineSession.sendPlacementAttributionEvent(
-            aid = AID,
-            onResult = { onResultCalled = true },
-            onException = { onExceptionCalled = true },
-        )
-
-        geckoResult.completeExceptionally(IOException())
-        shadowOf(getMainLooper()).idle()
-
-        assertFalse(onResultCalled)
-        assertTrue(onExceptionCalled)
     }
 
     @Test
@@ -3907,16 +3637,13 @@ class GeckoEngineSessionTest {
     }
 
     @Test
-    fun `onLoadRequest will notify onLaunchIntent observers if request was intercepted with app intent`() {
+    fun `onLoadRequest will notify onLaunchIntent observers if request on non-direct navigation was intercepted with app intent`() {
         val engineSession = GeckoEngineSession(
             mock(),
             geckoSessionProvider = geckoSessionProvider,
         )
 
         captureDelegates()
-
-        var observedUrl: String? = null
-        var observedIntent: Intent? = null
 
         engineSession.settings.requestInterceptor = object : RequestInterceptor {
             override fun interceptsAppInitiatedRequests() = true
@@ -3932,39 +3659,59 @@ class GeckoEngineSessionTest {
                 isSubframeRequest: Boolean,
             ): RequestInterceptor.InterceptionResponse? {
                 return when (uri) {
-                    "sample:about" -> RequestInterceptor.InterceptionResponse.AppIntent(mock(), "result")
+                    "sample:triggeredByRedirect" -> RequestInterceptor.InterceptionResponse.AppIntent(mock(), "result1")
+                    "sample:NotTriggeredByRedirect" -> RequestInterceptor.InterceptionResponse.AppIntent(mock(), "result2")
+                    "sample:isDirectNavigation" -> RequestInterceptor.InterceptionResponse.AppIntent(mock(), "result3")
                     else -> null
                 }
             }
         }
 
-        engineSession.register(
-            object : EngineSession.Observer {
-                override fun onLaunchIntentRequest(
-                    url: String,
-                    appIntent: Intent?,
-                ) {
-                    observedUrl = url
-                    observedIntent = appIntent
-                }
-            },
-        )
+        val observer = object : EngineSession.Observer {
+            var url: String? = null
+            var intent: Intent? = null
+
+            override fun onLaunchIntentRequest(
+                url: String,
+                appIntent: Intent?,
+            ) {
+                this.url = url
+                intent = appIntent
+            }
+
+            fun reset() {
+                url = null
+                intent = null
+            }
+        }
+
+        engineSession.register(observer)
 
         navigationDelegate.value.onLoadRequest(
             mock(),
-            mockLoadRequest("sample:about", triggeredByRedirect = true),
+            mockLoadRequest("sample:triggeredByRedirect", triggeredByRedirect = true, isDirectNavigation = false),
         )
 
-        assertNotNull(observedIntent)
-        assertEquals("result", observedUrl)
+        assertNotNull(observer.intent)
+        assertEquals("result1", observer.url)
 
+        observer.reset()
         navigationDelegate.value.onLoadRequest(
             mock(),
-            mockLoadRequest("sample:about", triggeredByRedirect = false),
+            mockLoadRequest("sample:NotTriggeredByRedirect", triggeredByRedirect = false, isDirectNavigation = false),
         )
 
-        assertNotNull(observedIntent)
-        assertEquals("result", observedUrl)
+        assertNotNull(observer.intent)
+        assertEquals("result2", observer.url)
+
+        observer.reset()
+        navigationDelegate.value.onLoadRequest(
+            mock(),
+            mockLoadRequest("sample:isDirectNavigation", triggeredByRedirect = false, isDirectNavigation = true),
+        )
+
+        assertNull(observer.intent)
+        assertNull(observer.url)
     }
 
     @Test

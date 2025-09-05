@@ -88,8 +88,7 @@
             class="context-menu-open-link"
             data-l10n-id="main-context-menu-open-link-container-tab"
             hidden="true">
-        <menupopup oncommand="gContextMenu.openLinkInTab(event);"
-                   onpopupshowing="return gContextMenu.createContainerMenu(event);" />
+        <menupopup id="context-openlinkinusercontext-popup"/>
       </menu>
 
       <menuitem id="context-openlink"
@@ -120,15 +119,14 @@
                 data-l10n-id="main-context-menu-copy-link-simple"
                 />
       <menuitem id="context-stripOnShareLink"
-                data-l10n-id="main-context-menu-strip-on-share-link"
+                data-l10n-id="main-context-menu-copy-clean-link"
                 hidden="true"
                 />
       <menu id="context-sendlinktodevice"
             class="sync-ui-item"
             data-l10n-id="main-context-menu-link-send-to-device"
             hidden="true">
-            <menupopup id="context-sendlinktodevice-popup"
-                  onpopupshowing="gSync.populateSendTabToDevicesMenu(event.target, gContextMenu.linkURI, gContextMenu.linkTextStr);"/>
+            <menupopup id="context-sendlinktodevice-popup"/>
       </menu>
       <menuseparator id="context-sep-sendlinktodevice" class="sync-ui-item"
                 hidden="true"/>
@@ -271,8 +269,7 @@
             class="sync-ui-item"
             data-l10n-id="main-context-menu-send-to-device"
             hidden="true">
-        <menupopup id="context-sendpagetodevice-popup"
-                   onpopupshowing="(() => { gSync.populateSendTabToDevicesMenu(event.target, gBrowser.currentURI, gBrowser.contentTitle); })()"/>
+        <menupopup id="context-sendpagetodevice-popup"/>
       </menu>
       <menu id="fill-login" hidden="true">
         <menupopup id="fill-login-popup" />
@@ -290,6 +287,16 @@
                 hidden="true"
                 />
       <menuseparator id="passwordmgr-items-separator"/>
+      <menuitem id="context-copy-link-to-highlight"
+                data-l10n-id="text-action-copy-link-to-highlight"
+                />
+      <menuitem id="context-copy-clean-link-to-highlight"
+                data-l10n-id="text-action-copy-clean-link-to-highlight"
+                />
+      <menuitem id="context-remove-all-highlights"
+                data-l10n-id="text-action-remove-all-highlights"
+                />
+      <menuseparator id="context-sep-highlights"/>
       <menuitem id="context-undo"
                 data-l10n-id="text-action-undo"
                 command="cmd_undo"/>

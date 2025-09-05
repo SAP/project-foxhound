@@ -1,10 +1,12 @@
 export const description = `
 createRenderBundleEncoder validation tests.
+
+TODO(#3363): Make this into a MaxLimitTest and increase kMaxColorAttachments.
 `;
 
 import { makeTestGroup } from '../../../../common/framework/test_group.js';
 import { range } from '../../../../common/util/util.js';
-import { kMaxColorAttachmentsToTest } from '../../../capability_info.js';
+import { getDefaultLimits } from '../../../capability_info.js';
 import {
   computeBytesPerSampleFromFormats,
   kAllTextureFormats,
@@ -12,16 +14,21 @@ import {
   kTextureFormatInfo,
   kRenderableColorTextureFormats,
 } from '../../../format_info.js';
+import { MaxLimitsTestMixin } from '../../../gpu_test.js';
 import { ValidationTest } from '../validation_test.js';
 
-export const g = makeTestGroup(ValidationTest);
+// MAINTENANCE_TODO: This should be changed to kMaxColorAttachmentsToTest
+// when this is made a MaxLimitTest (see above).
+const kMaxColorAttachments = getDefaultLimits('core').maxColorAttachments.default;
+
+export const g = makeTestGroup(MaxLimitsTestMixin(ValidationTest));
 
 g.test('attachment_state,limits,maxColorAttachments')
   .desc(`Tests that attachment state must have <= device.limits.maxColorAttachments.`)
   .params(u =>
     u.beginSubcases().combine(
       'colorFormatCount',
-      range(kMaxColorAttachmentsToTest, i => i + 1)
+      range(kMaxColorAttachments, i => i + 1)
     )
   )
   .fn(t => {
@@ -52,7 +59,7 @@ g.test('attachment_state,limits,maxColorAttachmentBytesPerSample,aligned')
       .beginSubcases()
       .combine(
         'colorFormatCount',
-        range(kMaxColorAttachmentsToTest, i => i + 1)
+        range(kMaxColorAttachments, i => i + 1)
       )
   )
   .beforeAllSubcases(t => {

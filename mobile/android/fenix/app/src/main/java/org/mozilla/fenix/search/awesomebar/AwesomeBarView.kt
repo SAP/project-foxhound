@@ -26,6 +26,8 @@ import mozilla.components.feature.awesomebar.provider.SearchEngineSuggestionProv
 import mozilla.components.feature.awesomebar.provider.SearchSuggestionProvider
 import mozilla.components.feature.awesomebar.provider.SearchTermSuggestionsProvider
 import mozilla.components.feature.awesomebar.provider.SessionSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.TopSitesSuggestionProvider
+import mozilla.components.feature.awesomebar.provider.TrendingSearchProvider
 import mozilla.components.feature.fxsuggest.FxSuggestSuggestionProvider
 import mozilla.components.feature.search.SearchUseCases
 import mozilla.components.feature.session.SessionUseCases
@@ -64,15 +66,18 @@ class AwesomeBarView(
     private val defaultCombinedHistoryProvider: CombinedHistorySuggestionProvider
     private val shortcutsEnginePickerProvider: ShortcutsSuggestionProvider
     private val defaultSearchSuggestionProvider: SearchSuggestionProvider
+    private val defaultTopSitesSuggestionProvider: TopSitesSuggestionProvider
+    private val defaultTrendingSearchProvider: TrendingSearchProvider
     private val defaultSearchActionProvider: SearchActionProvider
     private val searchEngineSuggestionProvider: SearchEngineSuggestionProvider
     private val searchSuggestionProviderMap: MutableMap<SearchEngine, List<AwesomeBar.SuggestionProvider>>
 
     private val loadUrlUseCase = object : SessionUseCases.LoadUrlUseCase {
-        override fun invoke(
+        override operator fun invoke(
             url: String,
             flags: EngineSession.LoadUrlFlags,
             additionalHeaders: Map<String, String>?,
+            originalInput: String?,
         ) {
             interactor.onUrlTapped(url, flags)
         }
@@ -167,6 +172,36 @@ class AwesomeBarView(
                     BrowsingMode.Private -> true
                 },
                 suggestionsHeader = getSearchEngineSuggestionsHeader(),
+            )
+
+        defaultTopSitesSuggestionProvider =
+            TopSitesSuggestionProvider(
+                topSitesStorage = components.core.topSitesStorage,
+                loadUrlUseCase = loadUrlUseCase,
+                icons = components.core.icons,
+                engine = engineForSpeculativeConnects,
+            )
+
+        defaultTrendingSearchProvider =
+            TrendingSearchProvider(
+                store = components.core.store,
+                fetchClient = components.core.client,
+                privateMode = when (activity.browsingModeManager.mode) {
+                    BrowsingMode.Normal -> false
+                    BrowsingMode.Private -> true
+                },
+                searchUseCase = searchUseCase,
+                limit = 4,
+                engine = engineForSpeculativeConnects,
+                icon = searchBitmap,
+                suggestionsHeader = components.core.store.state.search
+                    .selectedOrDefaultSearchEngine?.name?.let { searchEngineName ->
+                        getString(
+                            activity,
+                            R.string.trending_searches_header_2,
+                            searchEngineName,
+                        )
+                    },
             )
 
         defaultSearchActionProvider =
@@ -264,6 +299,7 @@ class AwesomeBarView(
         state: SearchProviderState,
     ): MutableSet<AwesomeBar.SuggestionProvider> {
         val providersToAdd = mutableSetOf<AwesomeBar.SuggestionProvider>()
+        val isPrivate = activity.browsingModeManager.mode.isPrivate
 
         when (state.searchEngineSource) {
             is SearchEngineSource.History -> {
@@ -277,9 +313,13 @@ class AwesomeBarView(
         }
 
         if (state.showSearchTermHistory) {
-            getSearchTermSuggestionsProvider(state.searchEngineSource)?.let {
-                providersToAdd.add(it)
-            }
+            getSearchTermSuggestionsProvider(
+                state.searchEngineSource,
+                activity.settings().shouldShowTrendingSearchSuggestions(
+                    isPrivate,
+                    state.searchEngineSource.searchEngine,
+                ),
+            )?.let { providersToAdd.add(it) }
         }
 
         if (state.showAllHistorySuggestions) {
@@ -341,18 +381,39 @@ class AwesomeBarView(
 
         if (state.showSponsoredSuggestions || state.showNonSponsoredSuggestions) {
             providersToAdd.add(
-                FxSuggestSuggestionProvider(
-                    resources = activity.resources,
-                    loadUrlUseCase = loadUrlUseCase,
-                    includeSponsoredSuggestions = state.showSponsoredSuggestions,
-                    includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
-                    suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
-                    contextId = activity.settings().contileContextId,
-                ),
+                if (activity.settings().boostAmpWikiSuggestions) {
+                    FxSuggestSuggestionProvider(
+                        resources = activity.resources,
+                        loadUrlUseCase = loadUrlUseCase,
+                        includeSponsoredSuggestions = state.showSponsoredSuggestions,
+                        includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
+                        suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
+                        contextId = activity.settings().contileContextId,
+                        scorer = FxSuggestionExperimentScorer(),
+                    )
+                } else {
+                    FxSuggestSuggestionProvider(
+                        resources = activity.resources,
+                        loadUrlUseCase = loadUrlUseCase,
+                        includeSponsoredSuggestions = state.showSponsoredSuggestions,
+                        includeNonSponsoredSuggestions = state.showNonSponsoredSuggestions,
+                        suggestionsHeader = activity.getString(R.string.firefox_suggest_header),
+                        contextId = activity.settings().contileContextId,
+                    )
+                },
             )
         }
 
         providersToAdd.add(searchEngineSuggestionProvider)
+
+        if (activity.settings().shouldShowTrendingSearchSuggestions(
+                isPrivate,
+                state.searchEngineSource.searchEngine,
+            )
+        ) {
+            providersToAdd.add(defaultTopSitesSuggestionProvider)
+            providersToAdd.add(defaultTrendingSearchProvider)
+        }
 
         return providersToAdd
     }
@@ -422,6 +483,7 @@ class AwesomeBarView(
     @VisibleForTesting
     internal fun getSearchTermSuggestionsProvider(
         searchEngineSource: SearchEngineSource,
+        showSuggestionsWhenEmpty: Boolean = false,
     ): AwesomeBar.SuggestionProvider? {
         val validSearchEngine = searchEngineSource.searchEngine ?: return null
 
@@ -432,6 +494,7 @@ class AwesomeBarView(
             icon = getDrawable(activity, R.drawable.ic_history)?.toBitmap(),
             engine = engineForSpeculativeConnects,
             suggestionsHeader = getSearchEngineSuggestionsHeader(searchEngineSource.searchEngine),
+            showSuggestionsWhenEmpty = showSuggestionsWhenEmpty,
         )
     }
 

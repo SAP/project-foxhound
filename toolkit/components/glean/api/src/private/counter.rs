@@ -2,12 +2,11 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at https://mozilla.org/MPL/2.0/.
 
+use glean::traits::Counter;
 use inherent::inherent;
 use std::sync::Arc;
 
-use glean::traits::Counter;
-
-use super::{CommonMetricData, MetricId};
+use super::{CommonMetricData, MetricGetter, MetricId};
 use crate::ipc::{need_ipc, with_ipc_payload};
 
 /// A counter metric.
@@ -17,10 +16,10 @@ use crate::ipc::{need_ipc, with_ipc_payload};
 #[derive(Clone)]
 pub enum CounterMetric {
     Parent {
-        /// The metric's ID.
-        ///
-        /// **TEST-ONLY** - Do not use unless gated with `#[cfg(test)]`.
-        id: MetricId,
+        /// The metric's ID. Used for testing and profiler markers. Counter
+        /// metrics can be labeled, so we may have either a metric ID or
+        /// sub-metric ID.
+        id: MetricGetter,
         inner: Arc<glean::private::CounterMetric>,
     },
     Child(CounterMetricIpc),
@@ -35,7 +34,10 @@ impl CounterMetric {
             CounterMetric::Child(CounterMetricIpc(id))
         } else {
             let inner = Arc::new(glean::private::CounterMetric::new(meta));
-            CounterMetric::Parent { id, inner }
+            CounterMetric::Parent {
+                id: id.into(),
+                inner,
+            }
         }
     }
 
@@ -46,7 +48,7 @@ impl CounterMetric {
     ///   * and is sent in precisely one ping.
     pub fn codegen_new(id: u32, category: &str, name: &str, ping: &str) -> Self {
         if need_ipc() {
-            CounterMetric::Child(CounterMetricIpc(id.into()))
+            CounterMetric::Child(CounterMetricIpc(MetricId(id)))
         } else {
             let inner = Arc::new(glean::private::CounterMetric::new(CommonMetricData {
                 category: category.into(),
@@ -55,24 +57,53 @@ impl CounterMetric {
                 ..Default::default()
             }));
             CounterMetric::Parent {
-                id: id.into(),
+                id: MetricId(id).into(),
+                inner,
+            }
+        }
+    }
+
+    /// Special-purpose ctor for use by codegen.
+    /// Only useful if the metric is:
+    ///   * disabled
+    ///   * lifetime: ping
+    ///   * and is sent in precisely one ping.
+    pub fn codegen_disabled_new(id: u32, category: &str, name: &str, ping: &str) -> Self {
+        if need_ipc() {
+            CounterMetric::Child(CounterMetricIpc(MetricId(id)))
+        } else {
+            let inner = Arc::new(glean::private::CounterMetric::new(CommonMetricData {
+                category: category.into(),
+                name: name.into(),
+                send_in_pings: vec![ping.into()],
+                disabled: true,
+                ..Default::default()
+            }));
+            CounterMetric::Parent {
+                id: MetricId(id).into(),
                 inner,
             }
         }
     }
 
     #[cfg(test)]
-    pub(crate) fn metric_id(&self) -> MetricId {
+    pub(crate) fn metric_id(&self) -> MetricGetter {
         match self {
             CounterMetric::Parent { id, .. } => *id,
-            CounterMetric::Child(c) => c.0,
+            CounterMetric::Child(c) => c.0.into(),
         }
     }
 
     #[cfg(test)]
     pub(crate) fn child_metric(&self) -> Self {
         match self {
-            CounterMetric::Parent { id, .. } => CounterMetric::Child(CounterMetricIpc(*id)),
+            CounterMetric::Parent { id, .. } => {
+                // SAFETY: We can unwrap here, as this code is only run in the
+                // context of a test. If this code is used elsewhere, the
+                // `unwrap` should be replaced with proper error handling of
+                // the `None` case.
+                CounterMetric::Child(CounterMetricIpc((*id).metric_id().unwrap()))
+            }
             CounterMetric::Child(_) => panic!("Can't get a child metric from a child metric"),
         }
     }
@@ -90,9 +121,11 @@ impl Counter for CounterMetric {
     ///
     /// Logs an error if the `amount` is 0 or negative.
     pub fn add(&self, amount: i32) {
-        match self {
-            CounterMetric::Parent { inner, .. } => {
+        #[allow(unused)]
+        let id = match self {
+            CounterMetric::Parent { id, inner, .. } => {
                 inner.add(amount);
+                *id
             }
             CounterMetric::Child(c) => {
                 with_ipc_payload(move |payload| {
@@ -102,7 +135,18 @@ impl Counter for CounterMetric {
                         payload.counters.insert(c.0, amount);
                     }
                 });
+                MetricGetter::Id(c.0)
             }
+        };
+
+        #[cfg(feature = "with_gecko")]
+        if gecko_profiler::can_accept_markers() {
+            gecko_profiler::add_marker(
+                "Counter::add",
+                super::profiler_utils::TelemetryProfilerCategory,
+                Default::default(),
+                super::profiler_utils::IntLikeMetricMarker::new(id, None, amount),
+            );
         }
     }
 
@@ -163,7 +207,7 @@ mod test {
         let metric = &metrics::test_only_ipc::a_counter;
         metric.add(1);
 
-        assert_eq!(1, metric.test_get_value("store1").unwrap());
+        assert_eq!(1, metric.test_get_value("test-ping").unwrap());
     }
 
     #[test]
@@ -178,7 +222,10 @@ mod test {
 
             // scope for need_ipc RAII
             let _raii = ipc::test_set_need_ipc(true);
-            let metric_id = child_metric.metric_id();
+            let metric_id = child_metric
+                .metric_id()
+                .metric_id()
+                .expect("Cannot perform IPC calls without a MetricId");
 
             child_metric.add(42);
 
@@ -197,7 +244,7 @@ mod test {
         assert!(ipc::replay_from_buf(&ipc::take_buf().unwrap()).is_ok());
 
         assert!(
-            45 == parent_metric.test_get_value("store1").unwrap(),
+            45 == parent_metric.test_get_value("test-ping").unwrap(),
             "Values from the 'processes' should be summed"
         );
     }

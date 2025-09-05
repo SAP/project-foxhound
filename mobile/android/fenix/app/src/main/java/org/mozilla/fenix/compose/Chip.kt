@@ -23,7 +23,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
-import org.mozilla.fenix.compose.annotation.LightDarkPreview
+import mozilla.components.compose.base.annotation.LightDarkPreview
 import org.mozilla.fenix.theme.FirefoxTheme
 
 /**
@@ -36,7 +36,6 @@ import org.mozilla.fenix.theme.FirefoxTheme
  * @param textColor Optional text [Color] for the chip.
  * @param onClick Callback for when the user taps this chip.
  */
-@OptIn(ExperimentalMaterialApi::class)
 @Composable
 private fun Chip(
     text: String,

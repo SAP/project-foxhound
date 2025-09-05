@@ -9,6 +9,7 @@ kind-dependencies:
     - build
     - build-apk
     - signing-apk
+    - fetch
 
 transforms:
     - gecko_taskgraph.transforms.perftest:transforms
@@ -22,6 +23,9 @@ tasks-from:
     - linux.yml
     - macosx.yml
     - windows11.yml
+    - windows11-ref.yml
+    - windows11-24h2.yml
+    - windows11-24h2-ref.yml
 
 task-defaults:
     attributes:
@@ -48,3 +52,5 @@ task-defaults:
         run-as-root: true
         using: run-task
         checkout: false
+    tags:
+        test-type: mozperftest

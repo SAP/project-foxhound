@@ -60,10 +60,10 @@ SyncModuleLoader::SyncModuleLoader(SyncScriptLoader* aScriptLoader,
 SyncModuleLoader::~SyncModuleLoader() { MOZ_ASSERT(mLoadRequests.isEmpty()); }
 
 already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateStaticImport(
-    nsIURI* aURI, ModuleLoadRequest* aParent) {
+    nsIURI* aURI, JS::ModuleType aModuleType, ModuleLoadRequest* aParent) {
   RefPtr<SyncLoadContext> context = new SyncLoadContext();
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aParent->ReferrerPolicy(), aParent->mFetchOptions,
+      aURI, aModuleType, aParent->ReferrerPolicy(), aParent->mFetchOptions,
       dom::SRIMetadata(), aParent->mURI, context, false, /* is top level */
       false,                                             /* is dynamic import */
       this, aParent->mVisitedSet, aParent->GetRootModule());
@@ -72,15 +72,18 @@ already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateStaticImport(
 }
 
 already_AddRefed<ModuleLoadRequest> SyncModuleLoader::CreateDynamicImport(
-    JSContext* aCx, nsIURI* aURI, LoadedScript* aMaybeActiveScript,
-    JS::Handle<JSString*> aSpecifier, JS::Handle<JSObject*> aPromise) {
+    JSContext* aCx, nsIURI* aURI, JS::ModuleType aModuleType,
+    LoadedScript* aMaybeActiveScript, JS::Handle<JSString*> aSpecifier,
+    JS::Handle<JSObject*> aPromise) {
   RefPtr<SyncLoadContext> context = new SyncLoadContext();
+  RefPtr<VisitedURLSet> visitedSet =
+      ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI, aModuleType);
   RefPtr<ModuleLoadRequest> request = new ModuleLoadRequest(
-      aURI, aMaybeActiveScript->ReferrerPolicy(),
+      aURI, aModuleType, aMaybeActiveScript->ReferrerPolicy(),
       aMaybeActiveScript->GetFetchOptions(), dom::SRIMetadata(),
       aMaybeActiveScript->BaseURL(), context,
       /* aIsTopLevel = */ true, /* aIsDynamicImport =  */ true, this,
-      ModuleLoadRequest::NewVisitedSetForTopLevelImport(aURI), nullptr);
+      visitedSet, nullptr);
 
   request->SetDynamicImport(aMaybeActiveScript, aSpecifier, aPromise);
   request->NoCacheEntryFound();

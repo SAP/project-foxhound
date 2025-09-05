@@ -302,7 +302,7 @@ class BrowserParent final : public PBrowserParent,
   mozilla::ipc::IPCResult RecvOnLocationChange(
       const WebProgressData& aWebProgressData, const RequestData& aRequestData,
       nsIURI* aLocation, const uint32_t aFlags, const bool aCanGoBack,
-      const bool aCanGoForward,
+      const bool aCanGoBackIgnoringUserInteraction, const bool aCanGoForward,
       const Maybe<WebProgressLocationChangeData>& aLocationChangeData);
 
   mozilla::ipc::IPCResult RecvOnStatusChange(const nsString& aMessage);
@@ -426,6 +426,7 @@ class BrowserParent final : public PBrowserParent,
       const int32_t& aAppUnitsPerDevPixel);
 
   already_AddRefed<PColorPickerParent> AllocPColorPickerParent(
+      const MaybeDiscarded<BrowsingContext>& aBrowsingContext,
       const nsString& aTitle, const nsString& aInitialColor,
       const nsTArray<nsString>& aDefaultColors);
 
@@ -468,7 +469,8 @@ class BrowserParent final : public PBrowserParent,
 
   bool Show(const OwnerShowInfo&);
 
-  void UpdateDimensions(const nsIntRect& aRect, const ScreenIntSize& aSize);
+  void UpdateDimensions(const LayoutDeviceIntRect& aRect,
+                        const LayoutDeviceIntSize& aSize);
 
   DimensionInfo GetDimensionInfo();
 
@@ -487,6 +489,7 @@ class BrowserParent final : public PBrowserParent,
 #if defined(MOZ_WIDGET_ANDROID)
   void DynamicToolbarMaxHeightChanged(ScreenIntCoord aHeight);
   void DynamicToolbarOffsetChanged(ScreenIntCoord aOffset);
+  void KeyboardHeightChanged(ScreenIntCoord aHeight);
 #endif
 
   void Activate(uint64_t aActionId);
@@ -612,7 +615,10 @@ class BrowserParent final : public PBrowserParent,
 
   bool HandleQueryContentEvent(mozilla::WidgetQueryContentEvent& aEvent);
 
-  bool SendInsertText(const nsString& aStringToInsert);
+  bool SendSimpleContentCommandEvent(
+      const mozilla::WidgetContentCommandEvent& aEvent);
+  bool SendInsertText(const mozilla::WidgetContentCommandEvent& aEvent);
+  bool SendReplaceText(const mozilla::WidgetContentCommandEvent& aEvent);
 
   bool SendPasteTransferable(IPCTransferable&& aTransferable);
 
@@ -918,8 +924,8 @@ class BrowserParent final : public PBrowserParent,
   };
   nsTArray<SentKeyEventData> mWaitingReplyKeyboardEvents;
 
-  nsIntRect mRect;
-  ScreenIntSize mDimensions;
+  LayoutDeviceIntRect mRect;
+  LayoutDeviceIntSize mDimensions;
   float mDPI;
   int32_t mRounding;
   CSSToLayoutDeviceScale mDefaultScale;

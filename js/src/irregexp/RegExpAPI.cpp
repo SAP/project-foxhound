@@ -32,7 +32,7 @@
 #include "js/ColumnNumber.h"  // JS::ColumnNumberOneOrigin, JS::ColumnNumberOffset
 #include "js/friend/ErrorMessages.h"  // JSMSG_*
 #include "js/friend/StackLimits.h"    // js::ReportOverRecursed
-#include "util/StringBuffer.h"
+#include "util/StringBuilder.h"
 #include "vm/MatchPairs.h"
 #include "vm/PlainObject.h"
 #include "vm/RegExpShared.h"
@@ -68,7 +68,7 @@ using v8::internal::Zone;
 using v8::internal::ZoneVector;
 
 using V8HandleString = v8::internal::Handle<v8::internal::String>;
-using V8HandleRegExp = v8::internal::Handle<v8::internal::JSRegExp>;
+using V8HandleRegExp = v8::internal::Handle<v8::internal::IrRegExpData>;
 
 using namespace v8::internal::regexp_compiler_constants;
 
@@ -114,10 +114,7 @@ static uint32_t ErrorNumber(RegExpError err) {
     case RegExpError::kInvalidFlagGroup:
       return JSMSG_INVALID_FLAG_GROUP;
     case RegExpError::kMultipleFlagDashes:
-      // V8 contains experimental support for turning regexp flags on
-      // and off in the middle of a regular expression. Unless it
-      // becomes standardized, SM does not support this feature.
-      MOZ_CRASH("Mode modifiers not supported");
+      return JSMSG_MULTIPLE_FLAG_DASHES;
     case RegExpError::kNotLinear:
       // V8 has an experimental non-backtracking engine. We do not
       // support it yet.
@@ -132,8 +129,6 @@ static uint32_t ErrorNumber(RegExpError err) {
       return JSMSG_INVALID_NAMED_REF;
     case RegExpError::kInvalidNamedCaptureReference:
       return JSMSG_INVALID_NAMED_CAPTURE_REF;
-    case RegExpError::kInvalidClassEscape:
-      return JSMSG_INVALID_DECIMAL_ESCAPE;
     case RegExpError::kInvalidClassPropertyName:
       return JSMSG_INVALID_CLASS_PROPERTY_NAME;
     case RegExpError::kInvalidCharacterClass:
@@ -262,12 +257,12 @@ static void ReportSyntaxError(TokenStreamAnyChars& ts,
 
   // Create the windowed string, not including the potential line
   // terminator.
-  StringBuffer windowBuf(ts.context());
+  StringBuilder windowBuf(ts.context());
   if (!windowBuf.append(windowStart, windowEnd)) {
     return;
   }
 
-  // The line of context must be null-terminated, and StringBuffer doesn't
+  // The line of context must be null-terminated, and StringBuilder doesn't
   // make that happen unless we force it to.
   if (!windowBuf.append('\0')) {
     return;
@@ -658,7 +653,7 @@ struct RegExpNamedCaptureIndexLess {
     // lowest capture index.
     MOZ_ASSERT(!lhs.indices.empty());
     MOZ_ASSERT(!rhs.indices.empty());
-    MOZ_ASSERT(lhs.indices[0] != rhs.indices[0]);
+    MOZ_ASSERT_IF(&lhs != &rhs, lhs.indices[0] != rhs.indices[0]);
     return lhs.indices[0] < rhs.indices[0];
   }
 };
@@ -900,7 +895,7 @@ RegExpRunStatus Interpret(JSContext* cx, MutableHandleRegExpShared re,
   MOZ_ASSERT(re->getByteCode(input->hasLatin1Chars()));
 
   HandleScope handleScope(cx->isolate);
-  V8HandleRegExp wrappedRegExp(v8::internal::JSRegExp(re), cx->isolate);
+  V8HandleRegExp wrappedRegExp(v8::internal::IrRegExpData(re), cx->isolate);
   V8HandleString wrappedInput(v8::internal::String(input), cx->isolate);
 
   static_assert(static_cast<int32_t>(RegExpRunStatus::Error) ==

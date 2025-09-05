@@ -4,7 +4,7 @@
 
 use std::marker::PhantomData;
 
-use glean_core::metrics::JsonValue;
+use glean_core::metrics::{JsonValue, MetricIdentifier};
 use glean_core::traits;
 
 use crate::ErrorType;
@@ -23,6 +23,12 @@ use crate::ErrorType;
 pub struct ObjectMetric<K> {
     pub(crate) inner: glean_core::metrics::ObjectMetric,
     object_type: PhantomData<K>,
+}
+
+impl<'a, K> MetricIdentifier<'a> for ObjectMetric<K> {
+    fn get_identifiers(&'a self) -> (&'a str, &'a str, Option<&'a str>) {
+        self.inner.get_identifiers()
+    }
 }
 
 impl<K: traits::ObjectSerialize> ObjectMetric<K> {
@@ -110,7 +116,7 @@ mod test {
         let metric: ObjectMetric<SimpleArray> = ObjectMetric::new(CommonMetricData {
             name: "object".into(),
             category: "test".into(),
-            send_in_pings: vec!["test1".into()],
+            send_in_pings: vec!["store1".into()],
             ..Default::default()
         });
 
@@ -144,7 +150,7 @@ mod test {
         let metric: ObjectMetric<BalloonsObject> = ObjectMetric::new(CommonMetricData {
             name: "object".into(),
             category: "test".into(),
-            send_in_pings: vec!["test1".into()],
+            send_in_pings: vec!["store1".into()],
             ..Default::default()
         });
 
@@ -178,7 +184,7 @@ mod test {
         let metric: ObjectMetric<SimpleArray> = ObjectMetric::new(CommonMetricData {
             name: "object".into(),
             category: "test".into(),
-            send_in_pings: vec!["test1".into()],
+            send_in_pings: vec!["store1".into()],
             ..Default::default()
         });
 
@@ -188,5 +194,63 @@ mod test {
         let data = metric.test_get_value(None).expect("no object recorded");
         let expected = json!([1, 2, 3]);
         assert_eq!(expected, data);
+    }
+
+    #[test]
+    fn set_string_api_complex() {
+        let _lock = lock_test();
+        let _t = new_glean(None, true);
+
+        #[derive(
+            Debug, Hash, Eq, PartialEq, traits::__serde::Deserialize, traits::__serde::Serialize,
+        )]
+        #[serde(crate = "traits::__serde")]
+        #[serde(deny_unknown_fields)]
+        struct StackTrace {
+            #[serde(skip_serializing_if = "Option::is_none")]
+            error: Option<String>,
+            #[serde(
+                skip_serializing_if = "Vec::is_empty",
+                default = "Vec::new",
+                deserialize_with = "traits::__serde_helper::vec_null"
+            )]
+            modules: Vec<String>,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            thread_info: Option<StackTraceThreadInfo>,
+        }
+
+        #[derive(
+            Debug, Hash, Eq, PartialEq, traits::__serde::Serialize, traits::__serde::Deserialize,
+        )]
+        #[serde(crate = "traits::__serde")]
+        #[serde(deny_unknown_fields)]
+        struct StackTraceThreadInfo {
+            base_address: Option<String>,
+        }
+
+        let metric: ObjectMetric<StackTrace> = ObjectMetric::new(CommonMetricData {
+            name: "object".into(),
+            category: "test".into(),
+            send_in_pings: vec!["store1".into()],
+            ..Default::default()
+        });
+
+        let arr_str = json!({
+            "error": "error",
+            "modules": null,
+            "thread_info": null,
+        })
+        .to_string();
+        metric.set_string(arr_str);
+
+        let data = metric.test_get_value(None).expect("no object recorded");
+        let expected = json!({
+            "error": "error"
+        });
+        assert_eq!(expected, data);
+        assert_eq!(
+            0,
+            metric.test_get_num_recorded_errors(ErrorType::InvalidValue)
+        );
     }
 }

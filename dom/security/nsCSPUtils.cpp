@@ -12,6 +12,7 @@
 #include "nsCSPParser.h"
 #include "nsComponentManagerUtils.h"
 #include "nsIConsoleService.h"
+#include "nsIContentSecurityPolicy.h"
 #include "nsIChannel.h"
 #include "nsICryptoHash.h"
 #include "nsIScriptError.h"
@@ -28,6 +29,7 @@
 #include "mozilla/dom/CSPDictionariesBinding.h"
 #include "mozilla/dom/Document.h"
 #include "mozilla/dom/SRIMetadata.h"
+#include "mozilla/dom/TrustedTypesConstants.h"
 #include "mozilla/StaticPrefs_security.h"
 
 using namespace mozilla;
@@ -147,13 +149,30 @@ void CSP_ApplyMetaCSPToDoc(mozilla::dom::Document& aDoc,
     return;
   }
 
+  // CSPs delivered via a <meta> tag can not be report-only.
+  bool reportOnly = false;
+
+  if (nsIURI* uri = aDoc.GetDocumentURI(); uri->SchemeIs("chrome")) {
+    nsAutoCString spec;
+    uri->GetSpec(spec);
+    if (spec.EqualsLiteral("chrome://browser/content/browser.xhtml")) {
+      // Make the <meta> policy in browser.xhtml toggleable.
+      if (!StaticPrefs::security_browser_xhtml_csp_enabled()) {
+        return;
+      }
+
+      // Make the policy report-only to be able to collect telemetry.
+      if (StaticPrefs::security_browser_xhtml_csp_report_only()) {
+        reportOnly = true;
+      }
+    }
+  }
+
   // Multiple CSPs (delivered through either header of meta tag) need to
   // be joined together, see:
   // https://w3c.github.io/webappsec/specs/content-security-policy/#delivery-html-meta-element
-  nsresult rv =
-      csp->AppendPolicy(policyStr,
-                        false,  // csp via meta tag can not be report only
-                        true);  // delivered through the meta tag
+  nsresult rv = csp->AppendPolicy(policyStr, reportOnly,
+                                  true);  // delivered through the meta tag
   NS_ENSURE_SUCCESS_VOID(rv);
   if (nsPIDOMWindowInner* inner = aDoc.GetInnerWindow()) {
     inner->SetCsp(csp);
@@ -177,7 +196,12 @@ void CSP_GetLocalizedStr(const char* aName, const nsTArray<nsString>& aParams,
   if (!keyStringBundle) {
     return;
   }
-  keyStringBundle->FormatStringFromName(aName, aParams, outResult);
+
+  if (aParams.IsEmpty()) {
+    keyStringBundle->GetStringFromName(aName, outResult);
+  } else {
+    keyStringBundle->FormatStringFromName(aName, aParams, outResult);
+  }
 }
 
 void CSP_LogStrMessage(const nsAString& aMsg) {
@@ -285,6 +309,7 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_PRELOAD:
     case nsIContentPolicy::TYPE_INTERNAL_IMAGE_FAVICON:
+    case nsIContentPolicy::TYPE_INTERNAL_EXTERNAL_RESOURCE:
       return nsIContentSecurityPolicy::IMG_SRC_DIRECTIVE;
 
     // BLock XSLT as script, see bug 910139
@@ -345,6 +370,8 @@ CSPDirective CSP_ContentTypeToDirective(nsContentPolicyType aType) {
     case nsIContentPolicy::TYPE_INTERNAL_FETCH_PRELOAD:
     case nsIContentPolicy::TYPE_WEB_IDENTITY:
     case nsIContentPolicy::TYPE_WEB_TRANSPORT:
+    case nsIContentPolicy::TYPE_JSON:
+    case nsIContentPolicy::TYPE_INTERNAL_JSON_PRELOAD:
       return nsIContentSecurityPolicy::CONNECT_SRC_DIRECTIVE;
 
     case nsIContentPolicy::TYPE_OBJECT:
@@ -1539,6 +1566,10 @@ void nsCSPDirective::toDomCSPStruct(mozilla::dom::CSP& outCSP) const {
   }
 }
 
+bool nsCSPDirective::isDefaultDirective() const {
+  return mDirective == nsIContentSecurityPolicy::DEFAULT_SRC_DIRECTIVE;
+}
+
 void nsCSPDirective::getReportURIs(nsTArray<nsString>& outReportURIs) const {
   NS_ASSERTION((mDirective == nsIContentSecurityPolicy::REPORT_URI_DIRECTIVE),
                "not a report-uri directive");
@@ -1851,6 +1882,12 @@ bool nsCSPPolicy::ShouldCreateViolationForNewTrustedTypesPolicy(
   return false;
 }
 
+bool nsCSPPolicy::AreTrustedTypesForSinkGroupRequired(
+    const nsAString& aSinkGroup) const {
+  MOZ_ASSERT(aSinkGroup == dom::kTrustedTypesOnlySinkGroup);
+  return mHasRequireTrustedTypesForDirective;
+}
+
 /*
  * Use this function only after ::allows() returned 'false' or if ensured by
  * other means that the directive is violated. First and foremost it's used to
@@ -1916,6 +1953,14 @@ void nsCSPPolicy::getReportGroup(nsAString& outReportGroup) const {
       mDirectives[i]->getReportGroup(outReportGroup);
       return;
     }
+  }
+}
+
+void nsCSPPolicy::getDirectiveNames(nsTArray<nsString>& outDirectives) const {
+  for (uint32_t i = 0; i < mDirectives.Length(); i++) {
+    nsAutoString name;
+    mDirectives[i]->getDirName(name);
+    outDirectives.AppendElement(name);
   }
 }
 

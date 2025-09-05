@@ -7,7 +7,6 @@ ChromeUtils.defineESModuleGetters(this, {
   AddonManager: "resource://gre/modules/AddonManager.sys.mjs",
   AddonTestUtils: "resource://testing-common/AddonTestUtils.sys.mjs",
   SearchTestUtils: "resource://testing-common/SearchTestUtils.sys.mjs",
-  TelemetryTestUtils: "resource://testing-common/TelemetryTestUtils.sys.mjs",
 });
 
 const EXTENSION1_ID = "extension1@mozilla.com";
@@ -21,14 +20,14 @@ SearchTestUtils.init(this);
 const DEFAULT_ENGINE = {
   id: "basic",
   name: "basic",
-  loadPath: "[app]basic@search.mozilla.org",
+  loadPath: "[app]basic",
   submissionUrl:
     "https://mochi.test:8888/browser/browser/components/search/test/browser/?foo=1&search=",
 };
 const ALTERNATE_ENGINE = {
   id: "simple",
   name: "Simple Engine",
-  loadPath: "[app]simple@search.mozilla.org",
+  loadPath: "[app]simple",
   submissionUrl: "https://example.com/?sourceId=Mozilla-search&search=",
 };
 const ALTERNATE2_ENGINE = {
@@ -92,24 +91,6 @@ function clearTelemetry() {
 }
 
 async function checkTelemetry(source, prevEngine, newEngine) {
-  TelemetryTestUtils.assertEvents(
-    [
-      {
-        object: "change_default",
-        value: source,
-        extra: {
-          prev_id: prevEngine.id,
-          new_id: newEngine.id,
-          new_name: newEngine.name,
-          new_load_path: newEngine.loadPath,
-          // Telemetry has a limit of 80 characters.
-          new_sub_url: newEngine.submissionUrl.slice(0, 80),
-        },
-      },
-    ],
-    { category: "search", method: "engine" }
-  );
-
   let snapshot = await Glean.searchEngineDefault.changed.testGetValue();
   delete snapshot[0].timestamp;
   Assert.deepEqual(

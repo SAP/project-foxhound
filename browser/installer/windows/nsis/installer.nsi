@@ -338,7 +338,7 @@ Section "-InstallStartCleanup"
     Delete "$INSTDIR\installation_telemetry.json"
   ${EndIf}
 
-  ; Explictly remove empty webapprt dir in case it exists (bug 757978).
+  ; Explicitly remove empty webapprt dir in case it exists (bug 757978).
   RmDir "$INSTDIR\webapprt\components"
   RmDir "$INSTDIR\webapprt"
 
@@ -608,6 +608,7 @@ Section "-Application" APP_IDX
     ${Else}
       CreateShortCut "$SMPROGRAMS\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
       ${If} ${FileExists} "$SMPROGRAMS\${BrandShortName}.lnk"
+        ShellLink::SetShortCutDescription "$SMPROGRAMS\${BrandShortName}.lnk" "$(BRIEF_APP_DESC)"
         ShellLink::SetShortCutWorkingDirectory "$SMPROGRAMS\${BrandShortName}.lnk" \
                                                "$INSTDIR"
         ${If} "$AppUserModelID" != ""
@@ -655,6 +656,7 @@ Section "-Application" APP_IDX
     ${Else}
       CreateShortCut "$DESKTOP\${BrandShortName}.lnk" "$INSTDIR\${FileMainEXE}"
       ${If} ${FileExists} "$DESKTOP\${BrandShortName}.lnk"
+        ShellLink::SetShortCutDescription "$DESKTOP\${BrandShortName}.lnk" "$(BRIEF_APP_DESC)"
         ShellLink::SetShortCutWorkingDirectory "$DESKTOP\${BrandShortName}.lnk" \
                                                "$INSTDIR"
         ${If} "$AppUserModelID" != ""
@@ -1030,6 +1032,13 @@ Function SendPing
     ReadINIStr $0 "$1" "Global" "version"
     nsJSON::Set /tree ping "Data" "distribution_version" /value '"$0"'
   ${EndIf}
+
+  ReadRegDWORD $0 HKLM "SOFTWARE\Microsoft\Windows NT\CurrentVersion" "UBR"
+  ${If} ${Errors}
+    StrCpy $0 "-1" ; Assign -1 if an error occured during registry read
+  ${EndIf}
+  
+  nsJSON::Set /tree ping "Data" "windows_ubr" /value '$0'
 
   ${GetParameters} $0
   ${GetOptions} $0 "/LaunchedFromMSI" $0

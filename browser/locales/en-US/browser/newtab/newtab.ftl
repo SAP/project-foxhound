@@ -7,11 +7,13 @@
 newtab-page-title = New Tab
 newtab-settings-button =
     .title = Customize your New Tab page
-newtab-personalize-icon-label =
-    .title = Personalize new tab
-    .aria-label = Personalize new tab
-newtab-personalize-dialog-label =
-    .aria-label = Personalize
+newtab-personalize-settings-icon-label =
+    .title = Personalize New Tab
+    .aria-label = Settings
+newtab-settings-dialog-label =
+    .aria-label = Settings
+newtab-logo-and-wordmark =
+    .aria-label = { -brand-full-name }
 
 ## Search box component.
 
@@ -114,6 +116,13 @@ newtab-menu-save-to-pocket = Save to { -pocket-brand-name }
 newtab-menu-delete-pocket = Delete from { -pocket-brand-name }
 newtab-menu-archive-pocket = Archive in { -pocket-brand-name }
 newtab-menu-show-privacy-info = Our sponsors & your privacy
+newtab-menu-about-fakespot = About { -fakespot-brand-name }
+# Context menu option to personalize New Tab recommended stories by blocking a section of stories,
+# e.g. "Sports". "Block" is a verb here.
+newtab-menu-section-block = Block
+# "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+# e.g. Following the travel section of stories.
+newtab-menu-section-unfollow = Unfollow topic
 
 ## Message displayed in a modal window to explain privacy and provide context for sponsored content.
 
@@ -226,16 +235,9 @@ newtab-discovery-empty-section-topstories-timed-out = Oops! We almost loaded thi
 
 ## Pocket Content Section.
 
-# This is shown at the bottom of the trending stories section and precedes a list of links to popular topics.
-newtab-pocket-read-more = Popular Topics:
-newtab-pocket-new-topics-title = Want even more stories? See these popular topics from { -pocket-brand-name }
-newtab-pocket-more-recommendations = More Recommendations
-newtab-pocket-learn-more = Learn more
-newtab-pocket-cta-button = Get { -pocket-brand-name }
-newtab-pocket-cta-text = Save the stories you love in { -pocket-brand-name }, and fuel your mind with fascinating reads.
-newtab-pocket-pocket-firefox-family = { -pocket-brand-name } is part of the { -brand-product-name } family
-
 # A save to Pocket button that shows over the card thumbnail on hover.
+newtab-pocket-image =
+    .aria-label = { -pocket-brand-name }
 newtab-pocket-save = Save
 newtab-pocket-saved = Saved
 
@@ -247,7 +249,9 @@ newtab-pocket-thumbs-up-tooltip =
 # Clicking the thumbs down button for this story informs us that the user does not feel like the story is interesting for them
 newtab-pocket-thumbs-down-tooltip =
     .title = Not for me
-newtab-toast-thumbs-up-or-down = Thanks. Your feedback will help us improve your feed.
+# Used to show the user a message upon clicking the thumbs up or down buttons
+newtab-toast-thumbs-up-or-down2 =
+    .message = Thanks. Your feedback will help us improve your feed.
 newtab-toast-dismiss-button =
     .title = Dismiss
     .aria-label = Dismiss
@@ -295,6 +299,12 @@ newtab-custom-settings = Manage more settings
 
 newtab-wallpaper-title = Wallpapers
 newtab-wallpaper-reset = Reset to default
+newtab-wallpaper-upload-image = Upload an image
+newtab-wallpaper-custom-color = Choose a color
+# Variables
+#   $file_size (number) - The number of the maximum image file size (in MB) that may be uploaded
+newtab-wallpaper-error-max-file-size = The image exceeded the file size limit of { $file_size }MB. Please try uploading a smaller file.
+newtab-wallpaper-error-file-type = We couldn’t upload your file. Please try again with different file type.
 newtab-wallpaper-light-red-panda = Red panda
 newtab-wallpaper-light-mountain = White mountain
 newtab-wallpaper-light-sky = Sky with purple and pink clouds
@@ -307,6 +317,8 @@ newtab-wallpaper-dark-panda = Red panda hidden in forest
 newtab-wallpaper-dark-sky = City landscape with a night sky
 newtab-wallpaper-dark-mountain = Landscape mountain
 newtab-wallpaper-dark-city = Purple city landscape
+newtab-wallpaper-dark-fox-anniversary = A fox on the pavement near a forest
+newtab-wallpaper-light-fox-anniversary = A fox in a grassy field with a misty mountain landscape
 
 ## Solid Colors
 
@@ -336,6 +348,10 @@ newtab-wallpaper-abstract-purple = Purple shapes
 newtab-wallpaper-abstract-orange = Orange shapes
 newtab-wallpaper-gradient-orange = Gradient orange and pink
 newtab-wallpaper-abstract-blue-purple = Blue and purple shapes
+newtab-wallpaper-abstract-white-curves = White with shaded curves
+newtab-wallpaper-abstract-purple-green = Purple and green light gradient
+newtab-wallpaper-abstract-blue-purple-waves = Blue and purple wavy shapes
+newtab-wallpaper-abstract-black-waves = Black wavy shapes
 
 ## Photographs
 
@@ -346,6 +362,26 @@ newtab-wallpaper-storm-sky = Storm sky
 newtab-wallpaper-sky-with-pink-clouds = Sky with pink clouds
 newtab-wallpaper-red-panda-yawns-in-a-tree = Red panda yawns in a tree
 newtab-wallpaper-white-mountains = White mountains
+newtab-wallpaper-hot-air-balloons = Assorted color of hot air balloons during daytime
+newtab-wallpaper-starry-canyon = Blue starry night
+newtab-wallpaper-suspension-bridge = Grey full-suspension bridge photography during daytime
+newtab-wallpaper-sand-dunes = White sand dunes
+newtab-wallpaper-palm-trees = Silhouette of coconut palm trees during golden hour
+newtab-wallpaper-forest-trees = Trees covered with fog
+
+## Celestial
+
+# “Celestial” referring to astronomy; positioned in or relating to the sky,
+# or outer space as observed in astronomy.
+# Not to be confused with religious definition of the word.
+newtab-wallpaper-category-title-celestial = Celestial
+newtab-wallpaper-celestial-lunar-eclipse = Lunar eclipse
+newtab-wallpaper-celestial-earth-night = Night photo from low Earth orbit
+newtab-wallpaper-celestial-starry-sky = Starry sky
+newtab-wallpaper-celestial-eclipse-time-lapse = Lunar eclipse time lapse
+newtab-wallpaper-celestial-black-hole = Black hole galaxy illustration
+newtab-wallpaper-celestial-river = Satellite image of river
+
 
 # Variables
 #   $author_string (String) - The name of the creator of the photo.
@@ -372,7 +408,9 @@ newtab-weather-see-forecast =
 #   $provider (string) - Service provider for weather data
 newtab-weather-sponsored = { $provider } ∙ Sponsored
 newtab-weather-menu-change-location = Change location
-newtab-weather-change-location-search-input = Search location
+newtab-weather-change-location-search-input-placeholder =
+    .placeholder = Search location
+    .aria-label = Search location
 newtab-weather-menu-weather-display = Weather display
 # Display options are:
 # - Simple: Displays a current weather condition icon and the current temperature
@@ -414,6 +452,7 @@ newtab-topic-label-society = Life Hacks
 newtab-topic-label-sports = Sports
 newtab-topic-label-tech = Tech
 newtab-topic-label-travel = Travel
+newtab-topic-label-home = Home & Garden
 
 ## Topic Selection Modal
 
@@ -429,3 +468,39 @@ newtab-topic-selection-button-maybe-later = Maybe later
 newtab-topic-selection-privacy-link = Learn how we protect and manage data
 newtab-topic-selection-button-update-interests = Update your interests
 newtab-topic-selection-button-pick-interests = Pick your interests
+
+## Content Feed Sections
+## "Follow", "unfollow", and "following" are social media terms that refer to subscribing to or unsubscribing from a section of stories.
+## e.g. Following the travel section of stories.
+
+newtab-section-follow-button = Follow
+newtab-section-following-button = Following
+newtab-section-unfollow-button = Unfollow
+
+## Button to block/unblock listed topics
+## "Block", "unblocked", and "blocked" are social media terms that refer to hiding a section of stories.
+## e.g. Blocked the politics section of stories.
+
+newtab-section-block-button = Block
+newtab-section-blocked-button = Blocked
+newtab-section-unblock-button = Unblock
+
+## Confirmation modal for blocking a section
+
+newtab-section-confirm-block-topic-p1 = Are you sure you want to block this topic?
+newtab-section-confirm-block-topic-p2 = Blocked topics will no longer appear in your feed.
+
+# Variables:
+#   $topic (string) - Name of topic that user is blocking
+newtab-section-block-topic-button = Block { $topic }
+newtab-section-cancel-button = Not now
+
+## Panel in the Customize menu section to manage followed and blocked topics
+
+newtab-section-mangage-topics-title = Topics
+newtab-section-manage-topics-button-v2 =
+    .label = Manage topics
+newtab-section-mangage-topics-followed-topics = Followed
+newtab-section-mangage-topics-followed-topics-empty-state = You have not followed any topics yet.
+newtab-section-mangage-topics-blocked-topics = Blocked
+newtab-section-mangage-topics-blocked-topics-empty-state = You have not blocked any topics yet.

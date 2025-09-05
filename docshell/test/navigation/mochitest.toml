@@ -86,6 +86,8 @@ support-files = [
   "frame_5_out_of_6.html",
   "frame_6_out_of_6.html",
   "frame_recursive.html",
+  "frame_recursive_dynamic.html",
+  "frame_recursive_target.html",
   "object_recursive_load.html",
   "file_nested_srcdoc.html",
 ]
@@ -122,6 +124,9 @@ skip-if = [
 ["test_bug278916.html"]
 
 ["test_bug279495.html"]
+skip-if = [
+  "os == 'android' && debug && processor == 'x86_64'", # Bug 1781600
+]
 
 ["test_bug344861.html"]
 skip-if = ["os == 'android'"]

@@ -1,7 +1,8 @@
-browser/components/newtab/vendor/
 browser/components/pocket/content/panels/css/normalize.scss
 browser/components/pocket/content/panels/js/vendor/
 browser/components/storybook/node_modules/
+browser/components/topsites/content/tippytop/favicons/
+browser/components/topsites/content/tippytop/images/
 browser/extensions/formautofill/content/third-party/
 browser/extensions/formautofill/test/fixtures/third_party/
 devtools/client/inspector/markup/test/lib_*
@@ -31,7 +32,6 @@ dom/media/gmp/rlz/
 dom/media/gmp/widevine-adapter/content_decryption_module_export.h
 dom/media/gmp/widevine-adapter/content_decryption_module_ext.h
 dom/media/gmp/widevine-adapter/content_decryption_module.h
-dom/media/gmp/widevine-adapter/content_decryption_module_proxy.h
 dom/media/platforms/ffmpeg/ffmpeg57/
 dom/media/platforms/ffmpeg/ffmpeg58/
 dom/media/platforms/ffmpeg/ffmpeg59/
@@ -61,6 +61,7 @@ editor/libeditor/tests/browserscope/lib/richtext/
 editor/libeditor/tests/browserscope/lib/richtext2/
 extensions/spellcheck/hunspell/src/
 function2/
+fmt/
 gfx/angle/checkout/
 gfx/cairo/
 gfx/graphite2/
@@ -108,6 +109,7 @@ js/src/vtune/ittnotify_types.h
 js/src/vtune/jitprofiling.c
 js/src/vtune/jitprofiling.h
 js/src/vtune/legacy/
+js/src/xsum/
 js/src/zydis/
 layout/docs/css-gap-decorations/
 media/ffvpx/
@@ -133,7 +135,6 @@ media/openmax_dl/
 media/openmax_il/
 media/webrtc/signaling/gtest/MockCall.h
 mfbt/double-conversion/double-conversion/
-mfbt/lz4/.*
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/JSDOMParser-0.4.2.js
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-0.4.2.js
 mobile/android/android-components/components/feature/readerview/src/main/assets/extensions/readerview/readability/readability-readerable-0.4.2.js
@@ -145,6 +146,7 @@ modules/woff2/
 modules/xz-embedded/
 modules/zlib/
 mozglue/misc/decimal/
+mozglue/static/lz4/.*
 mozglue/tests/glibc_printf_tests/
 netwerk/dns/nsIDNKitInterface.h
 netwerk/sctp/src/
@@ -163,9 +165,7 @@ services/common/kinto-http-client.sys.mjs
 services/common/kinto-offline-client.sys.mjs
 testing/gtest/gmock/
 testing/gtest/gtest/
-testing/mochitest/MochiKit/
 testing/mochitest/pywebsocket3/
-testing/mochitest/tests/MochiKit-1.4.2/
 testing/modules/sinon-7.2.7.js
 testing/mozbase/mozproxy/mozproxy/backends/mitm/scripts/catapult/
 testing/talos/talos/tests/devtools/addon/content/pages/
@@ -186,17 +186,18 @@ toolkit/components/certviewer/content/vendor/
 toolkit/components/jsoncpp/
 toolkit/components/ml/vendor/
 toolkit/components/normandy/vendor/
-toolkit/components/passwordmgr/PasswordRulesParser.sys.mjs
+toolkit/components/passwordmgr/shared/PasswordRulesParser.sys.mjs
 toolkit/components/protobuf/
 toolkit/components/reader/readability/
 toolkit/components/resistfingerprinting/content/gl-matrix.js
-toolkit/components/translation/cld2/
+toolkit/components/translations/cld2/
 toolkit/components/translations/bergamot-translator/thirdparty
 toolkit/components/translations/bergamot-translator/bergamot-translator.js
 toolkit/components/url-classifier/chromium/
 toolkit/components/utils/mozjexl.sys.mjs
 toolkit/components/viaduct/fetch_msg_types.pb.cc
 toolkit/components/viaduct/fetch_msg_types.pb.h
+toolkit/content/vendor/react/
 toolkit/content/widgets/vendor/lit.all.mjs
 toolkit/crashreporter/breakpad-client/
 toolkit/crashreporter/google-breakpad/
@@ -205,3 +206,4 @@ tools/profiler/core/vtune/
 xpcom/build/mach_override.c
 xpcom/build/mach_override.h
 xpcom/io/crc32c.c
+rlbox/rlbox_sandbox.hpp

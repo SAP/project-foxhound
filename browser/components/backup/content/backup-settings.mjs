@@ -93,44 +93,14 @@ export default class BackupSettings extends MozLitElement {
       new CustomEvent("BackupUI:InitWidget", { bubbles: true })
     );
 
-    this.addEventListener("turnOnScheduledBackups", this);
-    this.addEventListener("turnOffScheduledBackups", this);
     this.addEventListener("dialogCancel", this);
     this.addEventListener("getBackupFileInfo", this);
-    this.addEventListener("enableEncryption", this);
-    this.addEventListener("rerunEncryption", this);
-    this.addEventListener("disableEncryption", this);
     this.addEventListener("restoreFromBackupConfirm", this);
     this.addEventListener("restoreFromBackupChooseFile", this);
   }
 
   handleEvent(event) {
     switch (event.type) {
-      case "turnOnScheduledBackups":
-        this.turnOnScheduledBackupsDialogEl.close();
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:ToggleScheduledBackups", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              ...event.detail,
-              isScheduledBackupsEnabled: true,
-            },
-          })
-        );
-        break;
-      case "turnOffScheduledBackups":
-        this.turnOffScheduledBackupsDialogEl.close();
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:ToggleScheduledBackups", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              isScheduledBackupsEnabled: false,
-            },
-          })
-        );
-        break;
       case "dialogCancel":
         if (this.turnOnScheduledBackupsDialogEl.open) {
           this.turnOnScheduledBackupsDialogEl.close();
@@ -171,43 +141,6 @@ export default class BackupSettings extends MozLitElement {
             composed: true,
             detail: {
               backupFile: event.detail.backupFile,
-            },
-          })
-        );
-        break;
-      case "enableEncryption":
-        this.enableBackupEncryptionDialogEl.close();
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:ToggleEncryption", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              ...event.detail,
-              isEncryptionEnabled: true,
-            },
-          })
-        );
-        break;
-      case "rerunEncryption":
-        this.enableBackupEncryptionDialogEl.close();
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:RerunEncryption", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              ...event.detail,
-            },
-          })
-        );
-        break;
-      case "disableEncryption":
-        this.disableBackupEncryptionDialogEl.close();
-        this.dispatchEvent(
-          new CustomEvent("BackupUI:ToggleEncryption", {
-            bubbles: true,
-            composed: true,
-            detail: {
-              isEncryptionEnabled: false,
             },
           })
         );
@@ -324,11 +257,11 @@ export default class BackupSettings extends MozLitElement {
         <moz-button
           id="backup-toggle-restore-button"
           @click=${this.handleShowRestoreDialog}
-          data-l10n-id="${restoreButtonL10nID}"
+          data-l10n-id=${restoreButtonL10nID}
         ></moz-button>
         <div
           id="backup-restore-description"
-          data-l10n-id="${descriptionL10nID}"
+          data-l10n-id=${descriptionL10nID}
         ></div>
       </div>
     </section>`;
@@ -391,12 +324,12 @@ export default class BackupSettings extends MozLitElement {
         <div
           id="last-backup-date"
           data-l10n-id="settings-data-backup-last-backup-date"
-          data-l10n-args="${JSON.stringify(backupDateArgs)}"
+          data-l10n-args=${JSON.stringify(backupDateArgs)}
         ></div>
         <div
           id="last-backup-filename"
           data-l10n-id="settings-data-backup-last-backup-filename"
-          data-l10n-args="${JSON.stringify(backupFileNameArgs)}"
+          data-l10n-args=${JSON.stringify(backupFileNameArgs)}
         ></div>
       </div>
     `;
@@ -415,7 +348,7 @@ export default class BackupSettings extends MozLitElement {
           class="backup-location-filepicker-input"
           type="text"
           readonly
-          value="${backupDirPath}"
+          value=${backupDirPath}
           style=${`background-image: url(${iconURL})`}></input>
         <moz-button
           id="backup-location-show"
@@ -506,7 +439,7 @@ export default class BackupSettings extends MozLitElement {
         <div class="backups-control">
           <span
             id="scheduled-backups-enabled"
-            data-l10n-id="${scheduledBackupsEnabledL10nID}"
+            data-l10n-id=${scheduledBackupsEnabledL10nID}
             class="heading-medium"
           ></span>
 

@@ -684,7 +684,15 @@ def vcs_checkout_from_args(args, project):
 
 
 def main(args):
-    print_line(b'setup', b'run-task started in %s\n' % os.getcwd().encode('utf-8'))
+    task_workdir = os.getcwd()
+
+    # Task definitions generally expect to use forward slashes, so normalize to
+    # avoid paths with mixed separators.
+    if os.sep != "/":
+        task_workdir = task_workdir.replace(os.sep, "/")
+
+    os.environ["TASK_WORKDIR"] = task_workdir
+    print_line(b'setup', b'run-task started in %s\n' % task_workdir.encode('utf-8'))
     running_as_root = IS_POSIX and os.getuid() == 0
 
     # Set a reasonable limit to the number of open files.
@@ -875,6 +883,17 @@ def main(args):
     if args.gecko_checkout or args.comm_checkout:
         prepare_hg_store_path()
 
+    # Bug 1930944: work around docker-worker not running the image's entry point for interactive tasks.
+    # Tests need a system bus, which needs to be started before dropping privileges, so do this here until we're off
+    # docker-worker; see
+    # https://searchfox.org/mozilla-central/rev/8c9c85c74e366c11ffacbb5a2e457b33b0acc9cd/taskcluster/docker/ubuntu1804-test/Dockerfile#79-83
+    if (
+        running_as_root
+        and "TASKCLUSTER_INTERACTIVE" in os.environ
+        and os.access("/etc/init.d/dbus", os.X_OK)
+    ):
+        subprocess.run(["/etc/init.d/dbus", "start"])
+
     if IS_POSIX and running_as_root:
         # Drop permissions to requested user.
         # This code is modeled after what `sudo` was observed to do in a Docker
@@ -891,7 +910,16 @@ def main(args):
     vcs_checkout_from_args(args, 'gecko')
     vcs_checkout_from_args(args, 'comm')
 
-    for k in ('GECKO_PATH', 'MOZ_FETCHES_DIR', 'UPLOAD_DIR', 'MOZ_PYTHON_HOME'):
+    for k in (
+        "CARGO_HOME",
+        "GECKO_PATH",
+        "MOZ_FETCHES_DIR",
+        "MOZ_PYTHON_HOME",
+        "PIP_CACHE_DIR",
+        "UPLOAD_DIR",
+        "UV_CACHE_DIR",
+        "npm_config_cache",
+    ):
         if k in os.environ:
             # Normalize paths to use forward slashes. Some shell scripts
             # tolerate that better on Windows.

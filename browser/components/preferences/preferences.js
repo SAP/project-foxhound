@@ -43,10 +43,6 @@ var { Weave } = ChromeUtils.importESModule(
   "resource://services-sync/main.sys.mjs"
 );
 
-var { FirefoxRelayTelemetry } = ChromeUtils.importESModule(
-  "resource://gre/modules/FirefoxRelayTelemetry.mjs"
-);
-
 var { FxAccounts, getFxAccountsSingleton } = ChromeUtils.importESModule(
   "resource://gre/modules/FxAccounts.sys.mjs"
 );
@@ -195,7 +191,6 @@ function init_all() {
   // Asks Preferences to queue an update of the attribute values of
   // the entire document.
   Preferences.queueUpdateOfAllElements();
-  Services.telemetry.setEventRecordingEnabled("aboutpreferences", true);
 
   register_module("paneGeneral", gMainPane);
   register_module("paneHome", gHomePane);
@@ -275,12 +270,12 @@ function init_all() {
 }
 
 function onHashChange() {
-  gotoPref(null, "hash");
+  gotoPref(null, "Hash");
 }
 
 async function gotoPref(
   aCategory,
-  aShowReason = aCategory ? "click" : "initial"
+  aShowReason = aCategory ? "Click" : "Initial"
 ) {
   let categories = document.getElementById("categories");
   const kDefaultCategoryInternalName = "paneGeneral";
@@ -380,7 +375,7 @@ async function gotoPref(
 
   search(category, "data-category");
 
-  if (aShowReason != "initial") {
+  if (aShowReason != "Initial") {
     document.querySelector(".main-content").scrollTop = 0;
   }
 
@@ -394,12 +389,7 @@ async function gotoPref(
   }
 
   // Record which category is shown
-  Services.telemetry.recordEvent(
-    "aboutpreferences",
-    "show",
-    aShowReason,
-    category
-  );
+  Glean.aboutpreferences["show" + aShowReason].record({ value: category });
 
   document.dispatchEvent(
     new CustomEvent("paneshown", {
@@ -438,7 +428,7 @@ function search(aQuery, aAttribute) {
   }
 }
 
-async function spotlight(subcategory, category) {
+function spotlight(subcategory, category) {
   let highlightedElements = document.querySelectorAll(".spotlight");
   if (highlightedElements.length) {
     for (let element of highlightedElements) {
@@ -450,14 +440,17 @@ async function spotlight(subcategory, category) {
   }
 }
 
-async function scrollAndHighlight(subcategory) {
+function scrollAndHighlight(subcategory) {
   let element = document.querySelector(`[data-subcategory="${subcategory}"]`);
   if (!element) {
     return;
   }
   let header = getClosestDisplayedHeader(element);
 
-  scrollContentTo(header);
+  header.scrollIntoView({
+    behavior: "smooth",
+    block: "center",
+  });
   element.classList.add("spotlight");
 }
 
@@ -477,17 +470,6 @@ function getClosestDisplayedHeader(element) {
     header = header.previousElementSibling;
   }
   return header;
-}
-
-function scrollContentTo(element) {
-  const STICKY_CONTAINER_HEIGHT =
-    document.querySelector(".sticky-container").clientHeight;
-  let mainContent = document.querySelector(".main-content");
-  let top = element.getBoundingClientRect().top - STICKY_CONTAINER_HEIGHT;
-  mainContent.scroll({
-    top,
-    behavior: "smooth",
-  });
 }
 
 function friendlyPrefCategoryNameToInternalName(aName) {
@@ -621,7 +603,7 @@ async function ensureScrollPadding() {
   let stickyContainer = document.querySelector(".sticky-container");
   let height = await window.browsingContext.topChromeWindow
     .promiseDocumentFlushed(() => stickyContainer.clientHeight)
-    .catch(() => Cu.reportError); // Can reject if the window goes away.
+    .catch(console.error); // Can reject if the window goes away.
 
   // Make it a bit more, to ensure focus rectangles etc. don't get cut off.
   // This being 8px causes us to end up with 90px if the policies container
@@ -636,6 +618,6 @@ async function ensureScrollPadding() {
 function maybeDisplayPoliciesNotice() {
   if (Services.policies.status == Services.policies.ACTIVE) {
     document.getElementById("policies-container").removeAttribute("hidden");
-    ensureScrollPadding();
   }
+  ensureScrollPadding();
 }

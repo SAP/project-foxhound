@@ -828,6 +828,8 @@ extern JS_PUBLIC_API JSObject* JS_NewObjectForConstructor(
 extern JS_PUBLIC_API void JS_SetParallelParsingEnabled(JSContext* cx,
                                                        bool enabled);
 
+extern JS_PUBLIC_API void JS_SetOffthreadBaselineCompilationEnabled(
+    JSContext* cx, bool enabled);
 extern JS_PUBLIC_API void JS_SetOffthreadIonCompilationEnabled(JSContext* cx,
                                                                bool enabled);
 
@@ -955,9 +957,11 @@ class MOZ_RAII JS_PUBLIC_API AutoFilename {
  *
  * If a the embedding has hidden the scripted caller for the topmost activation
  * record, this will also return false.
+ *
+ * This never throws an exception.
  */
 extern JS_PUBLIC_API bool DescribeScriptedCaller(
-    JSContext* cx, AutoFilename* filename = nullptr, uint32_t* lineno = nullptr,
+    AutoFilename* filename, JSContext* cx, uint32_t* lineno = nullptr,
     JS::ColumnNumberOneOrigin* column = nullptr);
 
 extern JS_PUBLIC_API JSObject* GetScriptedCallerGlobal(JSContext* cx);

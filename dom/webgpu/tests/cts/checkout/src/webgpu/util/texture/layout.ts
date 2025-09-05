@@ -5,6 +5,7 @@ import {
   SizedTextureFormat,
   EncodableTextureFormat,
 } from '../../format_info.js';
+import { GPUTest } from '../../gpu_test.js';
 import { align } from '../math.js';
 import { reifyExtent3D } from '../unions.js';
 
@@ -195,8 +196,8 @@ export function fillTextureDataWithTexelValue(
  * texture where every texel has the byte value `texelValue`.
  */
 export function createTextureUploadBuffer(
+  t: GPUTest,
   texelValue: ArrayBuffer,
-  device: GPUDevice,
   format: EncodableTextureFormat,
   dimension: GPUTextureDimension,
   size: [number, number, number],
@@ -213,7 +214,7 @@ export function createTextureUploadBuffer(
     options
   );
 
-  const buffer = device.createBuffer({
+  const buffer = t.createBufferTracked({
     mappedAtCreation: true,
     size: byteLength,
     usage: GPUBufferUsage.COPY_SRC,
@@ -290,7 +291,7 @@ function validateRowsPerImage({
 }
 
 interface DataBytesForCopyArgs {
-  layout: GPUImageDataLayout;
+  layout: GPUTexelCopyBufferLayout;
   format: SizedTextureFormat;
   copySize: Readonly<GPUExtent3DDict> | readonly number[];
   method: ImageCopyType;

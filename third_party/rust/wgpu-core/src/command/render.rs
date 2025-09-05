@@ -1,9 +1,20 @@
+use alloc::{borrow::Cow, sync::Arc, vec::Vec};
+use core::{fmt, mem::size_of, num::NonZeroU32, ops::Range, str};
+
+use arrayvec::ArrayVec;
+use thiserror::Error;
+use wgt::{
+    BufferAddress, BufferSize, BufferUsages, Color, DynamicOffset, IndexFormat, ShaderStages,
+    TextureSelector, TextureUsages, TextureViewDimension, VertexStepMode,
+};
+
 use crate::binding_model::BindGroup;
 use crate::command::{
     validate_and_begin_occlusion_query, validate_and_begin_pipeline_statistics_query,
 };
 use crate::init_tracker::BufferInitTrackerAction;
-use crate::pipeline::RenderPipeline;
+use crate::pipeline::{RenderPipeline, VertexStep};
+use crate::resource::InvalidResourceError;
 use crate::snatch::SnatchGuard;
 use crate::{
     api_log,
@@ -13,32 +24,23 @@ use crate::{
         end_occlusion_query, end_pipeline_statistics_query,
         memory_init::{fixup_discarded_surfaces, SurfacesInDiscardState},
         ArcPassTimestampWrites, BasePass, BindGroupStateChange, CommandBuffer, CommandEncoderError,
-        CommandEncoderStatus, DrawError, ExecutionError, MapPassErr, PassErrorScope,
-        PassTimestampWrites, QueryUseError, RenderCommandError, StateChange,
+        DrawError, ExecutionError, MapPassErr, PassErrorScope, PassTimestampWrites, QueryUseError,
+        RenderCommandError, StateChange,
     },
     device::{
         AttachmentData, Device, DeviceError, MissingDownlevelFlags, MissingFeatures,
         RenderPassCompatibilityError, RenderPassContext,
     },
     global::Global,
-    hal_api::HalApi,
     hal_label, id,
     init_tracker::{MemoryInitKind, TextureInitRange, TextureInitTrackerAction},
-    pipeline::{self, PipelineFlags},
+    pipeline::PipelineFlags,
     resource::{
         DestroyedResourceError, Labeled, MissingBufferUsageError, MissingTextureUsageError,
         ParentDevice, QuerySet, Texture, TextureView, TextureViewNotRenderableReason,
     },
-    track::{ResourceUsageCompatibilityError, TextureSelector, Tracker, UsageScope},
+    track::{ResourceUsageCompatibilityError, Tracker, UsageScope},
     Label,
-};
-
-use arrayvec::ArrayVec;
-use hal::CommandEncoder as _;
-use thiserror::Error;
-use wgt::{
-    BufferAddress, BufferSize, BufferUsages, Color, DynamicOffset, IndexFormat, ShaderStages,
-    TextureUsages, TextureViewDimension, VertexStepMode,
 };
 
 #[cfg(feature = "serde")]
@@ -46,40 +48,27 @@ use serde::Deserialize;
 #[cfg(feature = "serde")]
 use serde::Serialize;
 
-use std::sync::Arc;
-use std::{borrow::Cow, fmt, iter, mem, num::NonZeroU32, ops::Range, str};
-
 use super::render_command::ArcRenderCommand;
 use super::{
     memory_init::TextureSurfaceDiscard, CommandBufferTextureMemoryActions, CommandEncoder,
     QueryResetMap,
 };
-use super::{DrawKind, DynRenderPass, Rect};
+use super::{DrawKind, Rect};
 
-/// Operation to perform to the output attachment at the start of a renderpass.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
-pub enum LoadOp {
-    /// Clear the output attachment with the clear color. Clearing is faster than loading.
-    Clear = 0,
-    /// Do not clear output attachment.
-    Load = 1,
+pub use wgt::{LoadOp, StoreOp};
+
+fn load_hal_ops<V>(load: LoadOp<V>) -> hal::AttachmentOps {
+    match load {
+        LoadOp::Load => hal::AttachmentOps::LOAD,
+        LoadOp::Clear(_) => hal::AttachmentOps::empty(),
+    }
 }
 
-/// Operation to perform to the output attachment at the end of a renderpass.
-#[repr(C)]
-#[derive(Copy, Clone, Debug, Hash, Eq, PartialEq)]
-#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-#[cfg_attr(feature = "serde", serde(rename_all = "kebab-case"))]
-pub enum StoreOp {
-    /// Discards the content of the render target.
-    ///
-    /// If you don't care about the contents of the target, this can be faster.
-    Discard = 0,
-    /// Store the result of the renderpass.
-    Store = 1,
+fn store_hal_ops(store: StoreOp) -> hal::AttachmentOps {
+    match store {
+        StoreOp::Store => hal::AttachmentOps::STORE,
+        StoreOp::Discard => hal::AttachmentOps::empty(),
+    }
 }
 
 /// Describes an individual channel within a render pass, such as color, depth, or stencil.
@@ -92,30 +81,77 @@ pub struct PassChannel<V> {
     ///
     /// This must be clear if it is the first renderpass rendering to a swap
     /// chain image.
-    pub load_op: LoadOp,
+    pub load_op: Option<LoadOp<V>>,
     /// Operation to perform to the output attachment at the end of a renderpass.
-    pub store_op: StoreOp,
-    /// If load_op is [`LoadOp::Clear`], the attachment will be cleared to this
-    /// color.
-    pub clear_value: V,
+    pub store_op: Option<StoreOp>,
     /// If true, the relevant channel is not changed by a renderpass, and the
     /// corresponding attachment can be used inside the pass by other read-only
     /// usages.
     pub read_only: bool,
 }
 
-impl<V> PassChannel<V> {
+impl<V: Copy + Default> PassChannel<Option<V>> {
+    fn resolve(
+        &self,
+        handle_clear: impl Fn(Option<V>) -> Result<V, AttachmentError>,
+    ) -> Result<ResolvedPassChannel<V>, AttachmentError> {
+        if self.read_only {
+            if self.load_op.is_some() {
+                return Err(AttachmentError::ReadOnlyWithLoad);
+            }
+            if self.store_op.is_some() {
+                return Err(AttachmentError::ReadOnlyWithStore);
+            }
+            Ok(ResolvedPassChannel::ReadOnly)
+        } else {
+            Ok(ResolvedPassChannel::Operational(wgt::Operations {
+                load: match self.load_op.ok_or(AttachmentError::NoLoad)? {
+                    LoadOp::Clear(clear_value) => LoadOp::Clear(handle_clear(clear_value)?),
+                    LoadOp::Load => LoadOp::Load,
+                },
+                store: self.store_op.ok_or(AttachmentError::NoStore)?,
+            }))
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ResolvedPassChannel<V> {
+    ReadOnly,
+    Operational(wgt::Operations<V>),
+}
+
+impl<V: Copy + Default> ResolvedPassChannel<V> {
+    fn load_op(&self) -> LoadOp<V> {
+        match self {
+            ResolvedPassChannel::ReadOnly => LoadOp::Load,
+            ResolvedPassChannel::Operational(wgt::Operations { load, .. }) => *load,
+        }
+    }
+
+    fn store_op(&self) -> StoreOp {
+        match self {
+            ResolvedPassChannel::ReadOnly => StoreOp::Store,
+            ResolvedPassChannel::Operational(wgt::Operations { store, .. }) => *store,
+        }
+    }
+
+    fn clear_value(&self) -> V {
+        match self {
+            Self::Operational(wgt::Operations {
+                load: LoadOp::Clear(clear_value),
+                ..
+            }) => *clear_value,
+            _ => Default::default(),
+        }
+    }
+
+    fn is_readonly(&self) -> bool {
+        matches!(self, Self::ReadOnly)
+    }
+
     fn hal_ops(&self) -> hal::AttachmentOps {
-        let mut ops = hal::AttachmentOps::empty();
-        match self.load_op {
-            LoadOp::Load => ops |= hal::AttachmentOps::LOAD,
-            LoadOp::Clear => (),
-        };
-        match self.store_op {
-            StoreOp::Store => ops |= hal::AttachmentOps::STORE,
-            StoreOp::Discard => (),
-        };
-        ops
+        load_hal_ops(self.load_op()) | store_hal_ops(self.store_op())
     }
 }
 
@@ -123,24 +159,34 @@ impl<V> PassChannel<V> {
 #[repr(C)]
 #[derive(Clone, Debug, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
-pub struct RenderPassColorAttachment {
+pub struct RenderPassColorAttachment<TV = id::TextureViewId> {
     /// The view to use as an attachment.
-    pub view: id::TextureViewId,
+    pub view: TV,
     /// The view that will receive the resolved output if multisampling is used.
-    pub resolve_target: Option<id::TextureViewId>,
-    /// What operations will be performed on this color attachment.
-    pub channel: PassChannel<Color>,
+    pub resolve_target: Option<TV>,
+    /// Operation to perform to the output attachment at the start of a
+    /// renderpass.
+    ///
+    /// This must be clear if it is the first renderpass rendering to a swap
+    /// chain image.
+    pub load_op: LoadOp<Color>,
+    /// Operation to perform to the output attachment at the end of a renderpass.
+    pub store_op: StoreOp,
 }
 
-/// Describes a color attachment to a render pass.
-#[derive(Debug)]
-struct ArcRenderPassColorAttachment<A: HalApi> {
-    /// The view to use as an attachment.
-    pub view: Arc<TextureView<A>>,
-    /// The view that will receive the resolved output if multisampling is used.
-    pub resolve_target: Option<Arc<TextureView<A>>>,
-    /// What operations will be performed on this color attachment.
-    pub channel: PassChannel<Color>,
+pub type ArcRenderPassColorAttachment = RenderPassColorAttachment<Arc<TextureView>>;
+
+impl ArcRenderPassColorAttachment {
+    fn hal_ops(&self) -> hal::AttachmentOps {
+        load_hal_ops(self.load_op) | store_hal_ops(self.store_op)
+    }
+
+    fn clear_value(&self) -> Color {
+        match self.load_op {
+            LoadOp::Clear(clear_value) => clear_value,
+            LoadOp::Load => Color::default(),
+        }
+    }
 }
 
 /// Describes a depth/stencil attachment to a render pass.
@@ -151,57 +197,20 @@ pub struct RenderPassDepthStencilAttachment {
     /// The view to use as an attachment.
     pub view: id::TextureViewId,
     /// What operations will be performed on the depth part of the attachment.
-    pub depth: PassChannel<f32>,
+    pub depth: PassChannel<Option<f32>>,
     /// What operations will be performed on the stencil part of the attachment.
-    pub stencil: PassChannel<u32>,
+    pub stencil: PassChannel<Option<u32>>,
 }
+
 /// Describes a depth/stencil attachment to a render pass.
 #[derive(Debug)]
-pub struct ArcRenderPassDepthStencilAttachment<A: HalApi> {
+pub struct ArcRenderPassDepthStencilAttachment {
     /// The view to use as an attachment.
-    pub view: Arc<TextureView<A>>,
+    pub view: Arc<TextureView>,
     /// What operations will be performed on the depth part of the attachment.
-    pub depth: PassChannel<f32>,
+    pub depth: ResolvedPassChannel<f32>,
     /// What operations will be performed on the stencil part of the attachment.
-    pub stencil: PassChannel<u32>,
-}
-
-impl<A: HalApi> ArcRenderPassDepthStencilAttachment<A> {
-    /// Validate the given aspects' read-only flags against their load
-    /// and store ops.
-    ///
-    /// When an aspect is read-only, its load and store ops must be
-    /// `LoadOp::Load` and `StoreOp::Store`.
-    ///
-    /// On success, return a pair `(depth, stencil)` indicating
-    /// whether the depth and stencil passes are read-only.
-    fn depth_stencil_read_only(
-        &self,
-        aspects: hal::FormatAspects,
-    ) -> Result<(bool, bool), RenderPassErrorInner> {
-        let mut depth_read_only = true;
-        let mut stencil_read_only = true;
-
-        if aspects.contains(hal::FormatAspects::DEPTH) {
-            if self.depth.read_only
-                && (self.depth.load_op, self.depth.store_op) != (LoadOp::Load, StoreOp::Store)
-            {
-                return Err(RenderPassErrorInner::InvalidDepthOps);
-            }
-            depth_read_only = self.depth.read_only;
-        }
-
-        if aspects.contains(hal::FormatAspects::STENCIL) {
-            if self.stencil.read_only
-                && (self.stencil.load_op, self.stencil.store_op) != (LoadOp::Load, StoreOp::Store)
-            {
-                return Err(RenderPassErrorInner::InvalidStencilOps);
-            }
-            stencil_read_only = self.stencil.read_only;
-        }
-
-        Ok((depth_read_only, stencil_read_only))
-    }
+    pub stencil: ResolvedPassChannel<u32>,
 }
 
 /// Describes the attachments of a render pass.
@@ -219,45 +228,45 @@ pub struct RenderPassDescriptor<'a> {
 }
 
 /// Describes the attachments of a render pass.
-struct ArcRenderPassDescriptor<'a, A: HalApi> {
+struct ArcRenderPassDescriptor<'a> {
     pub label: &'a Label<'a>,
     /// The color attachments of the render pass.
     pub color_attachments:
-        ArrayVec<Option<ArcRenderPassColorAttachment<A>>, { hal::MAX_COLOR_ATTACHMENTS }>,
+        ArrayVec<Option<ArcRenderPassColorAttachment>, { hal::MAX_COLOR_ATTACHMENTS }>,
     /// The depth and stencil attachment of the render pass, if any.
-    pub depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment<A>>,
+    pub depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment>,
     /// Defines where and when timestamp values will be written for this pass.
-    pub timestamp_writes: Option<ArcPassTimestampWrites<A>>,
+    pub timestamp_writes: Option<ArcPassTimestampWrites>,
     /// Defines where the occlusion query results will be stored for this pass.
-    pub occlusion_query_set: Option<Arc<QuerySet<A>>>,
+    pub occlusion_query_set: Option<Arc<QuerySet>>,
 }
 
-pub struct RenderPass<A: HalApi> {
+pub struct RenderPass {
     /// All pass data & records is stored here.
     ///
     /// If this is `None`, the pass is in the 'ended' state and can no longer be used.
     /// Any attempt to record more commands will result in a validation error.
-    base: Option<BasePass<ArcRenderCommand<A>>>,
+    base: Option<BasePass<ArcRenderCommand>>,
 
     /// Parent command buffer that this pass records commands into.
     ///
     /// If it is none, this pass is invalid and any operation on it will return an error.
-    parent: Option<Arc<CommandBuffer<A>>>,
+    parent: Option<Arc<CommandBuffer>>,
 
     color_attachments:
-        ArrayVec<Option<ArcRenderPassColorAttachment<A>>, { hal::MAX_COLOR_ATTACHMENTS }>,
-    depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment<A>>,
-    timestamp_writes: Option<ArcPassTimestampWrites<A>>,
-    occlusion_query_set: Option<Arc<QuerySet<A>>>,
+        ArrayVec<Option<ArcRenderPassColorAttachment>, { hal::MAX_COLOR_ATTACHMENTS }>,
+    depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment>,
+    timestamp_writes: Option<ArcPassTimestampWrites>,
+    occlusion_query_set: Option<Arc<QuerySet>>,
 
     // Resource binding dedupe state.
     current_bind_groups: BindGroupStateChange,
     current_pipeline: StateChange<id::RenderPipelineId>,
 }
 
-impl<A: HalApi> RenderPass<A> {
+impl RenderPass {
     /// If the parent command buffer is invalid, the returned pass will be invalid.
-    fn new(parent: Option<Arc<CommandBuffer<A>>>, desc: ArcRenderPassDescriptor<A>) -> Self {
+    fn new(parent: Option<Arc<CommandBuffer>>, desc: ArcRenderPassDescriptor) -> Self {
         let ArcRenderPassDescriptor {
             label,
             timestamp_writes,
@@ -287,7 +296,7 @@ impl<A: HalApi> RenderPass<A> {
     fn base_mut<'a>(
         &'a mut self,
         scope: PassErrorScope,
-    ) -> Result<&'a mut BasePass<ArcRenderCommand<A>>, RenderPassError> {
+    ) -> Result<&'a mut BasePass<ArcRenderCommand>, RenderPassError> {
         self.base
             .as_mut()
             .ok_or(RenderPassErrorInner::PassEnded)
@@ -295,7 +304,7 @@ impl<A: HalApi> RenderPass<A> {
     }
 }
 
-impl<A: HalApi> fmt::Debug for RenderPass<A> {
+impl fmt::Debug for RenderPass {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("RenderPass")
             .field("label", &self.label())
@@ -360,57 +369,45 @@ impl IndexState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
-struct VertexBufferState {
-    total_size: BufferAddress,
-    step: pipeline::VertexStep,
-    bound: bool,
-}
-
-impl VertexBufferState {
-    const EMPTY: Self = Self {
-        total_size: 0,
-        step: pipeline::VertexStep {
-            stride: 0,
-            last_stride: 0,
-            mode: VertexStepMode::Vertex,
-        },
-        bound: false,
-    };
-}
-
 #[derive(Debug, Default)]
-struct VertexState {
-    inputs: ArrayVec<VertexBufferState, { hal::MAX_VERTEX_BUFFERS }>,
+pub(crate) struct VertexLimits {
     /// Length of the shortest vertex rate vertex buffer
-    vertex_limit: u64,
+    pub(crate) vertex_limit: u64,
     /// Buffer slot which the shortest vertex rate vertex buffer is bound to
     vertex_limit_slot: u32,
     /// Length of the shortest instance rate vertex buffer
-    instance_limit: u64,
+    pub(crate) instance_limit: u64,
     /// Buffer slot which the shortest instance rate vertex buffer is bound to
     instance_limit_slot: u32,
 }
 
-impl VertexState {
-    fn update_limits(&mut self) {
+impl VertexLimits {
+    pub(crate) fn new(
+        buffer_sizes: impl Iterator<Item = Option<BufferAddress>>,
+        pipeline_steps: &[VertexStep],
+    ) -> Self {
         // Implements the validation from https://gpuweb.github.io/gpuweb/#dom-gpurendercommandsmixin-draw
         // Except that the formula is shuffled to extract the number of vertices in order
         // to carry the bulk of the computation when changing states instead of when producing
         // draws. Draw calls tend to happen at a higher frequency. Here we determine vertex
         // limits that can be cheaply checked for each draw call.
-        self.vertex_limit = u32::MAX as u64;
-        self.instance_limit = u32::MAX as u64;
-        for (idx, vbs) in self.inputs.iter().enumerate() {
-            if !vbs.bound {
-                continue;
-            }
 
-            let limit = if vbs.total_size < vbs.step.last_stride {
+        let mut vertex_limit = u64::MAX;
+        let mut vertex_limit_slot = 0;
+        let mut instance_limit = u64::MAX;
+        let mut instance_limit_slot = 0;
+
+        for (idx, (buffer_size, step)) in buffer_sizes.zip(pipeline_steps).enumerate() {
+            let Some(buffer_size) = buffer_size else {
+                // Missing required vertex buffer
+                return Self::default();
+            };
+
+            let limit = if buffer_size < step.last_stride {
                 // The buffer cannot fit the last vertex.
                 0
             } else {
-                if vbs.step.stride == 0 {
+                if step.stride == 0 {
                     // We already checked that the last stride fits, the same
                     // vertex will be repeated so this slot can accommodate any number of
                     // vertices.
@@ -418,65 +415,114 @@ impl VertexState {
                 }
 
                 // The general case.
-                (vbs.total_size - vbs.step.last_stride) / vbs.step.stride + 1
+                (buffer_size - step.last_stride) / step.stride + 1
             };
 
-            match vbs.step.mode {
+            match step.mode {
                 VertexStepMode::Vertex => {
-                    if limit < self.vertex_limit {
-                        self.vertex_limit = limit;
-                        self.vertex_limit_slot = idx as _;
+                    if limit < vertex_limit {
+                        vertex_limit = limit;
+                        vertex_limit_slot = idx as _;
                     }
                 }
                 VertexStepMode::Instance => {
-                    if limit < self.instance_limit {
-                        self.instance_limit = limit;
-                        self.instance_limit_slot = idx as _;
+                    if limit < instance_limit {
+                        instance_limit = limit;
+                        instance_limit_slot = idx as _;
                     }
                 }
             }
         }
+
+        Self {
+            vertex_limit,
+            vertex_limit_slot,
+            instance_limit,
+            instance_limit_slot,
+        }
     }
 
-    fn reset(&mut self) {
-        self.inputs.clear();
-        self.vertex_limit = 0;
-        self.instance_limit = 0;
+    pub(crate) fn validate_vertex_limit(
+        &self,
+        first_vertex: u32,
+        vertex_count: u32,
+    ) -> Result<(), DrawError> {
+        let last_vertex = first_vertex as u64 + vertex_count as u64;
+        let vertex_limit = self.vertex_limit;
+        if last_vertex > vertex_limit {
+            return Err(DrawError::VertexBeyondLimit {
+                last_vertex,
+                vertex_limit,
+                slot: self.vertex_limit_slot,
+            });
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn validate_instance_limit(
+        &self,
+        first_instance: u32,
+        instance_count: u32,
+    ) -> Result<(), DrawError> {
+        let last_instance = first_instance as u64 + instance_count as u64;
+        let instance_limit = self.instance_limit;
+        if last_instance > instance_limit {
+            return Err(DrawError::InstanceBeyondLimit {
+                last_instance,
+                instance_limit,
+                slot: self.instance_limit_slot,
+            });
+        }
+
+        Ok(())
     }
 }
 
-struct State<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder, A: HalApi> {
+#[derive(Debug, Default)]
+struct VertexState {
+    buffer_sizes: [Option<BufferAddress>; hal::MAX_VERTEX_BUFFERS],
+    limits: VertexLimits,
+}
+
+impl VertexState {
+    fn update_limits(&mut self, pipeline_steps: &[VertexStep]) {
+        self.limits = VertexLimits::new(self.buffer_sizes.iter().copied(), pipeline_steps);
+    }
+}
+
+struct State<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder> {
     pipeline_flags: PipelineFlags,
-    binder: Binder<A>,
+    binder: Binder,
     blend_constant: OptionalState,
     stencil_reference: u32,
-    pipeline: Option<Arc<RenderPipeline<A>>>,
+    pipeline: Option<Arc<RenderPipeline>>,
     index: IndexState,
     vertex: VertexState,
     debug_scope_depth: u32,
 
-    info: RenderPassInfo<'scope, A>,
+    info: RenderPassInfo<'scope>,
 
     snatch_guard: &'snatch_guard SnatchGuard<'snatch_guard>,
 
-    device: &'cmd_buf Arc<Device<A>>,
+    device: &'cmd_buf Arc<Device>,
 
-    raw_encoder: &'raw_encoder mut A::CommandEncoder,
+    raw_encoder: &'raw_encoder mut dyn hal::DynCommandEncoder,
 
-    tracker: &'cmd_buf mut Tracker<A>,
-    buffer_memory_init_actions: &'cmd_buf mut Vec<BufferInitTrackerAction<A>>,
-    texture_memory_actions: &'cmd_buf mut CommandBufferTextureMemoryActions<A>,
+    tracker: &'cmd_buf mut Tracker,
+    buffer_memory_init_actions: &'cmd_buf mut Vec<BufferInitTrackerAction>,
+    texture_memory_actions: &'cmd_buf mut CommandBufferTextureMemoryActions,
 
     temp_offsets: Vec<u32>,
     dynamic_offset_count: usize,
     string_offset: usize,
 
-    active_occlusion_query: Option<(Arc<QuerySet<A>>, u32)>,
-    active_pipeline_statistics_query: Option<(Arc<QuerySet<A>>, u32)>,
+    active_occlusion_query: Option<(Arc<QuerySet>, u32)>,
+    active_pipeline_statistics_query: Option<(Arc<QuerySet>, u32)>,
 }
 
-impl<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder, A: HalApi>
-    State<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder, A>
+impl<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder>
+    State<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder>
 {
     fn is_ready(&self, indexed: bool) -> Result<(), DrawError> {
         if let Some(pipeline) = self.pipeline.as_ref() {
@@ -488,8 +534,12 @@ impl<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder, A: HalApi>
             }
 
             // Determine how many vertex buffers have already been bound
-            let vertex_buffer_count =
-                self.vertex.inputs.iter().take_while(|v| v.bound).count() as u32;
+            let vertex_buffer_count = self
+                .vertex
+                .buffer_sizes
+                .iter()
+                .take_while(|v| v.is_some())
+                .count() as u32;
             // Compare with the needed quantity
             if vertex_buffer_count < pipeline.vertex_steps.len() as u32 {
                 return Err(DrawError::MissingVertexBuffer {
@@ -528,7 +578,7 @@ impl<'scope, 'snatch_guard, 'cmd_buf, 'raw_encoder, A: HalApi>
         self.binder.reset();
         self.pipeline = None;
         self.index.reset();
-        self.vertex.reset();
+        self.vertex = Default::default();
     }
 }
 
@@ -571,6 +621,25 @@ pub enum ColorAttachmentError {
     TooManyBytesPerSample { total: u32, limit: u32 },
 }
 
+#[derive(Clone, Debug, Error)]
+#[non_exhaustive]
+pub enum AttachmentError {
+    #[error("The format of the depth-stencil attachment ({0:?}) is not a depth-or-stencil format")]
+    InvalidDepthStencilAttachmentFormat(wgt::TextureFormat),
+    #[error("Read-only attachment with load")]
+    ReadOnlyWithLoad,
+    #[error("Read-only attachment with store")]
+    ReadOnlyWithStore,
+    #[error("Attachment without load")]
+    NoLoad,
+    #[error("Attachment without store")]
+    NoStore,
+    #[error("LoadOp is `Clear` but no clear value was provided")]
+    NoClearValue,
+    #[error("Clear value ({0}) must be between 0.0 and 1.0, inclusive")]
+    ClearValueOutOfRange(f32),
+}
+
 /// Error encountered when performing a render pass.
 #[derive(Clone, Debug, Error)]
 pub enum RenderPassErrorInner {
@@ -582,16 +651,6 @@ pub enum RenderPassErrorInner {
     Encoder(#[from] CommandEncoderError),
     #[error("Parent encoder is invalid")]
     InvalidParentEncoder,
-    #[error("The format of the depth-stencil attachment ({0:?}) is not a depth-stencil format")]
-    InvalidDepthStencilAttachmentFormat(wgt::TextureFormat),
-    #[error("Buffer {0:?} is invalid or destroyed")]
-    InvalidBuffer(id::BufferId),
-    #[error("Render pipeline {0:?} is invalid")]
-    InvalidPipeline(id::RenderPipelineId),
-    #[error("QuerySet {0:?} is invalid")]
-    InvalidQuerySet(id::QuerySetId),
-    #[error("Render bundle {0:?} is invalid")]
-    InvalidRenderBundle(id::RenderBundleId),
     #[error("The format of the {location} ({format:?}) is not resolvable")]
     UnsupportedResolveTargetFormat {
         location: AttachmentErrorLocation,
@@ -633,12 +692,6 @@ pub enum RenderPassErrorInner {
         src: wgt::TextureFormat,
         dst: wgt::TextureFormat,
     },
-    #[error("Surface texture is dropped before the render pass is finished")]
-    SurfaceTextureDropped,
-    #[error("Not enough memory left for render pass")]
-    OutOfMemory,
-    #[error("The bind group at index {0:?} is invalid")]
-    InvalidBindGroup(u32),
     #[error("Unable to clear non-present/read-only depth")]
     InvalidDepthOps,
     #[error("Unable to clear non-present/read-only stencil")]
@@ -649,10 +702,11 @@ pub enum RenderPassErrorInner {
     MissingFeatures(#[from] MissingFeatures),
     #[error(transparent)]
     MissingDownlevelFlags(#[from] MissingDownlevelFlags),
-    #[error("Indirect draw uses bytes {offset}..{end_offset} {} which overruns indirect buffer of size {buffer_size}",
-        count.map_or_else(String::new, |v| format!("(using count {v})")))]
+    #[error("Indirect buffer offset {0:?} is not a multiple of 4")]
+    UnalignedIndirectBufferOffset(BufferAddress),
+    #[error("Indirect draw uses bytes {offset}..{end_offset} using count {count} which overruns indirect buffer of size {buffer_size}")]
     IndirectBufferOverrun {
-        count: Option<NonZeroU32>,
+        count: u32,
         offset: u64,
         end_offset: u64,
         buffer_size: u64,
@@ -707,6 +761,8 @@ pub enum RenderPassErrorInner {
     DestroyedResource(#[from] DestroyedResourceError),
     #[error("The compute pass has already been ended and no further commands can be recorded")]
     PassEnded,
+    #[error(transparent)]
+    InvalidResource(#[from] InvalidResourceError),
 }
 
 impl From<MissingBufferUsageError> for RenderPassErrorInner {
@@ -748,14 +804,14 @@ where
     }
 }
 
-struct RenderAttachment<A: HalApi> {
-    texture: Arc<Texture<A>>,
+struct RenderAttachment {
+    texture: Arc<Texture>,
     selector: TextureSelector,
-    usage: hal::TextureUses,
+    usage: wgt::TextureUses,
 }
 
-impl<A: HalApi> TextureView<A> {
-    fn to_render_attachment(&self, usage: hal::TextureUses) -> RenderAttachment<A> {
+impl TextureView {
+    fn to_render_attachment(&self, usage: wgt::TextureUses) -> RenderAttachment {
         RenderAttachment {
             texture: self.parent.clone(),
             selector: self.selector.clone(),
@@ -767,28 +823,29 @@ impl<A: HalApi> TextureView<A> {
 const MAX_TOTAL_ATTACHMENTS: usize = hal::MAX_COLOR_ATTACHMENTS + hal::MAX_COLOR_ATTACHMENTS + 1;
 type AttachmentDataVec<T> = ArrayVec<T, MAX_TOTAL_ATTACHMENTS>;
 
-struct RenderPassInfo<'d, A: HalApi> {
+struct RenderPassInfo<'d> {
     context: RenderPassContext,
-    usage_scope: UsageScope<'d, A>,
+    usage_scope: UsageScope<'d>,
     /// All render attachments, including depth/stencil
-    render_attachments: AttachmentDataVec<RenderAttachment<A>>,
+    render_attachments: AttachmentDataVec<RenderAttachment>,
     is_depth_read_only: bool,
     is_stencil_read_only: bool,
     extent: wgt::Extent3d,
 
-    pending_discard_init_fixups: SurfacesInDiscardState<A>,
-    divergent_discarded_depth_stencil_aspect: Option<(wgt::TextureAspect, Arc<TextureView<A>>)>,
+    pending_discard_init_fixups: SurfacesInDiscardState,
+    divergent_discarded_depth_stencil_aspect: Option<(wgt::TextureAspect, Arc<TextureView>)>,
     multiview: Option<NonZeroU32>,
 }
 
-impl<'d, A: HalApi> RenderPassInfo<'d, A> {
+impl<'d> RenderPassInfo<'d> {
     fn add_pass_texture_init_actions<V>(
-        channel: &PassChannel<V>,
-        texture_memory_actions: &mut CommandBufferTextureMemoryActions<A>,
-        view: &TextureView<A>,
-        pending_discard_init_fixups: &mut SurfacesInDiscardState<A>,
+        load_op: LoadOp<V>,
+        store_op: StoreOp,
+        texture_memory_actions: &mut CommandBufferTextureMemoryActions,
+        view: &TextureView,
+        pending_discard_init_fixups: &mut SurfacesInDiscardState,
     ) {
-        if channel.load_op == LoadOp::Load {
+        if matches!(load_op, LoadOp::Load) {
             pending_discard_init_fixups.extend(texture_memory_actions.register_init_action(
                 &TextureInitTrackerAction {
                     texture: view.parent.clone(),
@@ -797,14 +854,14 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                     kind: MemoryInitKind::NeedsInitializedMemory,
                 },
             ));
-        } else if channel.store_op == StoreOp::Store {
+        } else if store_op == StoreOp::Store {
             // Clear + Store
             texture_memory_actions.register_implicit_init(
                 &view.parent,
                 TextureInitRange::from(view.selector.clone()),
             );
         }
-        if channel.store_op == StoreOp::Discard {
+        if store_op == StoreOp::Discard {
             // the discard happens at the *end* of a pass, but recording the
             // discard right away be alright since the texture can't be used
             // during the pass anyways
@@ -817,19 +874,19 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
     }
 
     fn start(
-        device: &'d Device<A>,
+        device: &'d Arc<Device>,
         hal_label: Option<&str>,
         color_attachments: ArrayVec<
-            Option<ArcRenderPassColorAttachment<A>>,
+            Option<ArcRenderPassColorAttachment>,
             { hal::MAX_COLOR_ATTACHMENTS },
         >,
-        mut depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment<A>>,
-        mut timestamp_writes: Option<ArcPassTimestampWrites<A>>,
-        mut occlusion_query_set: Option<Arc<QuerySet<A>>>,
-        encoder: &mut CommandEncoder<A>,
-        trackers: &mut Tracker<A>,
-        texture_memory_actions: &mut CommandBufferTextureMemoryActions<A>,
-        pending_query_resets: &mut QueryResetMap<A>,
+        mut depth_stencil_attachment: Option<ArcRenderPassDepthStencilAttachment>,
+        mut timestamp_writes: Option<ArcPassTimestampWrites>,
+        mut occlusion_query_set: Option<Arc<QuerySet>>,
+        encoder: &mut CommandEncoder,
+        trackers: &mut Tracker,
+        texture_memory_actions: &mut CommandBufferTextureMemoryActions,
+        pending_query_resets: &mut QueryResetMap,
         snatch_guard: &SnatchGuard<'_>,
     ) -> Result<Self, RenderPassErrorInner> {
         profiling::scope!("RenderPassInfo::start");
@@ -840,7 +897,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
         let mut is_depth_read_only = false;
         let mut is_stencil_read_only = false;
 
-        let mut render_attachments = AttachmentDataVec::<RenderAttachment<A>>::new();
+        let mut render_attachments = AttachmentDataVec::<RenderAttachment>::new();
         let mut discarded_surfaces = AttachmentDataVec::new();
         let mut pending_discard_init_fixups = SurfacesInDiscardState::new();
         let mut divergent_discarded_depth_stencil_aspect = None;
@@ -854,7 +911,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
 
         let mut detected_multiview: Option<Option<NonZeroU32>> = None;
 
-        let mut check_multiview = |view: &TextureView<A>| {
+        let mut check_multiview = |view: &TextureView| {
             // Get the multiview configuration for this texture view
             let layers = view.selector.layers.end - view.selector.layers.start;
             let this_multiview = if layers >= 2 {
@@ -885,7 +942,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
 
             Ok(())
         };
-        let mut add_view = |view: &TextureView<A>, location| {
+        let mut add_view = |view: &TextureView, location| {
             let render_extent = view.render_extent.map_err(|reason| {
                 RenderPassErrorInner::TextureViewIsNotRenderable { location, reason }
             })?;
@@ -923,25 +980,22 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
             add_view(view, AttachmentErrorLocation::Depth)?;
 
             let ds_aspects = view.desc.aspects();
-            if ds_aspects.contains(hal::FormatAspects::COLOR) {
-                return Err(RenderPassErrorInner::InvalidDepthStencilAttachmentFormat(
-                    view.desc.format,
-                ));
-            }
 
             if !ds_aspects.contains(hal::FormatAspects::STENCIL)
-                || (at.stencil.load_op == at.depth.load_op
-                    && at.stencil.store_op == at.depth.store_op)
+                || (at.stencil.load_op().eq_variant(at.depth.load_op())
+                    && at.stencil.store_op() == at.depth.store_op())
             {
                 Self::add_pass_texture_init_actions(
-                    &at.depth,
+                    at.depth.load_op(),
+                    at.depth.store_op(),
                     texture_memory_actions,
                     view,
                     &mut pending_discard_init_fixups,
                 );
             } else if !ds_aspects.contains(hal::FormatAspects::DEPTH) {
                 Self::add_pass_texture_init_actions(
-                    &at.stencil,
+                    at.stencil.load_op(),
+                    at.stencil.store_op(),
                     texture_memory_actions,
                     view,
                     &mut pending_discard_init_fixups,
@@ -969,7 +1023,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 // NeedsInitializedMemory should know that it doesn't need to
                 // clear the aspect that was set to C)
                 let need_init_beforehand =
-                    at.depth.load_op == LoadOp::Load || at.stencil.load_op == LoadOp::Load;
+                    at.depth.load_op() == LoadOp::Load || at.stencil.load_op() == LoadOp::Load;
                 if need_init_beforehand {
                     pending_discard_init_fixups.extend(
                         texture_memory_actions.register_init_action(&TextureInitTrackerAction {
@@ -988,7 +1042,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 // it isn't already set to NeedsInitializedMemory).
                 //
                 // (possible optimization: Delay and potentially drop this zeroing)
-                if at.depth.store_op != at.stencil.store_op {
+                if at.depth.store_op() != at.stencil.store_op() {
                     if !need_init_beforehand {
                         texture_memory_actions.register_implicit_init(
                             &view.parent,
@@ -996,14 +1050,14 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                         );
                     }
                     divergent_discarded_depth_stencil_aspect = Some((
-                        if at.depth.store_op == StoreOp::Discard {
+                        if at.depth.store_op() == StoreOp::Discard {
                             wgt::TextureAspect::DepthOnly
                         } else {
                             wgt::TextureAspect::StencilOnly
                         },
                         view.clone(),
                     ));
-                } else if at.depth.store_op == StoreOp::Discard {
+                } else if at.depth.store_op() == StoreOp::Discard {
                     // Both are discarded using the regular path.
                     discarded_surfaces.push(TextureSurfaceDiscard {
                         texture: view.parent.clone(),
@@ -1013,7 +1067,8 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 }
             }
 
-            (is_depth_read_only, is_stencil_read_only) = at.depth_stencil_read_only(ds_aspects)?;
+            is_depth_read_only = at.depth.is_readonly();
+            is_stencil_read_only = at.stencil.is_readonly();
 
             let usage = if is_depth_read_only
                 && is_stencil_read_only
@@ -1022,9 +1077,9 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                     .flags
                     .contains(wgt::DownlevelFlags::READ_ONLY_DEPTH_STENCIL)
             {
-                hal::TextureUses::DEPTH_STENCIL_READ | hal::TextureUses::RESOURCE
+                wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::RESOURCE
             } else {
-                hal::TextureUses::DEPTH_STENCIL_WRITE
+                wgt::TextureUses::DEPTH_STENCIL_WRITE
             };
             render_attachments.push(view.to_render_attachment(usage));
 
@@ -1035,12 +1090,12 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 },
                 depth_ops: at.depth.hal_ops(),
                 stencil_ops: at.stencil.hal_ops(),
-                clear_value: (at.depth.clear_value, at.stencil.clear_value),
+                clear_value: (at.depth.clear_value(), at.stencil.clear_value()),
             });
         }
 
         let mut color_attachments_hal =
-            ArrayVec::<Option<hal::ColorAttachment<A>>, { hal::MAX_COLOR_ATTACHMENTS }>::new();
+            ArrayVec::<Option<hal::ColorAttachment<_>>, { hal::MAX_COLOR_ATTACHMENTS }>::new();
         for (index, attachment) in color_attachments.iter().enumerate() {
             let at = if let Some(attachment) = attachment.as_ref() {
                 attachment
@@ -1048,7 +1103,8 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 color_attachments_hal.push(None);
                 continue;
             };
-            let color_view: &TextureView<A> = &at.view;
+            let color_view: &TextureView = &at.view;
+            color_view.same_device(device)?;
             check_multiview(color_view)?;
             add_view(
                 color_view,
@@ -1069,16 +1125,18 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
             }
 
             Self::add_pass_texture_init_actions(
-                &at.channel,
+                at.load_op,
+                at.store_op,
                 texture_memory_actions,
                 color_view,
                 &mut pending_discard_init_fixups,
             );
             render_attachments
-                .push(color_view.to_render_attachment(hal::TextureUses::COLOR_TARGET));
+                .push(color_view.to_render_attachment(wgt::TextureUses::COLOR_TARGET));
 
             let mut hal_resolve_target = None;
             if let Some(resolve_view) = &at.resolve_target {
+                resolve_view.same_device(device)?;
                 check_multiview(resolve_view)?;
 
                 let resolve_location = AttachmentErrorLocation::Color {
@@ -1130,22 +1188,22 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                     TextureInitRange::from(resolve_view.selector.clone()),
                 );
                 render_attachments
-                    .push(resolve_view.to_render_attachment(hal::TextureUses::COLOR_TARGET));
+                    .push(resolve_view.to_render_attachment(wgt::TextureUses::COLOR_TARGET));
 
                 hal_resolve_target = Some(hal::Attachment {
                     view: resolve_view.try_raw(snatch_guard)?,
-                    usage: hal::TextureUses::COLOR_TARGET,
+                    usage: wgt::TextureUses::COLOR_TARGET,
                 });
             }
 
             color_attachments_hal.push(Some(hal::ColorAttachment {
                 target: hal::Attachment {
                     view: color_view.try_raw(snatch_guard)?,
-                    usage: hal::TextureUses::COLOR_TARGET,
+                    usage: wgt::TextureUses::COLOR_TARGET,
                 },
                 resolve_target: hal_resolve_target,
-                ops: at.channel.hal_ops(),
-                clear_value: at.channel.clear_value,
+                ops: at.hal_ops(),
+                clear_value: at.clear_value(),
             }));
         }
 
@@ -1178,8 +1236,9 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
             multiview,
         };
 
-        let timestamp_writes_hal = timestamp_writes.as_ref().map(|tw| {
+        let timestamp_writes_hal = if let Some(tw) = timestamp_writes.as_ref() {
             let query_set = &tw.query_set;
+            query_set.same_device(device)?;
 
             if let Some(index) = tw.beginning_of_pass_write_index {
                 pending_query_resets.use_query_set(query_set, index);
@@ -1188,16 +1247,21 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 pending_query_resets.use_query_set(query_set, index);
             }
 
-            hal::RenderPassTimestampWrites {
-                query_set: query_set.raw.as_ref().unwrap(),
+            Some(hal::PassTimestampWrites {
+                query_set: query_set.raw(),
                 beginning_of_pass_write_index: tw.beginning_of_pass_write_index,
                 end_of_pass_write_index: tw.end_of_pass_write_index,
-            }
-        });
+            })
+        } else {
+            None
+        };
 
-        let occlusion_query_set_hal = occlusion_query_set
-            .as_ref()
-            .map(|query_set| query_set.raw.as_ref().unwrap());
+        let occlusion_query_set_hal = if let Some(query_set) = occlusion_query_set.as_ref() {
+            query_set.same_device(device)?;
+            Some(query_set.raw())
+        } else {
+            None
+        };
 
         let hal_desc = hal::RenderPassDescriptor {
             label: hal_label,
@@ -1246,9 +1310,9 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
 
     fn finish(
         mut self,
-        raw: &mut A::CommandEncoder,
+        raw: &mut dyn hal::DynCommandEncoder,
         snatch_guard: &SnatchGuard,
-    ) -> Result<(UsageScope<'d, A>, SurfacesInDiscardState<A>), RenderPassErrorInner> {
+    ) -> Result<(UsageScope<'d>, SurfacesInDiscardState), RenderPassErrorInner> {
         profiling::scope!("RenderPassInfo::finish");
         unsafe {
             raw.end_render_pass();
@@ -1289,7 +1353,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                     hal::AttachmentOps::STORE,                            // clear depth
                 )
             };
-            let desc = hal::RenderPassDescriptor {
+            let desc = hal::RenderPassDescriptor::<'_, _, dyn hal::DynTextureView> {
                 label: Some("(wgpu internal) Zero init discarded depth/stencil aspect"),
                 extent: view.render_extent.unwrap(),
                 sample_count: view.samples,
@@ -1297,7 +1361,7 @@ impl<'d, A: HalApi> RenderPassInfo<'d, A> {
                 depth_stencil_attachment: Some(hal::DepthStencilAttachment {
                     target: hal::Attachment {
                         view: view.try_raw(snatch_guard)?,
-                        usage: hal::TextureUses::DEPTH_STENCIL_WRITE,
+                        usage: wgt::TextureUses::DEPTH_STENCIL_WRITE,
                     },
                     depth_ops,
                     stencil_ops,
@@ -1323,37 +1387,46 @@ impl Global {
     /// If creation fails, an invalid pass is returned.
     /// Any operation on an invalid pass will return an error.
     ///
-    /// If successful, puts the encoder into the [`CommandEncoderStatus::Locked`] state.
-    pub fn command_encoder_create_render_pass<A: HalApi>(
+    /// If successful, puts the encoder into the [`Locked`] state.
+    ///
+    /// [`Locked`]: crate::command::CommandEncoderStatus::Locked
+    pub fn command_encoder_begin_render_pass(
         &self,
         encoder_id: id::CommandEncoderId,
         desc: &RenderPassDescriptor<'_>,
-    ) -> (RenderPass<A>, Option<CommandEncoderError>) {
-        fn fill_arc_desc<A: HalApi>(
-            hub: &crate::hub::Hub<A>,
-            device: &Arc<Device<A>>,
+    ) -> (RenderPass, Option<CommandEncoderError>) {
+        fn fill_arc_desc(
+            hub: &crate::hub::Hub,
             desc: &RenderPassDescriptor<'_>,
-            arc_desc: &mut ArcRenderPassDescriptor<A>,
+            arc_desc: &mut ArcRenderPassDescriptor,
+            device: &Device,
         ) -> Result<(), CommandEncoderError> {
             let query_sets = hub.query_sets.read();
             let texture_views = hub.texture_views.read();
+
+            let max_color_attachments = device.limits.max_color_attachments as usize;
+            if desc.color_attachments.len() > max_color_attachments {
+                return Err(CommandEncoderError::InvalidColorAttachment(
+                    ColorAttachmentError::TooMany {
+                        given: desc.color_attachments.len(),
+                        limit: max_color_attachments,
+                    },
+                ));
+            }
 
             for color_attachment in desc.color_attachments.iter() {
                 if let Some(RenderPassColorAttachment {
                     view: view_id,
                     resolve_target,
-                    channel,
+                    load_op,
+                    store_op,
                 }) = color_attachment
                 {
-                    let view = texture_views
-                        .get_owned(*view_id)
-                        .map_err(|_| CommandEncoderError::InvalidAttachmentId(*view_id))?;
+                    let view = texture_views.get(*view_id).get()?;
                     view.same_device(device)?;
 
                     let resolve_target = if let Some(resolve_target_id) = resolve_target {
-                        let rt_arc = texture_views.get_owned(*resolve_target_id).map_err(|_| {
-                            CommandEncoderError::InvalidResolveTargetId(*resolve_target_id)
-                        })?;
+                        let rt_arc = texture_views.get(*resolve_target_id).get()?;
                         rt_arc.same_device(device)?;
 
                         Some(rt_arc)
@@ -1366,7 +1439,8 @@ impl Global {
                         .push(Some(ArcRenderPassColorAttachment {
                             view,
                             resolve_target,
-                            channel: channel.clone(),
+                            load_op: *load_op,
+                            store_op: *store_op,
                         }));
                 } else {
                     arc_desc.color_attachments.push(None);
@@ -1374,45 +1448,52 @@ impl Global {
             }
 
             arc_desc.depth_stencil_attachment =
+            // https://gpuweb.github.io/gpuweb/#abstract-opdef-gpurenderpassdepthstencilattachment-gpurenderpassdepthstencilattachment-valid-usage
                 if let Some(depth_stencil_attachment) = desc.depth_stencil_attachment {
-                    let view = texture_views
-                        .get_owned(depth_stencil_attachment.view)
-                        .map_err(|_| {
-                            CommandEncoderError::InvalidDepthStencilAttachmentId(
-                                depth_stencil_attachment.view,
-                            )
-                        })?;
+                    let view = texture_views.get(depth_stencil_attachment.view).get()?;
                     view.same_device(device)?;
+
+                    let format = view.desc.format;
+                    if !format.is_depth_stencil_format() {
+                        return Err(CommandEncoderError::InvalidAttachment(AttachmentError::InvalidDepthStencilAttachmentFormat(
+                            view.desc.format,
+                        )));
+                    }
 
                     Some(ArcRenderPassDepthStencilAttachment {
                         view,
-                        depth: depth_stencil_attachment.depth.clone(),
-                        stencil: depth_stencil_attachment.stencil.clone(),
+                        depth: if format.has_depth_aspect() {
+                            depth_stencil_attachment.depth.resolve(|clear| if let Some(clear) = clear {
+                                // If this.depthLoadOp is "clear", this.depthClearValue must be provided and must be between 0.0 and 1.0, inclusive.
+                                if !(0.0..=1.0).contains(&clear) {
+                                    Err(AttachmentError::ClearValueOutOfRange(clear))
+                                } else {
+                                    Ok(clear)
+                                }
+                            } else {
+                                Err(AttachmentError::NoClearValue)
+                            })?
+                        } else {
+                            ResolvedPassChannel::ReadOnly
+                        },
+                        stencil: if format.has_stencil_aspect() {
+                            depth_stencil_attachment.stencil.resolve(|clear| Ok(clear.unwrap_or_default()))?
+                        } else {
+                            ResolvedPassChannel::ReadOnly
+                        },
                     })
                 } else {
                     None
                 };
 
-            arc_desc.timestamp_writes = if let Some(tw) = desc.timestamp_writes {
-                let query_set = query_sets.get_owned(tw.query_set).map_err(|_| {
-                    CommandEncoderError::InvalidTimestampWritesQuerySetId(tw.query_set)
-                })?;
-                query_set.same_device(device)?;
-
-                Some(ArcPassTimestampWrites {
-                    query_set,
-                    beginning_of_pass_write_index: tw.beginning_of_pass_write_index,
-                    end_of_pass_write_index: tw.end_of_pass_write_index,
-                })
-            } else {
-                None
-            };
+            arc_desc.timestamp_writes = desc
+                .timestamp_writes
+                .map(|tw| Global::validate_pass_timestamp_writes(device, &query_sets, tw))
+                .transpose()?;
 
             arc_desc.occlusion_query_set =
                 if let Some(occlusion_query_set) = desc.occlusion_query_set {
-                    let query_set = query_sets.get_owned(occlusion_query_set).map_err(|_| {
-                        CommandEncoderError::InvalidOcclusionQuerySetId(occlusion_query_set)
-                    })?;
+                    let query_set = query_sets.get(occlusion_query_set).get()?;
                     query_set.same_device(device)?;
 
                     Some(query_set)
@@ -1423,7 +1504,7 @@ impl Global {
             Ok(())
         }
 
-        let hub = A::hub(self);
+        let hub = &self.hub;
         let mut arc_desc = ArcRenderPassDescriptor {
             label: &desc.label,
             timestamp_writes: None,
@@ -1434,37 +1515,23 @@ impl Global {
 
         let make_err = |e, arc_desc| (RenderPass::new(None, arc_desc), Some(e));
 
-        let cmd_buf = match hub.command_buffers.get(encoder_id.into_command_buffer_id()) {
-            Ok(cmd_buf) => cmd_buf,
-            Err(_) => return make_err(CommandEncoderError::Invalid, arc_desc),
-        };
+        let cmd_buf = hub.command_buffers.get(encoder_id.into_command_buffer_id());
 
-        match cmd_buf.lock_encoder() {
+        match cmd_buf.data.lock().lock_encoder() {
             Ok(_) => {}
             Err(e) => return make_err(e, arc_desc),
         };
 
-        let err = fill_arc_desc(hub, &cmd_buf.device, desc, &mut arc_desc).err();
+        let err = fill_arc_desc(hub, desc, &mut arc_desc, &cmd_buf.device).err();
 
         (RenderPass::new(Some(cmd_buf), arc_desc), err)
     }
 
-    /// Creates a type erased render pass.
-    ///
-    /// If creation fails, an invalid pass is returned.
-    /// Any operation on an invalid pass will return an error.
-    pub fn command_encoder_create_render_pass_dyn<A: HalApi>(
-        &self,
-        encoder_id: id::CommandEncoderId,
-        desc: &RenderPassDescriptor<'_>,
-    ) -> (Box<dyn DynRenderPass>, Option<CommandEncoderError>) {
-        let (pass, err) = self.command_encoder_create_render_pass::<A>(encoder_id, desc);
-        (Box::new(pass), err)
-    }
-
+    /// Note that this differs from [`Self::render_pass_end`], it will
+    /// create a new pass, replay the commands and end the pass.
     #[doc(hidden)]
     #[cfg(any(feature = "serde", feature = "replay"))]
-    pub fn render_pass_end_with_unresolved_commands<A: HalApi>(
+    pub fn render_pass_end_with_unresolved_commands(
         &self,
         encoder_id: id::CommandEncoderId,
         base: BasePass<super::RenderCommand>,
@@ -1477,15 +1544,12 @@ impl Global {
 
         #[cfg(feature = "trace")]
         {
-            let hub = A::hub(self);
-
-            let cmd_buf = match hub.command_buffers.get(encoder_id.into_command_buffer_id()) {
-                Ok(cmd_buf) => cmd_buf,
-                Err(_) => return Err(CommandEncoderError::Invalid).map_pass_err(pass_scope)?,
-            };
-
+            let cmd_buf = self
+                .hub
+                .command_buffers
+                .get(encoder_id.into_command_buffer_id());
             let mut cmd_buf_data = cmd_buf.data.lock();
-            let cmd_buf_data = cmd_buf_data.as_mut().unwrap();
+            let cmd_buf_data = cmd_buf_data.get_inner().map_pass_err(pass_scope)?;
 
             if let Some(ref mut list) = cmd_buf_data.commands {
                 list.push(crate::device::trace::Command::RunRenderPass {
@@ -1512,7 +1576,7 @@ impl Global {
             push_constant_data,
         } = base;
 
-        let (mut render_pass, encoder_error) = self.command_encoder_create_render_pass::<A>(
+        let (mut render_pass, encoder_error) = self.command_encoder_begin_render_pass(
             encoder_id,
             &RenderPassDescriptor {
                 label: label.as_deref().map(Cow::Borrowed),
@@ -1529,31 +1593,25 @@ impl Global {
             });
         };
 
-        let hub = A::hub(self);
         render_pass.base = Some(BasePass {
             label,
-            commands: super::RenderCommand::resolve_render_command_ids(hub, &commands)?,
+            commands: super::RenderCommand::resolve_render_command_ids(&self.hub, &commands)?,
             dynamic_offsets,
             string_data,
             push_constant_data,
         });
 
-        if let Some(err) = encoder_error {
-            Err(RenderPassError {
-                scope: pass_scope,
-                inner: err.into(),
-            })
-        } else {
-            self.render_pass_end(&mut render_pass)
-        }
+        self.render_pass_end(&mut render_pass)
     }
 
-    #[doc(hidden)]
-    pub fn render_pass_end<A: HalApi>(
-        &self,
-        pass: &mut RenderPass<A>,
-    ) -> Result<(), RenderPassError> {
+    pub fn render_pass_end(&self, pass: &mut RenderPass) -> Result<(), RenderPassError> {
         let pass_scope = PassErrorScope::Pass;
+
+        let cmd_buf = pass
+            .parent
+            .as_ref()
+            .ok_or(RenderPassErrorInner::InvalidParentEncoder)
+            .map_pass_err(pass_scope)?;
 
         let base = pass
             .base
@@ -1563,27 +1621,20 @@ impl Global {
 
         profiling::scope!(
             "CommandEncoder::run_render_pass {}",
-            base.label.unwrap_or("")
+            base.label.as_deref().unwrap_or("")
         );
 
-        let Some(cmd_buf) = pass.parent.as_ref() else {
-            return Err(RenderPassErrorInner::InvalidParentEncoder).map_pass_err(pass_scope);
-        };
-        cmd_buf.unlock_encoder().map_pass_err(pass_scope)?;
-
-        let hal_label = hal_label(base.label.as_deref(), self.instance.flags);
+        let mut cmd_buf_data = cmd_buf.data.lock();
+        let mut cmd_buf_data_guard = cmd_buf_data.unlock_encoder().map_pass_err(pass_scope)?;
+        let cmd_buf_data = &mut *cmd_buf_data_guard;
 
         let device = &cmd_buf.device;
         let snatch_guard = &device.snatchable_lock.read();
 
         let (scope, pending_discard_init_fixups) = {
-            let mut cmd_buf_data = cmd_buf.data.lock();
-            let cmd_buf_data = cmd_buf_data.as_mut().unwrap();
-
             device.check_is_valid().map_pass_err(pass_scope)?;
 
             let encoder = &mut cmd_buf_data.encoder;
-            let status = &mut cmd_buf_data.status;
             let tracker = &mut cmd_buf_data.trackers;
             let buffer_memory_init_actions = &mut cmd_buf_data.buffer_memory_init_actions;
             let texture_memory_actions = &mut cmd_buf_data.texture_memory_actions;
@@ -1592,16 +1643,14 @@ impl Global {
             // We automatically keep extending command buffers over time, and because
             // we want to insert a command buffer _before_ what we're about to record,
             // we need to make sure to close the previous one.
-            encoder.close().map_pass_err(pass_scope)?;
-            // We will reset this to `Recording` if we succeed, acts as a fail-safe.
-            *status = CommandEncoderStatus::Error;
-            encoder.open_pass(hal_label).map_pass_err(pass_scope)?;
-
-            log::trace!("Encoding render pass begin in {}", cmd_buf.error_ident());
+            encoder.close_if_open().map_pass_err(pass_scope)?;
+            encoder
+                .open_pass(base.label.as_deref())
+                .map_pass_err(pass_scope)?;
 
             let info = RenderPassInfo::start(
                 device,
-                hal_label,
+                hal_label(base.label.as_deref(), device.instance_flags),
                 pass.color_attachments.take(),
                 pass.depth_stencil_attachment.take(),
                 pass.timestamp_writes.take(),
@@ -1619,15 +1668,6 @@ impl Global {
             let indices = &device.tracker_indices;
             tracker.buffers.set_size(indices.buffers.size());
             tracker.textures.set_size(indices.textures.size());
-            tracker.views.set_size(indices.texture_views.size());
-            tracker.bind_groups.set_size(indices.bind_groups.size());
-            tracker
-                .render_pipelines
-                .set_size(indices.render_pipelines.size());
-            tracker.bundles.set_size(indices.bundles.size());
-            tracker.query_sets.set_size(indices.query_sets.size());
-
-            let raw = &mut encoder.raw;
 
             let mut state = State {
                 pipeline_flags: PipelineFlags::empty(),
@@ -1644,7 +1684,7 @@ impl Global {
                 snatch_guard,
 
                 device,
-                raw_encoder: raw,
+                raw_encoder: encoder.raw.as_mut(),
                 tracker,
                 buffer_memory_init_actions,
                 texture_memory_actions,
@@ -1774,21 +1814,21 @@ impl Global {
                         )
                         .map_pass_err(scope)?;
                     }
-                    ArcRenderCommand::MultiDrawIndirect {
+                    ArcRenderCommand::DrawIndirect {
                         buffer,
                         offset,
                         count,
                         indexed,
                     } => {
                         let scope = PassErrorScope::Draw {
-                            kind: if count.is_some() {
+                            kind: if count != 1 {
                                 DrawKind::MultiDrawIndirect
                             } else {
                                 DrawKind::DrawIndirect
                             },
                             indexed,
                         };
-                        multi_draw_indirect(&mut state, buffer, offset, count, indexed)
+                        multi_draw_indirect(&mut state, cmd_buf, buffer, offset, count, indexed)
                             .map_pass_err(scope)?;
                     }
                     ArcRenderCommand::MultiDrawIndirectCount {
@@ -1805,6 +1845,7 @@ impl Global {
                         };
                         multi_draw_indirect_count(
                             &mut state,
+                            cmd_buf,
                             buffer,
                             offset,
                             count_buffer,
@@ -1831,6 +1872,7 @@ impl Global {
                         let scope = PassErrorScope::WriteTimestamp;
                         write_timestamp(
                             &mut state,
+                            cmd_buf,
                             &mut cmd_buf_data.pending_query_resets,
                             query_set,
                             query_index,
@@ -1902,7 +1944,6 @@ impl Global {
                 }
             }
 
-            log::trace!("Merging renderpass into {}", cmd_buf.error_ident());
             let (trackers, pending_discard_init_fixups) = state
                 .info
                 .finish(state.raw_encoder, state.snatch_guard)
@@ -1912,15 +1953,13 @@ impl Global {
             (trackers, pending_discard_init_fixups)
         };
 
-        let mut cmd_buf_data = cmd_buf.data.lock();
-        let cmd_buf_data = cmd_buf_data.as_mut().unwrap();
-
         let encoder = &mut cmd_buf_data.encoder;
-        let status = &mut cmd_buf_data.status;
         let tracker = &mut cmd_buf_data.trackers;
 
         {
-            let transit = encoder.open().map_pass_err(pass_scope)?;
+            let transit = encoder
+                .open_pass(Some("(wgpu internal) Pre Pass"))
+                .map_pass_err(pass_scope)?;
 
             fixup_discarded_surfaces(
                 pending_discard_init_fixups.into_iter(),
@@ -1935,25 +1974,29 @@ impl Global {
             CommandBuffer::insert_barriers_from_scope(transit, tracker, &scope, snatch_guard);
         }
 
-        *status = CommandEncoderStatus::Recording;
         encoder.close_and_swap().map_pass_err(pass_scope)?;
+        cmd_buf_data_guard.mark_successful();
 
         Ok(())
     }
 }
 
-fn set_bind_group<A: HalApi>(
-    state: &mut State<A>,
-    cmd_buf: &Arc<CommandBuffer<A>>,
+fn set_bind_group(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
     dynamic_offsets: &[DynamicOffset],
     index: u32,
     num_dynamic_offsets: usize,
-    bind_group: Arc<BindGroup<A>>,
+    bind_group: Option<Arc<BindGroup>>,
 ) -> Result<(), RenderPassErrorInner> {
-    api_log!(
-        "RenderPass::set_bind_group {index} {}",
-        bind_group.error_ident()
-    );
+    if bind_group.is_none() {
+        api_log!("RenderPass::set_bind_group {index} None");
+    } else {
+        api_log!(
+            "RenderPass::set_bind_group {index} {}",
+            bind_group.as_ref().unwrap().error_ident()
+        );
+    }
 
     let max_bind_groups = state.device.limits.max_bind_groups;
     if index >= max_bind_groups {
@@ -1971,6 +2014,12 @@ fn set_bind_group<A: HalApi>(
     );
     state.dynamic_offset_count += num_dynamic_offsets;
 
+    if bind_group.is_none() {
+        // TODO: Handle bind_group None.
+        return Ok(());
+    }
+
+    let bind_group = bind_group.unwrap();
     let bind_group = state.tracker.bind_groups.insert_single(bind_group);
 
     bind_group.same_device_as(cmd_buf.as_ref())?;
@@ -2013,7 +2062,7 @@ fn set_bind_group<A: HalApi>(
                     state.raw_encoder.set_bind_group(
                         pipeline_layout,
                         index + i as u32,
-                        raw_bg,
+                        Some(raw_bg),
                         &e.dynamic_offsets,
                     );
                 }
@@ -2023,10 +2072,10 @@ fn set_bind_group<A: HalApi>(
     Ok(())
 }
 
-fn set_pipeline<A: HalApi>(
-    state: &mut State<A>,
-    cmd_buf: &Arc<CommandBuffer<A>>,
-    pipeline: Arc<RenderPipeline<A>>,
+fn set_pipeline(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
+    pipeline: Arc<RenderPipeline>,
 ) -> Result<(), RenderPassErrorInner> {
     api_log!("RenderPass::set_pipeline {}", pipeline.error_ident());
 
@@ -2087,7 +2136,7 @@ fn set_pipeline<A: HalApi>(
                         state.raw_encoder.set_bind_group(
                             pipeline.layout.raw(),
                             start_index as u32 + i as u32,
-                            raw_bg,
+                            Some(raw_bg),
                             &e.dynamic_offsets,
                         );
                     }
@@ -2112,30 +2161,15 @@ fn set_pipeline<A: HalApi>(
         }
     }
 
-    // Initialize each `vertex.inputs[i].step` from
-    // `pipeline.vertex_steps[i]`.  Enlarge `vertex.inputs`
-    // as necessary to accommodate all slots in the
-    // pipeline. If `vertex.inputs` is longer, fill the
-    // extra entries with default `VertexStep`s.
-    while state.vertex.inputs.len() < pipeline.vertex_steps.len() {
-        state.vertex.inputs.push(VertexBufferState::EMPTY);
-    }
-
-    // This is worse as a `zip`, but it's close.
-    let mut steps = pipeline.vertex_steps.iter();
-    for input in state.vertex.inputs.iter_mut() {
-        input.step = steps.next().cloned().unwrap_or_default();
-    }
-
     // Update vertex buffer limits.
-    state.vertex.update_limits();
+    state.vertex.update_limits(&pipeline.vertex_steps);
     Ok(())
 }
 
-fn set_index_buffer<A: HalApi>(
-    state: &mut State<A>,
-    cmd_buf: &Arc<CommandBuffer<A>>,
-    buffer: Arc<crate::resource::Buffer<A>>,
+fn set_index_buffer(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
+    buffer: Arc<crate::resource::Buffer>,
     index_format: IndexFormat,
     offset: u64,
     size: Option<BufferSize>,
@@ -2146,7 +2180,7 @@ fn set_index_buffer<A: HalApi>(
         .info
         .usage_scope
         .buffers
-        .merge_single(&buffer, hal::BufferUses::INDEX)?;
+        .merge_single(&buffer, wgt::BufferUses::INDEX)?;
 
     buffer.same_device_as(cmd_buf.as_ref())?;
 
@@ -2173,16 +2207,16 @@ fn set_index_buffer<A: HalApi>(
         size,
     };
     unsafe {
-        state.raw_encoder.set_index_buffer(bb, index_format);
+        hal::DynCommandEncoder::set_index_buffer(state.raw_encoder, bb, index_format);
     }
     Ok(())
 }
 
-fn set_vertex_buffer<A: HalApi>(
-    state: &mut State<A>,
-    cmd_buf: &Arc<CommandBuffer<A>>,
+fn set_vertex_buffer(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
     slot: u32,
-    buffer: Arc<crate::resource::Buffer<A>>,
+    buffer: Arc<crate::resource::Buffer>,
     offset: u64,
     size: Option<BufferSize>,
 ) -> Result<(), RenderPassErrorInner> {
@@ -2195,7 +2229,7 @@ fn set_vertex_buffer<A: HalApi>(
         .info
         .usage_scope
         .buffers
-        .merge_single(&buffer, hal::BufferUses::VERTEX)?;
+        .merge_single(&buffer, wgt::BufferUses::VERTEX)?;
 
     buffer.same_device_as(cmd_buf.as_ref())?;
 
@@ -2211,24 +2245,18 @@ fn set_vertex_buffer<A: HalApi>(
     buffer.check_usage(BufferUsages::VERTEX)?;
     let buf_raw = buffer.try_raw(state.snatch_guard)?;
 
-    let empty_slots = (1 + slot as usize).saturating_sub(state.vertex.inputs.len());
-    state
-        .vertex
-        .inputs
-        .extend(iter::repeat(VertexBufferState::EMPTY).take(empty_slots));
-    let vertex_state = &mut state.vertex.inputs[slot as usize];
     //TODO: where are we checking that the offset is in bound?
-    vertex_state.total_size = match size {
+    let buffer_size = match size {
         Some(s) => s.get(),
         None => buffer.size - offset,
     };
-    vertex_state.bound = true;
+    state.vertex.buffer_sizes[slot as usize] = Some(buffer_size);
 
     state
         .buffer_memory_init_actions
         .extend(buffer.initialization_status.read().create_action(
             &buffer,
-            offset..(offset + vertex_state.total_size),
+            offset..(offset + buffer_size),
             MemoryInitKind::NeedsInitializedMemory,
         ));
 
@@ -2238,13 +2266,15 @@ fn set_vertex_buffer<A: HalApi>(
         size,
     };
     unsafe {
-        state.raw_encoder.set_vertex_buffer(slot, bb);
+        hal::DynCommandEncoder::set_vertex_buffer(state.raw_encoder, slot, bb);
     }
-    state.vertex.update_limits();
+    if let Some(pipeline) = state.pipeline.as_ref() {
+        state.vertex.update_limits(&pipeline.vertex_steps);
+    }
     Ok(())
 }
 
-fn set_blend_constant<A: HalApi>(state: &mut State<A>, color: &Color) {
+fn set_blend_constant(state: &mut State, color: &Color) {
     api_log!("RenderPass::set_blend_constant");
 
     state.blend_constant = OptionalState::Set;
@@ -2259,7 +2289,7 @@ fn set_blend_constant<A: HalApi>(state: &mut State<A>, color: &Color) {
     }
 }
 
-fn set_stencil_reference<A: HalApi>(state: &mut State<A>, value: u32) {
+fn set_stencil_reference(state: &mut State, value: u32) {
     api_log!("RenderPass::set_stencil_reference {value}");
 
     state.stencil_reference = value;
@@ -2273,8 +2303,8 @@ fn set_stencil_reference<A: HalApi>(state: &mut State<A>, value: u32) {
     }
 }
 
-fn set_viewport<A: HalApi>(
-    state: &mut State<A>,
+fn set_viewport(
+    state: &mut State,
     rect: Rect<f32>,
     depth_min: f32,
     depth_max: f32,
@@ -2304,8 +2334,8 @@ fn set_viewport<A: HalApi>(
     Ok(())
 }
 
-fn set_push_constant<A: HalApi>(
-    state: &mut State<A>,
+fn set_push_constant(
+    state: &mut State,
     push_constant_data: &[u32],
     stages: ShaderStages,
     offset: u32,
@@ -2338,10 +2368,7 @@ fn set_push_constant<A: HalApi>(
     Ok(())
 }
 
-fn set_scissor<A: HalApi>(
-    state: &mut State<A>,
-    rect: Rect<u32>,
-) -> Result<(), RenderPassErrorInner> {
+fn set_scissor(state: &mut State, rect: Rect<u32>) -> Result<(), RenderPassErrorInner> {
     api_log!("RenderPass::set_scissor_rect {rect:?}");
 
     if rect.x + rect.w > state.info.extent.width || rect.y + rect.h > state.info.extent.height {
@@ -2359,8 +2386,8 @@ fn set_scissor<A: HalApi>(
     Ok(())
 }
 
-fn draw<A: HalApi>(
-    state: &mut State<A>,
+fn draw(
+    state: &mut State,
     vertex_count: u32,
     instance_count: u32,
     first_vertex: u32,
@@ -2370,24 +2397,14 @@ fn draw<A: HalApi>(
 
     state.is_ready(false)?;
 
-    let last_vertex = first_vertex as u64 + vertex_count as u64;
-    let vertex_limit = state.vertex.vertex_limit;
-    if last_vertex > vertex_limit {
-        return Err(DrawError::VertexBeyondLimit {
-            last_vertex,
-            vertex_limit,
-            slot: state.vertex.vertex_limit_slot,
-        });
-    }
-    let last_instance = first_instance as u64 + instance_count as u64;
-    let instance_limit = state.vertex.instance_limit;
-    if last_instance > instance_limit {
-        return Err(DrawError::InstanceBeyondLimit {
-            last_instance,
-            instance_limit,
-            slot: state.vertex.instance_limit_slot,
-        });
-    }
+    state
+        .vertex
+        .limits
+        .validate_vertex_limit(first_vertex, vertex_count)?;
+    state
+        .vertex
+        .limits
+        .validate_instance_limit(first_instance, instance_count)?;
 
     unsafe {
         if instance_count > 0 && vertex_count > 0 {
@@ -2399,8 +2416,8 @@ fn draw<A: HalApi>(
     Ok(())
 }
 
-fn draw_indexed<A: HalApi>(
-    state: &mut State<A>,
+fn draw_indexed(
+    state: &mut State,
     index_count: u32,
     instance_count: u32,
     first_index: u32,
@@ -2419,15 +2436,10 @@ fn draw_indexed<A: HalApi>(
             index_limit,
         });
     }
-    let last_instance = first_instance as u64 + instance_count as u64;
-    let instance_limit = state.vertex.instance_limit;
-    if last_instance > instance_limit {
-        return Err(DrawError::InstanceBeyondLimit {
-            last_instance,
-            instance_limit,
-            slot: state.vertex.instance_limit_slot,
-        });
-    }
+    state
+        .vertex
+        .limits
+        .validate_instance_limit(first_instance, instance_count)?;
 
     unsafe {
         if instance_count > 0 && index_count > 0 {
@@ -2443,11 +2455,12 @@ fn draw_indexed<A: HalApi>(
     Ok(())
 }
 
-fn multi_draw_indirect<A: HalApi>(
-    state: &mut State<A>,
-    indirect_buffer: Arc<crate::resource::Buffer<A>>,
+fn multi_draw_indirect(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
+    indirect_buffer: Arc<crate::resource::Buffer>,
     offset: u64,
-    count: Option<NonZeroU32>,
+    count: u32,
     indexed: bool,
 ) -> Result<(), RenderPassErrorInner> {
     api_log!(
@@ -2458,11 +2471,11 @@ fn multi_draw_indirect<A: HalApi>(
     state.is_ready(indexed)?;
 
     let stride = match indexed {
-        false => mem::size_of::<wgt::DrawIndirectArgs>(),
-        true => mem::size_of::<wgt::DrawIndexedIndirectArgs>(),
+        false => size_of::<wgt::DrawIndirectArgs>(),
+        true => size_of::<wgt::DrawIndexedIndirectArgs>(),
     };
 
-    if count.is_some() {
+    if count != 1 {
         state
             .device
             .require_features(wgt::Features::MULTI_DRAW_INDIRECT)?;
@@ -2471,18 +2484,22 @@ fn multi_draw_indirect<A: HalApi>(
         .device
         .require_downlevel_flags(wgt::DownlevelFlags::INDIRECT_EXECUTION)?;
 
+    indirect_buffer.same_device_as(cmd_buf.as_ref())?;
+
     state
         .info
         .usage_scope
         .buffers
-        .merge_single(&indirect_buffer, hal::BufferUses::INDIRECT)?;
+        .merge_single(&indirect_buffer, wgt::BufferUses::INDIRECT)?;
 
     indirect_buffer.check_usage(BufferUsages::INDIRECT)?;
     let indirect_raw = indirect_buffer.try_raw(state.snatch_guard)?;
 
-    let actual_count = count.map_or(1, |c| c.get());
+    if offset % 4 != 0 {
+        return Err(RenderPassErrorInner::UnalignedIndirectBufferOffset(offset));
+    }
 
-    let end_offset = offset + stride as u64 * actual_count as u64;
+    let end_offset = offset + stride as u64 * count as u64;
     if end_offset > indirect_buffer.size {
         return Err(RenderPassErrorInner::IndirectBufferOverrun {
             count,
@@ -2502,24 +2519,23 @@ fn multi_draw_indirect<A: HalApi>(
 
     match indexed {
         false => unsafe {
-            state
-                .raw_encoder
-                .draw_indirect(indirect_raw, offset, actual_count);
+            state.raw_encoder.draw_indirect(indirect_raw, offset, count);
         },
         true => unsafe {
             state
                 .raw_encoder
-                .draw_indexed_indirect(indirect_raw, offset, actual_count);
+                .draw_indexed_indirect(indirect_raw, offset, count);
         },
     }
     Ok(())
 }
 
-fn multi_draw_indirect_count<A: HalApi>(
-    state: &mut State<A>,
-    indirect_buffer: Arc<crate::resource::Buffer<A>>,
+fn multi_draw_indirect_count(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
+    indirect_buffer: Arc<crate::resource::Buffer>,
     offset: u64,
-    count_buffer: Arc<crate::resource::Buffer<A>>,
+    count_buffer: Arc<crate::resource::Buffer>,
     count_buffer_offset: u64,
     max_count: u32,
     indexed: bool,
@@ -2533,8 +2549,8 @@ fn multi_draw_indirect_count<A: HalApi>(
     state.is_ready(indexed)?;
 
     let stride = match indexed {
-        false => mem::size_of::<wgt::DrawIndirectArgs>(),
-        true => mem::size_of::<wgt::DrawIndexedIndirectArgs>(),
+        false => size_of::<wgt::DrawIndirectArgs>(),
+        true => size_of::<wgt::DrawIndexedIndirectArgs>(),
     } as u64;
 
     state
@@ -2544,11 +2560,14 @@ fn multi_draw_indirect_count<A: HalApi>(
         .device
         .require_downlevel_flags(wgt::DownlevelFlags::INDIRECT_EXECUTION)?;
 
+    indirect_buffer.same_device_as(cmd_buf.as_ref())?;
+    count_buffer.same_device_as(cmd_buf.as_ref())?;
+
     state
         .info
         .usage_scope
         .buffers
-        .merge_single(&indirect_buffer, hal::BufferUses::INDIRECT)?;
+        .merge_single(&indirect_buffer, wgt::BufferUses::INDIRECT)?;
 
     indirect_buffer.check_usage(BufferUsages::INDIRECT)?;
     let indirect_raw = indirect_buffer.try_raw(state.snatch_guard)?;
@@ -2557,15 +2576,19 @@ fn multi_draw_indirect_count<A: HalApi>(
         .info
         .usage_scope
         .buffers
-        .merge_single(&count_buffer, hal::BufferUses::INDIRECT)?;
+        .merge_single(&count_buffer, wgt::BufferUses::INDIRECT)?;
 
     count_buffer.check_usage(BufferUsages::INDIRECT)?;
     let count_raw = count_buffer.try_raw(state.snatch_guard)?;
 
+    if offset % 4 != 0 {
+        return Err(RenderPassErrorInner::UnalignedIndirectBufferOffset(offset));
+    }
+
     let end_offset = offset + stride * max_count as u64;
     if end_offset > indirect_buffer.size {
         return Err(RenderPassErrorInner::IndirectBufferOverrun {
-            count: None,
+            count: 1,
             offset,
             end_offset,
             buffer_size: indirect_buffer.size,
@@ -2619,7 +2642,7 @@ fn multi_draw_indirect_count<A: HalApi>(
     Ok(())
 }
 
-fn push_debug_group<A: HalApi>(state: &mut State<A>, string_data: &[u8], len: usize) {
+fn push_debug_group(state: &mut State, string_data: &[u8], len: usize) {
     state.debug_scope_depth += 1;
     if !state
         .device
@@ -2637,7 +2660,7 @@ fn push_debug_group<A: HalApi>(state: &mut State<A>, string_data: &[u8], len: us
     state.string_offset += len;
 }
 
-fn pop_debug_group<A: HalApi>(state: &mut State<A>) -> Result<(), RenderPassErrorInner> {
+fn pop_debug_group(state: &mut State) -> Result<(), RenderPassErrorInner> {
     api_log!("RenderPass::pop_debug_group");
 
     if state.debug_scope_depth == 0 {
@@ -2656,7 +2679,7 @@ fn pop_debug_group<A: HalApi>(state: &mut State<A>) -> Result<(), RenderPassErro
     Ok(())
 }
 
-fn insert_debug_marker<A: HalApi>(state: &mut State<A>, string_data: &[u8], len: usize) {
+fn insert_debug_marker(state: &mut State, string_data: &[u8], len: usize) {
     if !state
         .device
         .instance_flags
@@ -2672,16 +2695,19 @@ fn insert_debug_marker<A: HalApi>(state: &mut State<A>, string_data: &[u8], len:
     state.string_offset += len;
 }
 
-fn write_timestamp<A: HalApi>(
-    state: &mut State<A>,
-    pending_query_resets: &mut QueryResetMap<A>,
-    query_set: Arc<QuerySet<A>>,
+fn write_timestamp(
+    state: &mut State,
+    cmd_buf: &CommandBuffer,
+    pending_query_resets: &mut QueryResetMap,
+    query_set: Arc<QuerySet>,
     query_index: u32,
 ) -> Result<(), RenderPassErrorInner> {
     api_log!(
         "RenderPass::write_timestamps {query_index} {}",
         query_set.error_ident()
     );
+
+    query_set.same_device_as(cmd_buf)?;
 
     state
         .device
@@ -2697,16 +2723,14 @@ fn write_timestamp<A: HalApi>(
     Ok(())
 }
 
-fn execute_bundle<A: HalApi>(
-    state: &mut State<A>,
-    cmd_buf: &Arc<CommandBuffer<A>>,
-    bundle: Arc<super::RenderBundle<A>>,
+fn execute_bundle(
+    state: &mut State,
+    cmd_buf: &Arc<CommandBuffer>,
+    bundle: Arc<super::RenderBundle>,
 ) -> Result<(), RenderPassErrorInner> {
     api_log!("RenderPass::execute_bundle {}", bundle.error_ident());
 
-    // Have to clone the bundle arc, otherwise we keep a mutable reference to the bundle
-    // while later trying to add the bundle's resources to the tracker.
-    let bundle = state.tracker.bundles.insert_single(bundle).clone();
+    let bundle = state.tracker.bundles.insert_single(bundle);
 
     bundle.same_device_as(cmd_buf.as_ref())?;
 
@@ -2757,48 +2781,39 @@ fn execute_bundle<A: HalApi>(
 
     unsafe {
         state.info.usage_scope.merge_render_bundle(&bundle.used)?;
-        state.tracker.add_from_render_bundle(&bundle.used)?;
     };
     state.reset_bundle();
     Ok(())
 }
 
 impl Global {
-    fn resolve_render_pass_buffer_id<A: HalApi>(
+    fn resolve_render_pass_buffer_id(
         &self,
         scope: PassErrorScope,
         buffer_id: id::Id<id::markers::Buffer>,
-    ) -> Result<Arc<crate::resource::Buffer<A>>, RenderPassError> {
-        let hub = A::hub(self);
-        let buffer = hub
-            .buffers
-            .get(buffer_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBuffer(buffer_id))
-            .map_pass_err(scope)?;
+    ) -> Result<Arc<crate::resource::Buffer>, RenderPassError> {
+        let hub = &self.hub;
+        let buffer = hub.buffers.get(buffer_id).get().map_pass_err(scope)?;
 
         Ok(buffer)
     }
 
-    fn resolve_render_pass_query_set<A: HalApi>(
+    fn resolve_render_pass_query_set(
         &self,
         scope: PassErrorScope,
         query_set_id: id::Id<id::markers::QuerySet>,
-    ) -> Result<Arc<QuerySet<A>>, RenderPassError> {
-        let hub = A::hub(self);
-        let query_set = hub
-            .query_sets
-            .get(query_set_id)
-            .map_err(|_| RenderPassErrorInner::InvalidQuerySet(query_set_id))
-            .map_pass_err(scope)?;
+    ) -> Result<Arc<QuerySet>, RenderPassError> {
+        let hub = &self.hub;
+        let query_set = hub.query_sets.get(query_set_id).get().map_pass_err(scope)?;
 
         Ok(query_set)
     }
 
-    pub fn render_pass_set_bind_group<A: HalApi>(
+    pub fn render_pass_set_bind_group(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         index: u32,
-        bind_group_id: id::BindGroupId,
+        bind_group_id: Option<id::BindGroupId>,
         offsets: &[DynamicOffset],
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::SetBindGroup;
@@ -2818,12 +2833,18 @@ impl Global {
             return Ok(());
         }
 
-        let hub = A::hub(self);
-        let bind_group = hub
-            .bind_groups
-            .get(bind_group_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBindGroup(index))
-            .map_pass_err(scope)?;
+        let mut bind_group = None;
+        if bind_group_id.is_some() {
+            let bind_group_id = bind_group_id.unwrap();
+
+            let hub = &self.hub;
+            let bg = hub
+                .bind_groups
+                .get(bind_group_id)
+                .get()
+                .map_pass_err(scope)?;
+            bind_group = Some(bg);
+        }
 
         base.commands.push(ArcRenderCommand::SetBindGroup {
             index,
@@ -2834,9 +2855,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_pipeline<A: HalApi>(
+    pub fn render_pass_set_pipeline(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         pipeline_id: id::RenderPipelineId,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::SetPipelineRender;
@@ -2849,11 +2870,11 @@ impl Global {
             return Ok(());
         }
 
-        let hub = A::hub(self);
+        let hub = &self.hub;
         let pipeline = hub
             .render_pipelines
             .get(pipeline_id)
-            .map_err(|_| RenderPassErrorInner::InvalidPipeline(pipeline_id))
+            .get()
             .map_pass_err(scope)?;
 
         base.commands.push(ArcRenderCommand::SetPipeline(pipeline));
@@ -2861,9 +2882,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_index_buffer<A: HalApi>(
+    pub fn render_pass_set_index_buffer(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         index_format: IndexFormat,
         offset: BufferAddress,
@@ -2882,9 +2903,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_vertex_buffer<A: HalApi>(
+    pub fn render_pass_set_vertex_buffer(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         slot: u32,
         buffer_id: id::BufferId,
         offset: BufferAddress,
@@ -2903,9 +2924,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_blend_constant<A: HalApi>(
+    pub fn render_pass_set_blend_constant(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         color: Color,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::SetBlendConstant;
@@ -2917,9 +2938,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_stencil_reference<A: HalApi>(
+    pub fn render_pass_set_stencil_reference(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         value: u32,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::SetStencilReference;
@@ -2931,9 +2952,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_viewport<A: HalApi>(
+    pub fn render_pass_set_viewport(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         x: f32,
         y: f32,
         w: f32,
@@ -2953,9 +2974,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_scissor_rect<A: HalApi>(
+    pub fn render_pass_set_scissor_rect(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         x: u32,
         y: u32,
         w: u32,
@@ -2970,9 +2991,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_set_push_constants<A: HalApi>(
+    pub fn render_pass_set_push_constants(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         stages: ShaderStages,
         offset: u32,
         data: &[u8],
@@ -3009,9 +3030,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_draw<A: HalApi>(
+    pub fn render_pass_draw(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         vertex_count: u32,
         instance_count: u32,
         first_vertex: u32,
@@ -3033,9 +3054,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_draw_indexed<A: HalApi>(
+    pub fn render_pass_draw_indexed(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         index_count: u32,
         instance_count: u32,
         first_index: u32,
@@ -3059,9 +3080,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_draw_indirect<A: HalApi>(
+    pub fn render_pass_draw_indirect(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
     ) -> Result<(), RenderPassError> {
@@ -3071,19 +3092,19 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        base.commands.push(ArcRenderCommand::MultiDrawIndirect {
+        base.commands.push(ArcRenderCommand::DrawIndirect {
             buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
             offset,
-            count: None,
+            count: 1,
             indexed: false,
         });
 
         Ok(())
     }
 
-    pub fn render_pass_draw_indexed_indirect<A: HalApi>(
+    pub fn render_pass_draw_indexed_indirect(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
     ) -> Result<(), RenderPassError> {
@@ -3093,19 +3114,19 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        base.commands.push(ArcRenderCommand::MultiDrawIndirect {
+        base.commands.push(ArcRenderCommand::DrawIndirect {
             buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
             offset,
-            count: None,
+            count: 1,
             indexed: true,
         });
 
         Ok(())
     }
 
-    pub fn render_pass_multi_draw_indirect<A: HalApi>(
+    pub fn render_pass_multi_draw_indirect(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
         count: u32,
@@ -3116,19 +3137,19 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        base.commands.push(ArcRenderCommand::MultiDrawIndirect {
+        base.commands.push(ArcRenderCommand::DrawIndirect {
             buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
             offset,
-            count: NonZeroU32::new(count),
+            count,
             indexed: false,
         });
 
         Ok(())
     }
 
-    pub fn render_pass_multi_draw_indexed_indirect<A: HalApi>(
+    pub fn render_pass_multi_draw_indexed_indirect(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
         count: u32,
@@ -3139,19 +3160,19 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        base.commands.push(ArcRenderCommand::MultiDrawIndirect {
+        base.commands.push(ArcRenderCommand::DrawIndirect {
             buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
             offset,
-            count: NonZeroU32::new(count),
+            count,
             indexed: true,
         });
 
         Ok(())
     }
 
-    pub fn render_pass_multi_draw_indirect_count<A: HalApi>(
+    pub fn render_pass_multi_draw_indirect_count(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
         count_buffer_id: id::BufferId,
@@ -3164,23 +3185,11 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        // Don't use resolve_render_pass_buffer_id here, because we don't want to take the read-lock twice.
-        let hub = A::hub(self);
-        let buffers = hub.buffers.read();
-        let buffer = buffers
-            .get_owned(buffer_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBuffer(buffer_id))
-            .map_pass_err(scope)?;
-        let count_buffer = buffers
-            .get_owned(buffer_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBuffer(count_buffer_id))
-            .map_pass_err(scope)?;
-
         base.commands
             .push(ArcRenderCommand::MultiDrawIndirectCount {
-                buffer,
+                buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
                 offset,
-                count_buffer,
+                count_buffer: self.resolve_render_pass_buffer_id(scope, count_buffer_id)?,
                 count_buffer_offset,
                 max_count,
                 indexed: false,
@@ -3189,9 +3198,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_multi_draw_indexed_indirect_count<A: HalApi>(
+    pub fn render_pass_multi_draw_indexed_indirect_count(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         buffer_id: id::BufferId,
         offset: BufferAddress,
         count_buffer_id: id::BufferId,
@@ -3204,24 +3213,11 @@ impl Global {
         };
         let base = pass.base_mut(scope)?;
 
-        // Don't use resolve_render_pass_buffer_id here, because we don't want to take the read-lock twice.
-        let hub = A::hub(self);
-        let buffers = hub.buffers.read();
-        let buffer = buffers
-            .get_owned(buffer_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBuffer(buffer_id))
-            .map_pass_err(scope)?;
-
-        let count_buffer = buffers
-            .get_owned(buffer_id)
-            .map_err(|_| RenderPassErrorInner::InvalidBuffer(count_buffer_id))
-            .map_pass_err(scope)?;
-
         base.commands
             .push(ArcRenderCommand::MultiDrawIndirectCount {
-                buffer,
+                buffer: self.resolve_render_pass_buffer_id(scope, buffer_id)?,
                 offset,
-                count_buffer,
+                count_buffer: self.resolve_render_pass_buffer_id(scope, count_buffer_id)?,
                 count_buffer_offset,
                 max_count,
                 indexed: true,
@@ -3230,9 +3226,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_push_debug_group<A: HalApi>(
+    pub fn render_pass_push_debug_group(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         label: &str,
         color: u32,
     ) -> Result<(), RenderPassError> {
@@ -3249,9 +3245,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_pop_debug_group<A: HalApi>(
+    pub fn render_pass_pop_debug_group(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
     ) -> Result<(), RenderPassError> {
         let base = pass.base_mut(PassErrorScope::PopDebugGroup)?;
 
@@ -3260,9 +3256,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_insert_debug_marker<A: HalApi>(
+    pub fn render_pass_insert_debug_marker(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         label: &str,
         color: u32,
     ) -> Result<(), RenderPassError> {
@@ -3279,9 +3275,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_write_timestamp<A: HalApi>(
+    pub fn render_pass_write_timestamp(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         query_set_id: id::QuerySetId,
         query_index: u32,
     ) -> Result<(), RenderPassError> {
@@ -3296,9 +3292,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_begin_occlusion_query<A: HalApi>(
+    pub fn render_pass_begin_occlusion_query(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         query_index: u32,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::BeginOcclusionQuery;
@@ -3310,9 +3306,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_end_occlusion_query<A: HalApi>(
+    pub fn render_pass_end_occlusion_query(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::EndOcclusionQuery;
         let base = pass.base_mut(scope)?;
@@ -3322,9 +3318,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_begin_pipeline_statistics_query<A: HalApi>(
+    pub fn render_pass_begin_pipeline_statistics_query(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         query_set_id: id::QuerySetId,
         query_index: u32,
     ) -> Result<(), RenderPassError> {
@@ -3340,9 +3336,9 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_end_pipeline_statistics_query<A: HalApi>(
+    pub fn render_pass_end_pipeline_statistics_query(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::EndPipelineStatisticsQuery;
         let base = pass.base_mut(scope)?;
@@ -3353,22 +3349,19 @@ impl Global {
         Ok(())
     }
 
-    pub fn render_pass_execute_bundles<A: HalApi>(
+    pub fn render_pass_execute_bundles(
         &self,
-        pass: &mut RenderPass<A>,
+        pass: &mut RenderPass,
         render_bundle_ids: &[id::RenderBundleId],
     ) -> Result<(), RenderPassError> {
         let scope = PassErrorScope::ExecuteBundle;
         let base = pass.base_mut(scope)?;
 
-        let hub = A::hub(self);
+        let hub = &self.hub;
         let bundles = hub.render_bundles.read();
 
         for &bundle_id in render_bundle_ids {
-            let bundle = bundles
-                .get_owned(bundle_id)
-                .map_err(|_| RenderPassErrorInner::InvalidRenderBundle(bundle_id))
-                .map_pass_err(scope)?;
+            let bundle = bundles.get(bundle_id).get().map_pass_err(scope)?;
 
             base.commands.push(ArcRenderCommand::ExecuteBundle(bundle));
         }

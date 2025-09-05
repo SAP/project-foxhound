@@ -489,12 +489,10 @@ add_task(async function test_iframe_navigate() {
   // process load" part. Additionally, it ensures that the process for the
   // initial iframe page doesn't shut down once we navigate away from it,
   // which will also affect its prioritization.
-  let { tab: iframe1Tab, childID: iframe1TabChildID } = await loadKeepAliveTab(
-    iframe1Host
-  );
-  let { tab: iframe2Tab, childID: iframe2TabChildID } = await loadKeepAliveTab(
-    iframe2Host
-  );
+  let { tab: iframe1Tab, childID: iframe1TabChildID } =
+    await loadKeepAliveTab(iframe1Host);
+  let { tab: iframe2Tab, childID: iframe2TabChildID } =
+    await loadKeepAliveTab(iframe2Host);
 
   await BrowserTestUtils.withNewTab(
     topHost + "/browser/dom/ipc/tests/file_cross_frame.html",
@@ -990,6 +988,45 @@ add_task(async function test_tab_moved_to_new_window() {
       );
 
       await BrowserTestUtils.closeWindow(win);
+    }
+  );
+});
+
+/**
+ * Test that if a tab is quickly switched away from and back to, it ends up at
+ * PROCESS_PRIORITY_FOREGROUND.
+ * See bug 1927609.
+ */
+add_task(async function test_tab_quickly_switched() {
+  let originalTab = gBrowser.selectedTab;
+  let origtabID = browsingContextChildID(
+    originalTab.linkedBrowser.browsingContext
+  );
+
+  await BrowserTestUtils.withNewTab(
+    "https://example.com/browser/dom/ipc/tests/file_dummy.html",
+    async browser => {
+      let tab = gBrowser.getTabForBrowser(browser);
+      let tabID = browsingContextChildID(tab.linkedBrowser.browsingContext);
+
+      // Don't use BrowserTestUtils.switchTab() because things have settled
+      // by the time it's done, which doesn't expose this bug.
+      gBrowser.selectedTab = originalTab;
+      gBrowser.selectedTab = tab;
+      await new Promise(resolve =>
+        // eslint-disable-next-line mozilla/no-arbitrary-setTimeout
+        setTimeout(resolve, WAIT_FOR_CHANGE_TIME_MS)
+      );
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(tabID),
+        PROCESS_PRIORITY_FOREGROUND,
+        "Active tab should be foreground priority"
+      );
+      Assert.equal(
+        gTabPriorityWatcher.currentPriority(origtabID),
+        PROCESS_PRIORITY_BACKGROUND,
+        "Inactive tab should be background priority"
+      );
     }
   );
 });

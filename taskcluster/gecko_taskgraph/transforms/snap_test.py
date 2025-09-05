@@ -20,9 +20,12 @@ transforms = TransformSequence()
 def fill_template(config, tasks):
     for task in tasks:
         test_type = task.get("attributes")["snap_test_type"]
+        test_release = task.get("attributes")["snap_test_release"]
 
         assert "-test-" in task.get("label")
-        task["label"] = task.get("label").replace("-test-", "-test-" + test_type + "-")
+        task["label"] = task.get("label").replace(
+            "-test-", "-test-" + test_type + "-" + test_release + "-"
+        )
 
         dep = get_primary_dependency(config, task)
         assert dep
@@ -32,8 +35,15 @@ def fill_template(config, tasks):
 
         # Disambiguate the treeherder symbol.
         full_platform_collection = (
-            task_platform + "-snap-" + task.get("label").split("-")[-1]
+            task_platform
+            + "-snap-"
+            + task.get("label").split("-")[-2]
+            + "-"
+            + test_release
+            + "-"
+            + task.get("label").split("-")[-1]
         )
+
         (platform, collection) = full_platform_collection.split("/")
         task["task"]["extra"]["treeherder"]["collection"] = {collection: True}
         task["task"]["extra"]["treeherder"]["machine"]["platform"] = platform

@@ -1607,13 +1607,10 @@ class TokenStreamCharsShared {
   /** Information for parsing with a lifetime longer than the parser itself. */
   ParserAtomsTable* parserAtoms;
 
-  // Foxhound: TODO: link this taint to the charBuffer
-  SafeStringTaint _taint;
-
  protected:
   explicit TokenStreamCharsShared(FrontendContext* fc,
-                                  ParserAtomsTable* parserAtoms, const StringTaint& taint)
-      : fc(fc), charBuffer(fc), parserAtoms(parserAtoms), _taint(taint) {}
+                                  ParserAtomsTable* parserAtoms)
+      : fc(fc), charBuffer(fc), parserAtoms(parserAtoms) {}
 
   [[nodiscard]] bool copyCharBufferTo(
       UniquePtr<char16_t[], JS::FreePolicy>* destination);
@@ -2111,7 +2108,7 @@ class GeneralTokenStreamChars : public SpecializedTokenStreamCharsBase<Unit> {
     return this->sourceUnits.getTaintFlow();
   }
 
-    const TaintFlow* previousTaintFlow() {
+  const TaintFlow* previousTaintFlow() {
     return this->sourceUnits.previousTaintFlow();
   }
 

@@ -59,40 +59,8 @@ using namespace mozilla::ipc;
 
 namespace IPC {
 
-// IPC channels on Windows use named pipes (CreateNamedPipe()) with
-// channel ids as the pipe names.  Channels on POSIX use anonymous
-// Unix domain sockets created via socketpair() as pipes.  These don't
-// quite line up.
-//
-// When creating a child subprocess, the parent side of the fork
-// arranges it such that the initial control channel ends up on the
-// magic file descriptor gClientChannelFd in the child.  Future
-// connections (file descriptors) can then be passed via that
-// connection via sendmsg().
-//
-// On Android, child processes are created as a service instead of
-// forking the parent process. The Android Binder service is used to
-// transport the IPC channel file descriptor to the child process.
-// So rather than re-mapping the file descriptor to a known value,
-// the received channel file descriptor is set by calling
-// SetClientChannelFd before gecko has been initialized and started
-// in the child process.
-
 //------------------------------------------------------------------------------
 namespace {
-
-// This is the file descriptor number that a client process expects to find its
-// IPC socket.
-static int gClientChannelFd =
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
-    // On android/ios the fd is set at the time of child creation.
-    -1
-#else
-    3
-#endif  // defined(MOZ_WIDGET_ANDROID)
-    ;
-
-//------------------------------------------------------------------------------
 
 bool ErrorIsBrokenPipe(int err) { return err == EPIPE || err == ECONNRESET; }
 
@@ -134,12 +102,6 @@ static inline ssize_t corrected_sendmsg(int socket,
 
 }  // namespace
 //------------------------------------------------------------------------------
-
-#if defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
-void Channel::SetClientChannelFd(int fd) { gClientChannelFd = fd; }
-#endif  // defined(MOZ_WIDGET_ANDROID) || defined(MOZ_WIDGET_UIKIT)
-
-int Channel::GetClientChannelHandle() { return gClientChannelFd; }
 
 Channel::ChannelImpl::ChannelImpl(ChannelHandle pipe, Mode mode,
                                   base::ProcessId other_pid)
@@ -576,7 +538,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
 
       if (msg->attached_handles_.Length() >
           IPC::Message::MAX_DESCRIPTORS_PER_MESSAGE) {
-        MOZ_DIAGNOSTIC_ASSERT(false, "Too many file descriptors!");
+        MOZ_DIAGNOSTIC_CRASH("Too many file descriptors!");
         CHROMIUM_LOG(FATAL) << "Too many file descriptors!";
         // This should not be reached.
         return false;
@@ -598,7 +560,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages() {
     }
 
     if (partial_write_->iter_.Done()) {
-      MOZ_DIAGNOSTIC_ASSERT(false, "partial_write_->iter_ should not be done");
+      MOZ_DIAGNOSTIC_CRASH("partial_write_->iter_ should not be done");
       // report a send error to our caller, which will close the channel.
       return false;
     }

@@ -103,6 +103,23 @@ struct ContainSizeAxes {
   const bool mBContained;
 };
 
+// Used value for the CSS 'float' property (logical 'inline-*' in the computed
+// value will have been resolved to 'left' or 'right').
+enum class UsedFloat : uint8_t {
+  None,
+  Left,
+  Right,
+};
+
+// Used value for the CSS 'clear' property (logical 'inline-*' in the computed
+// value will have been resolved to 'left' or 'right').
+enum class UsedClear : uint8_t {
+  None,
+  Left,
+  Right,
+  Both,
+};
+
 }  // namespace mozilla
 
 #define STYLE_STRUCT(name_)                          \
@@ -368,7 +385,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleMargin {
     }
 
     for (const auto side : mozilla::AllPhysicalSides()) {
-      aMargin.Side(side) = mMargin.Get(side).AsLengthPercentage().ToLength();
+      aMargin.Side(side) = GetMargin(side).AsLengthPercentage().ToLength();
     }
     return true;
   }
@@ -386,7 +403,33 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleMargin {
   inline bool HasInlineAxisAuto(mozilla::WritingMode aWM) const;
   inline bool HasAuto(mozilla::LogicalAxis, mozilla::WritingMode) const;
 
-  mozilla::StyleRect<mozilla::LengthPercentageOrAuto> mMargin;
+  // TODO(dshin): The following functions are used as shims to deal
+  // anchor size functions as if it's zero, before the computation
+  // is implemented.
+  static const mozilla::StyleMargin kZeroMargin;
+  const mozilla::StyleMargin& GetMargin(mozilla::Side aSide) const {
+    const auto& result = mMargin.Get(aSide);
+    if (MOZ_UNLIKELY(result.IsAnchorSizeFunction())) {
+      return kZeroMargin;
+    }
+    return result;
+  }
+
+  bool MarginEquals(const nsStyleMargin& aOther) const {
+    for (const auto side : mozilla::AllPhysicalSides()) {
+      if (GetMargin(side) != aOther.GetMargin(side)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // As with other logical-coordinate accessors, definitions for these
+  // are found in WritingModes.h.
+  inline const mozilla::StyleMargin& GetMargin(mozilla::LogicalSide aSide,
+                                               mozilla::WritingMode aWM) const;
+
+  mozilla::StyleRect<mozilla::StyleMargin> mMargin;
   mozilla::StyleRect<mozilla::StyleLength> mScrollMargin;
   // TODO: Add support for overflow-clip-margin: <visual-box> and maybe
   // per-axis/side clipping, see https://github.com/w3c/csswg-drafts/issues/7245
@@ -501,8 +544,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleBorder {
   mozilla::StyleBorderImageWidth mBorderImageWidth;
   mozilla::StyleNonNegativeLengthOrNumberRect mBorderImageOutset;
   mozilla::StyleBorderImageSlice mBorderImageSlice;  // factor, percent
-  mozilla::StyleBorderImageRepeat mBorderImageRepeatH;
-  mozilla::StyleBorderImageRepeat mBorderImageRepeatV;
+  mozilla::StyleBorderImageRepeat mBorderImageRepeat;
   mozilla::StyleFloatEdge mFloatEdge;
   mozilla::StyleBoxDecorationBreak mBoxDecorationBreak;
 
@@ -547,7 +589,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleBorder {
     return mBorderTopColor;
   }
 
-  static mozilla::StyleColor nsStyleBorder::*BorderColorFieldFor(
+  static mozilla::StyleColor nsStyleBorder::* BorderColorFieldFor(
       mozilla::Side aSide) {
     switch (aSide) {
       case mozilla::eSideTop:
@@ -661,6 +703,61 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePage {
   StylePageOrientation mPageOrientation = StylePageOrientation::Upright;
 };
 
+template <typename T>
+class AnchorResolved {
+ public:
+  const T* operator->() const { return Ptr(); }
+
+  const T& operator*() const { return *Ptr(); }
+
+ protected:
+  static AnchorResolved Evaluated(T&& aValue) {
+    return AnchorResolved{V{aValue}};
+  }
+
+  static AnchorResolved Unchanged(const T& aValue) {
+    return AnchorResolved{V{std::cref(aValue)}};
+  }
+
+ private:
+  // Anchor resolution was not required, or resolves to a fallback.
+  // Note the storage of reference - Computed style values won't update in the
+  // middle of reflow, but take care not to keep this for too long.
+  using U = std::reference_wrapper<const T>;
+
+  // Resolved value & Invalid-At-Computed-Value-Time (IACVT) is stored as T.
+  using V = mozilla::Variant<U, T>;
+
+  explicit AnchorResolved(V&& aValue) : mValue{aValue} {}
+
+  const T* Ptr() const {
+    return mValue.match([](const U& aValue) { return &aValue.get(); },
+                        [](const T& aValue) { return &aValue; });
+  }
+
+  V mValue;
+};
+
+class AnchorResolvedInset final : public AnchorResolved<mozilla::StyleInset> {
+ public:
+  AnchorResolvedInset(const mozilla::StyleInset& aValue,
+                      mozilla::StylePhysicalAxis aAxis,
+                      mozilla::StylePositionProperty aPosition);
+  AnchorResolvedInset(const mozilla::StyleInset& aValue,
+                      mozilla::LogicalAxis aAxis, mozilla::WritingMode aWM,
+                      mozilla::StylePositionProperty aPosition);
+
+ private:
+  static AnchorResolved<mozilla::StyleInset> FromUnresolved(
+      const mozilla::StyleInset& aValue, mozilla::StylePhysicalAxis aAxis,
+      mozilla::StylePositionProperty aPosition);
+  static AnchorResolved<mozilla::StyleInset> Invalid();
+  static AnchorResolved<mozilla::StyleInset> Evaluated(
+      mozilla::StyleLengthPercentage&& aLP);
+  static AnchorResolved<mozilla::StyleInset> Evaluated(
+      const mozilla::StyleLengthPercentage& aLP);
+};
+
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   STYLE_STRUCT(nsStylePosition)
   nsStylePosition();
@@ -684,10 +781,18 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   // Returns whether we need to compute an hypothetical position if we were
   // absolutely positioned.
   bool NeedsHypotheticalPositionIfAbsPos() const {
-    return (mOffset.Get(mozilla::eSideRight).IsAuto() &&
-            mOffset.Get(mozilla::eSideLeft).IsAuto()) ||
-           (mOffset.Get(mozilla::eSideTop).IsAuto() &&
-            mOffset.Get(mozilla::eSideBottom).IsAuto());
+    return (GetAnchorResolvedInset(mozilla::eSideRight,
+                                   mozilla::StylePositionProperty::Absolute)
+                ->IsAuto() &&
+            GetAnchorResolvedInset(mozilla::eSideLeft,
+                                   mozilla::StylePositionProperty::Absolute)
+                ->IsAuto()) ||
+           (GetAnchorResolvedInset(mozilla::eSideTop,
+                                   mozilla::StylePositionProperty::Absolute)
+                ->IsAuto() &&
+            GetAnchorResolvedInset(mozilla::eSideBottom,
+                                   mozilla::StylePositionProperty::Absolute)
+                ->IsAuto());
   }
 
   const mozilla::StyleContainIntrinsicSize& ContainIntrinsicBSize(
@@ -723,7 +828,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
       LogicalAxis aAxis) const;
 
   Position mObjectPosition;
-  StyleRect<LengthPercentageOrAuto> mOffset;
+  StyleRect<mozilla::StyleInset> mOffset;
   StyleSize mWidth;
   StyleSize mMinWidth;
   StyleMaxSize mMaxWidth;
@@ -734,10 +839,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   // 'auto' or a `<dashed-ident>` referencing an anchor positioning anchor
   // element.
   mozilla::StylePositionAnchor mPositionAnchor;
+  mozilla::StylePositionArea mPositionArea;
   mozilla::StylePositionVisibility mPositionVisibility;
   mozilla::StylePositionTryFallbacks mPositionTryFallbacks;
   mozilla::StylePositionTryOrder mPositionTryOrder;
-  mozilla::StyleInsetArea mInsetArea;
 
   mozilla::StyleFlexBasis mFlexBasis;
   StyleImplicitGridTracks mGridAutoColumns;
@@ -795,6 +900,61 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
   inline bool MinBSizeDependsOnContainer(WritingMode) const;
   inline bool MaxBSizeDependsOnContainer(WritingMode) const;
 
+  // TODO(dshin): These inset getters are to be removed when
+  // interleaving computation is implemented.
+  AnchorResolvedInset GetAnchorResolvedInset(
+      mozilla::Side aSide, mozilla::StylePositionProperty aPosition) const;
+  AnchorResolvedInset GetAnchorResolvedInset(
+      mozilla::LogicalSide aSide, WritingMode aWM,
+      mozilla::StylePositionProperty aPosition) const;
+
+  // TODO(dshin): These size getters can be removed when anchor
+  // size is actually calculated.
+  static const StyleSize kAutoSize;
+  static const StyleMaxSize kNoneMaxSize;
+
+  const StyleSize& GetWidth() const {
+    if (MOZ_UNLIKELY(mWidth.IsAnchorSizeFunction())) {
+      return kAutoSize;
+    }
+    return mWidth;
+  }
+
+  const StyleSize& GetHeight() const {
+    if (MOZ_UNLIKELY(mHeight.IsAnchorSizeFunction())) {
+      return kAutoSize;
+    }
+    return mHeight;
+  }
+
+  const StyleSize& GetMinWidth() const {
+    if (MOZ_UNLIKELY(mMinWidth.IsAnchorSizeFunction())) {
+      return kAutoSize;
+    }
+    return mMinWidth;
+  }
+
+  const StyleSize& GetMinHeight() const {
+    if (MOZ_UNLIKELY(mMinHeight.IsAnchorSizeFunction())) {
+      return kAutoSize;
+    }
+    return mMinHeight;
+  }
+
+  const StyleMaxSize& GetMaxWidth() const {
+    if (MOZ_UNLIKELY(mMaxWidth.IsAnchorSizeFunction())) {
+      return kNoneMaxSize;
+    }
+    return mMaxWidth;
+  }
+
+  const StyleMaxSize& GetMaxHeight() const {
+    if (MOZ_UNLIKELY(mMaxHeight.IsAnchorSizeFunction())) {
+      return kNoneMaxSize;
+    }
+    return mMaxHeight;
+  }
+
  private:
   template <typename SizeOrMaxSize>
   static bool ISizeCoordDependsOnContainer(const SizeOrMaxSize& aCoord) {
@@ -806,8 +966,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStylePosition {
 
   template <typename SizeOrMaxSize>
   static bool BSizeCoordDependsOnContainer(const SizeOrMaxSize& aCoord) {
-    return aCoord.IsLengthPercentage() &&
-           aCoord.AsLengthPercentage().HasPercent();
+    if (aCoord.IsLengthPercentage()) {
+      return aCoord.AsLengthPercentage().HasPercent();
+    }
+    return aCoord.BehavesLikeStretchOnBlockAxis();
   }
 };
 
@@ -881,6 +1043,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
 
   mozilla::StyleHyphenateCharacter mHyphenateCharacter =
       mozilla::StyleHyphenateCharacter::Auto();
+  mozilla::StyleHyphenateLimitChars mHyphenateLimitChars =
+      mozilla::StyleHyphenateLimitChars::Auto();
 
   mozilla::StyleTextSecurity mWebkitTextSecurity =
       mozilla::StyleTextSecurity::None;
@@ -1016,7 +1180,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleText {
   inline bool WhiteSpaceCanWrap(const nsIFrame* aContextFrame) const;
   inline bool WordCanWrap(const nsIFrame* aContextFrame) const;
 
-  mozilla::LogicalSide TextEmphasisSide(mozilla::WritingMode aWM) const;
+  mozilla::LogicalSide TextEmphasisSide(mozilla::WritingMode aWM,
+                                        const nsAtom* aLanguage) const;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleVisibility {
@@ -1132,7 +1297,7 @@ struct StyleAnimation {
     return mTimingFunction;
   }
   const StyleTime& GetDelay() const { return mDelay; }
-  const StyleTime& GetDuration() const { return mDuration; }
+  const StyleAnimationDuration& GetDuration() const { return mDuration; }
   nsAtom* GetName() const { return mName._0.AsAtom(); }
   StyleAnimationDirection GetDirection() const { return mDirection; }
   StyleAnimationFillMode GetFillMode() const { return mFillMode; }
@@ -1149,7 +1314,7 @@ struct StyleAnimation {
  private:
   StyleComputedTimingFunction mTimingFunction{
       StyleComputedTimingFunction::Keyword(StyleTimingKeyword::Ease)};
-  StyleTime mDuration{0.0f};
+  StyleAnimationDuration mDuration = StyleAnimationDuration::Auto();
   StyleTime mDelay{0.0f};
   StyleAnimationName mName;
   StyleAnimationDirection mDirection = StyleAnimationDirection::Normal;
@@ -1157,7 +1322,7 @@ struct StyleAnimation {
   StyleAnimationPlayState mPlayState = StyleAnimationPlayState::Running;
   StyleAnimationIterationCount mIterationCount{1.0f};
   StyleAnimationComposition mComposition = StyleAnimationComposition::Replace;
-  StyleAnimationTimeline mTimeline{StyleAnimationTimeline::Auto()};
+  StyleAnimationTimeline mTimeline = StyleAnimationTimeline::Auto();
 };
 
 struct StyleScrollTimeline {
@@ -1229,6 +1394,10 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleDisplay {
   bool IsQueryContainer() const {
     return mContainerType != mozilla::StyleContainerType::Normal;
   }
+
+  // See WritingModes.h for the implementations.
+  inline mozilla::UsedFloat UsedFloat(mozilla::WritingMode aWM) const;
+  inline mozilla::UsedClear UsedClear(mozilla::WritingMode aWM) const;
 
  private:
   mozilla::StyleAppearance mAppearance;
@@ -1665,7 +1834,8 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   const mozilla::StyleTime& GetAnimationDelay(uint32_t aIndex) const {
     return mAnimations[aIndex % mAnimationDelayCount].GetDelay();
   }
-  const mozilla::StyleTime& GetAnimationDuration(uint32_t aIndex) const {
+  const mozilla::StyleAnimationDuration& GetAnimationDuration(
+      uint32_t aIndex) const {
     return mAnimations[aIndex % mAnimationDurationCount].GetDuration();
   }
   mozilla::StyleAnimationDirection GetAnimationDirection(
@@ -1705,7 +1875,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   // The margin of the window region that should be transparent to events.
   mozilla::StyleLength mMozWindowInputRegionMargin;
   mozilla::StyleTransform mMozWindowTransform;
-  mozilla::StyleTransformOrigin mWindowTransformOrigin;
 
   nsStyleAutoArray<mozilla::StyleTransition> mTransitions;
   // The number of elements in mTransitions that are not from repeating
@@ -1739,6 +1908,12 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUIReset {
   uint32_t mViewTimelineInsetCount;
 
   mozilla::StyleFieldSizing mFieldSizing;
+
+  bool HasViewTransitionName() const {
+    return !mViewTransitionName._0.AsAtom()->IsEmpty();
+  }
+
+  mozilla::StyleViewTransitionName mViewTransitionName;
 };
 
 struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
@@ -1751,7 +1926,6 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
 
  private:
   mozilla::StyleUserInput mUserInput;
-  mozilla::StyleUserModify mUserModify;
   mozilla::StyleUserFocus mUserFocus;
   mozilla::StylePointerEvents mPointerEvents;
   mozilla::StyleCursor mCursor;
@@ -1759,13 +1933,7 @@ struct MOZ_NEEDS_MEMMOVABLE_MEMBERS nsStyleUI {
  public:
   bool IsInert() const { return mInert == mozilla::StyleInert::Inert; }
 
-  mozilla::StyleUserInput UserInput() const {
-    return IsInert() ? mozilla::StyleUserInput::None : mUserInput;
-  }
-
-  mozilla::StyleUserModify UserModify() const {
-    return IsInert() ? mozilla::StyleUserModify::ReadOnly : mUserModify;
-  }
+  mozilla::StyleUserInput UserInput() const { return mUserInput; }
 
   mozilla::StyleUserFocus UserFocus() const {
     return IsInert() ? mozilla::StyleUserFocus::None : mUserFocus;

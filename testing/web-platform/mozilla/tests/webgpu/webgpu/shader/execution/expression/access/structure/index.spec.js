@@ -30,12 +30,17 @@ expected,
 input,
 inputSource)
 {
-  const outputBufferSize = structStride(
-    expected.map((v) => v.type),
-    'storage_rw'
+  const kMinStorageBufferSize = 4;
+
+  const outputBufferSize = Math.max(
+    kMinStorageBufferSize,
+    structStride(
+      expected.map((v) => v.type),
+      'storage_rw'
+    )
   );
 
-  const outputBuffer = t.device.createBuffer({
+  const outputBuffer = t.createBufferTracked({
     size: outputBufferSize,
     usage: GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST | GPUBufferUsage.STORAGE
   });
@@ -51,7 +56,10 @@ inputSource)
     let inputData;
     if (input instanceof Array) {
       const inputTypes = input.map((v) => v.type);
-      const inputBufferSize = structStride(inputTypes, inputSource);
+      const inputBufferSize = Math.max(
+        kMinStorageBufferSize,
+        structStride(inputTypes, inputSource)
+      );
       inputData = new Uint8Array(inputBufferSize);
       structLayout(inputTypes, inputSource, (m) => {
         input[m.index].copyTo(inputData, m.offset);
@@ -174,7 +182,6 @@ u.
 beginSubcases().
 combine('member_index', [0, 1, 2]).
 combine('alignments', [
-[1, 1, 1],
 [4, 4, 4],
 [4, 8, 16],
 [8, 4, 16],

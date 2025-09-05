@@ -18,6 +18,11 @@ def pytest_generate_tests(metafunc):
     argvalues = []
     ids = []
 
+    if "only_firefox_versions" in marks:
+        for mark in metafunc.function.pytestmark:
+            if mark.name == "only_firefox_versions":
+                otherargs["only_firefox_versions"] = mark.args
+
     if "only_platforms" in marks:
         for mark in metafunc.function.pytestmark:
             if mark.name == "only_platforms":
@@ -35,6 +40,14 @@ def pytest_generate_tests(metafunc):
     if "without_interventions" in marks:
         argvalues.append([dict({"interventions": False}, **otherargs)])
         ids.append("without_interventions")
+
+    if "need_visible_scrollbars" in marks:
+        for mark in metafunc.function.pytestmark:
+            if mark.name == "need_visible_scrollbars":
+                otherargs["need_visible_scrollbars"] = mark.args
+
+    if "no_overlay_scrollbars" in marks:
+        otherargs["no_overlay_scrollbars"] = True
 
     metafunc.parametrize(["session"], argvalues, ids=ids, indirect=True)
 

@@ -1,5 +1,5 @@
 <!-- go/cmark -->
-<!--* freshness: {owner: 'danilchap' reviewed: '2024-04-17'} *-->
+<!--* freshness: {owner: 'danilchap' reviewed: '2024-10-22'} *-->
 
 # WebRTC coding style guide
 
@@ -55,7 +55,7 @@ file type suffix), in the same directory, in the same build target.
   test `.cc` files, and with `.cc` files that define `main`.)
 
 See also the
-[examples and exceptions on how to treat `.h` and `.cpp` files](style-guide/h-cc-pairs.md).
+[examples and exceptions on how to treat `.h` and `.cc` files](style-guide/h-cc-pairs.md).
 
 This makes the source code easier to navigate and organize, and precludes some
 questionable build system practices such as having build targets that don't pull
@@ -109,6 +109,13 @@ std::pony DEPRECATED_PonyPlz(const std::pony_spec& ps);
 inline std::pony PonyPlz(const std::pony_spec& ps) {
   return DEPRECATED_PonyPlz(ps);
 }
+```
+or wrap the test with
+```cpp
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+  TEST_...
+#pragma clang diagnostic pop
 ```
 
 In other words, rename the existing function, and provide an inline wrapper
@@ -166,7 +173,7 @@ Prefer `webrtc::CallbackList`, and manage thread safety yourself.
 The following smart pointer types are recommended:
 
    * `std::unique_ptr` for all singly-owned objects
-   * `rtc::scoped_refptr` for all objects with shared ownership
+   * `webrtc::scoped_refptr` for all objects with shared ownership
 
 Use of `std::shared_ptr` is *not permitted*. It is banned in the Chromium style
 guide (overriding the Google style guide). See the
@@ -176,7 +183,7 @@ information.
 In most cases, one will want to explicitly control lifetimes, and therefore use
 `std::unique_ptr`, but in some cases, for instance where references have to
 exist both from the API users and internally, with no way to invalidate pointers
-held by the API user, `rtc::scoped_refptr` can be appropriate.
+held by the API user, `scoped_refptr` can be appropriate.
 
 [chr-std-shared-ptr]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/c++/c++-features.md#shared-pointers-banned
 
@@ -192,7 +199,8 @@ already familiar to modern C++ programmers. See [Avoid std::bind][totw-108] for 
 `std::function` is allowed, but remember that it's not the right tool for every
 occasion. Prefer to use interfaces when that makes sense, and consider
 `rtc::FunctionView` for cases where the callee will not save the function
-object.
+object. Prefer `absl::AnyInvocable` over `std::function` when you can accomplish
+ the task by moving the callable instead of copying it.
 
 ### Forward declarations
 
@@ -238,7 +246,12 @@ WebRTC follows the
 
 WebRTC follows [Chromium's Python style][chr-py-style].
 
+Chromium's Python style is now using PEP-8 and not all Python code has been migrated.
+For this reason running presubmit on old WebRTC python script might trigger failures.
+The failures can either be fixed are ignored by adding the script to the [PYLINT_OLD_STYLE][old-style-lint] list.
+
 [chr-py-style]: https://chromium.googlesource.com/chromium/src/+/main/styleguide/python/python.md
+[old-style-lint]: https://source.chromium.org/chromium/_/webrtc/src/+/9b81d2c954128831c62d8a0657c7f955b3c02d32:PRESUBMIT.py;l=50
 
 ## Build files
 

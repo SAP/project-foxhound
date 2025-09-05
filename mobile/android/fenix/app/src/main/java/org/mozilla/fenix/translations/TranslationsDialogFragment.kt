@@ -11,8 +11,6 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -301,12 +299,13 @@ class TranslationsDialogFragment : BottomSheetDialogFragment() {
                 )
             },
             onNegativeButtonClicked = {
-                if (translationsDialogState.isTranslated) {
+                if (translationsDialogState.isTranslated || translationsDialogState.isTranslationInProgress) {
                     localView.announceForAccessibility(
                         requireContext().getString(
                             R.string.translations_bottom_sheet_restore_accessibility_announcement,
                         ),
                     )
+                    isTranslationInProgress = false
                     translationsDialogStore.dispatch(TranslationsDialogAction.RestoreTranslation)
                 }
                 dismiss()

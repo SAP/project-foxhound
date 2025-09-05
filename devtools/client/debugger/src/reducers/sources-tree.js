@@ -25,12 +25,14 @@ const IGNORED_EXTENSIONS = ["css", "svg", "png"];
 import { isPretty, getRawSourceURL } from "../utils/source";
 import { prefs } from "../utils/prefs";
 
+import TargetCommand from "resource://devtools/shared/commands/target/target-command.js";
+
 const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   BinarySearch: "resource://gre/modules/BinarySearch.sys.mjs",
 });
 
-export function initialSourcesTreeState() {
+export function initialSourcesTreeState({ isWebExtension } = {}) {
   return {
     // List of all Thread Tree Items.
     // All other item types are children of these and aren't store in
@@ -55,34 +57,50 @@ export function initialSourcesTreeState() {
     // The name is displayed in Source Tree header
     projectDirectoryRootName: prefs.projectDirectoryRootName,
 
-    // Reports if the top level target is a web extension.
+    // Reports if the debugged context is a web extension.
     // If so, we should display all web extension sources.
-    isWebExtension: false,
+    isWebExtension,
 
     /**
      * Boolean, to be set to true in order to display WebExtension's content scripts
      * that are applied to the current page we are debugging.
      *
      * Covered by: browser_dbg-content-script-sources.js
-     * Bound to: devtools.chrome.enabled
+     * Bound to: devtools.debugger.show-content-scripts
      *
      */
-    chromeAndExtensionsEnabled: prefs.chromeAndExtensionsEnabled,
+    showContentScripts: prefs.showContentScripts,
+
+    mutableExtensionSources: [],
   };
 }
 
 // eslint-disable-next-line complexity
 export default function update(state = initialSourcesTreeState(), action) {
   switch (action.type) {
+    case "SHOW_CONTENT_SCRIPTS": {
+      const { shouldShow } = action;
+      if (shouldShow !== state.showExtensionSources) {
+        prefs.showContentScripts = shouldShow;
+        return { ...state, showContentScripts: shouldShow };
+      }
+      return state;
+    }
     case "ADD_ORIGINAL_SOURCES": {
       const { generatedSourceActor } = action;
-      const validOriginalSources = action.originalSources.filter(source =>
-        isSourceVisibleInSourceTree(
+      const validOriginalSources = action.originalSources.filter(source => {
+        if (source.isExtension) {
+          state.mutableExtensionSources.push({
+            source,
+            sourceActor: generatedSourceActor,
+          });
+        }
+        return isSourceVisibleInSourceTree(
           source,
-          state.chromeAndExtensionsEnabled,
+          state.showContentScripts,
           state.isWebExtension
-        )
-      );
+        );
+      });
       if (!validOriginalSources.length) {
         return state;
       }
@@ -106,13 +124,19 @@ export default function update(state = initialSourcesTreeState(), action) {
       // But we do want to process source actors in order to be able to display
       // distinct Source Tree Items for sources with the same URL loaded in distinct thread.
       // (And may be also later be able to highlight the many sources with the same URL loaded in a given thread)
-      const newSourceActors = action.sourceActors.filter(sourceActor =>
-        isSourceVisibleInSourceTree(
+      const newSourceActors = action.sourceActors.filter(sourceActor => {
+        if (sourceActor.sourceObject.isExtension) {
+          state.mutableExtensionSources.push({
+            source: sourceActor.sourceObject,
+            sourceActor,
+          });
+        }
+        return isSourceVisibleInSourceTree(
           sourceActor.sourceObject,
-          state.chromeAndExtensionsEnabled,
+          state.showContentScripts,
           state.isWebExtension
-        )
-      );
+        );
+      });
       if (!newSourceActors.length) {
         return state;
       }
@@ -205,11 +229,6 @@ export default function update(state = initialSourcesTreeState(), action) {
 
 function addThread(state, thread) {
   const threadActorID = thread.actor;
-  // When processing the top level target,
-  // see if we are debugging an extension.
-  if (thread.isTopLevel) {
-    state.isWebExtension = thread.isWebExtension;
-  }
   let threadItem = state.threadItems.find(item => {
     return item.threadActorID == threadActorID;
   });
@@ -249,6 +268,7 @@ function updateBlackbox(state, sources, shouldBlackBox) {
           ...sourceTreeItem,
           isBlackBoxed: shouldBlackBox,
         });
+        threadItem.children = [...threadItem.children];
       }
     }
   }
@@ -286,7 +306,7 @@ function updateProjectDirectoryRoot(state, uniquePath, name) {
 
 function isSourceVisibleInSourceTree(
   source,
-  chromeAndExtensionsEnabled,
+  showContentScripts,
   debuggeeIsWebExtension
 ) {
   return (
@@ -296,9 +316,7 @@ function isSourceVisibleInSourceTree(
     !isPretty(source) &&
     // Only accept web extension sources when the chrome pref is enabled (to allows showing content scripts),
     // or when we are debugging an extension
-    (!source.isExtension ||
-      chromeAndExtensionsEnabled ||
-      debuggeeIsWebExtension)
+    (!source.isExtension || showContentScripts || debuggeeIsWebExtension)
   );
 }
 
@@ -387,6 +405,15 @@ function findSourceInThreadItem(source, threadItem) {
   if (!groupItem) return null;
 
   const parentPath = path.substring(0, path.lastIndexOf("/"));
+
+  // If the parent path is empty, the source isn't in a sub directory,
+  // and instead is an immediate child of the group item.
+  if (!parentPath) {
+    return groupItem.children.find(item => {
+      return item.type == "source" && item.source == source;
+    });
+  }
+
   const directoryItem = groupItem._allGroupDirectoryItems.find(item => {
     return item.type == "directory" && item.path == parentPath;
   });
@@ -412,58 +439,62 @@ function sortItems(a, b) {
   return 0;
 }
 
-function sortThreadItems(a, b) {
+const { TYPES } = TargetCommand;
+const TARGET_TYPE_ORDER = [
+  TYPES.PROCESS,
+  TYPES.FRAME,
+  TYPES.CONTENT_SCRIPT,
+  TYPES.SERVICE_WORKER,
+  TYPES.SHARED_WORKER,
+  TYPES.WORKER,
+];
+function sortThreadItems(threadItemA, threadItemB) {
   // Jest tests aren't emitting the necessary actions to populate the thread attributes.
   // Ignore sorting for them.
-  if (!a.thread || !b.thread) {
+  if (!threadItemA.thread || !threadItemB.thread) {
     return 0;
   }
-
+  return sortThreads(threadItemA.thread, threadItemB.thread);
+}
+export function sortThreads(a, b) {
   // Top level target is always listed first
-  if (a.thread.isTopLevel) {
+  if (a.isTopLevel) {
     return -1;
-  } else if (b.thread.isTopLevel) {
+  } else if (b.isTopLevel) {
     return 1;
   }
 
-  // Process targets should come next and after that frame targets
-  if (a.thread.targetType == "process" && b.thread.targetType == "frame") {
-    return -1;
-  } else if (
-    a.thread.targetType == "frame" &&
-    b.thread.targetType == "process"
-  ) {
+  // Order frame and content script per Window Global ID.
+  // It should order them by creation date.
+  if (a.innerWindowId > b.innerWindowId) {
     return 1;
+  } else if (a.innerWindowId < b.innerWindowId) {
+    return -1;
   }
 
-  // And we display the worker targets last.
-  if (
-    a.thread.targetType.endsWith("worker") &&
-    !b.thread.targetType.endsWith("worker")
-  ) {
-    return 1;
-  } else if (
-    !a.thread.targetType.endsWith("worker") &&
-    b.thread.targetType.endsWith("worker")
-  ) {
-    return -1;
+  // If the two target have a different type, order by type
+  if (a.targetType !== b.targetType) {
+    const idxA = TARGET_TYPE_ORDER.indexOf(a.targetType);
+    const idxB = TARGET_TYPE_ORDER.indexOf(b.targetType);
+    return idxA < idxB ? -1 : 1;
   }
 
   // Order the process targets by their process ids
-  if (a.thread.processID > b.thread.processID) {
-    return 1;
-  } else if (a.thread.processID < b.thread.processID) {
-    return -1;
+  if (a.processID && b.processID) {
+    if (a.processID > b.processID) {
+      return 1;
+    } else if (a.processID < b.processID) {
+      return -1;
+    }
   }
 
-  // Order the frame targets and the worker targets by their target name
-  if (a.thread.targetType == "frame" && b.thread.targetType == "frame") {
-    return a.thread.name.localeCompare(b.thread.name);
-  } else if (
-    a.thread.targetType.endsWith("worker") &&
-    b.thread.targetType.endsWith("worker")
+  // Order the frame, worker and content script targets by their target name
+  if (
+    (a.targetType == "frame" && b.targetType == "frame") ||
+    (a.targetType.endsWith("worker") && b.targetType.endsWith("worker")) ||
+    (a.targetType == "content_script" && b.targetType == "content_script")
   ) {
-    return a.thread.name.localeCompare(b.thread.name);
+    return a.name.localeCompare(b.name);
   }
 
   return 0;

@@ -61,6 +61,7 @@
 #include "nsSandboxFlags.h"
 #include "nsTaintingUtils.h"
 
+#include "nsIContentPolicy.h"
 #include "nsIURI.h"
 #include "nsIURIMutator.h"
 #include "nsILoadGroup.h"
@@ -138,13 +139,14 @@ const uint32_t XML_HTTP_REQUEST_ARRAYBUFFER_MIN_SIZE = 32 * 1024;
 const int32_t XML_HTTP_REQUEST_MAX_CONTENT_LENGTH_PREALLOCATE =
     1 * 1024 * 1024 * 1024LL;
 
-namespace {
-const nsString kLiteralString_readystatechange = u"readystatechange"_ns;
-const nsString kLiteralString_xmlhttprequest = u"xmlhttprequest"_ns;
-const nsString kLiteralString_DOMContentLoaded = u"DOMContentLoaded"_ns;
-const nsCString kLiteralString_charset = "charset"_ns;
-const nsCString kLiteralString_UTF_8 = "UTF-8"_ns;
-}  // namespace
+constexpr nsLiteralString kLiteralString_readystatechange =
+    u"readystatechange"_ns;
+// constexpr nsLiteralString kLiteralString_xmlhttprequest =
+// u"xmlhttprequest"_ns;
+constexpr nsLiteralString kLiteralString_DOMContentLoaded =
+    u"DOMContentLoaded"_ns;
+constexpr nsLiteralCString kLiteralString_charset = "charset"_ns;
+constexpr nsLiteralCString kLiteralString_UTF_8 = "UTF-8"_ns;
 
 #define NS_PROGRESS_EVENT_INTERVAL 50
 #define MAX_SYNC_TIMEOUT_WHEN_UNLOADING 10000 /* 10 secs */
@@ -1257,7 +1259,7 @@ bool XMLHttpRequestMainThread::IsSafeHeader(
   const char* kCrossOriginSafeHeaders[] = {
       "cache-control", "content-language", "content-type", "content-length",
       "expires",       "last-modified",    "pragma"};
-  for (uint32_t i = 0; i < ArrayLength(kCrossOriginSafeHeaders); ++i) {
+  for (uint32_t i = 0; i < std::size(kCrossOriginSafeHeaders); ++i) {
     if (aHeader.LowerCaseEqualsASCII(kCrossOriginSafeHeaders[i])) {
       return true;
     }
@@ -4318,7 +4320,7 @@ nsresult ArrayBufferBuilder::MapToFileInPackage(const nsCString& aFile,
   if (!zip) {
     return NS_ERROR_FAILURE;
   }
-  nsZipItem* zipItem = zip->GetItem(aFile.get());
+  nsZipItem* zipItem = zip->GetItem(aFile);
   if (!zipItem) {
     return NS_ERROR_FILE_NOT_FOUND;
   }

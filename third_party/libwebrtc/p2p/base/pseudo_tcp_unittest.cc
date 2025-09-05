@@ -21,8 +21,8 @@
 #include "api/task_queue/pending_task_safety_flag.h"
 #include "api/task_queue/task_queue_base.h"
 #include "api/units/time_delta.h"
+#include "rtc_base/crypto_random.h"
 #include "rtc_base/gunit.h"
-#include "rtc_base/helpers.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/memory_stream.h"
 #include "rtc_base/time_utils.h"
@@ -518,9 +518,9 @@ class PseudoTcpTestReceiveWindow : public PseudoTcpTestBase {
 
  private:
   // IPseudoTcpNotify interface
-  virtual void OnTcpReadable(PseudoTcp* tcp) {}
+  virtual void OnTcpReadable(PseudoTcp* /* tcp */) {}
 
-  virtual void OnTcpWriteable(PseudoTcp* tcp) {}
+  virtual void OnTcpWriteable(PseudoTcp* /* tcp */) {}
 
   void ReadUntilIOPending() {
     char block[kBlockSize];

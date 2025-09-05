@@ -420,18 +420,20 @@ export class ChromeProfileMigrator extends MigratorBase {
           return;
         }
 
-        let crypto;
+        let loginCrypto;
         try {
           if (AppConstants.platform == "win") {
             let { ChromeWindowsLoginCrypto } = ChromeUtils.importESModule(
               "resource:///modules/ChromeWindowsLoginCrypto.sys.mjs"
             );
-            crypto = new ChromeWindowsLoginCrypto(_chromeUserDataPathSuffix);
+            loginCrypto = new ChromeWindowsLoginCrypto(
+              _chromeUserDataPathSuffix
+            );
           } else if (AppConstants.platform == "macosx") {
             let { ChromeMacOSLoginCrypto } = ChromeUtils.importESModule(
               "resource:///modules/ChromeMacOSLoginCrypto.sys.mjs"
             );
-            crypto = new ChromeMacOSLoginCrypto(
+            loginCrypto = new ChromeMacOSLoginCrypto(
               _keychainServiceName,
               _keychainAccountName,
               _keychainMockPassphrase
@@ -449,6 +451,7 @@ export class ChromeProfileMigrator extends MigratorBase {
 
         let logins = [];
         let fallbackCreationDate = new Date();
+        const kValidSchemes = new Set(["https", "http", "ftp"]);
         for (let row of rows) {
           try {
             let origin_url = lazy.NetUtil.newURI(
@@ -456,13 +459,12 @@ export class ChromeProfileMigrator extends MigratorBase {
             );
             // Ignore entries for non-http(s)/ftp URLs because we likely can't
             // use them anyway.
-            const kValidSchemes = new Set(["https", "http", "ftp"]);
             if (!kValidSchemes.has(origin_url.scheme)) {
               continue;
             }
             let loginInfo = {
               username: row.getResultByName("username_value"),
-              password: await crypto.decryptData(
+              password: await loginCrypto.decryptData(
                 row.getResultByName("password_value"),
                 null
               ),
@@ -578,18 +580,20 @@ export class ChromeProfileMigrator extends MigratorBase {
       type: MigrationUtils.resourceTypes.PAYMENT_METHODS,
 
       async migrate(aCallback) {
-        let crypto;
+        let loginCrypto;
         try {
           if (AppConstants.platform == "win") {
             let { ChromeWindowsLoginCrypto } = ChromeUtils.importESModule(
               "resource:///modules/ChromeWindowsLoginCrypto.sys.mjs"
             );
-            crypto = new ChromeWindowsLoginCrypto(_chromeUserDataPathSuffix);
+            loginCrypto = new ChromeWindowsLoginCrypto(
+              _chromeUserDataPathSuffix
+            );
           } else if (AppConstants.platform == "macosx") {
             let { ChromeMacOSLoginCrypto } = ChromeUtils.importESModule(
               "resource:///modules/ChromeMacOSLoginCrypto.sys.mjs"
             );
-            crypto = new ChromeMacOSLoginCrypto(
+            loginCrypto = new ChromeMacOSLoginCrypto(
               _keychainServiceName,
               _keychainAccountName,
               _keychainMockPassphrase
@@ -609,7 +613,7 @@ export class ChromeProfileMigrator extends MigratorBase {
         for (let row of rows) {
           cards.push({
             "cc-name": row.getResultByName("name_on_card"),
-            "cc-number": await crypto.decryptData(
+            "cc-number": await loginCrypto.decryptData(
               row.getResultByName("card_number_encrypted"),
               null
             ),

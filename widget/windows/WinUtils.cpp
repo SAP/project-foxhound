@@ -7,6 +7,7 @@
 #include "WinUtils.h"
 
 #include <knownfolders.h>
+#include <psapi.h>
 #include <winioctl.h>
 
 #include "gfxPlatform.h"
@@ -18,6 +19,7 @@
 #include "mozilla/ArrayUtils.h"
 #include "mozilla/BackgroundHangMonitor.h"
 #include "mozilla/ClearOnShutdown.h"
+#include "mozilla/StaticPrefs_widget.h"
 #include "mozilla/dom/MouseEventBinding.h"
 #include "mozilla/gfx/2D.h"
 #include "mozilla/gfx/DataSurfaceHelpers.h"
@@ -64,13 +66,9 @@
 
 mozilla::LazyLogModule gWindowsLog("Widget");
 
-#define LOG_E(...) MOZ_LOG(gWindowsLog, LogLevel::Error, (__VA_ARGS__))
-#define LOG_D(...) MOZ_LOG(gWindowsLog, LogLevel::Debug, (__VA_ARGS__))
-
 using namespace mozilla::gfx;
 
-namespace mozilla {
-namespace widget {
+namespace mozilla::widget {
 
 #ifdef MOZ_PLACES
 NS_IMPL_ISUPPORTS(myDownloadObserver, nsIDownloadObserver)
@@ -524,7 +522,7 @@ HWND WinUtils::GetTopLevelHWND(HWND aWnd, bool aStopIfNotChild,
 
 // Map from native window handles to nsWindow structures. Does not AddRef.
 // Inherently unsafe to access outside the main thread.
-static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
+MOZ_RUNINIT static nsTHashMap<HWND, nsWindow*> sExtantNSWindows;
 
 /* static */
 void WinUtils::SetNSWindowPtr(HWND aWnd, nsWindow* aWindow) {
@@ -631,38 +629,6 @@ HWND WinUtils::FindOurWindowAtPoint(const POINT& aPointInScreen) {
   // This will enumerate all top-level windows in order from top to bottom.
   EnumWindows(FindOurWindowAtPointCallback, reinterpret_cast<LPARAM>(&info));
   return info.mOutWnd;
-}
-
-/* static */
-UINT WinUtils::GetInternalMessage(UINT aNativeMessage) {
-  switch (aNativeMessage) {
-    case WM_MOUSEWHEEL:
-      return MOZ_WM_MOUSEVWHEEL;
-    case WM_MOUSEHWHEEL:
-      return MOZ_WM_MOUSEHWHEEL;
-    case WM_VSCROLL:
-      return MOZ_WM_VSCROLL;
-    case WM_HSCROLL:
-      return MOZ_WM_HSCROLL;
-    default:
-      return aNativeMessage;
-  }
-}
-
-/* static */
-UINT WinUtils::GetNativeMessage(UINT aInternalMessage) {
-  switch (aInternalMessage) {
-    case MOZ_WM_MOUSEVWHEEL:
-      return WM_MOUSEWHEEL;
-    case MOZ_WM_MOUSEHWHEEL:
-      return WM_MOUSEHWHEEL;
-    case MOZ_WM_VSCROLL:
-      return WM_VSCROLL;
-    case MOZ_WM_HSCROLL:
-      return WM_HSCROLL;
-    default:
-      return aInternalMessage;
-  }
 }
 
 /* static */
@@ -899,26 +865,17 @@ NS_IMETHODIMP AsyncEncodeAndWriteIcon::Run() {
   FILE* file = _wfopen(mIconPath.get(), L"wb");
   if (!file) {
     // Maybe the directory doesn't exist; try creating it, then fopen again.
-    nsresult rv = NS_ERROR_FAILURE;
-    nsCOMPtr<nsIFile> comFile = do_CreateInstance("@mozilla.org/file/local;1");
-    if (comFile) {
-      rv = comFile->InitWithPath(mIconPath);
-      if (NS_SUCCEEDED(rv)) {
-        nsCOMPtr<nsIFile> dirPath;
-        comFile->GetParent(getter_AddRefs(dirPath));
-        if (dirPath) {
-          rv = dirPath->Create(nsIFile::DIRECTORY_TYPE, 0777);
-          if (NS_SUCCEEDED(rv) || rv == NS_ERROR_FILE_ALREADY_EXISTS) {
-            file = _wfopen(mIconPath.get(), L"wb");
-            if (!file) {
-              rv = NS_ERROR_FAILURE;
-            }
-          }
-        }
-      }
-    }
-    if (!file) {
+    nsCOMPtr<nsIFile> comFile;
+    MOZ_TRY(NS_NewLocalFile(mIconPath, getter_AddRefs(comFile)));
+    nsCOMPtr<nsIFile> dirPath;
+    MOZ_TRY(comFile->GetParent(getter_AddRefs(dirPath)));
+    nsresult rv = dirPath->Create(nsIFile::DIRECTORY_TYPE, 0777);
+    if (NS_FAILED(rv) && rv != NS_ERROR_FILE_ALREADY_EXISTS) {
       return rv;
+    }
+    file = _wfopen(mIconPath.get(), L"wb");
+    if (!file) {
+      return NS_ERROR_FAILURE;
     }
   }
   nsresult rv = gfxUtils::EncodeSourceSurface(surface, ImageType::ICO, u""_ns,
@@ -1310,9 +1267,40 @@ LayoutDeviceIntRegion WinUtils::ConvertHRGNToRegion(HRGN aRgn) {
   return rgn;
 }
 
+/* static */
+nsAutoRegion WinUtils::RegionToHRGN(const LayoutDeviceIntRegion& aRegion) {
+  const uint32_t count = aRegion.GetNumRects();
+  const size_t regionBytes = count * sizeof(RECT);
+  const size_t regionDataBytes = sizeof(RGNDATAHEADER) + regionBytes;
+  // See:
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/ns-wingdi-rgndataheader
+  // https://learn.microsoft.com/en-us/windows/win32/api/wingdi/nf-wingdi-extcreateregion
+  auto buffer = MakeUnique<char[]>(regionDataBytes);
+  auto* data = reinterpret_cast<RGNDATA*>(buffer.get());
+  data->rdh.dwSize = sizeof(RGNDATAHEADER);
+  data->rdh.iType = RDH_RECTANGLES;
+  data->rdh.nCount = count;
+  data->rdh.nRgnSize = regionBytes;
+  data->rdh.rcBound = ToWinRect(aRegion.GetBounds());
+  RECT* buf = (RECT*)data->Buffer;
+  for (auto iter = aRegion.RectIter(); !iter.Done(); iter.Next()) {
+    *buf++ = ToWinRect(iter.Get());
+  }
+  return nsAutoRegion(::ExtCreateRegion(nullptr, regionDataBytes, data));
+}
+
 LayoutDeviceIntRect WinUtils::ToIntRect(const RECT& aRect) {
   return LayoutDeviceIntRect(aRect.left, aRect.top, aRect.right - aRect.left,
                              aRect.bottom - aRect.top);
+}
+
+RECT WinUtils::ToWinRect(const LayoutDeviceIntRect& aRect) {
+  return {
+      .left = aRect.x,
+      .top = aRect.y,
+      .right = aRect.XMost(),
+      .bottom = aRect.YMost(),
+  };
 }
 
 /* static */
@@ -1338,14 +1326,14 @@ void WinUtils::SetupKeyModifiersSequence(nsTArray<KeyPair>* aArray,
           KeyPair(VK_CONTROL, VK_LCONTROL, ScanCode::eControlLeft));
       aArray->AppendElement(KeyPair(VK_MENU, VK_RMENU, ScanCode::eAltRight));
     }
-    for (uint32_t i = ArrayLength(sModifierKeyMap); i; --i) {
+    for (uint32_t i = std::size(sModifierKeyMap); i; --i) {
       const uint32_t* map = sModifierKeyMap[i - 1];
       if (aModifiers & map[0]) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
       }
     }
   } else {
-    for (uint32_t i = 0; i < ArrayLength(sModifierKeyMap); ++i) {
+    for (uint32_t i = 0; i < std::size(sModifierKeyMap); ++i) {
       const uint32_t* map = sModifierKeyMap[i];
       if (aModifiers & map[0]) {
         aArray->AppendElement(KeyPair(map[1], map[2], map[3]));
@@ -1560,9 +1548,8 @@ static bool IsTabletDevice() {
   // Guarantees that:
   // - The device has a touch screen.
   // - It is used as a tablet which means that it has no keyboard connected.
-  // On Windows 10 it means that it is verifying with ConvertibleSlateMode.
 
-  if (WindowsUIUtils::GetInTabletMode()) {
+  if (WindowsUIUtils::GetInWin10TabletMode()) {
     return true;
   }
 
@@ -1592,7 +1579,7 @@ static bool IsTabletDevice() {
   return false;
 }
 
-static bool SystemHasMouse() {
+bool WinUtils::SystemHasMouse() {
   // As per MSDN, this value is rarely false because of virtual mice, and
   // some machines report the existance of a mouse port as a mouse.
   //
@@ -1619,13 +1606,13 @@ PointerCapabilities WinUtils::GetPrimaryPointerCapabilities() {
   return PointerCapabilities::None;
 }
 
-static bool SystemHasTouchscreen() {
+bool WinUtils::SystemHasTouch() {
   int digitizerMetrics = ::GetSystemMetrics(SM_DIGITIZER);
   return (digitizerMetrics & NID_INTEGRATED_TOUCH) ||
          (digitizerMetrics & NID_EXTERNAL_TOUCH);
 }
 
-static bool SystemHasPenDigitizer() {
+bool WinUtils::SystemHasPen() {
   int digitizerMetrics = ::GetSystemMetrics(SM_DIGITIZER);
   return (digitizerMetrics & NID_INTEGRATED_PEN) ||
          (digitizerMetrics & NID_EXTERNAL_PEN);
@@ -1635,11 +1622,11 @@ static bool SystemHasPenDigitizer() {
 PointerCapabilities WinUtils::GetAllPointerCapabilities() {
   PointerCapabilities pointerCapabilities = PointerCapabilities::None;
 
-  if (SystemHasTouchscreen()) {
+  if (SystemHasTouch()) {
     pointerCapabilities |= PointerCapabilities::Coarse;
   }
 
-  if (SystemHasPenDigitizer() || SystemHasMouse()) {
+  if (SystemHasPen() || SystemHasMouse()) {
     pointerCapabilities |=
         PointerCapabilities::Fine | PointerCapabilities::Hover;
   }
@@ -1647,38 +1634,13 @@ PointerCapabilities WinUtils::GetAllPointerCapabilities() {
   return pointerCapabilities;
 }
 
-void WinUtils::GetPointerExplanation(nsAString* aExplanation) {
-  // To support localization, we will return a comma-separated list of
-  // Fluent IDs
-  *aExplanation = u"pointing-device-none";
-
-  bool first = true;
-  auto append = [&](const char16_t* str) {
-    if (first) {
-      aExplanation->Truncate();
-      first = false;
-    } else {
-      aExplanation->Append(u",");
-    }
-    aExplanation->Append(str);
-  };
-
-  if (SystemHasTouchscreen()) {
-    append(u"pointing-device-touchscreen");
-  }
-
-  if (SystemHasPenDigitizer()) {
-    append(u"pointing-device-pen-digitizer");
-  }
-
-  if (SystemHasMouse()) {
-    append(u"pointing-device-mouse");
-  }
-}
-
 /* static */
 bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
-  LOG_D("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str());
+  static mozilla::LazyLogModule sNTFSLog("NTFS");
+
+  MOZ_LOG(
+      sNTFSLog, LogLevel::Debug,
+      ("ResolveJunctionPointsAndSymLinks: Resolving path: %S", aPath.c_str()));
 
   wchar_t path[MAX_PATH] = {0};
 
@@ -1687,15 +1649,18 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
       nullptr, OPEN_EXISTING, FILE_FLAG_BACKUP_SEMANTICS, nullptr));
 
   if (handle == INVALID_HANDLE_VALUE) {
-    LOG_E("Failed to open file handle to resolve path. GetLastError=%lu",
-          GetLastError());
+    MOZ_LOG(sNTFSLog, LogLevel::Error,
+            ("Failed to open file handle to resolve path. GetLastError=%lu",
+             GetLastError()));
     return false;
   }
 
   DWORD pathLen = GetFinalPathNameByHandleW(
       handle, path, MAX_PATH, FILE_NAME_NORMALIZED | VOLUME_NAME_DOS);
   if (pathLen == 0 || pathLen >= MAX_PATH) {
-    LOG_E("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError());
+    MOZ_LOG(
+        sNTFSLog, LogLevel::Error,
+        ("GetFinalPathNameByHandleW failed. GetLastError=%lu", GetLastError()));
     return false;
   }
   aPath = path;
@@ -1709,8 +1674,9 @@ bool WinUtils::ResolveJunctionPointsAndSymLinks(std::wstring& aPath) {
     aPath.erase(0, 4);
   }
 
-  LOG_D("ResolveJunctionPointsAndSymLinks: Resolved path to: %S",
-        aPath.c_str());
+  MOZ_LOG(sNTFSLog, LogLevel::Debug,
+          ("ResolveJunctionPointsAndSymLinks: Resolved path to: %S",
+           aPath.c_str()));
   return true;
 }
 
@@ -1774,8 +1740,8 @@ bool WinUtils::MakeLongPath(nsAString& aPath) {
   wchar_t tempPath[MAX_PATH + 1];
   DWORD longResult =
       GetLongPathNameW((char16ptr_t)PromiseFlatString(aPath).get(), tempPath,
-                       ArrayLength(tempPath));
-  if (longResult > ArrayLength(tempPath)) {
+                       std::size(tempPath));
+  if (longResult > std::size(tempPath)) {
     // Our buffer is too short, and we're guaranteeing <= MAX_PATH results.
     return false;
   } else if (longResult) {
@@ -1794,7 +1760,7 @@ bool WinUtils::UnexpandEnvVars(nsAString& aPath) {
   // PathUnExpandEnvStringsW returns false if it doesn't make any
   // substitutions. Silently continue using the unaltered path.
   if (PathUnExpandEnvStringsW((char16ptr_t)PromiseFlatString(aPath).get(),
-                              tempPath, ArrayLength(tempPath))) {
+                              tempPath, std::size(tempPath))) {
     aPath = tempPath;
     MOZ_ASSERT(aPath.Length() <= MAX_PATH);
   }
@@ -2038,6 +2004,45 @@ bool WinUtils::GetTimezoneName(wchar_t* aBuffer) {
   return true;
 }
 
+static constexpr nsLiteralCString kMicaPrefs[] = {
+    "widget.windows.mica"_ns,
+    "widget.windows.mica.popups"_ns,
+};
+
+static BOOL CALLBACK UpdateMicaInHwnd(HWND aHwnd, LPARAM aLParam) {
+  if (RefPtr<nsWindow> win = WinUtils::GetNSWindowPtr(aHwnd)) {
+    win->UpdateMicaBackdrop(/* aForce = */ true);
+  }
+  return TRUE;
+}
+
+static void UpdateMicaInAllWindows(const char*, void*) {
+  ::EnumWindows(&UpdateMicaInHwnd, 0);
+  LookAndFeel::NotifyChangedAllWindows(
+      widget::ThemeChangeKind::MediaQueriesOnly);
+}
+
+bool WinUtils::MicaAvailable() {
+  static bool sAvailable = [] {
+    if (!IsWin1122H2OrLater()) {
+      return false;
+    }
+    for (const auto& pref : kMicaPrefs) {
+      Preferences::RegisterCallback(UpdateMicaInAllWindows, pref);
+    }
+    return true;
+  }();
+  return sAvailable;
+}
+
+bool WinUtils::MicaEnabled() {
+  return MicaAvailable() && StaticPrefs::widget_windows_mica();
+}
+
+bool WinUtils::MicaPopupsEnabled() {
+  return MicaAvailable() && StaticPrefs::widget_windows_mica_popups();
+}
+
 // There are undocumented APIs to query/change the system DPI settings found by
 // https://github.com/lihas/ . We use those APIs only for testing purpose, i.e.
 // in mochitests or some such. To avoid exposing them in our official release
@@ -2196,6 +2201,23 @@ const char* WinUtils::WinEventToEventName(UINT msg) {
              : nullptr;
 }
 
+nsresult WinUtils::GetProcessImageName(DWORD aProcessId, nsAString& aName) {
+  nsAutoHandle procHandle(
+      ::OpenProcess(PROCESS_QUERY_INFORMATION, FALSE, aProcessId));
+  if (!procHandle) {
+    return NS_ERROR_NOT_AVAILABLE;
+  }
+
+  wchar_t path[MAX_PATH] = {L'\0'};
+  auto len = ::GetProcessImageFileNameW(procHandle, path, std::size(path));
+  if (!len) {
+    return NS_ERROR_FAILURE;
+  }
+
+  aName = path;
+  return NS_OK;
+}
+
 // Note to testers and/or test-authors: on Windows 10, and possibly on other
 // versions as well, supplying the `WS_EX_LAYOUTRTL` flag here has no effect
 // whatsoever on child common-dialogs **unless the system UI locale is also set
@@ -2229,5 +2251,4 @@ ScopedRtlShimWindow::~ScopedRtlShimWindow() {
   }
 }
 
-}  // namespace widget
-}  // namespace mozilla
+}  // namespace mozilla::widget

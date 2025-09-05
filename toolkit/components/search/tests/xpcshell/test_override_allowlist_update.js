@@ -19,7 +19,7 @@ const EXTENSION_ID = "test@thirdparty.example.com";
 const allowlist = [
   {
     thirdPartyId: EXTENSION_ID,
-    overridesId: "simple@search.mozilla.org",
+    overridesAppIdv2: "simple",
     urls: [
       {
         search_url: INITIAL_SEARCH_ENGINE_URL,
@@ -32,7 +32,13 @@ let extension;
 let extensionInfo;
 
 add_setup(async function () {
-  await SearchTestUtils.useTestEngines("simple-engines");
+  SearchTestUtils.setRemoteSettingsConfig([
+    { identifier: "originalDefault" },
+    {
+      identifier: "simple",
+      base: { name: ENGINE_NAME },
+    },
+  ]);
   await SearchTestUtils.initXPCShellAddonManager();
   await Services.search.init();
 
@@ -61,6 +67,7 @@ add_setup(async function () {
 
   registerCleanupFunction(async () => {
     await extension.unload();
+    sinon.restore();
   });
 
   const settings = await RemoteSettings(SearchUtils.SETTINGS_ALLOWLIST_KEY);

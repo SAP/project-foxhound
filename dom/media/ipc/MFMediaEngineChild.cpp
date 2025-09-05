@@ -121,7 +121,7 @@ RefPtr<GenericNonExclusivePromise> MFMediaEngineChild::Init(
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvRequestSample(TrackType aType,
                                                               bool aIsEnough) {
   AssertOnManagerThread();
-  if (!mOwner) {
+  if (!mOwner || mShutdown) {
     return IPC_OK();
   }
   if (aType == TrackType::kVideoTrack) {
@@ -137,6 +137,9 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvRequestSample(TrackType aType,
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvUpdateCurrentTime(
     double aCurrentTimeInSecond) {
   AssertOnManagerThread();
+  if (mShutdown) {
+    return IPC_OK();
+  }
   if (mOwner) {
     mOwner->UpdateCurrentTime(aCurrentTimeInSecond);
   }
@@ -146,6 +149,9 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvUpdateCurrentTime(
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvNotifyEvent(
     MFMediaEngineEvent aEvent) {
   AssertOnManagerThread();
+  if (mShutdown) {
+    return IPC_OK();
+  }
   switch (aEvent) {
     case MF_MEDIA_ENGINE_EVENT_FIRSTFRAMEREADY:
       mOwner->NotifyEvent(ExternalEngineEvent::LoadedFirstFrame);
@@ -183,6 +189,9 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvNotifyEvent(
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvNotifyError(
     const MediaResult& aError) {
   AssertOnManagerThread();
+  if (mShutdown) {
+    return IPC_OK();
+  }
   mOwner->NotifyError(aError);
   return IPC_OK();
 }
@@ -209,6 +218,10 @@ mozilla::ipc::IPCResult MFMediaEngineChild::RecvUpdateStatisticData(
 
 mozilla::ipc::IPCResult MFMediaEngineChild::RecvNotifyResizing(
     uint32_t aWidth, uint32_t aHeight) {
+  AssertOnManagerThread();
+  if (mShutdown) {
+    return IPC_OK();
+  }
   mOwner->NotifyResizing(aWidth, aHeight);
   return IPC_OK();
 }
@@ -359,7 +372,9 @@ bool MFMediaEngineWrapper::SetCDMProxy(CDMProxy* aProxy) {
   MOZ_ASSERT(IsInited());
   Unused << ManagerThread()->Dispatch(NS_NewRunnableFunction(
       "MFMediaEngineWrapper::SetCDMProxy",
-      [engine = mEngine, proxyId] { engine->SendSetCDMProxyId(proxyId); }));
+      [engine = mEngine, proxy = RefPtr{aProxy}, proxyId] {
+        engine->SendSetCDMProxyId(proxyId);
+      }));
   return true;
 #else
   return false;
@@ -390,6 +405,7 @@ void MFMediaEngineWrapper::NotifyError(const MediaResult& aError) {
 }
 
 void MFMediaEngineWrapper::NotifyResizing(uint32_t aWidth, uint32_t aHeight) {
+  AssertOnManagerThread();
   WLOG("Video resizing, new size [%u,%u]", aWidth, aHeight);
   mOwner->NotifyResizing(aWidth, aHeight);
 }

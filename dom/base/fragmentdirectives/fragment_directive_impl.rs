@@ -143,7 +143,7 @@ impl TextDirective {
     /// that originates from a fragment directive.
     ///
     /// `text_fragment` is supposed to have this format:
-    /// ```
+    /// ```ignore
     /// text=[prefix-,]start[,end][,-suffix]
     /// ```
     /// This function returns `None` if `text_fragment`
@@ -281,11 +281,7 @@ pub fn parse_fragment_directive_and_remove_it_from_hash(
     if let Some(fragment_directive) = fragment_directive_iter.next() {
         if fragment_directive_iter.next().is_some() {
             // There are multiple occurrences of `:~:`, which is not allowed.
-            return Some((
-                hash_without_fragment_directive,
-                fragment_directive,
-                vec![],
-            ));
+            return Some((hash_without_fragment_directive, fragment_directive, vec![]));
         }
         // - fragments are separated by `&`.
         // - if a fragment does not start with `text=`, it is not a text directive and will be ignored.

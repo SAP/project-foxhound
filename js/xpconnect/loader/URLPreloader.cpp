@@ -338,7 +338,7 @@ Result<Ok, nsresult> URLPreloader::ReadCache(
                               "Entry should be in pendingURLs");
         MOZ_DIAGNOSTIC_ASSERT(key.mPath.Length() > 0,
                               "Path should be non-empty");
-        MOZ_DIAGNOSTIC_ASSERT(false, "Entry should be new and not in any list");
+        MOZ_DIAGNOSTIC_CRASH("Entry should be new and not in any list");
 #endif
         return Err(NS_ERROR_UNEXPECTED);
       }
@@ -402,7 +402,7 @@ void URLPreloader::BackgroundReadFiles() {
             entry->TypeString(), entry->mPath.get());
       }
 
-      auto item = zip->GetItem(entry->mPath.get());
+      auto item = zip->GetItem(entry->mPath);
       if (!item) {
         entry->mResultCode = NS_ERROR_FILE_NOT_FOUND;
         continue;
@@ -567,7 +567,7 @@ Result<nsCString, nsresult> URLPreloader::ReadURIInternal(nsIURI* uri,
   }
 
   // Not an Omnijar archive, so just read it directly.
-  FileLocation location(zip, PromiseFlatCString(path).BeginReading());
+  FileLocation location(zip, path);
   return URLEntry::ReadLocation(location);
 }
 
@@ -630,13 +630,13 @@ size_t URLPreloader::ShallowSizeOfIncludingThis(
 Result<FileLocation, nsresult> URLPreloader::CacheKey::ToFileLocation() {
   if (mType == TypeFile) {
     nsCOMPtr<nsIFile> file;
-    MOZ_TRY(NS_NewLocalFile(NS_ConvertUTF8toUTF16(mPath), false,
-                            getter_AddRefs(file)));
+    MOZ_TRY(
+        NS_NewLocalFile(NS_ConvertUTF8toUTF16(mPath), getter_AddRefs(file)));
     return FileLocation(file);
   }
 
   RefPtr<nsZipArchive> zip = Archive();
-  return FileLocation(zip, mPath.get());
+  return FileLocation(zip, mPath);
 }
 
 Result<nsCString, nsresult> URLPreloader::URLEntry::Read() {

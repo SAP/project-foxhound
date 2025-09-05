@@ -11,4 +11,5 @@ DIRS += [
     "report-site-issue",
     "pictureinpicture",
     "search-detection",
+    "newtab",
 ]

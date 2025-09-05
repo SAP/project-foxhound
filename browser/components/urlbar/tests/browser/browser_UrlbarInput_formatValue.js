@@ -40,6 +40,9 @@ async function testVal(urlFormatString, clobberedURLString = null) {
 }
 
 add_task(async function () {
+  await SpecialPowers.pushPrefEnv({
+    set: [["browser.urlbar.scotchBonnet.enableOverride", false]],
+  });
   const PREF_FORMATTING = "browser.urlbar.formatting.enabled";
   const PREF_TRIM_HTTPS = "browser.urlbar.trimHttps";
 
@@ -113,10 +116,6 @@ add_task(async function () {
 
   let IPs = [
     "192.168.1.1",
-    "[::]",
-    "[::1]",
-    "[1::]",
-    "[::]",
     "[::1]",
     "[1::]",
     "[1:2:3:4:5:6:7::]",

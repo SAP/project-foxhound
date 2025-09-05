@@ -77,8 +77,7 @@ NS_IMPL_CYCLE_COLLECTION_UNLINK_BEGIN(AbstractRange)
   // This may introduce additional overhead which is not needed when unlinking,
   // therefore this is done here beforehand.
   if (tmp->mRegisteredClosestCommonInclusiveAncestor) {
-    tmp->UnregisterClosestCommonInclusiveAncestor(
-        tmp->mRegisteredClosestCommonInclusiveAncestor, true);
+    tmp->UnregisterClosestCommonInclusiveAncestor(true);
   }
   MOZ_DIAGNOSTIC_ASSERT(!tmp->isInList(),
                         "Shouldn't be registered now that we're unlinking");
@@ -315,7 +314,7 @@ nsresult AbstractRange::SetStartAndEndInternal(
   }
 
   nsINode* newStartRoot =
-      RangeUtils::ComputeRootNode(aStartBoundary.Container());
+      RangeUtils::ComputeRootNode(aStartBoundary.GetContainer());
   if (!newStartRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -323,7 +322,7 @@ nsresult AbstractRange::SetStartAndEndInternal(
     return NS_ERROR_DOM_INDEX_SIZE_ERR;
   }
 
-  if (aStartBoundary.Container() == aEndBoundary.Container()) {
+  if (aStartBoundary.GetContainer() == aEndBoundary.GetContainer()) {
     if (!aEndBoundary.IsSetAndValid()) {
       return NS_ERROR_DOM_INDEX_SIZE_ERR;
     }
@@ -341,7 +340,8 @@ nsresult AbstractRange::SetStartAndEndInternal(
     return NS_OK;
   }
 
-  nsINode* newEndRoot = RangeUtils::ComputeRootNode(aEndBoundary.Container());
+  nsINode* newEndRoot =
+      RangeUtils::ComputeRootNode(aEndBoundary.GetContainer());
   if (!newEndRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -421,8 +421,7 @@ const nsTArray<WeakPtr<Selection>>& AbstractRange::GetSelections() const {
 void AbstractRange::UnregisterSelection(const Selection& aSelection) {
   mSelections.RemoveElement(&aSelection);
   if (mSelections.IsEmpty() && mRegisteredClosestCommonInclusiveAncestor) {
-    UnregisterClosestCommonInclusiveAncestor(
-        mRegisteredClosestCommonInclusiveAncestor, false);
+    UnregisterClosestCommonInclusiveAncestor();
     MOZ_DIAGNOSTIC_ASSERT(
         !mRegisteredClosestCommonInclusiveAncestor,
         "How can we have a registered common ancestor when we "
@@ -456,17 +455,17 @@ void AbstractRange::RegisterClosestCommonInclusiveAncestor(nsINode* aNode) {
 }
 
 void AbstractRange::UnregisterClosestCommonInclusiveAncestor(
-    nsINode* aNode, bool aIsUnlinking) {
-  MOZ_ASSERT(aNode, "bad arg");
-  NS_ASSERTION(aNode->IsClosestCommonInclusiveAncestorForRangeInSelection(),
-               "wrong node");
-  MOZ_DIAGNOSTIC_ASSERT(aNode == mRegisteredClosestCommonInclusiveAncestor,
-                        "wrong node");
-  LinkedList<AbstractRange>* ranges =
-      aNode->GetExistingClosestCommonInclusiveAncestorRanges();
-  MOZ_ASSERT(ranges);
-
+    bool aIsUnlinking) {
+  if (!mRegisteredClosestCommonInclusiveAncestor) {
+    return;
+  }
+  nsCOMPtr oldClosestCommonInclusiveAncestor =
+      mRegisteredClosestCommonInclusiveAncestor;
   mRegisteredClosestCommonInclusiveAncestor = nullptr;
+  LinkedList<AbstractRange>* ranges =
+      oldClosestCommonInclusiveAncestor
+          ->GetExistingClosestCommonInclusiveAncestorRanges();
+  MOZ_ASSERT(ranges);
 
 #ifdef DEBUG
   bool found = false;
@@ -485,9 +484,11 @@ void AbstractRange::UnregisterClosestCommonInclusiveAncestor(
   // We don't want to waste time unmarking flags on nodes that are
   // being unlinked anyway.
   if (!aIsUnlinking && ranges->isEmpty()) {
-    aNode->ClearClosestCommonInclusiveAncestorForRangeInSelection();
-    UnmarkDescendants(*aNode);
+    oldClosestCommonInclusiveAncestor
+        ->ClearClosestCommonInclusiveAncestorForRangeInSelection();
+    UnmarkDescendants(*oldClosestCommonInclusiveAncestor);
   }
+  oldClosestCommonInclusiveAncestor = nullptr;
 }
 
 void AbstractRange::UpdateCommonAncestorIfNecessary() {
@@ -495,9 +496,8 @@ void AbstractRange::UpdateCommonAncestorIfNecessary() {
   nsINode* newCommonAncestor =
       GetClosestCommonInclusiveAncestor(AllowRangeCrossShadowBoundary::Yes);
   if (newCommonAncestor != oldCommonAncestor) {
-    if (oldCommonAncestor) {
-      UnregisterClosestCommonInclusiveAncestor(oldCommonAncestor, false);
-    }
+    UnregisterClosestCommonInclusiveAncestor();
+
     if (newCommonAncestor) {
       RegisterClosestCommonInclusiveAncestor(newCommonAncestor);
     } else {
@@ -539,13 +539,13 @@ nsIContent* AbstractRange::GetMayCrossShadowBoundaryChildAtEndOffset() const {
 nsINode* AbstractRange::GetMayCrossShadowBoundaryStartContainer() const {
   return IsDynamicRange()
              ? AsDynamicRange()->GetMayCrossShadowBoundaryStartContainer()
-             : mStart.Container();
+             : mStart.GetContainer();
 }
 
 nsINode* AbstractRange::GetMayCrossShadowBoundaryEndContainer() const {
   return IsDynamicRange()
              ? AsDynamicRange()->GetMayCrossShadowBoundaryEndContainer()
-             : mEnd.Container();
+             : mEnd.GetContainer();
 }
 
 bool AbstractRange::MayCrossShadowBoundary() const {

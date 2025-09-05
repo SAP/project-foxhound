@@ -1,5 +1,5 @@
 // META: title=test WebNN API softplus operation
-// META: global=window,dedicatedworker
+// META: global=window
 // META: variant=?cpu
 // META: variant=?gpu
 // META: variant=?npu
@@ -13,14 +13,6 @@
 // the expression ln(1 + exp(x)).
 //
 // MLOperand softplus(MLOperand input);
-
-
-const getSoftplusPrecisionTolerance = (graphResources) => {
-  const toleranceValueDict = {float32: 18, float16: 18};
-  const expectedDataType =
-      getExpectedDataTypeOfSingleOutput(graphResources.expectedOutputs);
-  return {metricType: 'ULP', value: toleranceValueDict[expectedDataType]};
-};
 
 const softplusTests = [
   {
@@ -38,7 +30,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'},
+          'descriptor': {shape: [24], dataType: 'float32'},
           'constant': true
         }
       },
@@ -59,7 +51,29 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
+        }
+      }
+    }
+  },
+  {
+    'name': 'softplus float32 0D tensor',
+    'graph': {
+      'inputs': {
+        'softplusInput': {
+          'data': [5.626614570617676],
+          'descriptor': {shape: [], dataType: 'float32'}
+        }
+      },
+      'operators': [{
+        'name': 'softplus',
+        'arguments': [{'input': 'softplusInput'}],
+        'outputs': 'softplusOutput'
+      }],
+      'expectedOutputs': {
+        'softplusOutput': {
+          'data': [5.630208969116211],
+          'descriptor': {shape: [], dataType: 'float32'}
         }
       }
     }
@@ -79,7 +93,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -99,7 +113,7 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [24], 'dataType': 'float32'}
+          'descriptor': {shape: [24], dataType: 'float32'}
         }
       }
     }
@@ -119,7 +133,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -139,7 +153,7 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [4, 6], 'dataType': 'float32'}
+          'descriptor': {shape: [4, 6], dataType: 'float32'}
         }
       }
     }
@@ -159,7 +173,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -179,7 +193,7 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [2, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -199,7 +213,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [1, 2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -219,7 +233,7 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [1, 2, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -239,7 +253,7 @@ const softplusTests = [
             5.517927169799805,   7.192322254180908, 8.764925003051758,
             1.373470425605774,   8.930668830871582, 8.660283088684082
           ],
-          'descriptor': {'dimensions': [1, 2, 1, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 1, 3, 4], dataType: 'float32'}
         }
       },
       'operators': [{
@@ -259,7 +273,7 @@ const softplusTests = [
             5.521933078765869,  7.1930742263793945, 8.765081405639648,
             1.5991919040679932, 8.930801391601562,  8.660456657409668
           ],
-          'descriptor': {'dimensions': [1, 2, 1, 3, 4], 'dataType': 'float32'}
+          'descriptor': {shape: [1, 2, 1, 3, 4], dataType: 'float32'}
         }
       }
     }
@@ -268,8 +282,7 @@ const softplusTests = [
 
 if (navigator.ml) {
   softplusTests.forEach((test) => {
-    webnn_conformance_test(
-        buildGraphAndCompute, getSoftplusPrecisionTolerance, test);
+    webnn_conformance_test(buildAndExecuteGraph, getPrecisionTolerance, test);
   });
 } else {
   test(() => assert_implements(navigator.ml, 'missing navigator.ml'));

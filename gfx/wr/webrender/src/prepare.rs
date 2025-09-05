@@ -12,7 +12,7 @@ use api::units::*;
 use euclid::Scale;
 use smallvec::SmallVec;
 use crate::composite::CompositorSurfaceKind;
-use crate::command_buffer::{PrimitiveCommand, CommandBufferIndex};
+use crate::command_buffer::{CommandBufferIndex, PrimitiveCommand};
 use crate::image_tiling::{self, Repetition};
 use crate::border::{get_max_scale_for_border, build_border_instances};
 use crate::clip::{ClipStore, ClipNodeRange};
@@ -23,7 +23,7 @@ use crate::frame_builder::{FrameBuildingContext, FrameBuildingState, PictureCont
 use crate::gpu_cache::{GpuCacheHandle, GpuDataRequest};
 use crate::gpu_types::BrushFlags;
 use crate::internal_types::{FastHashMap, PlaneSplitAnchor, Filter};
-use crate::picture::{PicturePrimitive, SliceId, ClusterFlags, PictureCompositeMode};
+use crate::picture::{ClusterFlags, PictureCompositeMode, PicturePrimitive, SliceId};
 use crate::picture::{PrimitiveList, PrimitiveCluster, SurfaceIndex, TileCacheInstance, SubpixelMode, Picture3DContext};
 use crate::prim_store::line_dec::MAX_LINE_DECORATION_RESOLUTION;
 use crate::prim_store::*;
@@ -33,7 +33,7 @@ use crate::render_backend::DataStores;
 use crate::render_task_graph::RenderTaskId;
 use crate::render_task_cache::RenderTaskCacheKeyKind;
 use crate::render_task_cache::{RenderTaskCacheKey, to_cache_size, RenderTaskParent};
-use crate::render_task::{RenderTaskKind, RenderTask, SubPass, MaskSubPass, EmptyTask};
+use crate::render_task::{EmptyTask, MaskSubPass, RenderTask, RenderTaskKind, SubPass};
 use crate::segment::SegmentBuilder;
 use crate::util::{clamp_to_scale_factor, pack_as_float, ScaleOffset};
 use crate::visibility::{compute_conservative_visible_rect, PrimitiveVisibility, VisibilityState};
@@ -43,7 +43,66 @@ const MAX_MASK_SIZE: i32 = 4096;
 
 const MIN_BRUSH_SPLIT_AREA: f32 = 128.0 * 128.0;
 
-pub fn prepare_primitives(
+/// The entry point of the preapre pass.
+pub fn prepare_picture(
+    pic_index: PictureIndex,
+    store: &mut PrimitiveStore,
+    surface_index: Option<SurfaceIndex>,
+    subpixel_mode: SubpixelMode,
+    frame_context: &FrameBuildingContext,
+    frame_state: &mut FrameBuildingState,
+    data_stores: &mut DataStores,
+    scratch: &mut PrimitiveScratchBuffer,
+    tile_caches: &mut FastHashMap<SliceId, Box<TileCacheInstance>>,
+    prim_instances: &mut Vec<PrimitiveInstance>,
+) -> bool {
+    if frame_state.visited_pictures[pic_index.0] {
+        return true;
+    }
+
+    frame_state.visited_pictures[pic_index.0] = true;
+
+    let pic = &mut store.pictures[pic_index.0];
+    let Some((pic_context, mut pic_state, mut prim_list)) = pic.take_context(
+        pic_index,
+        surface_index,
+        subpixel_mode,
+        frame_state,
+        frame_context,
+        data_stores,
+        scratch,
+        tile_caches,
+    ) else {
+        return false;
+    };
+
+    prepare_primitives(
+        store,
+        &mut prim_list,
+        &pic_context,
+        &mut pic_state,
+        frame_context,
+        frame_state,
+        data_stores,
+        scratch,
+        tile_caches,
+        prim_instances,
+    );
+
+    // Restore the dependencies (borrow check dance)
+    store.pictures[pic_context.pic_index.0].restore_context(
+        pic_context.pic_index,
+        prim_list,
+        pic_context,
+        prim_instances,
+        frame_context,
+        frame_state,
+    );
+
+    true
+}
+
+fn prepare_primitives(
     store: &mut PrimitiveStore,
     prim_list: &mut PrimitiveList,
     pic_context: &PictureContext,
@@ -158,51 +217,25 @@ fn prepare_prim_for_render(
     // picture target, if being composited.
     let mut is_passthrough = false;
     if let PrimitiveInstanceKind::Picture { pic_index, .. } = prim_instances[prim_instance_index].kind {
-        let pic = &mut store.pictures[pic_index.0];
-
-        // TODO(gw): Plan to remove pictures with no composite mode, so that we don't need
-        //           to special case for pass through pictures.
-        is_passthrough = pic.composite_mode.is_none();
-
-        match pic.take_context(
+        if !prepare_picture(
             pic_index,
+            store,
             Some(pic_context.surface_index),
             pic_context.subpixel_mode,
-            frame_state,
             frame_context,
+            frame_state,
             data_stores,
             scratch,
             tile_caches,
+            prim_instances
         ) {
-            Some((pic_context_for_children, mut pic_state_for_children, mut prim_list)) => {
-                prepare_primitives(
-                    store,
-                    &mut prim_list,
-                    &pic_context_for_children,
-                    &mut pic_state_for_children,
-                    frame_context,
-                    frame_state,
-                    data_stores,
-                    scratch,
-                    tile_caches,
-                    prim_instances,
-                );
-
-                // Restore the dependencies (borrow check dance)
-                store.pictures[pic_context_for_children.pic_index.0]
-                    .restore_context(
-                        pic_context_for_children.pic_index,
-                        prim_list,
-                        pic_context_for_children,
-                        prim_instances,
-                        frame_context,
-                        frame_state,
-                    );
-            }
-            None => {
-                return;
-            }
+            return;
         }
+
+        is_passthrough = store
+            .pictures[pic_index.0]
+            .composite_mode
+            .is_none();
     }
 
     let prim_instance = &mut prim_instances[prim_instance_index];
@@ -271,6 +304,7 @@ fn prepare_prim_for_render(
                 &prim_rect.min,
                 cluster.spatial_node_index,
                 pic_context.raster_spatial_node_index,
+                pic_context.visibility_spatial_node_index,
                 pic_context,
                 pic_state,
                 frame_context,
@@ -321,8 +355,26 @@ fn prepare_interned_prim_for_render(
     let device_pixel_scale = frame_state.surfaces[pic_context.surface_index.0].device_pixel_scale;
 
     match &mut prim_instance.kind {
-        PrimitiveInstanceKind::BoxShadow { .. } => {
-            unreachable!("Native box shadow prims are not enabled yet");
+        PrimitiveInstanceKind::BoxShadow { data_handle } => {
+            let prim_data = &mut data_stores.box_shadow[*data_handle];
+
+            quad::prepare_quad(
+                prim_data,
+                &prim_data.kind.outer_shadow_rect,
+                prim_instance_index,
+                prim_spatial_node_index,
+                &prim_instance.vis.clip_chain,
+                device_pixel_scale,
+                frame_context,
+                pic_context,
+                targets,
+                &data_stores.clip,
+                frame_state,
+                pic_state,
+                scratch,
+            );
+
+            return;
         }
         PrimitiveInstanceKind::LineDecoration { data_handle, ref mut render_task, .. } => {
             profile_scope!("LineDecoration");
@@ -385,18 +437,17 @@ fn prepare_interned_prim_for_render(
                 //           happens, we can use the cache handle immediately, and not need
                 //           to temporarily store it in the primitive instance.
                 *render_task = Some(frame_state.resource_cache.request_render_task(
-                    RenderTaskCacheKey {
+                    Some(RenderTaskCacheKey {
                         size: task_size,
                         kind: RenderTaskCacheKeyKind::LineDecoration(cache_key.clone()),
-                    },
+                    }),
+                    false,
+                    RenderTaskParent::Surface,
                     frame_state.gpu_cache,
                     &mut frame_state.frame_gpu_data.f32,
                     frame_state.rg_builder,
-                    None,
-                    false,
-                    RenderTaskParent::Surface,
                     &mut frame_state.surface_builder,
-                    |rg_builder, _| {
+                    &mut |rg_builder, _, _| {
                         rg_builder.add().init(RenderTask::new_dynamic(
                             task_size,
                             RenderTaskKind::new_line_decoration(
@@ -543,15 +594,14 @@ fn prepare_interned_prim_for_render(
                 };
 
                 handles.push(frame_state.resource_cache.request_render_task(
-                    cache_key,
+                    Some(cache_key),
+                    false,          // TODO(gw): We don't calculate opacity for borders yet!
+                    RenderTaskParent::Surface,
                     frame_state.gpu_cache,
                     &mut frame_state.frame_gpu_data.f32,
                     frame_state.rg_builder,
-                    None,
-                    false,          // TODO(gw): We don't calculate opacity for borders yet!
-                    RenderTaskParent::Surface,
                     &mut frame_state.surface_builder,
-                    |rg_builder, _| {
+                    &mut |rg_builder, _, _| {
                         rg_builder.add().init(RenderTask::new_dynamic(
                             cache_size,
                             RenderTaskKind::new_border_segment(
@@ -702,7 +752,7 @@ fn prepare_interned_prim_for_render(
                 &mut scratch.segments,
                 &mut scratch.segment_instances,
                 |request| {
-                    image_data.write_prim_gpu_blocks(request);
+                    image_data.write_prim_gpu_blocks(&image_instance.adjustment, request);
                 },
             );
         }
@@ -959,7 +1009,8 @@ fn prepare_interned_prim_for_render(
                     &mut frame_state.frame_gpu_data.f32,
                     prim_local_rect,
                     prim_instance.vis.clip_chain.local_clip_rect,
-                    &pattern,
+                    pattern.base_color,
+                    pattern.texture_input.task_id,
                     &[],
                     ScaleOffset::identity(),
                 );
@@ -1082,6 +1133,7 @@ fn prepare_interned_prim_for_render(
             ) {
                 if let Picture3DContext::In { root_data: None, plane_splitter_index, .. } = pic.context_3d {
                     let dirty_rect = frame_state.current_dirty_region().combined;
+                    let visibility_node = frame_state.current_dirty_region().visibility_spatial_node;
                     let splitter = &mut frame_state.plane_splitters[plane_splitter_index.0];
                     let surface_index = pic.raster_config.as_ref().unwrap().surface_index;
                     let surface = &frame_state.surfaces[surface_index.0];
@@ -1091,6 +1143,7 @@ fn prepare_interned_prim_for_render(
                         splitter,
                         frame_context.spatial_tree,
                         prim_spatial_node_index,
+                        visibility_node,
                         local_prim_rect,
                         &prim_instance.vis.clip_chain.local_clip_rect,
                         dirty_rect,
@@ -1189,6 +1242,7 @@ fn decompose_repeated_gradient(
         let visible_rect = compute_conservative_visible_rect(
             &prim_vis.clip_chain,
             frame_state.current_dirty_region().combined,
+            frame_state.current_dirty_region().visibility_spatial_node,
             prim_spatial_node_index,
             spatial_tree,
         );
@@ -1228,6 +1282,7 @@ fn update_clip_task_for_brush(
     prim_origin: &LayoutPoint,
     prim_spatial_node_index: SpatialNodeIndex,
     root_spatial_node_index: SpatialNodeIndex,
+    visibility_spatial_node_index: SpatialNodeIndex,
     pic_context: &PictureContext,
     pic_state: &mut PictureState,
     frame_context: &FrameBuildingContext,
@@ -1365,7 +1420,7 @@ fn update_clip_task_for_brush(
         );
         clip_mask_instances.push(clip_mask_kind);
     } else {
-        let dirty_world_rect = frame_state.current_dirty_region().combined;
+        let dirty_rect = frame_state.current_dirty_region().combined;
 
         for segment in segments {
             // Build a clip chain for the smaller segment rect. This will
@@ -1374,6 +1429,7 @@ fn update_clip_task_for_brush(
             frame_state.clip_store.set_active_clips_from_clip_chain(
                 &instance.vis.clip_chain,
                 prim_spatial_node_index,
+                visibility_spatial_node_index,
                 &frame_context.spatial_tree,
                 &data_stores.clip,
             );
@@ -1383,12 +1439,12 @@ fn update_clip_task_for_brush(
                 .build_clip_chain_instance(
                     segment.local_rect.translate(prim_origin.to_vector()),
                     &pic_state.map_local_to_pic,
-                    &pic_state.map_pic_to_world,
+                    &pic_state.map_pic_to_vis,
                     &frame_context.spatial_tree,
                     frame_state.gpu_cache,
                     frame_state.resource_cache,
                     device_pixel_scale,
-                    &dirty_world_rect,
+                    &dirty_rect,
                     &mut data_stores.clip,
                     frame_state.rg_builder,
                     false,
@@ -1416,6 +1472,7 @@ pub fn update_clip_task(
     prim_origin: &LayoutPoint,
     prim_spatial_node_index: SpatialNodeIndex,
     root_spatial_node_index: SpatialNodeIndex,
+    visibility_spatial_node_index: SpatialNodeIndex,
     pic_context: &PictureContext,
     pic_state: &mut PictureState,
     frame_context: &FrameBuildingContext,
@@ -1441,6 +1498,7 @@ pub fn update_clip_task(
         prim_origin,
         prim_spatial_node_index,
         root_spatial_node_index,
+        visibility_spatial_node_index,
         pic_context,
         pic_state,
         frame_context,

@@ -740,6 +740,24 @@ class WidgetEvent : public WidgetEventTime {
   inline bool IsReservedByChrome() const { return mFlags.IsReservedByChrome(); }
 
   /**
+   * Return true if the corresponding DOM event supports screen(X|Y), etc.
+   */
+  [[nodiscard]] inline bool DOMEventSupportsCoords() const {
+    switch (mClass) {
+      case eMouseEventClass:
+      case eMouseScrollEventClass:
+      case eWheelEventClass:
+      case eTouchEventClass:
+      case eDragEventClass:
+      case ePointerEventClass:
+      case eSimpleGestureEventClass:
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  /**
    * Utils for checking event types
    */
 
@@ -1020,6 +1038,12 @@ class WidgetEvent : public WidgetEventTime {
   }
 
   bool IsUserAction() const;
+
+  /**
+   * Return true if the event should be handled without (pointer) capturing
+   * element.
+   */
+  [[nodiscard]] bool ShouldIgnoreCapturingContent() const;
 };
 
 /******************************************************************************

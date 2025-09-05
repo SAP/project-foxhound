@@ -29,6 +29,8 @@ add_task(async function () {
 
   info("Clicking an empty line in the editor should unfocus the outline");
   await clickAtPos(dbg, { line: 13, column: 3 });
+  // Wait for the node to be unfocused
+  await waitFor(() => !getFocusedNode(dbg));
   is(getFocusedNode(dbg), null, "should not exist");
 });
 

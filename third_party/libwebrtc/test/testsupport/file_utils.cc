@@ -20,7 +20,6 @@
 #include <windows.h>
 
 #include <algorithm>
-#include <codecvt>
 #include <locale>
 
 #include "Shlwapi.h"
@@ -54,7 +53,7 @@
 
 #include "absl/strings/string_view.h"
 #include "rtc_base/checks.h"
-#include "rtc_base/helpers.h"
+#include "rtc_base/crypto_random.h"
 #include "rtc_base/string_utils.h"
 #include "rtc_base/strings/string_builder.h"
 #include "test/testsupport/file_utils_override.h"
@@ -98,8 +97,8 @@ std::string OutputPath() {
 std::string OutputPathWithRandomDirectory() {
   std::string path = webrtc::test::internal::OutputPath();
   std::string rand_dir = path + rtc::CreateRandomUuid();
-
-  return CreateDir(rand_dir) ? rand_dir + std::string(kPathDelimiter) : path;
+  RTC_CHECK(CreateDir(rand_dir)) << "Failed to create dir: " << rand_dir;
+  return rand_dir + std::string(kPathDelimiter);
 }
 
 std::string WorkingDir() {
@@ -139,9 +138,9 @@ std::string GenerateTempFilename(absl::string_view dir,
   return filename;
 }
 
-absl::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
+std::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
   if (path.length() == 0)
-    return absl::optional<std::vector<std::string>>();
+    return std::optional<std::vector<std::string>>();
 
   std::string path_str(path);
 
@@ -154,7 +153,7 @@ absl::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
   WIN32_FIND_DATAW data;
   HANDLE handle = ::FindFirstFileW(rtc::ToUtf16(path_str + '*').c_str(), &data);
   if (handle == INVALID_HANDLE_VALUE)
-    return absl::optional<std::vector<std::string>>();
+    return std::optional<std::vector<std::string>>();
 
   // Populate output.
   std::vector<std::string> found_entries;
@@ -175,7 +174,7 @@ absl::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
   // Init.
   DIR* dir = ::opendir(path_str.c_str());
   if (dir == nullptr)
-    return absl::optional<std::vector<std::string>>();
+    return std::optional<std::vector<std::string>>();
 
   // Populate output.
   std::vector<std::string> found_entries;
@@ -189,7 +188,7 @@ absl::optional<std::vector<std::string>> ReadDirectory(absl::string_view path) {
   closedir(dir);
 #endif
 
-  return absl::optional<std::vector<std::string>>(std::move(found_entries));
+  return std::optional<std::vector<std::string>>(std::move(found_entries));
 }
 
 bool CreateDir(absl::string_view directory_name) {

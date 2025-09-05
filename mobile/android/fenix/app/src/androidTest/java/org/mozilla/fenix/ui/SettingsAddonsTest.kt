@@ -13,7 +13,6 @@ import org.mozilla.fenix.helpers.AppAndSystemHelper.registerAndCleanupIdlingReso
 import org.mozilla.fenix.helpers.HomeActivityIntentTestRule
 import org.mozilla.fenix.helpers.RecyclerViewIdlingResource
 import org.mozilla.fenix.helpers.TestAssetHelper.getEnhancedTrackingProtectionAsset
-import org.mozilla.fenix.helpers.TestAssetHelper.waitingTimeLong
 import org.mozilla.fenix.helpers.TestHelper
 import org.mozilla.fenix.helpers.TestHelper.verifySnackBarText
 import org.mozilla.fenix.helpers.TestHelper.waitUntilSnackbarGone
@@ -62,6 +61,7 @@ class SettingsAddonsTest : TestSetup() {
                         1,
                     ),
                 ) {
+                    waitForAddonsListProgressBarToBeGone()
                     clickInstallAddon(addonName)
                 }
                 verifyAddonDownloadOverlay()
@@ -69,8 +69,7 @@ class SettingsAddonsTest : TestSetup() {
                 cancelInstallAddon()
                 clickInstallAddon(addonName)
                 acceptPermissionToInstallAddon()
-                verifyAddonInstallCompleted(addonName, activityTestRule)
-                verifyAddonInstallCompletedPrompt(addonName)
+                verifyAddonInstallCompletedPrompt(addonName, activityTestRule)
                 closeAddonInstallCompletePrompt()
                 verifyAddonIsInstalled(addonName)
                 verifyEnabledTitleDisplayed()
@@ -136,13 +135,12 @@ class SettingsAddonsTest : TestSetup() {
         val addonName = "uBlock Origin"
 
         addonsMenu {
-            installAddon(addonName, activityTestRule)
-            selectAllowInPrivateBrowsing()
+            installAddonInPrivateMode(addonName, activityTestRule)
             closeAddonInstallCompletePrompt()
         }.goBack {
         }.openContextMenuOnSponsoredShortcut("Top Articles") {
         }.openTopSiteInPrivateTab {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyPocketPageContent()
         }.openThreeDotMenu {
             openAddonsSubList()
             verifyAddonAvailableInMainMenu(addonName)
@@ -160,7 +158,7 @@ class SettingsAddonsTest : TestSetup() {
             closeAddonInstallCompletePrompt()
         }.goBack {
         }.openTopSiteTabWithTitle("Top Articles") {
-            waitForPageToLoad(pageLoadWaitingTime = waitingTimeLong)
+            verifyUrl("getpocket.com/explore")
         }.openThreeDotMenu {
             openAddonsSubList()
             verifyTrackersBlockedByUblock()

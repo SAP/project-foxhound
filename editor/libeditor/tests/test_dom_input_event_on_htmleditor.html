@@ -424,7 +424,7 @@ function runTests() {
           synthesizeKey("C", {shiftKey: true}, aWindow);
         },
         {
-          innerHTML: "<div>B</div><div>C<br></div>",
+          innerHTML: "<div>B</div><div>C</div>",
           beforeInputEvent: {
             cancelable: true,
             inputType: "insertText",
@@ -866,7 +866,7 @@ function runTests() {
           SpecialPowers.doCommand(aWindow, "cmd_deleteWordBackward");
         },
         {
-          innerHTML: "abc ",
+          innerHTML: "abc <br>",
           beforeInputEvent: {
             cancelable: true,
             inputType: "deleteWordBackward",

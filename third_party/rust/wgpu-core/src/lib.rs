@@ -6,11 +6,12 @@
 #![doc = document_features::document_features!()]
 //!
 
+#![no_std]
 // When we have no backends, we end up with a lot of dead or otherwise unreachable code.
 #![cfg_attr(
     all(
         not(all(feature = "vulkan", not(target_arch = "wasm32"))),
-        not(all(feature = "metal", any(target_os = "macos", target_os = "ios"))),
+        not(all(feature = "metal", any(target_vendor = "apple"))),
         not(all(feature = "dx12", windows)),
         not(feature = "gles"),
     ),
@@ -41,12 +42,29 @@
     rustdoc::private_intra_doc_links
 )]
 #![warn(
+    clippy::alloc_instead_of_core,
+    clippy::ptr_as_ptr,
+    clippy::std_instead_of_alloc,
+    clippy::std_instead_of_core,
     trivial_casts,
     trivial_numeric_casts,
     unsafe_op_in_unsafe_fn,
     unused_extern_crates,
     unused_qualifications
 )]
+// We use `Arc` in wgpu-core, but on wasm (unless opted out via `fragile-send-sync-non-atomic-wasm`)
+// wgpu-hal resources are not Send/Sync, causing a clippy warning for unnecessary `Arc`s.
+// We could use `Rc`s in this case as recommended, but unless atomics are enabled
+// this doesn't make a difference.
+// Therefore, this is only really a concern for users targeting WebGL
+// (the only reason to use wgpu-core on the web in the first place) that have atomics enabled.
+#![cfg_attr(not(send_sync), allow(clippy::arc_with_non_send_sync))]
+
+extern crate alloc;
+// TODO(https://github.com/gfx-rs/wgpu/issues/6826): this should be optional
+extern crate std;
+extern crate wgpu_hal as hal;
+extern crate wgpu_types as wgt;
 
 pub mod binding_model;
 pub mod command;
@@ -59,6 +77,8 @@ mod hash_utils;
 pub mod hub;
 pub mod id;
 pub mod identity;
+#[cfg(feature = "indirect-validation")]
+mod indirect_validation;
 mod init_tracker;
 pub mod instance;
 mod lock;
@@ -66,29 +86,37 @@ pub mod pipeline;
 mod pipeline_cache;
 mod pool;
 pub mod present;
+pub mod ray_tracing;
 pub mod registry;
 pub mod resource;
 mod snatch;
 pub mod storage;
 mod track;
-mod utils;
+mod weak_vec;
 // This is public for users who pre-compile shaders while still wanting to
 // preserve all run-time checks that `wgpu-core` does.
 // See <https://github.com/gfx-rs/wgpu/issues/3103>, after which this can be
 // made private again.
+mod scratch;
 pub mod validation;
+
+pub use validation::{map_storage_format_from_naga, map_storage_format_to_naga};
 
 pub use hal::{api, MAX_BIND_GROUPS, MAX_COLOR_ATTACHMENTS, MAX_VERTEX_BUFFERS};
 pub use naga;
 
-use std::{borrow::Cow, os::raw::c_char};
+use alloc::{
+    borrow::{Cow, ToOwned as _},
+    string::String,
+};
+use std::os::raw::c_char;
 
 pub(crate) use hash_utils::*;
 
 /// The index of a queue submission.
 ///
 /// These are the values stored in `Device::fence`.
-type SubmissionIndex = hal::FenceValue;
+pub type SubmissionIndex = hal::FenceValue;
 
 type Index = u32;
 type Epoch = u32;
@@ -106,10 +134,10 @@ impl<'a> LabelHelpers<'a> for Label<'a> {
             return None;
         }
 
-        self.as_ref().map(|cow| cow.as_ref())
+        self.as_deref()
     }
     fn to_string(&self) -> String {
-        self.as_ref().map(|cow| cow.to_string()).unwrap_or_default()
+        self.as_deref().map(str::to_owned).unwrap_or_default()
     }
 }
 
@@ -121,184 +149,26 @@ pub fn hal_label(opt: Option<&str>, flags: wgt::InstanceFlags) -> Option<&str> {
     opt
 }
 
-const DOWNLEVEL_WARNING_MESSAGE: &str = "The underlying API or device in use does not \
-support enough features to be a fully compliant implementation of WebGPU. A subset of the features can still be used. \
-If you are running this program on native and not in a browser and wish to limit the features you use to the supported subset, \
-call Adapter::downlevel_properties or Device::downlevel_properties to get a listing of the features the current \
-platform supports.";
-const DOWNLEVEL_ERROR_MESSAGE: &str = "This is not an invalid use of WebGPU: the underlying API or device does not \
-support enough features to be a fully compliant implementation. A subset of the features can still be used. \
-If you are running this program on native and not in a browser and wish to work around this issue, call \
-Adapter::downlevel_properties or Device::downlevel_properties to get a listing of the features the current \
-platform supports.";
+const DOWNLEVEL_WARNING_MESSAGE: &str = concat!(
+    "The underlying API or device in use does not ",
+    "support enough features to be a fully compliant implementation of WebGPU. ",
+    "A subset of the features can still be used. ",
+    "If you are running this program on native and not in a browser and wish to limit ",
+    "the features you use to the supported subset, ",
+    "call Adapter::downlevel_properties or Device::downlevel_properties to get ",
+    "a listing of the features the current ",
+    "platform supports."
+);
 
-// #[cfg] attributes in exported macros are interesting!
-//
-// The #[cfg] conditions in a macro's expansion are evaluated using the
-// configuration options (features, target architecture and os, etc.) in force
-// where the macro is *used*, not where it is *defined*. That is, if crate A
-// defines a macro like this:
-//
-//     #[macro_export]
-//     macro_rules! if_bleep {
-//         { } => {
-//             #[cfg(feature = "bleep")]
-//             bleep();
-//         }
-//     }
-//
-// and then crate B uses it like this:
-//
-//     fn f() {
-//         if_bleep! { }
-//     }
-//
-// then it is crate B's `"bleep"` feature, not crate A's, that determines
-// whether the macro expands to a function call or an empty statement. The
-// entire configuration predicate is evaluated in the use's context, not the
-// definition's.
-//
-// Since `wgpu-core` selects back ends using features, we need to make sure the
-// arms of the `gfx_select!` macro are pruned according to `wgpu-core`'s
-// features, not those of whatever crate happens to be using `gfx_select!`. This
-// means we can't use `#[cfg]` attributes in `gfx_select!`s definition itself.
-// Instead, for each backend, `gfx_select!` must use a macro whose definition is
-// selected by `#[cfg]` in `wgpu-core`. The configuration predicate is still
-// evaluated when the macro is used; we've just moved the `#[cfg]` into a macro
-// used by `wgpu-core` itself.
-
-/// Define an exported macro named `$public` that expands to an expression if
-/// the feature `$feature` is enabled, or to a panic otherwise.
-///
-/// This is used in the definition of `gfx_select!`, to dispatch the
-/// call to the appropriate backend, but panic if that backend was not
-/// compiled in.
-///
-/// For a call like this:
-///
-/// ```ignore
-/// define_backend_caller! { name, private, "feature" if cfg_condition }
-/// ```
-///
-/// define a macro `name`, used like this:
-///
-/// ```ignore
-/// name!(expr)
-/// ```
-///
-/// that expands to `expr` if `#[cfg(cfg_condition)]` is enabled, or a
-/// panic otherwise. The panic message complains that `"feature"` is
-/// not enabled.
-///
-/// Because of odd technical limitations on exporting macros expanded
-/// by other macros, you must supply both a public-facing name for the
-/// macro and a private name, `$private`, which is never used
-/// outside this macro. For details:
-/// <https://github.com/rust-lang/rust/pull/52234#issuecomment-976702997>
-macro_rules! define_backend_caller {
-    { $public:ident, $private:ident, $feature:literal if $cfg:meta } => {
-        #[cfg($cfg)]
-        #[macro_export]
-        macro_rules! $private {
-            ( $call:expr ) => ( $call )
-        }
-
-        #[cfg(not($cfg))]
-        #[macro_export]
-        macro_rules! $private {
-            ( $call:expr ) => (
-                panic!("Identifier refers to disabled backend feature {:?}", $feature)
-            )
-        }
-
-        // See note about rust-lang#52234 above.
-        #[doc(hidden)] pub use $private as $public;
-    }
-}
-
-// Define a macro for each `gfx_select!` match arm. For example,
-//
-//     gfx_if_vulkan!(expr)
-//
-// expands to `expr` if the `"vulkan"` feature is enabled, or to a panic
-// otherwise.
-define_backend_caller! { gfx_if_vulkan, gfx_if_vulkan_hidden, "vulkan" if all(feature = "vulkan", not(target_arch = "wasm32")) }
-define_backend_caller! { gfx_if_metal, gfx_if_metal_hidden, "metal" if all(feature = "metal", any(target_os = "macos", target_os = "ios")) }
-define_backend_caller! { gfx_if_dx12, gfx_if_dx12_hidden, "dx12" if all(feature = "dx12", windows) }
-define_backend_caller! { gfx_if_gles, gfx_if_gles_hidden, "gles" if feature = "gles" }
-define_backend_caller! { gfx_if_empty, gfx_if_empty_hidden, "empty" if all(
-    not(any(feature = "metal", feature = "vulkan", feature = "gles")),
-    any(target_os = "macos", target_os = "ios"),
-) }
-
-/// Dispatch on an [`Id`]'s backend to a backend-generic method.
-///
-/// Uses of this macro have the form:
-///
-/// ```ignore
-///
-///     gfx_select!(id => value.method(args...))
-///
-/// ```
-///
-/// This expands to an expression that calls `value.method::<A>(args...)` for
-/// the backend `A` selected by `id`. The expansion matches on `id.backend()`,
-/// with an arm for each backend type in [`wgpu_types::Backend`] which calls the
-/// specialization of `method` for the given backend. This allows resource
-/// identifiers to select backends dynamically, even though many `wgpu_core`
-/// methods are compiled and optimized for a specific back end.
-///
-/// This macro is typically used to call methods on [`wgpu_core::global::Global`],
-/// many of which take a single `hal::Api` type parameter. For example, to
-/// create a new buffer on the device indicated by `device_id`, one would say:
-///
-/// ```ignore
-/// gfx_select!(device_id => global.device_create_buffer(device_id, ...))
-/// ```
-///
-/// where the `device_create_buffer` method is defined like this:
-///
-/// ```ignore
-/// impl Global {
-///    pub fn device_create_buffer<A: HalApi>(&self, ...) -> ...
-///    { ... }
-/// }
-/// ```
-///
-/// That `gfx_select!` call uses `device_id`'s backend to select the right
-/// backend type `A` for a call to `Global::device_create_buffer<A>`.
-///
-/// However, there's nothing about this macro that is specific to `hub::Global`.
-/// For example, Firefox's embedding of `wgpu_core` defines its own types with
-/// methods that take `hal::Api` type parameters. Firefox uses `gfx_select!` to
-/// dynamically dispatch to the right specialization based on the resource's id.
-///
-/// [`wgpu_types::Backend`]: wgt::Backend
-/// [`wgpu_core::global::Global`]: crate::global::Global
-/// [`Id`]: id::Id
-#[macro_export]
-macro_rules! gfx_select {
-    // Simple two-component expression, like `self.0.method(..)`.
-    ($id:expr => $c0:ident.$c1:tt.$method:ident $params:tt) => {
-        $crate::gfx_select!($id => {$c0.$c1}, $method $params)
-    };
-
-    // Simple identifier-only expression, like `global.method(..)`.
-    ($id:expr => $c0:ident.$method:ident $params:tt) => {
-        $crate::gfx_select!($id => {$c0}, $method $params)
-    };
-
-    ($id:expr => {$($c:tt)*}, $method:ident $params:tt) => {
-        match $id.backend() {
-            wgt::Backend::Vulkan => $crate::gfx_if_vulkan!($($c)*.$method::<$crate::api::Vulkan> $params),
-            wgt::Backend::Metal => $crate::gfx_if_metal!($($c)*.$method::<$crate::api::Metal> $params),
-            wgt::Backend::Dx12 => $crate::gfx_if_dx12!($($c)*.$method::<$crate::api::Dx12> $params),
-            wgt::Backend::Gl => $crate::gfx_if_gles!($($c)*.$method::<$crate::api::Gles> $params),
-            wgt::Backend::Empty => $crate::gfx_if_empty!($($c)*.$method::<$crate::api::Empty> $params),
-            other => panic!("Unexpected backend {:?}", other),
-        }
-    };
-}
+const DOWNLEVEL_ERROR_MESSAGE: &str = concat!(
+    "This is not an invalid use of WebGPU: the underlying API or device does not ",
+    "support enough features to be a fully compliant implementation. ",
+    "A subset of the features can still be used. ",
+    "If you are running this program on native and not in a browser ",
+    "and wish to work around this issue, call ",
+    "Adapter::downlevel_properties or Device::downlevel_properties ",
+    "to get a listing of the features the current platform supports."
+);
 
 #[cfg(feature = "api_log_info")]
 macro_rules! api_log {
@@ -308,7 +178,18 @@ macro_rules! api_log {
 macro_rules! api_log {
     ($($arg:tt)+) => (log::trace!($($arg)+))
 }
+
+#[cfg(feature = "api_log_info")]
+macro_rules! api_log_debug {
+    ($($arg:tt)+) => (log::info!($($arg)+))
+}
+#[cfg(not(feature = "api_log_info"))]
+macro_rules! api_log_debug {
+    ($($arg:tt)+) => (log::debug!($($arg)+))
+}
+
 pub(crate) use api_log;
+pub(crate) use api_log_debug;
 
 #[cfg(feature = "resource_log_info")]
 macro_rules! resource_log {

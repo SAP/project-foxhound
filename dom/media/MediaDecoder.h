@@ -170,8 +170,10 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   virtual void Play();
 
   // Notify activity of the decoder owner is changed.
-  virtual void NotifyOwnerActivityChanged(bool aIsOwnerInvisible,
-                                          bool aIsOwnerConnected);
+  void NotifyOwnerActivityChanged(bool aIsOwnerInvisible,
+                                  bool aIsOwnerConnected,
+                                  bool aIsOwnerInBackground,
+                                  bool aHasOwnerPendingCallbacks);
 
   // Pause video playback.
   virtual void Pause();
@@ -336,8 +338,9 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   bool CanPlayThrough();
 
   // Called from HTMLMediaElement when owner document activity changes
-  virtual void SetElementVisibility(bool aIsOwnerInvisible,
-                                    bool aIsOwnerConnected);
+  void SetElementVisibility(bool aIsOwnerInvisible, bool aIsOwnerConnected,
+                            bool aIsOwnerInBackground,
+                            bool aHasOwnerPendingCallbacks);
 
   // Force override the visible state to hidden.
   // Called from HTMLMediaElement when testing of video decode suspend from
@@ -633,6 +636,12 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   // https://dom.spec.whatwg.org/#connected
   bool mIsOwnerConnected;
 
+  // True if the owner element is in a backgrounded tab/window.
+  bool mIsOwnerInBackground;
+
+  // True if the owner element has pending rVFC callbacks.
+  bool mHasOwnerPendingCallbacks;
+
   // If true, forces the decoder to be considered hidden.
   bool mForcedHidden;
 
@@ -784,7 +793,6 @@ class MediaDecoder : public DecoderDoctorLifeLogger<MediaDecoder> {
   double GetTotalVideoHDRPlayTimeInSeconds() const;
   double GetVisibleVideoPlayTimeInSeconds() const;
   double GetInvisibleVideoPlayTimeInSeconds() const;
-  double GetVideoDecodeSuspendedTimeInSeconds() const;
   double GetTotalAudioPlayTimeInSeconds() const;
   double GetAudiblePlayTimeInSeconds() const;
   double GetInaudiblePlayTimeInSeconds() const;

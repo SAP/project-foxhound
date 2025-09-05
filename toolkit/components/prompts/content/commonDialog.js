@@ -19,7 +19,7 @@ XPCOMUtils.defineLazyServiceGetter(
 );
 
 // imported by adjustableTitle.js loaded in the same context:
-/* globals PromptUtils */
+/* globals PromptUtils, goDoCommand, goUpdateCommand */
 
 var propBag, args, Dialog;
 
@@ -38,7 +38,7 @@ function commonDialogOnLoad() {
   let needIconifiedHeader =
     args.modalType == Ci.nsIPrompt.MODAL_TYPE_CONTENT ||
     ["promptUserAndPass", "promptPassword"].includes(args.promptType) ||
-    args.headerIconURL;
+    args.headerIconCSSValue;
   let root = document.documentElement;
   if (needIconifiedHeader) {
     root.setAttribute("neediconheader", "true");
@@ -51,10 +51,7 @@ function commonDialogOnLoad() {
         title = { l10nId: "common-dialog-title-null" };
       } else if (promptPrincipal.isSystemPrincipal) {
         title = { l10nId: "common-dialog-title-system" };
-        root.style.setProperty(
-          "--icon-url",
-          "url('chrome://branding/content/icon32.png')"
-        );
+        root.style.setProperty("--icon-url", CommonDialog.DEFAULT_APP_ICON_CSS);
       } else if (promptPrincipal.addonPolicy) {
         title.raw = promptPrincipal.addonPolicy.name;
       } else if (promptPrincipal.isContentPrincipal) {
@@ -75,8 +72,8 @@ function commonDialogOnLoad() {
       title = { raw: args.authOrigin };
     }
   }
-  if (args.headerIconURL) {
-    root.style.setProperty("--icon-url", `url('${args.headerIconURL}')`);
+  if (args.headerIconCSSValue) {
+    root.style.setProperty("--icon-url", args.headerIconCSSValue);
   }
   // Fade and crop potentially long raw titles, e.g., origins and hostnames.
   title.shouldUseMaskFade =
@@ -107,6 +104,10 @@ function commonDialogOnLoad() {
     focusTarget: window,
   };
 
+  if (args.isExtra1Secondary) {
+    dialog.setAttribute("extra1-is-secondary", true);
+  }
+
   Dialog = new CommonDialog(args, ui);
   window.addEventListener("dialogclosing", function (aEvent) {
     if (aEvent.detail?.abort) {
@@ -131,6 +132,22 @@ function commonDialogOnLoad() {
     Dialog.setDefaultFocus(isInitialFocus);
   Dialog.onLoad(dialog);
 
+  document.addEventListener("command", event => {
+    switch (event.target.id) {
+      case "cmd_copy":
+      case "cmd_selectAll":
+        goDoCommand(event.target.id);
+        break;
+      case "checkbox":
+        Dialog.onCheckbox();
+        break;
+    }
+  });
+
+  document
+    .getElementById("contentAreaContextMenu")
+    .addEventListener("popupshowing", () => goUpdateCommand("cmd_copy"));
+
   // resize the window to the content
   window.sizeToContent();
 
@@ -138,56 +155,69 @@ function commonDialogOnLoad() {
   // it does, as its layout can change.
   ui.infoIcon.addEventListener("load", () => window.sizeToContent());
   if (lazy.gContentAnalysis.isActive && args.owningBrowsingContext?.isContent) {
-    ui.loginTextbox?.addEventListener("paste", async event => {
-      let data = event.clipboardData.getData("text/plain");
-      if (data?.length > 0) {
-        // Prevent the paste from happening until content analysis returns a response
-        event.preventDefault();
-        // Selections can be forward or backward, so use min/max
-        const startIndex = Math.min(
-          ui.loginTextbox.selectionStart,
-          ui.loginTextbox.selectionEnd
-        );
-        const endIndex = Math.max(
-          ui.loginTextbox.selectionStart,
-          ui.loginTextbox.selectionEnd
-        );
-        const selectionDirection =
-          endIndex < startIndex ? "backward" : "forward";
-        try {
-          const response = await lazy.gContentAnalysis.analyzeContentRequest(
+    let caEventChecker = async event => {
+      let isPaste = event.type == "paste";
+      let dataTransfer = isPaste ? event.clipboardData : event.dataTransfer;
+      let data = dataTransfer.getData("text/plain");
+      if (!data || !data.length) {
+        return;
+      }
+
+      // Prevent the paste/drop from happening until content analysis returns a response
+      event.preventDefault();
+      // Selections can be forward or backward, so use min/max
+      const startIndex = Math.min(
+        ui.loginTextbox.selectionStart,
+        ui.loginTextbox.selectionEnd
+      );
+      const endIndex = Math.max(
+        ui.loginTextbox.selectionStart,
+        ui.loginTextbox.selectionEnd
+      );
+      const selectionDirection = endIndex < startIndex ? "backward" : "forward";
+      try {
+        const response = await lazy.gContentAnalysis.analyzeContentRequests(
+          [
             {
-              requestToken: Services.uuid.generateUUID().toString(),
-              resources: [],
               analysisType: Ci.nsIContentAnalysisRequest.eBulkDataEntry,
-              operationTypeForDisplay: Ci.nsIContentAnalysisRequest.eClipboard,
-              url: args.owningBrowsingContext.currentURI,
+              reason: isPaste
+                ? Ci.nsIContentAnalysisRequest.eClipboardPaste
+                : Ci.nsIContentAnalysisRequest.eDragAndDrop,
+              resources: [],
+              operationTypeForDisplay: isPaste
+                ? Ci.nsIContentAnalysisRequest.eClipboard
+                : Ci.nsIContentAnalysisRequest.eDroppedText,
+              url: lazy.gContentAnalysis.getURIForBrowsingContext(
+                args.owningBrowsingContext
+              ),
               textContent: data,
               windowGlobalParent:
                 args.owningBrowsingContext.currentWindowContext,
             },
-            true
-          );
-          if (response.shouldAllowContent) {
-            ui.loginTextbox.value =
-              ui.loginTextbox.value.slice(0, startIndex) +
-              data +
-              ui.loginTextbox.value.slice(endIndex);
-            ui.loginTextbox.focus();
-            if (startIndex !== endIndex) {
-              // Select the pasted text
-              ui.loginTextbox.setSelectionRange(
-                startIndex,
-                startIndex + data.length,
-                selectionDirection
-              );
-            }
+          ],
+          true
+        );
+        if (response.shouldAllowContent) {
+          ui.loginTextbox.value =
+            ui.loginTextbox.value.slice(0, startIndex) +
+            data +
+            ui.loginTextbox.value.slice(endIndex);
+          ui.loginTextbox.focus();
+          if (startIndex !== endIndex) {
+            // Select the pasted text
+            ui.loginTextbox.setSelectionRange(
+              startIndex,
+              startIndex + data.length,
+              selectionDirection
+            );
           }
-        } catch (error) {
-          console.error("Content analysis request returned error: ", error);
         }
+      } catch (error) {
+        console.error("Content analysis request returned error: ", error);
       }
-    });
+    };
+    ui.loginTextbox?.addEventListener("paste", caEventChecker);
+    ui.loginTextbox?.addEventListener("drop", caEventChecker);
   }
 
   window.getAttention();
@@ -199,3 +229,6 @@ function commonDialogOnUnload() {
     propBag.setProperty(propName, args[propName]);
   }
 }
+
+document.addEventListener("DOMContentLoaded", commonDialogOnLoad);
+window.addEventListener("unload", commonDialogOnUnload);

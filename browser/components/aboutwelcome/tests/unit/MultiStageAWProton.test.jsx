@@ -1,5 +1,8 @@
 import { AboutWelcomeDefaults } from "modules/AboutWelcomeDefaults.sys.mjs";
-import { MultiStageProtonScreen } from "content-src/components/MultiStageProtonScreen";
+import {
+  MultiStageProtonScreen,
+  ProtonScreenActionButtons,
+} from "content-src/components/MultiStageProtonScreen";
 import { AWScreenUtils } from "modules/AWScreenUtils.sys.mjs";
 import React from "react";
 import { mount } from "enzyme";
@@ -244,6 +247,134 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.isTrue(wrapper.find("button.secondary[disabled]").exists());
     });
 
+    it("Primary button with disabled: hasActiveMultiSelect property", () => {
+      const MULTI_SELECT_SCREEN_PROPS = {
+        content: {
+          title: "Test MultiSelect",
+          tiles: {
+            type: "multiselect",
+            data: [
+              {
+                id: "checkbox-1",
+                label: "Option 1",
+              },
+              {
+                id: "checkbox-2",
+                label: "Option 2",
+              },
+            ],
+          },
+          primary_button: {
+            label: "Continue",
+            disabled: "hasActiveMultiSelect",
+            action: {
+              navigate: true,
+            },
+          },
+        },
+        navigate: null,
+        setScreenMultiSelects: sandbox.stub(),
+        setActiveMultiSelect: sandbox.stub(),
+      };
+
+      it("should be disabled when no checkboxes are selected", () => {
+        const wrapper = mount(
+          <MultiStageProtonScreen
+            {...MULTI_SELECT_SCREEN_PROPS}
+            activeMultiSelect={{}}
+          />
+        );
+        const primaryButton = wrapper.find("button.primary");
+        assert.isTrue(
+          primaryButton.prop("disabled"),
+          "disabled when no checkboxes are selected"
+        );
+      });
+
+      it("should be disabled when activeMultiSelect tile has an empty array", () => {
+        const wrapper = mount(
+          <MultiStageProtonScreen
+            {...MULTI_SELECT_SCREEN_PROPS}
+            activeMultiSelect={{ "tile-0": [] }}
+          />
+        );
+        const primaryButton = wrapper.find("button.primary");
+        assert.isTrue(
+          primaryButton.prop("disabled"),
+          "disabled when tile has empty array"
+        );
+      });
+
+      it("should be enabled when checkboxes are selected", () => {
+        const wrapper = mount(
+          <MultiStageProtonScreen
+            {...MULTI_SELECT_SCREEN_PROPS}
+            activeMultiSelect={{ "tile-0": ["checkbox-1"] }}
+          />
+        );
+        const primaryButton = wrapper.find("button.primary");
+        assert.isFalse(
+          primaryButton.prop("disabled"),
+          "enabled when checkboxes are selected"
+        );
+      });
+
+      it("should be enabled when a checkbox is selected in any tile", () => {
+        const wrapper = mount(
+          <MultiStageProtonScreen
+            {...MULTI_SELECT_SCREEN_PROPS}
+            activeMultiSelect={{
+              "tile-0": [],
+              "tile-1": ["checkbox-2"],
+            }}
+          />
+        );
+        const primaryButton = wrapper.find("button.primary");
+        assert.isFalse(
+          primaryButton.prop("disabled"),
+          "Button should be enabled when any tile has selections"
+        );
+      });
+    });
+
+    it("Primary button should be disabled when activeMultiSelect is null", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+            disabled: "hasActiveMultiSelect",
+          },
+        },
+        activeMultiSelect: null,
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(
+        wrapper.find("button.primary[disabled]").exists(),
+        "Button is disabled when activeMultiSelect is null"
+      );
+    });
+
+    it("Primary button should be disabled when activeMultiSelect is undefined", () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          primary_button: {
+            label: "test primary button",
+            disabled: "hasActiveMultiSelect",
+          },
+        },
+        // activeMultiSelect is intentionally not defined
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.isTrue(
+        wrapper.find("button.primary[disabled]").exists(),
+        "Button is disabled when activeMultiSelect is undefined"
+      );
+    });
+
     it("should not render a progress bar if there is 1 step", () => {
       const SCREEN_PROPS = {
         content: {
@@ -471,6 +602,55 @@ describe("MultiStageAboutWelcomeProton module", () => {
       assert.ok(wrapper.exists());
       assert.equal(wrapper.find("main").prop("reverse-split"), "");
     });
+
+    it("should render with screen custom styles", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          position: "center",
+          screen_style: {
+            overflow: "auto",
+            display: "block",
+            padding: "40px 0 0 0",
+            width: "800px",
+            // disallowed style
+            height: "500px",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      assert.ok(
+        (wrapper.find("main").getDOMNode().style.cssText =
+          `overflow: ${SCREEN_PROPS.content.screen_style.overflow}; display: ${SCREEN_PROPS.content.screen_style.display})`)
+      );
+      assert.ok(
+        (wrapper.find(".section-main").getDOMNode().style.cssText =
+          `padding: ${SCREEN_PROPS.content.screen_style.padding}; width: ${SCREEN_PROPS.content.screen_style.width})`)
+      );
+    });
+
+    it("should render action buttons above content when configured", async () => {
+      const SCREEN_PROPS = {
+        content: {
+          title: "test title",
+          position: "center",
+          action_buttons_above_content: "true",
+          primary_button: {
+            label: "test primary button",
+          },
+        },
+      };
+      const wrapper = mount(<MultiStageProtonScreen {...SCREEN_PROPS} />);
+      assert.ok(wrapper.exists());
+      const welcomeTextEl = wrapper.find(".welcome-text");
+      const secondChild = welcomeTextEl.children().at(1);
+      assert.strictEqual(
+        secondChild.type(),
+        ProtonScreenActionButtons,
+        "Second child is ProtonScreenActionButtons"
+      );
+    });
   });
 
   describe("AboutWelcomeDefaults for proton", () => {
@@ -480,6 +660,7 @@ describe("MultiStageAboutWelcomeProton module", () => {
       let data = await getData();
 
       if (evalFalseScreenIds?.length) {
+        // eslint-disable-next-line no-shadow
         data.screens.forEach(async screen => {
           if (evalFalseScreenIds.includes(screen.id)) {
             screen.targeting = false;
@@ -568,10 +749,9 @@ describe("MultiStageAboutWelcomeProton module", () => {
       ],
     };
     it("should not set url for default qrcode svg", async () => {
-      sandbox.stub(global.AppConstants, "isChinaRepack").returns(false);
-      const data = await AboutWelcomeDefaults.prepareContentForReact(
-        TEST_CONTENT
-      );
+      sandbox.stub(global.BrowserUtils, "isChinaRepack").returns(false);
+      const data =
+        await AboutWelcomeDefaults.prepareContentForReact(TEST_CONTENT);
       assert.propertyVal(
         data.screens[0].content.hero_image,
         "url",
@@ -579,10 +759,9 @@ describe("MultiStageAboutWelcomeProton module", () => {
       );
     });
     it("should set url for cn qrcode svg", async () => {
-      sandbox.stub(global.AppConstants, "isChinaRepack").returns(true);
-      const data = await AboutWelcomeDefaults.prepareContentForReact(
-        TEST_CONTENT
-      );
+      sandbox.stub(global.BrowserUtils, "isChinaRepack").returns(true);
+      const data =
+        await AboutWelcomeDefaults.prepareContentForReact(TEST_CONTENT);
       assert.propertyVal(
         data.screens[0].content.hero_image,
         "url",
@@ -616,9 +795,8 @@ describe("MultiStageAboutWelcomeProton module", () => {
           },
         ],
       };
-      const data = await AboutWelcomeDefaults.prepareContentForReact(
-        TEST_CONTENT
-      );
+      const data =
+        await AboutWelcomeDefaults.prepareContentForReact(TEST_CONTENT);
       assert.propertyVal(data, "ua", "test");
       assert.propertyVal(
         data.screens[0].content.primary_button.action.data,
@@ -643,9 +821,8 @@ describe("MultiStageAboutWelcomeProton module", () => {
           },
         ],
       };
-      const data = await AboutWelcomeDefaults.prepareContentForReact(
-        TEST_CONTENT
-      );
+      const data =
+        await AboutWelcomeDefaults.prepareContentForReact(TEST_CONTENT);
       assert.propertyVal(data, "ua", "test");
       assert.notPropertyVal(
         data.screens[0].content.primary_button.action.data,
@@ -663,6 +840,8 @@ describe("MultiStageAboutWelcomeProton module", () => {
           type: "migration-wizard",
         },
       },
+      setScreenMultiSelects: sinon.stub(),
+      setActiveMultiSelect: sinon.stub(),
     };
 
     it("should render migration wizard", async () => {

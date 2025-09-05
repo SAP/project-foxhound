@@ -44,7 +44,7 @@ android {
 
     packagingOptions {
         resources {
-            excludes += ['META-INF/proguard/androidx-annotations.pro']
+            excludes += ['META-INF/LICENSE.md', 'META-INF/LICENSE-notice.md']
         }
     }
 
@@ -101,7 +101,10 @@ dependencies {
     androidTestImplementation project(':tooling-fetch-tests')
 }
 
-ext.gleanNamespace = "mozilla.telemetry.glean"
+ext {
+    gleanNamespace = "mozilla.telemetry.glean"
+    gleanPythonEnvDir = gradle.mozconfig.substs.GRADLE_GLEAN_PARSER_VENV
+}
 apply plugin: "org.mozilla.telemetry.glean-gradle-plugin"
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
@@ -121,7 +124,7 @@ nimbus {
     applicationServicesDir = gradle.hasProperty('localProperties.autoPublish.application-services.dir')
             ? gradle.getProperty('localProperties.autoPublish.application-services.dir') : null
 }
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)
 
 // Non-official versions are like "61.0a1", where "a1" is the milestone.
 // This simply strips that off, leaving "61.0" in this example.

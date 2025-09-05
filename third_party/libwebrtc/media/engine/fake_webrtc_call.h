@@ -20,24 +20,54 @@
 #ifndef MEDIA_ENGINE_FAKE_WEBRTC_CALL_H_
 #define MEDIA_ENGINE_FAKE_WEBRTC_CALL_H_
 
+#include <cstddef>
+#include <cstdint>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
 
 #include "absl/strings/string_view.h"
+#include "api/adaptation/resource.h"
+#include "api/audio/audio_frame.h"
+#include "api/audio_codecs/audio_format.h"
+#include "api/crypto/frame_decryptor_interface.h"
 #include "api/environment/environment.h"
+#include "api/frame_transformer_interface.h"
+#include "api/media_types.h"
+#include "api/rtp_headers.h"
+#include "api/rtp_parameters.h"
+#include "api/rtp_sender_interface.h"
+#include "api/scoped_refptr.h"
+#include "api/task_queue/task_queue_base.h"
+#include "api/transport/bitrate_settings.h"
+#include "api/transport/rtp/rtp_source.h"
+#include "api/units/time_delta.h"
+#include "api/units/timestamp.h"
 #include "api/video/video_frame.h"
+#include "api/video/video_sink_interface.h"
+#include "api/video/video_source_interface.h"
+#include "api/video_codecs/video_codec.h"
 #include "call/audio_receive_stream.h"
 #include "call/audio_send_stream.h"
 #include "call/call.h"
+#include "call/fake_payload_type_suggester.h"
 #include "call/flexfec_receive_stream.h"
+#include "call/packet_receiver.h"
+#include "call/payload_type.h"
+#include "call/rtp_transport_controller_send_interface.h"
 #include "call/test/mock_rtp_transport_controller_send.h"
 #include "call/video_receive_stream.h"
 #include "call/video_send_stream.h"
+#include "modules/rtp_rtcp/include/receive_statistics.h"
 #include "modules/rtp_rtcp/source/rtp_packet_received.h"
 #include "rtc_base/buffer.h"
+#include "rtc_base/copy_on_write_buffer.h"
+#include "rtc_base/network/sent_packet.h"
+#include "test/gmock.h"
+#include "video/config/video_encoder_config.h"
 
 namespace cricket {
 class FakeAudioSendStream final : public webrtc::AudioSendStream {
@@ -65,8 +95,8 @@ class FakeAudioSendStream final : public webrtc::AudioSendStream {
                    webrtc::SetParametersCallback callback) override;
   void Start() override { sending_ = true; }
   void Stop() override { sending_ = false; }
-  void SendAudioData(std::unique_ptr<webrtc::AudioFrame> audio_frame) override {
-  }
+  void SendAudioData(
+      std::unique_ptr<webrtc::AudioFrame> /* audio_frame */) override {}
   bool SendTelephoneEvent(int payload_type,
                           int payload_frequency,
                           int event,
@@ -122,6 +152,7 @@ class FakeAudioReceiveStream final
   void SetDecoderMap(
       std::map<int, webrtc::SdpAudioFormat> decoder_map) override;
   void SetNackHistory(int history_ms) override;
+  void SetRtcpMode(webrtc::RtcpMode mode) override;
   void SetNonSenderRttMeasurement(bool enabled) override;
   void SetFrameDecryptor(rtc::scoped_refptr<webrtc::FrameDecryptorInterface>
                              frame_decryptor) override;
@@ -233,7 +264,7 @@ class FakeVideoSendStream final
   bool framerate_scaling_enabled_;
   rtc::VideoSourceInterface<webrtc::VideoFrame>* source_;
   int num_swapped_frames_;
-  absl::optional<webrtc::VideoFrame> last_frame_;
+  std::optional<webrtc::VideoFrame> last_frame_;
   webrtc::VideoSendStream::Stats stats_;
   int num_encoder_reconfigurations_ = 0;
   std::vector<std::string> keyframes_requested_by_rid_;
@@ -268,14 +299,16 @@ class FakeVideoReceiveStream final
   void UpdateRtxSsrc(uint32_t ssrc) { config_.rtp.rtx_ssrc = ssrc; }
 
   void SetFrameDecryptor(rtc::scoped_refptr<webrtc::FrameDecryptorInterface>
-                             frame_decryptor) override {}
+                         /* frame_decryptor */) override {}
 
   void SetDepacketizerToDecoderFrameTransformer(
-      rtc::scoped_refptr<webrtc::FrameTransformerInterface> frame_transformer)
-      override {}
+      rtc::scoped_refptr<
+          webrtc::FrameTransformerInterface> /* frame_transformer */) override {
+  }
 
-  RecordingState SetAndGetRecordingState(RecordingState state,
-                                         bool generate_key_frame) override {
+  RecordingState SetAndGetRecordingState(
+      RecordingState /* state */,
+      bool /* generate_key_frame */) override {
     return RecordingState();
   }
   void GenerateKeyFrame() override {}
@@ -370,6 +403,10 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
            webrtc::TaskQueueBase* network_thread);
   ~FakeCall() override;
 
+  webrtc::PayloadTypeSuggester* GetPayloadTypeSuggester() {
+    return &pt_suggester_;
+  }
+
   webrtc::MockRtpTransportControllerSend* GetMockTransportControllerSend() {
     return &transport_controller_send_;
   }
@@ -406,10 +443,13 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
   void SetStats(const webrtc::Call::Stats& stats);
 
   void SetClientBitratePreferences(
-      const webrtc::BitrateSettings& preferences) override {}
+      const webrtc::BitrateSettings& /* preferences */) override {}
   const webrtc::FieldTrialsView& trials() const override {
     return env_.field_trials();
   }
+  void EnableSendCongestionControlFeedbackAccordingToRfc8888() override {}
+  int FeedbackAccordingToRfc8888Count() { return 0; }
+  int FeedbackAccordingToTransportCcCount() { return 0; }
 
  private:
   webrtc::AudioSendStream* CreateAudioSendStream(
@@ -441,7 +481,7 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
 
   webrtc::PacketReceiver* Receiver() override;
 
-  void DeliverRtcpPacket(rtc::CopyOnWriteBuffer packet) override {}
+  void DeliverRtcpPacket(rtc::CopyOnWriteBuffer /* packet */) override {}
 
   void DeliverRtpPacket(
       webrtc::MediaType media_type,
@@ -500,6 +540,8 @@ class FakeCall final : public webrtc::Call, public webrtc::PacketReceiver {
 
   int num_created_send_streams_;
   int num_created_receive_streams_;
+
+  webrtc::FakePayloadTypeSuggester pt_suggester_;
 };
 
 }  // namespace cricket

@@ -1,4 +1,3 @@
-// |reftest| shell-option(--enable-arraybuffer-resizable) skip-if(!ArrayBuffer.prototype.resize||!xulRuntime.shell) -- resizable-arraybuffer is not enabled unconditionally, requires shell-options
 // Copyright 2023 the V8 project authors. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -10,13 +9,6 @@ description: >
 includes: [resizableArrayBufferUtils.js]
 features: [resizable-arraybuffer, Array.prototype.includes]
 ---*/
-
-function MayNeedBigInt(ta, n) {
-  if (typeof n == 'number' && (ta instanceof BigInt64Array || ta instanceof BigUint64Array)) {
-    return BigInt(n);
-  }
-  return n;
-}
 
 for (let ctor of ctors) {
   const rab = CreateResizableArrayBuffer(4 * ctor.BYTES_PER_ELEMENT, 8 * ctor.BYTES_PER_ELEMENT);
@@ -62,7 +54,7 @@ for (let ctor of ctors) {
   const rab = CreateResizableArrayBuffer(4 * ctor.BYTES_PER_ELEMENT, 8 * ctor.BYTES_PER_ELEMENT);
   const lengthTracking = new ctor(rab);
   for (let i = 0; i < 4; ++i) {
-    WriteToTypedArray(lengthTracking, i, 1);
+    lengthTracking[i] = MayNeedBigInt(lengthTracking, 1);
   }
   let evil = {
     valueOf: () => {
@@ -78,7 +70,7 @@ for (let ctor of ctors) {
 for (let ctor of ctors) {
   const rab = CreateResizableArrayBuffer(4 * ctor.BYTES_PER_ELEMENT, 8 * ctor.BYTES_PER_ELEMENT);
   const lengthTracking = new ctor(rab);
-  WriteToTypedArray(lengthTracking, 0, 1);
+  lengthTracking[0] = MayNeedBigInt(lengthTracking, 1);
   let evil = {
     valueOf: () => {
       rab.resize(6 * ctor.BYTES_PER_ELEMENT);

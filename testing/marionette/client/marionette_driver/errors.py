@@ -9,7 +9,6 @@ import six
 
 @six.python_2_unicode_compatible
 class MarionetteException(Exception):
-
     """Raised when a generic non-recoverable exception has occured."""
 
     status = "webdriver error"
@@ -193,7 +192,7 @@ class UnresponsiveInstanceException(Exception):
 es_ = [
     e
     for e in locals().values()
-    if type(e) == type and issubclass(e, MarionetteException)
+    if type(e) is type and issubclass(e, MarionetteException)
 ]
 by_string = {e.status: e for e in es_}
 

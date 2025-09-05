@@ -383,7 +383,7 @@ void WebRenderLayerManager::EndTransactionWithoutLayer(
 
   if (AsyncPanZoomEnabled()) {
     if (mIsFirstPaint) {
-      mScrollData.SetIsFirstPaint();
+      mScrollData.SetIsFirstPaint(true);
       mIsFirstPaint = false;
     }
     mScrollData.SetPaintSequenceNumber(mPaintSequenceNumber);
@@ -804,6 +804,13 @@ WebRenderLayerManager::ClearPendingScrollInfoUpdate() {
       mPendingScrollUpdates.Keys().cend());
   mPendingScrollUpdates.Clear();
   return scrollIds;
+}
+
+bool WebRenderLayerManager::AddPendingScrollUpdateForNextTransaction(
+    ScrollableLayerGuid::ViewID aScrollId,
+    const ScrollPositionUpdate& aUpdateInfo) {
+  mPendingScrollUpdates.LookupOrInsert(aScrollId).AppendElement(aUpdateInfo);
+  return true;
 }
 
 }  // namespace layers

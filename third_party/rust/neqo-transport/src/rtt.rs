@@ -6,6 +6,8 @@
 
 // Tracking of sent packets and detecting their loss.
 
+#![allow(clippy::module_name_repetitions)]
+
 use std::{
     cmp::{max, min},
     time::{Duration, Instant},
@@ -19,7 +21,6 @@ use crate::{
     qlog::{self, QlogMetric},
     recovery::RecoveryToken,
     stats::FrameStats,
-    tracking::PacketNumberSpace,
 };
 
 /// The smallest time that the system timer (via `sleep()`, `nanosleep()`,
@@ -27,6 +28,17 @@ use crate::{
 pub const GRANULARITY: Duration = Duration::from_millis(1);
 // Defined in -recovery 6.2 as 333ms but using lower value.
 pub const INITIAL_RTT: Duration = Duration::from_millis(100);
+
+/// The source of the RTT measurement.
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum RttSource {
+    /// RTT guess from a retry or dropping a packet number space.
+    Guesstimate,
+    /// Ack on an unconfirmed connection.
+    Ack,
+    /// Ack on a confirmed connection.
+    AckConfirmed,
+}
 
 #[derive(Debug)]
 #[allow(clippy::module_name_repetitions)]
@@ -37,6 +49,7 @@ pub struct RttEstimate {
     rttvar: Duration,
     min_rtt: Duration,
     ack_delay: PeerAckDelay,
+    best_source: RttSource,
 }
 
 impl RttEstimate {
@@ -58,11 +71,12 @@ impl RttEstimate {
             rttvar: Duration::from_millis(0),
             min_rtt: rtt,
             ack_delay: PeerAckDelay::Fixed(Duration::from_millis(25)),
+            best_source: RttSource::Ack,
         }
     }
 
     pub fn set_initial(&mut self, rtt: Duration) {
-        qtrace!("initial RTT={:?}", rtt);
+        qtrace!("initial RTT={rtt:?}");
         if rtt >= GRANULARITY {
             // Ignore if the value is too small.
             self.init(rtt);
@@ -83,17 +97,24 @@ impl RttEstimate {
         self.ack_delay.update(cwnd, mtu, self.smoothed_rtt);
     }
 
+    pub fn is_guesstimate(&self) -> bool {
+        self.best_source == RttSource::Guesstimate
+    }
+
     pub fn update(
         &mut self,
         qlog: &NeqoQlog,
         mut rtt_sample: Duration,
         ack_delay: Duration,
-        confirmed: bool,
+        source: RttSource,
         now: Instant,
     ) {
+        debug_assert!(source >= self.best_source);
+        self.best_source = max(self.best_source, source);
+
         // Limit ack delay by max_ack_delay if confirmed.
         let mad = self.ack_delay.max();
-        let ack_delay = if confirmed && ack_delay > mad {
+        let ack_delay = if self.best_source == RttSource::AckConfirmed && ack_delay > mad {
             mad
         } else {
             ack_delay
@@ -133,7 +154,9 @@ impl RttEstimate {
                 QlogMetric::LatestRtt(self.latest_rtt),
                 QlogMetric::MinRtt(self.min_rtt),
                 QlogMetric::SmoothedRtt(self.smoothed_rtt),
+                QlogMetric::RttVariance(self.rttvar),
             ],
+            now,
         );
     }
 
@@ -142,9 +165,9 @@ impl RttEstimate {
         self.smoothed_rtt
     }
 
-    pub fn pto(&self, pn_space: PacketNumberSpace) -> Duration {
+    pub fn pto(&self, confirmed: bool) -> Duration {
         let mut t = self.estimate() + max(4 * self.rttvar, GRANULARITY);
-        if pn_space == PacketNumberSpace::ApplicationData {
+        if confirmed {
             t += self.ack_delay.max();
         }
         t
@@ -204,6 +227,7 @@ impl Default for RttEstimate {
             rttvar: INITIAL_RTT / 2,
             min_rtt: INITIAL_RTT,
             ack_delay: PeerAckDelay::default(),
+            best_source: RttSource::Guesstimate,
         }
     }
 }

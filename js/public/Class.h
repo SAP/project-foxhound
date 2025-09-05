@@ -819,11 +819,6 @@ enum class ESClass {
   BigInt,
   Function,  // Note: Only JSFunction objects.
 
-#ifdef ENABLE_RECORD_TUPLE
-  Record,
-  Tuple,
-#endif
-
   /** None of the above. */
   Other
 };

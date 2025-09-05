@@ -29,6 +29,7 @@ import mozilla.components.concept.engine.webextension.WebExtensionRuntime
 import mozilla.components.concept.engine.webextension.isBlockListed
 import mozilla.components.concept.engine.webextension.isDisabledIncompatible
 import mozilla.components.concept.engine.webextension.isDisabledUnsigned
+import mozilla.components.concept.engine.webextension.isSoftBlocked
 import mozilla.components.concept.engine.webextension.isUnsupported
 import mozilla.components.feature.addons.update.AddonUpdater
 import mozilla.components.feature.addons.update.AddonUpdater.Status
@@ -46,6 +47,7 @@ import java.util.concurrent.ConcurrentHashMap
  * @property addonsProvider The [AddonsProvider] to query available [Addon]s.
  * @property addonUpdater The [AddonUpdater] instance to use when checking / triggering
  * updates.
+ * @param ioDispatcher Coroutine dispatcher for IO operations.
  */
 @Suppress("LargeClass")
 class AddonManager(
@@ -53,6 +55,7 @@ class AddonManager(
     private val runtime: WebExtensionRuntime,
     private val addonsProvider: AddonsProvider,
     private val addonUpdater: AddonUpdater,
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) {
 
     @VisibleForTesting
@@ -79,7 +82,10 @@ class AddonManager(
      */
     @Throws(AddonManagerException::class)
     @Suppress("TooGenericExceptionCaught")
-    suspend fun getAddons(waitForPendingActions: Boolean = true, allowCache: Boolean = true): List<Addon> {
+    suspend fun getAddons(
+        waitForPendingActions: Boolean = true,
+        allowCache: Boolean = true,
+    ): List<Addon> = withContext(ioDispatcher) {
         try {
             // Make sure extension support is initialized, i.e. the state of all installed extensions is known.
             WebExtensionSupport.awaitInitialization()
@@ -113,7 +119,7 @@ class AddonManager(
                     Addon.newFromWebExtension(extension, installedState)
                 }
 
-            return featuredAddons + installedAddons
+            return@withContext featuredAddons + installedAddons
         } catch (throwable: Throwable) {
             throw AddonManagerException(throwable)
         }
@@ -511,9 +517,23 @@ class AddonManager(
  */
 class AddonManagerException(throwable: Throwable) : Exception(throwable)
 
+/**
+ * This method returns a single [Addon.DisabledReason] from a [WebExtension] instance, which
+ * can have more that 1 disabled flag. This is fine as long as we use this method in UI and
+ * we don't need to know that an [Addon] is disabled for multiple reasons.
+ *
+ * A concrete example is when an [Addon] is soft-blocked and the user has enabled/disabled
+ * this [Addon] manually (which is possible for soft-blocked add-ons). When that happens,
+ * the [Addon] is soft-blocked per the `BlocklistState` as well as user-disabled. This
+ * method would only return `Addon.DisabledReason.SOFT_BLOCKED` in this case. That's fine
+ * for now because we want to always show the error message to the users, but it might not
+ * always be desirable.
+ */
 internal fun WebExtension.getDisabledReason(): Addon.DisabledReason? {
     return if (isBlockListed()) {
         Addon.DisabledReason.BLOCKLISTED
+    } else if (isSoftBlocked()) {
+        Addon.DisabledReason.SOFT_BLOCKED
     } else if (isDisabledUnsigned()) {
         Addon.DisabledReason.NOT_CORRECTLY_SIGNED
     } else if (isDisabledIncompatible()) {

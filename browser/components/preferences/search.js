@@ -10,7 +10,6 @@ const lazy = {};
 ChromeUtils.defineESModuleGetters(lazy, {
   SearchUIUtils: "resource:///modules/SearchUIUtils.sys.mjs",
   SearchUtils: "resource://gre/modules/SearchUtils.sys.mjs",
-  UrlbarPrefs: "resource:///modules/UrlbarPrefs.sys.mjs",
   CustomizableUI: "resource:///modules/CustomizableUI.sys.mjs",
 });
 
@@ -30,6 +29,7 @@ Preferences.addAll([
   { id: "browser.urlbar.trending.featureGate", type: "bool" },
   { id: "browser.urlbar.recentsearches.featureGate", type: "bool" },
   { id: "browser.urlbar.suggest.recentsearches", type: "bool" },
+  { id: "browser.urlbar.scotchBonnet.enableOverride", type: "bool" },
 ]);
 
 const ENGINE_FLAVOR = "text/x-moz-search-engine";
@@ -168,7 +168,7 @@ var gSearchPane = {
     let checkbox = document.getElementById("searchShowSearchTermCheckbox");
     let updateCheckboxHidden = () => {
       checkbox.hidden =
-        !UrlbarPrefs.get("showSearchTermsFeatureGate") ||
+        !UrlbarPrefs.getScotchBonnetPref("showSearchTerms.featureGate") ||
         !!lazy.CustomizableUI.getPlacementOfWidget("search-container");
     };
 
@@ -182,13 +182,11 @@ var gSearchPane = {
       },
     };
     lazy.CustomizableUI.addListener(customizableUIListener);
-    NimbusFeatures.urlbar.onUpdate(updateCheckboxHidden);
 
     // Fire once to initialize.
     updateCheckboxHidden();
 
     window.addEventListener("unload", () => {
-      NimbusFeatures.urlbar.offUpdate(updateCheckboxHidden);
       lazy.CustomizableUI.removeListener(customizableUIListener);
     });
   },
@@ -314,19 +312,6 @@ var gSearchPane = {
       NimbusFeatures.urlbar.offUpdate(onNimbus);
     });
 
-    // The Firefox Suggest info box potentially needs updating when any of the
-    // toggles change.
-    let infoBoxPrefs = [
-      "browser.urlbar.suggest.quicksuggest.nonsponsored",
-      "browser.urlbar.suggest.quicksuggest.sponsored",
-      "browser.urlbar.quicksuggest.dataCollection.enabled",
-    ];
-    for (let pref of infoBoxPrefs) {
-      Preferences.get(pref).on("change", () =>
-        this._updateFirefoxSuggestInfoBox()
-      );
-    }
-
     document.getElementById("clipboardSuggestion").hidden = !UrlbarPrefs.get(
       "clipboard.featureGate"
     );
@@ -345,7 +330,10 @@ var gSearchPane = {
   _updateFirefoxSuggestSection(onInit = false) {
     let container = document.getElementById("firefoxSuggestContainer");
 
-    if (UrlbarPrefs.get("quickSuggestEnabled")) {
+    if (
+      UrlbarPrefs.get("quickSuggestEnabled") &&
+      UrlbarPrefs.get("quickSuggestSettingsUi") != QuickSuggest.SETTINGS_UI.NONE
+    ) {
       // Update the l10n IDs of text elements.
       let l10nIdByElementId = {
         locationBarGroupHeader: "addressbar-header-firefox-suggest",
@@ -357,8 +345,17 @@ var gSearchPane = {
         element.dataset.l10nId = l10nId;
       }
 
-      // Show the container.
-      this._updateFirefoxSuggestInfoBox();
+      // Update the learn more link in the section's description.
+      document
+        .getElementById("locationBarSuggestionLabel")
+        .classList.add("tail-with-learn-more");
+      document.getElementById("firefoxSuggestLearnMore").hidden = false;
+
+      document.getElementById(
+        "firefoxSuggestDataCollectionSearchToggle"
+      ).hidden =
+        UrlbarPrefs.get("quickSuggestSettingsUi") !=
+        QuickSuggest.SETTINGS_UI.FULL;
 
       this._updateDismissedSuggestionsStatus();
       Preferences.get(PREF_URLBAR_QUICKSUGGEST_BLOCKLIST).on("change", () =>
@@ -371,79 +368,36 @@ var gSearchPane = {
         this.restoreDismissedSuggestions()
       );
 
-      container.removeAttribute("hidden");
+      container.hidden = false;
     } else if (!onInit) {
       // Firefox Suggest is not enabled. This is the default, so to avoid
       // accidentally messing anything up, only modify the doc if we're being
       // called due to a change in the rollout-enabled status (!onInit).
-      container.setAttribute("hidden", "true");
+      document
+        .getElementById("locationBarSuggestionLabel")
+        .classList.remove("tail-with-learn-more");
+      document.getElementById("firefoxSuggestLearnMore").hidden = true;
+      container.hidden = true;
       let elementIds = ["locationBarGroupHeader", "locationBarSuggestionLabel"];
       for (let id of elementIds) {
         let element = document.getElementById(id);
-        element.dataset.l10nId = element.dataset.l10nIdOriginal;
-        delete element.dataset.l10nIdOriginal;
-        document.l10n.translateElements([element]);
-      }
-    }
-  },
-
-  /**
-   * Updates the Firefox Suggest info box (in the address bar section) depending
-   * on the states of the Firefox Suggest toggles.
-   */
-  _updateFirefoxSuggestInfoBox() {
-    let nonsponsored = Preferences.get(
-      "browser.urlbar.suggest.quicksuggest.nonsponsored"
-    ).value;
-    let sponsored = Preferences.get(
-      "browser.urlbar.suggest.quicksuggest.sponsored"
-    ).value;
-    let dataCollection = Preferences.get(
-      "browser.urlbar.quicksuggest.dataCollection.enabled"
-    ).value;
-
-    // Get the l10n ID of the appropriate text based on the values of the three
-    // prefs.
-    let l10nId;
-    if (nonsponsored && sponsored && dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-all";
-    } else if (nonsponsored && sponsored && !dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-nonsponsored-sponsored";
-    } else if (nonsponsored && !sponsored && dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-nonsponsored-data";
-    } else if (nonsponsored && !sponsored && !dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-nonsponsored";
-    } else if (!nonsponsored && sponsored && dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-sponsored-data";
-    } else if (!nonsponsored && sponsored && !dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-sponsored";
-    } else if (!nonsponsored && !sponsored && dataCollection) {
-      l10nId = "addressbar-firefox-suggest-info-data";
-    }
-
-    let instance = (this._firefoxSuggestInfoBoxInstance = {});
-    let infoBox = document.getElementById("firefoxSuggestInfoBox");
-    if (!l10nId) {
-      infoBox.hidden = true;
-    } else {
-      let infoText = document.getElementById("firefoxSuggestInfoText");
-      infoText.dataset.l10nId = l10nId;
-
-      // If the info box is currently hidden and we unhide it immediately, it
-      // will show its old text until the new text is asyncly fetched and shown.
-      // That's ugly, so wait for the fetch to finish before unhiding it.
-      document.l10n.translateElements([infoText]).then(() => {
-        if (instance == this._firefoxSuggestInfoBoxInstance) {
-          infoBox.hidden = false;
+        if (element.dataset.l10nIdOriginal) {
+          document.l10n.setAttributes(element, element.dataset.l10nIdOriginal);
+          delete element.dataset.l10nIdOriginal;
         }
-      });
+      }
     }
   },
 
   _initQuickActionsSection() {
     let showPref = Preferences.get("browser.urlbar.quickactions.showPrefs");
+    let scotchBonnet = Preferences.get(
+      "browser.urlbar.scotchBonnet.enableOverride"
+    );
     let showQuickActionsGroup = () => {
-      document.getElementById("quickActionsBox").hidden = !showPref.value;
+      document.getElementById("quickActionsBox").hidden = !(
+        showPref.value || scotchBonnet.value
+      );
     };
     showPref.on("change", showQuickActionsGroup);
     showQuickActionsGroup();
@@ -855,26 +809,47 @@ class EngineView {
     this.#showAddEngineButton();
   }
 
-  loadL10nNames() {
+  async loadL10nNames() {
     // This maps local shortcut sources to their l10n names.  The names are needed
     // by getCellText.  Getting the names is async but getCellText is not, so we
     // cache them here to retrieve them syncronously in getCellText.
     this._localShortcutL10nNames = new Map();
-    return document.l10n
-      .formatValues(
-        UrlbarUtils.LOCAL_SEARCH_MODES.map(mode => {
-          let name = UrlbarUtils.getResultSourceName(mode.source);
-          return { id: `urlbar-search-mode-${name}` };
-        })
-      )
-      .then(names => {
-        for (let { source } of UrlbarUtils.LOCAL_SEARCH_MODES) {
-          this._localShortcutL10nNames.set(source, names.shift());
-        }
+
+    let getIDs = (suffix = "") =>
+      UrlbarUtils.LOCAL_SEARCH_MODES.map(mode => {
+        let name = UrlbarUtils.getResultSourceName(mode.source);
+        return { id: `urlbar-search-mode-${name}${suffix}` };
+      });
+
+    try {
+      let localizedIDs = getIDs();
+      let englishIDs = getIDs("-en");
+
+      let englishSearchStrings = new Localization([
+        "preview/enUS-searchFeatures.ftl",
+      ]);
+      let localizedNames = await document.l10n.formatValues(localizedIDs);
+      let englishNames = await englishSearchStrings.formatValues(englishIDs);
+
+      UrlbarUtils.LOCAL_SEARCH_MODES.forEach(({ source }, index) => {
+        let localizedName = localizedNames[index];
+        let englishName = englishNames[index];
+
+        // Add only the English name if localized and English are the same
+        let names =
+          localizedName === englishName
+            ? [englishName]
+            : [localizedName, englishName];
+
+        this._localShortcutL10nNames.set(source, names);
+
         // Invalidate the tree now that we have the names in case getCellText was
         // called before name retrieval finished.
         this.invalidate();
       });
+    } catch (ex) {
+      console.error("Error loading l10n names", ex);
+    }
   }
 
   #addListeners() {
@@ -1163,9 +1138,13 @@ class EngineView {
 
   // nsITreeView
   get rowCount() {
-    return (
-      this._engineStore.engines.length + UrlbarUtils.LOCAL_SEARCH_MODES.length
-    );
+    let localModes = UrlbarUtils.LOCAL_SEARCH_MODES;
+    if (!UrlbarPrefs.get("scotchBonnet.enableOverride")) {
+      localModes = localModes.filter(
+        mode => mode.source != UrlbarUtils.RESULT_SOURCE.ACTIONS
+      );
+    }
+    return this._engineStore.engines.length + localModes.length;
   }
 
   getImageSrc(index, column) {
@@ -1185,21 +1164,21 @@ class EngineView {
     if (column.id == "engineName") {
       let shortcut = this._getLocalShortcut(index);
       if (shortcut) {
-        return this._localShortcutL10nNames.get(shortcut.source) || "";
+        return this._localShortcutL10nNames.get(shortcut.source)[0] || "";
       }
       return this._engineStore.engines[index].name;
     } else if (column.id == "engineKeyword") {
       let shortcut = this._getLocalShortcut(index);
       if (shortcut) {
         if (
-          lazy.UrlbarPrefs.getScotchBonnetPref(
-            "searchRestrictKeywords.featureGate"
-          )
+          UrlbarPrefs.getScotchBonnetPref("searchRestrictKeywords.featureGate")
         ) {
-          const keyword =
-            "@" +
-            this._localShortcutL10nNames.get(shortcut.source).toLowerCase();
-          return `${keyword}, ${shortcut.restrict}`;
+          let keywords = this._localShortcutL10nNames
+            .get(shortcut.source)
+            .map(keyword => `@${keyword.toLowerCase()}`)
+            .join(", ");
+
+          return `${keywords}, ${shortcut.restrict}`;
         }
 
         return shortcut.restrict;
@@ -1447,9 +1426,10 @@ class DefaultEngineDropDown {
     ) {
       return;
     }
-    let defaultEngine = await Services.search[
-      this.#type == "normal" ? "getDefault" : "getDefaultPrivate"
-    ]();
+    let defaultEngine =
+      await Services.search[
+        this.#type == "normal" ? "getDefault" : "getDefaultPrivate"
+      ]();
 
     this.#element.removeAllItems();
     for (let engine of enginesList) {

@@ -14,6 +14,18 @@
   }
 }
 
+.setting-message {
+  /* Pull the message-bar over the input box's border */
+  margin-block-end: calc(-1 * var(--sidebar-box-border-width));
+  margin-inline: calc(-1 * var(--space-medium) - var(--sidebar-box-border-width));
+  /* Remove the top radius, match the bottom radius to the input box's radius */
+  --message-bar-border-radius: 0 0 var(--border-radius-medium) var(--border-radius-medium);
+}
+
+.medium-top-margin {
+  margin-block-start: var(--space-medium);
+}
+
 .customize-header {
   display: flex;
   justify-content: space-between;
@@ -38,19 +50,17 @@
   display: flex;
   flex-direction: column;
   margin-top: var(--space-small);
-  border: 0.5px solid var(--panel-separator-color);
+  padding-inline: var(--space-medium);
+  background-color: var(--sidebar-box-background);
+  color: var(--sidebar-box-color);
+  border: var(--sidebar-box-border);
   border-radius: var(--border-radius-medium);
-  background-color: var(--toolbar-bgcolor);
-  color: var(--toolbar-color);
-  padding-inline: var(--space-xsmall);
 }
 
 .extension-item {
   display: flex;
-  height: 2.6em;
   gap: var(--space-small);
-  align-items: center;
-  padding-block: var(--space-xsmall);
+  padding-block: var(--space-medium);
   box-sizing: border-box;
 
   &:not(:last-of-type){
@@ -60,47 +70,49 @@
 
 .customize-extensions-heading {
   margin: 0;
-  font-weight: inherit;
+  font-weight: var(--font-weight-bold);
 }
 
-moz-radio-group,
 moz-fieldset {
   display: block;
 
   &::part(inputs) {
-    border: 0.5px solid var(--panel-separator-color);
+    background-color: var(--sidebar-box-background);
+    color: var(--sidebar-box-color);
+    border: var(--sidebar-box-border);
     border-radius: var(--border-radius-medium);
-    background-color: var(--toolbar-bgcolor);
-    color: var(--toolbar-color);
     gap: 0;
-    padding-inline: var(--space-xsmall);
+    padding-inline: var(--space-medium);
   }
 }
 
-moz-radio,
 moz-checkbox {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  height: 2.6em;
-  padding-block: var(--space-xsmall);
-  box-sizing: border-box;
+  padding-block: var(--space-medium);
 
   &:not(:last-of-type) {
     border-bottom: 0.5px solid var(--panel-separator-color);
   }
 
-  &::part(label) {
-    width: 100%;
+  > moz-checkbox:last-of-type {
+    padding-block: 0;
   }
+
+  &[disabled]::part(label) {
+    opacity: 0.5;
+  }
+}
+
+.no-label::part(label) {
+  display: none;
 }
 
 #manage-settings {
   display: flex;
   align-items: center;
-  gap: var(--space-large);
+  gap: var(--space-small);
+  padding-inline-start: var(--space-medium);
 }
 
-.customize-group {
+.customize-group:not(.no-end-margin) {
   margin-block-end: var(--space-xlarge);
 }

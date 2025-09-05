@@ -25,6 +25,7 @@ using namespace dom;
 
 template WidgetMouseEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const;
 template WidgetPointerEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const;
+template WidgetDragEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const;
 
 InputData::~InputData() = default;
 
@@ -95,7 +96,8 @@ MultiTouchInput::MultiTouchInput(const WidgetTouchEvent& aTouchEvent)
                 aTouchEvent.mModifiers),
       mHandledByAPZ(aTouchEvent.mFlags.mHandledByAPZ),
       mButton(aTouchEvent.mButton),
-      mButtons(aTouchEvent.mButtons) {
+      mButtons(aTouchEvent.mButtons),
+      mInputSource(aTouchEvent.mInputSource) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only copy from WidgetTouchEvent on main thread");
 
@@ -153,13 +155,12 @@ void MultiTouchInput::Translate(const ScreenPoint& aTranslation) {
   }
 }
 
-WidgetTouchEvent MultiTouchInput::ToWidgetEvent(nsIWidget* aWidget,
-                                                uint16_t aInputSource) const {
+WidgetTouchEvent MultiTouchInput::ToWidgetEvent(nsIWidget* aWidget) const {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only convert To WidgetTouchEvent on main thread");
-  MOZ_ASSERT(aInputSource ==
+  MOZ_ASSERT(mInputSource ==
                  mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_TOUCH ||
-             aInputSource == mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_PEN);
+             mInputSource == mozilla::dom::MouseEvent_Binding::MOZ_SOURCE_PEN);
 
   EventMessage touchEventMessage = eVoidEvent;
   switch (mType) {
@@ -191,7 +192,7 @@ WidgetTouchEvent MultiTouchInput::ToWidgetEvent(nsIWidget* aWidget,
   event.mFlags.mHandledByAPZ = mHandledByAPZ;
   event.mFocusSequenceNumber = mFocusSequenceNumber;
   event.mLayersId = mLayersId;
-  event.mInputSource = aInputSource;
+  event.mInputSource = mInputSource;
   event.mButton = mButton;
   event.mButtons = mButtons;
 
@@ -239,7 +240,9 @@ MouseInput::MouseInput()
       mInputSource(0),
       mButtons(0),
       mHandledByAPZ(false),
-      mPreventClickEvent(false) {}
+      mPreventClickEvent(false),
+      mIgnoreCapturingContent(false),
+      mSynthesizeMoveAfterDispatch(false) {}
 
 MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
                        uint16_t aInputSource, int16_t aButtons,
@@ -252,7 +255,9 @@ MouseInput::MouseInput(MouseType aType, ButtonType aButtonType,
       mButtons(aButtons),
       mOrigin(aPoint),
       mHandledByAPZ(false),
-      mPreventClickEvent(false) {}
+      mPreventClickEvent(false),
+      mIgnoreCapturingContent(false),
+      mSynthesizeMoveAfterDispatch(false) {}
 
 MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
     : InputData(MOUSE_INPUT, aMouseEvent.mTimeStamp, aMouseEvent.mModifiers),
@@ -262,7 +267,17 @@ MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
       mButtons(aMouseEvent.mButtons),
       mHandledByAPZ(aMouseEvent.mFlags.mHandledByAPZ),
       mPreventClickEvent(aMouseEvent.mClass == eMouseEventClass &&
-                         aMouseEvent.AsMouseEvent()->mClickEventPrevented) {
+                         static_cast<const WidgetMouseEvent&>(aMouseEvent)
+                             .mClickEventPrevented),
+      mIgnoreCapturingContent((aMouseEvent.mClass == eMouseEventClass ||
+                               aMouseEvent.mClass == ePointerEventClass) &&
+                              static_cast<const WidgetMouseEvent&>(aMouseEvent)
+                                  .mIgnoreCapturingContent),
+      mSynthesizeMoveAfterDispatch(
+          (aMouseEvent.mClass == eMouseEventClass ||
+           aMouseEvent.mClass == ePointerEventClass) &&
+          static_cast<const WidgetMouseEvent&>(aMouseEvent)
+              .mSynthesizeMoveAfterDispatch) {
   MOZ_ASSERT(NS_IsMainThread(),
              "Can only copy from WidgetTouchEvent on main thread");
 
@@ -295,6 +310,18 @@ MouseInput::MouseInput(const WidgetMouseEventBase& aMouseEvent)
       break;
     case eDragEnd:
       mType = MOUSE_DRAG_END;
+      break;
+    case eDragEnter:
+      mType = MOUSE_DRAG_ENTER;
+      break;
+    case eDragOver:
+      mType = MOUSE_DRAG_OVER;
+      break;
+    case eDragExit:
+      mType = MOUSE_DRAG_EXIT;
+      break;
+    case eDrop:
+      mType = MOUSE_DROP;
       break;
     case eMouseEnterIntoWidget:
       mType = MOUSE_WIDGET_ENTER;
@@ -347,10 +374,13 @@ WidgetMouseOrPointerEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
       std::is_same<WidgetMouseOrPointerEvent, WidgetPointerEvent>::value;
   const DebugOnly<bool> isMouseEvent =
       std::is_same<WidgetMouseOrPointerEvent, WidgetMouseEvent>::value;
+  const DebugOnly<bool> isDragEvent =
+      std::is_same<WidgetMouseOrPointerEvent, WidgetDragEvent>::value;
   MOZ_ASSERT(!IsPointerEventType() || isPointerEvent,
              "Please use ToWidgetEvent<WidgetPointerEvent>() for the instance");
-  MOZ_ASSERT(IsPointerEventType() || isMouseEvent,
-             "Please use ToWidgetEvent<WidgetMouseEvent>() for the instance");
+  MOZ_ASSERT(IsPointerEventType() || isMouseEvent || isDragEvent,
+             "Please use ToWidgetEvent<WidgetMouseEvent>() or "
+             "ToWidgetEvent<WidgetDragEvent>() for the instance");
 
   EventMessage msg = eVoidEvent;
   uint32_t clickCount = 0;
@@ -372,6 +402,18 @@ WidgetMouseOrPointerEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
       break;
     case MOUSE_DRAG_END:
       msg = eDragEnd;
+      break;
+    case MOUSE_DRAG_ENTER:
+      msg = eDragEnter;
+      break;
+    case MOUSE_DRAG_OVER:
+      msg = eDragOver;
+      break;
+    case MOUSE_DRAG_EXIT:
+      msg = eDragExit;
+      break;
+    case MOUSE_DROP:
+      msg = eDrop;
       break;
     case MOUSE_WIDGET_ENTER:
       msg = eMouseEnterIntoWidget;
@@ -430,6 +472,8 @@ WidgetMouseOrPointerEvent MouseInput::ToWidgetEvent(nsIWidget* aWidget) const {
   event.mFocusSequenceNumber = mFocusSequenceNumber;
   event.mExitFrom = exitFrom;
   event.mClickEventPrevented = mPreventClickEvent;
+  event.mIgnoreCapturingContent = mIgnoreCapturingContent;
+  event.mSynthesizeMoveAfterDispatch = mSynthesizeMoveAfterDispatch;
 
   return event;
 }

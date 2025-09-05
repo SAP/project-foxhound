@@ -6,16 +6,13 @@
 
 use crate::gecko_bindings::bindings;
 use crate::gecko_bindings::structs;
-use crate::gecko_bindings::structs::ScreenColorGamut;
 use crate::media_queries::{Device, MediaType};
-use crate::parser::ParserContext;
 use crate::queries::feature::{AllowsRanges, Evaluator, FeatureFlags, QueryFeatureDescription};
 use crate::queries::values::Orientation;
 use crate::values::computed::{CSSPixelLength, Context, Ratio, Resolution};
-use crate::values::AtomString;
+use crate::values::specified::color::ForcedColors;
 use app_units::Au;
 use euclid::default::Size2D;
-use selectors::kleene_value::KleeneValue;
 
 fn device_size(device: &Device) -> Size2D<Au> {
     let mut width = 0;
@@ -150,7 +147,7 @@ fn eval_monochrome(context: &Context) -> i32 {
 /// higher capabilities.
 #[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, PartialOrd, ToCss)]
 #[repr(u8)]
-enum ColorGamut {
+pub enum ColorGamut {
     /// The sRGB gamut.
     Srgb,
     /// The gamut specified by the Display P3 Color Space.
@@ -168,12 +165,7 @@ fn eval_color_gamut(context: &Context, query_value: Option<ColorGamut>) -> bool 
     let color_gamut =
         unsafe { bindings::Gecko_MediaFeatures_ColorGamut(context.device().document()) };
     // Match if our color gamut is at least as wide as the query value
-    query_value <=
-        match color_gamut {
-            ScreenColorGamut::Srgb => ColorGamut::Srgb,
-            ScreenColorGamut::P3 => ColorGamut::P3,
-            ScreenColorGamut::Rec2020 => ColorGamut::Rec2020,
-        }
+    query_value <= color_gamut
 }
 
 /// https://drafts.csswg.org/mediaqueries-4/#resolution
@@ -277,27 +269,6 @@ fn eval_prefers_contrast(context: &Context, query_value: Option<PrefersContrast>
     match query_value {
         Some(v) => v == prefers_contrast,
         None => prefers_contrast != PrefersContrast::NoPreference,
-    }
-}
-
-/// Possible values for the forced-colors media query.
-/// https://drafts.csswg.org/mediaqueries-5/#forced-colors
-#[derive(Clone, Copy, Debug, FromPrimitive, Parse, PartialEq, ToCss)]
-#[repr(u8)]
-pub enum ForcedColors {
-    /// Page colors are not being forced.
-    None,
-    /// Page colors would be forced in content.
-    #[parse(condition = "ParserContext::chrome_rules_enabled")]
-    Requested,
-    /// Page colors are being forced.
-    Active,
-}
-
-impl ForcedColors {
-    /// Returns whether forced-colors is active for this page.
-    pub fn is_active(self) -> bool {
-        matches!(self, Self::Active)
     }
 }
 
@@ -644,13 +615,6 @@ fn eval_moz_overlay_scrollbars(context: &Context) -> bool {
     unsafe { bindings::Gecko_MediaFeatures_UseOverlayScrollbars(context.device().document()) }
 }
 
-fn eval_moz_bool_pref(_: &Context, pref: Option<&AtomString>) -> KleeneValue {
-    let Some(pref) = pref else {
-        return KleeneValue::False;
-    };
-    KleeneValue::from(unsafe { bindings::Gecko_ComputeBoolPrefMediaQuery(pref.as_ptr()) })
-}
-
 fn get_lnf_int(int_id: i32) -> i32 {
     unsafe { bindings::Gecko_GetLookAndFeelInt(int_id) }
 }
@@ -698,7 +662,7 @@ macro_rules! lnf_int_feature {
 /// to support new types in these entries and (2) ensuring that either
 /// nsPresContext::MediaFeatureValuesChanged is called when the value that
 /// would be returned by the evaluator function could change.
-pub static MEDIA_FEATURES: [QueryFeatureDescription; 59] = [
+pub static MEDIA_FEATURES: [QueryFeatureDescription; 61] = [
     feature!(
         atom!("width"),
         AllowsRanges::Yes,
@@ -835,11 +799,6 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 59] = [
         atom!("prefers-contrast"),
         AllowsRanges::No,
         keyword_evaluator!(eval_prefers_contrast, PrefersContrast),
-        // Note: by default this is only enabled in browser chrome and
-        // ua. It can be enabled on the web via the
-        // layout.css.prefers-contrast.enabled preference. See
-        // disabed_by_pref in media_feature_expression.rs for how that
-        // is done.
         FeatureFlags::empty(),
     ),
     feature!(
@@ -968,12 +927,6 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 59] = [
         Evaluator::BoolInteger(eval_moz_overlay_scrollbars),
         FeatureFlags::CHROME_AND_UA_ONLY,
     ),
-    feature!(
-        atom!("-moz-bool-pref"),
-        AllowsRanges::No,
-        Evaluator::String(eval_moz_bool_pref),
-        FeatureFlags::CHROME_AND_UA_ONLY,
-    ),
     lnf_int_feature!(
         atom!("-moz-scrollbar-start-backward"),
         ScrollArrowStyle,
@@ -1001,8 +954,11 @@ pub static MEDIA_FEATURES: [QueryFeatureDescription; 59] = [
         atom!("-moz-windows-accent-color-in-titlebar"),
         WindowsAccentColorInTitlebar
     ),
+    lnf_int_feature!(atom!("-moz-windows-mica"), WindowsMica),
+    lnf_int_feature!(atom!("-moz-windows-mica-popups"), WindowsMicaPopups),
     lnf_int_feature!(atom!("-moz-swipe-animation-enabled"), SwipeAnimationEnabled),
     lnf_int_feature!(atom!("-moz-gtk-csd-available"), GTKCSDAvailable),
+    lnf_int_feature!(atom!("-moz-gtk-csd-transparency-available"), GTKCSDTransparencyAvailable),
     lnf_int_feature!(atom!("-moz-gtk-csd-minimize-button"), GTKCSDMinimizeButton),
     lnf_int_feature!(atom!("-moz-gtk-csd-maximize-button"), GTKCSDMaximizeButton),
     lnf_int_feature!(atom!("-moz-gtk-csd-close-button"), GTKCSDCloseButton),

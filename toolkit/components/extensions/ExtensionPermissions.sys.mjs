@@ -6,6 +6,7 @@
 
 import { XPCOMUtils } from "resource://gre/modules/XPCOMUtils.sys.mjs";
 import { AppConstants } from "resource://gre/modules/AppConstants.sys.mjs";
+import { ExtensionTaskScheduler } from "resource://gre/modules/ExtensionTaskScheduler.sys.mjs";
 import { ExtensionUtils } from "resource://gre/modules/ExtensionUtils.sys.mjs";
 
 /** @type {Lazy} */
@@ -51,6 +52,8 @@ const RKV_DIRNAME = "extension-store-permissions";
 const VERSION_KEY = "_version";
 
 const VERSION_VALUE = 1;
+
+const WEB_SCHEMES = ["http", "https"];
 
 // Bug 1646182: remove once we fully migrate to rkv
 let prefs;
@@ -319,8 +322,11 @@ function createStore(useRkv = AppConstants.NIGHTLY_BUILD) {
 
 let store = createStore();
 
-// Map<string, Function[]> @see _synchronizeExtPermAccess.
-const extPermAccessQueues = new Map();
+// The public ExtensionPermissions.add, get, remove, removeAll methods may
+// interact with the same underlying data source. These methods are not
+// designed with concurrent modifications in mind, and therefore we
+// explicitly synchronize each operation, by processing them sequentially.
+const extPermAccessQueues = new ExtensionTaskScheduler();
 
 export var ExtensionPermissions = {
   /**
@@ -330,38 +336,6 @@ export var ExtensionPermissions = {
    * @type {Map<string, Set>}
    */
   tempOrigins: new ExtensionUtils.DefaultMap(() => new Set()),
-
-  // The public ExtensionPermissions.add, get, remove, removeAll methods may
-  // interact with the same underlying data source. These methods are not
-  // designed with concurrent modifications in mind, and therefore we
-  // explicitly synchronize each operation, by processing them sequentially.
-  async _synchronizeExtPermAccess(extensionId, asyncFunctionCallback) {
-    return new Promise((resolve, reject) => {
-      // Here we add the (wrapped) function in the queue. The first queue item
-      // is always the currently executing task. Once it completes, the next
-      // (wrapped) function in the queue will be run.
-      let queue = extPermAccessQueues.get(extensionId) ?? [];
-      queue.push(async () => {
-        try {
-          resolve(await asyncFunctionCallback());
-        } catch (e) {
-          reject(e);
-        }
-        queue.shift();
-        if (queue.length) {
-          queue[0]();
-        } else {
-          extPermAccessQueues.delete(extensionId);
-        }
-      });
-      if (queue.length === 1) {
-        // First item in the queue. Store queue (so that future calls become
-        // aware of the pending call), and call the first function in the queue.
-        extPermAccessQueues.set(extensionId, queue);
-        queue[0]();
-      }
-    });
-  },
 
   async _update(extensionId, perms) {
     await store.put(extensionId, perms);
@@ -389,7 +363,7 @@ export var ExtensionPermissions = {
    *   value should immediately be used and not be modified by callers.
    */
   get(extensionId) {
-    return this._synchronizeExtPermAccess(extensionId, () =>
+    return extPermAccessQueues.runReadTask(extensionId, () =>
       this._getCached(extensionId)
     );
   },
@@ -459,7 +433,7 @@ export var ExtensionPermissions = {
    * @param {EventEmitter} [emitter] optional object implementing emitter interfaces
    */
   async add(extensionId, perms, emitter) {
-    return this._synchronizeExtPermAccess(extensionId, async () => {
+    return extPermAccessQueues.runWriteTask(extensionId, async () => {
       let { permissions, origins } = await this._get(extensionId);
 
       let added = emptyPermissions();
@@ -500,7 +474,7 @@ export var ExtensionPermissions = {
    * @param {EventEmitter} [emitter] optional object implementing emitter interfaces
    */
   async remove(extensionId, perms, emitter) {
-    return this._synchronizeExtPermAccess(extensionId, async () => {
+    return extPermAccessQueues.runWriteTask(extensionId, async () => {
       let { permissions, origins } = await this._get(extensionId);
 
       let removed = emptyPermissions();
@@ -541,7 +515,7 @@ export var ExtensionPermissions = {
   },
 
   async removeAll(extensionId) {
-    return this._synchronizeExtPermAccess(extensionId, async () => {
+    return extPermAccessQueues.runWriteTask(extensionId, async () => {
       this.tempOrigins.delete(extensionId);
       lazy.StartupCache.permissions.delete(extensionId);
 
@@ -594,7 +568,7 @@ export var ExtensionPermissions = {
 export var OriginControls = {
   /**
    * @typedef {object} NativeTab
-   * @property {MozBrowserElement} linkedBrowser
+   * @property {XULBrowserElement} linkedBrowser
    */
 
   /**
@@ -646,8 +620,13 @@ export var OriginControls = {
   getState(policy, nativeTab) {
     // Note: don't use the nativeTab directly because it's different on mobile.
     let tab = policy?.extension?.tabManager?.getWrapper(nativeTab);
-    let temporaryAccess = tab?.hasActiveTabPermission;
+    let tabHasActiveTabPermission = tab?.hasActiveTabPermission;
     let uri = tab?.browser.currentURI;
+    return this._getStateInternal(policy, { uri, tabHasActiveTabPermission });
+  },
+
+  _getStateInternal(policy, { uri, tabHasActiveTabPermission }) {
+    let temporaryAccess = tabHasActiveTabPermission;
 
     if (!uri) {
       return { noAccess: true };
@@ -749,7 +728,53 @@ export var OriginControls = {
     if (!policy.active) {
       return;
     }
-    let perms = { permissions: [], origins: ["*://" + uri.host] };
+
+    // Already granted.
+    if (policy.allowedOrigins.matches(uri)) {
+      return;
+    }
+
+    // Only try to compute the per-host host permissions on web scheme urls (http/https).
+    if (!WEB_SCHEMES.includes(uri.scheme)) {
+      return;
+    }
+
+    // Determine which one from the 3 set of granted host permissions
+    // (granting access to the given url's host and scheme) are subsumed
+    // by the optional host permissions declared by the extension.
+    let originPatterns = [];
+    const originPatternsChoices = [
+      // Single wildcard scheme permission for the current host.
+      [`*://${uri.host}/*`],
+      // Two separate scheme-specific permission for the current host.
+      WEB_SCHEMES.map(scheme => `${scheme}://${uri.host}/*`),
+      // One scheme-specific permission for the current host and scheme.
+      [`${uri.scheme}://${uri.host}/*`],
+    ];
+    for (const originPatternsChoice of originPatternsChoices) {
+      const choiceMatchPatternSet = new MatchPatternSet(originPatternsChoice);
+      const choiceSubsumed = choiceMatchPatternSet.patterns.every(mp =>
+        policy.extension.optionalOrigins.subsumes(mp)
+      );
+      if (choiceSubsumed) {
+        originPatterns = originPatternsChoice;
+        break;
+      }
+    }
+
+    // Nothing to grant.
+    if (!originPatterns.length) {
+      // This shouldn't be ever hit outside of unit tests and so we log an error
+      // to prevent it from being silently hit (and make it easier to investigate
+      // potential bugs in our OriginControls.getState logic that could leave to
+      // this).
+      Cu.reportError(
+        `Unxpected no host permission patterns to grant found for ${policy.debugName} on ${uri.spec}`
+      );
+      return;
+    }
+
+    let perms = { permissions: [], origins: originPatterns };
     return ExtensionPermissions.add(policy.id, perms, policy.extension);
   },
 
@@ -758,7 +783,46 @@ export var OriginControls = {
     if (!policy.active) {
       return;
     }
-    let perms = { permissions: [], origins: ["*://" + uri.host] };
+
+    // Return earlier if the extension doesn't really have access to the
+    // given url.
+    if (!policy.allowedOrigins.matches(uri)) {
+      return;
+    }
+
+    // Only try to revoke per-host host permissions on web scheme urls (http/https).
+    if (!WEB_SCHEMES.includes(uri.scheme)) {
+      // TODO: once we have introduce a user-controlled opt-in for file urls
+      // we could consider to remove that internal permission to revoke
+      // to the extension access to file urls (and the user would be able
+      // to grant it back from the addon manager).
+      return;
+    }
+
+    // NOTE: all urls wouldn't be currently be revoked and so in that case
+    // setWhenClicked is going to be a no-op.
+    const matchHost = new MatchPattern(`*://${uri.host}/*`);
+    const patternsToRevoke = policy.allowedOrigins.patterns
+      .filter(mp => mp.overlaps(matchHost))
+      .map(mp => mp.pattern)
+      .filter(pattern => !lazy.Extension.isAllSitesPermission(pattern));
+
+    // Nothing to revoke.
+    if (!patternsToRevoke.length) {
+      // This shouldn't be ever hit outside of unit tests and so we log an error
+      // to prevent it from being silently hit (and make it easier to investigate
+      // potential bugs in our OriginControls.getState logic that could leave to
+      // this).
+      Cu.reportError(
+        `Unxpected no host permission patterns to revoke found for ${policy.debugName} on ${uri.spec}`
+      );
+      return;
+    }
+
+    let perms = {
+      permissions: [],
+      origins: patternsToRevoke,
+    };
     return ExtensionPermissions.remove(policy.id, perms, policy.extension);
   },
 

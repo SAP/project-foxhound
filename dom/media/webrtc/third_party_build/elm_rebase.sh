@@ -268,15 +268,12 @@ for commit in $COMMITS; do
     continue
   fi
 
-  MODIFIED_BUILD_RELATED_FILE_CNT=`hg diff -c tip --stat \
-      --include 'third_party/libwebrtc/**BUILD.gn' \
-      --include 'third_party/libwebrtc/webrtc.gni' \
-      --include 'dom/media/webrtc/third_party_build/gn-configs/webrtc.json' \
+  MODIFIED_BUILD_RELATED_FILE_CNT=`bash $SCRIPT_DIR/get_build_file_changes.sh \
       | wc -l | tr -d " "`
   echo "MODIFIED_BUILD_RELATED_FILE_CNT: $MODIFIED_BUILD_RELATED_FILE_CNT"
   if [ "x$MODIFIED_BUILD_RELATED_FILE_CNT" != "x0" ]; then
     echo "Regenerate build files"
-    ./mach python python/mozbuild/mozbuild/gn_processor.py \
+    ./mach python build/gn_processor.py \
         dom/media/webrtc/third_party_build/gn-configs/webrtc.json || \
     ( echo "$GENERATION_ERROR" ; exit 1 )
 

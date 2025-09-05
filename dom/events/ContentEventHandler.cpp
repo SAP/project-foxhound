@@ -136,21 +136,14 @@ ContentEventHandler::SimpleRangeBase<nsINode*,
 template <typename NodeType, typename RangeBoundaryType>
 void ContentEventHandler::SimpleRangeBase<
     NodeType, RangeBoundaryType>::AssertStartIsBeforeOrEqualToEnd() {
-  MOZ_ASSERT(
-      *nsContentUtils::ComparePoints(
-          mStart.Container(),
-          *mStart.Offset(
-              RangeBoundaryType::OffsetFilter::kValidOrInvalidOffsets),
-          mEnd.Container(),
-          *mEnd.Offset(
-              RangeBoundaryType::OffsetFilter::kValidOrInvalidOffsets)) <= 0);
+  MOZ_ASSERT(*nsContentUtils::ComparePoints(mStart, mEnd) <= 0);
 }
 
 template <typename NodeType, typename RangeBoundaryType>
 nsresult
 ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetStart(
     const RawRangeBoundary& aStart) {
-  nsINode* newRoot = RangeUtils::ComputeRootNode(aStart.Container());
+  nsINode* newRoot = RangeUtils::ComputeRootNode(aStart.GetContainer());
   if (!newRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -176,7 +169,7 @@ template <typename NodeType, typename RangeBoundaryType>
 nsresult
 ContentEventHandler::SimpleRangeBase<NodeType, RangeBoundaryType>::SetEnd(
     const RawRangeBoundary& aEnd) {
-  nsINode* newRoot = RangeUtils::ComputeRootNode(aEnd.Container());
+  nsINode* newRoot = RangeUtils::ComputeRootNode(aEnd.GetContainer());
   if (!newRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -217,7 +210,7 @@ template <typename NodeType, typename RangeBoundaryType>
 nsresult ContentEventHandler::SimpleRangeBase<
     NodeType, RangeBoundaryType>::SetStartAndEnd(const RawRangeBoundary& aStart,
                                                  const RawRangeBoundary& aEnd) {
-  nsINode* newStartRoot = RangeUtils::ComputeRootNode(aStart.Container());
+  nsINode* newStartRoot = RangeUtils::ComputeRootNode(aStart.GetContainer());
   if (!newStartRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -225,7 +218,7 @@ nsresult ContentEventHandler::SimpleRangeBase<
     return NS_ERROR_DOM_INDEX_SIZE_ERR;
   }
 
-  if (aStart.Container() == aEnd.Container()) {
+  if (aStart.GetContainer() == aEnd.GetContainer()) {
     if (!aEnd.IsSetAndValid()) {
       return NS_ERROR_DOM_INDEX_SIZE_ERR;
     }
@@ -237,7 +230,7 @@ nsresult ContentEventHandler::SimpleRangeBase<
     return NS_OK;
   }
 
-  nsINode* newEndRoot = RangeUtils::ComputeRootNode(aEnd.Container());
+  nsINode* newEndRoot = RangeUtils::ComputeRootNode(aEnd.GetContainer());
   if (!newEndRoot) {
     return NS_ERROR_DOM_INVALID_NODE_TYPE_ERR;
   }
@@ -364,8 +357,7 @@ nsresult ContentEventHandler::InitRootContent(
   if (!aNormalSelection.RangeCount()) {
     // If there is no selection range, we should compute the selection root
     // from ancestor limiter or root content of the document.
-    mRootElement =
-        Element::FromNodeOrNull(aNormalSelection.GetAncestorLimiter());
+    mRootElement = aNormalSelection.GetAncestorLimiter();
     if (!mRootElement) {
       mRootElement = mDocument->GetRootElement();
       if (NS_WARN_IF(!mRootElement)) {
@@ -441,10 +433,8 @@ nsresult ContentEventHandler::InitCommon(EventMessage aEventMessage,
   if (mSelection->Type() == SelectionType::eNormal) {
     normalSelection = mSelection;
   } else {
-    normalSelection = frameSel->GetSelection(SelectionType::eNormal);
-    if (NS_WARN_IF(!normalSelection)) {
-      return NS_ERROR_NOT_AVAILABLE;
-    }
+    normalSelection = &frameSel->NormalSelection();
+    MOZ_ASSERT(normalSelection);
   }
 
   rv = InitRootContent(*normalSelection);
@@ -1485,6 +1475,9 @@ nsresult ContentEventHandler::HandleQueryContentEvent(
     case eQueryDOMWidgetHittest:
       rv = OnQueryDOMWidgetHittest(aEvent);
       break;
+    case eQueryDropTargetHittest:
+      rv = OnQueryDropTargetHittest(aEvent);
+      break;
     default:
       break;
   }
@@ -1608,7 +1601,7 @@ nsresult ContentEventHandler::OnQuerySelectedText(
   }
 
   Result<nsIFrame*, nsresult> frameForTextRectOrError = GetFrameForTextRect(
-      focusRef.Container(),
+      focusRef.GetContainer(),
       focusRef.Offset(RawRangeBoundary::OffsetFilter::kValidOffsets).valueOr(0),
       true);
   if (NS_WARN_IF(frameForTextRectOrError.isErr()) ||
@@ -1738,7 +1731,7 @@ ContentEventHandler::GetFirstFrameInRangeForTextRect(
   }
 
   Result<nsIFrame*, nsresult> firstFrameOrError = GetFrameForTextRect(
-      nodePosition.Container(),
+      nodePosition.GetContainer(),
       *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets), true);
   if (NS_WARN_IF(firstFrameOrError.isErr()) || !firstFrameOrError.inspect()) {
     return FrameAndNodeOffset();
@@ -1779,14 +1772,14 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(
   // of "d" instead of right-bottom of "c").  Therefore, this method shouldn't
   // include the last frame when its content isn't really in aSimpleRange.
   nsINode* nextNodeOfRangeEnd = nullptr;
-  if (endPoint.Container()->IsText()) {
+  if (endPoint.GetContainer()->IsText()) {
     // Don't set nextNodeOfRangeEnd to the start node of aSimpleRange because if
     // the container of the end is same as start node of the range, the text
     // node shouldn't be next of range end even if the offset is 0.  This
     // could occur with empty text node.
     if (endPoint.IsStartOfContainer() &&
-        aSimpleRange.GetStartContainer() != endPoint.Container()) {
-      nextNodeOfRangeEnd = endPoint.Container();
+        aSimpleRange.GetStartContainer() != endPoint.GetContainer()) {
+      nextNodeOfRangeEnd = endPoint.GetContainer();
     }
   } else if (endPoint.IsSetAndValid()) {
     nextNodeOfRangeEnd = endPoint.GetChildAtOffset();
@@ -1842,7 +1835,7 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(
   }
 
   Result<nsIFrame*, nsresult> lastFrameOrError = GetFrameForTextRect(
-      nodePosition.Container(),
+      nodePosition.GetContainer(),
       *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets), true);
   if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
     return FrameAndNodeOffset();
@@ -1869,9 +1862,9 @@ ContentEventHandler::GetLastFrameInRangeForTextRect(
     const uint32_t newNodePositionOffset =
         *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets);
     MOZ_ASSERT(newNodePositionOffset != 0);
-    nodePosition = {nodePosition.Container(), newNodePositionOffset - 1u};
+    nodePosition = {nodePosition.GetContainer(), newNodePositionOffset - 1u};
     lastFrameOrError = GetFrameForTextRect(
-        nodePosition.Container(),
+        nodePosition.GetContainer(),
         *nodePosition.Offset(RawNodePosition::OffsetFilter::kValidOffsets),
         true);
     if (NS_WARN_IF(lastFrameOrError.isErr()) || !lastFrameOrError.inspect()) {
@@ -3065,16 +3058,16 @@ nsresult ContentEventHandler::OnQueryCharacterAtPoint(
   return NS_OK;
 }
 
-nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
-    WidgetQueryContentEvent* aEvent) {
+nsresult ContentEventHandler::QueryHittestImpl(WidgetQueryContentEvent* aEvent,
+                                               bool aFlushLayout,
+                                               bool aPerformRetargeting,
+                                               Element** aContentUnderMouse) {
   NS_ASSERTION(aEvent, "aEvent must not be null");
 
   nsresult rv = InitBasic();
   if (NS_FAILED(rv)) {
     return rv;
   }
-
-  aEvent->mReply->mWidgetIsHit = false;
 
   NS_ENSURE_TRUE(aEvent->mWidget, NS_ERROR_FAILURE);
 
@@ -3091,9 +3084,23 @@ nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
           docFrameRect.x,
       docFrame->PresContext()->DevPixelsToIntCSSPixels(eventLoc.y) -
           docFrameRect.y);
+  RefPtr<Element> contentUnderMouse = mDocument->ElementFromPointHelper(
+      eventLocCSS.x, eventLocCSS.y, false, false, ViewportType::Visual,
+      aPerformRetargeting);
 
-  if (Element* contentUnderMouse = mDocument->ElementFromPointHelper(
-          eventLocCSS.x, eventLocCSS.y, false, false, ViewportType::Visual)) {
+  contentUnderMouse.forget(aContentUnderMouse);
+  return NS_OK;
+}
+
+nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
+    WidgetQueryContentEvent* aEvent) {
+  aEvent->mReply->mWidgetIsHit = false;
+  RefPtr<Element> contentUnderMouse;
+  nsresult rv = QueryHittestImpl(aEvent, true /* flushLayout */,
+                                 true /* performRetargeting */,
+                                 getter_AddRefs(contentUnderMouse));
+  NS_ENSURE_SUCCESS(rv, rv);
+  if (contentUnderMouse) {
     if (nsIFrame* targetFrame = contentUnderMouse->GetPrimaryFrame()) {
       if (aEvent->mWidget == targetFrame->GetNearestWidget()) {
         aEvent->mReply->mWidgetIsHit = true;
@@ -3102,6 +3109,20 @@ nsresult ContentEventHandler::OnQueryDOMWidgetHittest(
   }
 
   MOZ_ASSERT(aEvent->Succeeded());
+  return NS_OK;
+}
+
+nsresult ContentEventHandler::OnQueryDropTargetHittest(
+    WidgetQueryContentEvent* aEvent) {
+  RefPtr<Element> contentUnderMouse;
+  nsresult rv = QueryHittestImpl(aEvent, true /* flushLayout */,
+                                 false /* performRetargeting */,
+                                 getter_AddRefs(contentUnderMouse));
+  NS_ENSURE_SUCCESS(rv, rv);
+  aEvent->EmplaceReply();
+  aEvent->mReply->mDropElement = contentUnderMouse;
+  aEvent->mReply->mDropFrame =
+      mDocument->GetPresShell()->GetCurrentEventFrame();
   return NS_OK;
 }
 
@@ -3126,18 +3147,10 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
   // including it forcibly.
   RawNodePosition endPosition(aEndPosition);
 
-  // This may be called for retrieving the text of removed nodes.  Even in this
-  // case, the node thinks it's still in the tree because UnbindFromTree() will
-  // be called after here.  However, the node was already removed from the
-  // array of children of its parent.  So, be careful to handle this case.
+  // This may be called for retrieving the text of removed nodes. So, be careful
+  // to handle this case. FIXME: Do we need this special-case now?
   if (aIsRemovingNode) {
-    DebugOnly<nsIContent*> parent = aStartPosition.Container()->GetParent();
-    MOZ_ASSERT(
-        parent &&
-            parent->ComputeIndexOf(aStartPosition.Container()).isNothing(),
-        "At removing the node, the node shouldn't be in the array of children "
-        "of its parent");
-    MOZ_ASSERT(aStartPosition.Container() == endPosition.Container(),
+    MOZ_ASSERT(aStartPosition.GetContainer() == endPosition.GetContainer(),
                "At removing the node, start and end node should be same");
     MOZ_ASSERT(*aStartPosition.Offset(
                    RawNodePosition::OffsetFilter::kValidOrInvalidOffsets) == 0,
@@ -3145,9 +3158,9 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
     MOZ_ASSERT(
         static_cast<uint32_t>(*endPosition.Offset(
             RawNodePosition::OffsetFilter::kValidOrInvalidOffsets)) ==
-            endPosition.Container()->GetChildCount(),
+            endPosition.GetContainer()->GetChildCount(),
         "When the node is being removed, the end offset should be child count");
-    nsresult rv = preOrderIter.Init(aStartPosition.Container());
+    nsresult rv = preOrderIter.Init(aStartPosition.GetContainer());
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -3160,27 +3173,29 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
 
     // When the end position is immediately after non-root element's open tag,
     // we need to include a line break caused by the open tag.
-    if (endPosition.Container() != aRootElement &&
+    if (endPosition.GetContainer() != aRootElement &&
         endPosition.IsImmediatelyAfterOpenTag()) {
-      if (endPosition.Container()->HasChildren()) {
+      if (endPosition.GetContainer()->HasChildren()) {
         // When the end node has some children, move the end position to before
         // the open tag of its first child.
-        nsIContent* const firstChild = endPosition.Container()->GetFirstChild();
+        nsIContent* const firstChild =
+            endPosition.GetContainer()->GetFirstChild();
         if (NS_WARN_IF(!firstChild)) {
           return NS_ERROR_FAILURE;
         }
         endPosition = RawNodePosition::Before(*firstChild);
       } else {
         // When the end node is empty, move the end position after the node.
-        if (NS_WARN_IF(!endPosition.Container()->IsContent())) {
+        if (NS_WARN_IF(!endPosition.GetContainer()->IsContent())) {
           return NS_ERROR_FAILURE;
         }
-        nsIContent* const parentContent = endPosition.Container()->GetParent();
+        nsIContent* const parentContent =
+            endPosition.GetContainer()->GetParent();
         if (NS_WARN_IF(!parentContent)) {
           return NS_ERROR_FAILURE;
         }
         endPosition =
-            RawNodePosition::After(*endPosition.Container()->AsContent());
+            RawNodePosition::After(*endPosition.GetContainer()->AsContent());
       }
     }
 
@@ -3195,9 +3210,9 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
-    } else if (endPosition.Container() != aRootElement) {
+    } else if (endPosition.GetContainer() != aRootElement) {
       // Offset is past node's length; set end of range to end of node
-      rv = prevSimpleRange.SetEndAfter(endPosition.Container());
+      rv = prevSimpleRange.SetEndAfter(endPosition.GetContainer());
       if (NS_WARN_IF(NS_FAILED(rv))) {
         return rv;
       }
@@ -3228,9 +3243,9 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
 
     if (const Text* textNode = Text::FromNode(content)) {
       // Note: our range always starts from offset 0
-      if (node == endPosition.Container()) {
-        // NOTE: We should have an offset here, as endPosition.Container() is a
-        // nsINode::eTEXT, which always has an offset.
+      if (node == endPosition.GetContainer()) {
+        // NOTE: We should have an offset here, as endPosition.GetContainer() is
+        // a nsINode::eTEXT, which always has an offset.
         *aLength += GetTextLength(
             *textNode, aLineBreakType,
             *endPosition.Offset(
@@ -3241,13 +3256,13 @@ nsresult ContentEventHandler::GetFlatTextLengthInRange(
     } else if (ShouldBreakLineBefore(*content, aRootElement)) {
       // If the start position is start of this node but doesn't include the
       // open tag, don't append the line break length.
-      if (node == aStartPosition.Container() &&
+      if (node == aStartPosition.GetContainer() &&
           !aStartPosition.IsBeforeOpenTag()) {
         continue;
       }
       // If the end position is before the open tag, don't append the line
       // break length.
-      if (node == endPosition.Container() && endPosition.IsBeforeOpenTag()) {
+      if (node == endPosition.GetContainer() && endPosition.IsBeforeOpenTag()) {
         continue;
       }
       *aLength += GetBRLength(aLineBreakType);
@@ -3301,7 +3316,7 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
 
   // If the node does not have children like a text node, we don't need to
   // modify aSimpleRange.
-  if (!startPoint.Container()->HasChildren()) {
+  if (!startPoint.GetContainer()->HasChildren()) {
     return NS_OK;
   }
 
@@ -3311,11 +3326,11 @@ nsresult ContentEventHandler::AdjustCollapsedRangeMaybeIntoTextNode(
   if (startPoint.IsStartOfContainer()) {
     // If the range is the start of the container, adjusted the range to the
     // start of the first child.
-    if (!startPoint.Container()->GetFirstChild()->IsText()) {
+    if (!startPoint.GetContainer()->GetFirstChild()->IsText()) {
       return NS_OK;
     }
     nsresult rv = aSimpleRange.CollapseTo(
-        RawRangeBoundary(startPoint.Container()->GetFirstChild(), 0u));
+        RawRangeBoundary(startPoint.GetContainer()->GetFirstChild(), 0u));
     if (NS_WARN_IF(NS_FAILED(rv))) {
       return rv;
     }
@@ -3484,8 +3499,7 @@ nsresult ContentEventHandler::OnSelectionEvent(WidgetSelectionEvent* aEvent) {
   // `ContentEventHandler` is a `MOZ_STACK_CLASS`, so `mSelection` is known to
   // be alive.
   MOZ_KnownLive(mSelection)
-      ->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION,
-                       ScrollAxis(), ScrollAxis(), 0);
+      ->ScrollIntoView(nsISelectionController::SELECTION_FOCUS_REGION);
   aEvent->mSucceeded = true;
   return NS_OK;
 }

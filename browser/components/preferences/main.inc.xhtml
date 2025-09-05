@@ -42,6 +42,12 @@
         <html:a id="windowsAutostartLink" class="text-link" data-l10n-name="startup-link" href="ms-settings:startupapps" target="_self" />
       </html:div>
     </hbox>
+    <hbox id="windowsLaunchOnLoginDisabledProfileBox" align="center" class="indent" hidden="true">
+      <hbox class="info-icon-container">
+        <html:img class="info-icon"/>
+      </hbox>
+      <html:div data-l10n-id="windows-launch-on-login-profile-disabled"/>
+    </hbox>
 #endif
   </vbox>
 
@@ -89,6 +95,27 @@
   </hbox>
 </groupbox>
 
+<!-- Profiles -->
+<groupbox id="profilesGroup" data-category="paneGeneral" hidden="true">
+  <label><html:h2 data-l10n-id="preferences-profiles-header"/></label>
+
+  <hbox id="profiles" flex="1">
+    <description flex="1" class="description-deemphasized" control="manage-profiles">
+      <html:span data-l10n-id="preferences-manage-profiles-description"></html:span>
+      <html:a
+        is="moz-support-link"
+        id="profile-management-learn-more"
+        support-page="profile-management"
+        data-l10n-id="preferences-manage-profiles-learn-more"
+      />
+    </description>
+    <button id="manage-profiles"
+            is="highlightable-button"
+            class="accessory-button"
+            data-l10n-id="preferences-manage-profiles-button"/>
+  </hbox>
+</groupbox>
+
 <!-- Tab preferences -->
 <groupbox data-category="paneGeneral"
           hidden="true">
@@ -106,7 +133,7 @@
     <checkbox id="switchToNewTabs" data-l10n-id="switch-to-new-tabs"
               preference="browser.tabs.loadInBackground"/>
 
-    <checkbox id="warnCloseMultiple" data-l10n-id="confirm-on-close-multiple-tabs"
+    <checkbox id="warnCloseMultiple" data-l10n-id="ask-on-close-multiple-tabs"
               preference="browser.tabs.warnOnClose"/>
 
 #ifndef XP_WIN
@@ -155,6 +182,23 @@
     </vbox>
 </groupbox>
 
+<!-- Browser layout -->
+<groupbox data-category="paneGeneral"
+          data-subcategory="layout"
+          hidden="true">
+  <label><html:h2 data-l10n-id="browser-layout-header"/></label>
+  <radiogroup id="browserLayoutRadioGroup" preference="sidebar.verticalTabs">
+    <radio id="browserLayoutHorizontalTabs" data-l10n-id="browser-layout-horizontal-tabs" value="false"/>
+    <description  class="indent" data-l10n-id="browser-layout-horizontal-tabs-desc"></description>
+
+    <radio id="browserLayoutVerticalTabs" data-l10n-id="browser-layout-vertical-tabs" value="true" />
+    <description class="indent" data-l10n-id="browser-layout-vertical-tabs-desc"></description>
+  </radiogroup>
+  <checkbox id="browserLayoutShowSidebar" data-l10n-id="browser-layout-show-sidebar"
+            preference="sidebar.revamp"/>
+  <description class="indent" data-l10n-id="browser-layout-show-sidebar-desc"></description>
+</groupbox>
+
 <hbox id="languageAndAppearanceCategory"
       class="subcategory"
       hidden="true"
@@ -167,8 +211,7 @@
   <html:h2 data-l10n-id="preferences-web-appearance-header"/>
   <html:div id="webAppearanceSettings">
     <description class="description-deemphasized" data-l10n-id="preferences-web-appearance-description"/>
-    <html:moz-message-bar id="web-appearance-override-warning" data-l10n-id="preferences-web-appearance-override-warning2"
-        data-l10n-attrs="message">
+    <html:moz-message-bar id="web-appearance-override-warning" data-l10n-id="preferences-web-appearance-override-warning2">
         <button slot="actions" class="accessory-button" data-l10n-id="preferences-colors-manage-button" id="web-appearance-manage-colors-button"/>
     </html:moz-message-bar>
     <form xmlns="http://www.w3.org/1999/xhtml" id="web-appearance-chooser" autocomplete="off">
@@ -325,8 +368,7 @@
       <menupopup/>
     </menulist>
   </hbox>
-  <html:moz-message-bar id="text-zoom-override-warning" data-l10n-id="preferences-text-zoom-override-warning"
-    data-l10n-attrs="message" />
+  <html:moz-message-bar id="text-zoom-override-warning" data-l10n-id="preferences-text-zoom-override-warning"/>
   <checkbox id="zoomText"
     data-l10n-id="preferences-zoom-text-only"/>
 
@@ -399,7 +441,7 @@
               data-l10n-id="translations-manage-settings-button"/>
     </hbox>
     <vbox>
-      <html:div id="translations-manage-install-list" hidden="true" tabindex="-1">
+      <html:div id="translations-manage-install-list" tabindex="-1">
         <hbox class="translations-manage-language">
           <label data-l10n-id="translations-manage-download-description"></label>
           <button id="translations-manage-install-all"

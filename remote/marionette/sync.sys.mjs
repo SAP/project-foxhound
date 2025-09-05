@@ -20,20 +20,6 @@ const { TYPE_ONE_SHOT, TYPE_REPEATING_SLACK } = Ci.nsITimer;
 const PROMISE_TIMEOUT = AppConstants.DEBUG ? 4500 : 1500;
 
 /**
- * Dispatch a function to be executed on the main thread.
- *
- * @param {Function} func
- *     Function to be executed.
- */
-export function executeSoon(func) {
-  if (typeof func != "function") {
-    throw new TypeError();
-  }
-
-  Services.tm.dispatchToMainThread(func);
-}
-
-/**
  * Runs a Promise-like function off the main thread until it is resolved
  * through ``resolve`` or ``rejected`` callbacks.  The function is
  * guaranteed to be run at least once, irregardless of the timeout.
@@ -313,32 +299,6 @@ export function MessageManagerDestroyedPromise(messageManager) {
 }
 
 /**
- * Throttle until the main thread is idle and `window` has performed
- * an animation frame (in that order).
- *
- * @param {ChromeWindow} win
- *     Window to request the animation frame from.
- *
- * @returns {Promise}
- */
-export function IdlePromise(win) {
-  const animationFramePromise = new Promise(resolve => {
-    executeSoon(() => {
-      win.requestAnimationFrame(resolve);
-    });
-  });
-
-  // Abort if the underlying window gets closed
-  const windowClosedPromise = new PollPromise(resolve => {
-    if (win.closed) {
-      resolve();
-    }
-  });
-
-  return Promise.race([animationFramePromise, windowClosedPromise]);
-}
-
-/**
  * Wraps a callback function, that, as long as it continues to be
  * invoked, will not be triggered.  The given function will be
  * called after the timeout duration is reached, after no more
@@ -503,8 +463,8 @@ export function waitForObserverTopic(topic, options = {}) {
       timer?.cancel();
     }
 
-    function observer(subject, topic, data) {
-      lazy.logger.trace(`Received observer notification ${topic}`);
+    function observer(subject, _topic, data) {
+      lazy.logger.trace(`Received observer notification ${_topic}`);
       try {
         if (checkFn && !checkFn(subject, data)) {
           return;

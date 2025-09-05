@@ -33,7 +33,6 @@
   display: flex;
   flex-direction: column;
 
-  --main-pane-width: 664px;
 }
 
 /*
@@ -56,7 +55,7 @@
 .pane-container {
   /* A workaround to keep the container always float on the `top: 0` (Bug 1377009) */
   display: block;
-  width: min(100%, var(--main-pane-width));
+  width: min(100%, var(--page-main-content-width));
   min-width: min-content;
 }
 
@@ -165,8 +164,8 @@ radio {
 }
 
 .spotlight {
-  background-color: color-mix(in srgb, var(--in-content-accent-color) 15%, transparent);
-  outline: var(--in-content-accent-color) 1px dotted;
+  background-color: color-mix(in srgb, var(--color-accent-primary) 15%, transparent);
+  outline: var(--color-accent-primary) 1px dotted;
   animation: fade-out 0.5s ease-out 2s forwards;
   /* Show the border to spotlight the components in high-contrast mode. */
   border: 1px solid transparent;
@@ -258,7 +257,7 @@ radio {
 }
 
 /* stylelint-disable-next-line media-query-no-invalid */
-@media not (-moz-bool-pref: "browser.migrate.preferences-entrypoint.enabled") {
+@media not -moz-pref("browser.migrate.preferences-entrypoint.enabled") {
   #dataMigrationGroup {
     display: none;
   }
@@ -500,7 +499,7 @@ richlistitem[selected] .actionsMenu:focus-visible {
   margin-inline-start: 0;
 }
 
-a[is="moz-support-link"]:not(.sidebar-footer-link) {
+a[is="moz-support-link"]:not(.sidebar-footer-link, [hidden]) {
   display: inline-block;
   white-space: initial;
 }
@@ -515,7 +514,7 @@ a[is="moz-support-link"]:not(.sidebar-footer-link) {
 #blocklistsTree > treechildren::-moz-tree-image(selectionCol, checked) {
   list-style-image: url("chrome://global/skin/icons/check.svg");
   -moz-context-properties: fill, stroke;
-  fill: var(--in-content-accent-color);
+  fill: var(--color-accent-primary);
 }
 
 #engineList > treechildren::-moz-tree-image(engineShown, checked, selected),
@@ -572,8 +571,7 @@ a[is="moz-support-link"]:not(.sidebar-footer-link) {
 #historyPane:not([selectedIndex="2"]) > #historyCustomPane,
 #weavePrefsDeck:not([selectedIndex="1"]) > #hasFxaAccount,
 #fxaLoginStatus:not([selectedIndex="1"]) > #fxaLoginUnverified,
-#fxaLoginStatus:not([selectedIndex="2"]) > #fxaLoginRejected,
-#syncStatus:not([selectedIndex="1"]) > #syncConfigured {
+#fxaLoginStatus:not([selectedIndex="2"]) > #fxaLoginRejected {
   visibility: collapse;
 }
 
@@ -810,8 +808,12 @@ html|dialog,
   margin-inline: 4px 8px;
 }
 
-#syncStatus {
+#syncStatusContainer {
   margin-top: 32px;
+}
+
+#syncChangeOptions {
+  margin-inline-start: 0;
 }
 
 .sync-group {
@@ -823,16 +825,15 @@ html|dialog,
   display: block;
 }
 
-.sync-choose-dialog-description {
-  margin-block-end: 10px;
+.sync-info-box {
+  border-radius: var(--border-radius-medium);
+  padding: var(--space-large);
 }
 
 .sync-engines-list > div,
 .sync-engines-list + hbox {
   margin-top: 0;
   padding-top: var(--space-large);
-  max-width: 300px;
-  height: auto;
 }
 
 dialog > .sync-engines-list > div,
@@ -861,7 +862,7 @@ dialog > .sync-engines-list + hbox {
 }
 
 .sync-engines-list {
-  column-count: 2;
+  column-count: 3;
   column-fill: balance;
   margin-block-end: 10px;
 }
@@ -929,7 +930,7 @@ dialog > .sync-engines-list + hbox {
   margin-inline-end: 8px;
   content: url("chrome://global/skin/icons/loading.svg");
   -moz-context-properties: fill;
-  fill: var(--in-content-accent-color);
+  fill: var(--color-accent-primary);
 }
 
 .navigation {
@@ -1020,7 +1021,7 @@ dialog > .sync-engines-list + hbox {
 
 .sticky-inner-container {
   flex: 1;
-  max-width: var(--main-pane-width);
+  max-width: var(--page-main-content-width);
 }
 
 .search-tooltip {
@@ -1218,17 +1219,6 @@ richlistitem .text-link:hover {
   white-space: pre-wrap;
 }
 
-#genai-chat-label,
-#genai-chat-provider,
-#genai-chat-links {
-  margin-block: 0 var(--input-space-block);
-}
-
-#genai-chat-provider {
-  width: min-content;
-  min-width: 20em;
-}
-
 .checkbox-row {
   display: flex;
   align-items: baseline;
@@ -1298,6 +1288,10 @@ richlistitem .text-link:hover {
   background-image: url("chrome://browser/skin/preferences/relay-logo.svg");
 }
 
+#solo-ai {
+  background-image: url("chrome://browser/skin/preferences/solo-ai-logo.svg")
+}
+
 /*
  * The :not clause is required because hiding an element with `display: flex` only
  * partially hides it.
@@ -1321,6 +1315,13 @@ richlistitem .text-link:hover {
   }
 }
 
+.qr-code-box-image-wrapper {
+  position: relative;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+}
+
 .qr-code-box-image {
   border-radius: 4px;
   padding: 2px;
@@ -1328,6 +1329,11 @@ richlistitem .text-link:hover {
   flex: 0 0 auto;
   -moz-context-properties: fill;
   fill: currentColor;
+}
+
+.qr-code-box-logo {
+  height: 18px;
+  position: absolute;
 }
 
 .qr-code-title-label {
@@ -1444,7 +1450,7 @@ richlistitem .text-link:hover {
 #translations-manage-install-list {
   height: 220px;
   overflow: auto;
-  background-color: var(--in-content-box-background);
+  background-color: var(--background-color-box);
   border: 1px solid var(--in-content-box-border-color);
   border-radius: 4px;
   resize: vertical;

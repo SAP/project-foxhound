@@ -68,6 +68,7 @@ constexpr char kVp8ForcePartitionResilience[] =
 // bitstream range of [0, 127] and not the user-level range of [0,63].
 constexpr int kLowVp8QpThreshold = 29;
 constexpr int kHighVp8QpThreshold = 95;
+constexpr int kScreenshareMinQp = 15;
 
 constexpr int kTokenPartitions = VP8_ONE_TOKENPARTITION;
 constexpr uint32_t kVp832ByteAlign = 32u;
@@ -116,8 +117,8 @@ static_assert(Vp8EncoderConfig::TemporalLayerConfig::kMaxLayers ==
 // Allow a newer value to override a current value only if the new value
 // is set.
 template <typename T>
-bool MaybeSetNewValue(const absl::optional<T>& new_value,
-                      absl::optional<T>* base_value) {
+bool MaybeSetNewValue(const std::optional<T>& new_value,
+                      std::optional<T>* base_value) {
   if (new_value.has_value() && new_value != *base_value) {
     *base_value = new_value;
     return true;
@@ -253,7 +254,7 @@ class FrameDropConfigOverride {
   const uint32_t original_frame_drop_threshold_;
 };
 
-absl::optional<TimeDelta> ParseFrameDropInterval(
+std::optional<TimeDelta> ParseFrameDropInterval(
     const FieldTrialsView& field_trials) {
   FieldTrialFlag disabled = FieldTrialFlag("Disabled");
   FieldTrialParameter<TimeDelta> interval("interval",
@@ -262,7 +263,7 @@ absl::optional<TimeDelta> ParseFrameDropInterval(
                   field_trials.Lookup("WebRTC-VP8-MaxFrameInterval"));
   if (disabled.Get()) {
     // Kill switch set, don't use any max frame interval.
-    return absl::nullopt;
+    return std::nullopt;
   }
   return interval.Get();
 }
@@ -493,7 +494,7 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
     return WEBRTC_VIDEO_CODEC_ERR_PARAMETER;
   }
 
-  if (absl::optional<ScalabilityMode> scalability_mode =
+  if (std::optional<ScalabilityMode> scalability_mode =
           inst->GetScalabilityMode();
       scalability_mode.has_value() &&
       !VP8SupportsScalabilityMode(*scalability_mode)) {
@@ -678,7 +679,7 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
   // Note the order we use is different from webm, we have lowest resolution
   // at position 0 and they have highest resolution at position 0.
   const size_t stream_idx_cfg_0 = encoders_.size() - 1;
-  SimulcastRateAllocator init_allocator(codec_);
+  SimulcastRateAllocator init_allocator(env_, codec_);
   VideoBitrateAllocation allocation =
       init_allocator.Allocate(VideoBitrateAllocationParameters(
           inst->startBitrate * 1000, inst->maxFramerate));
@@ -740,6 +741,31 @@ int LibvpxVp8Encoder::InitEncode(const VideoCodec* inst,
                                           vpx_configs_[i].rc_max_quantizer);
     UpdateVpxConfiguration(stream_idx);
   }
+
+  corruption_detection_settings_generator_ =
+      std::make_unique<CorruptionDetectionSettingsGenerator>(
+          CorruptionDetectionSettingsGenerator::ExponentialFunctionParameters{
+              .scale = 0.006,
+              .exponent_factor = 0.01857465,
+              .exponent_offset = -4.26470513},
+          CorruptionDetectionSettingsGenerator::ErrorThresholds{.luma = 5,
+                                                                .chroma = 6},
+          // On large changes, increase error threshold by one and std_dev
+          // by 2.0. Trigger on qp changes larger than 30, and fade down the
+          // adjusted value over 4 * num_temporal_layers to allow the base layer
+          // to converge somewhat. Set a minim filter size of 1.25 since some
+          // outlier pixels deviate a bit from truth even at very low QP,
+          // seeminly by bleeding into neighbours.
+          webrtc::CorruptionDetectionSettingsGenerator::TransientParameters{
+              .max_qp = 127,
+              .keyframe_threshold_offset = 1,
+              .keyframe_stddev_offset = 2.0,
+              .keyframe_offset_duration_frames =
+                  std::max(1,
+                           SimulcastUtility::NumberOfTemporalLayers(*inst, 0)) *
+                  4,
+              .large_qp_change_threshold = 30,
+              .std_dev_lower_bound = 1.25});
 
   return InitAndSetControlSettings();
 }
@@ -1158,7 +1184,7 @@ void LibvpxVp8Encoder::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
   frame_buffer_controller_->OnEncodeDone(stream_idx, timestamp,
                                          encoded_images_[encoder_idx].size(),
                                          is_keyframe, qp, codec_specific);
-  if (is_keyframe && codec_specific->template_structure != absl::nullopt) {
+  if (is_keyframe && codec_specific->template_structure != std::nullopt) {
     // Number of resolutions must match number of spatial layers, VP8 structures
     // expected to use single spatial layer. Templates must be ordered by
     // spatial_id, so assumption there is exactly one spatial layer is same as
@@ -1243,8 +1269,8 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
       }
     }
     encoded_images_[encoder_idx].SetRtpTimestamp(input_image.rtp_timestamp());
-    encoded_images_[encoder_idx].SetCaptureTimeIdentifier(
-        input_image.capture_time_identifier());
+    encoded_images_[encoder_idx].SetPresentationTimestamp(
+        input_image.presentation_timestamp());
     encoded_images_[encoder_idx].SetColorSpace(input_image.color_space());
     encoded_images_[encoder_idx].SetRetransmissionAllowed(
         retransmission_allowed);
@@ -1263,6 +1289,12 @@ int LibvpxVp8Encoder::GetEncodedPartitions(const VideoFrame& input_image,
         encoded_images_[encoder_idx].qp_ = qp_128;
         last_encoder_output_time_[stream_idx] =
             Timestamp::Micros(input_image.timestamp_us());
+
+        encoded_images_[encoder_idx].set_corruption_detection_filter_settings(
+            corruption_detection_settings_generator_->OnFrame(
+                encoded_images_[encoder_idx].FrameType() ==
+                    VideoFrameType::kVideoFrameKey,
+                qp_128));
 
         encoded_complete_callback_->OnEncodedImage(encoded_images_[encoder_idx],
                                                    &codec_specific);
@@ -1351,6 +1383,10 @@ VideoEncoder::EncoderInfo LibvpxVp8Encoder::GetEncoderInfo() const {
               0.5));
         }
       }
+    }
+
+    if (codec_.mode == VideoCodecMode::kScreensharing) {
+      info.min_qp = kScreenshareMinQp;
     }
   }
 

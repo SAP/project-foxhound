@@ -91,7 +91,7 @@ def write_scalar_tables(scalars, output):
     keys_table = []
     total_key_count = 0
 
-    print("const ScalarInfo gScalars[] = {", file=output)
+    print("MOZ_RUNINIT const ScalarInfo gScalars[] = {", file=output)
     for s in scalars:
         # We add both the scalar label and the expiration string to the strings
         # table.
@@ -186,9 +186,9 @@ def generate_JSON_definitions(output, *filenames):
                 "kind": scalar.nsITelemetry_kind,
                 "keyed": scalar.keyed,
                 "keys": scalar.keys,
-                "record_on_release": True
-                if scalar.dataset_short == "opt-out"
-                else False,
+                "record_on_release": (
+                    True if scalar.dataset_short == "opt-out" else False
+                ),
                 # We don't expire dynamic-builtin scalars: they're only meant for
                 # use in local developer builds anyway. They will expire when rebuilding.
                 "expired": False,

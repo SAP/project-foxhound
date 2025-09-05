@@ -564,6 +564,14 @@
     num: Int32Id
     expected: Int32Imm
 
+- name: GuardSpecificValue
+  shared: false
+  transpile: true
+  cost_estimate: 1
+  args:
+    val: ValId
+    expected: ValueField
+
 - name: GuardNoDenseElements
   shared: true
   transpile: true
@@ -793,6 +801,14 @@
   args:
     obj: ObjId
     flags: ByteImm
+
+# Guard cx->realm() == obj->realm().
+- name: GuardObjectHasSameRealm
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    obj: ObjId
 
 - name: LoadObject
   shared: true
@@ -1369,6 +1385,7 @@
   args:
     templateObject: ObjectField
     length: Int32Id
+    site: AllocSiteField
 
 - name: NewTypedArrayFromLengthResult
   shared: true
@@ -1395,6 +1412,36 @@
   args:
     templateObject: ObjectField
     array: ObjId
+
+- name: NewMapObjectResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+
+- name: NewSetObjectResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+
+- name: NewMapObjectFromIterableResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+    iterable: ValId
+
+- name: NewSetObjectFromIterableResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    templateObject: ObjectField
+    iterable: ValId
 
 - name: NewStringObjectResult
   shared: true
@@ -1852,6 +1899,12 @@
   args:
     value: Int32Id
 
+- name: AtomicsPauseResult
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+
 - name: CallNativeSetter
   shared: false
   transpile: true
@@ -2042,6 +2095,22 @@
     target: RawPointerField
 #endif
 
+- name: CallDOMFunctionWithAllocSite
+  shared: false
+  transpile: true
+  cost_estimate: 4
+  custom_writer: true
+  args:
+    callee: ObjId
+    argc: Int32Id
+    thisObj: ObjId
+    flags: CallFlagsImm
+    argcFixed: UInt32Imm
+    site: AllocSiteField
+#ifdef JS_SIMULATOR
+    target: RawPointerField
+#endif
+
 - name: CallClassHook
   shared: false
   transpile: true
@@ -2092,7 +2161,7 @@
     property: ValId
     trap: ObjId
     nargsAndFlags: UInt32Imm
-#endif
+  #endif
 
 # Meta ops generate no code, but contain data for the Warp Transpiler.
 - name: MetaScriptedThisShape
@@ -2314,6 +2383,15 @@
   args:
     obj: ObjId
     result: ObjId
+
+- name: LoadBoundFunctionArgument
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    obj: ObjId
+    index: UInt32Imm
+    result: ValId
 
 - name: GuardBoundFunctionIsConstructor
   shared: true
@@ -2795,6 +2873,75 @@
     lhs: BigIntId
     rhs: BigIntId
 
+- name: BigIntToIntPtr
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: BigIntId
+    result: IntPtrId
+
+- name: IntPtrToBigIntResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    input: IntPtrId
+
+- name: BigIntPtrAdd
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrSub
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrMul
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrDiv
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrMod
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrPow
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
 - name: Int32BitOrResult
   shared: true
   transpile: true
@@ -2898,6 +3045,59 @@
   args:
     input: BigIntId
 
+- name: BigIntPtrBitOr
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrBitXor
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrBitAnd
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrLeftShift
+  shared: true
+  transpile: true
+  cost_estimate: 3
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrRightShift
+  shared: true
+  transpile: true
+  cost_estimate: 3
+  args:
+    lhs: IntPtrId
+    rhs: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrNot
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: IntPtrId
+    result: IntPtrId
+
 - name: Int32NegationResult
   shared: true
   transpile: true
@@ -2918,6 +3118,14 @@
   cost_estimate: 5
   args:
     input: BigIntId
+
+- name: BigIntPtrNegation
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: IntPtrId
+    result: IntPtrId
 
 - name: Int32IncResult
   shared: true
@@ -2960,6 +3168,22 @@
   cost_estimate: 5
   args:
     input: BigIntId
+
+- name: BigIntPtrInc
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: IntPtrId
+    result: IntPtrId
+
+- name: BigIntPtrDec
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    input: IntPtrId
+    result: IntPtrId
 
 - name: LoadInt32TruthyResult
   shared: true
@@ -3037,13 +3261,22 @@
     shape: ShapeField
     site: AllocSiteField
 
-- name: CallStringConcatResult
+- name: NewFunctionCloneResult
+  shared: false
+  transpile: false
+  cost_estimate: 4
+  args:
+    canonical: ObjectField
+    allocKind: AllocKindImm
+
+- name: ConcatStringsResult
   shared: true
   transpile: true
   cost_estimate: 5
   args:
     lhs: StringId
     rhs: StringId
+    stub: JitCodeField
 
 - name: CallStringObjectConcatResult
   shared: false
@@ -3237,6 +3470,22 @@
     set: ObjId
     obj: ObjId
 
+- name: SetDeleteResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    set: ObjId
+    val: ValId
+
+- name: SetAddResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    set: ObjId
+    key: ValId
+
 - name: SetSizeResult
   shared: true
   transpile: true
@@ -3340,12 +3589,57 @@
     map: ObjId
     obj: ObjId
 
+- name: MapDeleteResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    map: ObjId
+    val: ValId
+
+- name: MapSetResult
+  shared: true
+  transpile: true
+  cost_estimate: 5
+  args:
+    map: ObjId
+    key: ValId
+    val: ValId
+
 - name: MapSizeResult
   shared: true
   transpile: true
   cost_estimate: 1
   args:
     map: ObjId
+
+- name: DateFillLocalTimeSlots
+  shared: true
+  transpile: true
+  cost_estimate: 4
+  args:
+    date: ObjId
+
+- name: DateHoursFromSecondsIntoYearResult
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    secondsIntoYear: ValId
+
+- name: DateMinutesFromSecondsIntoYearResult
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    secondsIntoYear: ValId
+
+- name: DateSecondsFromSecondsIntoYearResult
+  shared: true
+  transpile: true
+  cost_estimate: 2
+  args:
+    secondsIntoYear: ValId
 
 - name: ArrayFromArgumentsObjectResult
   shared: true
@@ -3389,6 +3683,14 @@
   transpile: true
   cost_estimate: 0
   args:
+
+- name: AssertFloat32Result
+  shared: true
+  transpile: true
+  cost_estimate: 1
+  args:
+    val: ValId
+    mustBeFloat32: BoolImm
 
 - name: AssertRecoveredOnBailoutResult
   shared: true

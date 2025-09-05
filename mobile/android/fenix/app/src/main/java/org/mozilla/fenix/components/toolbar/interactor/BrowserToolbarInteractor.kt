@@ -5,6 +5,7 @@
 package org.mozilla.fenix.components.toolbar.interactor
 
 import mozilla.components.ui.tabcounter.TabCounterMenu
+import org.mozilla.fenix.components.menu.MenuAccessPoint
 import org.mozilla.fenix.components.toolbar.BrowserToolbarController
 import org.mozilla.fenix.components.toolbar.BrowserToolbarMenuController
 import org.mozilla.fenix.components.toolbar.ToolbarMenu
@@ -34,16 +35,6 @@ interface BrowserToolbarInteractor {
     fun onEraseButtonClicked()
 
     /**
-     * Opens the shopping bottom sheet. Called when the user interacts with the shopping cfr action.
-     */
-    fun onShoppingCfrActionClicked()
-
-    /**
-     * Updates the settings for the shopping CFR. Called when the user is shown the CFR.
-     */
-    fun onShoppingCfrDisplayed()
-
-    /**
      * Opens the translation bottom sheet. Called when the user interacts with the translation
      * action.
      */
@@ -63,6 +54,20 @@ interface BrowserToolbarInteractor {
      * Called when the user long presses on the New Tab button.
      */
     fun onNewTabButtonLongClicked()
+
+    /**
+     * Opens the menu. Called when the user clicks the menu action button in the toolbar.
+     *
+     * @param accessPoint The [MenuAccessPoint] that was used to navigate to the menu dialog.
+     * @param customTabSessionId The ID of the custom tab session if navigating from
+     * an external access point, and null otherwise.
+     * @param isSandboxCustomTab Whether or not the current custom tab is sandboxed.
+     */
+    fun onMenuButtonClicked(
+        accessPoint: MenuAccessPoint,
+        customTabSessionId: String? = null,
+        isSandboxCustomTab: Boolean = false,
+    )
 }
 
 /**
@@ -118,14 +123,6 @@ class DefaultBrowserToolbarInteractor(
         browserToolbarController.handleEraseButtonClick()
     }
 
-    override fun onShoppingCfrActionClicked() {
-        browserToolbarController.handleShoppingCfrActionClick()
-    }
-
-    override fun onShoppingCfrDisplayed() {
-        browserToolbarController.handleShoppingCfrDisplayed()
-    }
-
     override fun onTranslationsButtonClicked() {
         browserToolbarController.handleTranslationsButtonClick()
     }
@@ -140,5 +137,13 @@ class DefaultBrowserToolbarInteractor(
 
     override fun onNewTabButtonLongClicked() {
         browserToolbarController.handleNewTabButtonLongClick()
+    }
+
+    override fun onMenuButtonClicked(
+        accessPoint: MenuAccessPoint,
+        customTabSessionId: String?,
+        isSandboxCustomTab: Boolean,
+    ) {
+        browserToolbarController.handleMenuButtonClicked(accessPoint, customTabSessionId, isSandboxCustomTab)
     }
 }

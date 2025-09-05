@@ -31,6 +31,7 @@
 #include <map>
 #include <memory>
 #include <sstream>
+#include <stack>
 #include <string>
 #include <tuple>
 #include <unordered_set>
@@ -87,7 +88,7 @@ enum class FileType {
 // Takes an absolute path to a file, and returns the type of file it is. If
 // it's a Source or Generated file, the provided inout path argument is modified
 // in-place so that it is relative to the source dir or objdir, respectively.
-FileType relativizePath(std::string& path) {
+FileType relativizePath(std::string &path) {
   if (path.compare(0, Objdir.length(), Objdir) == 0) {
     path.replace(0, Objdir.length(), GENERATED);
     return FileType::Generated;
@@ -95,7 +96,8 @@ FileType relativizePath(std::string& path) {
   // Empty filenames can get turned into Srcdir when they are resolved as
   // absolute paths, so we should exclude files that are exactly equal to
   // Srcdir or anything outside Srcdir.
-  if (path.length() > Srcdir.length() && path.compare(0, Srcdir.length(), Srcdir) == 0) {
+  if (path.length() > Srcdir.length() &&
+      path.compare(0, Srcdir.length(), Srcdir) == 0) {
     // Remove the trailing `/' as well.
     path.erase(0, Srcdir.length() + 1);
     return FileType::Source;
@@ -126,12 +128,12 @@ static bool isValidIdentifier(std::string Input) {
 }
 
 template <size_t N>
-static bool stringStartsWith(const std::string& Input,
+static bool stringStartsWith(const std::string &Input,
                              const char (&Prefix)[N]) {
   return Input.length() > N - 1 && memcmp(Input.c_str(), Prefix, N - 1) == 0;
 }
 
-static bool isASCII(const std::string& Input) {
+static bool isASCII(const std::string &Input) {
   for (char C : Input) {
     if (C & 0x80) {
       return false;
@@ -141,22 +143,45 @@ static bool isASCII(const std::string& Input) {
 }
 
 struct RAIITracer {
-  RAIITracer(const char *log) : mLog(log) {
-    printf("<%s>\n", mLog);
-  }
+  RAIITracer(const char *log) : mLog(log) { printf("<%s>\n", mLog); }
 
-  ~RAIITracer() {
-    printf("</%s>\n", mLog);
-  }
+  ~RAIITracer() { printf("</%s>\n", mLog); }
 
-  const char* mLog;
+  const char *mLog;
 };
 
 #define TRACEFUNC RAIITracer tracer(__FUNCTION__);
 
+// Sets variable to value on creation then resets variable to its original
+// value on destruction
+template <typename T> class ValueRollback {
+public:
+  template <typename U = T>
+  ValueRollback(T &variable, U &&value)
+      : mVariable{&variable},
+        mSavedValue{std::exchange(variable, std::forward<U>(value))} {}
+
+  ValueRollback(ValueRollback &&other) noexcept
+      : mVariable{std::exchange(other.mVariable, nullptr)},
+        mSavedValue{std::move(other.mSavedValue)} {}
+
+  ValueRollback(const ValueRollback &) = delete;
+  ValueRollback &operator=(ValueRollback &&) = delete;
+  ValueRollback &operator=(const ValueRollback &) = delete;
+
+  ~ValueRollback() {
+    if (mVariable)
+      *mVariable = std::move(mSavedValue);
+  }
+
+private:
+  T *mVariable;
+  T mSavedValue;
+};
+
 class IndexConsumer;
 
-bool isPure(FunctionDecl* D) {
+bool isPure(FunctionDecl *D) {
 #if CLANG_VERSION_MAJOR >= 18
   return D->isPureVirtual();
 #else
@@ -171,18 +196,18 @@ bool isPure(FunctionDecl* D) {
 struct FileInfo {
   FileInfo(std::string &Rname) : Realname(Rname) {
     switch (relativizePath(Realname)) {
-      case FileType::Generated:
-        Interesting = true;
-        Generated = true;
-        break;
-      case FileType::Source:
-        Interesting = true;
-        Generated = false;
-        break;
-      case FileType::Unknown:
-        Interesting = false;
-        Generated = false;
-        break;
+    case FileType::Generated:
+      Interesting = true;
+      Generated = true;
+      break;
+    case FileType::Source:
+      Interesting = true;
+      Generated = false;
+      break;
+    case FileType::Unknown:
+      Interesting = false;
+      Generated = false;
+      break;
     }
   }
   std::string Realname;
@@ -194,7 +219,8 @@ struct FileInfo {
 struct MacroExpansionState {
   Token MacroNameToken;
   const MacroInfo *MacroInfo = nullptr;
-  std::vector<std::string> Dependencies; // other macro symbols this expansions depends on
+  // other macro symbols this expansion depends on
+  std::vector<std::string> Dependencies;
   std::string Expansion;
   std::map<SourceLocation, unsigned> TokenLocations;
   SourceRange Range;
@@ -222,10 +248,8 @@ public:
                            FileID PrevFID) override;
 
   virtual void InclusionDirective(SourceLocation HashLoc,
-                                  const Token &IncludeTok,
-                                  StringRef FileName,
-                                  bool IsAngled,
-                                  CharSourceRange FileNameRange,
+                                  const Token &IncludeTok, StringRef FileName,
+                                  bool IsAngled, CharSourceRange FileNameRange,
 #if CLANG_VERSION_MAJOR >= 16
                                   OptionalFileEntryRef File,
 #elif CLANG_VERSION_MAJOR >= 15
@@ -233,8 +257,7 @@ public:
 #else
                                   const FileEntry *File,
 #endif
-                                  StringRef SearchPath,
-                                  StringRef RelativePath,
+                                  StringRef SearchPath, StringRef RelativePath,
 #if CLANG_VERSION_MAJOR >= 19
                                   const Module *SuggestedModule,
                                   bool ModuleImported,
@@ -281,9 +304,11 @@ private:
   // Tracks the set of declarations that the current expression/statement is
   // nested inside of.
   struct AutoSetContext {
-    AutoSetContext(IndexConsumer *Self, NamedDecl *Context, bool VisitImplicit = false)
+    AutoSetContext(IndexConsumer *Self, NamedDecl *Context,
+                   bool VisitImplicit = false)
         : Self(Self), Prev(Self->CurDeclContext), Decl(Context) {
-      this->VisitImplicit = VisitImplicit || (Prev ? Prev->VisitImplicit : false);
+      this->VisitImplicit =
+          VisitImplicit || (Prev ? Prev->VisitImplicit : false);
       Self->CurDeclContext = this;
     }
 
@@ -386,8 +411,8 @@ private:
   // Convert SourceRange to "PATH#line-line" or "PATH#line".
   // If Range's file is same as fromFileID, PATH is omitted.
   std::string pathAndLineRangeToString(FileID fromFileID, SourceRange Range) {
-    FileInfo* toFile = getFileInfo(Range.getBegin());
-    FileInfo* fromFile = FileMap.find(fromFileID)->second.get();
+    FileInfo *toFile = getFileInfo(Range.getBegin());
+    FileInfo *fromFile = FileMap.find(fromFileID)->second.get();
 
     auto lineRange = lineRangeToString(Range, true);
 
@@ -420,7 +445,8 @@ private:
     if (IsInvalid) {
       return "";
     }
-    unsigned Column1 = SM.getColumnNumber(Begin.first, Begin.second, &IsInvalid);
+    unsigned Column1 =
+        SM.getColumnNumber(Begin.first, Begin.second, &IsInvalid);
     if (IsInvalid) {
       return "";
     }
@@ -463,8 +489,8 @@ private:
           std::string Backing;
           llvm::raw_string_ostream Stream(Backing);
           const TemplateArgumentList &TemplateArgs = Spec->getTemplateArgs();
-          printTemplateArgumentList(
-              Stream, TemplateArgs.asArray(), PrintingPolicy(CI.getLangOpts()));
+          printTemplateArgumentList(Stream, TemplateArgs.asArray(),
+                                    PrintingPolicy(CI.getLangOpts()));
           Result += Stream.str();
         }
       } else if (const auto *Nd = dyn_cast<NamespaceDecl>(DC)) {
@@ -515,8 +541,9 @@ private:
       // we need to include a platform-specific thing in the hash. Otherwise
       // we can end up with hash collisions where different symbols from
       // different platforms map to the same thing.
-      char* Platform = getenv("MOZSEARCH_PLATFORM");
-      Filename = std::string(Platform ? Platform : "") + std::string("@") + Filename;
+      char *Platform = getenv("MOZSEARCH_PLATFORM");
+      Filename =
+          std::string(Platform ? Platform : "") + std::string("@") + Filename;
     }
     return hash(Filename + std::string("@") + locationToString(Loc));
   }
@@ -536,8 +563,8 @@ private:
     // The majority of path characters are letters and slashes which don't get
     // encoded, so that satisfies (1). Since "@" characters in the unsanitized
     // path get encoded, there should be no "@" characters in the sanitized path
-    // that got preserved from the unsanitized input, so that should satisfy (2).
-    // And (3) was done by trial-and-error. Note in particular the dot (.)
+    // that got preserved from the unsanitized input, so that should satisfy
+    // (2). And (3) was done by trial-and-error. Note in particular the dot (.)
     // character needs to be encoded, or the symbol-search feature of mozsearch
     // doesn't work correctly, as all dot characters in the symbol query get
     // replaced by #.
@@ -557,8 +584,9 @@ private:
       // we need to include a platform-specific thing in the hash. Otherwise
       // we can end up with hash collisions where different symbols from
       // different platforms map to the same thing.
-      char* Platform = getenv("MOZSEARCH_PLATFORM");
-      Filename = std::string(Platform ? Platform : "") + std::string("@") + Filename;
+      char *Platform = getenv("MOZSEARCH_PLATFORM");
+      Filename =
+          std::string(Platform ? Platform : "") + std::string("@") + Filename;
     }
     return Filename;
   }
@@ -675,11 +703,11 @@ private:
 
 public:
   IndexConsumer(CompilerInstance &CI)
-      : CI(CI), SM(CI.getSourceManager()), LO(CI.getLangOpts()), CurMangleContext(nullptr),
-        AstContext(nullptr), ConcatInfo(CI.getPreprocessor()), CurDeclContext(nullptr),
+      : CI(CI), SM(CI.getSourceManager()), LO(CI.getLangOpts()),
+        CurMangleContext(nullptr), AstContext(nullptr),
+        ConcatInfo(CI.getPreprocessor()), CurDeclContext(nullptr),
         TemplateStack(nullptr) {
-    CI.getPreprocessor().addPPCallbacks(
-        make_unique<PreprocessorHook>(this));
+    CI.getPreprocessor().addPPCallbacks(make_unique<PreprocessorHook>(this));
     CI.getPreprocessor().setTokenWatcher(
         [this](const auto &token) { onTokenLexed(token); });
   }
@@ -708,7 +736,7 @@ public:
   // All we need is to follow the final declaration.
   virtual void HandleTranslationUnit(ASTContext &Ctx) {
     CurMangleContext =
-      clang::ItaniumMangleContext::create(Ctx, CI.getDiagnostics());
+        clang::ItaniumMangleContext::create(Ctx, CI.getDiagnostics());
 
     AstContext = &Ctx;
     Resolver = std::make_unique<clangd::HeuristicResolver>(Ctx);
@@ -724,9 +752,9 @@ public:
       FileInfo &Info = *It->second;
 
       std::string Filename = Outdir + Info.Realname;
-      std::string SrcFilename = Info.Generated
-        ? Objdir + Info.Realname.substr(GENERATED.length())
-        : Srcdir + PATHSEP_STRING + Info.Realname;
+      std::string SrcFilename =
+          Info.Generated ? Objdir + Info.Realname.substr(GENERATED.length())
+                         : Srcdir + PATHSEP_STRING + Info.Realname;
 
       ensurePath(Filename);
 
@@ -745,19 +773,21 @@ public:
       std::ifstream Fin(Filename.c_str(), std::ios::in | std::ios::binary);
       FILE *OutFp = Lock.openTmp();
       if (!OutFp) {
-        fprintf(stderr, "Unable to open tmp out file for %s\n", Filename.c_str());
+        fprintf(stderr, "Unable to open tmp out file for %s\n",
+                Filename.c_str());
         exit(1);
       }
 
       // Sort our new results and get an iterator to them
       std::sort(Info.Output.begin(), Info.Output.end());
-      std::vector<std::string>::const_iterator NewLinesIter = Info.Output.begin();
+      std::vector<std::string>::const_iterator NewLinesIter =
+          Info.Output.begin();
       std::string LastNewWritten;
 
       // Loop over the existing (sorted) lines in the analysis output file.
       // (The good() check also handles the case where Fin did not exist when we
       // went to open it.)
-      while(Fin.good()) {
+      while (Fin.good()) {
         std::string OldLine;
         std::getline(Fin, OldLine);
         // Skip blank lines.
@@ -782,8 +812,10 @@ public:
             // dedupe the new entries being written
             continue;
           }
-          if (fwrite(NewLinesIter->c_str(), NewLinesIter->length(), 1, OutFp) != 1) {
-            fprintf(stderr, "Unable to write %zu bytes[1] to tmp output file for %s\n",
+          if (fwrite(NewLinesIter->c_str(), NewLinesIter->length(), 1, OutFp) !=
+              1) {
+            fprintf(stderr,
+                    "Unable to write %zu bytes[1] to tmp output file for %s\n",
                     NewLinesIter->length(), Filename.c_str());
             exit(1);
           }
@@ -792,7 +824,8 @@ public:
 
         // Write the entry read from the existing file.
         if (fwrite(OldLine.c_str(), OldLine.length(), 1, OutFp) != 1) {
-          fprintf(stderr, "Unable to write %zu bytes[2] to tmp output file for %s\n",
+          fprintf(stderr,
+                  "Unable to write %zu bytes[2] to tmp output file for %s\n",
                   OldLine.length(), Filename.c_str());
           exit(1);
         }
@@ -806,8 +839,10 @@ public:
         if (*NewLinesIter == LastNewWritten) {
           continue;
         }
-        if (fwrite(NewLinesIter->c_str(), NewLinesIter->length(), 1, OutFp) != 1) {
-          fprintf(stderr, "Unable to write %zu bytes[3] to tmp output file for %s\n",
+        if (fwrite(NewLinesIter->c_str(), NewLinesIter->length(), 1, OutFp) !=
+            1) {
+          fprintf(stderr,
+                  "Unable to write %zu bytes[3] to tmp output file for %s\n",
                   NewLinesIter->length(), Filename.c_str());
           exit(1);
         }
@@ -818,7 +853,9 @@ public:
       // with the new one.
       fclose(OutFp);
       if (!Lock.moveTmp()) {
-        fprintf(stderr, "Unable to move tmp output file into place for %s (err %d)\n", Filename.c_str(), errno);
+        fprintf(stderr,
+                "Unable to move tmp output file into place for %s (err %d)\n",
+                Filename.c_str(), errno);
         exit(1);
       }
     }
@@ -847,6 +884,7 @@ public:
     // the definition inside the scope of the template or else we won't properly
     // handle member access on the templated type.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseFunctionDecl(D);
@@ -856,6 +894,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXMethodDecl(D);
@@ -865,6 +904,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXConstructorDecl(D);
@@ -874,6 +914,7 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXConversionDecl(D);
@@ -883,9 +924,15 @@ public:
     const FunctionDecl *Def;
     // See TraverseFunctionDecl.
     if (TemplateStack && D->isDefined(Def) && Def && D != Def) {
+      const auto _ = ValueRollback(CurDeclContext, nullptr);
       TraverseFunctionDecl(const_cast<FunctionDecl *>(Def));
     }
     return Super::TraverseCXXDestructorDecl(D);
+  }
+
+  bool TraverseLambdaExpr(LambdaExpr *E) {
+    AutoSetContext Asc(this, nullptr, true);
+    return Super::TraverseLambdaExpr(E);
   }
 
   // Used to keep track of the context in which a token appears.
@@ -907,7 +954,8 @@ public:
       D = F->getTemplateInstantiationPattern();
     }
 
-    return Context(D->getQualifiedNameAsString(), getMangledName(CurMangleContext, D));
+    return Context(D->getQualifiedNameAsString(),
+                   getMangledName(CurMangleContext, D));
   }
 
   Context getContext(SourceLocation Loc) {
@@ -917,8 +965,12 @@ public:
       return Context();
     }
 
-    if (CurDeclContext) {
-      return translateContext(CurDeclContext->Decl);
+    AutoSetContext *Ctxt = CurDeclContext;
+    while (Ctxt) {
+      if (Ctxt->Decl) {
+        return translateContext(Ctxt->Decl);
+      }
+      Ctxt = Ctxt->Prev;
     }
     return Context();
   }
@@ -935,12 +987,27 @@ public:
 
     AutoSetContext *Ctxt = CurDeclContext;
     while (Ctxt) {
-      if (Ctxt->Decl != D) {
+      if (Ctxt->Decl && Ctxt->Decl != D) {
         return translateContext(Ctxt->Decl);
       }
       Ctxt = Ctxt->Prev;
     }
     return Context();
+  }
+
+  // Searches for the closest CurDeclContext parent that is a function template
+  // instantiation
+  const FunctionDecl *getCurrentFunctionTemplateInstantiation() {
+    const auto *Ctxt = CurDeclContext;
+    while (Ctxt) {
+      if (Ctxt->Decl && isa<FunctionDecl>(Ctxt->Decl)) {
+        const auto *F = Ctxt->Decl->getAsFunction();
+        if (F->isTemplateInstantiation())
+          return F;
+      }
+      Ctxt = Ctxt->Prev;
+    }
+    return nullptr;
   }
 
   // Analyzing template code is tricky. Suppose we have this code:
@@ -972,9 +1039,9 @@ public:
   // indexer to visit EVERY identifier, which is way too much data.
   struct AutoTemplateContext {
     AutoTemplateContext(IndexConsumer *Self)
-        : Self(Self)
-        , CurMode(Self->TemplateStack ? Self->TemplateStack->CurMode : Mode::GatherDependent)
-        , Parent(Self->TemplateStack) {
+        : Self(Self), CurMode(Self->TemplateStack ? Self->TemplateStack->CurMode
+                                                  : Mode::GatherDependent),
+          Parent(Self->TemplateStack) {
       Self->TemplateStack = this;
     }
 
@@ -1005,9 +1072,7 @@ public:
       }
     }
 
-    bool inGatherMode() {
-      return CurMode == Mode::GatherDependent;
-    }
+    bool inGatherMode() { return CurMode == Mode::GatherDependent; }
 
     // Do we need to perform the extra AnalyzeDependent passes (one per
     // instantiation)?
@@ -1058,6 +1123,10 @@ public:
 
   AutoTemplateContext *TemplateStack;
 
+  std::unordered_multimap<const FunctionDecl *, const Stmt *>
+      ForwardingTemplates;
+  std::unordered_set<unsigned> ForwardedTemplateLocations;
+
   bool shouldVisitTemplateInstantiations() const {
     if (TemplateStack) {
       return TemplateStack->shouldVisitTemplateInstantiations();
@@ -1069,9 +1138,57 @@ public:
     return CurDeclContext && CurDeclContext->VisitImplicit;
   }
 
+  // We don't want to traverse all specializations everytime we find a forward
+  // declaration, so only traverse specializations related to an actual
+  // definition.
+  //
+  // ```
+  // // This is the canonical declaration for Maybe but isn't really useful.
+  // template <typename T>
+  // struct Maybe;
+  //
+  // // This is another ClassTemplateDecl, but not the canonical one, where we
+  // // actually have the definition. This is the one we want to traverse.
+  // template <typename T>
+  // struct Maybe {
+  //   // This is both the canonical declaration and the definition for
+  //   // inline_method and we want to traverse it.
+  //   template <typename... Args>
+  //   T *inline_method(Args&&... args) {
+  //     // definition
+  //   }
+  //
+  //   // This is the canonical declaration, TraverseFunctionTemplateDecl
+  //   // traverses its out of line definition too.
+  //   template <typename... Args>
+  //   T *out_of_line_method(Args&&... args);
+  // }
+  //
+  // // This is the definition for Maybe<T>::out_of_line_method<Args...>
+  // // It is traversed when calling TraverseFunctionTemplateDecl on the
+  // // canonical declaration.
+  // template <typename T>
+  // template <typename... Args>
+  // T *maybe(Args&&... args) {
+  //   // definition
+  // }
+  // ```
+  //
+  // So:
+  // - for class templates we check isThisDeclarationADefinition
+  // - for function templates we check isCanonicalDecl
   bool TraverseClassTemplateDecl(ClassTemplateDecl *D) {
     AutoTemplateContext Atc(this);
     Super::TraverseClassTemplateDecl(D);
+
+    // Gather dependent locations from partial specializations too
+    SmallVector<ClassTemplatePartialSpecializationDecl *> PS;
+    D->getPartialSpecializations(PS);
+    for (auto *Spec : PS) {
+      for (auto *Rd : Spec->redecls()) {
+        TraverseDecl(Rd);
+      }
+    }
 
     if (!Atc.needsAnalysis()) {
       return true;
@@ -1079,9 +1196,8 @@ public:
 
     Atc.switchMode();
 
-    if (D != D->getCanonicalDecl()) {
+    if (!D->isThisDeclarationADefinition())
       return true;
-    }
 
     for (auto *Spec : D->specializations()) {
       for (auto *Rd : Spec->redecls()) {
@@ -1096,6 +1212,7 @@ public:
     return true;
   }
 
+  // See also comment above TraverseClassTemplateDecl
   bool TraverseFunctionTemplateDecl(FunctionTemplateDecl *D) {
     AutoTemplateContext Atc(this);
     if (Atc.inGatherMode()) {
@@ -1108,9 +1225,8 @@ public:
 
     Atc.switchMode();
 
-    if (D != D->getCanonicalDecl()) {
+    if (!D->isCanonicalDecl())
       return true;
-    }
 
     for (auto *Spec : D->specializations()) {
       for (auto *Rd : Spec->redecls()) {
@@ -1132,23 +1248,30 @@ public:
     // Flag to omit the identifier from being cross-referenced across files.
     // This is usually desired for local variables.
     NoCrossref = 1 << 0,
-    // Flag to indicate the token with analysis data is not an identifier. Indicates
+    // Flag to indicate the token with analysis data is not an identifier.
+    // Indicates
     // we want to skip the check that tries to ensure a sane identifier token.
     NotIdentifierToken = 1 << 1,
     // This indicates that the end of the provided SourceRange is valid and
     // should be respected. If this flag is not set, the visitIdentifier
     // function should use only the start of the SourceRange and auto-detect
     // the end based on whatever token is found at the start.
-    LocRangeEndValid = 1 << 2
+    LocRangeEndValid = 1 << 2,
+    // Indicates this record was generated through heuristic template
+    // resolution.
+    Heuristic = 1 << 3,
   };
 
-  void emitStructuredRecordInfo(llvm::json::OStream &J, SourceLocation Loc, const RecordDecl *decl) {
-    J.attribute("kind", TypeWithKeyword::getTagTypeKindName(decl->getTagKind()));
+  void emitStructuredRecordInfo(llvm::json::OStream &J, SourceLocation Loc,
+                                const RecordDecl *decl) {
+    J.attribute("kind",
+                TypeWithKeyword::getTagTypeKindName(decl->getTagKind()));
 
     const ASTContext &C = *AstContext;
     const ASTRecordLayout &Layout = C.getASTRecordLayout(decl);
 
     J.attribute("sizeBytes", Layout.getSize().getQuantity());
+    J.attribute("alignmentBytes", Layout.getAlignment().getQuantity());
 
     emitBindingAttributes(J, *decl);
 
@@ -1162,7 +1285,8 @@ public:
         //  * the size string 4/8 is shorter than true/false in the analysis
         //    file
         const QualType ptrType = C.getUIntPtrType();
-        J.attribute("ownVFPtrBytes", C.getTypeSizeInChars(ptrType).getQuantity());
+        J.attribute("ownVFPtrBytes",
+                    C.getTypeSizeInChars(ptrType).getQuantity());
       }
 
       J.attributeBegin("supers");
@@ -1246,14 +1370,17 @@ public:
     J.arrayBegin();
     uint64_t iField = 0;
     for (RecordDecl::field_iterator It = decl->field_begin(),
-          End = decl->field_end(); It != End; ++It, ++iField) {
+                                    End = decl->field_end();
+         It != End; ++It, ++iField) {
       const FieldDecl &Field = **It;
-      auto sourceRange = SM.getExpansionRange(Field.getSourceRange()).getAsRange();
+      auto sourceRange =
+          SM.getExpansionRange(Field.getSourceRange()).getAsRange();
       uint64_t localOffsetBits = Layout.getFieldOffset(iField);
       CharUnits localOffsetBytes = C.toCharUnitsFromBits(localOffsetBits);
 
       J.objectBegin();
-      J.attribute("lineRange", pathAndLineRangeToString(structFileID, sourceRange));
+      J.attribute("lineRange",
+                  pathAndLineRangeToString(structFileID, sourceRange));
       J.attribute("pretty", getQualifiedName(&Field));
       J.attribute("sym", getMangledName(CurMangleContext, &Field));
 
@@ -1282,8 +1409,13 @@ public:
         J.attributeBegin("bitPositions");
         J.objectBegin();
 
-        J.attribute("begin", unsigned(localOffsetBits - C.toBits(localOffsetBytes)));
+        J.attribute("begin",
+                    unsigned(localOffsetBits - C.toBits(localOffsetBytes)));
+#if CLANG_VERSION_MAJOR < 20
         J.attribute("width", Field.getBitWidthValue(C));
+#else
+        J.attribute("width", Field.getBitWidthValue());
+#endif
 
         J.objectEnd();
         J.attributeEnd();
@@ -1317,7 +1449,8 @@ public:
     J.attribute("kind", "enumConstant");
   }
 
-  void emitStructuredFunctionInfo(llvm::json::OStream &J, const FunctionDecl *decl) {
+  void emitStructuredFunctionInfo(llvm::json::OStream &J,
+                                  const FunctionDecl *decl) {
     emitBindingAttributes(J, *decl);
 
     J.attributeBegin("args");
@@ -1367,7 +1500,8 @@ public:
         // TODO: Make sure we're doing template traversals appropriately...
         // findOverriddenMethods (now removed) liked to do:
         //   if (Decl->isTemplateInstantiation()) {
-        //     Decl = dyn_cast<CXXMethodDecl>(Decl->getTemplateInstantiationPattern());
+        //     Decl =
+        //     dyn_cast<CXXMethodDecl>(Decl->getTemplateInstantiationPattern());
         //   }
         // I think our pre-emptive dereferencing/avoidance of templates may
         // protect us from this, but it needs more investigation.
@@ -1443,9 +1577,19 @@ public:
    * Emit structured info for a variable if it is a static class member.
    */
   void emitStructuredVarInfo(llvm::json::OStream &J, const VarDecl *decl) {
-    const auto *parentDecl = dyn_cast_or_null<RecordDecl>(decl->getDeclContext());
+    const auto *parentDecl =
+        dyn_cast_or_null<RecordDecl>(decl->getDeclContext());
 
-    J.attribute("kind", "field");
+    if (parentDecl) {
+      J.attribute("kind", "field");
+    } else if (llvm::isa<ParmVarDecl>(decl)) {
+      J.attribute("kind", "parameter");
+    } else if (decl->isLocalVarDecl()) {
+      J.attribute("kind", "localVar");
+    } else {
+      // namespace scope variable
+      J.attribute("kind", "variable");
+    }
 
     if (parentDecl) {
       J.attribute("parentsym", getMangledName(CurMangleContext, parentDecl));
@@ -1508,8 +1652,7 @@ public:
   // called for each identifier that corresponds to a symbol.
   void visitIdentifier(const char *Kind, const char *SyntaxKind,
                        llvm::StringRef QualName, SourceRange LocRange,
-                       std::string Symbol,
-                       QualType MaybeType = QualType(),
+                       std::string Symbol, QualType MaybeType = QualType(),
                        Context TokenContext = Context(), int Flags = 0,
                        SourceRange PeekRange = SourceRange(),
                        SourceRange NestingRange = SourceRange(),
@@ -1519,7 +1662,9 @@ public:
     // Also visit the spelling site.
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
     if (SpellingLoc != Loc) {
-      visitIdentifier(Kind, SyntaxKind, QualName, SpellingLoc, Symbol, MaybeType, TokenContext, Flags, PeekRange, NestingRange, ArgRanges);
+      visitIdentifier(Kind, SyntaxKind, QualName, SpellingLoc, Symbol,
+                      MaybeType, TokenContext, Flags, PeekRange, NestingRange,
+                      ArgRanges);
     }
 
     SourceLocation ExpansionLoc = SM.getExpansionLoc(Loc);
@@ -1534,12 +1679,16 @@ public:
 
     // Find the file positions corresponding to the token.
     unsigned StartOffset = SM.getFileOffset(ExpansionLoc);
-    unsigned EndOffset = (Flags & LocRangeEndValid)
-        ? SM.getFileOffset(LocRange.getEnd())
-        : StartOffset + Lexer::MeasureTokenLength(ExpansionLoc, SM, CI.getLangOpts());
+    unsigned EndOffset =
+        (Flags & LocRangeEndValid)
+            ? SM.getFileOffset(LocRange.getEnd())
+            : StartOffset +
+                  Lexer::MeasureTokenLength(ExpansionLoc, SM, CI.getLangOpts());
 
-    std::string LocStr = locationToString(ExpansionLoc, EndOffset - StartOffset);
-    std::string RangeStr = locationToString(ExpansionLoc, EndOffset - StartOffset);
+    std::string LocStr =
+        locationToString(ExpansionLoc, EndOffset - StartOffset);
+    std::string RangeStr =
+        locationToString(ExpansionLoc, EndOffset - StartOffset);
     std::string PeekRangeStr;
 
     if (!(Flags & NotIdentifierToken)) {
@@ -1658,15 +1807,23 @@ public:
       J.attribute("no_crossref", 1);
     }
 
+    if (Flags & Heuristic) {
+      J.attributeBegin("confidence");
+      J.arrayBegin();
+      J.value("cppTemplateHeuristic");
+      J.arrayEnd();
+      J.attributeEnd();
+    }
+
     if (ArgRanges) {
       J.attributeBegin("argRanges");
       J.arrayBegin();
 
       for (auto range : *ArgRanges) {
-          std::string ArgRangeStr = fullRangeToString(range);
-          if (!ArgRangeStr.empty()) {
-            J.value(ArgRangeStr);
-          }
+        std::string ArgRangeStr = fullRangeToString(range);
+        if (!ArgRangeStr.empty()) {
+          J.value(ArgRangeStr);
+        }
       }
 
       J.arrayEnd();
@@ -1681,7 +1838,8 @@ public:
         J.objectBegin();
         J.attributeBegin(macroInfo.Key);
         J.objectBegin();
-        J.attribute("", macroInfo.Expansion); // "" is the platform key, populated by the merge step
+        J.attribute("", macroInfo.Expansion); // "" is the platform key,
+                                              // populated by the merge step
         J.objectEnd();
         J.attributeEnd();
         J.objectEnd();
@@ -1693,7 +1851,8 @@ public:
           J.objectBegin();
           J.attributeBegin(macroInfo.Key);
           J.objectBegin();
-          J.attributeBegin(""); // "" is the platform key, populated by the merge step
+          J.attributeBegin(
+              ""); // "" is the platform key, populated by the merge step
           J.arrayBegin();
           J.value(it->second);
           J.arrayEnd();
@@ -1726,7 +1885,7 @@ public:
   }
 
   // If the provided statement is compound, return its range.
-  SourceRange getCompoundStmtRange(Stmt* D) {
+  SourceRange getCompoundStmtRange(Stmt *D) {
     if (!D) {
       return SourceRange();
     }
@@ -1739,7 +1898,7 @@ public:
     return SourceRange();
   }
 
-  SourceRange getFunctionPeekRange(FunctionDecl* D) {
+  SourceRange getFunctionPeekRange(FunctionDecl *D) {
     // We always start at the start of the function decl, which may include the
     // return type on a separate line.
     SourceLocation Start = D->getBeginLoc();
@@ -1750,8 +1909,9 @@ public:
     std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedLoc(End);
 
     // But if there are parameters, we want to include those as well.
-    for (ParmVarDecl* Param : D->parameters()) {
-      std::pair<FileID, unsigned> ParamLoc = SM.getDecomposedLoc(Param->getLocation());
+    for (ParmVarDecl *Param : D->parameters()) {
+      std::pair<FileID, unsigned> ParamLoc =
+          SM.getDecomposedLoc(Param->getLocation());
 
       // It's possible there are macros involved or something. We don't include
       // the parameters in that case.
@@ -1764,7 +1924,7 @@ public:
     return SourceRange(Start, End);
   }
 
-  SourceRange getTagPeekRange(TagDecl* D) {
+  SourceRange getTagPeekRange(TagDecl *D) {
     SourceLocation Start = D->getBeginLoc();
 
     // By default, we end at the line containing the name.
@@ -1772,13 +1932,13 @@ public:
 
     std::pair<FileID, unsigned> FuncLoc = SM.getDecomposedLoc(End);
 
-    if (CXXRecordDecl* D2 = dyn_cast<CXXRecordDecl>(D)) {
+    if (CXXRecordDecl *D2 = dyn_cast<CXXRecordDecl>(D)) {
       // But if there are parameters, we want to include those as well.
-      for (CXXBaseSpecifier& Base : D2->bases()) {
+      for (CXXBaseSpecifier &Base : D2->bases()) {
         std::pair<FileID, unsigned> Loc = SM.getDecomposedLoc(Base.getEndLoc());
 
-        // It's possible there are macros involved or something. We don't include
-        // the parameters in that case.
+        // It's possible there are macros involved or something. We don't
+        // include the parameters in that case.
         if (Loc.first == FuncLoc.first) {
           // Assume parameters are in order, so we always take the last one.
           End = Base.getEndLoc();
@@ -1789,9 +1949,8 @@ public:
     return SourceRange(Start, End);
   }
 
-  SourceRange getCommentRange(NamedDecl* D) {
-    const RawComment* RC =
-      AstContext->getRawCommentForDeclNoCache(D);
+  SourceRange getCommentRange(NamedDecl *D) {
+    const RawComment *RC = AstContext->getRawCommentForDeclNoCache(D);
     if (!RC) {
       return SourceRange();
     }
@@ -1880,7 +2039,8 @@ public:
         D = D2->getTemplateInstantiationPattern();
       }
       // We treat pure virtual declarations as definitions.
-      Kind = (D2->isThisDeclarationADefinition() || isPure(D2)) ? "def" : "decl";
+      Kind =
+          (D2->isThisDeclarationADefinition() || isPure(D2)) ? "def" : "decl";
       PrettyKind = "function";
       PeekRange = getFunctionPeekRange(D2);
 
@@ -1934,8 +2094,9 @@ public:
       if (D2) {
         // There's no exposure of the left brace so we have to find it.
         NestingRange = SourceRange(
-          findLeftBraceFromLoc(D2->isAnonymousNamespace() ? D2->getBeginLoc() : ExpansionLoc),
-          D2->getRBraceLoc());
+            findLeftBraceFromLoc(D2->isAnonymousNamespace() ? D2->getBeginLoc()
+                                                            : ExpansionLoc),
+            D2->getRBraceLoc());
       }
     } else if (isa<FieldDecl>(D)) {
       Kind = "def";
@@ -1960,9 +2121,9 @@ public:
 
     // In the case of destructors, Loc might point to the ~ character. In that
     // case we want to skip to the name of the class. However, Loc might also
-    // point to other places that generate destructors, such as a lambda (apparently
-    // clang 8 creates a destructor declaration for at least some lambdas). In
-    // that case we'll just drop the declaration.
+    // point to other places that generate destructors, such as a lambda
+    // (apparently clang 8 creates a destructor declaration for at least some
+    // lambdas). In that case we'll just drop the declaration.
     if (isa<CXXDestructorDecl>(D)) {
       PrettyKind = "destructor";
       const char *P = SM.getCharacterData(Loc);
@@ -1982,9 +2143,9 @@ public:
       }
     }
 
-    visitIdentifier(Kind, PrettyKind, getQualifiedName(D), SourceRange(Loc), Symbol,
-                    qtype,
-                    getContext(D), Flags, PeekRange, NestingRange);
+    visitIdentifier(Kind, PrettyKind, getQualifiedName(D), SourceRange(Loc),
+                    Symbol, qtype, getContext(D), Flags, PeekRange,
+                    NestingRange);
 
     // In-progress structured info emission.
     if (RecordDecl *D2 = dyn_cast<RecordDecl>(D)) {
@@ -1994,8 +2155,7 @@ public:
           // dependent type or if we're in any kind of template context.  This
           // should be re-evaluated once this is working for normal classes and
           // we can better evaluate what is useful.
-          !D2->isDependentType() &&
-          !TemplateStack) {
+          !D2->isDependentType() && !TemplateStack) {
         if (auto *D3 = dyn_cast<CXXRecordDecl>(D2)) {
           findBindingToJavaClass(*AstContext, *D3);
           findBoundAsJavaClasses(*AstContext, *D3);
@@ -2018,10 +2178,8 @@ public:
       if ((D2->isThisDeclarationADefinition() || isPure(D2)) &&
           // a clause at the top should have generalized and set wasTemplate so
           // it shouldn't be the case that isTemplateInstantiation() is true.
-          !D2->isTemplateInstantiation() &&
-          !wasTemplate &&
-          !D2->isFunctionTemplateSpecialization() &&
-          !TemplateStack) {
+          !D2->isTemplateInstantiation() && !wasTemplate &&
+          !D2->isFunctionTemplateSpecialization() && !TemplateStack) {
         if (auto *D3 = dyn_cast<CXXMethodDecl>(D2)) {
           findBindingToJavaMember(*AstContext, *D3);
         } else {
@@ -2031,15 +2189,12 @@ public:
       }
     }
     if (FieldDecl *D2 = dyn_cast<FieldDecl>(D)) {
-      if (!D2->isTemplated() &&
-          !TemplateStack) {
+      if (!D2->isTemplated() && !TemplateStack) {
         emitStructuredInfo(ExpansionLoc, D2);
       }
     }
     if (VarDecl *D2 = dyn_cast<VarDecl>(D)) {
-      if (!D2->isTemplated() &&
-          !TemplateStack &&
-          isa<CXXRecordDecl>(D2->getDeclContext())) {
+      if (!D2->isTemplated() && !TemplateStack) {
         findBindingToJavaConstant(*AstContext, *D2);
         emitStructuredInfo(ExpansionLoc, D2);
       }
@@ -2048,12 +2203,30 @@ public:
     return true;
   }
 
-  bool VisitCXXConstructExpr(CXXConstructExpr *E) {
+  bool VisitCXXConstructExpr(const CXXConstructExpr *E) {
+    // If we are in a template and find a Stmt that was registed in
+    // ForwardedTemplateLocations, convert the location to an actual Stmt* in
+    // ForwardingTemplates
+    if (TemplateStack && !TemplateStack->inGatherMode()) {
+      if (ForwardedTemplateLocations.find(E->getBeginLoc().getRawEncoding()) !=
+          ForwardedTemplateLocations.end()) {
+        if (const auto *currentTemplate =
+                getCurrentFunctionTemplateInstantiation()) {
+          ForwardingTemplates.insert({currentTemplate, E});
+        }
+        return true;
+      }
+    }
+
     SourceLocation Loc = E->getBeginLoc();
     if (!isInterestingLocation(Loc)) {
       return true;
     }
 
+    return VisitCXXConstructExpr(E, Loc);
+  }
+
+  bool VisitCXXConstructExpr(const CXXConstructExpr *E, SourceLocation Loc) {
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
 
     FunctionDecl *Ctor = E->getConstructor();
@@ -2070,7 +2243,56 @@ public:
     return true;
   }
 
+  CallExpr *CurrentCall = nullptr;
+  bool TraverseCallExpr(CallExpr *E) {
+    const auto _ = ValueRollback(CurrentCall, E);
+    return Super::TraverseCallExpr(E);
+  }
+
   bool VisitCallExpr(CallExpr *E) {
+    Expr *CalleeExpr = E->getCallee()->IgnoreParenImpCasts();
+
+    if (TemplateStack) {
+      const auto CalleeLocation = [&] {
+        if (const auto *Member =
+                dyn_cast<CXXDependentScopeMemberExpr>(CalleeExpr)) {
+          return Member->getMemberLoc();
+        }
+        if (const auto *DeclRef =
+                dyn_cast<DependentScopeDeclRefExpr>(CalleeExpr)) {
+          return DeclRef->getLocation();
+        }
+        if (const auto *DeclRef = dyn_cast<DeclRefExpr>(CalleeExpr)) {
+          return DeclRef->getLocation();
+        }
+
+        // Does the right thing for MemberExpr and UnresolvedMemberExpr at
+        // least.
+        return CalleeExpr->getExprLoc();
+      }();
+
+      // If we are in a template:
+      // - when in GatherDependent mode and the callee is type-dependent,
+      //   register it in ForwardedTemplateLocations
+      // - when in AnalyseDependent mode and the callee is in
+      //   ForwardedTemplateLocations, convert the location to an actual Stmt*
+      //   in ForwardingTemplates
+      if (TemplateStack->inGatherMode()) {
+        if (CalleeExpr->isTypeDependent()) {
+          TemplateStack->visitDependent(CalleeLocation);
+          ForwardedTemplateLocations.insert(CalleeLocation.getRawEncoding());
+        }
+      } else {
+        if (ForwardedTemplateLocations.find(CalleeLocation.getRawEncoding()) !=
+            ForwardedTemplateLocations.end()) {
+          if (const auto *currentTemplate =
+                  getCurrentFunctionTemplateInstantiation()) {
+            ForwardingTemplates.insert({currentTemplate, E});
+          }
+        }
+      }
+    }
+
     Decl *Callee = E->getCalleeDecl();
     if (!Callee || !FunctionDecl::classof(Callee)) {
       return true;
@@ -2087,8 +2309,6 @@ public:
 
     std::string Mangled = getMangledName(CurMangleContext, NamedCallee);
     int Flags = 0;
-
-    Expr *CalleeExpr = E->getCallee()->IgnoreParenImpCasts();
 
     if (CXXOperatorCallExpr::classof(E)) {
       // Just take the first token.
@@ -2109,6 +2329,10 @@ public:
       return true;
     }
 
+    if (F->isTemplateInstantiation()) {
+      VisitForwardedStatements(E, Loc);
+    }
+
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
 
     std::vector<SourceRange> argRanges;
@@ -2116,9 +2340,10 @@ public:
       argRanges.push_back(argExpr->getSourceRange());
     }
 
-    visitIdentifier("use", "function", getQualifiedName(NamedCallee), Loc, Mangled,
-                    E->getCallReturnType(*AstContext), getContext(SpellingLoc), Flags,
-                    SourceRange(), SourceRange(), &argRanges);
+    visitIdentifier("use", "function", getQualifiedName(NamedCallee), Loc,
+                    Mangled, E->getCallReturnType(*AstContext),
+                    getContext(SpellingLoc), Flags, SourceRange(),
+                    SourceRange(), &argRanges);
 
     return true;
   }
@@ -2205,7 +2430,49 @@ public:
     return true;
   }
 
-  bool VisitDeclRefExpr(DeclRefExpr *E) {
+  void VisitForwardedStatements(const Expr *E, SourceLocation Loc) {
+    // If Loc itself is forwarded to its callers, do nothing
+    if (ForwardedTemplateLocations.find(Loc.getRawEncoding()) !=
+        ForwardedTemplateLocations.cend())
+      return;
+
+    // If this is a forwarding template (eg MakeUnique), visit the forwarded
+    // statements
+    auto todo = std::stack{std::vector<const Stmt *>{E}};
+    auto seen = std::unordered_set<const Stmt *>{};
+    while (!todo.empty()) {
+      const auto forwarded = std::move(todo.top());
+      todo.pop();
+      if (seen.find(forwarded) != seen.end())
+        continue;
+      seen.insert(forwarded);
+
+      if (const auto *C = dyn_cast<CXXConstructExpr>(forwarded))
+        VisitCXXConstructExpr(C, Loc);
+
+      const Decl *Decl = nullptr;
+      if (const auto *D = dyn_cast<CallExpr>(forwarded))
+        Decl = D->getCalleeDecl();
+      if (const auto *D = dyn_cast<DeclRefExpr>(forwarded))
+        Decl = D->getDecl();
+
+      if (!Decl)
+        continue;
+      const auto *F = Decl->getAsFunction();
+      if (!F)
+        continue;
+      if (!F->isTemplateInstantiation())
+        continue;
+      const auto [ForwardedBegin, ForwardedEnd] =
+          ForwardingTemplates.equal_range(F);
+      for (auto ForwardedIt = ForwardedBegin; ForwardedIt != ForwardedEnd;
+           ++ForwardedIt)
+        if (seen.find(ForwardedIt->second) == seen.end())
+          todo.push(ForwardedIt->second);
+    }
+  }
+
+  bool VisitDeclRefExpr(const DeclRefExpr *E) {
     SourceLocation Loc = E->getExprLoc();
     if (!isInterestingLocation(Loc)) {
       return true;
@@ -2218,7 +2485,7 @@ public:
       SpellingLoc = SM.getSpellingLoc(Loc);
     }
 
-    NamedDecl *Decl = E->getDecl();
+    const NamedDecl *Decl = E->getDecl();
     if (const VarDecl *D2 = dyn_cast<VarDecl>(Decl)) {
       int Flags = 0;
       if (D2->isLocalVarDeclOrParm()) {
@@ -2231,6 +2498,7 @@ public:
       const FunctionDecl *F = dyn_cast<FunctionDecl>(Decl);
       if (F->isTemplateInstantiation()) {
         Decl = F->getTemplateInstantiationPattern();
+        VisitForwardedStatements(E, Loc);
       }
 
       std::string Mangled = getMangledName(CurMangleContext, Decl);
@@ -2264,8 +2532,13 @@ public:
 
       FieldDecl *Member = Ci->getMember();
       std::string Mangled = getMangledName(CurMangleContext, Member);
+      // We want the constructor to be the context of the field use and
+      // `getContext(D)` would skip the current context.  An alternate approach
+      // would be `getContext(Loc)` but the heuristic to omit a context if we're
+      // in a macro body expansion seems incorrect for field initializations; if
+      // code is using macros to initialize the fields, we still care.
       visitIdentifier("use", "field", getQualifiedName(Member), Loc, Mangled,
-                      Member->getType(), getContext(D));
+                      Member->getType(), translateContext(D));
     }
 
     return true;
@@ -2289,15 +2562,15 @@ public:
   }
 
   // Helper function for producing heuristic results for usages in dependent
-  // code. These should be distinguished from concrete results (obtained for
-  // dependent code using the AutoTemplateContext machinery) once bug 1833552 is
-  // fixed.
-  // We don't expect this method to be intentionally called multiple times for
-  // a given (Loc, NamedDecl) pair because our callers should be mutually
-  // exclusive AST node types. However, it's fine if this method is called
-  // multiple time for a given pair because we explicitly de-duplicate records
-  // with an identical string representation (which is a good reason to have
-  // this helper, as it ensures identical representations).
+  // code. These are distinguished from concrete results (obtained for dependent
+  // code using the AutoTemplateContext machinery) by setting the “confidence”
+  // property to “cppTemplateHeuristic”. We don't expect this method to be
+  // intentionally called multiple times for a given (Loc, NamedDecl) pair
+  // because our callers should be mutually exclusive AST node types. However,
+  // it's fine if this method is called multiple time for a given pair because
+  // we explicitly de-duplicate records with an identical string representation
+  // (which is a good reason to have this helper, as it ensures identical
+  // representations).
   void visitHeuristicResult(SourceLocation Loc, const NamedDecl *ND) {
     SourceLocation SpellingLoc = SM.getSpellingLoc(Loc);
 
@@ -2325,8 +2598,48 @@ public:
     if (SyntaxKind) {
       std::string Mangled = getMangledName(CurMangleContext, ND);
       visitIdentifier("use", SyntaxKind, getQualifiedName(ND), Loc, Mangled,
-                      MaybeType, getContext(SpellingLoc));
+                      MaybeType, getContext(SpellingLoc), Heuristic);
     }
+  }
+
+  bool arityMatchesCurrentCallExpr(const Expr *E, const NamedDecl *Candidate) {
+    const auto IsCurrentCallee = CurrentCall && E == CurrentCall->getCallee();
+    const auto CallNumArgs =
+        IsCurrentCallee ? CurrentCall->getNumArgs() : std::optional<uint>{};
+
+    const FunctionDecl *CandidateFunc;
+    if (const auto *UsingDecl = dyn_cast<UsingShadowDecl>(Candidate)) {
+      CandidateFunc = UsingDecl->getTargetDecl()->getAsFunction();
+    } else {
+      CandidateFunc = Candidate->getAsFunction();
+    }
+
+    // We try and filter candidates by arity, but be conservative and accept
+    // them when we don't know better
+    if (!CandidateFunc || !CallNumArgs) {
+      return true;
+    }
+
+    const auto MinNumArgs = CandidateFunc->getMinRequiredExplicitArguments();
+    const auto MaxNumArgs = [&]() -> std::optional<uint> {
+      const auto IsVariadic =
+          CandidateFunc->isVariadic() ||
+          std::any_of(CandidateFunc->param_begin(), CandidateFunc->param_end(),
+                      [](const ParmVarDecl *param) {
+                        return param->isParameterPack();
+                      });
+
+      if (IsVariadic)
+        return {};
+
+      return CandidateFunc->getNumNonObjectParams();
+    }();
+
+    if (CallNumArgs < MinNumArgs || (MaxNumArgs && CallNumArgs > *MaxNumArgs)) {
+      return false;
+    }
+
+    return true;
   }
 
   bool VisitOverloadExpr(OverloadExpr *E) {
@@ -2337,7 +2650,14 @@ public:
     }
 
     for (auto *Candidate : E->decls()) {
-      visitHeuristicResult(Loc, Candidate);
+      if (arityMatchesCurrentCallExpr(E, Candidate))
+        visitHeuristicResult(Loc, Candidate);
+    }
+
+    // Also record this location so that if we have instantiations, we can
+    // gather more accurate results from them.
+    if (TemplateStack) {
+      TemplateStack->visitDependent(Loc);
     }
     return true;
   }
@@ -2349,15 +2669,30 @@ public:
       return true;
     }
 
-    // If possible, provide a heuristic result without instantiation.
-    for (const NamedDecl *D : Resolver->resolveMemberExpr(E)) {
-      visitHeuristicResult(Loc, D);
+    for (const NamedDecl *Candidate : Resolver->resolveMemberExpr(E)) {
+      if (arityMatchesCurrentCallExpr(E, Candidate))
+        visitHeuristicResult(Loc, Candidate);
     }
 
     // Also record this location so that if we have instantiations, we can
     // gather more accurate results from them.
     if (TemplateStack) {
       TemplateStack->visitDependent(Loc);
+    }
+    return true;
+  }
+
+  bool VisitCXXNewExpr(CXXNewExpr *N) {
+    // If we are in a template and the new is type-dependent, register it in
+    // ForwardedTemplateLocations to forward its uses to the surrounding
+    // template call site
+    if (TemplateStack && TemplateStack->inGatherMode()) {
+      const auto *TypeInfo = N->getAllocatedTypeSourceInfo();
+      const auto ConstructExprLoc = TypeInfo->getTypeLoc().getBeginLoc();
+      if (N->isTypeDependent()) {
+        TemplateStack->visitDependent(ConstructExprLoc);
+        ForwardedTemplateLocations.insert(ConstructExprLoc.getRawEncoding());
+      }
     }
     return true;
   }
@@ -2369,9 +2704,25 @@ public:
       return true;
     }
 
-    for (const NamedDecl *D : Resolver->resolveDeclRefExpr(E)) {
-      visitHeuristicResult(Loc, D);
+    for (const NamedDecl *Candidate : Resolver->resolveDeclRefExpr(E)) {
+      if (arityMatchesCurrentCallExpr(E, Candidate))
+        visitHeuristicResult(Loc, Candidate);
     }
+
+    // Also record this location so that if we have instantiations, we can
+    // gather more accurate results from them.
+    if (TemplateStack) {
+      TemplateStack->visitDependent(Loc);
+
+      // Also record the dependent NestedNameSpecifier locations
+      for (auto NestedNameLoc = E->getQualifierLoc();
+           NestedNameLoc &&
+           NestedNameLoc.getNestedNameSpecifier()->isDependent();
+           NestedNameLoc = NestedNameLoc.getPrefix()) {
+        TemplateStack->visitDependent(NestedNameLoc.getLocalBeginLoc());
+      }
+    }
+
     return true;
   }
 
@@ -2397,16 +2748,15 @@ public:
 
     std::string symbol = std::string("URL_") + mangleURL(s);
 
-    visitIdentifier("use", "file", StringRef(s), Loc, symbol,
-                    QualType(), Context(),
-                    NotIdentifierToken | LocRangeEndValid);
+    visitIdentifier("use", "file", StringRef(s), Loc, symbol, QualType(),
+                    Context(), NotIdentifierToken | LocRangeEndValid);
 
     return true;
   }
 
   void enterSourceFile(SourceLocation Loc) {
     normalizeLocation(&Loc);
-    FileInfo* newFile = getFileInfo(Loc);
+    FileInfo *newFile = getFileInfo(Loc);
     if (!newFile->Interesting) {
       return;
     }
@@ -2414,31 +2764,33 @@ public:
     std::string symbol =
         std::string("FILE_") + mangleFile(newFile->Realname, type);
 
-    // We use an explicit zero-length source range at the start of the file. If we
-    // don't set the LocRangeEndValid flag, the visitIdentifier code will use the
-    // entire first token, which could be e.g. a long multiline-comment.
-    visitIdentifier("def", "file", newFile->Realname, SourceRange(Loc),
-                    symbol, QualType(), Context(),
+    // We use an explicit zero-length source range at the start of the file. If
+    // we don't set the LocRangeEndValid flag, the visitIdentifier code will use
+    // the entire first token, which could be e.g. a long multiline-comment.
+    visitIdentifier("def", "file", newFile->Realname, SourceRange(Loc), symbol,
+                    QualType(), Context(),
                     NotIdentifierToken | LocRangeEndValid);
   }
 
-  void inclusionDirective(SourceRange FileNameRange, const FileEntry* File) {
+  void inclusionDirective(SourceRange FileNameRange, const FileEntry *File) {
     std::string includedFile(File->tryGetRealPathName());
     FileType type = relativizePath(includedFile);
     if (type == FileType::Unknown) {
       return;
     }
-    std::string symbol =
-        std::string("FILE_") + mangleFile(includedFile, type);
+    std::string symbol = std::string("FILE_") + mangleFile(includedFile, type);
 
     // Support the #include MACRO use-case
     // When parsing #include MACRO:
     // - the filename is never passed to onTokenLexed
-    // - inclusionDirective is called before endMacroExpansion (which is only called when the following token is parsed)
-    // So add the filename here and call endMacroExpansion immediately.
-    // This ensures the macro has a correct expansion and it has been added to MacroMaps so the referenced filename knows to populate inExpansionAt.
+    // - inclusionDirective is called before endMacroExpansion (which is only
+    // called when the following token is parsed) So add the filename here and
+    // call endMacroExpansion immediately. This ensures the macro has a correct
+    // expansion and it has been added to MacroMaps so the referenced filename
+    // knows to populate inExpansionAt.
     if (MacroExpansionState) {
-      MacroExpansionState->TokenLocations[FileNameRange.getBegin()] = MacroExpansionState->Expansion.length();
+      MacroExpansionState->TokenLocations[FileNameRange.getBegin()] =
+          MacroExpansionState->Expansion.length();
       MacroExpansionState->Expansion += '"';
       MacroExpansionState->Expansion += includedFile;
       MacroExpansionState->Expansion += '"';
@@ -2462,8 +2814,8 @@ public:
 
     IdentifierInfo *Ident = Tok.getIdentifierInfo();
     if (Ident) {
-      std::string Mangled =
-          std::string("M_") + mangleLocation(Loc, std::string(Ident->getName()));
+      std::string Mangled = std::string("M_") +
+                            mangleLocation(Loc, std::string(Ident->getName()));
       visitIdentifier("def", "macro", Ident->getName(), Loc, Mangled);
     }
   }
@@ -2483,13 +2835,14 @@ public:
     IdentifierInfo *Ident = Tok.getIdentifierInfo();
     if (Ident) {
       std::string Mangled =
-          std::string("M_") +
-          mangleLocation(Macro->getDefinitionLoc(), std::string(Ident->getName()));
+          std::string("M_") + mangleLocation(Macro->getDefinitionLoc(),
+                                             std::string(Ident->getName()));
       visitIdentifier("use", "macro", Ident->getName(), Loc, Mangled);
     }
   }
 
-  void beginMacroExpansion(const Token &Tok, const MacroInfo *Macro, SourceRange Range) {
+  void beginMacroExpansion(const Token &Tok, const MacroInfo *Macro,
+                           SourceRange Range) {
     if (!Macro)
       return;
 
@@ -2505,12 +2858,19 @@ public:
       return;
 
     if (MacroExpansionState) {
-      const auto InMacroArgs = MacroExpansionState->Range.fullyContains(SM.getExpansionRange(Range).getAsRange());
-      const auto InMacroBody = SM.getExpansionLoc(Tok.getLocation()) == SM.getExpansionLoc(MacroExpansionState->MacroNameToken.getLocation());
+      const auto InMacroArgs = MacroExpansionState->Range.fullyContains(
+          SM.getExpansionRange(Range).getAsRange());
+      const auto InMacroBody =
+          SM.getExpansionLoc(Tok.getLocation()) ==
+          SM.getExpansionLoc(MacroExpansionState->MacroNameToken.getLocation());
       if (InMacroArgs || InMacroBody) {
-        if (MacroExpansionState->MacroInfo->getDefinitionLoc() != Macro->getDefinitionLoc()) {
+        if (MacroExpansionState->MacroInfo->getDefinitionLoc() !=
+            Macro->getDefinitionLoc()) {
           IdentifierInfo *DependencyIdent = Tok.getIdentifierInfo();
-          std::string DependencySymbol = std::string("M_") + mangleLocation(Macro->getDefinitionLoc(), std::string(DependencyIdent->getName()));
+          std::string DependencySymbol =
+              std::string("M_") +
+              mangleLocation(Macro->getDefinitionLoc(),
+                             std::string(DependencyIdent->getName()));
 
           MacroExpansionState->Dependencies.push_back(DependencySymbol);
         }
@@ -2523,39 +2883,69 @@ public:
     }
 
     MacroExpansionState = ::MacroExpansionState{
-      .MacroNameToken = Tok,
-      .MacroInfo = Macro,
-      .Expansion = {},
-      .TokenLocations = {},
-      .Range = Range,
-      .PrevPrevTok = {},
-      .PrevTok = {},
+        .MacroNameToken = Tok,
+        .MacroInfo = Macro,
+        .Expansion = {},
+        .TokenLocations = {},
+        .Range = Range,
+        .PrevPrevTok = {},
+        .PrevTok = {},
     };
   }
 
   void endMacroExpansion() {
-    const auto replacements = clang::format::reformat(
-      clang::format::getMozillaStyle(),
-      MacroExpansionState->Expansion,
-      {tooling::Range(0, MacroExpansionState->Expansion.length())}
-    );
-    auto formatted = clang::tooling::applyAllReplacements(MacroExpansionState->Expansion, replacements);
-    if (formatted) {
-      for (auto &[k, v] : MacroExpansionState->TokenLocations) {
-        v = replacements.getShiftedCodePosition(v);
+    // large macros are too slow to reformat, don't reformat macros larger than
+    // those arbitrary thresholds
+    static constexpr auto includedFileExpansionReformatThreshold = 20'000;
+    static constexpr auto mainFileExpansionReformatThreshold = 200'000;
+
+    const auto expansionLocation =
+        SM.getExpansionLoc(MacroExpansionState->MacroNameToken.getLocation());
+    const auto expansionFilename = SM.getFilename(expansionLocation);
+    const auto includedExtensions =
+        std::array{".h", ".hpp", ".hxx", ".inc", ".def"};
+    const auto isIncludedFile =
+        std::any_of(includedExtensions.begin(), includedExtensions.end(),
+                    [&](const auto *extension) {
+                      return expansionFilename.ends_with_insensitive(extension);
+                    });
+    const auto expansionReformatThreshold =
+        isIncludedFile ? includedFileExpansionReformatThreshold
+                       : mainFileExpansionReformatThreshold;
+
+    if (MacroExpansionState->Expansion.length() < expansionReformatThreshold) {
+      // large macros are too memory-hungry to reformat with ColumnLimit != 0
+      // see https://github.com/llvm/llvm-project/issues/107434
+      auto style = clang::format::getMozillaStyle();
+      if (MacroExpansionState->Expansion.length() >
+          includedFileExpansionReformatThreshold)
+        style.ColumnLimit = 0;
+
+      const auto replacements = clang::format::reformat(
+          style, MacroExpansionState->Expansion,
+          {tooling::Range(0, MacroExpansionState->Expansion.length())});
+      auto formatted = clang::tooling::applyAllReplacements(
+          MacroExpansionState->Expansion, replacements);
+      if (formatted) {
+        for (auto &[k, v] : MacroExpansionState->TokenLocations) {
+          v = replacements.getShiftedCodePosition(v);
+        }
+        MacroExpansionState->Expansion = std::move(formatted.get());
       }
-      MacroExpansionState->Expansion = std::move(formatted.get());
     }
 
-    IdentifierInfo *Ident = MacroExpansionState->MacroNameToken.getIdentifierInfo();
+    IdentifierInfo *Ident =
+        MacroExpansionState->MacroNameToken.getIdentifierInfo();
     std::string Symbol =
         std::string("M_") +
-        mangleLocation(MacroExpansionState->MacroInfo->getDefinitionLoc(), std::string(Ident->getName()));
+        mangleLocation(MacroExpansionState->MacroInfo->getDefinitionLoc(),
+                       std::string(Ident->getName()));
 
     const auto dependenciesBegin = MacroExpansionState->Dependencies.begin();
     const auto dependenciesEnd = MacroExpansionState->Dependencies.end();
     std::sort(dependenciesBegin, dependenciesEnd);
-    MacroExpansionState->Dependencies.erase(std::unique(dependenciesBegin, dependenciesEnd), dependenciesEnd);
+    MacroExpansionState->Dependencies.erase(
+        std::unique(dependenciesBegin, dependenciesEnd), dependenciesEnd);
 
     auto Key = Symbol;
     for (const auto &Dependency : MacroExpansionState->Dependencies) {
@@ -2564,18 +2954,19 @@ public:
     }
 
     MacroMaps.emplace(std::pair{
-      MacroExpansionState->MacroNameToken.getLocation(),
-      ExpandedMacro{
-        std::move(Symbol),
-        std::move(Key),
-        std::move(MacroExpansionState->Expansion),
-        std::move(MacroExpansionState->TokenLocations),
-      },
+        MacroExpansionState->MacroNameToken.getLocation(),
+        ExpandedMacro{
+            std::move(Symbol),
+            std::move(Key),
+            std::move(MacroExpansionState->Expansion),
+            std::move(MacroExpansionState->TokenLocations),
+        },
     });
 
     MacroExpansionState.reset();
 
-    macroUsed(MacroExpansionState->MacroNameToken, MacroExpansionState->MacroInfo);
+    macroUsed(MacroExpansionState->MacroNameToken,
+              MacroExpansionState->MacroInfo);
   }
 
   void onTokenLexed(const Token &Tok) {
@@ -2589,7 +2980,8 @@ public:
       return;
     }
 
-    if (ConcatInfo.AvoidConcat(MacroExpansionState->PrevPrevTok, MacroExpansionState->PrevTok, Tok)) {
+    if (ConcatInfo.AvoidConcat(MacroExpansionState->PrevPrevTok,
+                               MacroExpansionState->PrevTok, Tok)) {
       MacroExpansionState->Expansion += ' ';
     }
 
@@ -2601,7 +2993,8 @@ public:
     } else {
       const auto spelling = CI.getPreprocessor().getSpelling(Tok);
       if (Tok.isAnyIdentifier()) {
-        MacroExpansionState->TokenLocations[SLoc] = MacroExpansionState->Expansion.length();
+        MacroExpansionState->TokenLocations[SLoc] =
+            MacroExpansionState->Expansion.length();
       }
       MacroExpansionState->Expansion += spelling;
     }
@@ -2615,45 +3008,42 @@ void PreprocessorHook::FileChanged(SourceLocation Loc, FileChangeReason Reason,
                                    SrcMgr::CharacteristicKind FileType,
                                    FileID PrevFID = FileID()) {
   switch (Reason) {
-    case PPCallbacks::RenameFile:
-    case PPCallbacks::SystemHeaderPragma:
-      // Don't care about these, since we want the actual on-disk filenames
-      break;
-    case PPCallbacks::EnterFile:
-      Indexer->enterSourceFile(Loc);
-      break;
-    case PPCallbacks::ExitFile:
-      // Don't care about exiting files
-      break;
+  case PPCallbacks::RenameFile:
+  case PPCallbacks::SystemHeaderPragma:
+    // Don't care about these, since we want the actual on-disk filenames
+    break;
+  case PPCallbacks::EnterFile:
+    Indexer->enterSourceFile(Loc);
+    break;
+  case PPCallbacks::ExitFile:
+    // Don't care about exiting files
+    break;
   }
 }
 
-void PreprocessorHook::InclusionDirective(SourceLocation HashLoc,
-                                          const Token &IncludeTok,
-                                          StringRef FileName,
-                                          bool IsAngled,
-                                          CharSourceRange FileNameRange,
+void PreprocessorHook::InclusionDirective(
+    SourceLocation HashLoc, const Token &IncludeTok, StringRef FileName,
+    bool IsAngled, CharSourceRange FileNameRange,
 #if CLANG_VERSION_MAJOR >= 16
-                                          OptionalFileEntryRef File,
+    OptionalFileEntryRef File,
 #elif CLANG_VERSION_MAJOR >= 15
-                                          Optional<FileEntryRef> File,
+    Optional<FileEntryRef> File,
 #else
-                                          const FileEntry *File,
+    const FileEntry *File,
 #endif
-                                          StringRef SearchPath,
-                                          StringRef RelativePath,
+    StringRef SearchPath, StringRef RelativePath,
 #if CLANG_VERSION_MAJOR >= 19
-                                          const Module *SuggestedModule,
-                                          bool ModuleImported,
+    const Module *SuggestedModule, bool ModuleImported,
 #else
-                                          const Module *Imported,
+    const Module *Imported,
 #endif
-                                          SrcMgr::CharacteristicKind FileType) {
+    SrcMgr::CharacteristicKind FileType) {
 #if CLANG_VERSION_MAJOR >= 15
   if (!File) {
     return;
   }
-  Indexer->inclusionDirective(FileNameRange.getAsRange(), &File->getFileEntry());
+  Indexer->inclusionDirective(FileNameRange.getAsRange(),
+                              &File->getFileEntry());
 #else
   Indexer->inclusionDirective(FileNameRange.getAsRange(), File);
 #endif
@@ -2671,8 +3061,7 @@ void PreprocessorHook::MacroExpands(const Token &Tok, const MacroDefinition &Md,
 
 void PreprocessorHook::MacroUndefined(const Token &Tok,
                                       const MacroDefinition &Md,
-                                      const MacroDirective *Undef)
-{
+                                      const MacroDirective *Undef) {
   Indexer->macroUsed(Tok, Md.getMacroInfo());
 }
 

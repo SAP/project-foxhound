@@ -102,9 +102,6 @@ Symbol
    the test. The letter in parentheses identifies the actual test suite.
 Name
    Common name used when referring to the test suite.
-File type
-   When adding a new test, you will generally create a file of this type
-   in the source tree and then declare it in a manifest or makefile.
 Platform
    Most test suites are supported only on a subset of the available
    plaforms and operating systems. Unless otherwise noted:
@@ -251,10 +248,24 @@ Need to get more data out of your tests?
 ----------------------------------------
 
 Most test jobs now expose an environment variable named
-``$MOZ_UPLOAD_DIR``. If this variable is set during automated test runs,
+``MOZ_UPLOAD_DIR``. If this variable is set during automated test runs,
 you can drop additional files into this directory, and they will be
 uploaded to a web server when the test finishes. The URLs to retrieve
 the files will be output in the test log.
+
+Passing ``MOZ_RECORD_TEST=1`` as an environment variable when running some
+tests (e.g. mochitests) on Linux Desktop and macOS will trigger a recording of the
+desktop with GNOME Screencast. This works on try as well, in which case the video
+file will be uploaded as an artifact and available in the
+``Artifacts and Debugging Tools`` panel on Treeherder.
+
+For browser chrome mochitests, passing ``MOZ_DEVTOOLS_TEST_SCOPES=1`` as an
+environment variable will record all variables and arguments available in
+the scope of the test when any assert fails. On try, each failed assert will generate
+a JSON file named `scope-variables-[...].json` which will be uploaded as a
+test artifact. When using the feature locally, set MOZ_UPLOAD_DIR to a local
+folder where the JSON files should be saved. Note that Firefox opens JSON files
+with the built-in DevTools JSON viewer.
 
 .. _Need_to_set_preferences_for_test-suites:
 
@@ -281,7 +292,7 @@ that need it as possible. Here are some options:
 
 -  Mochitest plain tests can use
    `SpecialPowers
-   <https://developer.mozilla.org/en-US/docs/Mozilla/Projects/Mochitest/SpecialPowers>`__
+   </testing/mochitest-plain/faq.html#what-if-i-need-to-change-a-preference-to-run-my-test>`__
    to set prefs.
 
 -  All variants of mochitest can set prefs in their manifests. For

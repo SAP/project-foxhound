@@ -15,6 +15,7 @@
 #include "MicroGeckoProfiler.h"
 
 #include "mozilla/ProfileChunkedBuffer.h"
+#include "mozilla/ProfilerState.h"
 
 #include "mozilla/ArrayUtils.h"
 
@@ -76,7 +77,13 @@ class SandboxProfiler final {
       return false;
     }
 
-    return uprofiler.is_active();
+    if (!uprofiler.feature_active ||
+        uprofiler.feature_active == feature_active_noop) {
+      return false;
+    }
+
+    return uprofiler.is_active() &&
+           uprofiler.feature_active(ProfilerFeature::Sandbox);
   }
 
   static void Shutdown();
@@ -137,20 +144,19 @@ class SandboxProfiler final {
   //  - aQueue exists
   static bool ActiveWithQueue(SandboxProfilerQueue* aQueue);
 
-  // Rely on semaphore to handle consuming the queue:
-  //  - One semaphore
+  // Rely on semaphores to handle consuming the queue:
+  //  - One semaphore per queue (= thread)
   //  - Gets SIGNAL'd when a payload has been pushed to the SandboxProfilerQueue
   //  - SandboxProfiler dedicated thread WAIT's on the semaphore, gets unblocked
   //    on signal
-  //  - Timed wait allows to have a timeout to ensure the thread has a chance to
-  //    release its resources on shutdown
   //  - Semaphore's sem_post() is safe to use in a signal context
   //  - Using semaphores allows to wake the SandboxProfiler dedicated thread
   //    only when needed and avoid using sleep()
   static void Signal(sem_t* aSem);
-  static int TimedWait(sem_t* aSem, int aSec, int aNSec);
+  static int Wait(sem_t* aSem);
 
-  void ThreadMain(const char* aThreadName, SandboxProfilerQueue* aQueue);
+  void ThreadMain(const char* aThreadName, SandboxProfilerQueue* aQueue,
+                  sem_t* aRequest);
   void ReportInitImpl(SandboxProfilerPayload& payload,
                       ProfileChunkedBuffer& buffer);
   void ReportLogImpl(SandboxProfilerPayload& payload);
@@ -159,5 +165,4 @@ class SandboxProfiler final {
 };
 
 }  // namespace mozilla
-
 #endif  // SANDBOX_PROFILER_H

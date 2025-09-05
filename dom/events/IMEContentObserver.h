@@ -15,6 +15,7 @@
 #include "nsCOMPtr.h"
 #include "nsCycleCollectionParticipant.h"
 #include "nsIDocShell.h"  // XXX Why does only this need to be included here?
+#include "nsIMutationObserver.h"
 #include "nsIReflowObserver.h"
 #include "nsIScrollObserver.h"
 #include "nsIWidget.h"
@@ -48,6 +49,7 @@ class IMEContentObserver final : public nsStubMutationObserver,
   using TextChangeDataBase = widget::IMENotification::TextChangeDataBase;
   using IMENotificationRequests = widget::IMENotificationRequests;
   using IMEMessage = widget::IMEMessage;
+  enum class ForRemoval : bool { No, Yes };
 
   IMEContentObserver();
 
@@ -59,6 +61,7 @@ class IMEContentObserver final : public nsStubMutationObserver,
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTAPPENDED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTINSERTED
   NS_DECL_NSIMUTATIONOBSERVER_CONTENTREMOVED
+  NS_DECL_NSIMUTATIONOBSERVER_PARENTCHAINCHANGED
   NS_DECL_NSIREFLOWOBSERVER
 
   // nsIScrollObserver
@@ -560,9 +563,11 @@ class IMEContentObserver final : public nsStubMutationObserver,
      *                          For avoiding to generate a redundant line break
      *                          at open tag of this element, this is required
      *                          to call methods of ContentEventHandler.
+     * @param aForRemoval       Whether aContent is about to be removed.
      */
     [[nodiscard]] static Result<uint32_t, nsresult> ComputeTextLengthOfContent(
-        const nsIContent& aContent, const dom::Element* aRootElement);
+        const nsIContent& aContent, const dom::Element* aRootElement,
+        ForRemoval = ForRemoval::No);
 
     /**
      * Return flattened text length of starting from first content of
@@ -638,8 +643,8 @@ class IMEContentObserver final : public nsStubMutationObserver,
      * of aContent in such case.
      */
     [[nodiscard]] Maybe<uint32_t> GetFlatTextLengthBeforeContent(
-        const nsIContent& aContent, const nsIContent* aPreviousSibling,
-        const dom::Element* aRootElement) const;
+        const nsIContent& aContent, const dom::Element* aRootElement,
+        ForRemoval = ForRemoval::No) const;
 
     /**
      * Return text length before aFirstContent if it's exactly cached or can
@@ -672,13 +677,12 @@ class IMEContentObserver final : public nsStubMutationObserver,
                       const dom::Element* aRootElement);
 
     /**
-     * Called when aContent is removed. aFlatTextLengthOfContent is flattened
-     * text length of aContent.
+     * Called when aContent will be removed. aFlatTextLengthOfContent is
+     * flattened text length of aContent.
      */
-    void ContentRemoved(const nsIContent& aContent,
-                        const nsIContent* aPreviousSibling,
-                        uint32_t aFlatTextLengthOfContent,
-                        const dom::Element* aRootElement);
+    void ContentWillBeRemoved(const nsIContent& aContent,
+                              uint32_t aFlatTextLengthOfContent,
+                              const dom::Element* aRootElement);
 
    public:
     // mContainerNode is parent node of mContent when it's cached.
@@ -755,16 +759,6 @@ class IMEContentObserver final : public nsStubMutationObserver,
     bool TryToCache(const nsIContent& aFirstContent,
                     const nsIContent& aLastContent,
                     const dom::Element* aRootElement);
-
-    /**
-     * Called when aContent is removed from the DOM.  If aContent is the first
-     * node or the last node of the range, this updates the cached range.
-     *
-     * @return true if aContent was in the cached range.
-     */
-    [[nodiscard]] bool ContentRemoved(const nsIContent& aContent,
-                                      const nsIContent* aPreviousSibling,
-                                      const dom::Element* aRootElement);
 
     /**
      * Compute offset and length of the cached range before the nodes between

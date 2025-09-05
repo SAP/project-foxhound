@@ -68,8 +68,11 @@ nsProfileLock::nsProfileLock(nsProfileLock& src) { *this = src; }
 nsProfileLock& nsProfileLock::operator=(nsProfileLock& rhs) {
   Unlock();
 
+  mLockFile = rhs.mLockFile;
+  rhs.mLockFile = nullptr;
   mHaveLock = rhs.mHaveLock;
   rhs.mHaveLock = false;
+  mReplacedLockTime = rhs.mReplacedLockTime;
 
 #if defined(XP_WIN)
   mLockFileHandle = rhs.mLockFileHandle;
@@ -454,7 +457,7 @@ nsresult nsProfileLock::Lock(nsIFile* aProfileDir,
   rv = lockFile->Clone(getter_AddRefs(mLockFile));
   if (NS_FAILED(rv)) return rv;
 
-#if defined(XP_MACOSX)
+#if defined(XP_DARWIN)
   // First, try locking using fcntl. It is more reliable on
   // a local machine, but may not be supported by an NFS server.
 

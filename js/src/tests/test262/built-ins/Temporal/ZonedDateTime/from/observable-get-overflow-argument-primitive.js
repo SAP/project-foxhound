@@ -1,4 +1,4 @@
-// |reftest| skip-if(!this.hasOwnProperty('Temporal')) -- Temporal is not enabled unconditionally
+// |reftest| shell-option(--enable-temporal) skip-if(!this.hasOwnProperty('Temporal')||!xulRuntime.shell) -- Temporal is not enabled unconditionally, requires shell-options
 // Copyright (C) 2023 Igalia, S.L. All rights reserved.
 // This code is governed by the BSD license found in the LICENSE file.
 
@@ -35,6 +35,11 @@ assert.sameValue(result.epochNanoseconds, 1_000_000_000_000_000_000n);
 actual.splice(0);  // empty it for the next check
 
 assert.throws(TypeError, () => Temporal.ZonedDateTime.from(7, options));
-assert.compareArray(actual, expected, "Failing call");
+assert.compareArray(actual, [], "Failing call before options is processed");
+
+actual.splice(0);
+
+assert.throws(RangeError, () => Temporal.ZonedDateTime.from({ year: 2021, month: 2, day: 29, timeZone: "UTC" }, options));
+assert.compareArray(actual, expected, "Failing call after options is processed");
 
 reportCompare(0, 0);

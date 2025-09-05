@@ -8,6 +8,7 @@ import android.annotation.SuppressLint
 import android.app.Dialog
 import android.content.DialogInterface
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -19,12 +20,16 @@ import android.view.Window
 import android.widget.Button
 import android.widget.LinearLayout.LayoutParams
 import android.widget.TextView
+import android.widget.Toast
 import androidx.annotation.VisibleForTesting
+import androidx.appcompat.widget.AppCompatCheckBox
 import androidx.core.content.ContextCompat
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import mozilla.components.feature.addons.Addon
 import mozilla.components.feature.addons.R
+import mozilla.components.support.base.log.logger.Logger
 import mozilla.components.support.utils.ext.getParcelableCompat
 
 internal const val KEY_ADDON = "KEY_ADDON"
@@ -33,8 +38,10 @@ private const val KEY_DIALOG_WIDTH_MATCH_PARENT = "KEY_DIALOG_WIDTH_MATCH_PARENT
 private const val KEY_POSITIVE_BUTTON_BACKGROUND_COLOR = "KEY_POSITIVE_BUTTON_BACKGROUND_COLOR"
 private const val KEY_POSITIVE_BUTTON_TEXT_COLOR = "KEY_POSITIVE_BUTTON_TEXT_COLOR"
 private const val KEY_POSITIVE_BUTTON_RADIUS = "KEY_POSITIVE_BUTTON_RADIUS"
+private const val KEY_LEARN_MORE_LINK_TEXT_COLOR = "KEY_LEARN_MORE_LINK_TEXT_COLOR"
 private const val KEY_FOR_OPTIONAL_PERMISSIONS = "KEY_FOR_OPTIONAL_PERMISSIONS"
 internal const val KEY_PERMISSIONS = "KEY_PERMISSIONS"
+internal const val KEY_ORIGINS = "KEY_ORIGINS"
 private const val DEFAULT_VALUE = Int.MAX_VALUE
 
 /**
@@ -43,16 +50,28 @@ private const val DEFAULT_VALUE = Int.MAX_VALUE
 class PermissionsDialogFragment : AddonDialogFragment() {
 
     /**
-     * A lambda called when the allow button is clicked.
+     * A lambda called when the allow button is clicked which contains the [Addon] and
+     * whether the addon is allowed in private browsing mode.
      */
-    var onPositiveButtonClicked: ((Addon) -> Unit)? = null
+    var onPositiveButtonClicked: ((Addon, Boolean) -> Unit)? = null
 
     /**
      * A lambda called when the deny button is clicked.
      */
     var onNegativeButtonClicked: (() -> Unit)? = null
 
-    internal val addon get() = requireNotNull(safeArguments.getParcelableCompat(KEY_ADDON, Addon::class.java))
+    /**
+     * A lambda called when the learn more link is clicked.
+     */
+    var onLearnMoreClicked: (() -> Unit)? = null
+
+    internal val addon
+        get() = requireNotNull(
+            safeArguments.getParcelableCompat(
+                KEY_ADDON,
+                Addon::class.java,
+            ),
+        )
 
     internal val positiveButtonRadius
         get() =
@@ -82,6 +101,13 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 DEFAULT_VALUE,
             )
 
+    internal val learnMoreLinkTextColor
+        get() =
+            safeArguments.getInt(
+                KEY_LEARN_MORE_LINK_TEXT_COLOR,
+                DEFAULT_VALUE,
+            )
+
     /**
      * This flag is used to adjust the permissions prompt for optional permissions (instead of asking
      * users to grant the required permissions at install time, which is the default).
@@ -91,6 +117,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             safeArguments.getBoolean(KEY_FOR_OPTIONAL_PERMISSIONS)
 
     internal val permissions get() = requireNotNull(safeArguments.getStringArray(KEY_PERMISSIONS))
+    internal val origins get() = requireNotNull(safeArguments.getStringArray(KEY_ORIGINS))
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val sheetDialog = Dialog(requireContext())
@@ -136,6 +163,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
     }
 
     @SuppressLint("InflateParams")
+    @Suppress("LongMethod")
     private fun createContainer(): View {
         val rootView = LayoutInflater.from(requireContext()).inflate(
             R.layout.mozac_feature_addons_fragment_dialog_addon_permissions,
@@ -153,24 +181,68 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             },
             addon.translateName(requireContext()),
         )
-        val listPermissions = buildPermissionsList()
+
+        val classifyOriginPermissionsResult = Addon.classifyOriginPermissions(origins = origins.toList())
+        val hostPermissions = classifyOriginPermissionsResult.getOrNull()
+
+        if (classifyOriginPermissionsResult.isFailure || hostPermissions == null) {
+            handleOriginPermissionsException(classifyOriginPermissionsResult.exceptionOrNull())
+            return rootView
+        }
+
+        val allUrlsPermissionFound =
+            Addon.permissionsListContainsAllUrls(permissions.toList()) ||
+                !hostPermissions.allUrls.isNullOrEmpty()
+
+        val displayDomainList = if (allUrlsPermissionFound) {
+            // Show the All Urls permission instead of the list of domains
+            setOf()
+        } else {
+            hostPermissions.wildcards + hostPermissions.sites
+        }
+
+        val listPermissions = buildPermissionsList(allUrlsPermissionFound)
         rootView.findViewById<TextView>(R.id.optional_or_required_text).text =
-            buildOptionalOrRequiredText(listPermissions.isNotEmpty())
+            buildOptionalOrRequiredText(
+                listPermissions.isNotEmpty() ||
+                    displayDomainList.isNotEmpty(),
+            )
+
+        val learnMoreLink = rootView.findViewById<TextView>(R.id.learn_more_link)
+        learnMoreLink.paintFlags = Paint.UNDERLINE_TEXT_FLAG
 
         val permissionsRecyclerView = rootView.findViewById<RecyclerView>(R.id.permissions)
         val positiveButton = rootView.findViewById<Button>(R.id.allow_button)
         val negativeButton = rootView.findViewById<Button>(R.id.deny_button)
+        val allowedInPrivateBrowsing =
+            rootView.findViewById<AppCompatCheckBox>(R.id.allow_in_private_browsing)
 
-        permissionsRecyclerView.adapter = RequiredPermissionsAdapter(listPermissions)
+        permissionsRecyclerView.adapter = RequiredPermissionsAdapter(
+            permissions = listPermissions,
+            domains = displayDomainList,
+            domainsHeaderText = requireContext()
+                .getString(
+                    R.string.mozac_feature_addons_permissions_all_domain_count_description,
+                    displayDomainList.size,
+                ),
+        )
         permissionsRecyclerView.layoutManager = LinearLayoutManager(context)
 
         if (forOptionalPermissions) {
-            positiveButton.text = requireContext().getString(R.string.mozac_feature_addons_permissions_dialog_allow)
-            negativeButton.text = requireContext().getString(R.string.mozac_feature_addons_permissions_dialog_deny)
+            positiveButton.text =
+                requireContext().getString(R.string.mozac_feature_addons_permissions_dialog_allow)
+            negativeButton.text =
+                requireContext().getString(R.string.mozac_feature_addons_permissions_dialog_deny)
+        }
+
+        if (addon.incognito == Addon.Incognito.NOT_ALLOWED ||
+            forOptionalPermissions
+        ) {
+            allowedInPrivateBrowsing.isVisible = false
         }
 
         positiveButton.setOnClickListener {
-            onPositiveButtonClicked?.invoke(addon)
+            onPositiveButtonClicked?.invoke(addon, allowedInPrivateBrowsing.isChecked)
             dismiss()
         }
 
@@ -203,12 +275,57 @@ class PermissionsDialogFragment : AddonDialogFragment() {
             dismiss()
         }
 
+        if (learnMoreLinkTextColor != DEFAULT_VALUE) {
+            val color = ContextCompat.getColor(requireContext(), learnMoreLinkTextColor)
+            learnMoreLink.setTextColor(color)
+        }
+        learnMoreLink.setOnClickListener {
+            onLearnMoreClicked?.invoke()
+        }
         return rootView
     }
 
+    /**
+     * When an origin permission exception occurs we need to dismiss the permissions dialog, log
+     * the error, and show the user a visual notification.
+     *
+     * @param throwable exception for why classification failed
+     */
+    private fun handleOriginPermissionsException(throwable: Throwable?) {
+        Toast.makeText(
+            requireContext(),
+            R.string.mozac_feature_addons_extension_failed_to_install_corrupt_error,
+            Toast.LENGTH_LONG,
+        ).show()
+
+        Logger.error(
+            "Addon ID ${addon.id} has an incorrectly formatted host " +
+                "permissions which has caused the Addon installation to fail",
+            throwable,
+        )
+
+        this.dismiss()
+    }
+
     @VisibleForTesting
-    internal fun buildPermissionsList(): List<String> {
-        return Addon.localizePermissions(permissions.asList(), requireContext())
+    internal fun buildPermissionsList(
+        isAllUrlsPermissionFound: Boolean,
+    ): List<String> {
+        val result = if (isAllUrlsPermissionFound) {
+            permissions
+                .toMutableList()
+                .apply {
+                    if (contains("<all_urls>")) {
+                        // If found, move it to the front
+                        remove("<all_urls>")
+                    }
+
+                    add(0, "<all_urls>")
+                }
+        } else {
+            permissions.toList()
+        }
+        return Addon.localizePermissions(result, requireContext())
     }
 
     @VisibleForTesting
@@ -235,17 +352,20 @@ class PermissionsDialogFragment : AddonDialogFragment() {
          * @param promptsStyling Styling properties for the dialog.
          * @param onPositiveButtonClicked A lambda called when the allow button is clicked.
          * @param onNegativeButtonClicked A lambda called when the deny button is clicked.
+         * @param onLearnMoreClicked A lambda called when the learn more button is clicked.
          */
         fun newInstance(
             addon: Addon,
             permissions: List<String>,
+            origins: List<String>,
             forOptionalPermissions: Boolean = false,
             promptsStyling: PromptsStyling? = PromptsStyling(
                 gravity = Gravity.BOTTOM,
                 shouldWidthMatchParent = true,
             ),
-            onPositiveButtonClicked: ((Addon) -> Unit)? = null,
+            onPositiveButtonClicked: ((Addon, Boolean) -> Unit)? = null,
             onNegativeButtonClicked: (() -> Unit)? = null,
+            onLearnMoreClicked: (() -> Unit)? = null,
         ): PermissionsDialogFragment {
             val fragment = PermissionsDialogFragment()
             val arguments = fragment.arguments ?: Bundle()
@@ -254,6 +374,7 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 putParcelable(KEY_ADDON, addon)
                 putBoolean(KEY_FOR_OPTIONAL_PERMISSIONS, forOptionalPermissions)
                 putStringArray(KEY_PERMISSIONS, permissions.toTypedArray())
+                putStringArray(KEY_ORIGINS, origins.toTypedArray())
 
                 promptsStyling?.gravity?.apply {
                     putInt(KEY_DIALOG_GRAVITY, this)
@@ -264,13 +385,16 @@ class PermissionsDialogFragment : AddonDialogFragment() {
                 promptsStyling?.confirmButtonBackgroundColor?.apply {
                     putInt(KEY_POSITIVE_BUTTON_BACKGROUND_COLOR, this)
                 }
-
                 promptsStyling?.confirmButtonTextColor?.apply {
                     putInt(KEY_POSITIVE_BUTTON_TEXT_COLOR, this)
+                }
+                promptsStyling?.learnMoreLinkTextColor?.apply {
+                    putInt(KEY_LEARN_MORE_LINK_TEXT_COLOR, this)
                 }
             }
             fragment.onPositiveButtonClicked = onPositiveButtonClicked
             fragment.onNegativeButtonClicked = onNegativeButtonClicked
+            fragment.onLearnMoreClicked = onLearnMoreClicked
             fragment.arguments = arguments
             return fragment
         }

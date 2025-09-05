@@ -16,7 +16,6 @@
 #include "SVGAnimatedOrient.h"
 #include "SVGMotionSMILPathUtils.h"
 #include "SVGMotionSMILType.h"
-#include "SVGPathDataParser.h"
 
 using namespace mozilla::dom;
 using namespace mozilla::dom::SVGAngle_Binding;
@@ -213,7 +212,11 @@ void SVGMotionSMILAnimationFunction::RebuildPathAndVerticesFromMpathElem(
   if (shapeElem && shapeElem->HasValidDimensions()) {
     bool ok = shapeElem->GetDistancesFromOriginToEndsOfVisibleSegments(
         &mPathVertices);
-    if (ok && mPathVertices.Length()) {
+    if (!ok) {
+      mPathVertices.Clear();
+      return;
+    }
+    if (mPathVertices.Length()) {
       mPath = shapeElem->GetOrBuildPathForMeasuring();
     }
   }

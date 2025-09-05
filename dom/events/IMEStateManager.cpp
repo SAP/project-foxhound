@@ -79,12 +79,12 @@ nsIWidget* IMEStateManager::sActiveInputContextWidget = nullptr;
 StaticRefPtr<IMEContentObserver> IMEStateManager::sActiveIMEContentObserver;
 TextCompositionArray* IMEStateManager::sTextCompositions = nullptr;
 InputContext::Origin IMEStateManager::sOrigin = InputContext::ORIGIN_MAIN;
-InputContext IMEStateManager::sActiveChildInputContext;
+MOZ_RUNINIT InputContext IMEStateManager::sActiveChildInputContext;
 bool IMEStateManager::sInstalledMenuKeyboardListener = false;
 bool IMEStateManager::sIsGettingNewIMEState = false;
 bool IMEStateManager::sCleaningUpForStoppingIMEStateManagement = false;
 bool IMEStateManager::sIsActive = false;
-Maybe<IMEStateManager::PendingFocusedBrowserSwitchingData>
+MOZ_RUNINIT Maybe<IMEStateManager::PendingFocusedBrowserSwitchingData>
     IMEStateManager::sPendingFocusedBrowserSwitchingData;
 
 class PseudoFocusChangeRunnable : public Runnable {
@@ -415,8 +415,7 @@ nsresult IMEStateManager::OnRemoveContent(nsPresContext& aPresContext,
 
     if (compositionInContent) {
       MOZ_LOG(sISMLog, LogLevel::Debug,
-              ("  OnRemoveContent(), "
-               "composition is in the content"));
+              ("  OnRemoveContent(), composition is in the content"));
 
       // Try resetting the native IME state.  Be aware, typically, this method
       // is called during the content being removed.  Then, the native
@@ -430,8 +429,15 @@ nsresult IMEStateManager::OnRemoveContent(nsPresContext& aPresContext,
     }
   }
 
-  if (!sFocusedPresContext || !sFocusedElement ||
-      !sFocusedElement->IsInclusiveDescendantOf(&aElement)) {
+  if (!sFocusedPresContext ||
+      // If focused element is a text control or an editing host, we need to
+      // emulate "blur" on it when it's removed.
+      (sFocusedElement && sFocusedElement != &aElement) ||
+      // If it is (or was) in design mode, we need to emulate "blur" on the
+      // document when the observing element (typically, <body>) is removed.
+      (!sFocusedElement &&
+       (!sActiveIMEContentObserver ||
+        sActiveIMEContentObserver->GetObservingElement() != &aElement))) {
     return NS_OK;
   }
   MOZ_ASSERT(sFocusedPresContext == &aPresContext);
@@ -463,17 +469,143 @@ nsresult IMEStateManager::OnRemoveContent(nsPresContext& aPresContext,
   SetIMEState(newState, &aPresContext, nullptr, textInputHandlingWidget, action,
               origin);
   if (sFocusedPresContext != &aPresContext || sFocusedElement) {
-    return NS_OK;  // Some body must have set focus
+    return NS_OK;  // Somebody already has focus, don't steal it.
   }
 
   if (IsIMEObserverNeeded(newState)) {
-    if (RefPtr<HTMLEditor> htmlEditor =
-            nsContentUtils::GetHTMLEditor(&aPresContext)) {
-      CreateIMEContentObserver(*htmlEditor, nullptr);
-    }
+    // Initializing IMEContentObserver instance requires Selection, but its
+    // ranges have not been adjusted for this removal.  Therefore, we need to
+    // wait a moment.
+    nsContentUtils::AddScriptRunner(NS_NewRunnableFunction(
+        "IMEStateManager::RecreateIMEContentObserverWhenContentRemoved",
+        [presContext = OwningNonNull{aPresContext}]() {
+          MOZ_ASSERT(sFocusedPresContext == presContext);
+          MOZ_ASSERT(!sFocusedElement);
+          if (RefPtr<HTMLEditor> htmlEditor =
+                  nsContentUtils::GetHTMLEditor(presContext)) {
+            CreateIMEContentObserver(*htmlEditor, nullptr);
+          }
+        }));
   }
 
   return NS_OK;
+}
+
+// static
+void IMEStateManager::OnParentChainChangedOfObservingElement(
+    IMEContentObserver& aObserver) {
+  if (!sFocusedPresContext || sActiveIMEContentObserver != &aObserver) {
+    return;
+  }
+  RefPtr<nsPresContext> presContext = aObserver.GetPresContext();
+  RefPtr<Element> element = aObserver.GetObservingElement();
+  if (NS_WARN_IF(!presContext) || NS_WARN_IF(!element)) {
+    return;
+  }
+  MOZ_LOG(sISMLog, LogLevel::Info,
+          ("OnParentChainChangedOfObservingElement(aObserver=0x%p), "
+           "sFocusedPresContext=0x%p, sFocusedElement=0x%p, "
+           "aObserver->GetPresContext()=0x%p, "
+           "aObserver->GetObservingElement()=0x%p",
+           &aObserver, sFocusedPresContext.get(), sFocusedElement.get(),
+           presContext.get(), element.get()));
+  OnRemoveContent(*presContext, *element);
+}
+
+// static
+void IMEStateManager::OnUpdateHTMLEditorRootElement(HTMLEditor& aHTMLEditor,
+                                                    Element* aNewRootElement) {
+  MOZ_LOG(
+      sISMLog, LogLevel::Info,
+      ("OnUpdateHTMLEditorRootElement(aHTMLEditor=0x%p, aNewRootElement=%s), "
+       "sFocusedPresContext=0x%p, sFocusedElement=%s, "
+       "sActiveIMEContentObserver=0x%p (GetObservingElement()=%s), "
+       "sTextInputHandlingWidget=0x%p, aHTMLEditor.GetPresContext()=0x%p",
+       &aHTMLEditor,
+       aNewRootElement ? ToString(*aNewRootElement).c_str() : "nullptr",
+       sFocusedPresContext.get(),
+       ToString(RefPtr<Element>(sFocusedElement)).c_str(),
+       sActiveIMEContentObserver.get(),
+       sActiveIMEContentObserver
+           ? ToString(RefPtr<Element>(
+                          sActiveIMEContentObserver->GetObservingElement()))
+                 .c_str()
+           : "N/A",
+       sTextInputHandlingWidget, aHTMLEditor.GetPresContext()));
+
+  if (
+      // Nothing to do if nobody has focus.
+      !sFocusedPresContext || !sTextInputHandlingWidget ||
+      // Nothing to do if an element has focus because we need to handle this
+      // case only when no element has focus in the design mode.
+      sFocusedElement ||
+      // Nothing to do if the editable document does not have focus.
+      sFocusedPresContext != aHTMLEditor.GetPresContext() ||
+      // If it's not in the design mode, any mutation should be handled with a
+      // focus change.
+      !aHTMLEditor.IsInDesignMode() ||
+      // Nothing to do if the active IMEContentObserver has already been
+      // observing the new root element.
+      (aNewRootElement && sActiveIMEContentObserver &&
+       sActiveIMEContentObserver->GetObservingElement() == aNewRootElement)) {
+    return;
+  }
+
+  OwningNonNull<nsPresContext> presContext = *sFocusedPresContext;
+
+  DestroyIMEContentObserver();
+
+  if (!aNewRootElement) {
+    // When there is no element in the document, let's disable IME.
+    IMEState newState = GetNewIMEState(*presContext, nullptr);
+    MOZ_ASSERT(newState.mEnabled == IMEEnabled::Disabled);
+    InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
+                              InputContextAction::LOST_FOCUS);
+    InputContext::Origin origin =
+        BrowserParent::GetFocused() ? InputContext::ORIGIN_CONTENT : sOrigin;
+    OwningNonNull<nsIWidget> textInputHandlingWidget =
+        *sTextInputHandlingWidget;
+    SetIMEState(newState, presContext, nullptr, textInputHandlingWidget, action,
+                origin);
+    return;
+  }
+
+  MOZ_ASSERT(aNewRootElement);
+  const IMEState newState = GetNewIMEState(*presContext, nullptr);
+  // The caller wants to enable IME if there is at least one element in the most
+  // cases.  However, IME may be disabled, e.g., the menubar key listener is now
+  // installed, etc.  Therefore, if the new state is not "enabled", we should
+  // not update the state in unexpected situations.
+  if (MOZ_UNLIKELY(newState.mEnabled != IMEEnabled::Enabled)) {
+    MOZ_LOG(sISMLog, LogLevel::Warning,
+            ("  OnUpdateHTMLEditorRootElement(): WARNING, Not updating IME "
+             "state because of the new IME state is not \"enabled\""));
+    return;
+  }
+  InputContextAction action(InputContextAction::CAUSE_UNKNOWN,
+                            InputContextAction::GOT_FOCUS);
+  InputContext::Origin origin =
+      BrowserParent::GetFocused() ? InputContext::ORIGIN_CONTENT : sOrigin;
+  OwningNonNull<nsIWidget> textInputHandlingWidget = *sTextInputHandlingWidget;
+  SetIMEState(newState, presContext, nullptr, textInputHandlingWidget, action,
+              origin);
+  // Somebody moved focus, don't keep handling this since we lost the rights
+  // to touch IME state.
+  if (sFocusedElement || sActiveIMEContentObserver) {
+    MOZ_LOG(sISMLog, LogLevel::Warning,
+            ("OnUpdateHTMLEditorRootElement(), WARNING: Somebody update focus "
+             "during setting IME state, sFocusedElement=%s, "
+             "sActiveIMEContentObserver=0x%p",
+             ToString(RefPtr<Element>(sFocusedElement)).c_str(),
+             sActiveIMEContentObserver.get()));
+    return;
+  }
+
+  if (IsIMEObserverNeeded(newState)) {
+    MOZ_ASSERT(sFocusedPresContext == presContext);
+    MOZ_ASSERT(!sFocusedElement);
+    CreateIMEContentObserver(aHTMLEditor, nullptr);
+  }
 }
 
 // static
@@ -1490,10 +1622,16 @@ IMEState IMEStateManager::GetNewIMEState(const nsPresContext& aPresContext,
     // Even if there are no focused content, the focused document might be
     // editable, such case is design mode.
     if (aPresContext.Document() && aPresContext.Document()->IsInDesignMode()) {
+      if (aPresContext.Document()->GetRootElement()) {
+        MOZ_LOG(sISMLog, LogLevel::Debug,
+                ("  GetNewIMEState() returns IMEEnabled::Enabled because "
+                 "design mode editor has focus"));
+        return IMEState(IMEEnabled::Enabled);
+      }
       MOZ_LOG(sISMLog, LogLevel::Debug,
-              ("  GetNewIMEState() returns IMEEnabled::Enabled because "
-               "design mode editor has focus"));
-      return IMEState(IMEEnabled::Enabled);
+              ("  GetNewIMEState() returns IMEEnabled::Disabled because "
+               "document is in the design mode but has no element"));
+      return IMEState(IMEEnabled::Disabled);
     }
     MOZ_LOG(sISMLog, LogLevel::Debug,
             ("  GetNewIMEState() returns IMEEnabled::Disabled because "
@@ -1766,6 +1904,31 @@ static void GetAutocapitalize(const IMEState& aState, const Element& aElement,
   }
 }
 
+static bool GetAutocorrect(const IMEState& aState, const Element& aElement,
+                           const InputContext& aInputContext) {
+  if (!StaticPrefs::dom_forms_autocorrect()) {
+#ifdef ANDROID
+    // Autocorrect was on-by-default on Android by bug 806349, despite
+    // autocorrect preference.
+    return true;
+#else
+    return false;
+#endif
+  }
+
+  if (aElement.IsHTMLElement() && aState.IsEditable()) {
+    if (nsContentUtils::IsChromeDoc(aElement.OwnerDoc()) &&
+        !aElement.HasAttr(nsGkAtoms::autocorrect)) {
+      // Since Chrome UI may not want to enable autocorrect by default such as
+      // bug 1881783.
+      return false;
+    }
+
+    return nsGenericHTMLElement::FromNode(&aElement)->Autocorrect();
+  }
+  return true;
+}
+
 // static
 void IMEStateManager::SetIMEState(const IMEState& aState,
                                   const nsPresContext* aPresContext,
@@ -1819,9 +1982,8 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
   context.mHasHandledUserInput =
       aPresContext && aPresContext->PresShell()->HasHandledUserInput();
 
-  context.mInPrivateBrowsing =
-      aPresContext &&
-      nsContentUtils::IsInPrivateBrowsing(aPresContext->Document());
+  context.mInPrivateBrowsing = aPresContext && aPresContext->Document() &&
+                               aPresContext->Document()->IsInPrivateBrowsing();
 
   const RefPtr<Element> focusedElement =
       aElement ? Element::FromNodeOrNull(
@@ -1834,6 +1996,7 @@ void IMEStateManager::SetIMEState(const IMEState& aState,
     GetInputMode(aState, *focusedElement, context.mHTMLInputMode);
     GetAutocapitalize(aState, *focusedElement, context,
                       context.mAutocapitalize);
+    context.mAutocorrect = GetAutocorrect(aState, *focusedElement, context);
   }
 
   if (aAction.mCause == InputContextAction::CAUSE_UNKNOWN &&

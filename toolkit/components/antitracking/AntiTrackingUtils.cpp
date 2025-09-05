@@ -7,6 +7,7 @@
 #include "AntiTrackingUtils.h"
 
 #include "AntiTrackingLog.h"
+#include "ContentBlockingAllowList.h"
 #include "HttpBaseChannel.h"
 #include "mozilla/BasePrincipal.h"
 #include "mozilla/Components.h"
@@ -20,10 +21,10 @@
 #include "mozilla/net/NeckoChannelParams.h"
 #include "mozilla/PermissionManager.h"
 #include "mozIThirdPartyUtil.h"
-#include "nsEffectiveTLDService.h"
 #include "nsGlobalWindowInner.h"
 #include "nsIChannel.h"
 #include "nsICookieService.h"
+#include "nsIEffectiveTLDService.h"
 #include "nsIHttpChannel.h"
 #include "nsIPermission.h"
 #include "nsIURI.h"
@@ -160,8 +161,8 @@ bool AntiTrackingUtils::CreateStorageFramePermissionKey(
 bool AntiTrackingUtils::CreateStorageRequestPermissionKey(
     nsIURI* aURI, nsACString& aPermissionKey) {
   MOZ_ASSERT(aPermissionKey.IsEmpty());
-  RefPtr<nsEffectiveTLDService> eTLDService =
-      nsEffectiveTLDService::GetInstance();
+  nsCOMPtr<nsIEffectiveTLDService> eTLDService =
+      mozilla::components::EffectiveTLD::Service();
   if (!eTLDService) {
     return false;
   }
@@ -212,7 +213,7 @@ bool AntiTrackingUtils::IsStorageAccessPermission(nsIPermission* aPermission,
 // static
 Maybe<size_t> AntiTrackingUtils::CountSitesAllowStorageAccess(
     nsIPrincipal* aPrincipal) {
-  PermissionManager* permManager = PermissionManager::GetInstance();
+  RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (NS_WARN_IF(!permManager)) {
     return Nothing();
   }
@@ -289,7 +290,7 @@ bool AntiTrackingUtils::CheckStoragePermission(nsIPrincipal* aPrincipal,
                                                bool aIsInPrivateBrowsing,
                                                uint32_t* aRejectedReason,
                                                uint32_t aBlockedReason) {
-  PermissionManager* permManager = PermissionManager::GetInstance();
+  RefPtr<PermissionManager> permManager = PermissionManager::GetInstance();
   if (NS_WARN_IF(!permManager)) {
     LOG(("Failed to obtain the permission manager"));
     return false;
@@ -536,7 +537,14 @@ AntiTrackingUtils::GetStoragePermissionStateInParent(nsIChannel* aChannel) {
       return nsILoadInfo::NoStoragePermission;
     }
 
+    // Check whether the third-party channel is on any allow lists. We check
+    // the partitioning exception list and the content blocking allow list.
     if (PartitioningExceptionList::Check(targetOrigin, trackingOrigin)) {
+      return nsILoadInfo::StoragePermissionAllowListed;
+    }
+
+    nsCOMPtr<nsIHttpChannel> httpChannel = do_QueryInterface(aChannel);
+    if (httpChannel && ContentBlockingAllowList::Check(httpChannel)) {
       return nsILoadInfo::StoragePermissionAllowListed;
     }
   }
@@ -989,17 +997,41 @@ bool AntiTrackingUtils::IsThirdPartyWindow(nsPIDOMWindowInner* aWindow,
 /* static */
 bool AntiTrackingUtils::IsThirdPartyDocument(Document* aDocument) {
   MOZ_ASSERT(aDocument);
+
+  if (aDocument->IsTopLevelContentDocument()) {
+    return false;
+  }
+
   nsCOMPtr<mozIThirdPartyUtil> tpuService =
       mozilla::components::ThirdPartyUtil::Service();
   if (!tpuService) {
     return true;
   }
   bool thirdParty = true;
+
+  if (aDocument->GetSandboxFlags() & SANDBOXED_ORIGIN) {
+    return true;
+  }
+
   if (!aDocument->GetChannel()) {
     // If we can't get the channel from the document, i.e. initial about:blank
-    // page, we use the browsingContext of the document to check if it's in the
-    // third-party context. If the browsing context is still not available, we
-    // will treat the window as third-party.
+    // page, we first check if we should inherit from the parent document. If
+    // the principal of the document is the same as the principal of the parent
+    // document, we inherit the third-party status from the parent document.
+    // Otherwise, we use the browsingContext of the document to check if it's
+    // in the third-party context. If the browsing context is still not
+    // available, we will treat the window as third-party.
+    //
+    // Note that we cannot directly use the browsingContext here. The
+    // browsingContext of a mixed but same baseDomain context with top level
+    // will be considered as third-party because they are not in the same
+    // content process. However, it should be considered as first-party.
+    RefPtr<Document> parentDoc = aDocument->GetInProcessParentDocument();
+    if (parentDoc &&
+        aDocument->NodePrincipal()->Equals(parentDoc->NodePrincipal())) {
+      return IsThirdPartyDocument(parentDoc);
+    }
+
     RefPtr<BrowsingContext> bc = aDocument->GetBrowsingContext();
     return bc ? IsThirdPartyContext(bc) : true;
   }
@@ -1093,7 +1125,7 @@ void AntiTrackingUtils::UpdateAntiTrackingInfoForChannel(nsIChannel* aChannel) {
   // Note that we need to put this after computing the IsThirdPartyToTopWindow
   // flag because it will be used when getting the granular fingerprinting
   // protections.
-  Maybe<RFPTarget> overriddenFingerprintingSettings =
+  Maybe<RFPTargetSet> overriddenFingerprintingSettings =
       nsRFPService::GetOverriddenFingerprintingSettingsForChannel(aChannel);
 
   if (overriddenFingerprintingSettings) {

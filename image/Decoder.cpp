@@ -93,9 +93,19 @@ Decoder::~Decoder() {
 
 void Decoder::SetSurfaceFlags(SurfaceFlags aSurfaceFlags) {
   MOZ_ASSERT(!mInitialized);
+  MOZ_ASSERT(!(mSurfaceFlags & SurfaceFlags::NO_COLORSPACE_CONVERSION) ||
+             !(mSurfaceFlags & SurfaceFlags::TO_SRGB_COLORSPACE));
   mSurfaceFlags = aSurfaceFlags;
   if (mSurfaceFlags & SurfaceFlags::NO_COLORSPACE_CONVERSION) {
     mCMSMode = CMSMode::Off;
+  }
+  if (mSurfaceFlags & SurfaceFlags::TO_SRGB_COLORSPACE) {
+    // CMSMode::TaggedOnly and CMSMode::All are equivalent when the
+    // TO_SRGB_COLORSPACE flag is set (for untagged images CMSMode::All assumes
+    // they are in sRGB space so it does nothing, which is same as what
+    // CMSMode::TaggedOnly does for untagged images). We just want to avoid
+    // CMSMode::Off so that the sRGB conversion actually happens.
+    mCMSMode = CMSMode::All;
   }
 }
 
@@ -292,8 +302,7 @@ DecoderFinalStatus Decoder::FinalStatus() const {
 
 DecoderTelemetry Decoder::Telemetry() const {
   MOZ_ASSERT(mIterator);
-  return DecoderTelemetry(SpeedHistogram(),
-                          mIterator ? mIterator->ByteCount() : 0,
+  return DecoderTelemetry(SpeedMetric(), mIterator ? mIterator->ByteCount() : 0,
                           mIterator ? mIterator->ChunkCount() : 0, mDecodeTime);
 }
 
@@ -306,8 +315,7 @@ nsresult Decoder::AllocateFrame(const gfx::IntSize& aOutputSize,
   if (mCurrentFrame) {
     mHasFrameToTake = true;
 
-    // Gather the raw pointers the decoders will use.
-    mCurrentFrame->GetImageData(&mImageData, &mImageDataLength);
+    mImageData = mCurrentFrame.Data();
 
     // We should now be on |aFrameNum|. (Note that we're comparing the frame
     // number, which is zero-based, with the frame count, which is one-based.)
@@ -319,6 +327,9 @@ nsresult Decoder::AllocateFrame(const gfx::IntSize& aOutputSize,
     // Update our state to reflect the new frame.
     MOZ_ASSERT(!mInFrame, "Starting new frame but not done with old one!");
     mInFrame = true;
+  } else {
+    mImageData = nullptr;
+    mImageDataLength = 0;
   }
 
   return mCurrentFrame ? NS_OK : NS_ERROR_FAILURE;
@@ -379,7 +390,8 @@ RawAccessFrameRef Decoder::AllocateFrameInternal(
       // animation parameters elsewhere. For now we just drop it.
       bool blocked = ref.get() == mRestoreFrame.get();
       if (!blocked) {
-        blocked = NS_FAILED(ref->InitForDecoderRecycle(aAnimParams.ref()));
+        blocked = NS_FAILED(
+            ref->InitForDecoderRecycle(aAnimParams.ref(), &mImageDataLength));
       }
 
       if (blocked) {
@@ -398,12 +410,13 @@ RawAccessFrameRef Decoder::AllocateFrameInternal(
     bool nonPremult = bool(mSurfaceFlags & SurfaceFlags::NO_PREMULTIPLY_ALPHA);
     auto frame = MakeNotNull<RefPtr<imgFrame>>();
     if (NS_FAILED(frame->InitForDecoder(aOutputSize, aFormat, nonPremult,
-                                        aAnimParams, bool(mFrameRecycler)))) {
+                                        aAnimParams, bool(mFrameRecycler),
+                                        &mImageDataLength))) {
       NS_WARNING("imgFrame::Init should succeed");
       return RawAccessFrameRef();
     }
 
-    ref = frame->RawAccessRef();
+    ref = frame->RawAccessRef(gfx::DataSourceSurface::READ_WRITE);
     if (!ref) {
       frame->Abort();
       return RawAccessFrameRef();

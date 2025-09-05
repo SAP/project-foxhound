@@ -460,14 +460,12 @@ class TextEditor final : public EditorBase,
   void HandleNewLinesInStringForSingleLineEditor(nsString& aString) const;
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT Result<EditActionResult, nsresult>
-  HandleInsertText(EditSubAction aEditSubAction,
-                   const nsAString& aInsertionString,
-                   SelectionHandling aSelectionHandling) final;
+  HandleInsertText(const nsAString& aInsertionString,
+                   InsertTextFor aPurpose) final;
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult InsertDroppedDataTransferAsAction(
-      AutoEditActionDataSetter& aEditActionData,
-      dom::DataTransfer& aDataTransfer, const EditorDOMPoint& aDroppedAt,
-      nsIPrincipal* aSourcePrincipal) final;
+      AutoEditActionDataSetter& aEditActionData, DataTransfer& aDataTransfer,
+      const EditorDOMPoint& aDroppedAt, nsIPrincipal* aSourcePrincipal) final;
 
   /**
    * HandleDeleteSelectionInternal() is a helper method of
@@ -568,10 +566,12 @@ class TextEditor final : public EditorBase,
 
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   HandlePaste(AutoEditActionDataSetter& aEditActionData,
-              nsIClipboard::ClipboardType aClipboardType) final;
+              nsIClipboard::ClipboardType aClipboardType,
+              DataTransfer* aDataTransfer) final;
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   HandlePasteAsQuotation(AutoEditActionDataSetter& aEditActionData,
-                         nsIClipboard::ClipboardType aClipboardType) final;
+                         nsIClipboard::ClipboardType aClipboardType,
+                         DataTransfer* aDataTransfer) final;
   [[nodiscard]] MOZ_CAN_RUN_SCRIPT nsresult
   HandlePasteTransferable(AutoEditActionDataSetter& aEditActionData,
                           nsITransferable& aTransferable) final;
@@ -607,7 +607,7 @@ class TextEditor final : public EditorBase,
 
   int32_t mMaxTextLength = -1;
 
-  friend class AutoRangeArray;  // FindBetterInsertionPoint
+  friend class AutoClonedSelectionRangeArray;  // FindBetterInsertionPoint
   friend class DeleteNodeTransaction;
   friend class EditorBase;
   friend class InsertNodeTransaction;

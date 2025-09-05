@@ -9,28 +9,14 @@
   src="chrome://browser/content/backup/disable-backup-encryption.mjs"
   type="module"
 ></script>
+  <link rel="localization" href="preview/backupSettings.ftl"/>
+  <link rel="localization" href="branding/brand.ftl"/>
   <link rel="stylesheet" href="chrome://mochikit/content/tests/SimpleTest/test.css"/>
   <script>
 
     const { BrowserTestUtils } = ChromeUtils.importESModule(
       "resource://testing-common/BrowserTestUtils.sys.mjs"
     );
-
-    /**
-     * Tests that adding a disable-backup-encryption element to the DOM causes it to
-     * fire a BackupUI:InitWidget event.
-     */
-    add_task(async function test_initWidget() {
-      let disableBackupEncryption = document.createElement("disable-backup-encryption");
-      let content = document.getElementById("content");
-
-      let sawInitWidget = BrowserTestUtils.waitForEvent(content, "BackupUI:InitWidget");
-      content.appendChild(disableBackupEncryption);
-      await sawInitWidget;
-      ok(true, "Saw BackupUI:InitWidget");
-
-      disableBackupEncryption.remove();
-    });
 
     /**
      * Tests that pressing the confirm button will dispatch the expected events.
@@ -42,7 +28,7 @@
       ok(confirmButton, "Confirm button should be found");
 
       let content = document.getElementById("content");
-      let promise = BrowserTestUtils.waitForEvent(content, "disableEncryption");
+      let promise = BrowserTestUtils.waitForEvent(content, "BackupUI:DisableEncryption");
 
       confirmButton.click()
 

@@ -49,7 +49,8 @@ NS_IMETHODIMP FetchParent::FetchParentCSPEventListener::OnCSPViolationEvent(
   return NS_OK;
 }
 
-nsTHashMap<nsIDHashKey, RefPtr<FetchParent>> FetchParent::sActorTable;
+MOZ_RUNINIT nsTHashMap<nsIDHashKey, RefPtr<FetchParent>>
+    FetchParent::sActorTable;
 
 /*static*/
 RefPtr<FetchParent> FetchParent::GetActorByID(const nsID& aID) {
@@ -80,8 +81,8 @@ FetchParent::FetchParent() : mID(nsID::GenerateUUID()) {
 FetchParent::~FetchParent() {
   FETCH_LOG(("FetchParent::~FetchParent [%p]", this));
   // MOZ_ASSERT(!mBackgroundEventTarget);
-  MOZ_ASSERT(!mResponsePromises);
   MOZ_ASSERT(mActorDestroyed && mIsDone);
+  mResponsePromises = nullptr;
 }
 
 IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
@@ -105,6 +106,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
   mNeedOnDataAvailable = aArgs.needOnDataAvailable();
   mHasCSPEventListener = aArgs.hasCSPEventListener();
   mIsThirdPartyContext = aArgs.isThirdPartyContext();
+  mIsOn3PCBExceptionList = aArgs.isOn3PCBExceptionList();
 
   if (mHasCSPEventListener) {
     mCSPEventListener =
@@ -178,31 +180,62 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
                self->mCookieJarSettings, self->mNeedOnDataAvailable,
                self->mCSPEventListener, self->mAssociatedBrowsingContextID,
                self->mBackgroundEventTarget, self->mID,
-               self->mIsThirdPartyContext})));
+               self->mIsThirdPartyContext,
+               MozPromiseRequestHolder<FetchServiceResponseEndPromise>(),
+               self->mPromise, self->mIsOn3PCBExceptionList})));
     } else {
       MOZ_ASSERT(self->mRequest->GetKeepalive());
       self->mResponsePromises =
-          fetchService->Fetch(AsVariant(FetchService::MainThreadFetchArgs(
-              {self->mRequest.clonePtr(), self->mPrincipalInfo,
-               self->mCookieJarSettings, self->mNeedOnDataAvailable,
-               self->mCSPEventListener, self->mAssociatedBrowsingContextID,
-               self->mBackgroundEventTarget, self->mID})));
+          fetchService->Fetch(AsVariant(FetchService::MainThreadFetchArgs({
+              self->mRequest.clonePtr(),
+              self->mPrincipalInfo,
+              self->mCookieJarSettings,
+              self->mNeedOnDataAvailable,
+              self->mCSPEventListener,
+              self->mAssociatedBrowsingContextID,
+              self->mBackgroundEventTarget,
+              self->mID,
+              self->mIsThirdPartyContext,
+          })));
     }
 
-    self->mResponsePromises->GetResponseEndPromise()->Then(
-        GetMainThreadSerialEventTarget(), __func__,
-        [self](ResponseEndArgs&& aArgs) mutable {
-          AssertIsOnMainThread();
-          MOZ_ASSERT(self->mPromise);
-          self->mPromise->Resolve(true, __func__);
-          self->mResponsePromises = nullptr;
-        },
-        [self](CopyableErrorResult&& aErr) mutable {
-          AssertIsOnMainThread();
-          MOZ_ASSERT(self->mPromise);
-          self->mPromise->Reject(aErr.StealNSResult(), __func__);
-          self->mResponsePromises = nullptr;
-        });
+    bool isResolved = self->mResponsePromises->IsResponseEndPromiseResolved();
+    if (!isResolved && self->mIsWorkerFetch) {
+      // track only unresolved promises for worker fetch requests
+      // this is needed for clean-up of keepalive requests
+      self->mResponsePromises->GetResponseEndPromise()
+          ->Then(
+              GetMainThreadSerialEventTarget(), __func__,
+              [self](ResponseEndArgs&& aArgs) mutable {
+                AssertIsOnMainThread();
+                MOZ_ASSERT(self->mPromise);
+                self->mPromise->Resolve(true, __func__);
+                self->mResponsePromises = nullptr;
+              },
+              [self](CopyableErrorResult&& aErr) mutable {
+                AssertIsOnMainThread();
+                MOZ_ASSERT(self->mPromise);
+                self->mPromise->Reject(aErr.StealNSResult(), __func__);
+                self->mResponsePromises = nullptr;
+              })
+          ->Track(fetchService->GetResponseEndPromiseHolder(
+              self->mResponsePromises));
+    } else {
+      self->mResponsePromises->GetResponseEndPromise()->Then(
+          GetMainThreadSerialEventTarget(), __func__,
+          [self](ResponseEndArgs&& aArgs) mutable {
+            AssertIsOnMainThread();
+            MOZ_ASSERT(self->mPromise);
+            self->mPromise->Resolve(true, __func__);
+            self->mResponsePromises = nullptr;
+          },
+          [self](CopyableErrorResult&& aErr) mutable {
+            AssertIsOnMainThread();
+            MOZ_ASSERT(self->mPromise);
+            self->mPromise->Reject(aErr.StealNSResult(), __func__);
+            self->mResponsePromises = nullptr;
+          });
+    }
   });
 
   MOZ_ALWAYS_SUCCEEDS(
@@ -211,7 +244,7 @@ IPCResult FetchParent::RecvFetchOp(FetchOpArgs&& aArgs) {
   return IPC_OK();
 }
 
-IPCResult FetchParent::RecvAbortFetchOp() {
+IPCResult FetchParent::RecvAbortFetchOp(bool aForceAbort) {
   FETCH_LOG(("FetchParent::RecvAbortFetchOp [%p]", this));
   AssertIsOnBackgroundThread();
 
@@ -219,18 +252,31 @@ IPCResult FetchParent::RecvAbortFetchOp() {
     FETCH_LOG(("FetchParent::RecvAbortFetchOp [%p], Already aborted", this));
     return IPC_OK();
   }
-  mIsDone = true;
 
-  RefPtr<FetchParent> self = this;
-  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(__func__, [self]() mutable {
-    FETCH_LOG(("FetchParent::RecvAbortFetchOp Runnable"));
-    AssertIsOnMainThread();
-    if (self->mResponsePromises) {
-      RefPtr<FetchService> fetchService = FetchService::GetInstance();
-      MOZ_ASSERT(fetchService);
-      fetchService->CancelFetch(std::move(self->mResponsePromises));
+  if (!aForceAbort && mRequest && mRequest->GetKeepalive()) {
+    // Keeping FetchParent/FetchChild alive for the main-thread keepalive fetch
+    // here is a temporary solution. The cancel logic should always be handled
+    // in FetchInstance::Cancel() once all main-thread fetch routing through
+    // PFetch.
+    if (!mIsWorkerFetch) {
+      FETCH_LOG(("Skip aborting fetch as the request is marked keepalive"));
+      return IPC_OK();
     }
-  });
+  } else {
+    mIsDone = true;
+  }
+  RefPtr<FetchParent> self = this;
+  nsCOMPtr<nsIRunnable> r = NS_NewRunnableFunction(
+      __func__, [self, forceAbort = aForceAbort]() mutable {
+        FETCH_LOG(("FetchParent::RecvAbortFetchOp Runnable"));
+        AssertIsOnMainThread();
+        if (self->mResponsePromises) {
+          RefPtr<FetchService> fetchService = FetchService::GetInstance();
+          MOZ_ASSERT(fetchService);
+          fetchService->CancelFetch(std::move(self->mResponsePromises),
+                                    forceAbort);
+        }
+      });
 
   MOZ_ALWAYS_SUCCEEDS(
       NS_DispatchToMainThread(r.forget(), nsIThread::DISPATCH_NORMAL));
@@ -253,8 +299,8 @@ void FetchParent::OnResponseAvailableInternal(
     return;
   }
 
-  // To monitor the stream status between processes, response's body can not be
-  // serialized as RemoteLazyInputStream. Such that stream close can be
+  // To monitor the stream status between processes, response's body can not
+  // be serialized as RemoteLazyInputStream. Such that stream close can be
   // propagated to FetchDriver in the parent process.
   aResponse->SetSerializeAsLazy(false);
 
@@ -336,13 +382,11 @@ void FetchParent::ActorDestroy(ActorDestroyReason aReason) {
   if (!mRequest) {
     return;
   }
-  // Force to abort the existing fetch.
+
+  // Abort the existing fetch.
   // Actor can be destoried by shutdown when still fetching.
-  if (mRequest->GetKeepalive()) {
-    FETCH_LOG(("Skip aborting fetch as the request is marked keepalive"));
-  } else {
-    RecvAbortFetchOp();
-  }
+  RecvAbortFetchOp(false);
+
   // mBackgroundEventTarget = nullptr;
 }
 

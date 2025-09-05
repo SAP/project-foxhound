@@ -25,6 +25,8 @@ const MOZ_COMPATIBILITY_NIGHTLY = ![
 ].includes(AppConstants.MOZ_UPDATE_CHANNEL);
 
 const INTL_LOCALES_CHANGED = "intl:app-locales-changed";
+const XPIPROVIDER_BLOCKLIST_ATTENTION_UPDATED =
+  "xpi-provider:blocklist-attention-updated";
 
 const PREF_BLOCKLIST_PINGCOUNTVERSION = "extensions.blocklist.pingCountVersion";
 const PREF_EM_UPDATE_ENABLED = "extensions.update.enabled";
@@ -595,9 +597,6 @@ var AddonManagerInternal = {
 
       this.recordTimestamp("AMI_startup_begin");
 
-      // Enable the addonsManager telemetry event category.
-      AMTelemetry.init();
-
       // Enable the AMRemoteSettings client.
       AMRemoteSettings.init();
 
@@ -696,6 +695,9 @@ var AddonManagerInternal = {
       Services.obs.addObserver(this, AMBrowserExtensionsImport.TOPIC_CANCELLED);
       Services.obs.addObserver(this, AMBrowserExtensionsImport.TOPIC_COMPLETE);
       Services.obs.addObserver(this, AMBrowserExtensionsImport.TOPIC_PENDING);
+
+      // Watch for blocklist attention updates.
+      Services.obs.addObserver(this, XPIPROVIDER_BLOCKLIST_ATTENTION_UPDATED);
 
       // Ensure all default providers have had a chance to register themselves.
       const { XPIExports } = ChromeUtils.importESModule(
@@ -998,6 +1000,7 @@ var AddonManagerInternal = {
     );
     Services.obs.removeObserver(this, AMBrowserExtensionsImport.TOPIC_COMPLETE);
     Services.obs.removeObserver(this, AMBrowserExtensionsImport.TOPIC_PENDING);
+    Services.obs.removeObserver(this, XPIPROVIDER_BLOCKLIST_ATTENTION_UPDATED);
 
     AMRemoteSettings.shutdown();
 
@@ -1067,6 +1070,10 @@ var AddonManagerInternal = {
       case AMBrowserExtensionsImport.TOPIC_COMPLETE:
       case AMBrowserExtensionsImport.TOPIC_PENDING:
         this.callManagerListeners("onBrowserExtensionsImportChanged");
+        return;
+
+      case XPIPROVIDER_BLOCKLIST_ATTENTION_UPDATED:
+        this.callManagerListeners("onBlocklistAttentionUpdated");
         return;
     }
 
@@ -2177,7 +2184,9 @@ var AddonManagerInternal = {
     // we won't get any further events, detect those cases now.
     if (
       install.state == AddonManager.STATE_DOWNLOADED &&
-      install.addon.appDisabled
+      (install.addon.appDisabled ||
+        install.addon.blocklistState !=
+          Ci.nsIBlocklistService.STATE_NOT_BLOCKED)
     ) {
       install.cancel();
       this.installNotifyObservers(
@@ -2206,8 +2215,11 @@ var AddonManagerInternal = {
       },
 
       onDownloadEnded() {
-        if (install.addon.appDisabled) {
-          // App disabled items are not compatible and so fail to install.
+        if (
+          install.addon.appDisabled ||
+          install.addon.blocklistState !=
+            Ci.nsIBlocklistService.STATE_NOT_BLOCKED
+        ) {
           install.removeListener(listener);
           install.cancel();
           self.installNotifyObservers(
@@ -3047,6 +3059,30 @@ var AddonManagerInternal = {
     return this.getAddonsByTypes(null);
   },
 
+  shouldShowBlocklistAttention() {
+    if (!gStarted) {
+      throw Components.Exception(
+        "AddonManager is not initialized",
+        Cr.NS_ERROR_NOT_INITIALIZED
+      );
+    }
+
+    return this._getProviderByName(
+      "XPIProvider"
+    ).shouldShowBlocklistAttention();
+  },
+
+  getBlocklistAttentionInfo() {
+    if (!gStarted) {
+      throw Components.Exception(
+        "AddonManager is not initialized",
+        Cr.NS_ERROR_NOT_INITIALIZED
+      );
+    }
+
+    return this._getProviderByName("XPIProvider").getBlocklistAttentionInfo();
+  },
+
   /**
    * Adds a new AddonManagerListener if the listener is not already registered.
    *
@@ -3459,8 +3495,11 @@ var AddonManagerInternal = {
               ) {
                 reject({ message: "install cancelled" });
               } else if (event == "onDownloadEnded") {
-                if (install.addon.appDisabled) {
-                  // App disabled items are not compatible and so fail to install
+                if (
+                  install.addon.appDisabled ||
+                  install.addon.blocklistState !=
+                    Ci.nsIBlocklistService.STATE_NOT_BLOCKED
+                ) {
                   install.cancel();
                   AddonManagerInternal.installNotifyObservers(
                     "addon-install-failed",
@@ -4008,6 +4047,8 @@ export var AddonManager = {
     ["ERROR_UNSUPPORTED_ADDON_TYPE", -12],
     // The add-on can only be installed via enterprise policy.
     ["ERROR_ADMIN_INSTALL_ONLY", -13],
+    // The add-on is soft-blocked (and so new installation are expected to fail).
+    ["ERROR_SOFT_BLOCKED", -14],
   ]),
   // The update check timed out
   ERROR_TIMEOUT: -1,
@@ -4291,6 +4332,14 @@ export var AddonManager = {
 
   getAllInstalls() {
     return AddonManagerInternal.getAllInstalls();
+  },
+
+  shouldShowBlocklistAttention() {
+    return AddonManagerInternal.shouldShowBlocklistAttention();
+  },
+
+  getBlocklistAttentionInfo() {
+    return AddonManagerInternal.getBlocklistAttentionInfo();
   },
 
   isInstallEnabled(aType) {
@@ -4669,13 +4718,6 @@ AMRemoteSettings = {
 AMTelemetry = {
   telemetrySetupDone: false,
 
-  init() {
-    // Enable the addonsManager telemetry event category before the AddonManager
-    // has completed its startup, otherwise telemetry events recorded during the
-    // AddonManager/XPIProvider startup will not be recorded.
-    Services.telemetry.setEventRecordingEnabled("addonsManager", true);
-  },
-
   // This method is called by the AddonManager, once it has been started, so that we can
   // init the telemetry event category and start listening for the events related to the
   // addons installation and management.
@@ -4802,7 +4844,7 @@ AMTelemetry = {
 
     const length = str.length;
 
-    // Trim the string to prevent a flood of warnings messages logged internally by recordEvent,
+    // Trim the string to prevent a flood of warnings messages logged internally by recordLegacyEvent,
     // the trimmed version is going to be composed by the first 40 chars and the last 37 and 3 dots
     // that joins the two parts, to visually indicate that the string has been trimmed.
     return `${str.slice(0, 40)}...${str.slice(length - 37, length)}`;
@@ -4939,11 +4981,8 @@ AMTelemetry = {
    *          are defined in `AMO_ATTRIBUTION_DATA_KEYS`. Values are strings.
    */
   parseAttributionDataForAMO(sourceURL) {
-    let searchParams;
-
-    try {
-      searchParams = new URL(sourceURL).searchParams;
-    } catch {
+    let searchParams = URL.parse(sourceURL)?.searchParams;
+    if (!searchParams) {
       return {};
     }
 
@@ -5010,7 +5049,12 @@ AMTelemetry = {
       };
     }
 
-    this.recordEvent({ method, object, value: install.hashedAddonId, extra });
+    this.recordLegacyEvent({
+      method,
+      object,
+      value: install.hashedAddonId,
+      extra,
+    });
     Glean.addonsManager.installStats.record(
       this.formatExtraVars({
         addon_id: extra.addon_id,
@@ -5030,12 +5074,7 @@ AMTelemetry = {
    * @param {object} extraVars
    * @returns {object} The formatted extra vars.
    */
-  formatExtraVars({ addon, ...extraVars }) {
-    if (addon) {
-      extraVars.addonId = addon.id;
-      extraVars.type = addon.type;
-    }
-
+  formatExtraVars(extraVars) {
     // All the extra_vars in a telemetry event have to be strings.
     for (var [key, value] of Object.entries(extraVars)) {
       if (value == undefined) {
@@ -5043,10 +5082,6 @@ AMTelemetry = {
       } else {
         extraVars[key] = this.convertToString(value);
       }
-    }
-
-    if (extraVars.addonId) {
-      extraVars.addonId = this.getTrimmedString(extraVars.addonId);
     }
 
     return extraVars;
@@ -5123,7 +5158,12 @@ AMTelemetry = {
     // All the extra vars in a telemetry event have to be strings.
     extra = this.formatExtraVars({ ...extraVars, ...extra });
 
-    this.recordEvent({ method: eventMethod, object, value: installId, extra });
+    this.recordLegacyEvent({
+      method: eventMethod,
+      object,
+      value: installId,
+      extra,
+    });
     Glean.addonsManager[eventMethod]?.record(
       this.formatExtraVars({
         addon_id: extra.addon_id,
@@ -5172,6 +5212,8 @@ AMTelemetry = {
       }
     }
 
+    extra.blocklist_state = `${addon.blocklistState}`;
+
     if (extra.source === "internal") {
       // Do not record the telemetry event for installation sources
       // that are marked as "internal".
@@ -5186,7 +5228,7 @@ AMTelemetry = {
     let hasExtraVars = !!Object.keys(extra).length;
     extra = this.formatExtraVars(extra);
 
-    this.recordEvent({
+    this.recordLegacyEvent({
       method,
       object,
       value,
@@ -5200,6 +5242,7 @@ AMTelemetry = {
         source: extra.source,
         source_method: extra.method,
         num_strings: extra.num_strings,
+        blocklist_state: extra.blocklist_state,
       })
     );
   },
@@ -5210,36 +5253,22 @@ AMTelemetry = {
    */
   recordSuspiciousSiteEvent({ displayURI }) {
     let site = displayURI?.displayHost ?? "(unknown)";
-    this.recordEvent({
-      method: "reportSuspiciousSite",
-      object: "suspiciousSite",
-      value: site,
-      extra: {},
-    });
     Glean.addonsManager.reportSuspiciousSite.record(
-      this.formatExtraVars({ suspiciousSite: site })
+      this.formatExtraVars({ suspicious_site: site })
     );
   },
 
-  recordEvent({ method, object, value, extra }) {
-    if (typeof value != "string") {
-      // The value must be a string or null, make sure it's valid so sending
-      // the event doesn't fail.
-      value = null;
+  recordLegacyEvent({ method, object, value, extra }) {
+    if (typeof value == "string") {
+      if (!extra) {
+        extra = {};
+      }
+      extra.value = value;
     }
-    try {
-      Services.telemetry.recordEvent(
-        "addonsManager",
-        method,
-        object,
-        value,
-        extra
-      );
-    } catch (err) {
-      // If the telemetry throws just log the error so it doesn't break any
-      // functionality.
-      Cu.reportError(err);
-    }
+    const eventName = `${method}_${object}`.replace(/(_[a-z])/g, c =>
+      c[1].toUpperCase()
+    );
+    Glean.addonsManager[eventName].record(extra);
   },
 };
 

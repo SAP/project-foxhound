@@ -17,7 +17,7 @@ The tool is built to be conservative about the number of tests to run, so if you
     optional arguments:
       -h, --help            show this help message and exit
     perf arguments:
-      --show-all            Show all available tasks.
+      --show-all            Show all available tasks. Alternatively, --full may be used.
       --android             Show android test categories (disabled by default).
       --chrome              Show tests available for Chrome-based browsers (disabled by
                             default).
@@ -34,7 +34,7 @@ The tool is built to be conservative about the number of tests to run, so if you
       --single-run          Run tasks without a comparison
       -q QUERY, --query QUERY
                             Query to run in either the perf-category selector, or the fuzzy
-                            selector if --show-all is provided.
+                            selector if --show-all/--full is provided.
       --browsertime-upload-apk BROWSERTIME_UPLOAD_APK
                             Path to an APK to upload. Note that this will replace the APK
                             installed in all Android Performance tests. If the Activity,
@@ -49,7 +49,7 @@ The tool is built to be conservative about the number of tests to run, so if you
       --mozperftest-upload-apk MOZPERFTEST_UPLOAD_APK
                             See --browsertime-upload-apk. This option does the same thing
                             except it's for mozperftest tests such as the startup ones. Note
-                            that those tests only exist through --show-all as they aren't
+                            that those tests only exist through --show-all/--full as they aren't
                             contained in any existing categories.
       --detect-changes      Adds a task that detects performance changes using MWU.
       --comparator COMPARATOR
@@ -78,7 +78,6 @@ The tool is built to be conservative about the number of tests to run, so if you
       --extra-args [ [ ...]]
                             Set the extra args (e.x, --extra-args verbose post-startup-
                             delay=1)
-      --perfcompare-beta    Use PerfCompare Beta instead of CompareView.
       --non-pgo             Use opt/non-pgo builds instead of shippable/pgo builds. Setting
                             this flag will result in faster try runs.
       --tests [TESTS [TESTS ...]], -t [TESTS [TESTS ...]]
@@ -112,7 +111,7 @@ The tool is built to be conservative about the number of tests to run, so if you
 Workflow
 --------
 
-Below, you'll find an overview of the features available in ``./mach try perf``. If you'd like to learn more about how to use this tool to enhance your developement process, see the :ref:`Standard Workflow with Mach Try Perf` page.
+Below, you'll find an overview of the features available in ``./mach try perf``. If you'd like to learn more about how to use this tool to enhance your development process, see the :ref:`Standard Workflow with Mach Try Perf` page.
 
 Standard Usage
 --------------
@@ -128,12 +127,90 @@ To use mach try perf simply call ``./mach try perf``. This will open an interfac
 
 Select the categories you'd like to run, hit enter, and wait for the tool to finish the pushes. **Note that it can take some time to do both pushes, and you might not see logging for some time.**
 
+
+Retrigger
+---------
+After the push is done, you will receive a Treeherder link that you can open to view your push. Access the Treeherder link to see all your tests.
+
+To launch a retrigger, first select the task that you want to retrigger:
+
+ .. image:: ./th_select_task.png
+    :width: 300
+
+
+Then, click the rotating arrow icon in the task action bar, or press 'r' on your keyboard:
+
+ .. image:: ./th_retrigger.png
+    :width: 300
+
+
+Additionally, you can add the flag ``--rebuild=2-20`` to the try perf command to specify how many times you want to run the tests. If you want to learn more about retriggering please `visit this page <../treeherder-try/index.html#retrigger-r>`__.
+
+
+Add new jobs (mass retriggers)
+------------------------------
+
+The add new job function can be used to retrigger many tasks multiple times. To add a new job, follow these steps:
+ * Navigate to the push you want to add jobs on Treeherder.
+ * Click on the arrow drop-down on the top right of the push.
+ * Select the ``Custom push action`` from the menu.
+
+ .. image:: ./th_custom_push_action.png
+    :width: 500
+
+You can copy the values from the ``target-tasks.json`` file from your ``Decision`` task and paste them into the ``task`` option. This method is useful for mass retriggers if needed.
+After you have pasted the json values, press the ``Trigger`` button.
+
+ .. image:: ./th_custom_job_action.png
+    :width: 500
+
+Ideally, you should be able to use compare view to be more specific in the retriggers you do for tasks/tests that show a difference that they want to double-check.
+
+
+Add extra-arguments/options to try run
+--------------------------------------
+
+To add additional arguments to a try run, there are several approaches you can consider:
+
+
+Use Treeherder
+^^^^^^^^^^^^^^
+
+This method assumes that you already have the job that has been run and you want to run it again, but this time to add extra options as well. First select the task that you want to add extra options:
+
+ .. image:: ./th_select_task.png
+    :width: 300
+
+Then, click the three dots icon in the task action bar and select ``Custom Action``:
+
+ .. image:: ./th_custom_action.png
+    :width: 300
+
+A window will open where you need to select ``raptor-extra-options``. There you can add all the options you need (e.g. extra_options: 'verbose browser-cycles=3'). After finishing, press the ``Trigger`` button.
+
+ .. image:: ./th_raptor_extra_option.png
+    :width: 500
+
+Modify the yml file
+^^^^^^^^^^^^^^^^^^^
+
+This method involves identifying the YML file that contains the test you are interested in and modifying or adding the extra-options key. Under this key you can add all the parameters you desire.
+
+ .. image:: ./extra-options.png
+    :width: 500
+
+Use extra-args option
+^^^^^^^^^^^^^^^^^^^^^
+
+An alternative method is to utilize the ``--extra-args`` argument to try perf command (e.g. --extra-args verbose post-startup-delay=1).
+
+
 .. _Running Alert Tests:
 
 Running Alert Tests
 -------------------
 
-To run all the tests that triggered a given alert, use ``./mach try perf --alert <ALERT-NUMBER>``. **It's recommended to use this when working with performance alerts.** The alert number can be found in comment 0 on any alert bug `such as this one <https://bugzilla.mozilla.org/show_bug.cgi?id=1844510>`_. As seen in the image below, the alert number can be found just above the summary table. The comparison that is produced will be based on the base revision in your local repository (i.e. the base revision your patches, if any, are based on).
+To run all the tests that triggered a given alert, use ``./mach try perf --alert <ALERT-NUMBER>``. Using this command will run all the tests that generated the alert summary ID provided in the regression bug. **It's recommended to use this when working with performance alerts.** The alert number can be found in comment 0 on any alert bug, `such as this one <https://bugzilla.mozilla.org/show_bug.cgi?id=1844510>`_. As seen in the image below, the alert number can be found just above the summary table. The comparison that is produced will be based on the base revision in your local repository (i.e. the base revision your patches, if any, are based on).
 
 .. image:: ./comment-zero-alert-number.png
    :alt: Comment 0 containing an alert number just above the table.
@@ -144,9 +221,9 @@ To run all the tests that triggered a given alert, use ``./mach try perf --alert
 Running Tasks of a Specific Test
 --------------------------------
 
-Using the ``--tests`` option, you can run all tasks that run a specific test. This is based on the test name that is used in the command that runs in the task. For raptor, this is the test specified by ``--test``. For talos, it can either be a specific test in a suite like ``tp5n`` from ``xperf``, or the suite ``xperf`` can be specified. For AWSY though, there are no specific tests that can be selected so the only option to select awsy tests is to specify ``awsy`` as the test.
+Using the ``--tests`` option, you can run all tasks that run a specific test. This is based on the test name that is used in the command that runs in the task. For raptor, this is the test specified by ``--test``. For talos, it can either be a specific test in a suite like ``tp5n`` from ``xperf``, or the suite ``xperf`` can be specified. For AWSY though, there are no specific tests that can be selected so the only option to select AWSY tests is to specify ``AWSY`` as the test.
 
-If it's used with ``--alert <NUM>``, only the tasks that run the specific test will be run on try. If it's used with ``--show-all``, you will only see the tasks that run the specific test in the fuzzy interface. Finally, if it's used without either of those, then categories of the tests that were specified will be displayed in the fuzzy interface. For example, if ``--tests amazon`` is used, then categories like ``amazon linux firefox`` or ``amazon desktop`` will be displayed.
+If it's used with ``--alert <NUM>``, only the tasks that run the specific test will be run on try. If it's used with ``--show-all`` or ``--full``, you will only see the tasks that run the specific test in the fuzzy interface. Finally, if it's used without either of those, then categories of the tests that were specified will be displayed in the fuzzy interface. For example, if ``--tests amazon`` is used, then categories like ``amazon linux firefox`` or ``amazon desktop`` will be displayed.
 
 Chrome and Android
 ------------------
@@ -362,9 +439,9 @@ If you have any questions which aren't already answered below please reach out t
 
      * **Help! I can't find a test in any of the categories. What should I do?**
 
-       Use the option ``--show-all``. This will let you select tests from the ``./mach try fuzzy --full`` interface directly instead of the categories. You will always be able to find your tests this way. Please be careful with your task selections though as it's easy to run far too many tests in this way!
+       Use the option ``--show-all`` or ``--full``. This will let you select tests from the ``./mach try fuzzy --full`` interface directly instead of the categories. You will always be able to find your tests this way. Please be careful with your task selections though as it's easy to run far too many tests in this way!
 
 Future Work
 -----------
 
-The future work for this tool can be `found in this bug <https://bugzilla.mozilla.org/show_bug.cgi?id=1799178>`_. Feel free to file improvments, and bugs against it.
+The future work for this tool can be `found in this bug <https://bugzilla.mozilla.org/show_bug.cgi?id=1799178>`_. Feel free to file improvements, and bugs against it.

@@ -7,6 +7,10 @@ const { RemoteSettings } = ChromeUtils.importESModule(
   "resource://services-settings/remote-settings.sys.mjs"
 );
 
+let bounceTrackingProtection = Cc[
+  "@mozilla.org/bounce-tracking-protection;1"
+].getService(Ci.nsIBounceTrackingProtection);
+
 // Name of the RemoteSettings collection containing exceptions.
 const COLLECTION_NAME = "bounce-tracking-protection-exceptions";
 
@@ -26,6 +30,10 @@ const strArrayMatches = (arr1, arr2) =>
 add_setup(async function () {
   await SpecialPowers.pushPrefEnv({
     set: [
+      [
+        "privacy.bounceTrackingProtection.mode",
+        Ci.nsIBounceTrackingProtection.MODE_ENABLED,
+      ],
       ["privacy.bounceTrackingProtection.requireStatefulBounces", true],
       ["privacy.bounceTrackingProtection.bounceTrackingGracePeriodSec", 0],
     ],

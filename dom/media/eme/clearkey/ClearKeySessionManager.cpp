@@ -35,7 +35,7 @@ using std::function;
 using std::string;
 using std::vector;
 
-ClearKeySessionManager::ClearKeySessionManager(Host_10* aHost)
+ClearKeySessionManager::ClearKeySessionManager(Host_11* aHost)
     : mDecryptionManager(ClearKeyDecryptionManager::Get()) {
   CK_LOGD("ClearKeySessionManager ctor %p", this);
   AddRef();
@@ -142,6 +142,7 @@ void ClearKeySessionManager::CreateSession(uint32_t aPromiseId,
     // request, whether or not another session has sent a request with the same
     // key ID. Otherwise a script can end up waiting for another script to
     // respond to the request (which may not necessarily happen).
+    CK_LOGARRAY("Key ID: ", it->data(), it->size());
     neededKeys.push_back(*it);
     mDecryptionManager->ExpectKeyId(*it);
   }

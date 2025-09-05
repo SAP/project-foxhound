@@ -51,7 +51,11 @@ android {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
 
-            buildConfigField("String", "VCS_HASH", "\"" + getVcsHash() + "\"")
+            if (gradle.ext.vcsHashFileContent) {
+                buildConfigField("String", "VCS_HASH", "\"" + gradle.ext.vcsHashFileContent + "\"")
+            } else {
+                buildConfigField("String", "VCS_HASH", "\"" + getVcsHash() + "\"")
+            }
         }
     }
 
@@ -77,6 +81,8 @@ dependencies {
     implementation ComponentsDependencies.androidx_activity
     implementation ComponentsDependencies.androidx_core_ktx
     implementation ComponentsDependencies.androidx_lifecycle_viewmodel
+
+    implementation project(':concept-fetch')
 
     api project(":concept-base")
     // We expose the app-compat as API so that consumers get access to the Lifecycle classes automatically
@@ -125,4 +131,4 @@ tasks.register("generateComponentEnum") {
 
 apply from: '../../../android-lint.gradle'
 apply from: '../../../publish.gradle'
-ext.configurePublish(config.componentsGroupId, archivesBaseName, project.ext.description)
+ext.configurePublish(config.componentsGroupId, project.name, project.ext.description)

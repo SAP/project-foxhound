@@ -48,6 +48,7 @@ export default class MozCard extends MozLitElement {
   constructor() {
     super();
     this.type = "default";
+    this.expanded = false;
   }
 
   headingTemplate() {
@@ -65,7 +66,9 @@ export default class MozCard extends MozLitElement {
           () =>
             html`<div part="icon" id="heading-icon" role="presentation"></div>`
         )}
-        <span id="heading">${this.heading}</span>
+        <span id="heading" title=${ifDefined(this.heading)} part="heading"
+          >${this.heading}</span
+        >
       </div>
     `;
   }
@@ -75,7 +78,7 @@ export default class MozCard extends MozLitElement {
       return html`
         <details
           id="moz-card-details"
-          @toggle="${this.onToggle}"
+          @toggle=${this.onToggle}
           ?open=${this.expanded}
         >
           <summary part="summary">${this.headingTemplate()}</summary>
@@ -85,32 +88,13 @@ export default class MozCard extends MozLitElement {
     }
 
     return html`
-      ${this.headingTemplate()}
-      <div id="content" aria-describedby="content">
-        <slot></slot>
+      <div id="moz-card-details">
+        ${this.headingTemplate()}
+        <div id="content" aria-describedby="content">
+          <slot></slot>
+        </div>
       </div>
     `;
-  }
-  /**
-   * Handles the click event on the chevron icon.
-   *
-   * Without this, the click event would be passed to
-   * toggleDetails which would force the details element
-   * to stay open.
-   *
-   * @memberof MozCard
-   */
-  onDetailsClick() {
-    this.toggleDetails();
-  }
-
-  /**
-   * @param {boolean} force - Used to force open or force close the
-   * details element.
-   * @memberof MozCard
-   */
-  toggleDetails(force) {
-    this.expanded = force ?? !this.detailsEl.open;
   }
 
   onToggle() {

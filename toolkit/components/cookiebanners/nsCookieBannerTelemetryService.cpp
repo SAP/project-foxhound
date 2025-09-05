@@ -8,7 +8,7 @@
 
 #include "mozilla/Base64.h"
 #include "mozilla/ClearOnShutdown.h"
-#include "mozilla/glean/GleanMetrics.h"
+#include "mozilla/glean/CookiebannersMetrics.h"
 #include "mozilla/OriginAttributes.h"
 #include "mozilla/StaticPtr.h"
 #include "mozilla/Logging.h"
@@ -260,7 +260,7 @@ nsresult nsCookieBannerTelemetryService::MaybeReportGoogleGDPRChoiceTelemetry(
   NS_ENSURE_SUCCESS(rv, rv);
 
   // Bail out early if the default search engine is not Google.
-  if (!id.EqualsLiteral("google@search.mozilla.orgdefault")) {
+  if (!id.EqualsLiteral("google")) {
     return NS_OK;
   }
 
@@ -309,7 +309,7 @@ nsresult nsCookieBannerTelemetryService::MaybeReportGoogleGDPRChoiceTelemetry(
       nsTArray<RefPtr<nsICookie>> googleCookies;
       rv = cookieManager->GetCookiesWithOriginAttributes(
           u"{ \"privateBrowsingId\": 0, \"userContextId\": 0 }"_ns,
-          Substring(domain, 1, domain.Length() - 1), googleCookies);
+          Substring(domain, 1, domain.Length() - 1), false, googleCookies);
       NS_ENSURE_SUCCESS(rv, rv);
 
       cookies.AppendElements(googleCookies);

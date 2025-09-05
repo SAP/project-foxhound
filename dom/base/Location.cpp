@@ -46,7 +46,7 @@
 namespace mozilla::dom {
 
 Location::Location(nsPIDOMWindowInner* aWindow)
-    : mCachedHash(VoidString()), mInnerWindow(aWindow) {
+    : mCachedHash(VoidCString()), mInnerWindow(aWindow) {
   BrowsingContext* bc = GetBrowsingContext();
   if (bc) {
     bc->LocationCreated(this);
@@ -118,7 +118,7 @@ nsresult Location::GetURI(nsIURI** aURI, bool aGetInnermostURI) {
   return NS_OK;
 }
 
-void Location::GetHash(nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
+void Location::GetHash(nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -146,8 +146,9 @@ void Location::GetHash(nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
   }
 
   if (!ref.IsEmpty()) {
-    aHash.Assign(char16_t('#'));
-    AppendUTF8toUTF16(ref, aHash);
+    aHash.SetCapacity(ref.Length() + 1);
+    aHash.Assign('#');
+    aHash.Append(ref);
   }
 
   // Foxhound: location.hash source.
@@ -156,16 +157,11 @@ void Location::GetHash(nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
   mCachedHash = aHash;
 }
 
-void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
+void Location::SetHash(const nsACString& aHash, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
     return;
-  }
-
-  NS_ConvertUTF16toUTF8 hash(aHash);
-  if (hash.IsEmpty() || hash.First() != char16_t('#')) {
-    hash.Insert(char16_t('#'), 0);
   }
 
   nsCOMPtr<nsIURI> uri;
@@ -174,7 +170,11 @@ void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  aRv = NS_MutateURI(uri).SetRef(hash).Finalize(uri);
+  if (aHash.IsEmpty() || aHash.First() != '#') {
+    aRv = NS_MutateURI(uri).SetRef("#"_ns + aHash).Finalize(uri);
+  } else {
+    aRv = NS_MutateURI(uri).SetRef(aHash).Finalize(uri);
+  }
   if (NS_WARN_IF(aRv.Failed()) || !uri) {
     return;
   }
@@ -186,7 +186,7 @@ void Location::SetHash(const nsAString& aHash, nsIPrincipal& aSubjectPrincipal,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::GetHost(nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
+void Location::GetHost(nsACString& aHost, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -196,25 +196,16 @@ void Location::GetHost(nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
   aHost.Truncate();
 
   nsCOMPtr<nsIURI> uri;
-  nsresult result;
-
-  result = GetURI(getter_AddRefs(uri), true);
+  mozilla::Unused << GetURI(getter_AddRefs(uri), true);
 
   if (uri) {
-    nsAutoCString hostport;
-
-    result = uri->GetHostPort(hostport);
-
-    if (NS_SUCCEEDED(result)) {
-      AppendUTF8toUTF16(hostport, aHost);
-
-      // Foxhound: location.host source.
-      MarkTaintSource(aHost, "location.host");
-    }
+    mozilla::Unused << uri->GetHostPort(aHost);
+    // Foxhound: location.host source.
+    MarkTaintSource(aHost, "location.host");    
   }
 }
 
-void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
+void Location::SetHost(const nsACString& aHost, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -227,8 +218,7 @@ void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  aRv =
-      NS_MutateURI(uri).SetHostPort(NS_ConvertUTF16toUTF8(aHost)).Finalize(uri);
+  aRv = NS_MutateURI(uri).SetHostPort(aHost).Finalize(uri);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -239,7 +229,7 @@ void Location::SetHost(const nsAString& aHost, nsIPrincipal& aSubjectPrincipal,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::GetHostname(nsAString& aHostname,
+void Location::GetHostname(nsACString& aHostname,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -258,7 +248,7 @@ void Location::GetHostname(nsAString& aHostname,
   }
 }
 
-void Location::SetHostname(const nsAString& aHostname,
+void Location::SetHostname(const nsACString& aHostname,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -271,8 +261,7 @@ void Location::SetHostname(const nsAString& aHostname,
     return;
   }
 
-  aRv =
-      NS_MutateURI(uri).SetHost(NS_ConvertUTF16toUTF8(aHostname)).Finalize(uri);
+  aRv = NS_MutateURI(uri).SetHost(aHostname).Finalize(uri);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -280,7 +269,7 @@ void Location::SetHostname(const nsAString& aHostname,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-nsresult Location::GetHref(nsAString& aHref) {
+nsresult Location::GetHref(nsACString& aHref) {
   aHref.Truncate();
 
   nsCOMPtr<nsIURI> uri;
@@ -289,13 +278,10 @@ nsresult Location::GetHref(nsAString& aHref) {
     return rv;
   }
 
-  nsAutoCString uriString;
-  rv = uri->GetSpec(uriString);
+  rv = uri->GetSpec(aHref);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-
-  AppendUTF8toUTF16(uriString, aHref);
 
   // Foxhound: location.href source.
   MarkTaintSource(aHref, "location.href");
@@ -303,7 +289,7 @@ nsresult Location::GetHref(nsAString& aHref) {
   return NS_OK;
 }
 
-void Location::GetOrigin(nsAString& aOrigin, nsIPrincipal& aSubjectPrincipal,
+void Location::GetOrigin(nsACString& aOrigin, nsIPrincipal& aSubjectPrincipal,
                          ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -318,19 +304,17 @@ void Location::GetOrigin(nsAString& aOrigin, nsIPrincipal& aSubjectPrincipal,
     return;
   }
 
-  nsAutoString origin;
-  aRv = nsContentUtils::GetWebExposedOriginSerialization(uri, origin);
+  aRv = nsContentUtils::GetWebExposedOriginSerialization(uri, aOrigin);
   if (NS_WARN_IF(aRv.Failed())) {
+    aOrigin.Truncate();
     return;
   }
-
-  aOrigin = origin;
 
   // Foxhound: location.origin source.
   MarkTaintSource(aOrigin, "location.origin");
 }
 
-void Location::GetPathname(nsAString& aPathname,
+void Location::GetPathname(nsACString& aPathname,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -345,20 +329,16 @@ void Location::GetPathname(nsAString& aPathname,
     return;
   }
 
-  nsAutoCString file;
-
-  aRv = uri->GetFilePath(file);
+  aRv = uri->GetFilePath(aPathname);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
-
-  AppendUTF8toUTF16(file, aPathname);
 
   // Foxhound: location.pathname source.
   MarkTaintSource(aPathname, "location.pathname");
 }
 
-void Location::SetPathname(const nsAString& aPathname,
+void Location::SetPathname(const nsACString& aPathname,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -371,9 +351,7 @@ void Location::SetPathname(const nsAString& aPathname,
     return;
   }
 
-  nsresult rv = NS_MutateURI(uri)
-                    .SetFilePath(NS_ConvertUTF16toUTF8(aPathname))
-                    .Finalize(uri);
+  nsresult rv = NS_MutateURI(uri).SetFilePath(aPathname).Finalize(uri);
   if (NS_FAILED(rv)) {
     return;
   }
@@ -384,7 +362,7 @@ void Location::SetPathname(const nsAString& aPathname,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::GetPort(nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
+void Location::GetPort(nsACString& aPort, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -404,15 +382,12 @@ void Location::GetPort(nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
 
   // Don't propagate this exception to caller
   if (NS_SUCCEEDED(result) && -1 != port) {
-    nsAutoString portStr;
-    portStr.AppendInt(port);
-    aPort.Append(portStr);
-    // Foxhound: location.port source.
+    aPort.AppendInt(port);
     MarkTaintSource(aPort, "location.port");
   }
 }
 
-void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
+void Location::SetPort(const nsACString& aPort, nsIPrincipal& aSubjectPrincipal,
                        ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -426,11 +401,12 @@ void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
   }
 
   // perhaps use nsReadingIterators at some point?
-  NS_ConvertUTF16toUTF8 portStr(aPort);
+  nsAutoCString portStr(aPort);
   const char* buf = portStr.get();
   int32_t port = -1;
 
   if (!portStr.IsEmpty() && buf) {
+    // Sadly, ToInteger() on nsACString does not have the right semantics.
     if (*buf == ':') {
       port = atol(buf + 1);
     } else {
@@ -449,7 +425,7 @@ void Location::SetPort(const nsAString& aPort, nsIPrincipal& aSubjectPrincipal,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::GetProtocol(nsAString& aProtocol,
+void Location::GetProtocol(nsACString& aProtocol,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -464,21 +440,17 @@ void Location::GetProtocol(nsAString& aProtocol,
     return;
   }
 
-  nsAutoCString protocol;
-
-  aRv = uri->GetScheme(protocol);
+  aRv = uri->GetScheme(aProtocol);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
 
-  CopyASCIItoUTF16(protocol, aProtocol);
-  aProtocol.Append(char16_t(':'));
-
+  aProtocol.Append(':');
   // Foxhound: location.protocol source.
   MarkTaintSource(aProtocol, "location.protocol");
 }
 
-void Location::SetProtocol(const nsAString& aProtocol,
+void Location::SetProtocol(const nsACString& aProtocol,
                            nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -494,15 +466,14 @@ void Location::SetProtocol(const nsAString& aProtocol,
   // Foxhound: location.protocol sink.
   ReportTaintSink(aProtocol, "location.protocol");
 
-  nsAString::const_iterator start, end;
+  nsACString::const_iterator start, end;
   aProtocol.BeginReading(start);
   aProtocol.EndReading(end);
-  nsAString::const_iterator iter(start);
+  nsACString::const_iterator iter(start);
   Unused << FindCharInReadable(':', iter, end);
 
-  nsresult rv = NS_MutateURI(uri)
-                    .SetScheme(NS_ConvertUTF16toUTF8(Substring(start, iter)))
-                    .Finalize(uri);
+  nsresult rv =
+      NS_MutateURI(uri).SetScheme(Substring(start, iter)).Finalize(uri);
   if (NS_WARN_IF(NS_FAILED(rv))) {
     // Oh, I wish nsStandardURL returned NS_ERROR_MALFORMED_URI for _all_ the
     // malformed cases, not just some of them!
@@ -534,7 +505,7 @@ void Location::SetProtocol(const nsAString& aProtocol,
   SetURI(uri, aSubjectPrincipal, aRv);
 }
 
-void Location::GetSearch(nsAString& aSearch, nsIPrincipal& aSubjectPrincipal,
+void Location::GetSearch(nsACString& aSearch, nsIPrincipal& aSubjectPrincipal,
                          ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -556,16 +527,15 @@ void Location::GetSearch(nsAString& aSearch, nsIPrincipal& aSubjectPrincipal,
     result = url->GetQuery(search);
 
     if (NS_SUCCEEDED(result) && !search.IsEmpty()) {
-      aSearch.Assign(char16_t('?'));
-      AppendUTF8toUTF16(search, aSearch);
-
-      // Foxhound: location.search source.
+      aSearch.SetCapacity(search.Length() + 1);
+      aSearch.Assign('?');
+      aSearch.Append(search);
       MarkTaintSource(aSearch, "location.search");
     }
   }
 }
 
-void Location::SetSearch(const nsAString& aSearch,
+void Location::SetSearch(const nsACString& aSearch,
                          nsIPrincipal& aSubjectPrincipal, ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -579,8 +549,7 @@ void Location::SetSearch(const nsAString& aSearch,
     return;
   }
 
-  aRv =
-      NS_MutateURI(uri).SetQuery(NS_ConvertUTF16toUTF8(aSearch)).Finalize(uri);
+  aRv = NS_MutateURI(uri).SetQuery(aSearch).Finalize(uri);
   if (NS_WARN_IF(aRv.Failed())) {
     return;
   }
@@ -612,7 +581,7 @@ void Location::Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
                               ? CallerType::System
                               : CallerType::NonSystem;
 
-  nsresult rv = bc->CheckLocationChangeRateLimit(callerType);
+  nsresult rv = bc->CheckNavigationRateLimit(callerType);
   if (NS_FAILED(rv)) {
     aRv.Throw(rv);
     return;
@@ -634,7 +603,7 @@ void Location::Reload(bool aForceget, nsIPrincipal& aSubjectPrincipal,
   }
 }
 
-void Location::Assign(const nsAString& aUrl, nsIPrincipal& aSubjectPrincipal,
+void Location::Assign(const nsACString& aUrl, nsIPrincipal& aSubjectPrincipal,
                       ErrorResult& aRv) {
   if (!CallerSubsumes(&aSubjectPrincipal)) {
     aRv.Throw(NS_ERROR_DOM_SECURITY_ERR);
@@ -683,6 +652,6 @@ JSObject* Location::WrapObject(JSContext* aCx,
   return Location_Binding::Wrap(aCx, this, aGivenProto);
 }
 
-void Location::ClearCachedValues() { mCachedHash = VoidString(); }
+void Location::ClearCachedValues() { mCachedHash = VoidCString(); }
 
 }  // namespace mozilla::dom

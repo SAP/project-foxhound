@@ -302,9 +302,10 @@ void CryptoKey::SetExtractable(bool aExtractable) {
 nsresult CryptoKey::AddPublicKeyData(SECKEYPublicKey* aPublicKey) {
   // This should be a private key.
   MOZ_ASSERT(GetKeyType() == PRIVATE);
-  // There should be a private NSS key with type 'EC' and 'ED'.
+  // There should be a private NSS key with type 'EC', 'EC Montgomery' or 'ED'.
   MOZ_ASSERT(mPrivateKey &&
-             (mPrivateKey->keyType == ecKey || mPrivateKey->keyType == edKey));
+             (mPrivateKey->keyType == ecKey || mPrivateKey->keyType == edKey ||
+              mPrivateKey->keyType == ecMontKey));
   // The given public key should have the same key type.
   MOZ_ASSERT(aPublicKey->keyType == mPrivateKey->keyType);
 
@@ -328,13 +329,17 @@ nsresult CryptoKey::AddPublicKeyData(SECKEYPublicKey* aPublicKey) {
   CK_OBJECT_CLASS privateKeyValue = CKO_PRIVATE_KEY;
   CK_BBOOL falseValue = CK_FALSE;
 
-  /* ecKey corresponds to CKK_EC; edKey corresponds to CKK_EC_EDWARDS key.
-    The other key types are not allowed. */
+  // ecKey corresponds to CKK_EC;
+  // edKey corresponds to CKK_EC_EDWARDS key,
+  // ecMontKey corresponds to CKK_EC_MONTGOMERY.
+  // The other key types are not allowed.
   CK_KEY_TYPE ecValue;
   if (mPrivateKey->keyType == ecKey) {
     ecValue = CKK_EC;
   } else if (mPrivateKey->keyType == edKey) {
     ecValue = CKK_EC_EDWARDS;
+  } else if (mPrivateKey->keyType == ecMontKey) {
+    ecValue = CKK_EC_MONTGOMERY;
   } else {
     return NS_ERROR_DOM_OPERATION_ERR;
   }
@@ -353,7 +358,7 @@ nsresult CryptoKey::AddPublicKeyData(SECKEYPublicKey* aPublicKey) {
   };
 
   mPrivateKey =
-      PrivateKeyFromPrivateKeyTemplate(keyTemplate, ArrayLength(keyTemplate));
+      PrivateKeyFromPrivateKeyTemplate(keyTemplate, std::size(keyTemplate));
   NS_ENSURE_TRUE(mPrivateKey, NS_ERROR_DOM_OPERATION_ERR);
 
   return NS_OK;
@@ -711,7 +716,7 @@ UniqueSECKEYPrivateKey CryptoKey::PrivateKeyFromJwk(const JsonWebKey& aJwk) {
     };
 
     return PrivateKeyFromPrivateKeyTemplate(keyTemplate,
-                                            ArrayLength(keyTemplate));
+                                            std::size(keyTemplate));
   }
 
   if (aJwk.mKty.EqualsLiteral(JWK_TYPE_RSA)) {
@@ -752,7 +757,7 @@ UniqueSECKEYPrivateKey CryptoKey::PrivateKeyFromJwk(const JsonWebKey& aJwk) {
     };
 
     return PrivateKeyFromPrivateKeyTemplate(keyTemplate,
-                                            ArrayLength(keyTemplate));
+                                            std::size(keyTemplate));
   }
 
   if (aJwk.mKty.EqualsLiteral(JWK_TYPE_OKP)) {
@@ -818,7 +823,7 @@ UniqueSECKEYPrivateKey CryptoKey::PrivateKeyFromJwk(const JsonWebKey& aJwk) {
     };
 
     return PrivateKeyFromPrivateKeyTemplate(keyTemplate,
-                                            ArrayLength(keyTemplate));
+                                            std::size(keyTemplate));
   }
 
   return nullptr;
@@ -1051,9 +1056,10 @@ KeyType KeyTypeFromCurveName(const nsAString& aNamedCurve) {
       aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P384) ||
       aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_P521)) {
     t = ecKey;
-  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_ED25519) ||
-             aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_CURVE25519)) {
+  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_ED25519)) {
     t = edKey;
+  } else if (aNamedCurve.EqualsLiteral(WEBCRYPTO_NAMED_CURVE_CURVE25519)) {
+    t = ecMontKey;
   }
   return t;
 }
@@ -1082,7 +1088,8 @@ UniqueSECKEYPublicKey CreateECPublicKey(const SECItem* aKeyData,
   // Transfer arena ownership to the key.
   key->arena = arena.release();
   key->keyType = KeyTypeFromCurveName(aNamedCurve);
-  if (key->keyType != ecKey && key->keyType != edKey) {
+  if (key->keyType != ecKey && key->keyType != edKey &&
+      key->keyType != ecMontKey) {
     return nullptr;
   }
 

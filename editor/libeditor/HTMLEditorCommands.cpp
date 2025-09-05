@@ -127,10 +127,11 @@ nsresult PasteNoFormattingCommand::DoCommand(Command aCommand,
     return NS_ERROR_FAILURE;
   }
   // Known live because we hold a ref above in "editor"
-  nsresult rv = MOZ_KnownLive(htmlEditor)
-                    ->PasteNoFormattingAsAction(
-                        nsIClipboard::kGlobalClipboard,
-                        EditorBase::DispatchPasteEvent::Yes, aPrincipal);
+  nsresult rv =
+      MOZ_KnownLive(htmlEditor)
+          ->PasteNoFormattingAsAction(nsIClipboard::kGlobalClipboard,
+                                      EditorBase::DispatchPasteEvent::Yes,
+                                      nullptr, aPrincipal);
   NS_WARNING_ASSERTION(
       NS_SUCCEEDED(rv),
       "HTMLEditor::PasteNoFormattingAsAction(DispatchPasteEvent::Yes) failed");
@@ -1234,9 +1235,18 @@ nsresult InsertTagCommand::DoCommand(Command aCommand, EditorBase& aEditorBase,
   if (NS_WARN_IF(!newElement)) {
     return NS_ERROR_FAILURE;
   }
+  HTMLEditor::InsertElementOptions options{
+      HTMLEditor::InsertElementOption::DeleteSelection};
+  // We did insert <img> without splitting ancestor inline elements, but the
+  // other browsers split them.  Therefore, let's do it only when the document
+  // is content.
+  if (tagName == nsGkAtoms::img &&
+      htmlEditor->GetDocument()->IsContentDocument()) {
+    options += HTMLEditor::InsertElementOption::SplitAncestorInlineElements;
+  }
   nsresult rv =
       MOZ_KnownLive(htmlEditor)
-          ->InsertElementAtSelectionAsAction(newElement, true, aPrincipal);
+          ->InsertElementAtSelectionAsAction(newElement, options, aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertElementAtSelectionAsAction() failed");
   return rv;
@@ -1297,9 +1307,17 @@ nsresult InsertTagCommand::DoCommandParam(Command aCommand,
     return rv;
   }
 
+  HTMLEditor::InsertElementOptions options{
+      HTMLEditor::InsertElementOption::DeleteSelection};
+  // We did insert <img> without splitting ancestor inline elements, but the
+  // other browsers split them.  Therefore, let's do it only when the document
+  // is content.
+  if (htmlEditor->GetDocument()->IsContentDocument()) {
+    options += HTMLEditor::InsertElementOption::SplitAncestorInlineElements;
+  }
   nsresult rv =
       MOZ_KnownLive(htmlEditor)
-          ->InsertElementAtSelectionAsAction(newElement, true, aPrincipal);
+          ->InsertElementAtSelectionAsAction(newElement, options, aPrincipal);
   NS_WARNING_ASSERTION(NS_SUCCEEDED(rv),
                        "HTMLEditor::InsertElementAtSelectionAsAction() failed");
   return rv;

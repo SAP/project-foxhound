@@ -1282,6 +1282,7 @@ ssl3_SignHashesWithPrivKey(SSL3Hashes *hash, SECKEYPrivateKey *key,
     if (useRsaPss || hash->hashAlg == ssl_hash_none) {
         CK_MECHANISM_TYPE mech = PK11_MapSignKeyType(key->keyType);
         int signatureLen = PK11_SignatureLen(key);
+        PRInt32 optval;
 
         SECItem *params = NULL;
         CK_RSA_PKCS_PSS_PARAMS pssParams;
@@ -1292,6 +1293,17 @@ ssl3_SignHashesWithPrivKey(SSL3Hashes *hash, SECKEYPrivateKey *key,
         if (signatureLen <= 0) {
             PORT_SetError(SEC_ERROR_INVALID_KEY);
             goto done;
+        }
+        /* since we are calling PK11_SignWithMechanism directly, we need to check the
+         * key policy ourselves (which is already checked in SGN_Digest */
+        rv = NSS_OptionGet(NSS_KEY_SIZE_POLICY_FLAGS, &optval);
+        if ((rv == SECSuccess) &&
+            ((optval & NSS_KEY_SIZE_POLICY_SIGN_FLAG) == NSS_KEY_SIZE_POLICY_SIGN_FLAG)) {
+            rv = SECKEY_EnforceKeySize(key->keyType, SECKEY_PrivateKeyStrengthInBits(key),
+                                       SEC_ERROR_SIGNATURE_ALGORITHM_DISABLED);
+            if (rv != SECSuccess) {
+                goto done; /* error code already set */
+            }
         }
 
         buf->len = (unsigned)signatureLen;
@@ -5665,7 +5677,8 @@ ssl3_SendClientHello(sslSocket *ss, sslClientHelloType type)
                 goto loser; /* code set */
             }
             if (!ss->firstHsDone) {
-                PORT_Assert(ss->ssl3.hs.dtls13ClientMessageBuffer.len == 0);
+                PORT_Assert(type == client_hello_retransmit ||
+                            ss->ssl3.hs.dtls13ClientMessageBuffer.len == 0);
                 sslBuffer_Clear(&ss->ssl3.hs.dtls13ClientMessageBuffer);
                 /* Here instead of computing the hash, we copy the data to a buffer.*/
                 rv = sslBuffer_Append(&ss->ssl3.hs.dtls13ClientMessageBuffer, chBuf.buf, chBuf.len);
@@ -7137,7 +7150,7 @@ ssl3_HandleServerHello(sslSocket *ss, PRUint8 *b, PRUint32 length)
         goto loser;
     }
 
-    /* RFC 9147. 5.2. 
+    /* RFC 9147. 5.2.
      * DTLS Handshake Message Format states the difference between the computation
      * of the transcript if the version is DTLS1.2 or DTLS1.3.
      *

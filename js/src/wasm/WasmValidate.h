@@ -28,6 +28,7 @@
 #include "wasm/WasmCompile.h"
 #include "wasm/WasmCompileArgs.h"
 #include "wasm/WasmModuleTypes.h"
+#include "wasm/WasmOpIter.h"
 #include "wasm/WasmProcess.h"
 #include "wasm/WasmTypeDef.h"
 
@@ -64,11 +65,11 @@ class ElemSegmentFlags {
     encoded_ = uint32_t(kind) | uint32_t(payload);
   }
 
-  static Maybe<ElemSegmentFlags> construct(uint32_t encoded) {
+  static mozilla::Maybe<ElemSegmentFlags> construct(uint32_t encoded) {
     if (encoded > uint32_t(Flags::AllFlags)) {
-      return Nothing();
+      return mozilla::Nothing();
     }
-    return Some(ElemSegmentFlags(encoded));
+    return mozilla::Some(ElemSegmentFlags(encoded));
   }
 
   uint32_t encoded() const { return encoded_; }
@@ -85,22 +86,22 @@ class ElemSegmentFlags {
 // OpIter specialized for validation.
 
 class NothingVector {
-  Nothing unused_;
+  mozilla::Nothing unused_;
 
  public:
   bool reserve(size_t size) { return true; }
   bool resize(size_t length) { return true; }
-  Nothing& operator[](size_t) { return unused_; }
-  Nothing& back() { return unused_; }
+  mozilla::Nothing& operator[](size_t) { return unused_; }
+  mozilla::Nothing& back() { return unused_; }
   size_t length() const { return 0; }
-  bool append(Nothing& nothing) { return true; }
-  void infallibleAppend(Nothing& nothing) {}
+  bool append(mozilla::Nothing& nothing) { return true; }
+  void infallibleAppend(mozilla::Nothing& nothing) {}
 };
 
 struct ValidatingPolicy {
-  using Value = Nothing;
+  using Value = mozilla::Nothing;
   using ValueVector = NothingVector;
-  using ControlItem = Nothing;
+  using ControlItem = mozilla::Nothing;
 };
 
 template <typename Policy>
@@ -110,6 +111,9 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
 
 // Shared subtyping function across validation.
 
+[[nodiscard]] bool CheckIsSubtypeOf(Decoder& d, const CodeMetadata& codeMeta,
+                                    size_t opcodeOffset, ResultType subType,
+                                    ResultType superType);
 [[nodiscard]] bool CheckIsSubtypeOf(Decoder& d, const CodeMetadata& codeMeta,
                                     size_t opcodeOffset, StorageType subType,
                                     StorageType superType);
@@ -135,14 +139,14 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
                                                 ValTypeVector* locals);
 
 // Returns whether the given [begin, end) prefix of a module's bytecode starts a
-// code section and, if so, returns the SectionRange of that code section.
+// code section and, if so, returns the BytecodeRange of that code section.
 // Note that, even if this function returns 'false', [begin, end) may actually
 // be a valid module in the special case when there are no function defs and the
 // code section is not present. Such modules can be valid so the caller must
 // handle this special case.
 
 [[nodiscard]] bool StartsCodeSection(const uint8_t* begin, const uint8_t* end,
-                                     SectionRange* codeSection);
+                                     BytecodeRange* codeSection);
 
 // Calling DecodeModuleEnvironment decodes all sections up to the code section
 // and performs full validation of all those sections. The client must then
@@ -167,6 +171,46 @@ using ValidatingOpIter = OpIter<ValidatingPolicy>;
 
 [[nodiscard]] bool Validate(JSContext* cx, const ShareableBytes& bytecode,
                             const FeatureOptions& options, UniqueChars* error);
+
+// A base type for dumping wasm ops. Does nothing by default; extend to add
+// actual behavior.
+struct BaseOpDumper {
+  virtual void dumpOpBegin(OpBytes op) {}
+  virtual void dumpOpEnd() {}
+  virtual void dumpTypeIndex(uint32_t typeIndex, bool asTypeUse = false) {}
+  virtual void dumpFuncIndex(uint32_t funcIndex) {}
+  virtual void dumpTableIndex(uint32_t tableIndex) {}
+  virtual void dumpGlobalIndex(uint32_t globalIndex) {}
+  virtual void dumpMemoryIndex(uint32_t memoryIndex) {}
+  virtual void dumpElemIndex(uint32_t elemIndex) {}
+  virtual void dumpDataIndex(uint32_t dataIndex) {}
+  virtual void dumpTagIndex(uint32_t tagIndex) {}
+  virtual void dumpLocalIndex(uint32_t localIndex) {}
+  virtual void dumpBlockType(BlockType type) {}
+  virtual void dumpI32Const(int32_t constant) {}
+  virtual void dumpI64Const(int64_t constant) {}
+  virtual void dumpF32Const(float constant) {}
+  virtual void dumpF64Const(double constant) {}
+  virtual void dumpV128Const(V128 constant) {}
+  virtual void dumpVectorMask(V128 mask) {}
+  virtual void dumpRefType(RefType type) {}
+  virtual void dumpHeapType(RefType type) {}
+  virtual void dumpValType(ValType type) {}
+  virtual void dumpTryTableCatches(const TryTableCatchVector& catches) {}
+  virtual void dumpLinearMemoryAddress(
+      LinearMemoryAddress<mozilla::Nothing> addr) {}
+  virtual void dumpBlockDepth(uint32_t relativeDepth) {}
+  virtual void dumpBlockDepths(const Uint32Vector& relativeDepths) {}
+  virtual void dumpFieldIndex(uint32_t fieldIndex) {}
+  virtual void dumpNumElements(uint32_t numElements) {}
+  virtual void dumpLaneIndex(uint32_t laneIndex) {}
+
+  virtual void startScope() {};
+  virtual void endScope() {};
+};
+
+[[nodiscard]] bool ValidateOps(ValidatingOpIter& iter, BaseOpDumper& dumper,
+                               const CodeMetadata& codeMeta);
 
 }  // namespace wasm
 }  // namespace js

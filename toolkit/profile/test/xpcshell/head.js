@@ -31,6 +31,15 @@ let xreDirProvider = Cc["@mozilla.org/xre/directory-provider;1"].getService(
 );
 xreDirProvider.setUserDataDirectory(gDataHome, false);
 xreDirProvider.setUserDataDirectory(gDataHomeLocal, true);
+Services.dirsvc.set("UAppData", gDataHome);
+let gProfilesRoot = gDataHome.clone();
+let gProfilesTemp = gDataHomeLocal.clone();
+if (!AppConstants.XP_UNIX || AppConstants.platform == "macosx") {
+  gProfilesRoot.append("Profiles");
+  gProfilesTemp.append("Profiles");
+}
+Services.dirsvc.set("DefProfRt", gProfilesRoot);
+Services.dirsvc.set("DefProfLRt", gProfilesTemp);
 
 let gIsDefaultApp = false;
 

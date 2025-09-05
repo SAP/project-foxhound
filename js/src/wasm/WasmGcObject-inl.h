@@ -339,11 +339,12 @@ MOZ_ALWAYS_INLINE WasmArrayObject* WasmArrayObject::createArray(
     js::gc::Heap initialHeap, uint32_t numElements) {
   MOZ_ASSERT(typeDefData->arrayElemSize ==
              typeDefData->typeDef->arrayType().elementType().size());
-  CheckedUint32 storageBytes =
+  mozilla::CheckedUint32 storageBytes =
       calcStorageBytesChecked(typeDefData->arrayElemSize, numElements);
   if (!storageBytes.isValid() ||
       storageBytes.value() > uint32_t(wasm::MaxArrayPayloadBytes)) {
-    wasm::ReportTrapError(cx, JSMSG_WASM_ARRAY_IMP_LIMIT);
+    js::ReportOversizedAllocation(cx, JSMSG_WASM_ARRAY_IMP_LIMIT);
+    wasm::MarkPendingExceptionAsTrap(cx);
     return nullptr;
   }
 

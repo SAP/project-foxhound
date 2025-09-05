@@ -9,7 +9,7 @@ ChromeUtils.defineESModuleGetters(lazy, {
   LRUCache:
     "chrome://global/content/translations/translations-document.sys.mjs",
   LanguageDetector:
-    "resource://gre/modules/translation/LanguageDetector.sys.mjs",
+    "resource://gre/modules/translations/LanguageDetector.sys.mjs",
 });
 
 /**
@@ -39,10 +39,13 @@ export class TranslationsChild extends JSWindowActorChild {
     }
   }
 
-  addProfilerMarker(message) {
+  addProfilerMarker(message, startTime) {
     ChromeUtils.addProfilerMarker(
       "TranslationsChild",
-      { innerWindowId: this.contentWindow.windowGlobalChild.innerWindowId },
+      {
+        innerWindowId: this.contentWindow?.windowGlobalChild.innerWindowId,
+        startTime,
+      },
       message
     );
   }
@@ -60,24 +63,20 @@ export class TranslationsChild extends JSWindowActorChild {
           return undefined;
         }
 
-        const { fromLanguage, toLanguage, port, translationsStart } = data;
+        const { languagePair, port, translationsStart } = data;
         if (
           !TranslationsChild.#translationsCache ||
-          !TranslationsChild.#translationsCache.matches(
-            fromLanguage,
-            toLanguage
-          )
+          !TranslationsChild.#translationsCache.matches(languagePair)
         ) {
           TranslationsChild.#translationsCache = new lazy.LRUCache(
-            fromLanguage,
-            toLanguage
+            languagePair
           );
         }
 
         this.#translatedDoc = new lazy.TranslationsDocument(
           this.document,
-          fromLanguage,
-          toLanguage,
+          languagePair.sourceLanguage,
+          languagePair.targetLanguage,
           this.contentWindow.windowGlobalChild.innerWindowId,
           port,
           () => this.sendAsyncMessage("Translations:RequestPort"),
@@ -100,13 +99,14 @@ export class TranslationsChild extends JSWindowActorChild {
           });
         }
 
-        try {
-          return lazy.LanguageDetector.detectLanguageFromDocument(
-            this.document
-          );
-        } catch (error) {
-          return null;
-        }
+        const startTime = Cu.now();
+        const detectionResult =
+          await lazy.LanguageDetector.detectLanguageFromDocument(this.document);
+        this.addProfilerMarker(
+          `Detect language from document: ${detectionResult.language}`,
+          startTime
+        );
+        return detectionResult;
       }
       case "Translations:AcquirePort": {
         this.addProfilerMarker("Acquired a port, resuming translations");

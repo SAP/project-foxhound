@@ -1145,6 +1145,7 @@ export class SpecialPowersParent extends JSWindowActorParent {
               }
             },
             actorParent: this.manager,
+            console,
           });
 
           // Evaluate the chrome script
@@ -1217,14 +1218,14 @@ export class SpecialPowersParent extends JSWindowActorParent {
         case "SPLoadExtension": {
           let id = aMessage.data.id;
           let ext = aMessage.data.ext;
-          if (AppConstants.platform === "android") {
+          if (AppConstants.MOZ_GECKOVIEW) {
             // Some extension APIs are partially implemented in Java, and the
             // interface between the JS and Java side (GeckoViewWebExtension)
             // expects extensions to be registered with the AddonManager.
             //
             // For simplicity, default to using an Addon Manager (if not null).
             if (ext.useAddonManager === undefined) {
-              ext.useAddonManager = "android-only";
+              ext.useAddonManager = "geckoview-only";
             }
           }
           // delayedStartup is only supported in xpcshell

@@ -16,7 +16,6 @@
 #include <string>
 
 #include "absl/strings/match.h"
-#include "api/transport/field_trial_based_config.h"
 #include "rtc_base/logging.h"
 #include "rtc_base/numerics/safe_conversions.h"
 
@@ -87,10 +86,6 @@ RateControlSettings::RateControlSettings(
 RateControlSettings::~RateControlSettings() = default;
 RateControlSettings::RateControlSettings(RateControlSettings&&) = default;
 
-RateControlSettings RateControlSettings::ParseFromFieldTrials() {
-  return RateControlSettings(FieldTrialBasedConfig());
-}
-
 bool RateControlSettings::UseCongestionWindow() const {
   return static_cast<bool>(congestion_window_config_.queue_size_ms);
 }
@@ -115,12 +110,12 @@ uint32_t RateControlSettings::CongestionWindowMinPushbackTargetBitrateBps()
       kDefaultMinPushbackTargetBitrateBps);
 }
 
-absl::optional<DataSize>
-RateControlSettings::CongestionWindowInitialDataWindow() const {
+std::optional<DataSize> RateControlSettings::CongestionWindowInitialDataWindow()
+    const {
   return congestion_window_config_.initial_data_window;
 }
 
-absl::optional<double> RateControlSettings::GetPacingFactor() const {
+std::optional<double> RateControlSettings::GetPacingFactor() const {
   return video_config_.pacing_factor;
 }
 
@@ -128,18 +123,18 @@ bool RateControlSettings::UseAlrProbing() const {
   return video_config_.alr_probing;
 }
 
-absl::optional<int> RateControlSettings::LibvpxVp8QpMax() const {
+std::optional<int> RateControlSettings::LibvpxVp8QpMax() const {
   if (video_config_.vp8_qp_max &&
       (*video_config_.vp8_qp_max < 0 || *video_config_.vp8_qp_max > 63)) {
     RTC_LOG(LS_WARNING) << "Unsupported vp8_qp_max_ value, ignored.";
-    return absl::nullopt;
+    return std::nullopt;
   }
   return video_config_.vp8_qp_max;
 }
 
-absl::optional<int> RateControlSettings::LibvpxVp8MinPixels() const {
+std::optional<int> RateControlSettings::LibvpxVp8MinPixels() const {
   if (video_config_.vp8_min_pixels && *video_config_.vp8_min_pixels < 1) {
-    return absl::nullopt;
+    return std::nullopt;
   }
   return video_config_.vp8_min_pixels;
 }

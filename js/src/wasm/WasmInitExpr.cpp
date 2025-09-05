@@ -34,6 +34,10 @@
 using namespace js;
 using namespace js::wasm;
 
+using mozilla::Maybe;
+using mozilla::Nothing;
+using mozilla::Some;
+
 class MOZ_STACK_CLASS InitExprInterpreter {
  public:
   explicit InitExprInterpreter(JSContext* cx,
@@ -70,8 +74,8 @@ class MOZ_STACK_CLASS InitExprInterpreter {
   [[nodiscard]] bool pushRef(ValType type, AnyRef ref) {
     return stack.append(Val(type, ref));
   }
-  [[nodiscard]] bool pushFuncRef(HandleFuncRef ref) {
-    return stack.append(Val(RefType::func(), ref));
+  [[nodiscard]] bool pushFuncRef(RefType type, FuncRef ref) {
+    return stack.append(Val(type, ref));
   }
 
   int32_t popI32() {
@@ -96,11 +100,13 @@ class MOZ_STACK_CLASS InitExprInterpreter {
   bool evalF64Const(double c) { return pushF64(c); }
   bool evalV128Const(V128 c) { return pushV128(c); }
   bool evalRefFunc(JSContext* cx, uint32_t funcIndex) {
-    RootedFuncRef func(cx, FuncRef::fromJSFunction(nullptr));
-    if (!instance().constantRefFunc(funcIndex, &func)) {
+    RootedFunction func(cx);
+    if (!instance().getExportedFunction(cx, funcIndex, &func)) {
       return false;
     }
-    return pushFuncRef(func);
+    const TypeDef& t = instance().codeMeta().getFuncTypeDef(funcIndex);
+    return pushFuncRef(RefType::fromTypeDef(&t, false),
+                       FuncRef::fromJSFunction(func.get()));
   }
   bool evalRefNull(RefType type) { return pushRef(type, AnyRef::null()); }
   bool evalI32Add() {
@@ -133,7 +139,6 @@ class MOZ_STACK_CLASS InitExprInterpreter {
     uint64_t a = popI64();
     return pushI64(a * b);
   }
-#ifdef ENABLE_WASM_GC
   bool evalStructNew(JSContext* cx, uint32_t typeIndex) {
     const TypeDef& typeDef = instance().codeMeta().types->type(typeIndex);
     const StructType& structType = typeDef.structType();
@@ -237,7 +242,6 @@ class MOZ_STACK_CLASS InitExprInterpreter {
     stack.popBack();
     return pushRef(RefType::any(), ref);
   }
-#endif  // ENABLE_WASM_GC
 };
 
 bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
@@ -350,7 +354,6 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
         }
         CHECK(evalI64Mul());
       }
-#ifdef ENABLE_WASM_GC
       case uint16_t(Op::GcPrefix): {
         switch (op.b1) {
           case uint32_t(GcOp::StructNew): {
@@ -406,7 +409,6 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
         }
         break;
       }
-#endif
       default: {
         MOZ_CRASH();
       }
@@ -418,7 +420,8 @@ bool InitExprInterpreter::evaluate(JSContext* cx, Decoder& d) {
 
 bool wasm::DecodeConstantExpression(Decoder& d, CodeMetadata* codeMeta,
                                     ValType expected, Maybe<LitVal>* literal) {
-  ValidatingOpIter iter(*codeMeta, d, ValidatingOpIter::InitExpr);
+  ValTypeVector locals;
+  ValidatingOpIter iter(*codeMeta, d, locals, ValidatingOpIter::InitExpr);
 
   if (!iter.startInitExpr(expected)) {
     return false;
@@ -550,11 +553,7 @@ bool wasm::DecodeConstantExpression(Decoder& d, CodeMetadata* codeMeta,
         *literal = Nothing();
         break;
       }
-#ifdef ENABLE_WASM_GC
       case uint16_t(Op::GcPrefix): {
-        if (!codeMeta->gcEnabled()) {
-          return iter.unrecognizedOpcode(&op);
-        }
         switch (op.b1) {
           case uint32_t(GcOp::StructNew): {
             uint32_t typeIndex;
@@ -623,7 +622,6 @@ bool wasm::DecodeConstantExpression(Decoder& d, CodeMetadata* codeMeta,
         *literal = Nothing();
         break;
       }
-#endif
       default: {
         return iter.unrecognizedOpcode(&op);
       }
@@ -639,7 +637,10 @@ bool InitExpr::decodeAndValidate(Decoder& d, CodeMetadata* codeMeta,
     return false;
   }
   const uint8_t* exprEnd = d.currentPosition();
-  size_t exprSize = exprEnd - exprStart;
+
+  if (!expr->bytecode_.append(exprStart, exprEnd)) {
+    return false;
+  }
 
   MOZ_ASSERT(expr->kind_ == InitExprKind::None);
   expr->type_ = expected;
@@ -652,8 +653,7 @@ bool InitExpr::decodeAndValidate(Decoder& d, CodeMetadata* codeMeta,
   }
 
   expr->kind_ = InitExprKind::Variable;
-  return expr->bytecode_.reserve(exprSize) &&
-         expr->bytecode_.append(exprStart, exprEnd);
+  return true;
 }
 
 /* static */ bool InitExpr::decodeAndEvaluate(
@@ -705,6 +705,6 @@ bool InitExpr::clone(const InitExpr& src) {
   return true;
 }
 
-size_t InitExpr::sizeOfExcludingThis(MallocSizeOf mallocSizeOf) const {
+size_t InitExpr::sizeOfExcludingThis(mozilla::MallocSizeOf mallocSizeOf) const {
   return bytecode_.sizeOfExcludingThis(mallocSizeOf);
 }

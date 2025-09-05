@@ -8,9 +8,9 @@ define(function (require, exports) {
   const {
     Component,
     createRef,
-  } = require("devtools/client/shared/vendor/react");
-  const dom = require("devtools/client/shared/vendor/react-dom-factories");
-  const PropTypes = require("devtools/client/shared/vendor/react-prop-types");
+  } = require("resource://devtools/client/shared/vendor/react.js");
+  const dom = require("resource://devtools/client/shared/vendor/react-dom-factories.js");
+  const PropTypes = require("resource://devtools/client/shared/vendor/react-prop-types.js");
 
   /**
    * Renders simple 'tab' widget.
@@ -228,7 +228,7 @@ define(function (require, exports) {
     }
 
     onClickTab(index, event) {
-      this.setActive(index);
+      this.setActive(index, { fromMouseEvent: true });
 
       if (event) {
         event.preventDefault();
@@ -244,7 +244,16 @@ define(function (require, exports) {
 
     // API
 
-    setActive(index) {
+    /**
+     * Set the active tab from its index
+     *
+     * @param {Integer} index
+     *        Index of the tab that we want to set as the active one
+     * @param {Object} options
+     * @param {Boolean} options.fromMouseEvent
+     *        Set to true if this is called from a click on the tab
+     */
+    setActive(index, options = {}) {
       const onAfterChange = this.props.onAfterChange;
       const onBeforeChange = this.props.onBeforeChange;
 
@@ -267,10 +276,14 @@ define(function (require, exports) {
 
       this.setState(newState, () => {
         // Properly set focus on selected tab.
-        const selectedTab = this.tabsEl.current.querySelector(".is-active > a");
-        if (selectedTab) {
-          selectedTab.focus();
-        }
+        const selectedTab = this.tabsEl.current.querySelector(
+          `a[data-tab-index="${index}"]`
+        );
+        selectedTab.focus({
+          // When focus is coming from a mouse event,
+          // prevent :focus-visible to be applied to the element
+          focusVisible: !options.fromMouseEvent,
+        });
 
         if (onAfterChange) {
           onAfterChange(index);
@@ -297,6 +310,7 @@ define(function (require, exports) {
             id,
             className: tabClassName,
             title,
+            tooltip,
             badge,
             showBadge,
           } = tab.props;
@@ -327,7 +341,7 @@ define(function (require, exports) {
               {
                 id: id ? id + "-tab" : "tab-" + index,
                 tabIndex: isTabSelected ? 0 : -1,
-                title,
+                title: tooltip || title,
                 "aria-controls": id ? id + "-panel" : "panel-" + index,
                 "aria-selected": isTabSelected,
                 role: "tab",

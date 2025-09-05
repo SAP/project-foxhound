@@ -59,7 +59,7 @@ fail-if = ["os == 'android'"]
 ["test_localfile.js"]
 
 ["test_logFromPreference.js"]
-skip-if = "(os == 'android' && release_or_beta)" # bug 1841818
+skip-if = ["(os == 'android' && release_or_beta)"] # bug 1841818
 
 ["test_mac_bundle.js"]
 
@@ -114,3 +114,8 @@ run-if = ["os == 'win'"]
 
 ["test_windows_registry.js"]
 run-if = ["os == 'win'"]
+
+["test_error_iserror.js"]
+prefs = [
+  "javascript.options.experimental.error_iserror=true",
+]

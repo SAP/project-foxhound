@@ -36,10 +36,6 @@ import mozilla.components.concept.engine.manifest.WebAppManifest
 import mozilla.components.concept.engine.manifest.WebAppManifestParser
 import mozilla.components.concept.engine.request.RequestInterceptor
 import mozilla.components.concept.engine.request.RequestInterceptor.InterceptionResponse
-import mozilla.components.concept.engine.shopping.Highlight
-import mozilla.components.concept.engine.shopping.ProductAnalysis
-import mozilla.components.concept.engine.shopping.ProductAnalysisStatus
-import mozilla.components.concept.engine.shopping.ProductRecommendation
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
 import mozilla.components.concept.engine.translate.TranslationOptions
@@ -75,7 +71,6 @@ import org.mozilla.geckoview.GeckoRuntime
 import org.mozilla.geckoview.GeckoSession
 import org.mozilla.geckoview.GeckoSession.NavigationDelegate
 import org.mozilla.geckoview.GeckoSession.PermissionDelegate.ContentPermission
-import org.mozilla.geckoview.GeckoSession.Recommendation
 import org.mozilla.geckoview.GeckoSessionSettings
 import org.mozilla.geckoview.WebRequestError
 import org.mozilla.geckoview.WebResponse
@@ -179,6 +174,7 @@ class GeckoEngineSession(
         parent: EngineSession?,
         flags: LoadUrlFlags,
         additionalHeaders: Map<String, String>?,
+        originalInput: String?,
     ) {
         notifyObservers { onLoadUrl() }
 
@@ -195,6 +191,7 @@ class GeckoEngineSession(
         val loader = GeckoSession.Loader()
             .uri(url)
             .flags(flags.getGeckoFlags())
+            .originalInput(originalInput)
 
         if (additionalHeaders != null) {
             val headerFilter = if (flags.contains(ALLOW_ADDITIONAL_HEADERS)) {
@@ -661,288 +658,23 @@ class GeckoEngineSession(
     }
 
     /**
-     * See [EngineSession.requestProductRecommendations]
+     * See [EngineSession.getWebCompatInfo].
      */
-    override fun requestProductRecommendations(
-        url: String,
-        onResult: (List<ProductRecommendation>) -> Unit,
+    override fun getWebCompatInfo(
+        onResult: (JSONObject) -> Unit,
         onException: (Throwable) -> Unit,
     ) {
-        geckoSession.requestRecommendations(url).then(
-            { response: List<Recommendation>? ->
-                if (response == null) {
-                    logger.error("Invalid value: unable to get analysis result from Gecko Engine.")
-                    onException(
-                        java.lang.IllegalStateException(
-                            "Invalid value: unable to get analysis result from Gecko Engine.",
-                        ),
-                    )
-                    return@then GeckoResult()
+        geckoSession.webCompatInfo.then(
+            { result ->
+                if (result == null) {
+                    logger.error("No result from GeckoView getWebCompatInfo.")
+                    return@then GeckoResult<JSONObject>()
                 }
-
-                val productRecommendations = response.map { it: Recommendation ->
-                    ProductRecommendation(
-                        url = it.url,
-                        analysisUrl = it.analysisUrl,
-                        adjustedRating = it.adjustedRating,
-                        sponsored = it.sponsored,
-                        imageUrl = it.imageUrl,
-                        aid = it.aid,
-                        name = it.name,
-                        grade = it.grade,
-                        price = it.price,
-                        currency = it.currency,
-                    )
-                }
-                onResult(productRecommendations)
-                GeckoResult<ProductRecommendation>()
-            },
-            { throwable ->
-                logger.error("Requesting product analysis failed.", throwable)
-                onException(throwable)
+                onResult(result)
                 GeckoResult()
             },
-        )
-    }
-
-    /**
-     * See [EngineSession.requestProductAnalysis]
-     */
-    @Suppress("ComplexCondition")
-    override fun requestProductAnalysis(
-        url: String,
-        onResult: (ProductAnalysis) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.requestAnalysis(url).then(
-            { response ->
-                if (response == null) {
-                    logger.error(
-                        "Invalid value: unable to get analysis result from Gecko Engine.",
-                    )
-                    onException(
-                        java.lang.IllegalStateException(
-                            "Invalid value: unable to get analysis result from Gecko Engine.",
-                        ),
-                    )
-                    return@then GeckoResult()
-                }
-
-                val highlights = if (
-                    response.highlights?.quality == null &&
-                    response.highlights?.price == null &&
-                    response.highlights?.shipping == null &&
-                    response.highlights?.appearance == null &&
-                    response.highlights?.competitiveness == null
-                ) {
-                    null
-                } else {
-                    Highlight(
-                        response.highlights?.quality?.toList(),
-                        response.highlights?.price?.toList(),
-                        response.highlights?.shipping?.toList(),
-                        response.highlights?.appearance?.toList(),
-                        response.highlights?.competitiveness?.toList(),
-                    )
-                }
-
-                val analysisResult = ProductAnalysis(
-                    productId = response.productId,
-                    analysisURL = response.analysisURL,
-                    grade = response.grade,
-                    adjustedRating = response.adjustedRating,
-                    needsAnalysis = response.needsAnalysis,
-                    pageNotSupported = response.pageNotSupported,
-                    notEnoughReviews = response.notEnoughReviews,
-                    lastAnalysisTime = response.lastAnalysisTime,
-                    deletedProductReported = response.deletedProductReported,
-                    deletedProduct = response.deletedProduct,
-                    highlights = highlights,
-                )
-
-                onResult(analysisResult)
-                GeckoResult<ProductAnalysis>()
-            },
             { throwable ->
-                logger.error("Requesting product analysis failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.reanalyzeProduct]
-     */
-    override fun reanalyzeProduct(
-        url: String,
-        onResult: (String) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.requestCreateAnalysis(url).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to reanalyze product from Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                onResult(response)
-                GeckoResult<String>()
-            },
-            { throwable ->
-                logger.error("Request to reanalyze product failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.requestAnalysisStatus]
-     */
-    override fun requestAnalysisStatus(
-        url: String,
-        onResult: (ProductAnalysisStatus) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.requestAnalysisStatus(url).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to request analysis status from Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                val analysisStatusResult = ProductAnalysisStatus(
-                    status = response.status,
-                    progress = response.progress,
-                )
-                onResult(analysisStatusResult)
-                GeckoResult<ProductAnalysisStatus>()
-            },
-            { throwable ->
-                logger.error("Request for product analysis status failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.sendClickAttributionEvent]
-     */
-    override fun sendClickAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.sendClickAttributionEvent(aid).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to send click attribution event through Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                onResult(response)
-                GeckoResult<Boolean>()
-            },
-            { throwable ->
-                logger.error("Sending click attribution event failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.sendImpressionAttributionEvent]
-     */
-    override fun sendImpressionAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.sendImpressionAttributionEvent(aid).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to send impression attribution event through Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                onResult(response)
-                GeckoResult<Boolean>()
-            },
-            { throwable ->
-                logger.error("Sending impression attribution event failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.sendPlacementAttributionEvent]
-     */
-    override fun sendPlacementAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.sendPlacementAttributionEvent(aid).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to send placement attribution event through Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                onResult(response)
-                GeckoResult<Boolean>()
-            },
-            { throwable ->
-                logger.error("Sending placement attribution event failed.", throwable)
-                onException(throwable)
-                GeckoResult()
-            },
-        )
-    }
-
-    /**
-     * See [EngineSession.reportBackInStock]
-     */
-    override fun reportBackInStock(
-        url: String,
-        onResult: (String) -> Unit,
-        onException: (Throwable) -> Unit,
-    ) {
-        geckoSession.reportBackInStock(url).then(
-            { response ->
-                val errorMessage = "Invalid value: unable to report back in stock from Gecko Engine."
-                if (response == null) {
-                    logger.error(errorMessage)
-                    onException(
-                        java.lang.IllegalStateException(errorMessage),
-                    )
-                    return@then GeckoResult()
-                }
-                onResult(response)
-                GeckoResult<String>()
-            },
-            { throwable ->
-                logger.error("Request for reporting back in stock failed.", throwable)
+                logger.error("Getting web compat info failed.", throwable)
                 onException(throwable)
                 GeckoResult()
             },
@@ -1119,10 +851,13 @@ class GeckoEngineSession(
                 return
             }
 
-            appRedirectUrl?.let {
-                if (url == appRedirectUrl) {
-                    goBack(false)
-                    return
+            // if it is an initial load then we can't go back. We should update the URL.
+            if (!initialLoad) {
+                appRedirectUrl?.let {
+                    if (url == appRedirectUrl) {
+                        goBack(false)
+                        return
+                    }
                 }
             }
 
@@ -1238,8 +973,10 @@ class GeckoEngineSession(
 
             val interceptor = settings.requestInterceptor
             val interceptionResponse = if (
-                interceptor != null && (!request.isDirectNavigation || interceptor.interceptsAppInitiatedRequests())
+                interceptor == null || (request.isDirectNavigation && !interceptor.interceptsAppInitiatedRequests())
             ) {
+                null
+            } else {
                 val engineSession = this@GeckoEngineSession
                 val isSameDomain =
                     engineSession.currentUrl?.tryGetHostFromUrl() == request.uri.tryGetHostFromUrl()
@@ -1252,27 +989,28 @@ class GeckoEngineSession(
                     request.isRedirect,
                     request.isDirectNavigation,
                     isSubframeRequest,
-                )?.apply {
+                )?.takeUnless {
+                    it is InterceptionResponse.AppIntent && request.isDirectNavigation
+                }?.apply {
                     when (this) {
-                        is InterceptionResponse.Content -> loadData(data, mimeType, encoding)
-                        is InterceptionResponse.Url -> loadUrl(
-                            url = url,
-                            flags = flags,
-                            additionalHeaders = additionalHeaders,
-                        )
                         is InterceptionResponse.AppIntent -> {
                             appRedirectUrl = lastLoadRequestUri
                             notifyObservers {
                                 onLaunchIntentRequest(url = url, appIntent = appIntent)
                             }
                         }
+
+                        is InterceptionResponse.Content -> loadData(data, mimeType, encoding)
+                        is InterceptionResponse.Url -> loadUrl(
+                            url = url,
+                            flags = flags,
+                            additionalHeaders = additionalHeaders,
+                        )
                         else -> {
                             // no-op
                         }
                     }
                 }
-            } else {
-                null
             }
 
             if (interceptionResponse !is InterceptionResponse.AppIntent) {
@@ -1815,7 +1553,7 @@ class GeckoEngineSession(
         internal const val ABOUT_BLANK = "about:blank"
         internal const val JS_SCHEME = "javascript"
         internal val BLOCKED_SCHEMES =
-            listOf("file", "resource", JS_SCHEME) // See 1684761 and 1684947
+            listOf("file", "resource", "fido", JS_SCHEME) // See 1684761 and 1684947
 
         /**
          * Provides an ErrorType corresponding to the error code provided.

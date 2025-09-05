@@ -134,7 +134,6 @@ std::unique_ptr<webgl::ShaderValidator> WebGLContext::CreateShaderValidator(
   const auto outputLanguage = ShaderOutput(gl);
 
   ShBuiltInResources resources;
-  memset(&resources, 0, sizeof(resources));
   sh::InitBuiltInResources(&resources);
 
   resources.HashFunction = webgl::IdentifierHashFunc;
@@ -206,10 +205,6 @@ std::unique_ptr<webgl::ShaderValidator> WebGLContext::CreateShaderValidator(
     const auto bytes = StaticPrefs::webgl_glsl_max_private_var_size_in_bytes();
     if (bytes >= 0) {
       return static_cast<size_t>(bytes);
-    }
-
-    if (gl->IsMesa()) {
-      return 4 * 4 * 1024;  // 4K words
     }
 
     if (kIsMacOS) {

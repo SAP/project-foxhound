@@ -87,7 +87,9 @@ add_setup(function () {
  * @returns {Promise<undefined>}
  */
 async function testCreateBackupHelper(sandbox, taskFn) {
+  Services.telemetry.clearEvents();
   Services.fog.testResetFOG();
+
   // Handle for the metric for total byte size of staging folder
   let totalBackupSizeHistogram = TelemetryTestUtils.getAndClearHistogram(
     "BROWSER_BACKUP_TOTAL_BACKUP_SIZE"
@@ -102,6 +104,16 @@ async function testCreateBackupHelper(sandbox, taskFn) {
   );
 
   const EXPECTED_CLIENT_ID = await ClientID.getClientID();
+  const EXPECTED_PROFILE_GROUP_ID = await ClientID.getProfileGroupID();
+
+  // Enable the scheduled backups pref so that backups can be deleted. We're
+  // not calling initBackupScheduler on the BackupService that we're
+  // constructing, so there's no danger of accidentally having a backup be
+  // created during this test if there's an idle period.
+  Services.prefs.setBoolPref("browser.backup.scheduled.enabled", true);
+  registerCleanupFunction(() => {
+    Services.prefs.clearUserPref("browser.backup.scheduled.enabled");
+  });
 
   let fake1ManifestEntry = { fake1: "hello from 1" };
   sandbox
@@ -147,6 +159,14 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     profilePath: fakeProfilePath,
   });
   Assert.ok(bs.state.lastBackupDate, "The backup date was recorded.");
+
+  let legacyEvents = TelemetryTestUtils.getEvents(
+    { category: "browser.backup", method: "created", object: "BackupService" },
+    { process: "parent" }
+  );
+  Assert.equal(legacyEvents.length, 1, "Found the created legacy event.");
+  let events = Glean.browserBackup.created.testGetValue();
+  Assert.equal(events.length, 1, "Found the created Glean event.");
 
   // Validate total backup time metrics were recorded
   assertSingleTimeMeasurement(
@@ -271,6 +291,11 @@ async function testCreateBackupHelper(sandbox, taskFn) {
     manifest.meta.legacyClientID,
     EXPECTED_CLIENT_ID,
     "The client ID was stored properly."
+  );
+  Assert.equal(
+    manifest.meta.profileGroupID,
+    EXPECTED_PROFILE_GROUP_ID,
+    "The profile group ID was stored properly."
   );
   Assert.equal(
     manifest.meta.profileName,

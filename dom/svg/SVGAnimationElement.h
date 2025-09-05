@@ -58,6 +58,8 @@ class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
   mozilla::SMILTimedElement& TimedElement();
   mozilla::SMILTimeContainer* GetTimeContainer();
   virtual SMILAnimationFunction& AnimationFunction() = 0;
+  virtual bool SupportsXLinkHref() const { return true; }
+  virtual void AddDiscards(nsTObserverArray<RefPtr<Element>>&) {}
 
   bool IsEventAttributeNameInternal(nsAtom* aName) override;
 
@@ -70,11 +72,11 @@ class SVGAnimationElement : public SVGAnimationElementBase, public SVGTests {
   SVGElement* GetTargetElement();
   float GetStartTime(ErrorResult& rv);
   float GetCurrentTimeAsFloat();
-  float GetSimpleDuration(ErrorResult& rv);
-  void BeginElement(ErrorResult& rv) { BeginElementAt(0.f, rv); }
-  void BeginElementAt(float offset, ErrorResult& rv);
-  void EndElement(ErrorResult& rv) { EndElementAt(0.f, rv); }
-  void EndElementAt(float offset, ErrorResult& rv);
+  float GetSimpleDuration(ErrorResult& aRv);
+  void BeginElement(ErrorResult& aRv) { BeginElementAt(0.f, aRv); }
+  void BeginElementAt(float offset, ErrorResult& aRv);
+  void EndElement(ErrorResult& aRv) { EndElementAt(0.f, aRv); }
+  void EndElementAt(float offset, ErrorResult& aRv);
 
   // Manually implement onbegin/onrepeat/onend IDL property getters/setters.
   // We don't autogenerate these methods because the property name differs

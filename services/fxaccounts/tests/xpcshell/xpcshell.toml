@@ -16,6 +16,8 @@ support-files = [
 
 ["test_accounts_device_registration.js"]
 
+["test_browser_lifetime.js"]
+
 ["test_client.js"]
 
 ["test_commands.js"]
@@ -46,6 +48,9 @@ skip-if = ["appname == 'thunderbird'"]
 ["test_push_service.js"]
 
 ["test_storage_manager.js"]
+
+["test_sync_warning_dialogs.js"]
+skip-if = ["appname == 'thunderbird'"]
 
 ["test_telemetry.js"]
 

@@ -3,8 +3,8 @@
 `moz-radio-group` is an element that allows users to select one option from a list of related options. It is designed to be used in tandem with our `moz-radio` custom element, which is a wrapper around an `<input type="radio">` HTML element.
 
 ```html story
-<moz-radio-group name="contact" label="Select a contact method">
-  <moz-radio value="email" label="Email" checked></moz-radio>
+<moz-radio-group name="contact" label="Select a contact method" value="email">
+  <moz-radio value="email" label="Email"></moz-radio>
   <moz-radio value="phone" label="Phone"></moz-radio>
   <moz-radio value="mail" label="Mail"></moz-radio>
 </moz-radio-group>
@@ -15,7 +15,6 @@ More information about this component including design, writing, and localizatio
 ## Code
 
 The source for `moz-radio-group` and `moz-radio` can be found under [toolkit/content/widgets/moz-radio-group/](https://searchfox.org/mozilla-central/source/toolkit/content/widgets/moz-radio-group/).
-
 
 ## When to use `moz-radio-group`
 
@@ -41,6 +40,26 @@ If you are using the elements improperly you may see the following [console erro
 
 ```sh
 moz-radio can only be used in moz-radio-group element.
+```
+
+### Setting `value` for the group
+
+The `value` property or attribute of `moz-radio-group` can be used to set the `checked` state of its `moz-radio` elements. While it is also possible to set `checked` directly individual `moz-radio` elements, in most cases it's clearer to set `value` on the group. This allows `moz-radio-group` to serve as the single source of truth for the checked/unchecked state of related `moz-radio` elements.
+
+```html
+<moz-radio-group name="greeting" label="Select a preferred greeting" value="hola">
+  <moz-radio value="hi" label="Hi"></moz-radio>
+  <moz-radio value="hello" label="Hello"></moz-radio>
+  <moz-radio value="hola" label="Hola"></moz-radio>
+</moz-radio-group>
+```
+
+```html story
+<moz-radio-group name="greeting" label="Select a preferred greeting" value="hola">
+  <moz-radio value="hi" label="Hi"></moz-radio>
+  <moz-radio value="hello" label="Hello"></moz-radio>
+  <moz-radio value="hola" label="Hola"></moz-radio>
+</moz-radio-group>
 ```
 
 ### Setting `name` for the group
@@ -90,5 +109,39 @@ Would be used to set labels on the different elements as follows:
 <moz-radio-group data-l10n-id="moz-radio-group-id">
   <moz-radio data-l10n-id="first-moz-radio-id"></moz-radio>
   <moz-radio data-l10n-id="second-moz-radio-id"></moz-radio>
+</moz-radio-group>
+```
+
+### Nested fields
+
+`moz-radio` elements support nested or dependent fields via a `nested` named
+slot. These fields will be rendered below the radio element in which they are
+nested, and will be indented to visually indicate dependence. Any nested fields
+will mirror the `disabled` state of the radio and will also become `disabled`
+whenever the radio is not `checked`.
+
+When nesting fields under a radio element we do not need to do any additional
+wrapping with `moz-fieldset`, since `moz-radio-group` already relies on
+`moz-fieldset` under the hood:
+
+```html
+<moz-radio-group label="Label for the group">
+  <moz-radio label="Some radio button" value="bar"></moz-radio>
+  <moz-radio label="another another radio button" value="baz"></moz-radio>
+  <moz-radio label="Parent radio button" value="foo" checked>
+    <moz-checkbox slot="nested" label="Nested checkbox one" value="one"></moz-checkbox>
+    <moz-checkbox slot="nested" label="Nested checkbox two" value="two" checked></moz-checkbox>
+  </moz-radio>
+</moz-radio-group>
+```
+
+```html story
+<moz-radio-group label="Label for the group">
+  <moz-radio label="Some radio button" value="bar"></moz-radio>
+  <moz-radio label="another another radio button" value="baz"></moz-radio>
+  <moz-radio label="Parent radio button" value="foo" checked>
+    <moz-checkbox slot="nested" label="Nested checkbox one" value="one"></moz-checkbox>
+    <moz-checkbox slot="nested" label="Nested checkbox two" value="two" checked></moz-checkbox>
+  </moz-radio>
 </moz-radio-group>
 ```

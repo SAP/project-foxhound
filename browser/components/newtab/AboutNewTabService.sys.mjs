@@ -48,7 +48,7 @@ const PREF_ABOUT_HOME_CACHE_TESTING =
 const ABOUT_WELCOME_URL =
   "chrome://browser/content/aboutwelcome/aboutwelcome.html";
 
-const CACHE_WORKER_URL = "resource://activity-stream/lib/cache.worker.js";
+const CACHE_WORKER_URL = "resource://newtab/lib/cache.worker.js";
 
 const IS_PRIVILEGED_PROCESS =
   Services.appinfo.remoteType === E10SUtils.PRIVILEGEDABOUT_REMOTE_TYPE;
@@ -65,7 +65,7 @@ const PREF_ACTIVITY_STREAM_DEBUG = "browser.newtabpage.activity-stream.debug";
  * process" first launches, so subsequent loads of about:home do not read
  * from this cache.
  *
- * See https://firefox-source-docs.mozilla.org/browser/components/newtab/docs/v2-system-addon/about_home_startup_cache.html
+ * See https://firefox-source-docs.mozilla.org/browser/extensions/newtab/docs/v2-system-addon/about_home_startup_cache.html
  * for further details.
  */
 export const AboutHomeStartupCacheChild = {
@@ -94,9 +94,9 @@ export const AboutHomeStartupCacheChild = {
    * the nsIAboutNewTabService when the initial about:home document is
    * eventually requested.
    *
-   * @param pageInputStream (nsIInputStream)
+   * @param {nsIInputStream} pageInputStream
    *   The stream for the cached page markup.
-   * @param scriptInputStream (nsIInputStream)
+   * @param {nsIInputStream} scriptInputStream
    *   The stream for the cached script to run on the page.
    */
   init(pageInputStream, scriptInputStream) {
@@ -176,12 +176,12 @@ export const AboutHomeStartupCacheChild = {
    * It is expected that the same BrowsingContext that loads the cached
    * page will also load the cached script.
    *
-   * @param uri (nsIURI)
+   * @param {nsIURI} uri
    *   The URI for the requested page, as passed by nsIAboutNewTabService.
-   * @param loadInfo (nsILoadInfo)
+   * @param {nsILoadInfo} loadInfo
    *   The nsILoadInfo for the requested load, as passed by
    *   nsIAboutNewWTabService.
-   * @return nsIChannel or null.
+   * @returns {?nsIChannel}
    */
   maybeGetCachedPageChannel(uri, loadInfo) {
     if (!this._initted) {
@@ -280,11 +280,10 @@ export const AboutHomeStartupCacheChild = {
    * is sent to the parent process with the nsIInputStream's for the
    * markup and script contents.
    *
-   * @param state (Object)
+   * @param {object} state
    *   The Redux state of the about:home document to render.
-   * @return Promise
-   * @resolves undefined
-   *   After the message with the nsIInputStream's have been sent to
+   * @returns {Promise<undefined>}
+   *   Fulfills after the message with the nsIInputStream's have been sent to
    *   the parent.
    */
   async constructAndSendCache(state) {
@@ -415,18 +414,18 @@ class BaseAboutNewTabService {
   }
 
   /**
-   * Returns the default URL.
+   * @returns {string} the default URL
    *
    * This URL depends on various activity stream prefs. Overriding
    * the newtab page has no effect on the result of this function.
    */
   get defaultURL() {
     // Generate the desired activity stream resource depending on state, e.g.,
-    // "resource://activity-stream/prerendered/activity-stream.html"
-    // "resource://activity-stream/prerendered/activity-stream-debug.html"
-    // "resource://activity-stream/prerendered/activity-stream-noscripts.html"
+    // "resource://newtab/prerendered/activity-stream.html"
+    // "resource://newtab/prerendered/activity-stream-debug.html"
+    // "resource://newtab/prerendered/activity-stream-noscripts.html"
     return [
-      "resource://activity-stream/prerendered/",
+      "resource://newtab/prerendered/",
       "activity-stream",
       // Debug version loads dev scripts but noscripts separately loads scripts
       this.activityStreamDebug && !this.privilegedAboutProcessEnabled
@@ -437,18 +436,22 @@ class BaseAboutNewTabService {
     ].join("");
   }
 
+  /**
+   * @returns {string} the about:welcome URL
+   *
+   * This is calculated in the same way the default URL is.
+   *
+   * (defaultURL's description)
+   * this URL depends on various activity stream prefs. Overriding
+   * the newtab page has no effect on the result of this function.
+   */
   get welcomeURL() {
-    /*
-     * Returns the about:welcome URL
-     *
-     * This is calculated in the same way the default URL is.
-     */
-
     lazy.NimbusFeatures.aboutwelcome.recordExposureEvent({ once: true });
     if (lazy.NimbusFeatures.aboutwelcome.getVariable("enabled") ?? true) {
       return ABOUT_WELCOME_URL;
     }
-    return this.defaultURL;
+    // If about:welcome isn't enabled, fallback to showing about:home.
+    return "about:home";
   }
 
   aboutHomeChannel() {
@@ -456,6 +459,43 @@ class BaseAboutNewTabService {
       "AboutHomeChannel not implemented for this process.",
       Cr.NS_ERROR_NOT_IMPLEMENTED
     );
+  }
+}
+
+/**
+ * The parent-process implementation of nsIAboutNewTabService,
+ * which mainly delegates to the BaseAboutNewTabService implementation,
+ * except for doing some New Tab initialization work for the parent
+ * process.
+ */
+class AboutNewTabParentService extends BaseAboutNewTabService {
+  constructor() {
+    super();
+
+    ChromeUtils.registerWindowActor("AboutNewTab", {
+      parent: {
+        esModuleURI: "resource:///actors/AboutNewTabParent.sys.mjs",
+      },
+      child: {
+        esModuleURI: "resource:///actors/AboutNewTabChild.sys.mjs",
+        events: {
+          DOMDocElementInserted: {},
+          DOMContentLoaded: { capture: true },
+          load: { capture: true },
+          unload: { capture: true },
+          pageshow: {},
+          visibilitychange: {},
+        },
+      },
+      // The wildcard on about:newtab is for the # parameter
+      // that is used for the newtab devtools. The wildcard for about:home
+      // is similar, and also allows for falling back to loading the
+      // about:home document dynamically if an attempt is made to load
+      // about:home?jscache from the AboutHomeStartupCache as a top-level
+      // load.
+      matches: ["about:home*", "about:newtab*"],
+      remoteTypes: ["privilegedabout"],
+    });
   }
 }
 
@@ -508,7 +548,7 @@ class AboutNewTabChildService extends BaseAboutNewTabService {
  */
 export function AboutNewTabStubService() {
   if (Services.appinfo.processType === Services.appinfo.PROCESS_TYPE_DEFAULT) {
-    return new BaseAboutNewTabService();
+    return new AboutNewTabParentService();
   }
   return new AboutNewTabChildService();
 }

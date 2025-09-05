@@ -25,14 +25,14 @@ describe('`puppeteer` with configuration', () => {
       before: async cwd => {
         await writeFile(
           join(cwd, '.puppeteerrc.cjs'),
-          await readAsset('puppeteer', 'configuration', '.puppeteerrc.cjs')
+          await readAsset('puppeteer', 'configuration', '.puppeteerrc.cjs'),
         );
       },
     });
 
     it('evaluates', async function () {
       const files = await readdir(join(this.sandbox, '.cache', 'puppeteer'));
-      assert.equal(files.length, 2);
+      assert.equal(files.length, 2, files.join());
       assert(files.includes('chrome'));
       assert(files.includes('chrome-headless-shell'));
 
@@ -57,7 +57,7 @@ describe('`puppeteer` with configuration', () => {
       before: async cwd => {
         await writeFile(
           join(cwd, 'puppeteer.config.ts'),
-          await readAsset('puppeteer', 'configuration', 'puppeteer.config.ts')
+          await readAsset('puppeteer', 'configuration', 'puppeteer.config.ts'),
         );
       },
     });
@@ -89,8 +89,8 @@ describe('`puppeteer` with configuration', () => {
           await readAsset(
             'puppeteer',
             'configuration',
-            '.puppeteerrc-browserVersion.cjs'
-          )
+            '.puppeteerrc-browserVersion.cjs',
+          ),
         );
       },
     });
@@ -108,19 +108,19 @@ describe('`puppeteer` with configuration', () => {
             ...process.env,
             PUPPETEER_CACHE_DIR: join(this.sandbox, '.cache', 'puppeteer'),
           },
-        }
+        },
       );
       assert.strictEqual(
         result.status,
         0,
-        `${result.stdout}\n${result.stderr}`
+        `${result.stdout}\n${result.stderr}`,
       );
       const metadataFilePath = join(
         this.sandbox,
         '.cache',
         'puppeteer',
         'chrome',
-        '.metadata'
+        '.metadata',
       );
       assert.ok(existsSync(metadataFilePath));
       const metadata = JSON.parse(readFileSync(metadataFilePath, 'utf8'));

@@ -162,6 +162,13 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
   clickOnAddonWidget(ADDON_ID);
   await onPopupMessage;
 
+  info("Assert the context of the evaluation context selector");
+  const contextLabels = getContextLabels(toolbox);
+  is(contextLabels.length, 3);
+  is(contextLabels[0], "Web Extension Fallback Document");
+  is(contextLabels[1], "/_generated_background_page.html");
+  is(contextLabels[2], "/popup.html");
+
   info("Wait a bit to catch unexpected duplicates or mixed up messages");
   await wait(1000);
 
@@ -230,8 +237,19 @@ add_task(async function testWebExtensionsToolboxWebConsole() {
 
   // Verify that console evaluations still work after reloading the page
   info("Reload the webextension document");
-  const { onDomCompleteResource } =
-    await waitForNextTopLevelDomCompleteResource(toolbox.commands);
+  const { onResource: onDomCompleteResource } =
+    await toolbox.commands.resourceCommand.waitForNextResource(
+      toolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+      {
+        ignoreExistingResources: true,
+        predicate: resource => {
+          return (
+            resource.name === "dom-complete" &&
+            resource.targetFront.url.endsWith("background_page.html")
+          );
+        },
+      }
+    );
   hud.ui.wrapper.dispatchEvaluateExpression("location.reload()");
   await onDomCompleteResource;
 
@@ -398,9 +416,16 @@ add_task(async function testWebExtensionTwoReloads() {
 
   // Verify that console evaluations still work after reloading the addon
   info("Reload the webextension itself");
-  let { onDomCompleteResource } = await waitForNextTopLevelDomCompleteResource(
-    toolbox.commands
-  );
+  let { onResource: onDomCompleteResource } =
+    await toolbox.commands.resourceCommand.waitForNextResource(
+      toolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+      {
+        ignoreExistingResources: true,
+        predicate: resource =>
+          resource.name === "dom-complete" &&
+          resource.targetFront.url.endsWith("background_page.html"),
+      }
+    );
   const reloadButton = addonTarget.querySelector(
     ".qa-temporary-extension-reload-button"
   );
@@ -419,9 +444,16 @@ add_task(async function testWebExtensionTwoReloads() {
   await waitUntil(() => findMessageByType(hud, "41", ".result"));
 
   info("Reload the extension a second time");
-  ({ onDomCompleteResource } = await waitForNextTopLevelDomCompleteResource(
-    toolbox.commands
-  ));
+  ({ onResource: onDomCompleteResource } =
+    await toolbox.commands.resourceCommand.waitForNextResource(
+      toolbox.commands.resourceCommand.TYPES.DOCUMENT_EVENT,
+      {
+        ignoreExistingResources: true,
+        predicate: resource =>
+          resource.name === "dom-complete" &&
+          resource.targetFront.url.endsWith("background_page.html"),
+      }
+    ));
   reloadButton.click();
   await onDomCompleteResource;
 
@@ -438,3 +470,12 @@ add_task(async function testWebExtensionTwoReloads() {
   await removeTemporaryExtension(BACKGROUND_ADDON_NAME, document);
   await removeTab(tab);
 });
+
+function getContextLabels(toolbox) {
+  // Note that the context menu is in the top level chrome document (toolbox.xhtml)
+  // instead of webconsole.xhtml.
+  const labels = toolbox.doc.querySelectorAll(
+    "#webconsole-console-evaluation-context-selector-menu-list li .label"
+  );
+  return Array.from(labels).map(item => item.textContent);
+}

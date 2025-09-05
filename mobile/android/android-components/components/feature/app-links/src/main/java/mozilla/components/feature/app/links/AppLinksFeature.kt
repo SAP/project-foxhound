@@ -95,7 +95,7 @@ class AppLinksFeature(
         }
 
         val doNotOpenApp = {
-            AppLinksInterceptor.addUserDoNotIntercept(url, appIntent)
+            AppLinksInterceptor.addUserDoNotIntercept(url, appIntent, tab.id)
 
             loadUrlIfSchemeSupported(tab, url)
         }
@@ -108,7 +108,7 @@ class AppLinksFeature(
         }
 
         @Suppress("ComplexCondition")
-        if (isSameCallerAndApp(tab, appIntent) || (!tab.content.private && !shouldPrompt()) ||
+        if (isAuthentication(tab, appIntent) || (!tab.content.private && !shouldPrompt()) ||
             fragmentManager == null
         ) {
             doOpenApp()
@@ -116,7 +116,7 @@ class AppLinksFeature(
         }
 
         val dialog = getOrCreateDialog(tab.content.private, url)
-        dialog.onConfirmRedirect = doOpenApp
+        dialog.onConfirmRedirect = { doOpenApp() }
         dialog.onCancelRedirect = doNotOpenApp
 
         if (!isAlreadyADialogCreated()) {
@@ -146,8 +146,6 @@ class AppLinksFeature(
             } else {
                 message
             },
-            positiveButtonText = R.string.mozac_feature_applinks_confirm_dialog_confirm,
-            negativeButtonText = R.string.mozac_feature_applinks_confirm_dialog_deny,
         )
     }
 
@@ -172,13 +170,24 @@ class AppLinksFeature(
     }
 
     @VisibleForTesting(otherwise = VisibleForTesting.PRIVATE)
-    internal fun isSameCallerAndApp(tab: SessionState, appIntent: Intent): Boolean {
-        return (tab.source as? SessionState.Source.External.CustomTab)?.let { externalSource ->
-            when (externalSource.caller?.packageId) {
-                null -> false
-                appIntent.component?.packageName -> true
-                else -> false
+    internal fun isAuthentication(tab: SessionState, appIntent: Intent): Boolean {
+        return when (tab.source) {
+            is SessionState.Source.External.ActionSend,
+            is SessionState.Source.External.ActionSearch,
+            -> false
+            // CustomTab and ActionView can be used for authentication
+            is SessionState.Source.External.CustomTab,
+            is SessionState.Source.External.ActionView,
+            -> {
+                (tab.source as? SessionState.Source.External)?.let { externalSource ->
+                    when (externalSource.caller?.packageId) {
+                        null -> false
+                        appIntent.component?.packageName -> true
+                        else -> false
+                    }
+                } ?: false
             }
-        } ?: false
+            else -> false
+        }
     }
 }

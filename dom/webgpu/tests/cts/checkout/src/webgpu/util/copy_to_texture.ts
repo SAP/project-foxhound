@@ -55,7 +55,7 @@ export const kCopySubrectInfo = [
   },
 ] as const;
 
-export class CopyToTextureUtils extends TextureTestMixin(GPUTest) {
+export class TextureUploadingUtils extends TextureTestMixin(GPUTest) {
   doFlipY(
     sourcePixels: Uint8ClampedArray,
     width: number,
@@ -169,8 +169,8 @@ export class CopyToTextureUtils extends TextureTestMixin(GPUTest) {
   }
 
   doTestAndCheckResult(
-    imageCopyExternalImage: GPUImageCopyExternalImage,
-    dstTextureCopyView: GPUImageCopyTextureTagged,
+    imageCopyExternalImage: GPUCopyExternalImageSourceInfo,
+    dstTextureCopyView: GPUCopyExternalImageDestInfo,
     expTexelView: TexelView,
     copySize: Required<GPUExtent3DDict>,
     texelCompareOptions: TexelCompareOptions
@@ -187,6 +187,5 @@ export class CopyToTextureUtils extends TextureTestMixin(GPUTest) {
       copySize,
       texelCompareOptions
     );
-    this.trackForCleanup(dstTextureCopyView.texture);
   }
 }

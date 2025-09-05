@@ -24,12 +24,8 @@ class HttpTransactionShell;
 class nsHttpHandler;
 
 // Use to support QI nsIChannel to TRRServiceChannel
-#define NS_TRRSERVICECHANNEL_IID                     \
-  {                                                  \
-    0x361c4bb1, 0xd6b2, 0x493b, {                    \
-      0x86, 0xbc, 0x88, 0xd3, 0x5d, 0x16, 0x38, 0xfa \
-    }                                                \
-  }
+#define NS_TRRSERVICECHANNEL_IID \
+  {0x361c4bb1, 0xd6b2, 0x493b, {0x86, 0xbc, 0x88, 0xd3, 0x5d, 0x16, 0x38, 0xfa}}
 
 // TRRServiceChannel is designed to fetch DNS data from DoH server. This channel
 // MUST only be used by TRR.
@@ -103,6 +99,11 @@ class TRRServiceChannel : public HttpBaseChannel,
     return NS_OK;
   }
 
+  NS_IMETHOD SetResponseStatus(uint32_t aStatus,
+                               const nsACString& aStatusText) override {
+    return NS_OK;
+  }
+
   [[nodiscard]] nsresult OnPush(uint32_t aPushedStreamId,
                                 const nsACString& aUrl,
                                 const nsACString& aRequestString,
@@ -138,7 +139,7 @@ class TRRServiceChannel : public HttpBaseChannel,
   virtual void DoNotifyListenerCleanup() override;
   virtual void DoAsyncAbort(nsresult aStatus) override;
   bool IsIsolated() { return false; };
-  void ProcessAltService();
+  void ProcessAltService(nsHttpConnectionInfo* aTransConnInfo);
   nsresult CallOnStartRequest();
 
   void MaybeStartDNSPrefetch();

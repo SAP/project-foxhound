@@ -329,10 +329,11 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
         ->GetValueAsDecimal();
   }
 
-  const nsRect rangeContentRect = GetContentRectRelativeToSelf();
+  nsRect rangeRect;
   nsSize thumbSize;
-
   if (IsThemed()) {
+    // Themed ranges draw on the border-box rect.
+    rangeRect = GetRectRelativeToSelf();
     // We need to get the size of the thumb from the theme.
     nsPresContext* pc = PresContext();
     LayoutDeviceIntSize size = pc->Theme()->GetMinimumWidgetSize(
@@ -348,6 +349,7 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
                    (!IsHorizontal() && thumbSize.height > 0),
                "The thumb is expected to take up some slider space");
   } else {
+    rangeRect = GetContentRectRelativeToSelf();
     nsIFrame* thumbFrame = mThumbDiv->GetPrimaryFrame();
     if (thumbFrame) {  // diplay:none?
       thumbSize = thumbFrame->GetSize();
@@ -356,25 +358,25 @@ Decimal nsRangeFrame::GetValueAtEventPoint(WidgetGUIEvent* aEvent) {
 
   Decimal fraction;
   if (IsHorizontal()) {
-    nscoord traversableDistance = rangeContentRect.width - thumbSize.width;
+    nscoord traversableDistance = rangeRect.width - thumbSize.width;
     if (traversableDistance <= 0) {
       return minimum;
     }
-    nscoord posAtStart = rangeContentRect.x + thumbSize.width / 2;
+    nscoord posAtStart = rangeRect.x + thumbSize.width / 2;
     nscoord posAtEnd = posAtStart + traversableDistance;
-    nscoord posOfPoint = mozilla::clamped(point.x, posAtStart, posAtEnd);
+    nscoord posOfPoint = std::clamp(point.x, posAtStart, posAtEnd);
     fraction = Decimal(posOfPoint - posAtStart) / Decimal(traversableDistance);
     if (IsRightToLeft()) {
       fraction = Decimal(1) - fraction;
     }
   } else {
-    nscoord traversableDistance = rangeContentRect.height - thumbSize.height;
+    nscoord traversableDistance = rangeRect.height - thumbSize.height;
     if (traversableDistance <= 0) {
       return minimum;
     }
-    nscoord posAtStart = rangeContentRect.y + thumbSize.height / 2;
+    nscoord posAtStart = rangeRect.y + thumbSize.height / 2;
     nscoord posAtEnd = posAtStart + traversableDistance;
-    nscoord posOfPoint = mozilla::clamped(point.y, posAtStart, posAtEnd);
+    nscoord posOfPoint = std::clamp(point.y, posAtStart, posAtEnd);
     // For a vertical range, the top (posAtStart) is the highest value, so we
     // subtract the fraction from 1.0 to get that polarity correct.
     fraction = Decimal(posOfPoint - posAtStart) / Decimal(traversableDistance);
@@ -624,7 +626,7 @@ nscoord nsRangeFrame::AutoCrossSize() {
                   NSToCoordRound(OneEmInAppUnits() * CROSS_AXIS_EM_SIZE));
 }
 
-nscoord nsRangeFrame::IntrinsicISize(gfxContext* aContext,
+nscoord nsRangeFrame::IntrinsicISize(const IntrinsicSizeInput& aInput,
                                      IntrinsicISizeType aType) {
   if (aType == IntrinsicISizeType::MinISize) {
     const auto* pos = StylePosition();

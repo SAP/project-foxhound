@@ -12,7 +12,6 @@ import android.view.ViewGroup
 import androidx.fragment.app.Fragment
 import androidx.navigation.fragment.findNavController
 import androidx.preference.PreferenceManager
-import com.google.android.material.snackbar.Snackbar
 import mozilla.components.browser.state.action.ContentAction
 import mozilla.components.browser.state.action.CustomTabListAction
 import mozilla.components.browser.state.state.CustomTabSessionState
@@ -33,7 +32,8 @@ import mozilla.components.support.base.feature.UserInteractionHandler
 import mozilla.components.support.base.feature.ViewBoundFeatureWrapper
 import org.jetbrains.annotations.VisibleForTesting
 import org.mozilla.fenix.R
-import org.mozilla.fenix.components.FenixSnackbar
+import org.mozilla.fenix.compose.snackbar.Snackbar
+import org.mozilla.fenix.compose.snackbar.SnackbarState
 import org.mozilla.fenix.databinding.DownloadDialogLayoutBinding
 import org.mozilla.fenix.downloads.DownloadService
 import org.mozilla.fenix.downloads.dialog.DynamicDownloadDialog
@@ -314,11 +314,13 @@ abstract class AddonPopupBaseFragment : Fragment(), EngineSession.Observer, User
         if (shouldShowCompletedDownloadDialog(downloadState, downloadJobStatus)) {
             val safeContext = context ?: return
             val onCannotOpenFile: (DownloadState) -> Unit = {
-                FenixSnackbar.make(
-                    view = requireView(),
-                    duration = Snackbar.LENGTH_SHORT,
-                ).setText(DynamicDownloadDialog.getCannotOpenFileErrorMessage(requireContext(), downloadState))
-                    .show()
+                Snackbar.make(
+                    snackBarParentView = requireView(),
+                    snackbarState = SnackbarState(
+                        message = DynamicDownloadDialog.getCannotOpenFileErrorMessage(requireContext(), downloadState),
+                        duration = SnackbarState.Duration.Preset.Short,
+                    ),
+                ).show()
             }
             if (downloadState.openInApp && downloadJobStatus == DownloadState.Status.COMPLETED) {
                 val fileWasOpened = AbstractFetchDownloadService.openFile(
@@ -336,7 +338,6 @@ abstract class AddonPopupBaseFragment : Fragment(), EngineSession.Observer, User
                     tryAgain = tryAgain,
                     onCannotOpenFile = onCannotOpenFile,
                     binding = provideDownloadDialogLayoutBinding(),
-                    bottomToolbarHeight = 0,
                 ) {}
                 dynamicDownloadDialog.show()
             }

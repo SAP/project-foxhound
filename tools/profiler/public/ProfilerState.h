@@ -120,9 +120,23 @@
                                                                            \
   MACRO(23, "bandwidth", Bandwidth,                                        \
         "Record the network bandwidth used for every profiler sample.")    \
-  MACRO(                                                                   \
-      24, "memory", Memory,                                                \
-      "Track the memory allocations and deallocations per process over time.")
+                                                                           \
+  MACRO(24, "memory", Memory,                                              \
+        "Track the memory allocations and deallocations per process over " \
+        "time.")                                                           \
+                                                                           \
+  MACRO(25, "tracing", Tracing,                                            \
+        "Instead of sampling periodically, captures information about "    \
+        "every function executed for the duration (JS only)")              \
+                                                                           \
+  MACRO(26, "sandbox", Sandbox,                                            \
+        "Report sandbox syscalls and logs in the "                         \
+        "profiler.")                                                       \
+                                                                           \
+  MACRO(27, "flows", Flows,                                                \
+        "Include all flow-related markers. These markers show the program" \
+        "better but can cause more overhead in some places than normal.")
+
 // *** Synchronize with lists in BaseProfilerState.h and geckoProfiler.json ***
 
 struct ProfilerFeature {

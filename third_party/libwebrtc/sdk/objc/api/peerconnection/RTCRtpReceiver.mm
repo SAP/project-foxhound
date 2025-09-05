@@ -13,6 +13,7 @@
 #import "RTCMediaStreamTrack+Private.h"
 #import "RTCRtpParameters+Private.h"
 #import "RTCRtpReceiver+Native.h"
+#import "RTCRtpSource+Private.h"
 #import "base/RTCLogging.h"
 #import "helpers/NSString+StdString.h"
 
@@ -67,6 +68,16 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
       stringWithFormat:@"RTC_OBJC_TYPE(RTCRtpReceiver) {\n  receiverId: %@\n}", self.receiverId];
 }
 
+- (NSArray<RTC_OBJC_TYPE(RTCRtpSource) *> *)sources {
+  std::vector<webrtc::RtpSource> nativeSources = _nativeRtpReceiver->GetSources();
+  NSMutableArray<RTC_OBJC_TYPE(RTCRtpSource) *> *result =
+      [[NSMutableArray alloc] initWithCapacity:nativeSources.size()];
+  for (auto nativeSource : nativeSources) {
+    [result addObject:[[RTC_OBJC_TYPE(RTCRtpSource) alloc] initWithNativeRtpSource:nativeSource]];
+  }
+  return result;
+}
+
 - (void)dealloc {
   if (_nativeRtpReceiver) {
     _nativeRtpReceiver->SetObserver(nullptr);
@@ -106,7 +117,8 @@ void RtpReceiverDelegateAdapter::OnFirstPacketReceived(
 - (instancetype)initWithFactory:(RTC_OBJC_TYPE(RTCPeerConnectionFactory) *)factory
               nativeRtpReceiver:
                   (rtc::scoped_refptr<webrtc::RtpReceiverInterface>)nativeRtpReceiver {
-  if (self = [super init]) {
+  self = [super init];
+  if (self) {
     _factory = factory;
     _nativeRtpReceiver = nativeRtpReceiver;
     RTCLogInfo(@"RTC_OBJC_TYPE(RTCRtpReceiver)(%p): created receiver: %@", self, self.description);

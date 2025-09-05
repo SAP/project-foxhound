@@ -21,9 +21,16 @@ self.addEventListener("message", function (event) {
   if (event.data === "install-service-worker") {
     canInstall = true;
   }
+  if (event.data === "install-service-worker-and-pause") {
+    canInstall = true;
+    // eslint-disable-next-line no-debugger
+    debugger;
+  }
 });
 
 // Wait for the canInstall flag to be flipped before completing the install.
 self.addEventListener("install", function (event) {
   event.waitUntil(waitUntil(() => canInstall));
+  // Log an early message to check cached log messages in tests.
+  console.log("service worker installed");
 });

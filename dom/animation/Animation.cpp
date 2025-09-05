@@ -803,7 +803,7 @@ void Animation::CommitStyles(ErrorResult& aRv) {
     return;
   }
 
-  if (target.mPseudoType != PseudoStyleType::NotPseudo) {
+  if (!target.mPseudoRequest.IsNotPseudo()) {
     return aRv.ThrowNoModificationAllowedError(
         "Can't commit styles of a pseudo-element");
   }
@@ -1192,7 +1192,9 @@ void Animation::Remove() {
   QueuePlaybackEvent(nsGkAtoms::onremove, GetTimelineCurrentTimeAsTimeStamp());
 }
 
-bool Animation::HasLowerCompositeOrderThan(const Animation& aOther) const {
+bool Animation::HasLowerCompositeOrderThan(
+    const Maybe<EventContext>& aContext, const Animation& aOther,
+    const Maybe<EventContext>& aOtherContext) const {
   // 0. Object-equality case
   if (&aOther == this) {
     return false;
@@ -1201,14 +1203,20 @@ bool Animation::HasLowerCompositeOrderThan(const Animation& aOther) const {
   // 1. CSS Transitions sort lowest
   {
     auto asCSSTransitionForSorting =
-        [](const Animation& anim) -> const CSSTransition* {
+        [](const Animation& anim,
+           const Maybe<EventContext>& aContext) -> const CSSTransition* {
       const CSSTransition* transition = anim.AsCSSTransition();
-      return transition && transition->IsTiedToMarkup() ? transition : nullptr;
+      return transition && (aContext || transition->IsTiedToMarkup())
+                 ? transition
+                 : nullptr;
     };
-    auto thisTransition = asCSSTransitionForSorting(*this);
-    auto otherTransition = asCSSTransitionForSorting(aOther);
+    const auto* const thisTransition =
+        asCSSTransitionForSorting(*this, aContext);
+    const auto* const otherTransition =
+        asCSSTransitionForSorting(aOther, aOtherContext);
     if (thisTransition && otherTransition) {
-      return thisTransition->HasLowerCompositeOrderThan(*otherTransition);
+      return thisTransition->HasLowerCompositeOrderThan(
+          aContext, *otherTransition, aOtherContext);
     }
     if (thisTransition || otherTransition) {
       // Cancelled transitions no longer have an owning element. To be strictly

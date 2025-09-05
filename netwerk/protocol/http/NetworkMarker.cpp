@@ -9,6 +9,7 @@
 #include "HttpBaseChannel.h"
 #include "nsIChannelEventSink.h"
 #include "mozilla/Perfetto.h"
+#include "mozilla/ErrorNames.h"
 
 namespace mozilla::net {
 struct NetworkMarker {
@@ -23,7 +24,10 @@ struct NetworkMarker {
       bool aIsPrivateBrowsing, const net::TimingStruct& aTimings,
       const ProfilerString8View& aRedirectURI,
       const ProfilerString8View& aContentType, uint32_t aRedirectFlags,
-      int64_t aRedirectChannelId) {
+      int64_t aRedirectChannelId, unsigned long aClassOfServiceFlag,
+      nsresult aRequestStatus,
+      const mozilla::Maybe<mozilla::net::HttpVersion> aHttpVersion,
+      mozilla::Maybe<uint32_t> aResponseStatus) {
     // This payload still streams a startTime and endTime property because it
     // made the migration to MarkerTiming on the front-end easier.
     aWriter.TimeProperty("startTime", aStart);
@@ -31,6 +35,21 @@ struct NetworkMarker {
 
     aWriter.IntProperty("id", aID);
     aWriter.StringProperty("status", GetNetworkState(aType));
+
+    // Bug 1919148 - Moved aClassOfServiceStr here to ensure that we call
+    // aWriter.StringProperty before the lifetime of nsAutoCString ends
+    nsAutoCString aClassOfServiceStr;
+    GetClassOfService(aClassOfServiceStr, aClassOfServiceFlag);
+    MOZ_ASSERT(aClassOfServiceStr.Length() > 0,
+               "aClassOfServiceStr should be set after GetClassOfService");
+    aWriter.StringProperty("classOfService",
+                           MakeStringSpan(aClassOfServiceStr.get()));
+
+    nsAutoCString aRequestStatusStr;
+    GetErrorName(aRequestStatus, aRequestStatusStr);
+    aWriter.StringProperty("requestStatus",
+                           MakeStringSpan(aRequestStatusStr.get()));
+
     if (Span<const char> cacheString = GetCacheState(aCacheDisposition);
         !cacheString.IsEmpty()) {
       aWriter.StringProperty("cache", cacheString);
@@ -55,6 +74,14 @@ struct NetworkMarker {
     }
 
     aWriter.StringProperty("requestMethod", aRequestMethod);
+    if (aHttpVersion) {
+      aWriter.StringProperty("httpVersion",
+                             ProfilerString8View::WrapNullTerminatedString(
+                                 nsHttp::GetProtocolVersion(*aHttpVersion)));
+    }
+    if (aResponseStatus) {
+      aWriter.IntProperty("responseStatus", *aResponseStatus);
+    }
 
     if (aContentType.Length() != 0) {
       aWriter.StringProperty("contentType", aContentType);
@@ -133,6 +160,59 @@ struct NetworkMarker {
     }
     MOZ_ASSERT(false, "Couldn't find a redirect type from aRedirectFlags");
     return MakeStringSpan("");
+  }
+
+  // Update an empty string aClassOfServiceStr based on aClassOfServiceFlag
+  static void GetClassOfService(nsAutoCString& aClassOfServiceStr,
+                                unsigned long aClassOfServiceFlag) {
+    MOZ_ASSERT(aClassOfServiceStr.IsEmpty(),
+               "Flags should not be appended to aClassOfServiceStr before "
+               "calling GetClassOfService");
+
+    if (aClassOfServiceFlag & nsIClassOfService::Leader) {
+      aClassOfServiceStr.Append("Leader | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Follower) {
+      aClassOfServiceStr.Append("Follower | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Speculative) {
+      aClassOfServiceStr.Append("Speculative | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Background) {
+      aClassOfServiceStr.Append("Background | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Unblocked) {
+      aClassOfServiceStr.Append("Unblocked | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Throttleable) {
+      aClassOfServiceStr.Append("Throttleable | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::UrgentStart) {
+      aClassOfServiceStr.Append("UrgentStart | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::DontThrottle) {
+      aClassOfServiceStr.Append("DontThrottle | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::Tail) {
+      aClassOfServiceStr.Append("Tail | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::TailAllowed) {
+      aClassOfServiceStr.Append("TailAllowed | ");
+    }
+    if (aClassOfServiceFlag & nsIClassOfService::TailForbidden) {
+      aClassOfServiceStr.Append("TailForbidden | ");
+    }
+
+    if (aClassOfServiceStr.IsEmpty()) {
+      aClassOfServiceStr.Append("Unset");
+      return;
+    }
+
+    MOZ_ASSERT(aClassOfServiceStr.Length() > 3,
+               "aClassOfServiceStr must be at least 4 characters long to "
+               "include two blank spaces and a '|' character.");
+    // Remove the trailing '|'
+    aClassOfServiceStr.Truncate(aClassOfServiceStr.Length() - 3);
   }
 };
 }  // namespace mozilla::net
@@ -307,8 +387,11 @@ void profiler_add_network_marker(
     uint64_t aChannelId, NetworkLoadType aType, mozilla::TimeStamp aStart,
     mozilla::TimeStamp aEnd, int64_t aCount,
     mozilla::net::CacheDisposition aCacheDisposition, uint64_t aInnerWindowID,
-    bool aIsPrivateBrowsing, const mozilla::net::TimingStruct* aTimings,
+    bool aIsPrivateBrowsing, unsigned long aClassOfServiceFlag,
+    nsresult aRequestStatus, const mozilla::net::TimingStruct* aTimings,
     UniquePtr<ProfileChunkedBuffer> aSource,
+    const Maybe<mozilla::net::HttpVersion> aHttpVersion,
+    const Maybe<uint32_t> aResponseStatus,
     const Maybe<nsDependentCString>& aContentType, nsIURI* aRedirectURI,
     uint32_t aRedirectFlags, uint64_t aRedirectChannelId) {
   if (!profiler_thread_is_being_profiled_for_markers()) {
@@ -343,6 +426,7 @@ void profiler_add_network_marker(
       aIsPrivateBrowsing, aTimings ? *aTimings : scEmptyNetTimingStruct,
       redirect_spec,
       aContentType ? ProfilerString8View(*aContentType) : ProfilerString8View(),
-      aRedirectFlags, aRedirectChannelId);
+      aRedirectFlags, aRedirectChannelId, aClassOfServiceFlag, aRequestStatus,
+      aHttpVersion, aResponseStatus);
 }
 }  // namespace mozilla::net

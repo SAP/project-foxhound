@@ -77,8 +77,8 @@ void nsInlineFrame::InvalidateFrameWithRect(const nsRect& aRect,
                                             aRebuildDisplayItems);
 }
 
-static inline bool IsMarginZero(const LengthPercentageOrAuto& aLength) {
-  return aLength.IsAuto() ||
+static inline bool IsMarginZero(const StyleMargin& aLength) {
+  return !aLength.IsLengthPercentage() ||
          nsLayoutUtils::IsMarginZero(aLength.AsLengthPercentage());
 }
 
@@ -103,7 +103,7 @@ bool nsInlineFrame::IsSelfEmpty() {
   auto HaveSide = [&](mozilla::Side aSide) -> bool {
     return border->GetComputedBorderWidth(aSide) != 0 ||
            !nsLayoutUtils::IsPaddingZero(padding->mPadding.Get(aSide)) ||
-           !IsMarginZero(margin->mMargin.Get(aSide));
+           !IsMarginZero(margin->GetMargin(aSide));
   };
   // Initially set up haveStart and haveEnd in terms of visual (LTR/TTB)
   // coordinates; we'll exchange them later if bidi-RTL is in effect to
@@ -146,10 +146,27 @@ bool nsInlineFrame::IsEmpty() {
   }
 
   for (nsIFrame* kid : mFrames) {
-    if (!kid->IsEmpty()) return false;
+    if (!kid->IsEmpty()) {
+      return false;
+    }
   }
 
   return true;
+}
+
+nscoord nsInlineFrame::GetCaretBaseline() const {
+  if (mBaseline == 0 && mRect.IsEmpty()) {
+    nsBlockFrame* container = do_QueryFrame(FindLineContainer());
+    // TODO(emilio): Ideally we'd want to find out if only our line is empty,
+    // but that's non-trivial to do, and realistically empty inlines and text
+    // will get placed into a non-empty line unless all lines are empty, I
+    // believe...
+    if (container && container->LinesAreEmpty()) {
+      nscoord blockSize = container->ContentBSize(GetWritingMode());
+      return GetFontMetricsDerivedCaretBaseline(blockSize);
+    }
+  }
+  return nsIFrame::GetCaretBaseline();
 }
 
 nsIFrame::FrameSearchResult nsInlineFrame::PeekOffsetCharacter(
@@ -157,7 +174,9 @@ nsIFrame::FrameSearchResult nsInlineFrame::PeekOffsetCharacter(
   // Override the implementation in nsFrame, to skip empty inline frames
   NS_ASSERTION(aOffset && *aOffset <= 1, "aOffset out of range");
   int32_t startOffset = *aOffset;
-  if (startOffset < 0) startOffset = 1;
+  if (startOffset < 0) {
+    startOffset = 1;
+  }
   if (aForward == (startOffset == 0)) {
     // We're before the frame and moving forward, or after it and moving
     // backwards: skip to the other side, but keep going.
@@ -223,15 +242,15 @@ void nsInlineFrame::BuildDisplayList(nsDisplayListBuilder* aBuilder,
 // Reflow methods
 
 /* virtual */
-void nsInlineFrame::AddInlineMinISize(gfxContext* aRenderingContext,
+void nsInlineFrame::AddInlineMinISize(const IntrinsicSizeInput& aInput,
                                       InlineMinISizeData* aData) {
-  DoInlineMinISize(aRenderingContext, aData);
+  DoInlineMinISize(aInput, aData);
 }
 
 /* virtual */
-void nsInlineFrame::AddInlinePrefISize(gfxContext* aRenderingContext,
+void nsInlineFrame::AddInlinePrefISize(const IntrinsicSizeInput& aInput,
                                        InlinePrefISizeData* aData) {
-  DoInlinePrefISize(aRenderingContext, aData);
+  DoInlinePrefISize(aInput, aData);
 }
 
 /* virtual */
@@ -672,7 +691,7 @@ void nsInlineFrame::ReflowInlineFrame(nsPresContext* aPresContext,
       // Change break-before status into break-after since we have
       // already placed at least one child frame. This preserves the
       // break-type so that it can be propagated upward.
-      StyleClear oldClearType = aStatus.FloatClearType();
+      UsedClear oldClearType = aStatus.FloatClearType();
       aStatus.Reset();
       aStatus.SetIncomplete();
       aStatus.SetInlineLineBreakAfter(oldClearType);
@@ -846,6 +865,8 @@ Maybe<nscoord> nsInlineFrame::GetNaturalBaselineBOffset(
   if (aBaselineGroup == BaselineSharingGroup::Last) {
     return Nothing{};
   }
+  // TODO(dshin): Some functions seem to rely on this returning
+  // NS_INTRINSIC_ISIZE_UNKNOWN. e.g. /css/css-pseudo/target-text-008.html
   return Some(mBaseline);
 }
 
@@ -854,8 +875,9 @@ a11y::AccType nsInlineFrame::AccessibleType() {
   // FIXME(emilio): This is broken, if the image has its default `display` value
   // overridden. Should be somewhere else.
   if (mContent->IsHTMLElement(
-          nsGkAtoms::img))  // Create accessible for broken <img>
+          nsGkAtoms::img)) {  // Create accessible for broken <img>
     return a11y::eHyperTextType;
+  }
 
   return a11y::eNoType;
 }
@@ -907,13 +929,6 @@ void nsInlineFrame::UpdateStyleOfOwnedAnonBoxesForIBSplit(
     }
 
     nsIFrame* nextInline = blockFrame->GetProperty(nsIFrame::IBSplitSibling());
-
-    // This check is here due to bug 1431232.  Please remove it once
-    // that bug is fixed.
-    if (MOZ_UNLIKELY(!nextInline)) {
-      break;
-    }
-
     MOZ_ASSERT(nextInline, "There is always a trailing inline in an IB split");
 
     for (nsIFrame* cont = nextInline; cont;

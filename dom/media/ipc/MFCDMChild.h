@@ -85,6 +85,8 @@ class MFCDMChild final : public PMFCDMChild {
       mState = NS_ERROR_NOT_AVAILABLE;
     }
   }
+
+  void EnsureRemote();
   void Shutdown();
 
   nsISerialEventTarget* ManagerThread() { return mManagerThread; }
@@ -95,9 +97,6 @@ class MFCDMChild final : public PMFCDMChild {
  private:
   ~MFCDMChild();
 
-  using RemotePromise = GenericNonExclusivePromise;
-  RefPtr<RemotePromise> EnsureRemote();
-
   void AssertSendable();
 
   const nsString mKeySystem;
@@ -105,6 +104,7 @@ class MFCDMChild final : public PMFCDMChild {
   const RefPtr<nsISerialEventTarget> mManagerThread;
   RefPtr<MFCDMChild> mIPDLSelfRef;
 
+  using RemotePromise = GenericNonExclusivePromise;
   RefPtr<RemotePromise> mRemotePromise;
   MozPromiseHolder<RemotePromise> mRemotePromiseHolder;
   MozPromiseRequestHolder<RemotePromise> mRemoteRequest;
@@ -141,11 +141,13 @@ class MFCDMChild final : public PMFCDMChild {
   MozPromiseHolder<GenericPromise> mRemoveSessionPromiseHolder;
   MozPromiseRequestHolder<RemoveSessionPromise> mRemoveSessionRequest;
 
+  mutable Mutex mMutex{"MFCDMChild"};
+
   std::unordered_map<uint32_t, MozPromiseHolder<SessionPromise>>
-      mPendingSessionPromises;
+      mPendingSessionPromises MOZ_GUARDED_BY(mMutex);
 
   std::unordered_map<uint32_t, MozPromiseHolder<GenericPromise>>
-      mPendingGenericPromises;
+      mPendingGenericPromises MOZ_GUARDED_BY(mMutex);
 
   RefPtr<WMFCDMProxyCallback> mProxyCallback;
 };

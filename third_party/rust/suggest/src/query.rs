@@ -2,14 +2,26 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-use crate::SuggestionProvider;
+use std::collections::HashSet;
+
+use crate::{LabeledTimingSample, Suggestion, SuggestionProvider, SuggestionProviderConstraints};
 
 /// A query for suggestions to show in the address bar.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, uniffi::Record)]
 pub struct SuggestionQuery {
     pub keyword: String,
     pub providers: Vec<SuggestionProvider>,
+    #[uniffi(default = None)]
+    pub provider_constraints: Option<SuggestionProviderConstraints>,
+    #[uniffi(default = None)]
     pub limit: Option<i32>,
+}
+
+#[derive(uniffi::Record)]
+pub struct QueryWithMetricsResult {
+    pub suggestions: Vec<Suggestion>,
+    /// Samples for the `suggest.query_time` metric
+    pub query_times: Vec<LabeledTimingSample>,
 }
 
 impl SuggestionQuery {
@@ -19,7 +31,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.to_string(),
             providers: Vec::from(SuggestionProvider::all()),
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -27,7 +39,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.to_string(),
             providers,
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -45,7 +57,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Amp],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -53,7 +65,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Wikipedia],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -61,7 +73,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::AmpMobile],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -69,7 +81,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Amo],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -77,7 +89,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Pocket],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -85,7 +97,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Yelp],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -93,7 +105,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Mdn],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -101,7 +113,7 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Fakespot],
-            limit: None,
+            ..Self::default()
         }
     }
 
@@ -109,7 +121,21 @@ impl SuggestionQuery {
         Self {
             keyword: keyword.into(),
             providers: vec![SuggestionProvider::Weather],
-            limit: None,
+            ..Self::default()
+        }
+    }
+
+    pub fn exposure(keyword: &str, suggestion_types: &[&str]) -> Self {
+        Self {
+            keyword: keyword.into(),
+            providers: vec![SuggestionProvider::Exposure],
+            provider_constraints: Some(SuggestionProviderConstraints {
+                exposure_suggestion_types: Some(
+                    suggestion_types.iter().map(|s| s.to_string()).collect(),
+                ),
+                ..SuggestionProviderConstraints::default()
+            }),
+            ..Self::default()
         }
     }
 
@@ -120,31 +146,38 @@ impl SuggestionQuery {
         }
     }
 
-    // Other Functionality
-
-    /// Parse the `keyword` field into a set of keywords.
-    ///
-    /// This is used when passing the keywords into an FTS search.  It:
-    ///   - Strips out any `():^*"` chars.  These are typically used for advanced searches, which
-    ///     we don't support and it would be weird to only support for FTS searches, which
-    ///     currently means Fakespot searches.
-    ///   - Splits on whitespace to get a list of individual keywords
-    ///
-    pub(crate) fn parse_keywords(&self) -> Vec<&str> {
-        self.keyword
-            .split([' ', '(', ')', ':', '^', '*', '"'])
-            .filter(|s| !s.is_empty())
-            .collect()
-    }
-
     /// Create an FTS query term for our keyword(s)
-    pub(crate) fn fts_query(&self) -> String {
-        let keywords = self.parse_keywords();
+    pub(crate) fn fts_query(&self) -> FtsQuery<'_> {
+        FtsQuery::new(&self.keyword)
+    }
+}
+
+pub struct FtsQuery<'a> {
+    pub match_arg: String,
+    pub match_arg_without_prefix_match: String,
+    pub is_prefix_query: bool,
+    keyword_terms: Vec<&'a str>,
+}
+
+impl<'a> FtsQuery<'a> {
+    fn new(keyword: &'a str) -> Self {
+        // Parse the `keyword` field into a set of keywords.
+        //
+        // This is used when passing the keywords into an FTS search.  It:
+        //   - Strips out any `():^*"` chars.  These are typically used for advanced searches, which
+        //     we don't support and it would be weird to only support for FTS searches.
+        //   - splits on whitespace to get a list of individual keywords
+        let keywords = Self::split_terms(keyword);
         if keywords.is_empty() {
-            return String::from(r#""""#);
+            return Self {
+                keyword_terms: keywords,
+                match_arg: String::from(r#""""#),
+                match_arg_without_prefix_match: String::from(r#""""#),
+                is_prefix_query: false,
+            };
         }
         // Quote each term from `query` and join them together
-        let mut fts_query = keywords
+        let mut sqlite_match = keywords
             .iter()
             .map(|keyword| format!(r#""{keyword}""#))
             .collect::<Vec<_>>()
@@ -152,21 +185,78 @@ impl SuggestionQuery {
         // If the input is > 3 characters, and there's no whitespace at the end.
         // We want to append a `*` char to the end to do a prefix match on it.
         let total_chars = keywords.iter().fold(0, |count, s| count + s.len());
-        let query_ends_in_whitespace = self.keyword.ends_with(' ');
-        if (total_chars > 3) && !query_ends_in_whitespace {
-            fts_query.push('*');
+        let query_ends_in_whitespace = keyword.ends_with(' ');
+        let prefix_match = (total_chars > 3) && !query_ends_in_whitespace;
+        let sqlite_match_without_prefix_match = sqlite_match.clone();
+        if prefix_match {
+            sqlite_match.push('*');
         }
-        fts_query
+        Self {
+            keyword_terms: keywords,
+            is_prefix_query: prefix_match,
+            match_arg: sqlite_match,
+            match_arg_without_prefix_match: sqlite_match_without_prefix_match,
+        }
     }
+
+    /// Try to figure out if a FTS match required stemming
+    ///
+    /// To test this, we have to try to mimic the SQLite FTS logic. This code doesn't do it
+    /// perfectly, but it should return the correct result most of the time.
+    pub fn match_required_stemming(&self, title: &str) -> bool {
+        let title = title.to_lowercase();
+        let split_title = Self::split_terms(&title);
+
+        !self.keyword_terms.iter().enumerate().all(|(i, keyword)| {
+            split_title.iter().any(|title_word| {
+                let last_keyword = i == self.keyword_terms.len() - 1;
+
+                if last_keyword && self.is_prefix_query {
+                    title_word.starts_with(keyword)
+                } else {
+                    title_word == keyword
+                }
+            })
+        })
+    }
+
+    fn split_terms(phrase: &str) -> Vec<&str> {
+        phrase
+            .split([' ', '(', ')', ':', '^', '*', '"', ','])
+            .filter(|s| !s.is_empty())
+            .collect()
+    }
+}
+
+/// Given a list of full keywords, create an FTS string to match against.
+///
+/// Creates a string with de-duped keywords.
+pub fn full_keywords_to_fts_content<'a>(
+    full_keywords: impl IntoIterator<Item = &'a str>,
+) -> String {
+    let parts: HashSet<_> = full_keywords
+        .into_iter()
+        .flat_map(str::split_whitespace)
+        .map(str::to_lowercase)
+        .collect();
+    let mut result = String::new();
+    for (i, part) in parts.into_iter().enumerate() {
+        if i != 0 {
+            result.push(' ');
+        }
+        result.push_str(&part);
+    }
+    result
 }
 
 #[cfg(test)]
 mod test {
     use super::*;
+    use std::collections::HashMap;
 
     fn check_parse_keywords(input: &str, expected: Vec<&str>) {
         let query = SuggestionQuery::all_providers(input);
-        assert_eq!(query.parse_keywords(), expected);
+        assert_eq!(query.fts_query().keyword_terms, expected);
     }
 
     #[test]
@@ -184,7 +274,7 @@ mod test {
 
     fn check_fts_query(input: &str, expected: &str) {
         let query = SuggestionQuery::all_providers(input);
-        assert_eq!(query.fts_query(), expected);
+        assert_eq!(query.fts_query().match_arg, expected);
     }
 
     #[test]
@@ -210,5 +300,46 @@ mod test {
         check_fts_query("", r#""""#);
         check_fts_query(" ", r#""""#);
         check_fts_query("()", r#""""#);
+    }
+
+    #[test]
+    fn test_fts_query_match_required_stemming() {
+        // These don't require stemming, since each keyword matches a term in the title
+        assert!(!FtsQuery::new("running shoes").match_required_stemming("running shoes"));
+        assert!(
+            !FtsQuery::new("running shoes").match_required_stemming("new balance running shoes")
+        );
+        // Case changes shouldn't matter
+        assert!(!FtsQuery::new("running shoes").match_required_stemming("Running Shoes"));
+        // This doesn't require stemming, since `:` is not part of the word
+        assert!(!FtsQuery::new("running shoes").match_required_stemming("Running: Shoes"));
+        // This requires the keywords to be stemmed in order to match
+        assert!(FtsQuery::new("run shoes").match_required_stemming("running shoes"));
+        // This didn't require stemming, since the last keyword was a prefix match
+        assert!(!FtsQuery::new("running sh").match_required_stemming("running shoes"));
+        // This does require stemming (we know it wasn't a prefix match since there's not enough
+        // characters).
+        assert!(FtsQuery::new("run").match_required_stemming("running shoes"));
+    }
+
+    #[test]
+    fn test_full_keywords_to_fts_content() {
+        check_full_keywords_to_fts_content(["a", "b", "c"], "a b c");
+        check_full_keywords_to_fts_content(["a", "b c"], "a b c");
+        check_full_keywords_to_fts_content(["a", "b c a"], "a b c");
+        check_full_keywords_to_fts_content(["a", "b C A"], "a b c");
+    }
+
+    fn check_full_keywords_to_fts_content<const N: usize>(input: [&str; N], expected: &str) {
+        let mut expected_counts = HashMap::<&str, usize>::new();
+        let mut actual_counts = HashMap::<&str, usize>::new();
+        for term in expected.split_whitespace() {
+            *expected_counts.entry(term).or_default() += 1;
+        }
+        let fts_content = full_keywords_to_fts_content(input);
+        for term in fts_content.split_whitespace() {
+            *actual_counts.entry(term).or_default() += 1;
+        }
+        assert_eq!(actual_counts, expected_counts);
     }
 }

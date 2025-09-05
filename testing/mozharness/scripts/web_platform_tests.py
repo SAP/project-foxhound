@@ -1,9 +1,7 @@
 #!/usr/bin/env python
-# ***** BEGIN LICENSE BLOCK *****
 # This Source Code Form is subject to the terms of the Mozilla Public
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
-# ***** END LICENSE BLOCK *****
 import copy
 import gzip
 import json
@@ -662,6 +660,11 @@ class WebPlatformTest(TestingMixin, MercurialScript, CodeCoverageMixin, AndroidM
 
         if self.is_android:
             env["ADB_PATH"] = self.adb_path
+
+        env["MOZ_GMP_PATH"] = os.pathsep.join(
+            os.path.join(dirs["abs_test_bin_dir"], "plugins", p, "1.0")
+            for p in ("gmp-fake", "gmp-fakeopenh264")
+        )
 
         env = self.query_env(partial_env=env, log_level=INFO)
 

@@ -90,11 +90,7 @@ class JSONPrinter {
   void endList();
   void endInlineList();
 
-  // Notify the output that the caller has detected OOM and should transition
-  // to its saw-OOM state.
-  void outOfMemory() { out_.reportOutOfMemory(); }
-
-  // Flush the output
+  // Force flushing the output
   void flush() { out_.flush(); }
 
  protected:

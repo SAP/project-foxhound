@@ -74,11 +74,14 @@ def vendor_puppeteer(command_context, repository, commitish, install):
         os.path.join(puppeteer_dir, "json-mocha-reporter.js"),
         os.path.join(remotedir(command_context), "json-mocha-reporter.js"),
     )
+
+    print("Removing folders for current Puppeteer version…")
     shutil.rmtree(puppeteer_dir, ignore_errors=True)
     os.makedirs(puppeteer_dir)
+
     with TemporaryDirectory() as tmpdir:
-        git("clone", "-q", repository, tmpdir)
-        git("checkout", commitish, worktree=tmpdir)
+        print(f'Fetching commitish "{commitish}" from {repository}…')
+        git("clone", "--depth", "1", "--branch", commitish, repository, tmpdir)
         git(
             "checkout-index",
             "-a",
@@ -139,6 +142,7 @@ def vendor_puppeteer(command_context, repository, commitish, install):
             "PUPPETEER_SKIP_DOWNLOAD": "1",  # Don't download any build
         }
 
+        print("Cleaning up and installing new version of Puppeteer…")
         run_npm(
             "run",
             "clean",
@@ -394,8 +398,6 @@ class PuppeteerRunner(MozbuildObject):
         `binary`:
           Path for the browser binary to use.  Defaults to the local
           build.
-        `cdp`:
-          Boolean to indicate whether to test Firefox with CDP protocol.
         `headless`:
           Boolean to indicate whether to activate Firefox' headless mode.
         `extra_prefs`:
@@ -409,7 +411,8 @@ class PuppeteerRunner(MozbuildObject):
         binary = params.get("binary")
         headless = params.get("headless", False)
         product = params.get("product", "firefox")
-        with_cdp = params.get("cdp", False)
+        this_chunk = params.get("this_chunk", "1")
+        total_chunks = params.get("total_chunks", "1")
 
         extra_options = {}
         for k, v in params.get("extra_launcher_options", {}).items():
@@ -455,25 +458,29 @@ class PuppeteerRunner(MozbuildObject):
                 ".cache",
             )
 
-        test_command = "test:" + product
-
-        if with_cdp:
+        if product == "chrome":
+            if not headless:
+                raise Exception(
+                    "Chrome doesn't support headful mode with the WebDriver BiDi protocol"
+                )
+            test_command = "chrome-bidi"
+        elif product == "firefox":
             if headless:
-                test_command = test_command + ":headless"
+                test_command = "firefox-headless"
             else:
-                test_command = test_command + ":headful"
+                test_command = "firefox-headful"
         else:
-            if headless:
-                test_command = test_command + ":bidi"
-            else:
-                if product == "chrome":
-                    raise Exception(
-                        "Chrome doesn't support headful mode with the WebDriver BiDi protocol"
-                    )
+            test_command = product
 
-                test_command = test_command + ":bidi:headful"
-
-        command = ["run", test_command, "--"] + mocha_options
+        command = [
+            "run",
+            "test",
+            "--",
+            "--shard",
+            f"{this_chunk}-{total_chunks}",
+            "--test-suite",
+            test_command,
+        ] + mocha_options
 
         prefs = {}
         for k, v in params.get("extra_prefs", {}).items():
@@ -510,7 +517,7 @@ class PuppeteerRunner(MozbuildObject):
             expectation
             for expectation in expected_data
             if is_relevant_expectation(
-                expectation, product, with_cdp, env["HEADLESS"], expected_platform
+                expectation, product, env["HEADLESS"], expected_platform
             )
         ]
 
@@ -542,11 +549,6 @@ def create_parser_puppeteer():
         "--binary",
         type=str,
         help="Path to browser binary.  Defaults to local Firefox build.",
-    )
-    p.add_argument(
-        "--cdp",
-        action="store_true",
-        help="Flag that indicates whether to test Firefox with the CDP protocol.",
     )
     p.add_argument(
         "--ci",
@@ -583,6 +585,18 @@ def create_parser_puppeteer():
         help="Defines additional options for `puppeteer.launch`.",
     )
     p.add_argument(
+        "--this-chunk",
+        type=str,
+        default="1",
+        help="Defines a current chunk to run.",
+    )
+    p.add_argument(
+        "--total-chunks",
+        type=str,
+        default="1",
+        help="Defines a total amount of chunks to run.",
+    )
+    p.add_argument(
         "-v",
         dest="verbosity",
         action="count",
@@ -597,20 +611,18 @@ def create_parser_puppeteer():
 
 
 def is_relevant_expectation(
-    expectation, expected_product, with_cdp, is_headless, expected_platform
+    expectation, expected_product, is_headless, expected_platform
 ):
     parameters = expectation["parameters"]
 
     if expected_product == "firefox":
-        is_expected_product = "chrome" not in parameters
+        is_expected_product = (
+            "chrome" not in parameters and "chrome-headless-shell" not in parameters
+        )
     else:
         is_expected_product = "firefox" not in parameters
 
-    if with_cdp:
-        is_expected_protocol = "webDriverBiDi" not in parameters
-    else:
-        is_expected_protocol = "cdp" not in parameters
-        is_headless = "True"
+    is_expected_protocol = "cdp" not in parameters
 
     if is_headless == "True":
         is_expected_mode = "headful" not in parameters
@@ -643,7 +655,6 @@ def is_relevant_expectation(
 def puppeteer_test(
     command_context,
     binary=None,
-    cdp=False,
     ci=False,
     disable_fission=False,
     enable_webrender=False,
@@ -654,6 +665,8 @@ def puppeteer_test(
     verbosity=0,
     tests=None,
     product="firefox",
+    this_chunk="1",
+    total_chunks="1",
     **kwargs,
 ):
     logger = mozlog.commandline.setup_logging(
@@ -706,12 +719,13 @@ def puppeteer_test(
 
     params = {
         "binary": binary,
-        "cdp": cdp,
         "headless": headless,
         "enable_webrender": enable_webrender,
         "extra_prefs": prefs,
         "product": product,
         "extra_launcher_options": options,
+        "this_chunk": this_chunk,
+        "total_chunks": total_chunks,
     }
     puppeteer = command_context._spawn(PuppeteerRunner)
     try:

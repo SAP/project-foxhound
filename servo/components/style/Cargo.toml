@@ -3,6 +3,7 @@ name = "style"
 version = "0.0.1"
 authors = ["The Servo Project Developers"]
 license = "MPL-2.0"
+repository = "https://github.com/servo/stylo"
 publish = false
 
 build = "build.rs"
@@ -25,7 +26,9 @@ gecko = [
     "regex",
     "serde",
     "style_traits/gecko",
-    "toml"
+    "toml",
+    "selectors/to_shmem",
+    "to_shmem/gecko",
 ]
 servo = [
     "arrayvec/use_union",
@@ -39,8 +42,9 @@ servo = [
     "servo_config",
     "string_cache",
     "style_traits/servo",
+    "url",
+    "selectors/to_shmem",
     "to_shmem/servo",
-    "url"
 ]
 gecko_debug = []
 gecko_refcount_logging = []
@@ -91,13 +95,12 @@ style_derive = {path = "../style_derive"}
 style_traits = {path = "../style_traits"}
 to_shmem = {path = "../to_shmem"}
 to_shmem_derive = {path = "../to_shmem_derive"}
-time = "0.1"
 thin-vec = { version = "0.2.1", features = ["gecko-ffi"] }
 uluru = "3.0"
 unicode-bidi = { version = "0.3", default-features = false }
 void = "1.0.2"
 gecko-profiler = { path = "../../../tools/profiler/rust-api" }
-url = { version = "2.5", optional = true }
+url = { version = "2.5", optional = true, features = ["serde"] }
 
 [build-dependencies]
 lazy_static = "1"

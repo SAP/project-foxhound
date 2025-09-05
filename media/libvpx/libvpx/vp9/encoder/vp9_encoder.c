@@ -78,6 +78,7 @@
 #include "vp9/encoder/vp9_multi_thread.h"
 #include "vp9/encoder/vp9_noise_estimate.h"
 #include "vp9/encoder/vp9_picklpf.h"
+#include "vp9/encoder/vp9_quantize.h"
 #include "vp9/encoder/vp9_ratectrl.h"
 #include "vp9/encoder/vp9_rd.h"
 #include "vp9/encoder/vp9_resize.h"
@@ -1021,6 +1022,9 @@ static void dealloc_compressor_data(VP9_COMP *cpi) {
   vpx_free(cpi->mb_wiener_variance);
   cpi->mb_wiener_variance = NULL;
 
+  vpx_free(cpi->sb_mul_scale);
+  cpi->sb_mul_scale = NULL;
+
   vpx_free(cpi->mi_ssim_rdmult_scaling_factors);
   cpi->mi_ssim_rdmult_scaling_factors = NULL;
 
@@ -1042,7 +1046,7 @@ static void dealloc_compressor_data(VP9_COMP *cpi) {
   vpx_free_frame_buffer(&cpi->last_frame_uf);
   vpx_free_frame_buffer(&cpi->scaled_source);
   vpx_free_frame_buffer(&cpi->scaled_last_source);
-  vpx_free_frame_buffer(&cpi->alt_ref_buffer);
+  vpx_free_frame_buffer(&cpi->tf_buffer);
 #ifdef ENABLE_KF_DENOISE
   vpx_free_frame_buffer(&cpi->raw_unscaled_source);
   vpx_free_frame_buffer(&cpi->raw_scaled_source);
@@ -1299,7 +1303,7 @@ static void alloc_raw_frame_buffers(VP9_COMP *cpi) {
                        "Failed to allocate lag buffers");
 
   // TODO(agrange) Check if ARF is enabled and skip allocation if not.
-  if (vpx_realloc_frame_buffer(&cpi->alt_ref_buffer, oxcf->width, oxcf->height,
+  if (vpx_realloc_frame_buffer(&cpi->tf_buffer, oxcf->width, oxcf->height,
                                cm->subsampling_x, cm->subsampling_y,
 #if CONFIG_VP9_HIGHBITDEPTH
                                cm->use_highbitdepth,
@@ -1307,7 +1311,7 @@ static void alloc_raw_frame_buffers(VP9_COMP *cpi) {
                                VP9_ENC_BORDER_IN_PIXELS, cm->byte_alignment,
                                NULL, NULL, NULL))
     vpx_internal_error(&cm->error, VPX_CODEC_MEM_ERROR,
-                       "Failed to allocate altref buffer");
+                       "Failed to allocate temporal filter buffer");
 }
 
 static void alloc_util_frame_buffers(VP9_COMP *cpi) {
@@ -1540,7 +1544,7 @@ void vp9_check_reset_rc_flag(VP9_COMP *cpi) {
     if (cpi->use_svc) {
       vp9_svc_check_reset_layer_rc_flag(cpi);
     } else {
-      if (rc->avg_frame_bandwidth > (3 * rc->last_avg_frame_bandwidth >> 1) ||
+      if (rc->avg_frame_bandwidth / 3 > (rc->last_avg_frame_bandwidth >> 1) ||
           rc->avg_frame_bandwidth < (rc->last_avg_frame_bandwidth >> 1)) {
         rc->rc_1_frame = 0;
         rc->rc_2_frame = 0;
@@ -3298,6 +3302,34 @@ static void update_ref_frames(VP9_COMP *cpi) {
   BufferPool *const pool = cm->buffer_pool;
   GF_GROUP *const gf_group = &cpi->twopass.gf_group;
 
+  if (cpi->ext_ratectrl.ready &&
+      (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_GOP) != 0 &&
+      cpi->ext_ratectrl.funcs.get_gop_decision != NULL) {
+    const int this_gf_index = gf_group->index;
+    const int update_ref_idx = gf_group->update_ref_idx[this_gf_index];
+    if (gf_group->update_type[this_gf_index] == KF_UPDATE) {
+      ref_cnt_fb(pool->frame_bufs, &cm->ref_frame_map[0], cm->new_fb_idx);
+      ref_cnt_fb(pool->frame_bufs, &cm->ref_frame_map[1], cm->new_fb_idx);
+      ref_cnt_fb(pool->frame_bufs, &cm->ref_frame_map[2], cm->new_fb_idx);
+    } else if (update_ref_idx != INVALID_IDX) {
+      ref_cnt_fb(pool->frame_bufs,
+                 &cm->ref_frame_map[gf_group->update_ref_idx[this_gf_index]],
+                 cm->new_fb_idx);
+    }
+
+    const int next_gf_index = gf_group->index + 1;
+
+    // Overlay frame should ideally look at the colocated ref frame from rc lib.
+    // Here temporarily just don't update the indices.
+    if (next_gf_index < gf_group->gf_group_size) {
+      cpi->lst_fb_idx = gf_group->ext_rc_ref[next_gf_index].last_index;
+      cpi->gld_fb_idx = gf_group->ext_rc_ref[next_gf_index].golden_index;
+      cpi->alt_fb_idx = gf_group->ext_rc_ref[next_gf_index].altref_index;
+    }
+
+    return;
+  }
+
   if (cpi->rc.show_arf_as_gld) {
     int tmp = cpi->alt_fb_idx;
     cpi->alt_fb_idx = cpi->gld_fb_idx;
@@ -4185,7 +4217,7 @@ static int encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
                                  cpi->oxcf.rc_mode == VPX_CBR &&
                                  cm->frame_type != KEY_FRAME;
 
-  vp9_set_quantizer(cpi, q);
+  vp9_set_quantizer(cpi, q, 0);
   vp9_set_variance_partition_thresholds(cpi, q, 0);
 
   setup_frame(cpi);
@@ -4214,7 +4246,7 @@ static int encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
       (cpi->rc.high_source_sad ||
        (cpi->use_svc && svc->high_source_sad_superframe))) {
     if (vp9_encodedframe_overshoot(cpi, -1, &q)) {
-      vp9_set_quantizer(cpi, q);
+      vp9_set_quantizer(cpi, q, 0);
       vp9_set_variance_partition_thresholds(cpi, q, 0);
     }
   }
@@ -4275,7 +4307,7 @@ static int encode_without_recode_loop(VP9_COMP *cpi, size_t *size,
     // adjust some rate control parameters, and return to re-encode the frame.
     if (vp9_encodedframe_overshoot(cpi, frame_size, &q)) {
       vpx_clear_system_state();
-      vp9_set_quantizer(cpi, q);
+      vp9_set_quantizer(cpi, q, 0);
       vp9_set_variance_partition_thresholds(cpi, q, 0);
       suppress_active_map(cpi);
       // Turn-off cyclic refresh for re-encoded frame.
@@ -4495,11 +4527,6 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest,
   int qrange_adj = 1;
 #endif
 
-  // A flag which indicates whether we are recoding the current frame
-  // when the current frame size is larger than the max frame size in the
-  // external rate control model.
-  // This flag doesn't have any impact when external rate control is not used.
-  int ext_rc_recode = 0;
   const int orig_rc_max_frame_bandwidth = rc->max_frame_bandwidth;
 
 #if CONFIG_RATE_CTRL
@@ -4615,23 +4642,37 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest,
     }
 #endif  // CONFIG_RATE_CTRL
     const GF_GROUP *gf_group = &cpi->twopass.gf_group;
-    if (cpi->ext_ratectrl.ready && !ext_rc_recode &&
-        !cpi->tpl_with_external_rc &&
+    int ext_rc_delta_q_uv = 0;
+    if (cpi->ext_ratectrl.ready &&
         (cpi->ext_ratectrl.funcs.rc_type & VPX_RC_QP) != 0 &&
         cpi->ext_ratectrl.funcs.get_encodeframe_decision != NULL) {
       vpx_codec_err_t codec_status;
       vpx_rc_encodeframe_decision_t encode_frame_decision;
+      int sb_size = num_8x8_blocks_wide_lookup[BLOCK_64X64] * MI_SIZE;
+      int frame_height_sb = (cm->height + sb_size - 1) / sb_size;
+      int frame_width_sb = (cm->width + sb_size - 1) / sb_size;
+      CHECK_MEM_ERROR(&cm->error, encode_frame_decision.sb_params_list,
+                      (sb_params *)vpx_calloc(
+                          frame_height_sb * frame_width_sb,
+                          sizeof(*encode_frame_decision.sb_params_list)));
       codec_status = vp9_extrc_get_encodeframe_decision(
           &cpi->ext_ratectrl, gf_group->index, &encode_frame_decision);
       if (codec_status != VPX_CODEC_OK) {
         vpx_internal_error(&cm->error, codec_status,
                            "vp9_extrc_get_encodeframe_decision() failed");
       }
+      for (int idx = 0; idx < frame_height_sb * frame_width_sb; ++idx) {
+        cpi->sb_mul_scale[idx] =
+            (((int64_t)encode_frame_decision.sb_params_list[idx].rdmult * 256) /
+             (encode_frame_decision.rdmult + 1));
+      }
+      vpx_free(encode_frame_decision.sb_params_list);
       // If the external model recommends a reserved value, we use
       // libvpx's default q.
       if (encode_frame_decision.q_index != VPX_DEFAULT_Q) {
         q = encode_frame_decision.q_index;
       }
+      ext_rc_delta_q_uv = encode_frame_decision.delta_q_uv;
     }
 
     if (cpi->ext_ratectrl.ready && cpi->ext_ratectrl.log_file) {
@@ -4640,7 +4681,7 @@ static void encode_with_recode_loop(VP9_COMP *cpi, size_t *size, uint8_t *dest,
               gf_group->index, gf_group->update_type[gf_group->index], q);
     }
 
-    vp9_set_quantizer(cpi, q);
+    vp9_set_quantizer(cpi, q, ext_rc_delta_q_uv);
 
     if (loop_count == 0) setup_frame(cpi);
 
@@ -5310,6 +5351,23 @@ static void init_mb_wiener_var_buffer(VP9_COMP *cpi) {
   cpi->mb_wiener_var_cols = cm->mb_cols;
 }
 
+static void init_sb_mul_scale_buffer(VP9_COMP *cpi) {
+  VP9_COMMON *cm = &cpi->common;
+
+  if (cpi->mb_wiener_var_rows >= cm->mb_rows &&
+      cpi->mb_wiener_var_cols >= cm->mb_cols)
+    return;
+
+  vpx_free(cpi->sb_mul_scale);
+  cpi->sb_mul_scale = NULL;
+
+  CHECK_MEM_ERROR(
+      &cm->error, cpi->sb_mul_scale,
+      vpx_calloc(cm->mb_rows * cm->mb_cols, sizeof(*cpi->sb_mul_scale)));
+  cpi->mb_wiener_var_rows = cm->mb_rows;
+  cpi->mb_wiener_var_cols = cm->mb_cols;
+}
+
 static void set_mb_wiener_variance(VP9_COMP *cpi) {
   VP9_COMMON *cm = &cpi->common;
   uint8_t *buffer = cpi->Source->y_buffer;
@@ -5566,6 +5624,8 @@ static void encode_frame_to_data_rate(
     set_mb_wiener_variance(cpi);
   }
 
+  init_sb_mul_scale_buffer(cpi);
+
   vpx_clear_system_state();
 
 #if CONFIG_INTERNAL_STATS
@@ -5697,11 +5757,8 @@ static void encode_frame_to_data_rate(
 
   if (cpi->ext_ratectrl.ready &&
       cpi->ext_ratectrl.funcs.update_encodeframe_result != NULL) {
-    const RefCntBuffer *coded_frame_buf =
-        get_ref_cnt_buffer(cm, cm->new_fb_idx);
     vpx_codec_err_t codec_status = vp9_extrc_update_encodeframe_result(
-        &cpi->ext_ratectrl, (*size) << 3, cpi->Source, &coded_frame_buf->buf,
-        cm->bit_depth, cpi->oxcf.input_bit_depth, cm->base_qindex);
+        &cpi->ext_ratectrl, (*size) << 3, cm->base_qindex);
     if (codec_status != VPX_CODEC_OK) {
       vpx_internal_error(&cm->error, codec_status,
                          "vp9_extrc_update_encodeframe_result() failed");
@@ -6441,7 +6498,7 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
 #endif
         // Produce the filtered ARF frame.
         vp9_temporal_filter(cpi, arf_src_index);
-        vpx_extend_frame_borders(&cpi->alt_ref_buffer);
+        vpx_extend_frame_borders(&cpi->tf_buffer);
 #if CONFIG_COLLECT_COMPONENT_TIMING
         end_timing(cpi, vp9_temporal_filter_time);
 #endif
@@ -6451,7 +6508,7 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
         if (cpi->oxcf.alt_ref_aq != 0 && not_low_bitrate && not_last_frame)
           vp9_alt_ref_aq_setup_mode(cpi->alt_ref_aq, cpi);
 
-        force_src_buffer = &cpi->alt_ref_buffer;
+        force_src_buffer = &cpi->tf_buffer;
       }
 #endif
       cm->show_frame = 0;
@@ -6568,6 +6625,26 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
   } else if (oxcf->pass == 1) {
     set_frame_size(cpi);
   }
+
+  // Key frame temporal filtering
+  const int is_key_temporal_filter_enabled =
+      oxcf->enable_keyframe_filtering && cpi->oxcf.mode != REALTIME &&
+      (oxcf->pass != 1) && !cpi->use_svc &&
+      !is_lossless_requested(&cpi->oxcf) && cm->frame_type == KEY_FRAME &&
+      (oxcf->arnr_max_frames > 0) && (oxcf->arnr_strength > 0) &&
+      cpi->oxcf.speed < 2;
+  // Save the pointer to the original source image.
+  YV12_BUFFER_CONFIG *source_buffer = cpi->un_scaled_source;
+
+  if (is_key_temporal_filter_enabled && source != NULL) {
+    // Produce the filtered Key frame. Set distance to -1 since the key frame
+    // is already popped out.
+    vp9_temporal_filter(cpi, -1);
+    vpx_extend_frame_borders(&cpi->tf_buffer);
+    force_src_buffer = &cpi->tf_buffer;
+    cpi->un_scaled_source = cpi->Source =
+        force_src_buffer ? force_src_buffer : &source->img;
+  }
 #endif  // !CONFIG_REALTIME_ONLY
 
   if (oxcf->pass != 1 && cpi->level_constraint.level_index >= 0 &&
@@ -6607,7 +6684,7 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
 #if CONFIG_COLLECT_COMPONENT_TIMING
   start_timing(cpi, setup_tpl_stats_time);
 #endif
-  if (should_run_tpl(cpi, gf_group_index)) {
+  if (should_run_tpl(cpi, cpi->twopass.gf_group.index)) {
     vp9_init_tpl_buffer(cpi);
     vp9_estimate_tpl_qp_gop(cpi);
     vp9_setup_tpl_stats(cpi);
@@ -6697,6 +6774,13 @@ int vp9_get_compressed_data(VP9_COMP *cpi, unsigned int *frame_flags,
 
   if (cpi->keep_level_stats && oxcf->pass != 1)
     update_level_info(cpi, size, arf_src_index);
+
+#if !CONFIG_REALTIME_ONLY
+  if (is_key_temporal_filter_enabled && cpi->b_calculate_psnr) {
+    cpi->raw_source_frame = vp9_scale_if_required(
+        cm, source_buffer, &cpi->scaled_source, (oxcf->pass == 0), EIGHTTAP, 0);
+  }
+#endif  // !CONFIG_REALTIME_ONLY
 
 #if CONFIG_INTERNAL_STATS
 
@@ -6981,7 +7065,6 @@ int vp9_set_size_literal(VP9_COMP *cpi, unsigned int width,
     cm->width = width;
     if (cm->width > cpi->initial_width) {
       cm->width = cpi->initial_width;
-      printf("Warning: Desired width too large, changed to %d\n", cm->width);
     }
   }
 
@@ -6989,7 +7072,6 @@ int vp9_set_size_literal(VP9_COMP *cpi, unsigned int width,
     cm->height = height;
     if (cm->height > cpi->initial_height) {
       cm->height = cpi->initial_height;
-      printf("Warning: Desired height too large, changed to %d\n", cm->height);
     }
   }
   assert(cm->width <= cpi->initial_width);

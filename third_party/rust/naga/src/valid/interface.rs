@@ -50,6 +50,11 @@ pub enum VaryingError {
     NotIOShareableType(Handle<crate::Type>),
     #[error("Interpolation is not valid")]
     InvalidInterpolation,
+    #[error("Cannot combine {interpolation:?} interpolation with the {sampling:?} sample type")]
+    InvalidInterpolationSamplingCombination {
+        interpolation: crate::Interpolation,
+        sampling: crate::Sampling,
+    },
     #[error("Interpolation must be specified on vertex shader outputs and fragment shader inputs")]
     MissingInterpolation,
     #[error("Built-in {0:?} is not available at this stage")]
@@ -124,6 +129,9 @@ fn storage_usage(access: crate::StorageAccess) -> GlobalUse {
     if access.contains(crate::StorageAccess::STORE) {
         storage_usage |= GlobalUse::WRITE;
     }
+    if access.contains(crate::StorageAccess::ATOMIC) {
+        storage_usage |= GlobalUse::ATOMIC;
+    }
     storage_usage
 }
 
@@ -189,7 +197,11 @@ impl VaryingContext<'_> {
                 }
 
                 let (visible, type_good) = match built_in {
-                    Bi::BaseInstance | Bi::BaseVertex | Bi::InstanceIndex | Bi::VertexIndex => (
+                    Bi::BaseInstance
+                    | Bi::BaseVertex
+                    | Bi::InstanceIndex
+                    | Bi::VertexIndex
+                    | Bi::DrawID => (
                         self.stage == St::Vertex && !self.output,
                         *ty_inner == Ti::Scalar(crate::Scalar::U32),
                     ),
@@ -339,6 +351,31 @@ impl VaryingContext<'_> {
                     }
                 }
 
+                if let Some(interpolation) = interpolation {
+                    let invalid_sampling = match (interpolation, sampling) {
+                        (_, None)
+                        | (
+                            crate::Interpolation::Perspective | crate::Interpolation::Linear,
+                            Some(
+                                crate::Sampling::Center
+                                | crate::Sampling::Centroid
+                                | crate::Sampling::Sample,
+                            ),
+                        )
+                        | (
+                            crate::Interpolation::Flat,
+                            Some(crate::Sampling::First | crate::Sampling::Either),
+                        ) => None,
+                        (_, Some(invalid_sampling)) => Some(invalid_sampling),
+                    };
+                    if let Some(sampling) = invalid_sampling {
+                        return Err(VaryingError::InvalidInterpolationSamplingCombination {
+                            interpolation,
+                            sampling,
+                        });
+                    }
+                }
+
                 let needs_interpolation = match self.stage {
                     crate::ShaderStage::Vertex => self.output,
                     crate::ShaderStage::Fragment => !self.output,
@@ -463,7 +500,10 @@ impl super::Validator {
                 if access == crate::StorageAccess::STORE {
                     return Err(GlobalVariableError::StorageAddressSpaceWriteOnlyNotSupported);
                 }
-                (TypeFlags::DATA | TypeFlags::HOST_SHAREABLE, true)
+                (
+                    TypeFlags::DATA | TypeFlags::HOST_SHAREABLE | TypeFlags::CREATION_RESOLVED,
+                    true,
+                )
             }
             crate::AddressSpace::Uniform => {
                 if let Err((ty_handle, disalignment)) = type_info.uniform_layout {
@@ -479,7 +519,8 @@ impl super::Validator {
                     TypeFlags::DATA
                         | TypeFlags::COPY
                         | TypeFlags::SIZED
-                        | TypeFlags::HOST_SHAREABLE,
+                        | TypeFlags::HOST_SHAREABLE
+                        | TypeFlags::CREATION_RESOLVED,
                     true,
                 )
             }
@@ -517,7 +558,10 @@ impl super::Validator {
 
                 (TypeFlags::empty(), true)
             }
-            crate::AddressSpace::Private => (TypeFlags::CONSTRUCTIBLE, false),
+            crate::AddressSpace::Private => (
+                TypeFlags::CONSTRUCTIBLE | TypeFlags::CREATION_RESOLVED,
+                false,
+            ),
             crate::AddressSpace::WorkGroup => (TypeFlags::DATA | TypeFlags::SIZED, false),
             crate::AddressSpace::PushConstant => {
                 if !self.capabilities.contains(Capabilities::PUSH_CONSTANT) {
@@ -717,7 +761,9 @@ impl super::Validator {
                     } => storage_usage(access),
                     _ => GlobalUse::READ | GlobalUse::QUERY,
                 },
-                crate::AddressSpace::Private | crate::AddressSpace::WorkGroup => GlobalUse::all(),
+                crate::AddressSpace::Private | crate::AddressSpace::WorkGroup => {
+                    GlobalUse::READ | GlobalUse::WRITE | GlobalUse::QUERY
+                }
                 crate::AddressSpace::PushConstant => GlobalUse::READ,
             };
             if !allowed_usage.contains(usage) {
@@ -732,7 +778,7 @@ impl super::Validator {
             }
 
             if let Some(ref bind) = var.binding {
-                if !self.ep_resource_bindings.insert(bind.clone()) {
+                if !self.ep_resource_bindings.insert(*bind) {
                     if self.flags.contains(super::ValidationFlags::BINDINGS) {
                         return Err(EntryPointError::BindingCollision(var_handle)
                             .with_span_handle(var_handle, &module.global_variables));

@@ -24,7 +24,6 @@
 #include "mozilla/TimeStamp.h"
 #include "mozilla/Utf8.h"
 #include "mozilla/net/WebSocketEventService.h"
-#include "nsAlgorithm.h"
 #include "nsCRT.h"
 #include "nsCharSeparatedTokenizer.h"
 #include "nsComponentManagerUtils.h"
@@ -1185,7 +1184,6 @@ WebSocketChannel::WebSocketChannel()
       mInnerWindowID(0),
       mGotUpgradeOK(0),
       mRecvdHttpUpgradeTransport(0),
-      mAllowPMCE(1),
       mPingOutstanding(0),
       mReleaseOnTransmit(0),
       mDataStarted(false),
@@ -2700,14 +2698,6 @@ nsresult WebSocketChannel::HandleExtensions() {
     return rv;
   }
 
-  if (!mAllowPMCE) {
-    LOG(
-        ("WebSocketChannel::HandleExtensions: "
-         "Recvd permessage-deflate which wasn't offered\n"));
-    AbortSession(NS_ERROR_ILLEGAL_VALUE);
-    return NS_ERROR_ILLEGAL_VALUE;
-  }
-
   if (clientMaxWindowBits == -1) {
     clientMaxWindowBits = 15;
   }
@@ -2742,17 +2732,6 @@ nsresult WebSocketChannel::HandleExtensions() {
 void ProcessServerWebSocketExtensions(const nsACString& aExtensions,
                                       nsACString& aNegotiatedExtensions) {
   aNegotiatedExtensions.Truncate();
-
-  nsCOMPtr<nsIPrefBranch> prefService;
-  prefService = mozilla::components::Preferences::Service();
-  if (prefService) {
-    bool boolpref;
-    nsresult rv = prefService->GetBoolPref(
-        "network.websocket.extensions.permessage-deflate", &boolpref);
-    if (NS_SUCCEEDED(rv) && !boolpref) {
-      return;
-    }
-  }
 
   for (const auto& ext :
        nsCCharSeparatedTokenizer(aExtensions, ',').ToRange()) {
@@ -2847,11 +2826,9 @@ nsresult WebSocketChannel::SetupRequest() {
     MOZ_ASSERT(NS_SUCCEEDED(rv));
   }
 
-  if (mAllowPMCE) {
-    rv = mHttpChannel->SetRequestHeader("Sec-WebSocket-Extensions"_ns,
-                                        "permessage-deflate"_ns, false);
-    MOZ_ASSERT(NS_SUCCEEDED(rv));
-  }
+  rv = mHttpChannel->SetRequestHeader("Sec-WebSocket-Extensions"_ns,
+                                      "permessage-deflate"_ns, false);
+  MOZ_ASSERT(NS_SUCCEEDED(rv));
 
   uint8_t* secKey;
   nsAutoCString secKeyString;
@@ -3462,38 +3439,32 @@ WebSocketChannel::AsyncOpenNative(nsIURI* aURI, const nsACString& aOrigin,
 
   if (prefService) {
     int32_t intpref;
-    bool boolpref;
     rv =
         prefService->GetIntPref("network.websocket.max-message-size", &intpref);
     if (NS_SUCCEEDED(rv)) {
-      mMaxMessageSize = clamped(intpref, 1024, INT32_MAX);
+      mMaxMessageSize = std::clamp(intpref, 1024, INT32_MAX);
     }
     rv = prefService->GetIntPref("network.websocket.timeout.close", &intpref);
     if (NS_SUCCEEDED(rv)) {
-      mCloseTimeout = clamped(intpref, 1, 1800) * 1000;
+      mCloseTimeout = std::clamp(intpref, 1, 1800) * 1000;
     }
     rv = prefService->GetIntPref("network.websocket.timeout.open", &intpref);
     if (NS_SUCCEEDED(rv)) {
-      mOpenTimeout = clamped(intpref, 1, 1800) * 1000;
+      mOpenTimeout = std::clamp(intpref, 1, 1800) * 1000;
     }
     rv = prefService->GetIntPref("network.websocket.timeout.ping.request",
                                  &intpref);
     if (NS_SUCCEEDED(rv) && !mClientSetPingInterval) {
-      mPingInterval = clamped(intpref, 0, 86400) * 1000;
+      mPingInterval = std::clamp(intpref, 0, 86400) * 1000;
     }
     rv = prefService->GetIntPref("network.websocket.timeout.ping.response",
                                  &intpref);
     if (NS_SUCCEEDED(rv) && !mClientSetPingTimeout) {
-      mPingResponseTimeout = clamped(intpref, 1, 3600) * 1000;
-    }
-    rv = prefService->GetBoolPref(
-        "network.websocket.extensions.permessage-deflate", &boolpref);
-    if (NS_SUCCEEDED(rv)) {
-      mAllowPMCE = boolpref ? 1 : 0;
+      mPingResponseTimeout = std::clamp(intpref, 1, 3600) * 1000;
     }
     rv = prefService->GetIntPref("network.websocket.max-connections", &intpref);
     if (NS_SUCCEEDED(rv)) {
-      mMaxConcurrentConnections = clamped(intpref, 1, 0xffff);
+      mMaxConcurrentConnections = std::clamp(intpref, 1, 0xffff);
     }
   }
 

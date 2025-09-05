@@ -279,15 +279,6 @@ Services.prefs.setBoolPref("devtools.inspector.three-pane-enabled", true);
 // requests occuring after a process is created/destroyed. See Bug 1620983.
 Services.prefs.setBoolPref("dom.ipc.processPrelaunch.enabled", false);
 
-// Disable this preference to capture async stacks across all locations during
-// DevTools mochitests. Async stacks provide very valuable information to debug
-// intermittents, but come with a performance overhead, which is why they are
-// only captured in Debuggees by default.
-Services.prefs.setBoolPref(
-  "javascript.options.asyncstack_capture_debuggee_only",
-  false
-);
-
 // On some Linux platforms, prefers-reduced-motion is enabled, which would
 // trigger the notification to be displayed in the toolbox. Dismiss the message
 // by default.
@@ -304,9 +295,6 @@ registerCleanupFunction(() => {
   Services.prefs.clearUserPref("devtools.toolbox.previousHost");
   Services.prefs.clearUserPref("devtools.toolbox.splitconsole.open");
   Services.prefs.clearUserPref("devtools.toolbox.splitconsoleHeight");
-  Services.prefs.clearUserPref(
-    "javascript.options.asyncstack_capture_debuggee_only"
-  );
   Services.prefs.clearUserPref(
     "devtools.inspector.simple-highlighters.message-dismissed"
   );
@@ -1016,9 +1004,8 @@ function isEveryFrameTargetEnabled() {
  */
 async function openInspectorForURL(url, hostType) {
   const tab = await addTab(url);
-  const { inspector, toolbox, highlighterTestFront } = await openInspector(
-    hostType
-  );
+  const { inspector, toolbox, highlighterTestFront } =
+    await openInspector(hostType);
   return { tab, inspector, toolbox, highlighterTestFront };
 }
 
@@ -1036,9 +1023,7 @@ function getActiveInspector() {
  *        Optional window where to fire the key event
  */
 function synthesizeKeyShortcut(key, target) {
-  // parseElectronKey requires any window, just to access `KeyboardEvent`
-  const window = Services.appShell.hiddenDOMWindow;
-  const shortcut = KeyShortcuts.parseElectronKey(window, key);
+  const shortcut = KeyShortcuts.parseElectronKey(key);
   const keyEvent = {
     altKey: shortcut.alt,
     ctrlKey: shortcut.ctrl,
@@ -1093,10 +1078,19 @@ function wait(ms) {
  * @param number maxTries [optional]
  *        How many times the predicate is invoked before timing out.
  *        Can be set globally for a test via `waitFor.overrideMaxTriesForTestFile = someNumber;`.
+ * @param boolean expectTimeout [optional]
+ *        Whether the helper is expected to reach the timeout or not. Consider
+ *        using waitForTimeout instead of passing this to true.
  * @return object
  *         A promise that is resolved with the result of the condition.
  */
-async function waitFor(condition, message = "", interval = 10, maxTries = 500) {
+async function waitFor(
+  condition,
+  message = "",
+  interval = 10,
+  maxTries = 500,
+  expectTimeout = false
+) {
   // Update interval & maxTries if overrides are defined on the waitFor object.
   interval =
     typeof waitFor.overrideIntervalForTestFile !== "undefined"
@@ -1114,11 +1108,44 @@ async function waitFor(condition, message = "", interval = 10, maxTries = 500) {
       interval,
       maxTries
     );
+    if (expectTimeout) {
+      // If we expected a timeout, fail the test here.
+      const errorMessage = `Expected timeout in waitFor(): ${message} \nUnexpected condition: ${condition} \n`;
+      ok(false, errorMessage);
+    }
     return value;
   } catch (e) {
+    if (expectTimeout) {
+      // If we expected a timeout, simply return null, the consumer should not
+      // need any return value.
+      return null;
+    }
+
+    // If we didn't expect a timeout, fail the test here.
     const errorMessage = `Failed waitFor(): ${message} \nFailed condition: ${condition} \nException Message: ${e}`;
+    // Use both assert ok(false) and throw.
+    // Assert captures the correct frame to log variables with dump-scope.js.
+    // Error will make sure the test stops.
+    ok(false, errorMessage);
     throw new Error(errorMessage);
   }
+}
+
+/**
+ * Similar to @see waitFor defined above but expect the predicate to never
+ * be satisfied and therefore to timeout.
+ *
+ * Arguments are identical to `waitFor` but the default values for interval and
+ * maxTries are more conservative since this method expects a timeout.
+ *
+ */
+async function waitForTimeout(
+  condition,
+  message = "",
+  interval = 100,
+  maxTries = 10
+) {
+  return waitFor(condition, message, interval, maxTries, true);
 }
 
 /**
@@ -2457,4 +2484,51 @@ async function toggleJsTracer(toolbox) {
       );
     }
   }
+}
+
+/**
+ * Retrieve the context menu element corresponding to the provided id, for the
+ * provided netmonitor instance.
+ * @param {Object} monitor
+ *        The network monitor object
+ * @param {String} id
+ *        The id of the context menu item
+ */
+function getNetmonitorContextMenuItem(monitor, id) {
+  const Menu = require("resource://devtools/client/framework/menu.js");
+  return Menu.getMenuElementById(id, monitor.panelWin.document);
+}
+
+/*
+ * Selects and clicks the context menu item of the netmonitor, it should
+ * also wait for the popup to close.
+ * @param {Object} monitor
+ *        The network monitor object
+ * @param {String} id
+ *        The id of the context menu item
+ */
+async function selectNetmonitorContextMenuItem(monitor, id) {
+  const contextMenuItem = getNetmonitorContextMenuItem(monitor, id);
+
+  const popup = contextMenuItem.parentNode;
+  await _maybeOpenAncestorMenu(contextMenuItem);
+  const hidden = BrowserTestUtils.waitForEvent(popup, "popuphidden");
+  popup.activateItem(contextMenuItem);
+  await hidden;
+}
+
+async function _maybeOpenAncestorMenu(menuItem) {
+  const parentPopup = menuItem.parentNode;
+  if (parentPopup.state == "open") {
+    return;
+  }
+  const shown = BrowserTestUtils.waitForEvent(parentPopup, "popupshown");
+  if (parentPopup.state == "showing") {
+    await shown;
+    return;
+  }
+  const parentMenu = parentPopup.parentNode;
+  await _maybeOpenAncestorMenu(parentMenu);
+  parentMenu.openMenu(true);
+  await shown;
 }

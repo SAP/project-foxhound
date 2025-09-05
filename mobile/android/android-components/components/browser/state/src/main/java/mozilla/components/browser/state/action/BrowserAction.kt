@@ -28,7 +28,7 @@ import mozilla.components.browser.state.state.UndoHistoryState
 import mozilla.components.browser.state.state.WebExtensionState
 import mozilla.components.browser.state.state.content.DownloadState
 import mozilla.components.browser.state.state.content.FindResultState
-import mozilla.components.browser.state.state.content.ShareInternetResourceState
+import mozilla.components.browser.state.state.content.ShareResourceState
 import mozilla.components.browser.state.state.extension.WebExtensionPromptRequest
 import mozilla.components.browser.state.state.recover.RecoverableTab
 import mozilla.components.browser.state.state.recover.TabState
@@ -378,6 +378,11 @@ sealed class UndoAction : BrowserAction() {
      * Restores the tabs in [UndoHistoryState].
      */
     object RestoreRecoverableTabs : UndoAction()
+
+    /**
+     * Updates the [EngineState] for the given tab id in [UndoHistoryState].
+     */
+    data class UpdateEngineStateForRecoverableTab(val id: String, val engineState: EngineSessionState) : UndoAction()
 }
 
 /**
@@ -810,7 +815,7 @@ sealed class ContentAction : BrowserAction() {
     /**
      * Updates the [ContentState] of the given [sessionId] to indicate whether or not desktop mode is enabled.
      */
-    data class UpdateDesktopModeAction(val sessionId: String, val enabled: Boolean) : ContentAction()
+    data class UpdateTabDesktopMode(val sessionId: String, val enabled: Boolean) : ContentAction()
 
     /**
      * Updates the [AppIntentState] of the [ContentState] with the given [sessionId].
@@ -854,6 +859,20 @@ sealed class ContentAction : BrowserAction() {
     data class UpdateProductUrlStateAction(
         val tabId: String,
         val isProductUrl: Boolean,
+    ) : ContentAction()
+
+    /**
+     * Inform that the tab with [tabId] started rendering a pdf.
+     */
+    data class EnteredPdfViewer(
+        val tabId: String,
+    ) : ContentAction()
+
+    /**
+     * Inform that the tab with [tabId] stopped rendering a pdf.
+     */
+    data class ExitedPdfViewer(
+        val tabId: String,
     ) : ContentAction()
 }
 
@@ -1697,16 +1716,16 @@ sealed class DownloadAction : BrowserAction() {
 }
 
 /**
- * [BrowserAction] implementations related to updating the session state of internet resources to be shared.
+ * [BrowserAction] implementations related to updating the session state of internet or local resources to be shared.
  */
-sealed class ShareInternetResourceAction : BrowserAction() {
+sealed class ShareResourceAction : BrowserAction() {
     /**
-     * Starts the sharing process of an Internet resource.
+     * Starts the sharing process of an Internet or local resource.
      */
     data class AddShareAction(
         val tabId: String,
-        val internetResource: ShareInternetResourceState,
-    ) : ShareInternetResourceAction()
+        val resource: ShareResourceState,
+    ) : ShareResourceAction()
 
     /**
      * Previous share request is considered completed.
@@ -1715,7 +1734,7 @@ sealed class ShareInternetResourceAction : BrowserAction() {
      */
     data class ConsumeShareAction(
         val tabId: String,
-    ) : ShareInternetResourceAction()
+    ) : ShareResourceAction()
 }
 
 /**
@@ -1727,7 +1746,7 @@ sealed class CopyInternetResourceAction : BrowserAction() {
      */
     data class AddCopyAction(
         val tabId: String,
-        val internetResource: ShareInternetResourceState,
+        val internetResource: ShareResourceState.InternetResource,
     ) : CopyInternetResourceAction()
 
     /**
@@ -1870,6 +1889,11 @@ sealed class SearchAction : BrowserAction() {
 }
 
 /**
+ * [BrowserAction] implements setting and updating the distribution
+ */
+data class UpdateDistribution(val distributionId: String?) : BrowserAction()
+
+/**
  * [BrowserAction] implementations for updating state needed for debugging. These actions should
  * be carefully considered before being used.
  *
@@ -1902,4 +1926,19 @@ sealed class AppLifecycleAction : BrowserAction() {
      * The application has received an ON_PAUSE event.
      */
     object PauseAction : AppLifecycleAction()
+}
+
+/**
+ * [BrowserAction] implementations related to updating the application's default desktop mode setting.
+ */
+sealed class DefaultDesktopModeAction : BrowserAction() {
+    /**
+     * Toggles the global default for desktop browsing mode.
+     */
+    data object ToggleDesktopMode : DefaultDesktopModeAction()
+
+    /**
+     * Updates the global default for desktop browsing mode.
+     */
+    data class DesktopModeUpdated(val newValue: Boolean) : DefaultDesktopModeAction()
 }

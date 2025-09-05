@@ -97,6 +97,8 @@ devtools:
     selector: fuzzy
     description: >-
         Runs the tests relevant to the Firefox Devtools
+    env:
+        - MOZ_DEVTOOLS_TEST_SCOPES=1
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
@@ -112,6 +114,8 @@ devtools-linux:
     selector: fuzzy
     description: >-
         Runs the tests relevant to the Firefox Devtools, on Linux only.
+    env:
+        - MOZ_DEVTOOLS_TEST_SCOPES=1
     query:
         - "'node-debugger | 'node-devtools"
         - "'mozlint-eslint"
@@ -232,6 +236,25 @@ mochitest-bc:
         - "'browser-chrome !tsan !asan !msix !spi !a11y !swr | 'linux"
     selector: fuzzy
 
+os_integration:
+    selector: fuzzy
+    description: >-
+        run tests that have os_integration tag.
+    env:
+        - MOZHARNESS_TEST_TAG=["os_integration"]
+    query:
+        - "'source-test-python"
+        - "'opt-talos- !swr !nightly !damp   'xperf | 'other | 'webgl"
+        - "'perftest        !nightly         'service-worker | 'startup-geckoview"
+        - "'browsertime     !nightly         speedometer3"
+        - "'browsertime     !nightly         firefox billgates-ama"
+        - "'browsertime     !nightly         firefox playback-widevine"
+        - "'browsertime     !nightly         tp6-essential-firefox amazon"
+        - "'marionette      !-cf        !unit   !64-qr/opt !64/opt !2009-qr/opt"
+        - "'mochitest-      !-cf        !webgl !-gpu !devtools !dfpi !nofis !a11y !trans !wmfme !64-qr/opt !64/opt !2009-qr/opt"
+        - "'mochitest-webgl1-core !-cf  !64-qr/opt !64/opt !2009-qr/opt"
+        - "'xpcshell        !64-qr/opt !64/opt !2009-qr/opt"
+
 perf:
     selector: fuzzy
     description: >-
@@ -262,6 +285,8 @@ remote-protocol:
         This preset can be filtered down further to limit it to a specific
         platform or to opt/debug tasks only. For example:
         |mach try --preset remote-protocol -xq "'linux 'opt"|
+    env:
+        - MOZ_DEVTOOLS_TEST_SCOPES=1
     query:
         - "'awsy-base"
         - "'firefox-ui"
@@ -281,11 +306,12 @@ sample-suites:
         Runs one chunk of every test suite plus all suites that aren't chunked.
         It is useful for testing infrastructure changes that can affect the
         harnesses themselves but are unlikely to break specific tests.
+    show_chunk_numbers: true
     query:
-        - ^test- -1$
-        # Only run a single talos + raptor suite per platform
-        - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos !components !apk
-        - ^test- 'raptor-speedometer | 'talos-g1
+        - ^test- -1$ !browsertime !raptor !talos
+        - ^test- !1$ !2$ !3$ !4$ !5$ !6$ !7$ !8$ !9$ !0$ !raptor !talos !components !apk !browsertime
+        # Only run a single talos / raptor / browsertime suite per platform
+        - ^test- raptor-speedometer$ | talos-g1$ | browsertime-tp6-firefox-imgur$
 
 sm-shell-all:
     selector: fuzzy
@@ -325,11 +351,13 @@ webextensions:
         GeckoView JUnit tests are NOT run.
     paths:  # must be duplicate of test_paths, see bug 1556445
         - browser/components/extensions/test/
+        - browser/base/content/test/webextensions/
         - mobile/shared/components/extensions/test/
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/
     test_paths:  # must be duplicate of paths, see bug 1556445
         - browser/components/extensions/test/
+        - browser/base/content/test/webextensions/
         - mobile/shared/components/extensions/test/
         - toolkit/components/extensions/test/
         - toolkit/mozapps/extensions/test/

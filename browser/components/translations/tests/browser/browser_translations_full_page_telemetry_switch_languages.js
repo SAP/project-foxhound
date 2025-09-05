@@ -20,11 +20,14 @@ add_task(async function test_translations_telemetry_switch_from_language() {
   await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
 
-  FullPageTranslationsTestUtils.assertSelectedFromLanguage({ langTag: "es" });
-  await FullPageTranslationsTestUtils.changeSelectedFromLanguage("en");
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "en",
+  });
 
   await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
     expectedEventCount: 1,
@@ -47,7 +50,9 @@ add_task(async function test_translations_telemetry_switch_from_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedFromLanguage("es");
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "es",
+  });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeFromLanguage,
@@ -60,7 +65,9 @@ add_task(async function test_translations_telemetry_switch_from_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedFromLanguage("");
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "",
+  });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeFromLanguage,
@@ -69,7 +76,9 @@ add_task(async function test_translations_telemetry_switch_from_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedFromLanguage("en");
+  await FullPageTranslationsTestUtils.changeSelectedFromLanguage({
+    langTag: "en",
+  });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeFromLanguage,
@@ -81,6 +90,10 @@ add_task(async function test_translations_telemetry_switch_from_language() {
       },
     }
   );
+
+  await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+    expectedEventCount: 0,
+  });
 
   await cleanup();
 });
@@ -102,11 +115,14 @@ add_task(async function test_translations_telemetry_switch_to_language() {
   await FullPageTranslationsTestUtils.assertPageIsUntranslated(runInPage);
 
   await FullPageTranslationsTestUtils.openPanel({
+    expectedFromLanguage: "es",
+    expectedToLanguage: "en",
     onOpenPanel: FullPageTranslationsTestUtils.assertPanelViewDefault,
   });
 
-  FullPageTranslationsTestUtils.assertSelectedToLanguage({ langTag: "en" });
-  await FullPageTranslationsTestUtils.changeSelectedToLanguage("fr");
+  await FullPageTranslationsTestUtils.changeSelectedToLanguage({
+    langTag: "fr",
+  });
 
   await TestTranslationsTelemetry.assertEvent(Glean.translationsPanel.open, {
     expectedEventCount: 1,
@@ -129,7 +145,9 @@ add_task(async function test_translations_telemetry_switch_to_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedToLanguage("en");
+  await FullPageTranslationsTestUtils.changeSelectedToLanguage({
+    langTag: "en",
+  });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeToLanguage,
@@ -142,7 +160,7 @@ add_task(async function test_translations_telemetry_switch_to_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedToLanguage("");
+  await FullPageTranslationsTestUtils.changeSelectedToLanguage({ langTag: "" });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeToLanguage,
@@ -151,7 +169,9 @@ add_task(async function test_translations_telemetry_switch_to_language() {
     }
   );
 
-  await FullPageTranslationsTestUtils.changeSelectedToLanguage("en");
+  await FullPageTranslationsTestUtils.changeSelectedToLanguage({
+    langTag: "en",
+  });
 
   await TestTranslationsTelemetry.assertEvent(
     Glean.translationsPanel.changeToLanguage,
@@ -163,6 +183,10 @@ add_task(async function test_translations_telemetry_switch_to_language() {
       },
     }
   );
+
+  await TestTranslationsTelemetry.assertTranslationsEnginePerformance({
+    expectedEventCount: 0,
+  });
 
   await cleanup();
 });

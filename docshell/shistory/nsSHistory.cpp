@@ -33,6 +33,7 @@
 
 #include "mozilla/Attributes.h"
 #include "mozilla/dom/BrowsingContextGroup.h"
+#include "mozilla/dom/BrowserParent.h"
 #include "mozilla/dom/CanonicalBrowsingContext.h"
 #include "mozilla/dom/ContentParent.h"
 #include "mozilla/dom/Element.h"
@@ -82,7 +83,7 @@ struct ListHelper {
   LinkedList<nsSHistory> mList;
 };
 
-static ListHelper gSHistoryList;
+MOZ_RUNINIT static ListHelper gSHistoryList;
 // Max viewers allowed total, across all SHistory objects - negative default
 // means we will calculate how many viewers to cache based on total memory
 int32_t nsSHistory::sHistoryMaxTotalViewers = -1;
@@ -98,6 +99,7 @@ LazyLogModule gSHistoryLog("nsSHistory");
 #define LOG(format) MOZ_LOG(gSHistoryLog, mozilla::LogLevel::Debug, format)
 
 extern mozilla::LazyLogModule gPageCacheLog;
+extern mozilla::LazyLogModule gNavigationLog;
 extern mozilla::LazyLogModule gSHIPBFCacheLog;
 
 // This macro makes it easier to print a log message which includes a URI's
@@ -303,14 +305,14 @@ uint32_t nsSHistory::CalcMaxTotalViewers() {
 #  define MAX_TOTAL_VIEWERS_BIAS 14
 #endif
 
-  // Calculate an estimate of how many ContentViewers we should cache based
-  // on RAM.  This assumes that the average ContentViewer is 4MB (conservative)
-  // and caps the max at 8 ContentViewers
+  // Calculate an estimate of how many DocumentViewers we should cache based
+  // on RAM.  This assumes that the average DocumentViewer is 4MB (conservative)
+  // and caps the max at 8 DocumentViewers
   //
-  // TODO: Should we split the cache memory betw. ContentViewer caching and
+  // TODO: Should we split the cache memory betw. DocumentViewer caching and
   // nsCacheService?
   //
-  // RAM    | ContentViewers | on Android
+  // RAM    | DocumentViewers | on Android
   // -------------------------------------
   // 32   Mb       0                0
   // 64   Mb       1                0
@@ -339,7 +341,7 @@ uint32_t nsSHistory::CalcMaxTotalViewers() {
 
   // This is essentially the same calculation as for nsCacheService,
   // except that we divide the final memory calculation by 4, since
-  // we assume each ContentViewer takes on average 4MB
+  // we assume each DocumentViewer takes on average 4MB
   uint32_t viewers = 0;
   double x = std::log(kBytesD) / std::log(2.0) - MAX_TOTAL_VIEWERS_BIAS;
   if (x > 0) {
@@ -612,6 +614,63 @@ void nsSHistory::WalkContiguousEntries(
 
       aCallback(entry);
     }
+  }
+}
+
+// static
+void nsSHistory::WalkContiguousEntriesInOrder(
+    nsISHEntry* aEntry, const std::function<void(nsISHEntry*)>& aCallback) {
+  MOZ_ASSERT(aEntry);
+
+  nsCOMPtr<nsISHistory> shistory = aEntry->GetShistory();
+  if (!shistory) {
+    return;
+  }
+
+  int32_t index = shistory->GetIndexOfEntry(aEntry);
+  int32_t count = shistory->GetCount();
+
+  nsCOMPtr<nsIURI> targetURI = aEntry->GetURI();
+
+  // Walk backward to find the entries that have the same origin as the
+  // input entry.
+  int32_t lowerBound = index;
+  for (int32_t i = index - 1; i >= 0; i--) {
+    RefPtr<nsISHEntry> entry;
+    shistory->GetEntryAtIndex(i, getter_AddRefs(entry));
+    if (!entry) {
+      continue;
+    }
+    nsCOMPtr<nsIURI> uri = entry->GetURI();
+    if (NS_FAILED(nsContentUtils::GetSecurityManager()->CheckSameOriginURI(
+            targetURI, uri, false, false))) {
+      break;
+    }
+    lowerBound = i;
+  }
+  for (int32_t i = lowerBound; i < index; i++) {
+    RefPtr<nsISHEntry> entry;
+    shistory->GetEntryAtIndex(i, getter_AddRefs(entry));
+    MOZ_ASSERT(entry);
+    aCallback(entry);
+  }
+
+  // Then, call the callback on the input entry.
+  aCallback(aEntry);
+
+  // Then, Walk forward.
+  for (int32_t i = index + 1; i < count; i++) {
+    RefPtr<nsISHEntry> entry;
+    shistory->GetEntryAtIndex(i, getter_AddRefs(entry));
+    if (!entry) {
+      continue;
+    }
+    nsCOMPtr<nsIURI> uri = entry->GetURI();
+    if (NS_FAILED(nsContentUtils::GetSecurityManager()->CheckSameOriginURI(
+            targetURI, uri, false, false))) {
+      break;
+    }
+    aCallback(entry);
   }
 }
 
@@ -978,6 +1037,10 @@ static void LogEntry(nsISHEntry* aEntry, int32_t aIndex, int32_t aTotal,
       gSHLog, LogLevel::Debug,
       (" %s%s  Is in BFCache = %s\n", prefix.get(), childCount > 0 ? "|" : " ",
        aEntry->GetIsInBFCache() ? "true" : "false"));
+  MOZ_LOG(gSHLog, LogLevel::Debug,
+          (" %s%s  Has User Interaction = %s\n", prefix.get(),
+           childCount > 0 ? "|" : " ",
+           aEntry->GetHasUserInteraction() ? "true" : "false"));
 
   nsCOMPtr<nsISHEntry> prevChild;
   for (int32_t i = 0; i < childCount; ++i) {
@@ -1218,6 +1281,7 @@ nsSHistory::EvictAllDocumentViewers() {
   return NS_OK;
 }
 
+MOZ_CAN_RUN_SCRIPT
 static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
                           nsDocShellLoadState* aLoadState,
                           SessionHistoryEntry* aEntry,
@@ -1276,11 +1340,11 @@ static void FinishRestore(CanonicalBrowsingContext* aBrowsingContext,
       }
     }
 
-    if (aBrowsingContext->IsActive()) {
-      loadingBC->PreOrderWalk([&](BrowsingContext* aContext) {
-        if (BrowserParent* bp = aContext->Canonical()->GetBrowserParent()) {
-          ProcessPriorityManager::BrowserPriorityChanged(bp, true);
-        }
+    // Ensure browser priority to matches `IsPriorityActive` after restoring.
+    if (BrowserParent* bp = loadingBC->GetBrowserParent()) {
+      bp->VisitAll([&](BrowserParent* aBp) {
+        ProcessPriorityManager::BrowserPriorityChanged(
+            aBp, aBrowsingContext->IsPriorityActive());
       });
     }
 
@@ -1346,7 +1410,7 @@ void nsSHistory::LoadURIOrBFCache(LoadEntryResult& aLoadEntry) {
         canonicalBC->GetActiveSessionHistoryEntry();
     MOZ_ASSERT(she);
     RefPtr<nsFrameLoader> frameLoader = she->GetFrameLoader();
-    if (frameLoader &&
+    if (frameLoader && canonicalBC->Group()->Toplevels().Length() == 1 &&
         (!currentShe || (she->SharedInfo() != currentShe->SharedInfo() &&
                          !currentShe->GetFrameLoader()))) {
       bool canSave = (!currentShe || currentShe->GetSaveLayoutStateFlag()) &&
@@ -1368,22 +1432,24 @@ void nsSHistory::LoadURIOrBFCache(LoadEntryResult& aLoadEntry) {
                   currentFrameLoader->GetMaybePendingBrowsingContext()
                       ->Canonical()
                       ->GetCurrentWindowGlobal()) {
-            wgp->PermitUnload([canonicalBC, loadState, she, frameLoader,
-                               currentFrameLoader, canSave](bool aAllow) {
-              if (aAllow && !canonicalBC->IsReplaced()) {
-                FinishRestore(canonicalBC, loadState, she, frameLoader,
-                              canSave && canonicalBC->AllowedInBFCache(
-                                             Nothing(), nullptr));
-              } else if (currentFrameLoader->GetMaybePendingBrowsingContext()) {
-                nsISHistory* shistory =
-                    currentFrameLoader->GetMaybePendingBrowsingContext()
-                        ->Canonical()
-                        ->GetSessionHistory();
-                if (shistory) {
-                  shistory->InternalSetRequestedIndex(-1);
-                }
-              }
-            });
+            wgp->PermitUnload(
+                [canonicalBC, loadState, she, frameLoader, currentFrameLoader,
+                 canSave](bool aAllow) MOZ_CAN_RUN_SCRIPT_BOUNDARY_LAMBDA {
+                  if (aAllow && !canonicalBC->IsReplaced()) {
+                    FinishRestore(canonicalBC, loadState, she, frameLoader,
+                                  canSave && canonicalBC->AllowedInBFCache(
+                                                 Nothing(), nullptr));
+                  } else if (currentFrameLoader
+                                 ->GetMaybePendingBrowsingContext()) {
+                    nsISHistory* shistory =
+                        currentFrameLoader->GetMaybePendingBrowsingContext()
+                            ->Canonical()
+                            ->GetSessionHistory();
+                    if (shistory) {
+                      shistory->InternalSetRequestedIndex(-1);
+                    }
+                  }
+                });
             return;
           }
         }
@@ -2051,6 +2117,24 @@ nsSHistory::HasUserInteractionAtIndex(int32_t aIndex) {
     return false;
   }
   return entry->GetHasUserInteraction();
+}
+
+NS_IMETHODIMP
+nsSHistory::CanGoBackFromEntryAtIndex(int32_t aIndex, bool* aCanGoBack) {
+  *aCanGoBack = false;
+  if (!StaticPrefs::browser_navigation_requireUserInteraction()) {
+    *aCanGoBack = aIndex > 0;
+    return NS_OK;
+  }
+
+  for (int32_t i = aIndex - 1; i >= 0; i--) {
+    if (HasUserInteractionAtIndex(i)) {
+      *aCanGoBack = true;
+      break;
+    }
+  }
+
+  return NS_OK;
 }
 
 nsresult nsSHistory::LoadNextPossibleEntry(

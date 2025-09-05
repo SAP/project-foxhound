@@ -46,10 +46,11 @@ class CookieParser final {
 
   nsIURI* HostURI() const { return mHostURI; }
 
-  bool Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
-             CookieStatus aStatus, nsCString& aCookieHeader, bool aFromHttp,
+  void Parse(const nsACString& aBaseDomain, bool aRequireHostMatch,
+             CookieStatus aStatus, nsCString& aCookieHeader,
+             const nsACString& aDateHeader, bool aFromHttp,
              bool aIsForeignAndNotAddon, bool aPartitionedOnly,
-             bool aIsInPrivateBrowsing);
+             bool aIsInPrivateBrowsing, bool aOn3pcbException);
 
   bool ContainsCookie() const {
     MOZ_ASSERT_IF(mContainsCookie, mRejection == NoRejection);
@@ -63,22 +64,24 @@ class CookieParser final {
     return mCookieData;
   }
 
+  void GetCookieString(nsACString& aCookieString) const;
+
   // Public for testing
   bool ParseMaxAgeAttribute(const nsACString& aMaxage, int64_t* aValue);
 
  private:
-  static bool GetTokenValue(nsACString::const_char_iterator& aIter,
+  static void GetTokenValue(nsACString::const_char_iterator& aIter,
                             nsACString::const_char_iterator& aEndIter,
                             nsDependentCSubstring& aTokenString,
                             nsDependentCSubstring& aTokenValue,
                             bool& aEqualsFound);
 
-  bool ParseAttributes(nsCString& aCookieHeader, nsACString& aExpires,
+  void ParseAttributes(nsCString& aCookieHeader, nsACString& aExpires,
                        nsACString& aMaxage, bool& aAcceptedByParser);
 
   bool GetExpiry(CookieStruct& aCookieData, const nsACString& aExpires,
                  const nsACString& aMaxage, int64_t aCurrentTime,
-                 bool aFromHttp);
+                 const nsACString& aDateHeader, bool aFromHttp);
 
   bool CheckPath();
   bool CheckAttributeSize(const nsACString& currentValue,
@@ -112,6 +115,7 @@ class CookieParser final {
   } mWarnings;
 
   CookieStruct mCookieData;
+  nsCString mCookieString;
 };
 
 }  // namespace net

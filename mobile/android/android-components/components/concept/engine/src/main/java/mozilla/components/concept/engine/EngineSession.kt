@@ -15,9 +15,6 @@ import mozilla.components.concept.engine.media.RecordingDevice
 import mozilla.components.concept.engine.mediasession.MediaSession
 import mozilla.components.concept.engine.permission.PermissionRequest
 import mozilla.components.concept.engine.prompt.PromptRequest
-import mozilla.components.concept.engine.shopping.ProductAnalysis
-import mozilla.components.concept.engine.shopping.ProductAnalysisStatus
-import mozilla.components.concept.engine.shopping.ProductRecommendation
 import mozilla.components.concept.engine.translate.TranslationEngineState
 import mozilla.components.concept.engine.translate.TranslationError
 import mozilla.components.concept.engine.translate.TranslationOperation
@@ -26,6 +23,7 @@ import mozilla.components.concept.engine.window.WindowRequest
 import mozilla.components.concept.fetch.Response
 import mozilla.components.support.base.observer.Observable
 import mozilla.components.support.base.observer.ObserverRegistry
+import org.json.JSONObject
 
 /**
  * Class representing a single engine session.
@@ -782,12 +780,15 @@ abstract class EngineSession(
      * triggered creating this one.
      * @param flags the [LoadUrlFlags] to use when loading the provided url.
      * @param additionalHeaders the extra headers to use when loading the provided url.
+     * @param originalInput If the user entered a URL, this is the original
+     * user input before any fixups were applied to it.
      */
     abstract fun loadUrl(
         url: String,
         parent: EngineSession? = null,
         flags: LoadUrlFlags = LoadUrlFlags.none(),
         additionalHeaders: Map<String, String>? = null,
+        originalInput: String? = null,
     )
 
     /**
@@ -902,102 +903,12 @@ abstract class EngineSession(
     abstract fun checkForPdfViewer(onResult: (Boolean) -> Unit, onException: (Throwable) -> Unit)
 
     /**
-     * Requests product recommendations given a specific product url.
+     * Gets the web compat info.
      *
-     * @param onResult callback invoked if the engine API returned a valid response. Please note
-     * that the response can be null - which can indicate a bug, a miscommunication
-     * or other unexpected failure.
+     * @param onResult callback invoked if the engine API returned a valid response.
      * @param onException callback invoked if there was an error getting the response.
      */
-    abstract fun requestProductRecommendations(
-        url: String,
-        onResult: (List<ProductRecommendation>) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Requests the analysis results for a given product page URL.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun requestProductAnalysis(
-        url: String,
-        onResult: (ProductAnalysis) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Requests the reanalysis of a product for a given product page URL.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun reanalyzeProduct(
-        url: String,
-        onResult: (String) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Requests the status of a product analysis for a given product page URL.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun requestAnalysisStatus(
-        url: String,
-        onResult: (ProductAnalysisStatus) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Sends a click attribution event for a given product aid.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun sendClickAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Sends an impression attribution event for a given product aid.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun sendImpressionAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Sends a placement attribution event for a given product aid.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun sendPlacementAttributionEvent(
-        aid: String,
-        onResult: (Boolean) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
-
-    /**
-     * Reports when a product is back in stock.
-     *
-     * @param onResult callback invoked if the engine API returns a valid response.
-     * @param onException callback invoked if there was an error getting the response.
-     */
-    abstract fun reportBackInStock(
-        url: String,
-        onResult: (String) -> Unit,
-        onException: (Throwable) -> Unit,
-    )
+    abstract fun getWebCompatInfo(onResult: (JSONObject) -> Unit, onException: (Throwable) -> Unit)
 
     /**
      * Requests the [EngineSession] to translate the current session's contents.

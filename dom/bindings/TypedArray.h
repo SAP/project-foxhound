@@ -163,12 +163,12 @@ namespace mozilla::dom {
  *       … // Getting offset value from somewhere.
  *       uint32_t data[3];
  *       if (!aUint32Array.CopyDataTo(data, [&](const size_t& aLength) {
- *         if (aLength - offset != ArrayLength(data)) {
+ *         if (aLength - offset != std::size(data)) {
  *           aError.ThrowTypeError("Typed array doesn't contain the right"
  *                                 " amount of data");
  *           return Maybe<std::pair<size_t, size_t>>();
  *         }
- *         return Some(std::make_pair(offset, ArrayLength(data)));
+ *         return Some(std::make_pair(offset, std::size(data)));
  *       }) {
  *         return;
  *       }
@@ -213,12 +213,12 @@ namespace mozilla::dom {
  *       Maybe<Buffer<uint8_t>> buffer =
  *         aUint8Array.CreateFromData<Buffer<uint8_t>>([&](
  *             const size_t& aLength) {
- *         if (aLength - offset != ArrayLength(data)) {
+ *         if (aLength - offset != std::size(data)) {
  *           aError.ThrowTypeError(
  *               "Typed array doesn't contain the right amount" of data");
  *           return Maybe<std::pair<size_t, size_t>>();
  *         }
- *         return Some(std::make_pair(offset, ArrayLength(data)));
+ *         return Some(std::make_pair(offset, std::size(data)));
  *       });
  *       if (buffer.isNothing()) {
  *         return;
@@ -800,6 +800,7 @@ struct TypedArray : public TypedArray_base<ArrayT> {
   }
   static inline ArrayT CreateCommon(JSContext* cx, size_t length,
                                     ErrorResult& error) {
+    error.MightThrowJSException();
     ArrayT array = CreateCommon(cx, length);
     if (array) {
       return array;
@@ -879,23 +880,25 @@ using ArrayBuffer = TypedArray<JS::ArrayBuffer>;
 //       things that understand TypedArray, as with ToJSValue.
 template <typename TypedArrayType>
 class MOZ_STACK_CLASS TypedArrayCreator {
-  typedef nsTArray<typename TypedArrayType::element_type> ArrayType;
+  using ValuesType = typename TypedArrayType::element_type;
+  using ArrayType = nsTArray<ValuesType>;
 
  public:
-  explicit TypedArrayCreator(const ArrayType& aArray) : mArray(aArray) {}
+  explicit TypedArrayCreator(const ArrayType& aArray) : mValues(aArray) {}
+  explicit TypedArrayCreator(const nsCString& aString) : mValues(aString) {}
 
   // NOTE: this leaves any exceptions on the JSContext, and the caller is
   //       required to deal with them.
   JSObject* Create(JSContext* aCx) const {
-    auto array = TypedArrayType::CreateCommon(aCx, mArray.Length());
+    auto array = TypedArrayType::CreateCommon(aCx, mValues.Length());
     if (array) {
-      TypedArrayType::CopyFrom(aCx, mArray, array);
+      TypedArrayType::CopyFrom(aCx, mValues, array);
     }
     return array.asObject();
   }
 
  private:
-  const ArrayType& mArray;
+  Span<const ValuesType> mValues;
 };
 
 namespace binding_detail {
