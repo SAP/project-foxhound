@@ -29,6 +29,11 @@ jobs:
           large-packages: true
           docker-images: true
           swap-storage: true
+      
+      - name: Set Swap Space
+        uses: pierotofy/set-swap-space@master
+        with:
+          swap-size-gb: 10
 
       - name: Install Dependencies
         run: |
