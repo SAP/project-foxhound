@@ -31,7 +31,7 @@ jobs:
           swap-storage: true
       
       - name: Set Swap Space
-        uses: pierotofy/set-swap-space@master
+        uses: pierotofy/set-swap-space@v1.0
         with:
           swap-size-gb: 10
 
