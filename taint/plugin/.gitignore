@@ -1,0 +1,10 @@
+node_modules
+try.js
+old-extension
+dist
+extension
+dev
+.vscode
+
+xpi/*.xpi
+!xpi/.gitkeep 

@@ -1,0 +1,45 @@
+{
+  "manifest_version": 2,
+  "name": "taint-notifier 2",
+  "version": "2.1.1",
+  "description": "Tracking data flows with Tainfox",
+  "author": "Thomas Barber, Souphiane Bensalim",
+  "browser_action": {
+    "default_icon": "img/notifier.png",
+    "default_title": "Taint Notifier Panel"
+  },
+  "content_security_policy": "default",
+  "devtools_page": "devtools/devtools.html",
+  "web_accessible_resources": ["panel.html"],
+  "background": {
+    "scripts": ["lib/js/browser-polyfill.js", "background.js"]
+  },
+  "permissions": [
+    "<all_urls>",
+    "webRequest",
+    "notifications",
+    "tabs",
+    "activeTab",
+    "storage",
+    "unlimitedStorage",
+    "devtools"
+  ],
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "taint-notifier@2.1.1",
+      "strict_min_version": "67.0"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": [
+        "lib/js/browser-polyfill.js",
+        "content_scripts/copy.js",
+        "content_scripts/taint.js"
+      ],
+      "all_frames": true,
+      "run_at": "document_start"
+    }
+  ]
+}
