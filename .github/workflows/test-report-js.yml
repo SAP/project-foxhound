@@ -1,4 +1,4 @@
-name: 'Test Report'
+name: 'Test Report JS Tests'
 on:
   workflow_run:
     workflows: ['JavaScript']                     # runs after CI workflow
@@ -11,7 +11,7 @@ jobs:
       contents: read
       checks: write
     steps:
-    - uses: dorny/test-reporter@v1
+    - uses: dorny/test-reporter@v2
       with:
         artifact: test-results            # artifact name
         name: JavaScript Tests            # Name of the check run which will be created
