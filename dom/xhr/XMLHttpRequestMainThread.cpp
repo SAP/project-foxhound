@@ -1609,12 +1609,6 @@ void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   Telemetry::Accumulate(Telemetry::XMLHTTPREQUEST_ASYNC_OR_SYNC,
                         aAsync ? 0 : 1);
 
-  // Foxhound: XMLHttpRequest.open sink
-  nsAutoString url = NS_ConvertUTF8toUTF16(aUrl);
-  ReportTaintSink(url, "XMLHttpRequest.open(url)");
-  ReportTaintSink(aUsername, "XMLHttpRequest.open(username)", url);
-  ReportTaintSink(aPassword, "XMLHttpRequest.open(password)", url);
-
   // Step 1
   nsCOMPtr<Document> responsibleDocument = GetDocumentIfCurrent();
   if (!responsibleDocument) {
@@ -1689,6 +1683,13 @@ void XMLHttpRequestMainThread::Open(const nsACString& aMethod,
   // Step 7
   // This is already handled by the other Open() method, which passes
   // username and password in as NullStrings.
+
+  // Foxhound: XMLHttpRequest.open sink
+  nsCString parsedUrlStr = parsedURL->GetSpecOrDefault();
+  nsAutoString aParsedUrlStr = NS_ConvertUTF8toUTF16(parsedUrlStr);
+  ReportTaintSink(parsedUrlStr, "XMLHttpRequest.open(url)");
+  ReportTaintSink(aUsername, "XMLHttpRequest.open(username)", aParsedUrlStr);
+  ReportTaintSink(aPassword, "XMLHttpRequest.open(password)", aParsedUrlStr);
 
   // Step 8
   nsAutoCString host;
@@ -3467,13 +3468,13 @@ void XMLHttpRequestMainThread::SetRequestHeader(const nsACString& aName,
     return;
   }
 
-  nsAutoString aUrl;
+  nsString url;
   if (mRequestURL) {
-    nsCString url = mRequestURL->GetSpecOrDefault();
-    aUrl = NS_ConvertUTF8toUTF16(url);
+    nsCString cUrl = mRequestURL->GetSpecOrDefault();
+    url = NS_ConvertUTF8toUTF16(cUrl);
   }
-  ReportTaintSink(NS_ConvertUTF8toUTF16(value), "XMLHttpRequest.setRequestHeader(value)", aUrl);
-  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)", aUrl);
+  ReportTaintSink(NS_ConvertUTF8toUTF16(value), "XMLHttpRequest.setRequestHeader(value)", url);
+  ReportTaintSink(NS_ConvertUTF8toUTF16(aName), "XMLHttpRequest.setRequestHeader(name)", url);
 
   // Step 5
   bool isPrivilegedCaller = IsSystemXHR();

@@ -1465,10 +1465,12 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
   nsCOMPtr<nsIInputStream> bodyStream;
   DerivedClass()->GetBody(getter_AddRefs(bodyStream));
   if (!bodyStream) {
+    nsCString initialURL;
+    DerivedClass()->GetInitialURL(initialURL);
     RefPtr<EmptyBody> emptyBody =
         EmptyBody::Create(DerivedClass()->GetParentObject(),
                           DerivedClass()->GetPrincipalInfo().get(), signalImpl,
-                          mimeType, mixedCaseMimeType, aRv);
+                          mimeType, mixedCaseMimeType, initialURL, aRv);
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
@@ -1500,10 +1502,13 @@ already_AddRefed<Promise> FetchBody<Derived>::ConsumeBody(
     blobStorageType = MutableBlobStorage::eCouldBeInTemporaryFile;
   }
 
+  nsCString initialURL;
+  GetInitialURL(initialURL);
+
   RefPtr<Promise> promise = BodyConsumer::Create(
       global, mMainThreadEventTarget, bodyStream, signalImpl, aType,
       BodyBlobURISpec(), BodyLocalPath(), mimeType, mixedCaseMimeType,
-      blobStorageType, aRv);
+      blobStorageType, initialURL, aRv);
   if (NS_WARN_IF(aRv.Failed())) {
     return nullptr;
   }
@@ -1757,6 +1762,17 @@ template void FetchBody<Request>::RunAbortAlgorithm();
 
 template void FetchBody<Response>::RunAbortAlgorithm();
 
+template <class Derived>
+void FetchBody<Derived>::GetInitialURL(nsACString& aInitialURL) {
+  DerivedClass()->GetInitialURL(aInitialURL);
+}
+
+template void FetchBody<Request>::GetInitialURL(nsACString& aInitialURL);
+
+template void FetchBody<Response>::GetInitialURL(nsACString& aInitialURL);
+
+template void FetchBody<EmptyBody>::GetInitialURL(nsACString& aInitialURL);
+
 NS_IMPL_ADDREF_INHERITED(EmptyBody, FetchBody<EmptyBody>)
 NS_IMPL_RELEASE_INHERITED(EmptyBody, FetchBody<EmptyBody>)
 
@@ -1786,11 +1802,13 @@ EmptyBody::EmptyBody(nsIGlobalObject* aGlobal,
                      AbortSignalImpl* aAbortSignalImpl,
                      const nsACString& aMimeType,
                      const nsACString& aMixedCaseMimeType,
+                     const nsACString& aInitialURL,
                      already_AddRefed<nsIInputStream> aBodyStream)
     : FetchBody<EmptyBody>(aGlobal),
       mAbortSignalImpl(aAbortSignalImpl),
       mMimeType(aMimeType),
       mMixedCaseMimeType(aMixedCaseMimeType),
+      mInitialURL(aInitialURL),
       mBodyStream(std::move(aBodyStream)) {
   if (aPrincipalInfo) {
     mPrincipalInfo = MakeUnique<mozilla::ipc::PrincipalInfo>(*aPrincipalInfo);
@@ -1803,7 +1821,8 @@ EmptyBody::~EmptyBody() = default;
 already_AddRefed<EmptyBody> EmptyBody::Create(
     nsIGlobalObject* aGlobal, mozilla::ipc::PrincipalInfo* aPrincipalInfo,
     AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
-    const nsACString& aMixedCaseMimeType, ErrorResult& aRv) {
+    const nsACString& aMixedCaseMimeType, const nsACString& aInitialURL,
+    ErrorResult& aRv) {
   nsCOMPtr<nsIInputStream> bodyStream;
   aRv = NS_NewCStringInputStream(getter_AddRefs(bodyStream), ""_ns);
   if (NS_WARN_IF(aRv.Failed())) {
@@ -1812,7 +1831,7 @@ already_AddRefed<EmptyBody> EmptyBody::Create(
 
   RefPtr<EmptyBody> emptyBody =
       new EmptyBody(aGlobal, aPrincipalInfo, aAbortSignalImpl, aMimeType,
-                    aMixedCaseMimeType, bodyStream.forget());
+                    aMixedCaseMimeType, aInitialURL, bodyStream.forget());
   return emptyBody.forget();
 }
 

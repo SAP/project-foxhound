@@ -127,6 +127,18 @@ class Request final : public FetchBody<Request>, public nsWrapperCache {
   AbortSignalImpl* GetSignalImpl() const override;
   AbortSignalImpl* GetSignalImplToConsumeBody() const final;
 
+  using FetchBody::GetInitialURL;
+
+  void GetInitialURL(nsACString& aInitialURL) {
+    nsTArray<nsCString> aURLList;
+    mRequest->GetURLListWithoutFragment(aURLList);
+    if (aURLList.IsEmpty()) {
+      aInitialURL = EmptyCString();
+      return;
+    }
+    aInitialURL = aURLList[0];
+  }
+
  private:
   ~Request();
 

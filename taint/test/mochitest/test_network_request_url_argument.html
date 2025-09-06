@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Check request URL argument of network taint operations (see
+      https://github.com/SAP/project-foxhound/issues/320)
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      function checkRequestUrlArgument(value, requestUrl, opName) {
+        check_tainted(value);
+        const op = value.taint[0].flow.slice(-1)[0];
+        SimpleTest.is(op.operation, opName);
+        SimpleTest.is(
+          op.arguments[0],
+          requestUrl,
+          `Unexpected value for request URL argument of taint operation: ${opName}`
+        );
+      }
+
+      add_task(async function test_XMLHttpRequest_response() {
+        const requestUrl = `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`;
+        const value = await new Promise((resolve) => {
+          const xhr = new XMLHttpRequest();
+          xhr.addEventListener("readystatechange", (e) => {
+            if (xhr.readyState === XMLHttpRequest.DONE && xhr.status === 200) {
+              resolve(xhr.responseText);
+            }
+          });
+          xhr.open("GET", requestUrl);
+          xhr.send();
+        });
+        checkRequestUrlArgument(value, requestUrl, "XMLHttpRequest.response");
+      });
+
+      add_task(async function test_fetch_text() {
+        const requestUrl = `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?text`;
+        const response = await fetch(requestUrl);
+        const value = await response.text();
+        checkRequestUrlArgument(value, requestUrl, "fetch.text()");
+      });
+
+      add_task(async function test_fetch_json() {
+        const requestUrl = `http://mochi.test:8888/tests/taint/test/mochitest/fetch_server.sjs?json`;
+        const response = await fetch(requestUrl);
+        const obj = await response.json();
+        const value = obj.txt;
+        checkRequestUrlArgument(value, requestUrl, "fetch.json()");
+      });
+
+      add_task(async function test_WebSocket_MessageEvent_data() {
+        const requestUrl =
+          "ws://mochi.test:8888/tests/taint/test/mochitest/file_websocket";
+        const ws = new WebSocket(requestUrl);
+        const messageEvent = await new Promise((resolve) => {
+          ws.addEventListener("message", (e) => resolve(e));
+        });
+        const value = messageEvent.data;
+        checkRequestUrlArgument(
+          value,
+          requestUrl,
+          "WebSocket.MessageEvent.data"
+        );
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>

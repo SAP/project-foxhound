@@ -248,7 +248,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     return TaintLocation();
   }
 
-  const char* filename = NULL;
+  const char* filename = nullptr;
   uint32_t line = 0;
   uint32_t pos = 0;
   uint32_t scriptStartline = 0;
@@ -288,7 +288,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     }
   }
 
-  if (filename == NULL) {
+  if (filename == nullptr) {
     return TaintLocation();
   }
 

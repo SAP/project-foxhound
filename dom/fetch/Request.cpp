@@ -373,6 +373,11 @@ SafeRefPtr<Request> Request::Constructor(
     request->SetMethod(outMethod);
   }
 
+  // Foxhound:
+  nsCString cUrl;
+  request->GetURL(cUrl);
+  nsString url = NS_ConvertUTF8toUTF16(cUrl);
+
   RefPtr<InternalHeaders> requestHeaders = request->Headers();
 
   RefPtr<InternalHeaders> headers;
@@ -387,8 +392,8 @@ SafeRefPtr<Request> Request::Constructor(
     nsTArray<InternalHeaders::Entry> headerEntries;
     headers->GetEntries(headerEntries);
     for(InternalHeaders::Entry entry : headerEntries) {
-      ReportTaintSink(entry.mName, "fetch.header(key)");
-      ReportTaintSink(entry.mValue, "fetch.header(value)");
+      ReportTaintSink(entry.mName, "fetch.header(key)", url);
+      ReportTaintSink(entry.mValue, "fetch.header(value)", url);
     }
 
   } else {
@@ -440,12 +445,9 @@ SafeRefPtr<Request> Request::Constructor(
       nsCOMPtr<nsIInputStream> stream;
       nsAutoCString contentTypeWithCharset;
       uint64_t contentLength = 0;
+      // Foxhound:
       if (bodyInit.IsUSVString()) {
-        nsAutoCString url;
-        request->GetURL(url);
-        nsAutoString aUrl;
-        CopyUTF8toUTF16(url, aUrl);
-        ReportTaintSink(bodyInit.GetAsUSVString(), "fetch.body", aUrl);
+        ReportTaintSink(bodyInit.GetAsUSVString(), "fetch.body", url);
       }
       aRv = ExtractByteStreamFromBody(bodyInit, getter_AddRefs(stream),
                                       contentTypeWithCharset, contentLength);

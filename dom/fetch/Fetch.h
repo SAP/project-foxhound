@@ -174,6 +174,7 @@ class FetchBody : public FetchBodyBase, public AbortFollower {
   }
 
   already_AddRefed<ReadableStream> GetBody(JSContext* aCx, ErrorResult& aRv);
+
   void GetMimeType(nsACString& aMimeType, nsACString& aMixedCaseMimeType);
 
   const nsACString& BodyBlobURISpec() const;
@@ -227,6 +228,8 @@ class FetchBody : public FetchBodyBase, public AbortFollower {
                                         BodyConsumer::ConsumeType aType,
                                         ErrorResult& aRv);
 
+  void GetInitialURL(nsACString& aInitialURL);
+
  protected:
   nsCOMPtr<nsIGlobalObject> mOwner;
 
@@ -267,7 +270,8 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   static already_AddRefed<EmptyBody> Create(
       nsIGlobalObject* aGlobal, mozilla::ipc::PrincipalInfo* aPrincipalInfo,
       AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
-      const nsACString& aMixedCaseMimeType, ErrorResult& aRv);
+      const nsACString& aMixedCaseMimeType, const nsACString& aInitialURL,
+      ErrorResult& aRv);
 
   nsIGlobalObject* GetParentObject() const { return mOwner; }
 
@@ -293,11 +297,15 @@ class EmptyBody final : public FetchBody<EmptyBody> {
 
   const nsAString& BodyLocalPath() const { return EmptyString(); }
 
+  using FetchBody::GetInitialURL;
+
+  void GetInitialURL(nsACString& aInitialURL) { aInitialURL = mInitialURL; }
+
  private:
   EmptyBody(nsIGlobalObject* aGlobal,
             mozilla::ipc::PrincipalInfo* aPrincipalInfo,
             AbortSignalImpl* aAbortSignalImpl, const nsACString& aMimeType,
-            const nsACString& aMixedCaseMimeType,
+            const nsACString& aMixedCaseMimeType, const nsACString& aInitialURL,
             already_AddRefed<nsIInputStream> aBodyStream);
 
   ~EmptyBody();
@@ -306,8 +314,8 @@ class EmptyBody final : public FetchBody<EmptyBody> {
   RefPtr<AbortSignalImpl> mAbortSignalImpl;
   nsCString mMimeType;
   nsCString mMixedCaseMimeType;
+  nsCString mInitialURL;
   nsCOMPtr<nsIInputStream> mBodyStream;
-
 };
 }  // namespace dom
 }  // namespace mozilla

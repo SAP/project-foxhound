@@ -295,7 +295,7 @@ already_AddRefed<Promise> Blob::ConsumeBody(
   return BodyConsumer::Create(mGlobal, mainThreadEventTarget, inputStream,
                               nullptr, aConsumeType, VoidCString(),
                               VoidString(), VoidCString(), VoidCString(),
-                              MutableBlobStorage::eOnlyInMemory, aRv);
+                              MutableBlobStorage::eOnlyInMemory, VoidCString(), aRv);
 }
 
 // https://w3c.github.io/FileAPI/#stream-method-algo
