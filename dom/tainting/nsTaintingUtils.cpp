@@ -613,13 +613,12 @@ nsresult ReportTaintSink(JSContext* cx, JS::Handle<JS::Value> aValue, const char
     return NS_OK;
   }
 
-  JS::RootedString jsArgStr(cx, JS_NewUCStringCopyN(cx, arg.BeginReading(), arg.Length()));
-  if (!jsArgStr) {
-      return NS_ERROR_FAILURE;
+  JS::RootedValue argval(cx);
+  if (!mozilla::dom::ToJSValue(cx, arg, &argval)) {
+    return nsresult::NS_ERROR_FAILURE;
   }
-  JS::RootedValue jsArgVal(cx, JS::StringValue(jsArgStr));
 
-  JS_ReportTaintSink(cx, aValue, name, jsArgVal);
+  JS_ReportTaintSink(cx, aValue, name, argval);
 
   return NS_OK;
 }
