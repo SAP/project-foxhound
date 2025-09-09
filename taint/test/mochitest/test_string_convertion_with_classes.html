@@ -30,12 +30,18 @@
       }
 
       let string_content = "hello";
+      let expected_strings = [
+        "W3sia2V5IjoiaXRlbTEiLCJkYXRhIjpbImhlbGxvIl19XQ==",
+        "[{\"key\":\"item1\",\"data\":[\"hello\"]}]",
+        "W3sia2V5IjoiaXRlbTEiLCJkYXRhIjpbImhlbGxvIl19LHsia2V5IjoiaXRlbTIiLCJkYXRhIjpbImhlbGxvIl19XQ==",
+        "[{\"key\":\"item1\",\"data\":[\"hello\"]},{\"key\":\"item2\",\"data\":[\"hello\"]}]"
+      ];
       let number_of_tainted_flows = 4;
       let i = 0;
 
       SimpleTest.waitForExplicitFinish();
       addEventListener("__taintreport", (report) => {
-          is(report.detail.str, string_content, "Check sink string content");
+          is(report.detail.str, expected_strings[i], "Check sink string content");
           i += 1;
           if (i >= number_of_tainted_flows) {
             SimpleTest.finish();
