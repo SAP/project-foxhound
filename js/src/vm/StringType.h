@@ -1277,7 +1277,7 @@ class JSLinearString : public JSString {
   mozilla::StringBuffer* stringBuffer() const {
     MOZ_ASSERT(hasStringBuffer());
     auto* chars = nonInlineCharsRaw();
-    mozilla::StringBuffer* buf = mozilla::StringBuffer::FromData(const_cast<void*>(chars), this->Taint());
+    mozilla::StringBuffer* buf = mozilla::StringBuffer::FromData(const_cast<void*>(chars));
     return buf;
   }
 
