@@ -178,4 +178,4 @@ Additionally, if you get a paper accepted using project Foxhound, we are happy t
 
 We want to thank everybody who contributed to the development of Foxhound!
 
-In no particular order: [tmbrbr](https://github.com/tmbrbr), [leeN](https://github.com/leeN), [saelo](https://github.com/saelo), [soumboussaha](https://github.com/soumboussaha) [LukasHock](https://github.com/LukasHock), [0drai](https://github.com/0drai), [alexbara2000](https://github.com/alexbara2000), [moorts](https://github.com/moorts), [unqrf](https://github.com/unqrf), ..
+In no particular order: [tmbrbr](https://github.com/tmbrbr), [leeN](https://github.com/leeN), [saelo](https://github.com/saelo), [soumboussaha](https://github.com/soumboussaha) [LukasHock](https://github.com/LukasHock), [0drai](https://github.com/0drai), [alexbara2000](https://github.com/alexbara2000), [moorts](https://github.com/moorts), [unqrf](https://github.com/unqrf), [eleumasc](https://github.com/eleumasc), ...
