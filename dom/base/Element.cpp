@@ -4366,15 +4366,13 @@ void Element::SetInnerHTML(const TrustedHTMLOrNullIsEmptyString& aInnerHTML,
     return;
   }
 
-  // Foxhound: innerHTML sink - don't set for template elements
+  // Foxhound: innerHTML sink - don't trigger this for following:
+  // - template elements
+  // - script elements (a specific report is done in HTMLScriptElement.cpp)
   // We want to do the check even if the trusted type check fails
-  if (!IsTemplateElement()) {
+  if (!IsTemplateElement() && !IsHTMLElement(nsGkAtoms::script)) {
     ReportTaintSink(*compliantString, "innerHTML", this);
   }
-
-  // Copy in order to mark the taint operation
-  nsAutoString strCpy(*compliantString);
-  MarkTaintOperation(strCpy, "innerHTML", this);
 
   SetInnerHTMLTrusted(*compliantString, aSubjectPrincipal, aError);
 }

@@ -1207,7 +1207,7 @@ class nsTSubstring : public mozilla::detail::nsTStringRepr<T> {
    */
   mozilla::StringBuffer* GetStringBuffer() const {
     if (this->mDataFlags & DataFlags::REFCOUNTED) {
-      return mozilla::StringBuffer::FromData(this->mData, this->mTaint);
+      return mozilla::StringBuffer::FromData(this->mData);
     }
     return nullptr;
   }

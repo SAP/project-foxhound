@@ -221,9 +221,8 @@ static already_AddRefed<StringBuffer> Create(const char* aData,
    * pointer.  The data pointer must have been returned previously by a
    * call to the StringBuffer::Data method.
    */
-  static StringBuffer* FromData(void* aData, const StringTaint& aTaint = EmptyTaint) {
+  static StringBuffer* FromData(void* aData) {
     StringBuffer* buf = reinterpret_cast<StringBuffer*>(aData) - 1;
-    buf->setTaint(aTaint);
     return buf;
   }
 
