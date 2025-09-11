@@ -1337,9 +1337,6 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
   nsCOMPtr<nsIPrincipal> principal;
   nsCOMPtr<nsIPrincipal> partitionedPrincipal;
 
-  // Foxhound: WebSocket constructor sink
-  ReportTaintSink(aUrl, "WebSocket");
-
   nsCOMPtr<nsIGlobalObject> global = do_QueryInterface(aGlobal.GetAsSupports());
   if (NS_WARN_IF(!global)) {
     aRv.Throw(NS_ERROR_FAILURE);
@@ -1409,6 +1406,11 @@ already_AddRefed<WebSocket> WebSocket::ConstructorCommon(
     if (NS_WARN_IF(aRv.Failed())) {
       return nullptr;
     }
+
+    // Foxhound: WebSocket constructor sink
+    nsString url;
+    webSocket->GetUrl(url);
+    ReportTaintSink(aUrl, "WebSocket", url);
 
     nsCOMPtr<Document> doc = webSocket->GetDocumentIfCurrent();
 
@@ -2081,7 +2083,9 @@ nsresult WebSocket::CreateAndDispatchMessageEvent(const nsACString& aData,
     // Foxhound: Propagate Taint
     JS_SetStringTaint(cx, jsString, aData.Taint());
     // Foxhound: WebSocket.MessageEvent.data
-    MarkTaintSource(cx, jsString, "WebSocket.MessageEvent.data");
+    nsString url;
+    GetUrl(url);
+    MarkTaintSource(cx, jsString, "WebSocket.MessageEvent.data", url);
 
     jsData.setString(jsString);
   }

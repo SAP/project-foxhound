@@ -280,7 +280,7 @@ NS_IMPL_ISUPPORTS(ConsumeBodyDoneObserver, nsIStreamLoaderObserver)
     const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
     const nsACString& aMixedCaseMimeType,
     MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
-    ErrorResult& aRv) {
+    const nsACString& aInitialURL, ErrorResult& aRv) {
   MOZ_ASSERT(aBodyStream);
   MOZ_ASSERT(aMainThreadEventTarget);
 
@@ -292,7 +292,7 @@ NS_IMPL_ISUPPORTS(ConsumeBodyDoneObserver, nsIStreamLoaderObserver)
   RefPtr<BodyConsumer> consumer =
       new BodyConsumer(aMainThreadEventTarget, aGlobal, aBodyStream, promise,
                        aType, aBodyBlobURISpec, aBodyLocalPath, aBodyMimeType,
-                       aMixedCaseMimeType, aBlobStorageType);
+                       aMixedCaseMimeType, aBlobStorageType, aInitialURL);
 
   RefPtr<ThreadSafeWorkerRef> workerRef;
 
@@ -350,7 +350,8 @@ BodyConsumer::BodyConsumer(
     Promise* aPromise, ConsumeType aType, const nsACString& aBodyBlobURISpec,
     const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
     const nsACString& aMixedCaseMimeType,
-    MutableBlobStorage::MutableBlobStorageType aBlobStorageType)
+    MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
+    const nsACString& aInitialURL)
     : mTargetThread(NS_GetCurrentThread()),
       mMainThreadEventTarget(aMainThreadEventTarget),
       mBodyStream(aBodyStream),
@@ -362,6 +363,7 @@ BodyConsumer::BodyConsumer(
       mGlobal(aGlobalObject),
       mConsumeType(aType),
       mConsumePromise(aPromise),
+      mInitialURL(aInitialURL),
       mBodyConsumed(false),
       mShuttingDown(false) {
   MOZ_ASSERT(aMainThreadEventTarget);
@@ -719,10 +721,12 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
       if (NS_SUCCEEDED(
               BodyUtil::ConsumeText(aResultLength, resultPtr.get(), decoded))) {
         if (mConsumeType == ConsumeType::Text) {
-          MarkTaintSource(decoded, "fetch.text()");
+          MarkTaintSource(decoded, "fetch.text()",
+                          NS_ConvertUTF8toUTF16(mInitialURL));
           localPromise->MaybeResolve(decoded);
         } else {
-          MarkTaintSource(decoded, "fetch.json()");
+          MarkTaintSource(decoded, "fetch.json()",
+                          NS_ConvertUTF8toUTF16(mInitialURL));
           JS::Rooted<JS::Value> json(cx);
           BodyUtil::ConsumeJson(cx, &json, decoded, error);
           if (!error.Failed()) {

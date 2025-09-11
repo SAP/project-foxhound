@@ -5859,7 +5859,7 @@ void nsGlobalWindowOuter::PostMessageMozOuter(JSContext* aCx,
       scriptLocation, callerAgentClusterId);
 
   // Foxhound: window.postMessage sink
-  ReportTaintSink(aCx, aMessage, "window.postMessage");
+  ReportTaintSink(aCx, aMessage, "window.postMessage", aTargetOrigin);
 
   JS::CloneDataPolicy clonePolicy;
 

@@ -138,6 +138,18 @@ class Response final : public FetchBody<Response>, public nsWrapperCache {
     return mSignalImpl;
   }
 
+  using FetchBody::GetInitialURL;
+
+  void GetInitialURL(nsACString& aInitialURL) {
+    nsTArray<nsCString> aURLList;
+    mInternalResponse->GetURLList(aURLList);
+    if (aURLList.IsEmpty()) {
+      aInitialURL = EmptyCString();
+      return;
+    }
+    aInitialURL = aURLList[0];
+  }
+
  private:
   static already_AddRefed<Response> CreateAndInitializeAResponse(
       const GlobalObject& aGlobal,
