@@ -658,7 +658,7 @@ static bool str_unescape(JSContext* cx, unsigned argc, Value* vp) {
   }
 
   // Save operation to avoid GC issues
-  StringTaint newtaint;
+  SafeStringTaint newtaint;
 
   // Steps 2, 4-5.
   bool unescapeFailed = false;
