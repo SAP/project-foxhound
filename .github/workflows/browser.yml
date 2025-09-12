@@ -92,8 +92,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: foxhound-ubuntu
-          path: obj-tf-release/dist/foxhound-*.tar.bz2
+          path: obj-tf-release/dist/foxhound-*.tar.xz
           compression-level: 0
+          if-no-files-found: error
 
 
   # Test complete build on Windows
