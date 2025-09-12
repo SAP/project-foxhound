@@ -114,7 +114,7 @@ class TaintLocation
 class TaintOperation
 {
   public:
-
+    TaintOperation() = default;
     TaintOperation(const char* name, std::initializer_list<std::u16string> args);
     TaintOperation(const char* name, bool is_native, std::initializer_list<std::u16string> args);
 
