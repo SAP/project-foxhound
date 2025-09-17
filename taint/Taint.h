@@ -863,26 +863,24 @@ class TaintList {
 // #define DEBUG_E2E_TAINTING (TAINT_DEBUG)
 
 /*
- * Deserialize taint information from its string representation. Required for
- * incoming taint information in an end2end tainting scenario.
+ * Deserialize a StringTaint from a valid JSON-like string.
+ * Required for incoming taint information in an end-to-end tainting scenario.
  */
-StringTaint ParseTaint(const std::string& str);
+StringTaint ParseStringTaintForE2E(const std::string& input);
 
 /*
- * This Piece of code is added to add the ability to deserialize a Taintstring
- * object and convert it to a json like Taint representation as a string :
+ * Serialize a StringTaint object into a JSON-like string:
  * [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
+ * Required for outgoing taint information in an end-to-end tainting scenario.
  */
-
-std::string serializeStringtaint(const StringTaint& taintstr,
-                                 bool addSinks = false);
+std::string SerializeStringTaintForE2E(const StringTaint& taint,
+                                       bool addSinks = false);
 
 /*
  * Print a string representation of the given StringTaint instance to stdout.
  */
 
 #ifdef TAINT_DEBUG
-
 void PrintTaint(const StringTaint& taint);
 
 void DumpTaint(const StringTaint& taint,
@@ -898,6 +896,7 @@ void TaintDebug(std::string_view message,
                     std::experimental::source_location::current());
 #else
 void DumpTaint(const StringTaint& taint);
+
 void PrintTaint(const StringTaint& taint);
 #endif
 

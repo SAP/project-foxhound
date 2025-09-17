@@ -414,15 +414,15 @@ class alignas(alignof(uint32_t)) ParserAtom {
   uint32_t flags_ = 0;
 
   // Reserve some memory for Taint information
-  uint32_t taint_length_ = 0;
+  uint32_t taintDataSize_ = 0;
 
   // End of fields.
 
-  ParserAtom(uint32_t length, HashNumber hash, bool hasTwoByteChars, uint32_t taint)
+  ParserAtom(uint32_t length, HashNumber hash, bool hasTwoByteChars, uint32_t taintDataSize)
       : hash_(hash),
         length_(length),
         flags_(hasTwoByteChars ? HasTwoByteCharsFlag : 0),
-        taint_length_(taint) {}
+        taintDataSize_(taintDataSize) {}
 
  public:
   // The constexpr constructor is used by XDR
