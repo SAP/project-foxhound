@@ -2515,7 +2515,7 @@ nsresult nsHttpTransaction::HandleContentStart() {
           puts("!!!!! Received Taint header !!!!!");
         #endif
         std::string taint(serializedTaint.BeginReading());
-        taintableInputStream->SetTaint(ParseTaint(taint));
+        taintableInputStream->SetTaint(ParseStringTaintForE2E(taint));
       }
     } else {
       #if (DEBUG_E2E_TAINTING)

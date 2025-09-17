@@ -701,8 +701,8 @@ void HttpChannelChild::OnTransportAndData(const nsresult& aChannelStatus,
   // support only reading part of the data, allowing later calls to read the
   // rest.
   nsCOMPtr<nsIInputStream> stringStream;
-  std::string taintString(aTaint.BeginReading());
-  SafeStringTaint taint(ParseTaint(taintString));
+  std::string taintData(aTaint.BeginReading());
+  SafeStringTaint taint(ParseStringTaintForE2E(taintData));
   nsresult rv =
       NS_NewByteInputStream(getter_AddRefs(stringStream),
                             Span(aData).To(aCount), NS_ASSIGNMENT_DEPEND, taint);
