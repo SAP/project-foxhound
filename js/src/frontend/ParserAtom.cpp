@@ -110,10 +110,10 @@ template <typename CharT, typename SeqCharT>
     uint32_t length, HashNumber hash, const StringTaint& taint) {
   constexpr size_t HeaderSize = sizeof(ParserAtom);
 
-  std::string taintString = serializeStringtaint(taint);
-  uint32_t taintSize = taint.hasTaint() ? taintString.size() : 0;
+  std::string taintData = SerializeStringTaint(taint);
+  uint32_t taintDataSize = taint.hasTaint() ? taintData.size() : 0;
 
-  void* raw = alloc.alloc(HeaderSize + (sizeof(CharT) * length) + taintSize);
+  void* raw = alloc.alloc(HeaderSize + (sizeof(CharT) * length) + taintDataSize);
   if (!raw) {
     js::ReportOutOfMemory(fc);
     return nullptr;
@@ -122,13 +122,13 @@ template <typename CharT, typename SeqCharT>
   constexpr bool hasTwoByteChars = (sizeof(CharT) == 2);
   static_assert(sizeof(CharT) == 1 || sizeof(CharT) == 2,
                 "CharT should be 1 or 2 byte type");
-  ParserAtom* entry = new (raw) ParserAtom(length, hash, hasTwoByteChars, taintSize);
+  ParserAtom* entry = new (raw) ParserAtom(length, hash, hasTwoByteChars, taintDataSize);
   CharT* entryBuf = entry->chars<CharT>();
   drainChar16Seq(entryBuf, seq, length);
 
   if (taint.hasTaint()) {
     // Copy the taint as well
-    memcpy(entry->taint(), taintString.c_str(), taintSize);
+    memcpy(entry->taint(), taintData.c_str(), taintDataSize);
   }
 
   return entry;
@@ -140,7 +140,7 @@ bool ParserAtom::isInstantiatedAsJSAtom() const {
   }
 
   // Never use JSAtom for tainted strings
-  if (taint_length_ > 0) {
+  if (taintDataSize_ > 0) {
     return false;
   }
 
@@ -165,9 +165,9 @@ JSString* ParserAtom::instantiateString(JSContext* cx, FrontendContext* fc,
     str = NewStringCopyNDontDeflateNonStaticValidLength<CanGC>(
         cx, twoByteChars(), length(), gc::Heap::Tenured);
   }
-  if (taint_length_ > 0) {
-    std::string taintString(taint(), taint_length_);
-    str->setTaint(cx, ParseTaint(taintString));
+  if (taintDataSize_ > 0) {
+    std::string taintData(taint(), taintDataSize_);
+    str->setTaint(cx, ParseStringTaint(taintData));
   }
   if (!str) {
     return nullptr;
@@ -192,8 +192,8 @@ JSAtom* ParserAtom::instantiateAtom(JSContext* cx, FrontendContext* fc,
     atom =
         AtomizeCharsNonStaticValidLength(cx, hash(), twoByteChars(), length());
   }
-  if (taint_length_ > 0) {
-    std::string taintString(taint(), taint_length_);
+  if (taintDataSize_ > 0) {
+    std::string taintData(taint(), taintDataSize_);
   }
   if (!atom) {
     return nullptr;
