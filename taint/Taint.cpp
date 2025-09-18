@@ -75,105 +75,89 @@ TaintOperation::TaintOperation(const char* name, TaintLocation location,
                                std::initializer_list<std::u16string> args)
     : name_(name),
       arguments_(args),
-      source_(0),
-      is_native_(false),
+      source_(false),
+      native_(false),
       location_(std::move(location)) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native,
+TaintOperation::TaintOperation(const char* name, bool native,
                                TaintLocation location,
                                std::initializer_list<std::u16string> args)
     : name_(name),
       arguments_(args),
-      source_(0),
-      is_native_(is_native),
+      source_(false),
+      native_(native),
       location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location,
                                std::vector<std::u16string> args)
     : name_(name),
       arguments_(std::move(args)),
-      source_(0),
-      is_native_(false),
+      source_(false),
+      native_(false),
       location_(std::move(location)) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native,
+TaintOperation::TaintOperation(const char* name, bool native,
                                TaintLocation location,
                                std::vector<std::u16string> args)
     : name_(name),
       arguments_(std::move(args)),
-      source_(0),
-      is_native_(is_native),
+      source_(false),
+      native_(native),
       location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(const char* name,
                                std::initializer_list<std::u16string> args)
-    : name_(name),
-      arguments_(args),
-      source_(0),
-      is_native_(false),
-      location_() {}
+    : name_(name), arguments_(args), source_(false), native_(false) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native,
+TaintOperation::TaintOperation(const char* name, bool native,
                                std::initializer_list<std::u16string> args)
-    : name_(name),
-      arguments_(args),
-      source_(0),
-      is_native_(is_native),
-      location_() {}
+    : name_(name), arguments_(args), source_(false), native_(native) {}
 
 TaintOperation::TaintOperation(const char* name,
                                std::vector<std::u16string> args)
     : name_(name),
       arguments_(std::move(args)),
-      source_(0),
-      is_native_(false),
-      location_() {}
+      source_(false),
+      native_(false) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native,
+TaintOperation::TaintOperation(const char* name, bool native,
                                std::vector<std::u16string> args)
     : name_(name),
       arguments_(std::move(args)),
-      source_(0),
-      is_native_(is_native),
-      location_() {}
+      source_(false),
+      native_(native) {}
 
 TaintOperation::TaintOperation(const char* name)
-    : name_(name), arguments_(), source_(0), is_native_(false), location_() {}
+    : name_(name), source_(false), native_(false) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native)
-    : name_(name),
-      arguments_(),
-      source_(0),
-      is_native_(is_native),
-      location_() {}
+TaintOperation::TaintOperation(const char* name, bool native)
+    : name_(name), source_(false), native_(native) {}
 
 TaintOperation::TaintOperation(const char* name, TaintLocation location)
     : name_(name),
-      arguments_(),
-      source_(0),
-      is_native_(false),
+      source_(false),
+      native_(false),
       location_(std::move(location)) {}
 
-TaintOperation::TaintOperation(const char* name, bool is_native,
+TaintOperation::TaintOperation(const char* name, bool native,
                                TaintLocation location)
     : name_(name),
-      arguments_(),
-      source_(0),
-      is_native_(is_native),
+      source_(false),
+      native_(native),
       location_(std::move(location)) {}
 
 TaintOperation::TaintOperation(TaintOperation&& other) noexcept
     : name_(std::move(other.name_)),
       arguments_(std::move(other.arguments_)),
       source_(other.source_),
-      is_native_(other.is_native_),
+      native_(other.native_),
       location_(std::move(other.location_)) {}
 
 TaintOperation& TaintOperation::operator=(TaintOperation&& other) noexcept {
   name_ = std::move(other.name_);
   arguments_ = std::move(other.arguments_);
   source_ = other.source_;
-  is_native_ = other.is_native_;
+  native_ = other.native_;
   location_ = std::move(other.location_);
   return *this;
 }
@@ -194,7 +178,7 @@ void TaintOperation::dump(const TaintOperation& op) {
   std::cout << "Location: " << convert.to_bytes(op.location().filename()) << ":"
             << op.location().line() << ":" << op.location().pos() << std::endl;
   std::cout << "Function: " << convert.to_bytes(op.location().function())
-            << " native[" << op.is_native() << "]" << std::endl;
+            << " native[" << op.isNative() << "]" << std::endl;
   std::cout << "Args:" << std::endl;
   for (const auto& arg : op.arguments()) {
     len += arg.length();

@@ -114,30 +114,30 @@ class TaintLocation {
 class TaintOperation {
  public:
   TaintOperation(const char* name, std::initializer_list<std::u16string> args);
-  TaintOperation(const char* name, bool is_native,
+  TaintOperation(const char* name, bool native,
                  std::initializer_list<std::u16string> args);
 
   TaintOperation(const char* name, std::vector<std::u16string> args);
-  TaintOperation(const char* name, bool is_native,
+  TaintOperation(const char* name, bool native,
                  std::vector<std::u16string> args);
 
   TaintOperation(const char* name, TaintLocation location,
                  std::initializer_list<std::u16string> args);
-  TaintOperation(const char* name, bool is_native, TaintLocation location,
+  TaintOperation(const char* name, bool native, TaintLocation location,
                  std::initializer_list<std::u16string> args);
 
   TaintOperation(const char* name, TaintLocation location,
                  std::vector<std::u16string> args);
-  TaintOperation(const char* name, bool is_native, TaintLocation location,
+  TaintOperation(const char* name, bool native, TaintLocation location,
                  std::vector<std::u16string> args);
 
   // Constructs a taint operation with no arguments.
   explicit TaintOperation(const char* name);
-  TaintOperation(const char* name, bool is_native);
+  TaintOperation(const char* name, bool native);
 
   // Constructs a taint operation with location information
   TaintOperation(const char* name, TaintLocation location);
-  TaintOperation(const char* name, bool is_native, TaintLocation location);
+  TaintOperation(const char* name, bool native, TaintLocation location);
 
   // These work fine as long as we are using stl classes.
   TaintOperation(const TaintOperation& other) = default;
@@ -152,10 +152,10 @@ class TaintOperation {
   const TaintLocation& location() const { return location_; }
 
   // Getter and setter to mark a taint source
-  bool isSource() const { return source_ != 0; }
-  void setSource() { source_ = 1; }
-  bool is_native() const { return is_native_; }
-  void set_native() { is_native_ = 1; }
+  bool isSource() const { return source_; }
+  void setSource() { source_ = true; }
+  bool isNative() const { return native_; }
+  void setNative() { native_ = true; }
 
   static void dump(const TaintOperation& op);
 
@@ -168,10 +168,10 @@ class TaintOperation {
   std::vector<std::u16string> arguments_;
 
   // Is this Operation a Source
-  uint8_t source_;
+  bool source_;
 
   // Is this function an internal function?
-  bool is_native_;
+  bool native_;
 
   TaintLocation location_;
 };

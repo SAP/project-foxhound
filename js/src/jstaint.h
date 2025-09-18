@@ -35,7 +35,8 @@ std::u16string taintarg_full(JSContext* cx, JS::HandleString str);
 
 std::u16string taintarg_jsstring(JSContext* cx, JSString* const& str);
 
-std::u16string taintarg_jsstring(JSContext* cx, const JSLinearString* const& str);
+std::u16string taintarg_jsstring(JSContext* cx,
+                                 const JSLinearString* const& str);
 
 std::u16string taintarg_jsstring_full(JSContext* cx, JSString* const& str);
 
@@ -43,57 +44,79 @@ std::u16string taintarg_jsstring_full(JSContext* cx, JSString* const& str);
 std::u16string taintarg(JSContext* cx, JS::HandleObject obj);
 
 // Converts a JS value into an argument string for a taint operation.
-std::u16string taintarg(JSContext* cx, JS::HandleValue val, bool fullArgs = false);
+std::u16string taintarg(JSContext* cx, JS::HandleValue val,
+                        bool fullArgs = false);
 
 // Converts an integer to a taint argument string.
 std::u16string taintarg(JSContext* cx, int32_t num);
 
 // Converts a JS Handle to a taint argument string.
-std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str, bool fullArgs);
+std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleValue str,
+                                      bool fullArgs);
 
 std::vector<std::u16string> taintargs(JSContext* cx, JS::HandleString str);
 
-std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& str);
+std::vector<std::u16string> taintargs_jsstring(JSContext* cx,
+                                               JSString* const& str);
 
-std::vector<std::u16string> taintargs(JSContext* cx, HandleString str1, HandleString str2);
+std::vector<std::u16string> taintargs(JSContext* cx, HandleString str1,
+                                      HandleString str2);
 
-std::vector<std::u16string> taintargs_jsstring(JSContext* cx, JSString* const& str1, JSString* const& str2);
+std::vector<std::u16string> taintargs_jsstring(JSContext* cx,
+                                               JSString* const& str1,
+                                               JSString* const& str2);
 
-std::vector<std::u16string> taintargs_jsstring(JSContext* cx, const JSLinearString* const& str1, const JSLinearString* const& str2);
+std::vector<std::u16string> taintargs_jsstring(
+    JSContext* cx, const JSLinearString* const& str1,
+    const JSLinearString* const& str2);
 
 std::string convertDigestToHexString(const TaintMd5& digest);
 
 // Extracts the current filename, linenumber and function from the JSContext
 TaintLocation TaintLocationFromContext(JSContext* cx);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args, bool fullArgs = false);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+                                         bool native, JS::HandleValue args,
+                                         bool fullArgs = false);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+                                         bool native, JS::HandleString arg);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleString arg1, JS::HandleString arg2);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+                                         bool native, JS::HandleString arg1,
+                                         JS::HandleString arg2);
 
-TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native, JSString* const& str);
+TaintOperation TaintOperationFromContextJSString(JSContext* cx,
+                                                 const char* name, bool native,
+                                                 JSString* const& str);
 
-TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native,
-                                                 JSString* const& str1, JSString* const& str2);
+TaintOperation TaintOperationFromContextJSString(JSContext* cx,
+                                                 const char* name, bool native,
+                                                 JSString* const& str1,
+                                                 JSString* const& str2);
 
-TaintOperation TaintOperationFromContextJSString(JSContext* cx, const char* name, bool is_native,
-                                                 const JSLinearString* const& str1, const JSLinearString* const& str2);
+TaintOperation TaintOperationFromContextJSString(
+    JSContext* cx, const char* name, bool native,
+    const JSLinearString* const& str1, const JSLinearString* const& str2);
 
-TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
-                                         JS::HandleString str1, JS::HandleString str2);
+TaintOperation TaintOperationConcat(JSContext* cx, const char* name,
+                                    bool native, JS::HandleString str1,
+                                    JS::HandleString str2);
 
-TaintOperation TaintOperationConcat(JSContext* cx, const char* name, bool is_native,
-                                         JSString* const& str1, JSString* const& str2);
+TaintOperation TaintOperationConcat(JSContext* cx, const char* name,
+                                    bool native, JSString* const& str1,
+                                    JSString* const& str2);
 
-TaintOperation TaintOperationFromContext(JSContext* cx, const char* name, bool is_native);
+TaintOperation TaintOperationFromContext(JSContext* cx, const char* name,
+                                         bool native);
 
 // Mark all tainted arguments of a function call.
 // This is mainly useful for tracing tainted arguments through the code.
-void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function, const JS::CallArgs& args);
+void MarkTaintedFunctionArguments(JSContext* cx, JSFunction* function,
+                                  const JS::CallArgs& args);
 
 // Write the taint information to a StructuredSpewer
-// To enable this, set the 
+// To enable this, set the
 //     ac_add_options --enable-jitspew
 // flag in the .mozconfig build file
 // and the environment variable
@@ -103,9 +126,9 @@ void MaybeSpewStringTaint(JSContext* cx, JSString* str, HandleValue location);
 #endif
 
 // Write taint information from a string to file
-// This can be set by the TAINT_FILE environment variable or defaults to taint_output in the current directory
-// One file is produced per taint report call
-// Writing to file is enable by the compilation flag
+// This can be set by the TAINT_FILE environment variable or defaults to
+// taint_output in the current directory One file is produced per taint report
+// call Writing to file is enable by the compilation flag
 //    ac_add_options --enable-taintspew
 #ifdef JS_TAINTSPEW
 void WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location);
@@ -113,7 +136,8 @@ void WriteTaintToFile(JSContext* cx, JSString* str, HandleValue location);
 
 #if defined(JS_JITSPEW) || defined(JS_TAINTSPEW)
 // Write a string and its taint information to JSON
-void PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::JSONPrinter& json);
+void PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location,
+                    js::JSONPrinter& json);
 
 // Write a simple version of an object to JSON
 void PrintJsonObject(JSContext* cx, JSObject* obj, js::JSONPrinter& json);
@@ -125,6 +149,6 @@ void MaybeSpewMessage(JSContext* cx, JSString* str);
 // Print a message to stdout.
 void TaintFoxReport(JSContext* cx, const char* msg);
 
-}
+}  // namespace JS
 
 #endif
