@@ -203,7 +203,7 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
         return false;
 
       RootedValue isBuiltIn(cx);
-      isBuiltIn.setBoolean(taint_node.operation().is_native());
+      isBuiltIn.setBoolean(taint_node.operation().isNative());
 
       if (!JS_DefineProperty(cx, node, "builtin", isBuiltIn, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
