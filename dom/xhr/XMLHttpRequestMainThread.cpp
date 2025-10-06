@@ -759,7 +759,17 @@ nsresult XMLHttpRequestMainThread::CreateResponseParsedJSON(JSContext* aCx) {
   if (NS_WARN_IF(NS_FAILED(rv))) {
     return rv;
   }
-  MarkTaintSource(string, "XMLHttpRequest.response(json)");
+
+  nsTArray<nsString> args;
+
+  nsAutoString url;
+  if (mRequestURL) {
+    nsCString cUrl = mRequestURL->GetSpecOrDefault();
+    url = NS_ConvertUTF8toUTF16(cUrl);
+  }
+  args.AppendElement(url);
+  
+  MarkTaintSource(string, "XMLHttpRequest.response(json)", args);
 
   // The Unicode converter has already zapped the BOM if there was one
   JS::Rooted<JS::Value> value(aCx);
