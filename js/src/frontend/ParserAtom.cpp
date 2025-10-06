@@ -110,7 +110,7 @@ template <typename CharT, typename SeqCharT>
     uint32_t length, HashNumber hash, const StringTaint& taint) {
   constexpr size_t HeaderSize = sizeof(ParserAtom);
 
-  std::string taintData = SerializeStringTaintForE2E(taint);
+  std::string taintData = SerializeStringTaint(taint);
   uint32_t taintDataSize = taint.hasTaint() ? taintData.size() : 0;
 
   void* raw = alloc.alloc(HeaderSize + (sizeof(CharT) * length) + taintDataSize);
@@ -167,7 +167,7 @@ JSString* ParserAtom::instantiateString(JSContext* cx, FrontendContext* fc,
   }
   if (taintDataSize_ > 0) {
     std::string taintData(taint(), taintDataSize_);
-    str->setTaint(cx, ParseStringTaintForE2E(taintData));
+    str->setTaint(cx, ParseStringTaint(taintData));
   }
   if (!str) {
     return nullptr;

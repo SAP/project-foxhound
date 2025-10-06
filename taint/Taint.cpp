@@ -1072,9 +1072,55 @@ std::vector<TaintFlow>::const_iterator TaintList::end() const {
   return flows_->end();
 }
 
-bool ParseStringTaintForE2E(const std::string& input, StringTaint& taint) {
-  using json = nlohmann::json;
+#ifdef TAINT_DEBUG
+void PrintTaint(const StringTaint& taint) {
+  for (auto& range : taint) {
+    std::cout << "    " << range.begin() << " - " << range.end() << " : "
+              << range.flow().source().name() << std::endl;
+  }
+}
 
+void DumpTaint(const StringTaint& taint,
+               std::experimental::source_location location) {
+  TaintDebug("Taint Information", location);
+  if (!taint.hasTaint()) {
+    std::cout << "EmptyTaint" << std::endl;
+  }
+  for (auto& range : taint) {
+    std::cout << "    " << range.begin() << " - " << range.end() << " : "
+              << range.flow().source().name() << ":\n";
+    DumpTaintFlow(range.flow());
+  }
+}
+
+void DumpTaintFlow(const TaintFlow& flow) {
+  for (auto& node : flow) {
+    DumpTaintOperation(node.operation());
+  }
+}
+
+void DumpTaintOperation(const TaintOperation& operation) {
+  std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
+  std::cout << "\t\t" << operation.name() << "[";
+  for (auto& arg : operation.arguments()) {
+    std::cout << convert.to_bytes(arg) << ", ";
+  }
+  std::cout << "]\n";
+}
+
+void TaintDebug(std::string_view message,
+                std::experimental::source_location location) {
+  std::cout << "Tainting Debug Info:" << location.file_name() << ":"
+            << location.line() << ":" << location.function_name() << " "
+            << message << std::endl;
+}
+#else
+void DumpTaint(const StringTaint& taint) {}
+
+void PrintTaint(const StringTaint& taint) {}
+#endif
+
+bool ParseStringTaintForE2E(const std::string& input, StringTaint& taint) {
 #if (DEBUG_E2E_TAINTING)
   std::cout << "ParseStringTaintForE2E: " << input << std::endl;
 #endif
@@ -1141,11 +1187,8 @@ StringTaint ParseStringTaintForE2E(const std::string& input) {
   return ParseStringTaintForE2E(input, taint) ? taint : EmptyTaint;
 }
 
-
 std::string SerializeStringTaintForE2E(const StringTaint& taint,
                                        bool addSinks) {
-  using json = nlohmann::json;
-
   json data = json::array();
 
   for (const auto& range : taint) {
@@ -1164,50 +1207,92 @@ std::string SerializeStringTaintForE2E(const StringTaint& taint,
   return data.dump();
 }
 
-#ifdef TAINT_DEBUG
-void PrintTaint(const StringTaint& taint) {
-  for (auto& range : taint) {
-    std::cout << "    " << range.begin() << " - " << range.end() << " : "
-              << range.flow().source().name() << std::endl;
+StringTaint ParseStringTaint(std::string aInput) {
+  json data = json::parse(aInput, nullptr, false);
+  if (data.is_discarded()) {
+    return EmptyTaint;
   }
+  return LoadStringTaintFromJSON(data);
 }
 
-void DumpTaint(const StringTaint& taint,
-               std::experimental::source_location location) {
-  TaintDebug("Taint Information", location);
-  if (!taint.hasTaint()) {
-    std::cout << "EmptyTaint" << std::endl;
-  }
-  for (auto& range : taint) {
-    std::cout << "    " << range.begin() << " - " << range.end() << " : "
-              << range.flow().source().name() << ":\n";
-    DumpTaintFlow(range.flow());
-  }
+std::string SerializeStringTaint(const StringTaint& aTaint) {
+  return DumpStringTaintAsJSON(aTaint).dump();
 }
 
-void DumpTaintFlow(const TaintFlow& flow) {
-  for (auto& node : flow) {
-    DumpTaintOperation(node.operation());
+StringTaint LoadStringTaintFromJSON(const json& aData) {
+  StringTaint taint;
+  for (const auto& elem : aData) {
+    taint.append(LoadTaintRangeFromJSON(elem));
   }
+  return taint;
 }
 
-void DumpTaintOperation(const TaintOperation& operation) {
-  std::wstring_convert<std::codecvt_utf8<char16_t>, char16_t> convert;
-  std::cout << "\t\t" << operation.name() << "[";
-  for (auto& arg : operation.arguments()) {
-    std::cout << convert.to_bytes(arg) << ", ";
+json DumpStringTaintAsJSON(const StringTaint& aTaint) {
+  json data = json::array();
+  for (const auto& range : aTaint) {
+    data.push_back(DumpTaintRangeAsJSON(range));
   }
-  std::cout << "]\n";
+  return data;
 }
 
-void TaintDebug(std::string_view message,
-                std::experimental::source_location location) {
-  std::cout << "Tainting Debug Info:" << location.file_name() << ":"
-            << location.line() << ":" << location.function_name() << " "
-            << message << std::endl;
+TaintRange LoadTaintRangeFromJSON(const json& aData) {
+  return TaintRange(aData[0].get<uint32_t>(), aData[1].get<uint32_t>(),
+                    LoadTaintFlowFromJSON(aData[2]));
 }
-#else
-void DumpTaint(const StringTaint& taint) {}
 
-void PrintTaint(const StringTaint& taint) {}
-#endif
+json DumpTaintRangeAsJSON(const TaintRange& aRange) {
+  return json::array(
+      {aRange.begin(), aRange.end(), DumpTaintFlowAsJSON(aRange.flow())});
+}
+
+TaintFlow LoadTaintFlowFromJSON(const json& aData) {
+  TaintFlow flow;
+  for (auto it = aData.rbegin(); it != aData.rend(); ++it) {
+    flow.extend(LoadTaintOperationFromJSON(it.value()));
+  }
+  return flow;
+}
+
+json DumpTaintFlowAsJSON(const TaintFlow& aFlow) {
+  json data = json::array();
+  for (const auto& node : aFlow) {
+    data.push_back(DumpTaintOperationAsJSON(node.operation()));
+  }
+  return data;
+}
+
+TaintOperation LoadTaintOperationFromJSON(const json& aData) {
+  TaintOperation op(aData[0].get<std::string>().c_str(),
+                    LoadTaintLocationFromJSON(aData[1]),
+                    aData[2].get<std::vector<std::u16string>>());
+  if (aData[3].get<bool>()) {
+    op.setSource();
+  }
+  if (aData[4].get<bool>()) {
+    op.setNative();
+  }
+  return op;
+}
+
+json DumpTaintOperationAsJSON(const TaintOperation& aOperation) {
+  return json::array({
+      aOperation.name(),
+      DumpTaintLocationAsJSON(aOperation.location()),
+      aOperation.arguments(),
+      aOperation.isSource(),
+      aOperation.isNative(),
+  });
+}
+
+TaintLocation LoadTaintLocationFromJSON(const json& aData) {
+  return TaintLocation(aData[0].get<std::u16string>(), aData[1].get<uint32_t>(),
+                       aData[2].get<std::uint32_t>(),
+                       aData[3].get<std::uint32_t>(), aData[4].get<TaintMd5>(),
+                       aData[5].get<std::u16string>());
+}
+
+json DumpTaintLocationAsJSON(const TaintLocation& aLocation) {
+  return json::array({aLocation.filename(), aLocation.line(), aLocation.pos(),
+                      aLocation.scriptStartLine(), aLocation.scriptHash(),
+                      aLocation.function()});
+}

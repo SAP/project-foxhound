@@ -25,6 +25,10 @@
 #  include <experimental/source_location>
 #endif
 
+#include "json.hpp"
+
+using json = nlohmann::json;
+
 /*
  * How to taint:
  *
@@ -867,20 +871,6 @@ class TaintList {
 // #define DEBUG_E2E_TAINTING (TAINT_DEBUG)
 
 /*
- * Deserialize a StringTaint from a valid JSON-like string.
- * Required for incoming taint information in an end-to-end tainting scenario.
- */
-StringTaint ParseStringTaintForE2E(const std::string& input);
-
-/*
- * Serialize a StringTaint object into a JSON-like string:
- * [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
- * Required for outgoing taint information in an end-to-end tainting scenario.
- */
-std::string SerializeStringTaintForE2E(const StringTaint& taint,
-                                       bool addSinks = false);
-
-/*
  * Print a string representation of the given StringTaint instance to stdout.
  */
 
@@ -903,5 +893,43 @@ void DumpTaint(const StringTaint& taint);
 
 void PrintTaint(const StringTaint& taint);
 #endif
+
+/*
+ * Parse a StringTaint object from a valid JSON string.
+ * Required for incoming taint information in an end-to-end tainting scenario.
+ */
+StringTaint ParseStringTaintForE2E(const std::string& input);
+
+/*
+ * Serialize a StringTaint object into a JSON string:
+ * [{begin: 10, end: 20, source: 'src1'}, {begin: 80, end: 90, source: 'src2'}]
+ * Required for outgoing taint information in an end-to-end tainting scenario.
+ */
+std::string SerializeStringTaintForE2E(const StringTaint& taint,
+                                       bool addSinks = false);
+
+StringTaint ParseStringTaint(std::string aInput);
+
+std::string SerializeStringTaint(const StringTaint& aTaint);
+
+StringTaint LoadStringTaintFromJSON(const json& aData);
+
+json DumpStringTaintAsJSON(const StringTaint& aTaint);
+
+TaintRange LoadTaintRangeFromJSON(const json& aData);
+
+json DumpTaintRangeAsJSON(const TaintRange& aRange);
+
+TaintFlow LoadTaintFlowFromJSON(const json& aData);
+
+json DumpTaintFlowAsJSON(const TaintFlow& aFlow);
+
+TaintOperation LoadTaintOperationFromJSON(const json& aData);
+
+json DumpTaintOperationAsJSON(const TaintOperation& aOperation);
+
+TaintLocation LoadTaintLocationFromJSON(const json& aData);
+
+json DumpTaintLocationAsJSON(const TaintLocation& aLocation);
 
 #endif
