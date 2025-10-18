@@ -289,10 +289,12 @@ NS_IMPL_ISUPPORTS(ConsumeBodyDoneObserver, nsIStreamLoaderObserver)
     return nullptr;
   }
 
-  RefPtr<BodyConsumer> consumer =
-      new BodyConsumer(aMainThreadEventTarget, aGlobal, aBodyStream, promise,
-                       aType, aBodyBlobURISpec, aBodyLocalPath, aBodyMimeType,
-                       aMixedCaseMimeType, aBlobStorageType, aInitialURL);
+  TaintLocation taintLocation = GetTaintLocation();
+
+  RefPtr<BodyConsumer> consumer = new BodyConsumer(
+      aMainThreadEventTarget, aGlobal, aBodyStream, promise, aType,
+      aBodyBlobURISpec, aBodyLocalPath, aBodyMimeType, aMixedCaseMimeType,
+      aBlobStorageType, aInitialURL, taintLocation);
 
   RefPtr<ThreadSafeWorkerRef> workerRef;
 
@@ -351,7 +353,7 @@ BodyConsumer::BodyConsumer(
     const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
     const nsACString& aMixedCaseMimeType,
     MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
-    const nsACString& aInitialURL)
+    const nsACString& aInitialURL, const TaintLocation& aTaintLocation)
     : mTargetThread(NS_GetCurrentThread()),
       mMainThreadEventTarget(aMainThreadEventTarget),
       mBodyStream(aBodyStream),
@@ -364,6 +366,7 @@ BodyConsumer::BodyConsumer(
       mConsumeType(aType),
       mConsumePromise(aPromise),
       mInitialURL(aInitialURL),
+      mTaintLocation(aTaintLocation),
       mBodyConsumed(false),
       mShuttingDown(false) {
   MOZ_ASSERT(aMainThreadEventTarget);
@@ -721,12 +724,16 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
       if (NS_SUCCEEDED(
               BodyUtil::ConsumeText(aResultLength, resultPtr.get(), decoded))) {
         if (mConsumeType == ConsumeType::Text) {
-          MarkTaintSource(decoded, "fetch.text()",
-                          NS_ConvertUTF8toUTF16(mInitialURL));
+          TaintOperation taintOperation(
+              "fetch.text()", mTaintLocation,
+              {std::u16string(NS_ConvertUTF8toUTF16(mInitialURL))});
+          MarkTaintSource(decoded, taintOperation);
           localPromise->MaybeResolve(decoded);
         } else {
-          MarkTaintSource(decoded, "fetch.json()",
-                          NS_ConvertUTF8toUTF16(mInitialURL));
+          TaintOperation taintOperation(
+              "fetch.json()", mTaintLocation,
+              {std::u16string(NS_ConvertUTF8toUTF16(mInitialURL))});
+          MarkTaintSource(decoded, taintOperation);
           JS::Rooted<JS::Value> json(cx);
           BodyUtil::ConsumeJson(cx, &json, decoded, error);
           if (!error.Failed()) {

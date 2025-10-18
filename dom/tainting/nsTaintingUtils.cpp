@@ -171,6 +171,10 @@ TaintOperation GetTaintOperation(const char* name)
   return GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name);
 }
 
+TaintLocation GetTaintLocation() {
+  return JS_GetTaintLocation(nsContentUtils::GetCurrentJSContext());
+}
+
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name) {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
   auto op = GetTaintOperation(cx, name);
@@ -268,13 +272,13 @@ nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString 
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
 }
 
-static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
+nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
   operation.setSource();
   operation.setNative();
   str.Taint().overlay(0, str.Length(), operation);

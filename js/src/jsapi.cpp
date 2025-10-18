@@ -5026,6 +5026,12 @@ JS_GetTaintOperation(JSContext* cx, const char* sink)
   return TaintOperationFromContext(cx, sink, false);
 }
 
+JS_PUBLIC_API TaintLocation
+JS_GetTaintLocation(JSContext* cx)
+{
+  return TaintLocationFromContext(cx);
+}
+
 JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleValue val, const char* sink)
 {
