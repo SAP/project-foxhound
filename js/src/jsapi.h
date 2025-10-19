@@ -1026,6 +1026,9 @@ JS_PUBLIC_API TaintLocation
 JS_GetTaintLocation(JSContext* cx);
 
 JS_PUBLIC_API void
+JS_SetFallbackTaintLocation(JSContext* cx, const TaintLocation& taintLocation);
+
+JS_PUBLIC_API void
 JS_MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const TaintOperation& op);
 
 JS_PUBLIC_API void

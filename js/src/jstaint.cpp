@@ -282,7 +282,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx) {
   }
 
   if (filename == nullptr) {
-    return TaintLocation();
+    return cx->getFallbackTaintLocation();
   }
 
   return TaintLocation(ascii2utf16(std::string(filename)), line, pos, next_line,

@@ -5033,6 +5033,11 @@ JS_GetTaintLocation(JSContext* cx)
 }
 
 JS_PUBLIC_API void
+JS_SetFallbackTaintLocation(JSContext* cx, const TaintLocation& taintLocation) {
+  cx->setFallbackTaintLocation(taintLocation);
+}
+
+JS_PUBLIC_API void
 JS_ReportTaintSink(JSContext* cx, JS::HandleValue val, const char* sink)
 {
   RootedValue arg(cx);

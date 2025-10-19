@@ -1004,6 +1004,14 @@ struct JS_PUBLIC_API JSContext : public JS::RootingContext,
   bool hasExecutionTracer() { return false; }
 #endif
 
+ public:
+  TaintLocation getFallbackTaintLocation();
+
+  void setFallbackTaintLocation(const TaintLocation& taintLocation);
+
+ private:
+  TaintLocation fallbackTaintLocation;
+
 }; /* struct JSContext */
 
 inline JSContext* JSRuntime::mainContextFromOwnThread() {

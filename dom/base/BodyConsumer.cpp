@@ -681,6 +681,8 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
   JSContext* cx = jsapi.cx();
   ErrorResult error;
 
+  JS_SetFallbackTaintLocation(cx, mTaintLocation);
+
   switch (mConsumeType) {
     case ConsumeType::ArrayBuffer: {
       JS::Rooted<JSObject*> arrayBuffer(cx);
