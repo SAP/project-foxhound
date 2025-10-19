@@ -278,7 +278,7 @@ nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString 
   return NS_OK;
 }
 
-nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
+static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
   operation.setSource();
   operation.setNative();
   str.Taint().overlay(0, str.Length(), operation);

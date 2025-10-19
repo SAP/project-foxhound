@@ -726,16 +726,12 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
       if (NS_SUCCEEDED(
               BodyUtil::ConsumeText(aResultLength, resultPtr.get(), decoded))) {
         if (mConsumeType == ConsumeType::Text) {
-          TaintOperation taintOperation(
-              "fetch.text()", mTaintLocation,
-              {std::u16string(NS_ConvertUTF8toUTF16(mInitialURL))});
-          MarkTaintSource(decoded, taintOperation);
+          MarkTaintSource(decoded, "fetch.text()",
+                          NS_ConvertUTF8toUTF16(mInitialURL));
           localPromise->MaybeResolve(decoded);
         } else {
-          TaintOperation taintOperation(
-              "fetch.json()", mTaintLocation,
-              {std::u16string(NS_ConvertUTF8toUTF16(mInitialURL))});
-          MarkTaintSource(decoded, taintOperation);
+          MarkTaintSource(decoded, "fetch.json()",
+                          NS_ConvertUTF8toUTF16(mInitialURL));
           JS::Rooted<JS::Value> json(cx);
           BodyUtil::ConsumeJson(cx, &json, decoded, error);
           if (!error.Failed()) {

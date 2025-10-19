@@ -34,8 +34,6 @@ nsresult MarkTaintOperation(nsCString &str, const char* name, const nsTArray<nsC
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name);
 
 // Foxhound: Add taint source information to a string
-nsresult MarkTaintSource(nsAString &str, TaintOperation operation);
-
 nsresult MarkTaintSource(nsAString &str, const char* name);
 nsresult MarkTaintSource(nsACString &str, const char* name);
 
