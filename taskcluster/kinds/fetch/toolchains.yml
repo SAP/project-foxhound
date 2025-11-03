@@ -6,7 +6,7 @@ binutils-2.31.1:
     description: binutils 2.31.1 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/binutils/binutils-2.31.1.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/binutils/binutils-2.31.1.tar.xz
         sha256: 5d20086ecf5752cc7d9134246e9588fa201740d540f7eb84d795b1f7a93bca86
         size: 20467996
         gpg-signature:
@@ -20,7 +20,7 @@ binutils-2.41:
     description: binutils 2.41 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/binutils/binutils-2.41.tar.xz
         sha256: ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450
         size: 26765692
         gpg-signature:
@@ -34,7 +34,7 @@ gcc-8.5.0:
     description: GCC 8.5.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-8.5.0/gcc-8.5.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-8.5.0/gcc-8.5.0.tar.xz
         sha256: d308841a511bb830a6100397b0042db24ce11f642dab6ea6ee44842e5325ed50
         size: 63841008
         gpg-signature:
@@ -48,7 +48,7 @@ gcc-9.5.0:
     description: GCC 9.5.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-9.5.0/gcc-9.5.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-9.5.0/gcc-9.5.0.tar.xz
         sha256: 27769f64ef1d4cd5e2be8682c0c93f9887983e6cfd1a927ce5a0a2915a95cf8f
         size: 72462752
         gpg-signature:
@@ -76,7 +76,7 @@ gcc-11.4.0:
     description: GCC 11.4.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-11.4.0/gcc-11.4.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-11.4.0/gcc-11.4.0.tar.xz
         sha256: 3f2db222b007e8a4a23cd5ba56726ef08e8b1f1eb2055ee72c1402cea73a8dd9
         size: 79837032
         gpg-signature:
@@ -90,7 +90,7 @@ gmp-6.1.0:
     description: GMP 6.1.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gmp/gmp-6.1.0.tar.bz2
+        url: https://ftpmirror.gnu.org/gnu/gmp/gmp-6.1.0.tar.bz2
         sha256: 498449a994efeba527885c10405993427995d3f86b8768d8cdf8d9dd7c6b73e8
         size: 2383840
         gpg-signature:
@@ -123,7 +123,7 @@ mpc-1.0.3:
     description: mpc 1.0.3 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz
+        url: https://ftpmirror.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz
         sha256: 617decc6ea09889fb08ede330917a00b16809b8db88c29c31bfbb49cbf88ecc3
         size: 669925
         gpg-signature:
@@ -238,14 +238,14 @@ cctools-port:
     fetch:
         type: git
         repo: https://github.com/tpoechtrager/cctools-port
-        revision: 30518813875aed656aa7f18b6d485feee25f8f87
+        revision: 55943b0c68c0eaf8b8ad2f51f63738bbc7b0c86b
 
 libtapi:
     description: libtapi source code
     fetch:
         type: git
         repo: https://github.com/tpoechtrager/apple-libtapi
-        revision: b4f141a16c7c82f75973429c92242a8c7de3ddb1
+        revision: aed9334283e3e290bba622ee980bde2322e4d516
 
 ldid:
     description: ldid source code
@@ -296,7 +296,7 @@ gn:
     fetch:
         type: git
         repo: https://gn.googlesource.com/gn
-        revision: 7e05276308f3d49f8514ef02afe4f94487b1efb2
+        revision: f98b6d7275c2e823e0983fa7f874facfe6980778
 
 grcov:
     description: grcov source code
@@ -310,8 +310,8 @@ sccache:
     fetch:
         type: git
         repo: https://github.com/mozilla/sccache
-        # 0.9.1 release
-        revision: 77f67d73445a383ffd8af095fb7a8e41f258e80f
+        # 0.11.0 release
+        revision: 5709f069514a775ddb6604a6e9f5f5c91c0e9821
 
 fxc2:
     description: fxc2 source code
@@ -325,7 +325,7 @@ mingw-w64:
     fetch:
         type: git
         repo: https://git.code.sf.net/p/mingw-w64/mingw-w64
-        revision: 3346c0eb95c34e2ac0c5f157da8965ee292c64e8
+        revision: 849a151baf187f32eb57b34c00365cbc7d2353a7
 
 mingw-w64-trunk:
     description: mingw-w64 master branch source code
@@ -376,11 +376,11 @@ clang-19:
         revision: cd708029e0b2869e80abe31ddb175f7c35361f90
 
 clang-20:
-    description: clang 20.1.0-rc2 source code
+    description: clang 20.1.8 source code
     fetch:
         type: git
         repo: https://github.com/llvm/llvm-project
-        revision: 20621e2609ac49dcf01c4353dbfd69626cea3015
+        revision: 87f0227cb60147a26a1eeb4fb06e3b505e9c7261
 
 clang-trunk:
     description: clang main branch source code
@@ -474,14 +474,14 @@ dump-syms:
     fetch:
         type: git
         repo: https://github.com/mozilla/dump_syms/
-        revision: ca31661882b190c97a6869c0add73b27000c92c5
+        revision: f5e0c9d493a725c11cdcab38fd02bce4d6888361
 
 rust-minidump:
-    description: rust-minidump 0.23.0 source code (for minidump-stackwalk)
+    description: rust-minidump 0.25.0 source code (for minidump-stackwalk)
     fetch:
         type: git
         repo: https://github.com/rust-minidump/rust-minidump/
-        revision: fdb2c98a659a54b0077e5bad7f7dfa28a55c5f1d
+        revision: 4bc0e1bb3a19f22d5b7c4057112197ac5f6ea2d9
 
 fix-stacks:
     description: fix-stacks source code
@@ -522,9 +522,10 @@ sonatype-nexus:
     description: Sonatype Nexus Maven repository service
     fetch:
         type: static-url
-        url: https://download.sonatype.com/nexus/oss/nexus-2.14.18-01-bundle.tar.gz
-        sha256: 350af8b270bec7fda5861a15b8a5b7870fd8903d0b9a210754113d5a966ce6a6
-        size: 83493896
+        # https://download.sonatype.com/nexus/oss/nexus-2.15.2-03-bundle.tar.gz
+        url: https://tooltool.mozilla-releng.net/sha512/8d0cd58839f95b8fa02eba82fd532b15795b59e93968bcfcf179383849cf3a09f3c2a76480c5583ebf4ee1b1528bfccbda5ad6d92f175817ebc6179d85a93b5b
+        sha256: cec1d80dad0be8a34a902aa00e666da547f51e83dc3a4a28b50b3ec36fe433a8
+        size: 89526162
         artifact-name: sonatype-nexus.tar.zst
         strip-components: 1
         add-prefix: sonatype-nexus/
@@ -533,9 +534,9 @@ jdk-8-linux64:
     description: Java 8 JDK
     fetch:
         type: static-url
-        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u442-b06/OpenJDK8U-jdk_x64_linux_hotspot_8u442b06.tar.gz
-        sha256: 5b0a0145e7790552a9c8767b4680074c4628ec276e5bb278b61d85cf90facafa
-        size: 103096556
+        url: https://github.com/adoptium/temurin8-binaries/releases/download/jdk8u472-b08/OpenJDK8U-jdk_x64_linux_hotspot_8u472b08.tar.gz
+        sha256: 5becaa4ac660e844c5a39e2ebc39ff5ac824c37ff1b625af8c8b111dc13c3592
+        size: 103123206
         artifact-name: jdk-8.tar.zst
         strip-components: 1
         add-prefix: jdk-8/
@@ -628,7 +629,7 @@ gnumake:
     description: GNU make source
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz
+        url: https://ftpmirror.gnu.org/gnu/make/make-4.4.1.tar.gz
         sha256: dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
         size: 2348200
         artifact-name: make.tar.zst
@@ -672,7 +673,7 @@ symbol-scrapers:
     fetch:
         type: git
         repo: https://github.com/mozilla/symbol-scrapers
-        revision: 04f906fe8585b31d03d8baf6044a01654808c96a
+        revision: 4a589bc872995b76fa18b5f8746715e5c86fa4bb
 
 xz-5.4.4:
     description: xz 5.4.4 source code
@@ -727,6 +728,8 @@ cpython-3.11.7.exe:
 
 windows-rs:
     description: Source of the windows rust crate
+    attributes:
+        local-fetch: true
     fetch:
         type: static-url
         url: https://crates.io/api/v1/crates/windows/0.58.0/download
@@ -737,15 +740,11 @@ windows-rs:
         add-prefix: windows-rs/
 
 libxml2:
-    description: Source of the libxml2 library
+    description: libxml2 2.9.12 source code
     fetch:
-        type: static-url
-        url: https://gitlab.gnome.org/GNOME/libxml2/-/archive/v2.9.12/libxml2-v2.9.12.tar.gz
-        sha256: 98bfa7a9a5e2a75638422050740448ee9f02bf4dc2075c9822d7747d5ff9e617
-        size: 5233674
-        artifact-name: libxml2.tar.zst
-        strip-components: 1
-        add-prefix: libxml2/
+        type: git
+        repo: https://gitlab.gnome.org/GNOME/libxml2
+        revision: b48e77cf4f6fa0792c5f4b639707a2b0675e461b
 
 mozilla-pdf.js:
     description: Mozilla pdf.js Github repo
@@ -773,15 +772,15 @@ chromium-depot-tools:
         include-dot-git: true
 
 uv:
-    description: uv 0.5.9 source code
+    description: uv 0.7.2 source code
     fetch:
         type: git
         repo: https://github.com/astral-sh/uv
-        revision: 0652800cb018eb086fbbf220a1f73af7e320be54
+        revision: 481d05d8dfb8627612dec72840a02c17b926b263
 
 dxc-src:
     description: Source code for mozilla's DXC fork
     fetch:
         type: git
         repo: https://github.com/FirefoxGraphics/DirectXShaderCompiler
-        revision: c75bb05c0e040bc09ec012ccf9767b1ec622477f
+        revision: 81378be83a1690cac0e727941e1a963518d67c26
