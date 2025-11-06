@@ -251,6 +251,8 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
   const char* filename = nullptr;
   uint32_t line = 0;
   uint32_t pos = 0;
+  uint32_t next_line = 0;
+  uint32_t next_pos = 0;
   uint32_t scriptStartline = 0;
   TaintMd5 hash;
 
@@ -269,6 +271,10 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
       JS::LimitedColumnNumberOneOrigin column;
       line = PCToLineNumber(i.script(), i.pc(), &column);
       pos = column.oneOriginValue();
+
+      next_line = PCToNextLineNumber(i.script(), i.pc(), &column);
+      next_pos = column.oneOriginValue();
+
     } else {
       JS::TaggedColumnNumberOneOrigin column;
       filename = i.filename();
@@ -292,7 +298,7 @@ TaintLocation JS::TaintLocationFromContext(JSContext* cx)
     return TaintLocation();
   }
 
-  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, scriptStartline, hash, taintarg(cx, function));
+  return TaintLocation(ascii2utf16(std::string(filename)), line, pos, next_line, next_pos, scriptStartline, hash, taintarg(cx, function));
 }
 
 TaintOperation JS::TaintOperationFromContext(JSContext* cx, const char* name, bool is_native, JS::HandleValue args, bool fullArgs) {
@@ -555,6 +561,8 @@ void JS::PrintJsonTaint(JSContext* cx, JSString* str, HandleValue location, js::
       json.property("filename", loc.filename().c_str(), loc.filename().size());
       json.property("line", loc.line());
       json.property("pos", loc.pos());
+      json.property("next_line", loc.next_line());
+      json.property("next_pos", loc.next_pos());
       json.property("scriptline", loc.scriptStartLine());
       json.property("scripthash", JS::convertDigestToHexString(loc.scriptHash()).c_str());
       json.endObject(); // Location

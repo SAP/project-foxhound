@@ -77,7 +77,7 @@ class TaintLocation
 {
   public:
 
-    TaintLocation(std::u16string filename, uint32_t line, uint32_t pos, uint32_t scriptStartLine, TaintMd5 scriptHash, std::u16string function);
+    TaintLocation(std::u16string filename, uint32_t line, uint32_t pos, uint32_t next_line, uint32_t next_pos, uint32_t scriptStartLine, TaintMd5 scriptHash, std::u16string function);
 
     TaintLocation();
 
@@ -92,6 +92,8 @@ class TaintLocation
     const std::u16string& filename() const { return filename_; }
     uint32_t line() const { return line_; }
     uint32_t pos() const { return pos_; }
+    uint32_t next_line() const { return next_line_; }
+    uint32_t next_pos() const { return next_pos_; }
     uint32_t scriptStartLine() const { return scriptStartLine_; }
     const TaintMd5& scriptHash() const { return scriptHash_; }
     const std::u16string& function() const { return function_; }
@@ -100,6 +102,8 @@ class TaintLocation
     std::u16string filename_;
     uint32_t line_;
     uint32_t pos_;
+    uint32_t next_line_;
+    uint32_t next_pos_;
     uint32_t scriptStartLine_;
     TaintMd5 scriptHash_;
     std::u16string function_;
