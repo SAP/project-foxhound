@@ -2290,6 +2290,15 @@ extern unsigned PCToLineNumber(
     SrcNote* notes, SrcNote* notesEnd, jsbytecode* code, jsbytecode* pc,
     JS::LimitedColumnNumberOneOrigin* columnp = nullptr);
 
+extern unsigned PCToNextLineNumber(
+    JSScript* script, jsbytecode* pc,
+    JS::LimitedColumnNumberOneOrigin* columnp = nullptr);
+
+extern unsigned PCToNextLineNumber(
+    unsigned startLine, JS::LimitedColumnNumberOneOrigin startCol,
+    SrcNote* notes, SrcNote* notesEnd, jsbytecode* code, jsbytecode* pc,
+    JS::LimitedColumnNumberOneOrigin* columnp = nullptr);
+
 /*
  * This function returns the file and line number of the script currently
  * executing on cx. If there is no current script executing on cx (e.g., a

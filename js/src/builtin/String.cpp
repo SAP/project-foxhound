@@ -233,6 +233,8 @@ str_taint_getter(JSContext* cx, unsigned argc, Value* vp)
           !JS_DefineProperty(cx, location, "function", function, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "line", taint_node.operation().location().line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "pos", taint_node.operation().location().pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "next_line", taint_node.operation().location().next_line(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
+          !JS_DefineProperty(cx, location, "next_pos", taint_node.operation().location().next_pos(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "scriptline", taint_node.operation().location().scriptStartLine(), JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT) ||
           !JS_DefineProperty(cx, location, "scripthash", hash, JSPROP_READONLY | JSPROP_ENUMERATE | JSPROP_PERMANENT))
         return false;
