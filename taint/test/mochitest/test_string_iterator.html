@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Test StringIterator (see
+      https://github.com/SAP/project-foxhound/issues/348)
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      add_task(async function test_untainted_string() {
+        const str = "abc";
+        const chars = [...str];
+        for (let i = 0; i < chars.length; ++i) {
+          check_untainted(chars[i]);
+        }
+      });
+
+      add_task(async function test_tainted_string() {
+        const str = String.tainted("abc", "t1");
+        const chars = [...str];
+        for (let i = 0; i < chars.length; ++i) {
+          check_tainted(chars[i]);
+        }
+      });
+
+      add_task(async function test_concat_tainted_strings() {
+        const str = String.tainted("abc", "t1") + String.tainted("def", "t2");
+        const chars = [...str];
+        for (let i = 0; i < chars.length; ++i) {
+          const c = chars[i];
+          check_tainted(c);
+          SimpleTest.is(c.taint.length, 1);
+          SimpleTest.is(c.taint[0].flow.slice(-1)[0].operation, i < 3 ? "t1" : "t2");
+        }
+      });
+
+      add_task(async function test_utf16() {
+        const str = String.tainted("a😊c", "t1");
+        const chars = [...str];
+        for (let i = 0; i < chars.length; ++i) {
+          const c = chars[i];
+          check_tainted(c);
+          SimpleTest.is(c.taint.length, 1);
+          SimpleTest.is(c.taint[0].end - c.taint[0].begin, i === 1 ? 2 : 1);
+        }
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
