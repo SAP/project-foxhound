@@ -879,7 +879,11 @@ function StringIteratorNext() {
 
   UnsafeSetReservedSlot(obj, ITERATOR_SLOT_NEXT_INDEX, index + charCount);
 
-  result.value = callFunction(std_String_fromCodePoint, null, codePoint);
+  var value = callFunction(std_String_fromCodePoint, null, codePoint);
+
+  SetTaintForSubString(value, S, index, index + charCount);
+
+  result.value = value;
 
   return result;
 }

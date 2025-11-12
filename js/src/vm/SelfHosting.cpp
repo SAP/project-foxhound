@@ -1848,6 +1848,30 @@ taint_copyString(JSContext* cx, unsigned argc, Value* vp)
     return true;
 }
 
+static bool
+taint_setTaintForSubString(JSContext* cx, unsigned argc, Value* vp)
+{
+    // dstStr, srcStr, begin, end
+    CallArgs args = CallArgsFromVp(argc, vp);
+
+    RootedString dstStr(cx, args[0].toString());
+    if (!dstStr) {
+        return false;
+    }
+
+    RootedString srcStr(cx, args[1].toString());
+    if (!srcStr) {
+        return false;
+    }
+
+    int32_t begin = args[2].toInt32();
+    int32_t end = args[3].toInt32();
+
+    dstStr->setTaint(srcStr->Taint().safeSubTaint(begin, end));
+
+    return true;
+}
+
 static bool intrinsic_PromiseResolve(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   MOZ_ASSERT(args.length() == 2);
@@ -2394,6 +2418,7 @@ static const JSFunctionSpec intrinsic_functions[] = {
                     RegExpSearcherLastLimit),
     JS_INLINABLE_FN("SameValue", js::obj_is, 2, 0, ObjectIs),
     JS_FN("SetCopy", SetObject::copy, 1, 0),
+    JS_FN("SetTaintForSubString", taint_setTaintForSubString, 4, 0),
     JS_FN("SharedArrayBufferByteLength",
           intrinsic_ArrayBufferByteLength<SharedArrayBufferObject>, 1, 0),
     JS_FN("SharedArrayBufferCopyData",
