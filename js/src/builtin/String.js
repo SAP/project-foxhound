@@ -879,10 +879,8 @@ function StringIteratorNext() {
 
   UnsafeSetReservedSlot(obj, ITERATOR_SLOT_NEXT_INDEX, index + charCount);
 
-  var value = callFunction(std_String_fromCodePoint, null, codePoint);
-
+  var value = CopyString(callFunction(std_String_fromCodePoint, null, codePoint));
   SetTaintForSubString(value, S, index, index + charCount);
-
   result.value = value;
 
   return result;
