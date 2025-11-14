@@ -143,14 +143,8 @@ jobs:
   
  # Test complete build on MacOS
   macos-build:
-    strategy:
-      matrix:
-        # Build using both latest (M1 ARM) and macos-13 (Intel x86)
-        os: [macos-latest, macos-13]
-    runs-on: ${{ matrix.os }}
 
-    # Make sure all versions run to end
-    continue-on-error: true
+    runs-on: macos-latest
 
     steps:
 
