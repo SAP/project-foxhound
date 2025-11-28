@@ -70,6 +70,18 @@ static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const n
   return TaintOperation(name);
 }
 
+static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsACString& arg)
+{
+  if (cx && JS::CurrentGlobalOrNull(cx)) {
+    JS::Rooted<JS::Value> argval(cx);
+    if (mozilla::dom::ToJSValue(cx, arg, &argval)) {
+      return JS_GetTaintOperationFullArgs(cx, name, argval);
+    }
+  }
+
+  return TaintOperation(name);
+}
+
 static TaintOperation GetTaintOperation(JSContext *cx, const char* name, const nsTArray<nsString> &args)
 {
   if (cx && JS::CurrentGlobalOrNull(cx)) {
@@ -250,6 +262,16 @@ static nsresult MarkTaintOperation(JSContext *cx, nsCString &str, const char* na
 nsresult MarkTaintOperation(nsCString &str, const char* name, const nsTArray<nsCString> &args)
 {
   return MarkTaintOperation(nsContentUtils::GetCurrentJSContext(), str, name, args);
+}
+
+nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString &arg)
+{
+  if (str.isTainted()) {
+    auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg);
+    op.set_native();
+    str.Taint().extend(op);
+  }
+  return NS_OK;
 }
 
 static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {

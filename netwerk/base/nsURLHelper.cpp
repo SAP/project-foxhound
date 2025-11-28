@@ -1129,6 +1129,7 @@ void URLParams::Get(const nsACString& aName, nsACString& aRetval) {
   const auto it = std::find_if(mParams.cbegin(), end, MakeNameMatcher(aName));
   if (it != end) {
     aRetval.Assign(it->mValue);
+    MarkTaintOperation(aRetval, "URLSearchParams.get", aName);
   }
 }
 
@@ -1138,6 +1139,7 @@ void URLParams::GetAll(const nsACString& aName, nsTArray<nsCString>& aRetval) {
   for (uint32_t i = 0, len = mParams.Length(); i < len; ++i) {
     if (mParams[i].mKey.Equals(aName)) {
       aRetval.AppendElement(mParams[i].mValue);
+      MarkTaintOperation(aRetval.LastElement(), "URLSearchParams.getAll", mParams[i].mKey);
     }
   }
 }

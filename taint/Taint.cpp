@@ -33,16 +33,18 @@
 
 #define DEBUG_LINE() std::cout << __PRETTY_FUNCTION__ << std::endl;
 
-TaintLocation::TaintLocation(std::u16string filename, uint32_t line, uint32_t pos, uint32_t scriptStartLine, TaintMd5 scriptHash, std::u16string function)
-    : filename_(std::move(filename)), line_(line), pos_(pos), scriptStartLine_(scriptStartLine), scriptHash_(scriptHash), function_(std::move(function)) {}
+TaintLocation::TaintLocation(std::u16string filename, uint32_t line, uint32_t pos, uint32_t next_line, uint32_t next_pos, uint32_t scriptStartLine, TaintMd5 scriptHash, std::u16string function)
+    : filename_(std::move(filename)), line_(line), pos_(pos), next_line_(next_line), next_pos_(next_pos), scriptStartLine_(scriptStartLine), scriptHash_(scriptHash), function_(std::move(function)) {}
 
 TaintLocation::TaintLocation()
-    : filename_(), line_(0), pos_(0), scriptStartLine_(0), scriptHash_({0}), function_() {}
+    : filename_(), line_(0), pos_(0), next_line_(0), next_pos_(0), scriptStartLine_(0), scriptHash_({0}), function_() {}
 
 TaintLocation::TaintLocation(TaintLocation&& other) noexcept
     : filename_(std::move(other.filename_)),
       line_(other.line_),
       pos_(other.pos_),
+      next_line_(other.next_line_),
+      next_pos_(other.next_pos_),
       scriptStartLine_(other.scriptStartLine_),
       scriptHash_(other.scriptHash_),
       function_(std::move(other.function_)) {}
@@ -52,6 +54,8 @@ TaintLocation& TaintLocation::operator=(TaintLocation&& other) noexcept
     filename_ = std::move(other.filename_);
     line_ = other.line_;
     pos_ = other.pos_;
+    next_line_ = other.next_line_;
+    next_pos_ = other.next_pos_;
     scriptStartLine_ = other.scriptStartLine_;
     scriptHash_ = other.scriptHash_;
     function_ = std::move(other.function_);

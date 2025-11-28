@@ -2726,6 +2726,110 @@ unsigned js::PCToLineNumber(JSScript* script, jsbytecode* pc,
       script->notes(), script->notesEnd(), script->code(), pc, columnp);
 }
 
+
+unsigned js::PCToNextLineNumber(unsigned startLine,
+                            JS::LimitedColumnNumberOneOrigin startCol,
+                            SrcNote* notes, SrcNote* notesEnd, jsbytecode* code,
+                            jsbytecode* pc,
+                            JS::LimitedColumnNumberOneOrigin* columnp) {
+
+
+  /*
+   * We want to get the position of the next-highest source note
+   * This is *not* the one corresponding to the next bytecode, as this could be
+   * *lower* than the current pc
+   */
+
+  // First get the position and line of the current pc
+  JS::LimitedColumnNumberOneOrigin targetColumn;
+  unsigned targetLine = PCToLineNumber(startLine, startCol, notes, notesEnd, code, pc, &targetColumn);
+  // The column and line corresponding to the closest match so far
+  JS::LimitedColumnNumberOneOrigin closestColumn = targetColumn;
+  unsigned closestLine = targetLine;
+  // Keep track of best difference
+  int32_t columnBestDiff = INT32_MAX;
+  unsigned lineBestDiff = UINT32_MAX;
+  // Initialize
+  JS::LimitedColumnNumberOneOrigin column = startCol;
+  unsigned lineno = startLine;
+
+  // Now perform a second iteration over the notes
+  // These might not be in order, so need to iterate over all of them
+  for (SrcNoteIterator iter(notes, notesEnd); !iter.atEnd(); ++iter) {
+    const auto* sn = *iter;
+
+    SrcNoteType type = sn->type();
+    if (type == SrcNoteType::SetLine) {
+      lineno = SrcNote::SetLine::getLine(sn, startLine);
+      column = JS::LimitedColumnNumberOneOrigin();
+    } else if (type == SrcNoteType::SetLineColumn) {
+      lineno = SrcNote::SetLineColumn::getLine(sn, startLine);
+      column = SrcNote::SetLineColumn::getColumn(sn);
+    } else if (type == SrcNoteType::NewLine) {
+      lineno++;
+      column = JS::LimitedColumnNumberOneOrigin();
+    } else if (type == SrcNoteType::NewLineColumn) {
+      lineno++;
+      column = SrcNote::NewLineColumn::getColumn(sn);
+    } else if (type == SrcNoteType::ColSpan) {
+      column += SrcNote::ColSpan::getSpan(sn);
+    }
+
+    // The next instruction might be on the next line
+    if (lineno > targetLine) {
+      unsigned lineDiff = lineno - targetLine;
+      // As we are still on a different line, the column distance is to the start of the line
+      JS::ColumnNumberOffset columnOffset = column - JS::LimitedColumnNumberOneOrigin();
+      int32_t columnDiff = columnOffset.value();
+      // Check if the line is closer than before
+      if (lineDiff < lineBestDiff) {
+        lineBestDiff = lineDiff;
+        closestLine = lineno;
+        closestColumn = column;
+        columnBestDiff = columnDiff;
+      } else if (lineDiff == lineBestDiff) {
+        // Check column
+        if (columnDiff < columnBestDiff) {
+          closestColumn = column;
+          columnBestDiff = columnDiff;
+        }
+      }
+    } else if (lineno == targetLine) {
+      if (column > targetColumn) {
+        // Update the column
+        JS::ColumnNumberOffset columnOffset = column - targetColumn;
+        int32_t columnDiff = columnOffset.value();
+        // If we were previously on a different line, always update
+        if ((lineBestDiff > 0) || (columnDiff < columnBestDiff)) {
+          closestColumn = column;
+          columnBestDiff = columnDiff;
+        }
+        // Update the line
+        lineBestDiff = 0;
+        closestLine = lineno;
+      }
+    }
+  }
+
+  if (columnp) {
+    *columnp = closestColumn;
+  }
+
+  return closestLine;
+}
+
+unsigned js::PCToNextLineNumber(JSScript* script, jsbytecode* pc,
+                            JS::LimitedColumnNumberOneOrigin* columnp) {
+  /* Cope with InterpreterFrame.pc value prior to entering Interpret. */
+  if (!pc) {
+    return 0;
+  }
+
+  return PCToNextLineNumber(
+      script->lineno(), JS::LimitedColumnNumberOneOrigin(script->column()),
+      script->notes(), script->notesEnd(), script->code(), pc, columnp);
+}
+
 jsbytecode* js::LineNumberToPC(JSScript* script, unsigned target) {
   ptrdiff_t offset = 0;
   ptrdiff_t best = -1;

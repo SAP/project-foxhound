@@ -141,7 +141,9 @@ already_AddRefed<nsIURI> URL::ParseURI(const nsACString& aURL,
     }
   }
 
-  nsresult rv = NS_NewURI(getter_AddRefs(uri), aURL, nullptr, baseUri);
+  nsAutoCString urlStr(aURL);
+  MarkTaintOperation(urlStr, "URL.parse", aURL);
+  nsresult rv = NS_NewURI(getter_AddRefs(uri), urlStr, nullptr, baseUri);
   if (NS_FAILED(rv)) {
     return nullptr;
   }

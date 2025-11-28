@@ -25,6 +25,7 @@ TaintOperation GetTaintOperation(const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* node);
 nsresult MarkTaintOperation(nsACString &str, const char* name);
+nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString &arg);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsTArray<nsString> &arg);
 nsresult MarkTaintOperation(nsACString &str, const char* name, const nsTArray<nsString> &arg);
 nsresult MarkTaintOperation(nsCString &str, const char* name, const nsTArray<nsCString> &arg);
