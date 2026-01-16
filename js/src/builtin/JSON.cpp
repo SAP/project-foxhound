@@ -61,27 +61,6 @@ using mozilla::Variant;
 
 using JS::AutoStableStringChars;
 
-// Foxhound: expanding taint information
-template <typename SrcCharT, typename DstCharT>
-static MOZ_ALWAYS_INLINE void appendTaintIfRequired(
-              const StringTaint& srcTaint,
-              StringTaint& dstTaint,
-              RangedPtr<const SrcCharT> srcBegin,
-              RangedPtr<const SrcCharT> src,
-              RangedPtr<DstCharT> dstBegin,
-              RangedPtr<DstCharT> dstCharBegin,
-              RangedPtr<DstCharT> dstPtr) // dstPtr after post-incrementation
-{
-  // TODO: probably not very efficient as we are adding character wise to the the taint ranges
-  if (const TaintFlow* flow = srcTaint.at(src - srcBegin)) {
-    if ((dstCharBegin >= dstBegin) && (dstPtr >= dstBegin)) {
-      dstTaint.append(TaintRange(dstCharBegin - dstBegin,
-                                 dstPtr - dstBegin,
-                                 *flow));
-    }
-  }
-}
-
 /* ES5 15.12.3 Quote.
  * Requires that the destination has enough space allocated for src after
  * escaping (that is, `2 + 6 * (srcEnd - srcBegin)` characters).
@@ -90,12 +69,18 @@ template <typename SrcCharT, typename DstCharT>
 static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
     RangedPtr<const SrcCharT> srcBegin, RangedPtr<const SrcCharT> srcEnd,
     RangedPtr<DstCharT> dstPtr,
-    // Foxhound: need to propgate Tainting information here
+    // Foxhound: need to propagate taint information here
     const StringTaint& srcTaint, StringTaint& dstTaint) {
-  RangedPtr<const SrcCharT> src = srcBegin;
-  RangedPtr<const SrcCharT> srcCharBegin = src;
+  RangedPtr<const SrcCharT> srcPtr = srcBegin;
   RangedPtr<DstCharT> dstBegin = dstPtr;
-  RangedPtr<DstCharT> dstCharBegin = dstPtr;
+
+  auto srcTaintIter = srcTaint.begin();
+  RangedPtr<const SrcCharT> srcRangeBegin = srcBegin;
+  RangedPtr<DstCharT> dstRangeBegin = dstBegin;
+
+  // Clear any existing taint information
+  dstTaint.clear();
+
   // Maps characters < 256 to the value that must follow the '\\' in the quoted
   // string. Entries with 'u' are handled as \\u00xy, and entries with 0 are not
   // escaped in any way. Characters >= 256 are all assumed to be unescaped.
@@ -114,9 +99,6 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
       // clang-format on
   };
 
-  // Clear any existing taint information
-  dstTaint.clear();
-
   /* Step 1. */
   *dstPtr++ = '"';
 
@@ -126,11 +108,21 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
   };
 
   /* Step 2. */
-  while (src != srcEnd) {
-    dstCharBegin = dstPtr;
-    srcCharBegin = src;
-    const SrcCharT c = *src++;
-    
+  while (srcPtr != srcEnd) {
+    uint32_t srcIndexInitial = srcPtr - srcBegin;
+    const TaintRange* srcRange =
+        srcTaintIter != srcTaint.end() ? &(*srcTaintIter) : nullptr;
+    if (srcRange && !srcRange->contains(srcIndexInitial)) {
+      srcRange = nullptr;
+    }
+
+    if (srcRange && srcIndexInitial == srcRange->begin()) {
+      srcRangeBegin = srcPtr;
+      dstRangeBegin = dstPtr;
+    }
+
+    const SrcCharT c = *srcPtr++;
+
     // Handle the Latin-1 cases.
     if (MOZ_LIKELY(c < sizeof(escapeLookup))) {
       Latin1Char escaped = escapeLookup[c];
@@ -138,8 +130,7 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
       // Directly copy non-escaped code points.
       if (escaped == 0) {
         *dstPtr++ = c;
-        appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
-        continue;
+        goto finally;
       }
 
       // Escape the rest, elaborating Unicode escapes when needed.
@@ -155,37 +146,41 @@ static MOZ_ALWAYS_INLINE RangedPtr<DstCharT> InfallibleQuoteJSONString(
 
         *dstPtr++ = ToLowerHex(c & 0xF);
       }
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
-      continue;
+      goto finally;
     }
 
     // Non-ASCII non-surrogates are directly copied.
     if (!unicode::IsSurrogate(c)) {
       *dstPtr++ = c;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
-      continue;
+      goto finally;
     }
 
     // So too for complete surrogate pairs.
-    if (MOZ_LIKELY(unicode::IsLeadSurrogate(c) && src < srcEnd &&
-                   unicode::IsTrailSurrogate(*src))) {
+    if (MOZ_LIKELY(unicode::IsLeadSurrogate(c) && srcPtr < srcEnd &&
+                   unicode::IsTrailSurrogate(*srcPtr))) {
       *dstPtr++ = c;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
-      *dstPtr++ = *src++;
-      appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin++, dstBegin, dstCharBegin, dstPtr);
-      continue;
+      *dstPtr++ = *srcPtr++;
+      goto finally;
     }
 
     // But lone surrogates are Unicode-escaped.
-    char32_t as32 = char32_t(c);
-    *dstPtr++ = '\\';
-    *dstPtr++ = 'u';
-    *dstPtr++ = ToLowerHex(as32 >> 12);
-    *dstPtr++ = ToLowerHex((as32 >> 8) & 0xF);
-    *dstPtr++ = ToLowerHex((as32 >> 4) & 0xF);
-    *dstPtr++ = ToLowerHex(as32 & 0xF);
+    {
+      char32_t as32 = char32_t(c);
+      *dstPtr++ = '\\';
+      *dstPtr++ = 'u';
+      *dstPtr++ = ToLowerHex(as32 >> 12);
+      *dstPtr++ = ToLowerHex((as32 >> 8) & 0xF);
+      *dstPtr++ = ToLowerHex((as32 >> 4) & 0xF);
+      *dstPtr++ = ToLowerHex(as32 & 0xF);
+    }
 
-    appendTaintIfRequired(srcTaint, dstTaint, srcBegin, srcCharBegin, dstBegin, dstCharBegin, dstPtr);
+  finally:
+    uint32_t srcIndexFinal = srcPtr - srcBegin;
+    if (srcRange && srcIndexFinal == srcRange->end()) {
+      dstTaint.append(TaintRange(dstRangeBegin - dstBegin, dstPtr - dstBegin,
+                                 srcRange->flow()));
+      ++srcTaintIter;
+    }
   }
 
   /* Steps 3-4. */
@@ -203,8 +198,8 @@ static size_t QuoteJSONStringHelper(const JSLinearString& linear,
   RangedPtr<const SrcCharT> srcBegin{linear.chars<SrcCharT>(nogc), len};
   RangedPtr<DstCharT> dstBegin{sb.begin<DstCharT>(), sb.begin<DstCharT>(),
                                sb.end<DstCharT>()};
-  RangedPtr<DstCharT> dstEnd =
-      InfallibleQuoteJSONString(srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), taint);
+  RangedPtr<DstCharT> dstEnd = InfallibleQuoteJSONString(
+      srcBegin, srcBegin + len, dstBegin + sbOffset, linear.taint(), taint);
 
   // Foxhound: append the taint with the correct offset
   sb.taint().concat(taint, sbOffset);
@@ -1943,8 +1938,8 @@ static bool Revive(JSContext* cx, HandleValue reviver,
 }
 
 template <typename CharT>
-bool ParseJSON(JSContext* cx, const mozilla::Range<const CharT> chars, const StringTaint& aTaint,
-               MutableHandleValue vp) {
+bool ParseJSON(JSContext* cx, const mozilla::Range<const CharT> chars,
+               const StringTaint& aTaint, MutableHandleValue vp) {
   Rooted<JSONParser<CharT>> parser(cx, cx, chars, aTaint,
                                    JSONParser<CharT>::ParseType::JSONParse);
   return parser.parse(vp);
@@ -2093,11 +2088,13 @@ static bool json_rawJSON(JSContext* cx, unsigned argc, Value* vp) {
   /* Step 3. */
   RootedValue parsedValue(cx);
   if (linearChars.isLatin1()) {
-    if (!ParseJSON(cx, linearChars.latin1Range(), linear->Taint(), &parsedValue)) {
+    if (!ParseJSON(cx, linearChars.latin1Range(), linear->Taint(),
+                   &parsedValue)) {
       return false;
     }
   } else {
-    if (!ParseJSON(cx, linearChars.twoByteRange(), linear->Taint(), &parsedValue)) {
+    if (!ParseJSON(cx, linearChars.twoByteRange(), linear->Taint(),
+                   &parsedValue)) {
       return false;
     }
   }
@@ -2148,15 +2145,17 @@ bool json_stringify(JSContext* cx, unsigned argc, Value* vp) {
   // needs to support returning undefined. So this is a little awkward
   // for the API, because we want to support streaming writers.
   if (!sb.empty()) {
-    // Foxhound: We have to root the string here, as we introduce the TaintOperationFromContext call, which can trigger the GC.
+    // Foxhound: We have to root the string here, as we introduce the
+    // TaintOperationFromContext call, which can trigger the GC.
     JS::Rooted<JSString*> str(cx, sb.finishString());
     if (!str) {
       return false;
     }
 
     // Foxhound: Add stringify operation to taint flows.
-    if(str->isTainted()) {
-      str->taint().extend(TaintOperationFromContext(cx, "JSON.stringify", true));
+    if (str->isTainted()) {
+      str->taint().extend(
+          TaintOperationFromContext(cx, "JSON.stringify", true));
     }
     args.rval().setString(str);
   } else {
