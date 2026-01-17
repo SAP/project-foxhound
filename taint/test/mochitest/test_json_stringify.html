@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>
+      Test JSON.stringify (see
+      https://github.com/SAP/project-foxhound/issues/345)
+    </title>
+    <script src="/tests/SimpleTest/SimpleTest.js"></script>
+    <link rel="stylesheet" href="/tests/SimpleTest/test.css" />
+
+    <script type="text/javascript">
+      function getStringJsonChars(str) {
+        const strJson = JSON.stringify(str);
+        check_untainted(strJson[0]); // opening double quotes
+        check_untainted(strJson[strJson.length - 1]); // closing double quotes
+        return strJson.substring(1, strJson.length - 1);
+      }
+
+      add_task(async function test_untainted_string() {
+        const str = "abc";
+        const chars = getStringJsonChars(str);
+        check_untainted(chars);
+      });
+
+      add_task(async function test_tainted_string() {
+        const str = String.tainted("abc", "t1");
+        const chars = getStringJsonChars(str);
+        check_tainted(chars);
+      });
+
+      add_task(async function test_concat_tainted_strings() {
+        const str = String.tainted("abc", "t1") + String.tainted("def", "t2");
+        const chars = getStringJsonChars(str);
+        check_tainted(chars);
+        SimpleTest.is(chars.taint.length, 2);
+        const [t1, t2] = chars.taint;
+        SimpleTest.is(t1.flow.slice(-1)[0].operation, "t1");
+        SimpleTest.is(t1.begin, 0);
+        SimpleTest.is(t1.end, 3);
+        SimpleTest.is(t2.flow.slice(-1)[0].operation, "t2");
+        SimpleTest.is(t2.begin, 3);
+        SimpleTest.is(t2.end, 6);
+      });
+
+      add_task(async function test_escape() {
+        function doTest(arg) {
+          const str = String.tainted(arg, "t1");
+          const chars = getStringJsonChars(str);
+          SimpleTest.is(chars.taint.length, 1);
+          const [t1] = chars.taint;
+          SimpleTest.is(t1.begin, 0);
+          SimpleTest.is(t1.end, chars.length);
+        }
+
+        doTest('"');
+        doTest("\\");
+        doTest("\n");
+        doTest("\0");
+      });
+    </script>
+  </head>
+
+  <body></body>
+</html>
