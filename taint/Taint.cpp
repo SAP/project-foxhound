@@ -1285,14 +1285,16 @@ json DumpTaintOperationAsJSON(const TaintOperation& aOperation) {
 }
 
 TaintLocation LoadTaintLocationFromJSON(const json& aData) {
-  return TaintLocation(aData[0].get<std::u16string>(), aData[1].get<uint32_t>(),
-                       aData[2].get<std::uint32_t>(),
-                       aData[3].get<std::uint32_t>(), aData[4].get<TaintMd5>(),
-                       aData[5].get<std::u16string>());
+  return TaintLocation(
+      aData[0].get<std::u16string>(), aData[1].get<uint32_t>(),
+      aData[2].get<std::uint32_t>(), aData[3].get<std::uint32_t>(),
+      aData[4].get<std::uint32_t>(), aData[5].get<std::uint32_t>(),
+      aData[6].get<TaintMd5>(), aData[7].get<std::u16string>());
 }
 
 json DumpTaintLocationAsJSON(const TaintLocation& aLocation) {
   return json::array({aLocation.filename(), aLocation.line(), aLocation.pos(),
+                      aLocation.next_line(), aLocation.next_pos(),
                       aLocation.scriptStartLine(), aLocation.scriptHash(),
                       aLocation.function()});
 }
