@@ -289,10 +289,12 @@ NS_IMPL_ISUPPORTS(ConsumeBodyDoneObserver, nsIStreamLoaderObserver)
     return nullptr;
   }
 
-  RefPtr<BodyConsumer> consumer =
-      new BodyConsumer(aMainThreadEventTarget, aGlobal, aBodyStream, promise,
-                       aType, aBodyBlobURISpec, aBodyLocalPath, aBodyMimeType,
-                       aMixedCaseMimeType, aBlobStorageType, aInitialURL);
+  TaintLocation taintLocation = GetTaintLocation();
+
+  RefPtr<BodyConsumer> consumer = new BodyConsumer(
+      aMainThreadEventTarget, aGlobal, aBodyStream, promise, aType,
+      aBodyBlobURISpec, aBodyLocalPath, aBodyMimeType, aMixedCaseMimeType,
+      aBlobStorageType, aInitialURL, taintLocation);
 
   RefPtr<ThreadSafeWorkerRef> workerRef;
 
@@ -351,7 +353,7 @@ BodyConsumer::BodyConsumer(
     const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
     const nsACString& aMixedCaseMimeType,
     MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
-    const nsACString& aInitialURL)
+    const nsACString& aInitialURL, const TaintLocation& aTaintLocation)
     : mTargetThread(NS_GetCurrentThread()),
       mMainThreadEventTarget(aMainThreadEventTarget),
       mBodyStream(aBodyStream),
@@ -364,6 +366,7 @@ BodyConsumer::BodyConsumer(
       mConsumeType(aType),
       mConsumePromise(aPromise),
       mInitialURL(aInitialURL),
+      mTaintLocation(aTaintLocation),
       mBodyConsumed(false),
       mShuttingDown(false) {
   MOZ_ASSERT(aMainThreadEventTarget);
@@ -677,6 +680,8 @@ void BodyConsumer::ContinueConsumeBody(nsresult aStatus, uint32_t aResultLength,
 
   JSContext* cx = jsapi.cx();
   ErrorResult error;
+
+  JS_SetFallbackTaintLocation(cx, mTaintLocation);
 
   switch (mConsumeType) {
     case ConsumeType::ArrayBuffer: {

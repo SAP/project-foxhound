@@ -171,10 +171,14 @@ TaintOperation GetTaintOperation(const char* name)
   return GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name);
 }
 
+TaintLocation GetTaintLocation() {
+  return JS_GetTaintLocation(nsContentUtils::GetCurrentJSContext());
+}
+
 nsresult MarkTaintOperation(StringTaint& aTaint, const char* name) {
   JSContext *cx = nsContentUtils::GetCurrentJSContext();
   auto op = GetTaintOperation(cx, name);
-  op.set_native();
+  op.setNative();
   aTaint.extend(op);
   return NS_OK;
 }
@@ -183,7 +187,7 @@ static nsresult MarkTaintOperation(JSContext *cx, nsACString &str, const char* n
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(cx, name);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -198,7 +202,7 @@ static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* na
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(cx, name);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -208,7 +212,7 @@ nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* nod
 {
   if (str.isTainted()) {
     TaintOperation op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, node);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -223,7 +227,7 @@ static nsresult MarkTaintOperation(JSContext *cx, nsAString &str, const char* na
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(cx, name, args);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -238,7 +242,7 @@ static nsresult MarkTaintOperation(JSContext *cx, nsACString &str, const char* n
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(cx, name, args);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -253,7 +257,7 @@ static nsresult MarkTaintOperation(JSContext *cx, nsCString &str, const char* na
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(cx, name, args);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -268,7 +272,7 @@ nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString 
 {
   if (str.isTainted()) {
     auto op = GetTaintOperation(nsContentUtils::GetCurrentJSContext(), name, arg);
-    op.set_native();
+    op.setNative();
     str.Taint().extend(op);
   }
   return NS_OK;
@@ -276,21 +280,21 @@ nsresult MarkTaintOperation(nsACString &str, const char* name, const nsACString 
 
 static nsresult MarkTaintSource(nsAString &str, TaintOperation operation) {
   operation.setSource();
-  operation.set_native();
+  operation.setNative();
   str.Taint().overlay(0, str.Length(), operation);
   return NS_OK;
 }
 
 static nsresult MarkTaintSource(nsACString &str, TaintOperation operation) {
   operation.setSource();
-  operation.set_native();
+  operation.setNative();
   str.Taint().overlay(0, str.Length(), operation);
   return NS_OK;
 }
 
 static nsresult MarkTaintSource(mozilla::dom::DOMString &str, TaintOperation operation) {
   operation.setSource();
-  operation.set_native();
+  operation.setNative();
   str.Taint().overlay(0, str.Length(), operation);
   return NS_OK;
 }
@@ -300,7 +304,7 @@ nsresult MarkTaintSource(JSContext* cx, JSString* str, const char* name)
   if (isSourceActive(name)) {
     TaintOperation op = GetTaintOperation(cx, name);
     op.setSource();
-    op.set_native();
+    op.setNative();
     JS_MarkTaintSource(cx, str, op);
   }
   return NS_OK;
@@ -310,7 +314,7 @@ nsresult MarkTaintSource(JSContext* aCx, JSString* str, const char* name, const 
   if (isSourceActive(name)) {
     TaintOperation op = GetTaintOperation(aCx, name, arg);
     op.setSource();
-    op.set_native();
+    op.setNative();
     JS_MarkTaintSource(aCx, str, op);
   }
   return NS_OK;
@@ -320,7 +324,7 @@ nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, con
   if (isSourceActive(name)) {
     TaintOperation op = GetTaintOperation(cx, name);
     op.setSource();
-    op.set_native();
+    op.setNative();
     JS_MarkTaintSource(cx, aValue, op);
   }
   return NS_OK;
@@ -331,7 +335,7 @@ nsresult MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, con
   if (isSourceActive(name)) {
     TaintOperation op = GetTaintOperation(cx, name, arg);
     op.setSource();
-    op.set_native();
+    op.setNative();
     JS_MarkTaintSource(cx, aValue, op);
   }
   return NS_OK;
@@ -363,7 +367,7 @@ nsresult MarkTaintSource(nsAString &str, const char* name, const nsAString &arg)
 
 static nsresult MarkTaintSource(TaintFlow &flow, TaintOperation operation) {
   operation.setSource();
-  operation.set_native();
+  operation.setNative();
   flow.extend(operation);
   return NS_OK;
 }

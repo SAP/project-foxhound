@@ -1022,6 +1022,12 @@ JS_GetTaintOperationFullArgs(JSContext* cx, const char* name, JS::HandleValue ar
 extern JS_PUBLIC_API TaintOperation
 JS_GetTaintOperation(JSContext* cx, const char* name);
 
+JS_PUBLIC_API TaintLocation
+JS_GetTaintLocation(JSContext* cx);
+
+JS_PUBLIC_API void
+JS_SetFallbackTaintLocation(JSContext* cx, const TaintLocation& taintLocation);
+
 JS_PUBLIC_API void
 JS_MarkTaintSource(JSContext* cx, JS::MutableHandle<JS::Value> aValue, const TaintOperation& op);
 

@@ -1515,3 +1515,11 @@ JS_PUBLIC_API bool js::CheckWasiRecursionLimit(JSContext* cx) {
   return true;
 }
 #endif  // __wasi__
+
+TaintLocation JSContext::getFallbackTaintLocation() {
+  return fallbackTaintLocation;
+}
+
+void JSContext::setFallbackTaintLocation(const TaintLocation& taintLocation) {
+  fallbackTaintLocation = taintLocation;
+}

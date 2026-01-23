@@ -101,7 +101,8 @@ class BodyConsumer final : public AbortFollower,
                const nsAString& aBodyLocalPath, const nsACString& aBodyMimeType,
                const nsACString& aMixedCaseMimeType,
                MutableBlobStorage::MutableBlobStorageType aBlobStorageType,
-               const nsACString& aInitialURL);
+               const nsACString& aInitialURL,
+               const TaintLocation& aTaintLocation);
 
   ~BodyConsumer();
 
@@ -143,6 +144,8 @@ class BodyConsumer final : public AbortFollower,
   RefPtr<Promise> mConsumePromise;
 
   nsCString mInitialURL;
+
+  TaintLocation mTaintLocation;
 
   // touched only on the target thread.
   bool mBodyConsumed;

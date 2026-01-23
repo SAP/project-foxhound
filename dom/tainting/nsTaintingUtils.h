@@ -21,6 +21,8 @@
 // Get a taint operation
 TaintOperation GetTaintOperation(const char* name);
 
+TaintLocation GetTaintLocation();
+
 // Extend the taintflow
 nsresult MarkTaintOperation(nsAString &str, const char* name);
 nsresult MarkTaintOperation(nsAString &str, const char* name, const nsINode* node);
