@@ -238,11 +238,11 @@ _package_foxhound() {
   _status "Creating Foxhound zip"
   if [ -z "$DRY_RUN" ]; then
     pushd "${FOXHOUND_OBJ_DIR}/dist" || exit 1
-    zip -r foxhound_linux.zip $FOXHOUND_NAME
+    zip -r foxhound.zip $FOXHOUND_NAME
     if [ -n "$WITH_PLAYWRIGHT_INTEGRATION" ]; then
-        cp foxhound_linux.zip "foxhound_linux_${PLAYWRIGHT_VERSION}.zip"
+        cp foxhound.zip "foxhound_${PLAYWRIGHT_VERSION}.zip"
     fi
-    _status "Zip located at '$(pwd  || true)/foxhound_linux.zip', done!"
+    _status "Zip located at '$(pwd  || true)/foxhound.zip', done!"
     popd > /dev/null || exit 1
   fi
   popd > /dev/null || exit 1

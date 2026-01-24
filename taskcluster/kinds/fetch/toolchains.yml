@@ -6,7 +6,7 @@ binutils-2.31.1:
     description: binutils 2.31.1 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/binutils/binutils-2.31.1.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/binutils/binutils-2.31.1.tar.xz
         sha256: 5d20086ecf5752cc7d9134246e9588fa201740d540f7eb84d795b1f7a93bca86
         size: 20467996
         gpg-signature:
@@ -20,7 +20,7 @@ binutils-2.41:
     description: binutils 2.41 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/binutils/binutils-2.41.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/binutils/binutils-2.41.tar.xz
         sha256: ae9a5789e23459e59606e6714723f2d3ffc31c03174191ef0d015bdf06007450
         size: 26765692
         gpg-signature:
@@ -34,7 +34,7 @@ gcc-8.5.0:
     description: GCC 8.5.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-8.5.0/gcc-8.5.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-8.5.0/gcc-8.5.0.tar.xz
         sha256: d308841a511bb830a6100397b0042db24ce11f642dab6ea6ee44842e5325ed50
         size: 63841008
         gpg-signature:
@@ -48,9 +48,23 @@ gcc-9.5.0:
     description: GCC 9.5.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-9.5.0/gcc-9.5.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-9.5.0/gcc-9.5.0.tar.xz
         sha256: 27769f64ef1d4cd5e2be8682c0c93f9887983e6cfd1a927ce5a0a2915a95cf8f
         size: 72462752
+        gpg-signature:
+            sig-url: "{url}.sig"
+            key-path: build/unix/build-gcc/7F74F97C103468EE5D750B583AB00996FC26A641.key
+        artifact-name: gcc-source.tar.zst
+        strip-components: 1
+        add-prefix: gcc-source/
+
+gcc-10.5.0:
+    description: GCC 10.5.0 source code
+    fetch:
+        type: static-url
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-10.5.0/gcc-10.5.0.tar.xz
+        sha256: 25109543fdf46f397c347b5d8b7a2c7e5694a5a51cce4b9c6e1ea8a71ca307c1
+        size: 77846412
         gpg-signature:
             sig-url: "{url}.sig"
             key-path: build/unix/build-gcc/7F74F97C103468EE5D750B583AB00996FC26A641.key
@@ -62,7 +76,7 @@ gcc-11.4.0:
     description: GCC 11.4.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gcc/gcc-11.4.0/gcc-11.4.0.tar.xz
+        url: https://ftpmirror.gnu.org/gnu/gcc/gcc-11.4.0/gcc-11.4.0.tar.xz
         sha256: 3f2db222b007e8a4a23cd5ba56726ef08e8b1f1eb2055ee72c1402cea73a8dd9
         size: 79837032
         gpg-signature:
@@ -76,7 +90,7 @@ gmp-6.1.0:
     description: GMP 6.1.0 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/gmp/gmp-6.1.0.tar.bz2
+        url: https://ftpmirror.gnu.org/gnu/gmp/gmp-6.1.0.tar.bz2
         sha256: 498449a994efeba527885c10405993427995d3f86b8768d8cdf8d9dd7c6b73e8
         size: 2383840
         gpg-signature:
@@ -109,7 +123,7 @@ mpc-1.0.3:
     description: mpc 1.0.3 source code
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz
+        url: https://ftpmirror.gnu.org/gnu/mpc/mpc-1.0.3.tar.gz
         sha256: 617decc6ea09889fb08ede330917a00b16809b8db88c29c31bfbb49cbf88ecc3
         size: 669925
         gpg-signature:
@@ -544,68 +558,68 @@ nodejs-12-linux64:
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-linux64-arm64:
-    description: nodejs 18 for arm64 linux
+nodejs-22-linux64-arm64:
+    description: nodejs 22 for arm64 linux
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-linux-arm64.tar.xz
-        sha256: cf94ab72e45b855257545fec1c017bdf30a9e23611561382eaf64576b999e72d
-        size: 23403368
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0-linux-arm64.tar.xz
+        sha256: eab80cb88f8fda1e65f5e8d0420c9809bdb320b03fd34976ab7161b6e703b910
+        size: 29126496
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-macosx64:
-    description: nodejs 18 for x64 macOS
+nodejs-22-macosx64:
+    description: nodejs 22 for x64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-darwin-x64.tar.xz
-        sha256: 4f60b40071c6a67482b99d22a5265839177b8706a2b13b493396f368f0b42b00
-        size: 22496376
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-x64.tar.xz
+        sha256: 5c34638f2c0e3f3aaa7b3a94b58304765a169730da1896ebba8515ea4d987a9c
+        size: 26966604
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-macosx64-arm64:
-    description: nodejs 18 for arm64 macOS
+nodejs-22-macosx64-arm64:
+    description: nodejs 22 for arm64 macOS
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-darwin-arm64.tar.xz
-        sha256: 857885257c586fb13c93d33d326ca82056ba8b7445ce27cf34dd406add04158e
-        size: 20768464
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0-darwin-arm64.tar.xz
+        sha256: aaf7fc3c936f1b359bc312b63638e41f258689ac2303966ad932cda18c54ea00
+        size: 24867980
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-win32:
-    description: nodejs 18 for x86 Windows
+nodejs-22-win32:
+    description: nodejs 22 for x86 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-win-x86.zip
-        sha256: 3171148f735954bdca8adccb2200379e61142e0f5a2bdb4ca6432afb0d9951df
-        size: 27504941
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x86.zip
+        sha256: c23e16ffddd95ef45272549675a8f87480b3a0a900bebb94c277ff11ba99ec06
+        size: 32797334
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-win64:
-    description: nodejs 18 for x64 Windows
+nodejs-22-win64:
+    description: nodejs 22 for x64 Windows
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0-win-x64.zip
-        sha256: 5311913d45e1fcc3643c58d1e3926eb85437b180f025fe5857413c9f02403645
-        size: 29332158
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0-win-x64.zip
+        sha256: 21c2d9735c80b8f86dab19305aa6a9f6f59bbc808f68de3eef09d5832e3bfbbd
+        size: 35466975
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
 
-nodejs-18-source:
-    description: nodejs 18 source
+nodejs-22-source:
+    description: nodejs 22 source
     fetch:
         type: static-url
-        url: https://nodejs.org/dist/v18.19.0/node-v18.19.0.tar.xz
-        sha256: f52b41af20596a9abd8ed75241837ec43945468221448bbf841361e2091819b6
-        size: 41248748
+        url: https://nodejs.org/dist/v22.16.0/node-v22.16.0.tar.gz
+        sha256: 108f250ff79cc103b464b3ef41fa60f4866e4e6c962117171adaac7325ebdab2
+        size: 100514588
         artifact-name: nodejs.tar.zst
         strip-components: 1
         add-prefix: node/
@@ -614,7 +628,7 @@ gnumake:
     description: GNU make source
     fetch:
         type: static-url
-        url: https://ftp.gnu.org/gnu/make/make-4.4.1.tar.gz
+        url: https://ftpmirror.gnu.org/gnu/make/make-4.4.1.tar.gz
         sha256: dd16fb1d67bfab79a72f5e8390735c49e3e8e70b4945a15ab1f81ddb78658fb3
         size: 2348200
         artifact-name: make.tar.zst

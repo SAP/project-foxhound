@@ -178,6 +178,20 @@ tasks:
         symbol: I(deb8-32-pkg)
         definition: debian-packages
         parent: debian8-i386-raw
+    # Neither the debian10-*raw nor the debian10-*packages images can have
+    # packages dependencies.
+    debian10-arm64-raw:
+        symbol: I(deb10-arm64-raw)
+        definition: debian-raw
+        args:
+            BASE_IMAGE: debian:buster-20230612
+            DIST: buster
+        arch: arm64
+    debian10-arm64-packages:
+        symbol: I(deb10-arm64-pkg)
+        definition: debian-packages
+        parent: debian10-arm64-raw
+        arch: arm64
     custom-v8:
         symbol: I(custom-v8)
         parent: debian12-base
