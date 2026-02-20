@@ -26,3 +26,5 @@ set_config("DEBUG_E2E_TAINTING", taint_e2e_debug)
 imply_option("--enable-taint-debug", True, when=taint_e2e_debug)
 
 set_define("JSON_NOEXCEPTION", "1")
+set_define("JSON_HAS_FILESYSTEM", "0")
+set_define("JSON_HAS_EXPERIMENTAL_FILESYSTEM", "0")
