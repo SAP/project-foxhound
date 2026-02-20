@@ -87,3 +87,8 @@ jobs:
         with:
           name: spidermonkey
           path: obj-spider-release/dist/bin
+
+      - name: Show Summary
+        run: |
+          cat ./jstest_output.xml >> $GITHUB_STEP_SUMMARY
+      
