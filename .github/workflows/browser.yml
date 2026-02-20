@@ -103,6 +103,20 @@ jobs:
     name: Windows
     steps:
 
+      - name: Check Free Space
+        run: Get-Volume
+
+      - name: Configure Pagefile
+        uses: al-cheb/configure-pagefile-action@v1.5
+        with:
+          minimum-size: 4GB
+          maximum-size: 10GB
+          disk-root: "C:"
+
+      - name: Check Swap Size
+        run: |
+          (Get-CimInstance Win32_PageFileUsage).AllocatedBaseSize      
+
       - name: Download Mozilla Build
         run: |
           Set-PSDebug -Trace 1
@@ -119,7 +133,7 @@ jobs:
       - name: Bootstrap
         run: |
           cp "taintfox_mozconfig_win" ".mozconfig"    
-          Add-Content -Path .mozconfig -Value 'mk_add_options MOZ_PARALLEL_BUILD=2'
+          Add-Content -Path .mozconfig -Value 'mk_add_options MOZ_PARALLEL_BUILD=4'
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
           $env:RUST_VERSION=$((((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1] -Split '"')[1])
           echo "Installing $env:RUST_VERSION from .PLAYWRIGHT_VERSION"
