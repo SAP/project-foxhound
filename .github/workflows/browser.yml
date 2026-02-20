@@ -119,12 +119,17 @@ jobs:
       - name: Bootstrap
         run: |
           cp "taintfox_mozconfig_win" ".mozconfig"    
+          Add-Content -Path .mozconfig -Value 'mk_add_options MOZ_PARALLEL_BUILD=2'
           .\mach.ps1  --no-interactive bootstrap --application-choice=browser
           $env:RUST_VERSION=$((((Get-Content .\.PLAYWRIGHT_VERSION | select-string RUST_VERSION)  -Split "=")[1] -Split '"')[1])
           echo "Installing $env:RUST_VERSION from .PLAYWRIGHT_VERSION"
           rustup install $env:RUST_VERSION
           rustup default $env:RUST_VERSION
-      
+
+      - name: Build
+        run: |
+          .\mach.ps1 configure
+
       - name: Build
         run: |
           .\mach.ps1 build
