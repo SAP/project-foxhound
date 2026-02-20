@@ -3,8 +3,6 @@ import sys
 from junit_xml import TestSuite, TestCase
 
 run_tests = True
-dump_test_output = True
-
 failure_message = ""
 
 def parse_report(report):
@@ -36,7 +34,7 @@ def parse_line(line):
         test_case.add_skipped_info()
     return test_case
 
-def write_markdown(f, tests):
+def write_markdown(cmd, f, tests):
     failed_tests = []
     ntests = 0
     nfails = 0
@@ -49,10 +47,10 @@ def write_markdown(f, tests):
             nskips += 1
         ntests += 1
 
-    f.write(f""":rocket: Test Report
+    f.write(f"""# :rocket: Test Report
 Summary of JavaScript tests run with command:
 ```bash
-./mach jstests
+{cmd}
 ```
 ## Summary
   - {ntests} Total
@@ -62,29 +60,43 @@ Summary of JavaScript tests run with command:
 ## Failed Tests
 """)
 
-    for failed in failed_tests:
-        f.write(f"  - {failed.name}")
+    if len(failed_tests) > 0:
+        for failed in failed_tests:
+            f.write(f"  - {failed.name}")
+    else:
+        f.write("No failed tests")
 
 # Execute Jstests
 result = None
+outfile = "jstest_dump.txt"
+errfile = "jstest_stderr.txt"
+cmd = ["./mach", "jstests", "--tinderbox"]
 
 if run_tests:
-    result = subprocess.run(["./mach", "jstests", "--tinderbox"], capture_output=True)
+    print(f"Running: {' '.join(cmd)}")
+    result = subprocess.run(cmd, capture_output=True)
+    print("Done!")
+
+    print(f"Writing stdout to {outfile}") 
     data = result.stdout.decode("utf-8")
+    with open(outfile, "w+") as f:
+        f.write(data)
 
-    if dump_test_output:
-        with open("jstest_dump.txt", "w+") as f:
-            f.write(data)
+    print(f"Writing stdout to {errfile}") 
+    errdata = result.stderr.decode("utf-8")
+    with open(errfile, "w+") as f:
+        f.write(errdata)
 else:
-    data = open("jstest_dump.txt").read()
+    print(f"Reading results from {outfile}") 
+    data = open(outfile).read()
 
+print("Writing JUnit output file")
 tests = parse_report(data)
-
 with open("jstest_output.xml", "w") as f:
     TestSuite.to_file(f, [tests])
 
+print("Writing Markdown Output")
 with open("jstest_output.md", "w") as f:
-    write_markdown(f, tests)
+    write_markdown(' '.join(cmd), f, tests)
 
-if result:
-    sys.exit(result.returncode)
+print("All done!")
