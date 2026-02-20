@@ -3,7 +3,7 @@ import sys
 from junit_xml import TestSuite, TestCase
 
 run_tests = True
-dump_test_output = False
+dump_test_output = True
 
 failure_message = ""
 
@@ -36,23 +36,55 @@ def parse_line(line):
         test_case.add_skipped_info()
     return test_case
 
+def write_markdown(f, tests):
+    failed_tests = []
+    ntests = 0
+    nfails = 0
+    nskips = 0
+    for case in tests.test_cases:
+        if case.is_error():
+            failed_tests.append(case)
+            nfails += 1
+        elif case.is_skipped():
+            nskips += 1
+        ntests += 1
+
+    f.write(f""":rocket: Test Report
+Summary of JavaScript tests run with command:
+```bash
+./mach jstests
+```
+## Summary
+  - {ntests} Total
+  - {nskips} Skipped
+  - {nfails} Failed
+
+## Failed Tests
+""")
+
+    for failed in failed_tests:
+        f.write(f"  - {failed.name}")
 
 # Execute Jstests
+result = None
 
 if run_tests:
     result = subprocess.run(["./mach", "jstests", "--tinderbox"], capture_output=True)
-
     data = result.stdout.decode("utf-8")
 
     if dump_test_output:
-        with open("dump.txt", "w+") as f:
+        with open("jstest_dump.txt", "w+") as f:
             f.write(data)
 else:
-    data = open("dump.txt").read()
+    data = open("jstest_dump.txt").read()
 
 tests = parse_report(data)
 
 with open("jstest_output.xml", "w") as f:
     TestSuite.to_file(f, [tests])
 
-sys.exit(result.returncode)
+with open("jstest_output.md", "w") as f:
+    write_markdown(f, tests)
+
+if result:
+    sys.exit(result.returncode)

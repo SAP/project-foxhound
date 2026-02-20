@@ -126,7 +126,7 @@ jobs:
           rustup install $env:RUST_VERSION
           rustup default $env:RUST_VERSION
 
-      - name: Build
+      - name: Configure
         run: |
           .\mach.ps1 configure
 
