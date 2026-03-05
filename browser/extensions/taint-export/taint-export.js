@@ -3,7 +3,7 @@
 
   // Event handler for Tainfox taint report
   function handleTaintReport(report) {
-
+    console.log("Getting taint export URL");
     browser.tainting.getTaintExportUrl()
         .then((url) => {
             if (url != "") {
@@ -17,6 +17,8 @@
 
                 // fetch is a sink, so untaint to prevent recursive events
                 body_string.untaint();
+
+                console.log("Sending Taintflow to " + url);
 
                 fetch(url, {
                         method: "POST",
@@ -43,6 +45,7 @@
   }
 
 
+  console.info("Starting Taint Export Service");
   // Event listener for Taintfox taint report
   window.addEventListener('__taintreport', handleTaintReport);
 
