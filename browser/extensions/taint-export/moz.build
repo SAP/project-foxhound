@@ -7,11 +7,7 @@
 DEFINES["MOZ_APP_VERSION"] = CONFIG["MOZ_APP_VERSION"]
 DEFINES["MOZ_APP_MAXVERSION"] = CONFIG["MOZ_APP_MAXVERSION"]
 
-FINAL_TARGET_FILES.features["taint-exporter@sap.com"] += [
-    "manifest.json",
-    "moz.build",
-    "taint-export.js",
-]
+JAR_MANIFESTS += ["jar.mn"]
 
 SPHINX_TREES["docs"] = "docs"
 
