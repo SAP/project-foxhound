@@ -7,9 +7,10 @@
   }
   window.__taintExportInitialized = true;
 
-  // Cache the export URL to avoid repeated API calls
+  // Cache the export URL and single-mode flag to avoid repeated API calls
   let cachedExportUrl = null;
-  let urlInitPromise = null;
+  let cachedSingleMode = false;
+  let initPromise = null;
 
   // Track in-flight requests to serialize network calls
   let fetchInProgress = false;
@@ -29,35 +30,41 @@
     }
   }
 
-  // Initialize the export URL (called once at startup)
-  function initializeExportUrl() {
-    if (!urlInitPromise) {
-      urlInitPromise = browser.tainting.getTaintExportUrl()
-        .then((url) => {
+  // Initialize the export URL and single-mode flag (called once at startup)
+  function initializeConfig() {
+    if (!initPromise) {
+      initPromise = Promise.all([
+        browser.tainting.getTaintExportUrl(),
+        browser.tainting.getTaintExportSingleMode()
+      ])
+        .then(([url, singleMode]) => {
           // Validate the URL
           if (!url || url === "") {
             cachedExportUrl = "";
             console.info("[Taint-Export] No export URL configured");
-            return "";
+            return { url: "", singleMode: false };
           }
 
           if (!isValidUrl(url)) {
             console.error("[Taint-Export] Invalid URL provided:", url);
             cachedExportUrl = "";
-            return "";
+            cachedSingleMode = false;
+            return { url: "", singleMode: false };
           }
 
           cachedExportUrl = url;
-          console.info("[Taint-Export] Initialized with valid URL");
-          return cachedExportUrl;
+          cachedSingleMode = singleMode;
+          console.info("[Taint-Export] Initialized with valid URL, single-mode:", singleMode);
+          return { url: cachedExportUrl, singleMode: cachedSingleMode };
         })
         .catch((e) => {
-          console.error("[Taint-Export] Failed to initialize export URL:", e);
+          console.error("[Taint-Export] Failed to initialize configuration:", e);
           cachedExportUrl = "";
-          return "";
+          cachedSingleMode = false;
+          return { url: "", singleMode: false };
         });
     }
-    return urlInitPromise;
+    return initPromise;
   }
 
   // Send a batch of taint reports to the server
@@ -71,15 +78,30 @@
     fetchInProgress = true;
 
     try {
-      // Serialize reports to JSON - always use consistent batch format
-      const body_string = JSON.stringify({
-        findings: reports
-      });
+      let body_string;
+
+      // Check if single-mode is enabled (legacy format)
+      if (cachedSingleMode && reports.length > 0) {
+        // Send only the first report in legacy format
+        body_string = JSON.stringify(reports[0]);
+
+        // Queue remaining reports for next iteration
+        if (reports.length > 1) {
+          pendingReports.push(...reports.slice(1));
+        }
+
+        console.debug("[Taint-Export] Sending single taint flow (legacy mode) to " + cachedExportUrl);
+      } else {
+        // Send all reports in batch format
+        body_string = JSON.stringify({
+          findings: reports
+        });
+
+        console.debug("[Taint-Export] Sending " + reports.length + " taint flow(s) to " + cachedExportUrl);
+      }
 
       // fetch is a sink, so untaint to prevent recursive events
       body_string.untaint();
-
-      console.debug("[Taint-Export] Sending " + reports.length + " taint flow(s) to " + cachedExportUrl);
 
       const response = await fetch(cachedExportUrl, {
         method: "POST",
@@ -137,7 +159,7 @@
   // Initialize and start listening for events
   console.info("[Taint-Export] Starting Taint Export Service");
 
-  initializeExportUrl().then(() => {
+  initializeConfig().then(() => {
     // Only add listener after initialization completes
     window.addEventListener('__taintreport', handleTaintReport);
     console.info("[Taint-Export] Ready to export taint flows");
