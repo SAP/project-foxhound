@@ -71,17 +71,15 @@
     fetchInProgress = true;
 
     try {
-      // Serialize reports to JSON
-      const body_string = JSON.stringify(
-        reports.length === 1
-          ? reports[0] // Single report - keep backward compatible format
-          : { reports: reports } // Multiple reports - batch format
-      );
+      // Serialize reports to JSON - always use consistent batch format
+      const body_string = JSON.stringify({
+        findings: reports
+      });
 
       // fetch is a sink, so untaint to prevent recursive events
       body_string.untaint();
 
-      console.log("[Taint-Export] Sending " + reports.length + " taint flow(s) to " + cachedExportUrl);
+      console.debug("[Taint-Export] Sending " + reports.length + " taint flow(s) to " + cachedExportUrl);
 
       const response = await fetch(cachedExportUrl, {
         method: "POST",
