@@ -37,15 +37,63 @@ Adding the `jar.mn` file fixed this by properly registering the extension with F
 
 ## Configuration
 
-To activate the extension, set the following preference (in about:config):
+To activate the extension, set the following preferences (in about:config):
+
+### Required: Export URL
 
 ```
 tainting.export.url
 ```
 
-to a String containing the URL where your export server is listening. If an empty string is provided (default), then no request will be sent.
+Set to a String containing the URL where your export server is listening. If an empty string is provided (default), then no request will be sent.
 
-For each taint flow detected by Foxhound, a POST request will be sent to the server containing a JSON-formatted version of the taint flow.
+### Optional: Legacy Single-Request Mode
+
+```
+tainting.export.single
+```
+
+Set to a Boolean to control the request format (default: `false`):
+
+- **`false` (default - Recommended)**: Sends taint flows in batch format:
+  ```json
+  {
+    "findings": [
+      { "detail": {...}, "taint": {...}, "timestamp": 1234567890 },
+      { "detail": {...}, "taint": {...}, "timestamp": 1234567891 }
+    ]
+  }
+  ```
+  Multiple taint flows can be sent in a single request for better performance.
+
+- **`true` (legacy mode)**: Sends individual taint flows one at a time without wrapper:
+  ```json
+  { "detail": {...}, "taint": {...}, "timestamp": 1234567890 }
+  ```
+  This mode is provided for backward compatibility with servers expecting the original format. Requests are still queued and serialized, but only one taint flow is sent per request.
+
+**Migration Path**: If you have an existing server expecting the legacy format:
+1. Keep `tainting.export.single = true` while updating your server code
+2. Update server to handle the batch format with `findings` array
+3. Set `tainting.export.single = false` (or remove the preference) to use the efficient batch mode
+
+### Example Configuration
+
+For new deployments (recommended):
+```
+tainting.export.url = "https://your-server.com/api/taint-flows"
+tainting.export.single = false  (or leave unset)
+```
+
+For backward compatibility:
+```
+tainting.export.url = "https://your-server.com/api/taint-flows"
+tainting.export.single = true
+```
+
+## Behavior
+
+For each taint flow detected by Foxhound, a POST request will be sent to the configured server containing a JSON-formatted version of the taint flow.
 
 ## Developer
 
