@@ -1268,12 +1268,14 @@ static JSLinearString* ToLowerCaseInternal(JSContext* cx, JSLinearString* str) {
 template <typename CharT>
 static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   JSLinearString* res = ToLowerCaseInternal<CharT>(cx, str);
-  if (res == str) {
-    res = NewDependentString(cx, str, 0, str->length());
+  if (res && str->isTainted()) {
+    if (res == str) {
+      res = NewDependentString(cx, str, 0, str->length());
+    }
+    SafeStringTaint taint(str->taint());
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
+    res->setTaint(taint);
   }
-  SafeStringTaint taint(str->taint());
-  taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
-  res->setTaint(taint);
   return res;
 }
 
