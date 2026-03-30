@@ -1271,6 +1271,9 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
   if (res && str->isTainted()) {
     if (res == str) {
       res = NewDependentString(cx, str, 0, str->length());
+      if (!res) {
+        return nullptr;
+      }
     }
     SafeStringTaint taint(str->taint());
     taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
@@ -1934,13 +1937,19 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   CallArgs args = CallArgsFromVp(argc, vp);
   
   // Steps 1-2.
-  RootedString arg(cx,
+  RootedString str(cx,
                    ToStringForStringFunction(cx, "normalize", args.thisv()));
-  if (!arg) {
+  if (!str) {
     return false;
   }
 
-  auto* str = NewDependentString(cx, arg, 0, arg->length());
+  if (str->isTainted()) {
+    JSString* dep = NewDependentString(cx, str, 0, str->length());
+    if (!dep) {
+      return false;
+    }
+    str = dep;
+  }
 
   using NormalizationForm = mozilla::intl::String::NormalizationForm;
 
