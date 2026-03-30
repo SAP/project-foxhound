@@ -1276,7 +1276,7 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
       }
     }
     SafeStringTaint taint(str->taint());
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", true, str));
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
     res->setTaint(taint);
   }
   return res;
@@ -1935,7 +1935,7 @@ static bool str_localeCompare(JSContext* cx, unsigned argc, Value* vp) {
 static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
   AutoJSMethodProfilerEntry pseudoFrame(cx, "String.prototype", "normalize");
   CallArgs args = CallArgsFromVp(argc, vp);
-  
+
   // Steps 1-2.
   RootedString str(cx,
                    ToStringForStringFunction(cx, "normalize", args.thisv()));
