@@ -1172,16 +1172,11 @@ static size_t ToLowerCaseLength(const char16_t* chars, size_t startIndex,
 }
 
 template <typename CharT>
-static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
+static JSLinearString* ToLowerCaseInternal(JSContext* cx, JSLinearString* str) {
   // Unlike toUpperCase, toLowerCase has the nice invariant that if the
   // input is a Latin-1 string, the output is also a Latin-1 string.
 
   StringChars<CharT> newChars(cx);
-  // Foxhound: cache the taint up here to prevent GC issues
-  SafeStringTaint taint(str->taint());
-  if (taint.hasTaint()) {
-    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
-  }
 
   const size_t length = str->length();
   size_t resultLength;
@@ -1234,11 +1229,7 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
 
     // If no character needs to change, return the input string.
-    // Foxhound: disabled. We need to return a new string here (so we can correctly
-    // set the taint). However, we are in an AutoCheckCannotGC block, so cannot
-    // allocate a new string here.
     if (i == length) {
-      str->setTaint(cx, taint);
       return str;
     }
 
@@ -1269,12 +1260,25 @@ static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
     }
   }
 
-  // Foxhound: Add taint operation to all taint ranges of the input string.
   JSLinearString* res = newChars.template toStringDontDeflate<CanGC>(cx, resultLength);
-  if (res && taint.hasTaint()) {
-    res->setTaint(cx, taint);
-  }
 
+  return res;
+}
+
+template <typename CharT>
+static JSLinearString* ToLowerCase(JSContext* cx, JSLinearString* str) {
+  JSLinearString* res = ToLowerCaseInternal<CharT>(cx, str);
+  if (res && str->isTainted()) {
+    if (res == str) {
+      res = NewDependentString(cx, str, 0, str->length());
+      if (!res) {
+        return nullptr;
+      }
+    }
+    SafeStringTaint taint(str->taint());
+    taint.extend(TaintOperationFromContextJSString(cx, "toLowerCase", str));
+    res->setTaint(taint);
+  }
   return res;
 }
 
@@ -1937,6 +1941,14 @@ static bool str_normalize(JSContext* cx, unsigned argc, Value* vp) {
                    ToStringForStringFunction(cx, "normalize", args.thisv()));
   if (!str) {
     return false;
+  }
+
+  if (str->isTainted()) {
+    JSString* dep = NewDependentString(cx, str, 0, str->length());
+    if (!dep) {
+      return false;
+    }
+    str = dep;
   }
 
   using NormalizationForm = mozilla::intl::String::NormalizationForm;
