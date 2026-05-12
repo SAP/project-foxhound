@@ -1,0 +1,67 @@
+name: Upstream Version Update
+description: Track an update to the upstream Firefox / Playwright version
+title: "Update to Playwright v"
+labels: ["chore", "upstream"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this template to track a rebase onto a new upstream Firefox / Playwright release.
+
+  - type: input
+    id: playwright-version
+    attributes:
+      label: Playwright version
+      description: Target Playwright release
+      placeholder: "e.g. 1.56"
+    validations:
+      required: true
+
+  - type: input
+    id: playwright-release-url
+    attributes:
+      label: Playwright release URL
+      description: Link to the Playwright release tag on GitHub
+      placeholder: "https://github.com/microsoft/playwright/tree/release-1.XX"
+    validations:
+      required: true
+
+  - type: input
+    id: firefox-commit
+    attributes:
+      label: Firefox base commit
+      description: Commit SHA or tag from the Firefox repository that Playwright targets
+      placeholder: "e.g. 00656c9425c51ee035578ca6ebebe13c755b0375"
+    validations:
+      required: true
+
+  - type: input
+    id: firefox-commit-url
+    attributes:
+      label: Firefox commit URL
+      description: Full URL to the Firefox commit or tag
+      placeholder: "https://github.com/mozilla-firefox/firefox/tree/<commit>"
+    validations:
+      required: false
+
+  - type: textarea
+    id: notes
+    attributes:
+      label: Notes
+      description: Any relevant changes in this release (infrastructure changes, new APIs, breaking changes, etc.)
+      placeholder: "e.g. Playwright has moved to the new Firefox GitHub repo (mozilla-firefox/firefox)"
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: tasks
+    attributes:
+      label: Tasks
+      options:
+        - label: Update upstream remote / fetch new Firefox base commit
+        - label: Rebase Foxhound taint-tracking patches onto new base
+        - label: Resolve any merge conflicts in taint instrumentation
+        - label: Update Playwright submodule / version reference
+        - label: Update CI workflow versions if needed
+        - label: Run Foxhound test suite and fix any regressions
+        - label: Open and merge pull request
